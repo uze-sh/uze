@@ -128,24 +128,21 @@ pub(super) fn sync_target_locked(primary: &Path, target: &str, fetched: &str) ->
 /// sync brings the target in line, the task's branch when a delivery lands
 /// it. Through the working tree when the operator is standing on the target
 /// — Git's own fast-forward, which refuses rather than overwrite anything
-/// uncommitted in the way — and by moving the ref when they are not, which
-/// Git refuses in turn while another checkout has the branch.
+/// uncommitted in the way — and by moving the ref when they are not.
 ///
 /// Which of the two it is has to be asked, because `git merge` advances
 /// `HEAD` and not the named target: run against a detached `HEAD` it
 /// succeeds while the target never moves, and run on any other branch that
 /// is an ancestor of `source` it fast-forwards *that* branch instead.
 pub(super) fn fast_forward(primary: &Path, target: &str, source: &str) -> Result<(), String> {
-    let args = if checkout::current_branch(primary).as_deref() == Some(target) {
-        vec!["merge", "--quiet", "--ff-only", "--", source]
+    if checkout::current_branch(primary).as_deref() == Some(target) {
+        git(primary, &["merge", "--quiet", "--ff-only", "--", source])?;
     } else {
-        vec!["branch", "--quiet", "--force", "--", target, source]
-    };
-    git(primary, &args).map(|_| ())?;
-    // `git merge` advances whatever HEAD is, and `git branch --force` can be
-    // refused while another checkout holds the target. Neither says so by
-    // failing in every case, so the one thing that matters — that the target
-    // now names the source's commit — is read back rather than assumed.
+        move_ref_forward(primary, target, source)?;
+    }
+    // `git merge` advances whatever HEAD is, so the one thing that matters —
+    // that the target now names the source's commit — is read back rather
+    // than assumed.
     let moved = checkout::tip_of(primary, target);
     let expected = checkout::tip_of(primary, source);
     if moved.is_empty() || moved != expected {
@@ -160,4 +157,45 @@ pub(super) fn fast_forward(primary: &Path, target: &str, source: &str) -> Result
         ));
     }
     Ok(())
+}
+
+/// Moves `refs/heads/<target>` onto `source` as a compare-and-swap: only
+/// from the commit that was read here, only to a descendant of it, and
+/// never under another checkout that has the branch out. The write lock is
+/// UZE's alone, so an operator's `git commit` on the target in another
+/// checkout, or a fetch, can land between the read and the write; Git then
+/// refuses the swap rather than drop what landed.
+fn move_ref_forward(primary: &Path, target: &str, source: &str) -> Result<(), String> {
+    let from = checkout::tip_of(primary, target);
+    let onto = checkout::tip_of(primary, source);
+    if from.is_empty() || onto.is_empty() {
+        return Err(format!("`{target}` or `{source}` names no commit"));
+    }
+    if !is_ancestor(primary, &from, &onto) {
+        return Err(format!(
+            "`{source}` does not descend from `{target}`; only a fast-forward moves it"
+        ));
+    }
+    let reference = format!("refs/heads/{target}");
+    if let Some((holder, _)) = checkout::linked_worktrees(primary)
+        .into_iter()
+        .find(|(_, branch)| branch.as_deref() == Some(target))
+    {
+        return Err(format!(
+            "`{target}` is checked out in {}, which a moved ref would leave behind",
+            holder.display()
+        ));
+    }
+    git(
+        primary,
+        &[
+            "update-ref",
+            "-m",
+            &format!("uze: fast-forward {target} onto {source}"),
+            &reference,
+            &onto,
+            &from,
+        ],
+    )
+    .map(|_| ())
 }

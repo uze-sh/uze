@@ -13,7 +13,7 @@ use uze_core::{
     naming::NameCollisionAuthority,
     project_lock::{self, LockedMarketplace, LockedPlugin, ProjectLock},
     project_root,
-    trust::TrustAuthority,
+    trust::{SourceOrigin, TrustAuthority},
 };
 
 use super::marketplace::MarketplaceRequest;
@@ -357,14 +357,15 @@ impl Project<'_> {
         }
 
         // Acquire and ingest (reuses existing lifecycle).
-        let report = self.resolve_into_lock(
-            &mut lock,
+        let report = self.resolve_and_install(
             plugin,
             marketplace,
             &request,
             authority,
             name_authority,
+            global.origin(),
         )?;
+        self.record_in_lock(&mut lock, plugin, marketplace, &request, &report.plugin.id)?;
 
         // The declaration comes first and the lock second: `agents.yaml` is
         // what the project meant, and the lock is what that meant resolved
@@ -581,11 +582,12 @@ impl Project<'_> {
                         catalogues: &self.0.marketplace_catalogues,
                     },
                 )?;
-                match self
-                    .0
-                    .plugins()
-                    .replace_with(&qualified, materialized, authority)
-                {
+                match self.0.plugins().replace_with(
+                    &qualified,
+                    materialized,
+                    authority,
+                    SourceOrigin::Project,
+                ) {
                     Ok(UpdatePluginReport::Updated {
                         plugin, deliveries, ..
                     }) => (plugin.id, deliveries),
@@ -616,6 +618,7 @@ impl Project<'_> {
                     &request,
                     authority,
                     &uze_core::naming::NoNameCollisionAuthority,
+                    SourceOrigin::Project,
                 )?;
                 (report.plugin.id, report.deliveries)
             };
@@ -930,17 +933,36 @@ impl Project<'_> {
                     });
                     continue;
                 }
+                Err(UzeError::ForeignDeclaredPath { path, .. }) => {
+                    skipped.push(SkippedPlugin {
+                        plugin: stale.plugin.clone(),
+                        marketplace: marketplace.to_owned(),
+                        reason: format!(
+                            "its marketplace is declared at {}, outside the project and owned \
+                             by another account",
+                            path.display()
+                        ),
+                    });
+                    continue;
+                }
                 Err(error) => return Err(error),
             };
             let request = MarketplaceRequest::of(&fetch_source)?;
             self.register_marketplace(marketplace, fetch_source, &request.repository.identity)?;
-            let report = self.resolve_into_lock(
-                &mut lock,
+            let report = self.resolve_and_install(
                 &stale.plugin,
                 marketplace,
                 &request,
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
+                SourceOrigin::Project,
+            )?;
+            self.record_in_lock(
+                &mut lock,
+                &stale.plugin,
+                marketplace,
+                &request,
+                &report.plugin.id,
             )?;
             undelivered.extend(
                 report
@@ -999,6 +1021,7 @@ impl Project<'_> {
                 None,
                 authority,
                 &uze_core::naming::NoNameCollisionAuthority,
+                SourceOrigin::Project,
             )?;
             undelivered.extend(
                 report
@@ -1052,11 +1075,12 @@ impl Project<'_> {
             let materialized =
                 self.reproduce_locked_plugin(recorded, &locked.marketplace, &name)?;
             Self::verify_integrity_of(&name, &locked, &materialized)?;
-            match self
-                .0
-                .plugins()
-                .replace_with(&qualified, materialized, authority)
-            {
+            match self.0.plugins().replace_with(
+                &qualified,
+                materialized,
+                authority,
+                SourceOrigin::Project,
+            ) {
                 Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
                     undelivered.extend(
                         deliveries
@@ -1180,7 +1204,7 @@ impl Project<'_> {
             },
             other => other,
         };
-        uze_core::state::marketplace_add(&self.0.home, marketplace, source)?;
+        uze_core::state::marketplace_add_declared(&self.0.home, marketplace, source)?;
         Ok(())
     }
 
@@ -1208,6 +1232,16 @@ impl Project<'_> {
         let path = joined
             .canonical()
             .map_err(|_| UzeError::MissingPath(joined.clone()))?;
+        // A `path:` leaving the project names a directory the clone did not
+        // bring. One this user owns is theirs to have declared (a working
+        // copy beside the project); one another account owns — anything in
+        // a shared `/tmp` — is somebody else's code chosen by a file.
+        if !path.starts_with(root) && !project_root::owned_here(&path) {
+            return Err(UzeError::ForeignDeclaredPath {
+                marketplace: marketplace.to_owned(),
+                path,
+            });
+        }
         Ok(PackageSource::Local { path })
     }
 
@@ -1227,6 +1261,7 @@ impl Project<'_> {
         request: &MarketplaceRequest,
         authority: &dyn TrustAuthority,
         name_authority: &dyn NameCollisionAuthority,
+        origin: SourceOrigin,
     ) -> Result<AddPluginReport> {
         let materialized = request.materialize_plugin(
             plugin,
@@ -1244,6 +1279,7 @@ impl Project<'_> {
             None,
             authority,
             name_authority,
+            origin,
         )
     }
 
@@ -1293,21 +1329,6 @@ impl Project<'_> {
             },
         );
         Ok(true)
-    }
-
-    fn resolve_into_lock(
-        &self,
-        lock: &mut ProjectLock,
-        plugin: &str,
-        marketplace: &str,
-        request: &MarketplaceRequest,
-        authority: &dyn TrustAuthority,
-        name_authority: &dyn NameCollisionAuthority,
-    ) -> Result<AddPluginReport> {
-        let report =
-            self.resolve_and_install(plugin, marketplace, request, authority, name_authority)?;
-        self.record_in_lock(lock, plugin, marketplace, request, &report.plugin.id)?;
-        Ok(report)
     }
 
     /// Refuses bytes that are not the bytes the lock pinned. An entry with

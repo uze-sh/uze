@@ -61,7 +61,10 @@ fn a_made_checkout_is_recorded_where_it_lives() {
     let mut store = AgentStore::default();
     let (_, slot) = launch(&repository, &mut store, "made");
 
-    assert!(matches!(record::read(&slot.path), Recorded::Ours(_)));
+    assert!(matches!(
+        record::read(repository.root(), &slot.path),
+        Recorded::Ours(_)
+    ));
     assert!(
         record_file(&slot.path).starts_with(repository.root().join(".git/worktrees")),
         "the record lives in Git's administrative directory, not in the tree"
@@ -122,8 +125,106 @@ fn a_copied_checkout_does_not_inherit_the_record() {
     fs::create_dir_all(&copy).unwrap();
     fs::copy(slot.path.join(".git"), copy.join(".git")).unwrap();
 
-    assert_eq!(record::read(&copy), Recorded::Absent);
-    assert!(matches!(record::read(&slot.path), Recorded::Ours(_)));
+    assert_eq!(record::read(repository.root(), &copy), Recorded::Absent);
+    assert!(matches!(
+        record::read(repository.root(), &slot.path),
+        Recorded::Ours(_)
+    ));
+}
+
+/// Whoever works in a slot can rewrite its `.git` file to name a
+/// repository of their own, holding a record of their own. Neither the
+/// record nor the repository is taken: the administrative directory is the
+/// one the primary registers, and a slot that no longer names it is not a
+/// slot — never reused, so Git never runs there for the workspace.
+#[test]
+fn a_slot_whose_git_file_was_repointed_is_no_longer_anyones_slot() {
+    let repository = repository("record-repointed");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (agent, slot) = launch(&repository, &mut store, "repointed");
+    end(&repository, &mut store, &agent);
+    assert!(anchored(primary, &slot.path).is_ok());
+    let scratch = uze_testkit::temp::scratch("record-repointed-forged");
+    repository.git_in(&scratch, &["init", "-q", "-b", "forged"]);
+    let forged = scratch.join(".git");
+    fs::write(
+        forged.join(crate::worktree::CHECKOUT_RECORD_FILE),
+        serde_json::to_vec(&CheckoutRecord {
+            path: slot.path.clone(),
+            parent: Some(agent.id.clone()),
+            split_at: Some("--exec=true".to_owned()),
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        slot.path.join(".git"),
+        format!("gitdir: {}\n", forged.display()),
+    )
+    .unwrap();
+
+    assert!(anchored(primary, &slot.path).is_err());
+    assert_eq!(record::read(primary, &slot.path), Recorded::Absent);
+    assert!(record::write(primary, &slot.path, &CheckoutRecord::made_at(&slot.path)).is_err());
+    assert_eq!(
+        current_branch(&slot.path),
+        None,
+        "Git was run in the repository the slot now names"
+    );
+    assert!(
+        holds_uncommitted_work(&slot.path),
+        "an unasked question is taken as yes"
+    );
+    assert!(slots(primary, &store, &nobody()).is_empty());
+    let (_, next) = launch(&repository, &mut store, "next");
+    assert!(next.created, "the repointed slot was handed out again");
+    assert_eq!(
+        account(primary, &[])
+            .into_iter()
+            .find(|checkout| same_directory(&checkout.path, &slot.path))
+            .map(|checkout| checkout.owner),
+        Some(Owner::Operator)
+    );
+}
+
+/// The same, with a whole repository put where the `.git` file was.
+#[test]
+fn a_slot_whose_git_file_became_a_repository_is_not_anchored() {
+    let repository = repository("record-replaced");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "replaced");
+    fs::remove_file(slot.path.join(".git")).unwrap();
+    repository.git_in(&slot.path, &["init", "-q"]);
+
+    assert!(anchored(primary, &slot.path).is_err());
+    assert_eq!(record::read(primary, &slot.path), Recorded::Absent);
+}
+
+/// Anchoring asks who registered a checkout, not who made it: a worktree a
+/// person added by hand is still one Git may run in.
+#[test]
+fn a_hand_made_worktree_is_anchored_without_being_a_slot() {
+    let repository = repository("record-hand-made-anchored");
+    let primary = repository.root();
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "mine",
+        ".worktrees/mine",
+        "HEAD",
+    ]);
+    let hand_made = primary.join(".worktrees/mine");
+
+    assert!(anchored(primary, &hand_made).is_ok());
+    assert_eq!(record::read(primary, &hand_made), Recorded::Absent);
+    assert!(
+        anchored(primary, primary).is_err(),
+        "the primary is no linked checkout"
+    );
 }
 
 #[test]
@@ -151,7 +252,14 @@ fn a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over() {
         &nobody(),
     );
     assert!(!removed.contains(&slot.id), "never removed");
-    assert!(record::write(&slot.path, &CheckoutRecord::made_at(&slot.path)).is_err());
+    assert!(
+        record::write(
+            repository.root(),
+            &slot.path,
+            &CheckoutRecord::made_at(&slot.path)
+        )
+        .is_err()
+    );
     assert_eq!(fs::read_to_string(record_file(&slot.path)).unwrap(), newer);
 }
 
@@ -167,7 +275,10 @@ fn a_launched_agents_slot_is_recorded_on_sight() {
 
     reconcile(primary, &mut store, TARGET);
 
-    assert!(matches!(record::read(&slot.path), Recorded::Ours(_)));
+    assert!(matches!(
+        record::read(repository.root(), &slot.path),
+        Recorded::Ours(_)
+    ));
     assert_eq!(
         store.slot_owner(&slot.id).map(|owner| owner.id.clone()),
         Some(agent.id)
@@ -207,7 +318,10 @@ fn an_earlier_builds_inference_is_not_inherited() {
 
     reconcile(primary, &mut store, TARGET);
 
-    assert_eq!(record::read(&hand_made), Recorded::Absent);
+    assert_eq!(
+        record::read(repository.root(), &hand_made),
+        Recorded::Absent
+    );
     assert!(slots(primary, &store, &nobody()).is_empty());
 }
 
@@ -222,6 +336,7 @@ fn a_child_whose_agent_an_older_build_forgot_is_given_it_back() {
     let (child, slot) = launch(&repository, &mut store, "child");
     let split_at = child.isolation().unwrap().base_commit.clone();
     record::write(
+        repository.root(),
         &slot.path,
         &CheckoutRecord {
             path: slot.path.clone(),

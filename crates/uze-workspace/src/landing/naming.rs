@@ -78,10 +78,20 @@ pub(super) fn commit_derived_halves(
 /// The subject of the oldest commit the branch carries beyond its base.
 pub(super) fn first_commit_subject(primary: &Path, isolation: &Isolation) -> Option<String> {
     let range = format!("{}..{}", isolation.base_commit, isolation.branch);
-    let listing = uze_git::read(primary, &["log", "--format=%s", "--reverse", &range, "--"])
-        .ok()?
-        .successful()
-        .ok()?;
+    let listing = crate::git::read(
+        primary,
+        &[
+            "log",
+            "--format=%s",
+            "--reverse",
+            "--end-of-options",
+            &range,
+            "--",
+        ],
+    )
+    .ok()?
+    .successful()
+    .ok()?;
     listing
         .lines()
         .map(str::trim)

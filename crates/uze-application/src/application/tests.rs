@@ -453,6 +453,7 @@ pub(crate) fn replace_resolution_removes_the_existing_active_plugin_and_installs
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
     assert_eq!(alpha.plugin.active_name, "uze-agent-skill-conformance");
@@ -467,6 +468,7 @@ pub(crate) fn replace_resolution_removes_the_existing_active_plugin_and_installs
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::FixedResolution(uze_core::naming::NameCollisionResolution::Replace),
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
 
@@ -515,6 +517,7 @@ pub(crate) fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_r
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
     let alpha_id = alpha.plugin.id.clone();
@@ -557,6 +560,7 @@ pub(crate) fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_r
         None,
         &uze_core::trust::AlwaysTrust,
         &uze_core::naming::FixedResolution(uze_core::naming::NameCollisionResolution::Replace),
+        uze_core::trust::SourceOrigin::Operator,
     );
     assert!(matches!(
         result,
@@ -610,6 +614,7 @@ pub(crate) fn update_preserves_an_aliased_plugins_active_name() {
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
 
@@ -625,6 +630,7 @@ pub(crate) fn update_preserves_an_aliased_plugins_active_name() {
             &uze_core::naming::FixedResolution(uze_core::naming::NameCollisionResolution::Alias(
                 "conformance-beta".to_owned(),
             )),
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
     assert_eq!(beta.plugin.active_name, "conformance-beta");
@@ -715,6 +721,7 @@ fn install_conformance_fixture(app: &UzeApplication, marketplace: &str) {
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
 }
@@ -868,6 +875,7 @@ pub(crate) fn an_update_whose_delivery_fails_puts_the_previous_bytes_back() {
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .unwrap();
 
@@ -1324,6 +1332,7 @@ pub(crate) fn a_failed_reinstall_keeps_the_package_that_was_there() {
             None,
             &uze_core::trust::AlwaysTrust,
             &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Operator,
         )
         .expect_err("the only harness refused");
     assert!(matches!(failure, UzeError::DeliveryFailed(_)), "{failure}");
@@ -1674,6 +1683,7 @@ pub(crate) fn a_default_plugin_that_would_cross_the_trust_boundary_is_not_instal
         None,
         &uze_core::trust::NoTrustAuthority,
         &uze_core::naming::NoNameCollisionAuthority,
+        uze_core::trust::SourceOrigin::Operator,
     );
     assert!(matches!(result, Err(UzeError::TrustRequired { .. })));
     assert!(

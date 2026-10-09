@@ -411,6 +411,34 @@ fn validate(manifest: &ProjectManifest, path: &Path) -> Result<()> {
         reason,
     };
     for (name, marketplace) in &manifest.marketplaces {
+        let spelled = [
+            Some(name.as_str()),
+            marketplace.git.as_deref(),
+            marketplace.r#ref.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(marketplace.plugins.iter().map(String::as_str))
+        .chain(
+            [
+                marketplace.path.as_deref(),
+                marketplace.subdirectory.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .filter_map(Path::to_str),
+        );
+        for value in spelled {
+            if let Some(character) = crate::authored::control_character(value, true) {
+                return Err(malformed(format!(
+                    "marketplace `{}` declares `{}`, which holds the control character U+{:04X}; \
+                     no name or source may carry one",
+                    crate::authored::inert_line(name),
+                    crate::authored::inert_line(value),
+                    u32::from(character)
+                )));
+            }
+        }
         if name == BUILT_IN_MARKETPLACE {
             return Err(malformed(format!(
                 "`{name}` is the marketplace built into UZE; it is always available and cannot \
@@ -544,6 +572,21 @@ mod tests {
         assert!(error.to_string().contains("declares no source"), "{error}");
     }
 
+    /// A name or source able to rewrite the terminal line it is printed on
+    /// is refused where the manifest is read, and the refusal shows it
+    /// inert.
+    #[test]
+    fn a_control_character_in_a_declared_name_is_refused() {
+        let error = parsed(
+            "marketplaces:\n  ai:\n    git: https://example.invalid/ai\n    plugins: \
+             [\"ok\\e[2K\\rfake\"]\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("U+001B"), "{error}");
+        assert!(!error.contains('\u{1b}'), "{error}");
+    }
+
     #[test]
     fn a_key_declared_twice_is_an_error_rather_than_the_last_one_winning() {
         let error = parsed(
@@ -613,6 +656,40 @@ mod tests {
         assert!(
             !message.contains("plugin versions"),
             "the plugin answer must not be given to the schema question: {message}"
+        );
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_linked_out_of_its_project_is_refused_and_never_written() {
+        let base = uze_testkit::temp::scratch("manifest-escape");
+        let root = base.join("project");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink("../outside/agents.yaml", manifest_path_for(&root)).unwrap();
+
+        let refused = set_scalar(&root, Section::Workspace, "delivery", "pr");
+        assert!(
+            matches!(refused, Err(UzeError::ProjectFileEscapes { .. })),
+            "{refused:?}"
+        );
+        assert!(
+            !outside.join("agents.yaml").exists(),
+            "the dangling link was followed"
+        );
+
+        let authored = "workspace:\n  delivery: pr\n";
+        fs::write(outside.join("agents.yaml"), authored).unwrap();
+        let refused = set_scalar(&root, Section::Workspace, "delivery", "push");
+        assert!(
+            matches!(refused, Err(UzeError::ProjectFileEscapes { .. })),
+            "{refused:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(outside.join("agents.yaml")).unwrap(),
+            authored
         );
     }
 

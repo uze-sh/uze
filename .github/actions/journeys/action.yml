@@ -64,8 +64,17 @@ runs:
     # with no `expect`, and a `proves:` pointing at a page that moved.
     - name: Validate the journeys
       shell: bash
-      run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} journeys/journey.py validate journeys/suites
+      env:
+        PYTHON: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+      run: '"${PYTHON}" journeys/journey.py validate journeys/suites'
 
+    # The arguments arrive as data and are split into words, never handed to
+    # the shell as script text.
     - name: Run the journeys
       shell: bash
-      run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} journeys/journey.py run journeys/suites ${{ inputs.args }}
+      env:
+        PYTHON: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+        JOURNEY_ARGS: ${{ inputs.args }}
+      run: |
+        read -r -a arguments <<< "${JOURNEY_ARGS}"
+        "${PYTHON}" journeys/journey.py run journeys/suites "${arguments[@]}"

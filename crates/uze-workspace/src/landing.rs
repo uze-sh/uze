@@ -48,7 +48,7 @@ pub const GATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const REMOTE: &str = "origin";
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    uze_git::write(root, args)
+    crate::git::write(root, args)
         .map_err(|error| error.to_string())?
         .successful()
         .map(|stdout| stdout.trim().to_owned())

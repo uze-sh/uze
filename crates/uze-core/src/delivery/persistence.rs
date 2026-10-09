@@ -87,6 +87,39 @@ pub fn write_atomic_preserving(path: &Path, payload: &[u8]) -> Result<()> {
     replace_atomically(&destination, payload, permissions)
 }
 
+/// [`write_atomic_preserving`] for a file a project keeps, which may be a
+/// link only to somewhere inside `root`.
+///
+/// A project's files arrive with a clone, so a link among them is the
+/// repository's choice, not the operator's: an `AGENTS.md` committed as a
+/// link to `../../.bashrc` would otherwise have UZE write a plugin's text
+/// into a file nobody asked it to touch. A machine file (an rc file, a
+/// harness's own config) keeps following its link wherever it goes; this
+/// one is refused, before anything is written, with
+/// [`UzeError::ProjectFileEscapes`].
+pub fn write_atomic_within(root: &Path, path: &Path, payload: &[u8]) -> Result<()> {
+    let destination = contained_destination(root, path)?;
+    let permissions = fs::metadata(&destination)
+        .ok()
+        .map(|metadata| metadata.permissions());
+    replace_atomically(&destination, payload, permissions)
+}
+
+/// Where a write to the project file `path` lands, refused when that is
+/// outside `root`.
+pub fn contained_destination(root: &Path, path: &Path) -> Result<PathBuf> {
+    let destination = uze_platform::path::resolved(path).map_err(UzeError::write(path))?;
+    let root = uze_platform::path::resolved(root).map_err(UzeError::read(root))?;
+    if uze_platform::path::is_within(&destination, &root) {
+        Ok(destination)
+    } else {
+        Err(UzeError::ProjectFileEscapes {
+            path: path.to_path_buf(),
+            target: destination,
+        })
+    }
+}
+
 /// Replaces the directory at `destination` with the one `build` writes,
 /// in a single rename, so a reader sees the previous tree or the new one
 /// and never a mix: Claude Code reads a directory-marketplace plugin live

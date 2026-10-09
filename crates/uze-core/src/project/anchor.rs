@@ -30,7 +30,7 @@ use serde::Serialize;
 use crate::{
     Result,
     manifest::MANIFEST_FILE_NAME,
-    project_root::{find_upward, is_repository_root},
+    project_root::{adoptable, find_upward, is_repository_root, owned_here},
 };
 
 /// The marketplace manifest name (`marketplace.json`) — the same name
@@ -103,7 +103,10 @@ pub fn resolve_anchor(cwd: &Path) -> Result<ResolvedAnchor> {
 }
 
 fn anchor_kind(dir: &Path) -> Option<AnchorKind> {
-    let consumer = dir.join(MANIFEST_FILE_NAME).is_file();
+    // The same rule `resolve_project_root` applies: another account's
+    // manifest outside every repository anchors nothing.
+    let manifest = dir.join(MANIFEST_FILE_NAME);
+    let consumer = manifest.is_file() && adoptable(&manifest, owned_here);
     let marketplace = dir.join(MARKETPLACE_MANIFEST_NAME).is_file();
     match (consumer, marketplace) {
         (true, true) => Some(AnchorKind::Hybrid),

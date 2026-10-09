@@ -82,22 +82,25 @@ impl PackageSource {
         }
     }
 
-    /// Whether installing from this source crosses the trust boundary
-    /// acquisition introduced.
+    /// Whether installing from this source, chosen by `origin`, crosses the
+    /// trust boundary acquisition introduced.
     ///
-    /// A local path was typed by the operator, who has the directory in front
-    /// of them — that is the posture UZE has always had and M2 does not
-    /// change it. A remote source removes exactly that: nobody read the
-    /// contents, so a capability that will execute has to be authorized.
-    /// "Local" is about where the bytes are, not how the source is
-    /// spelled: a Git URL that names a directory on this machine is a
-    /// local path with a different syntax.
+    /// A local path the operator typed is one they have in front of them —
+    /// that is the posture UZE has always had. "Local" is about where the
+    /// bytes are, not how the source is spelled: a Git URL that names a
+    /// directory on this machine is a local path with a different syntax.
+    /// A remote source removes exactly that: nobody read the contents, so a
+    /// capability that will execute has to be authorized.
     ///
-    /// This is a deliberate, narrow scope. It also leaves an honest gap: an
-    /// operator can clone a repository by hand and install the result as a
-    /// local path, bypassing the question entirely. Closing that would mean
-    /// prompting on every local install with an MCP server, which changes an
-    /// existing workflow — a product decision, not one to make in passing.
+    /// A source a project declares crosses it wherever the bytes are. A
+    /// clone's `agents.yaml` saying `path: .`, or naming a repository on this
+    /// disk with no `origin`, is the clone choosing its own code; the person
+    /// running `uze install` there chose the project, not what it runs, so a
+    /// manifest is never what makes a local source trusted.
+    ///
+    /// The operator's own gap stays honest: one can clone a repository by
+    /// hand and install the result as a local path, bypassing the question.
+    /// That is a person typing a path, which is the posture above.
     ///
     /// `Embedded` crosses the boundary too, deliberately not treated like
     /// `Local`: the operator trusted the binary, not necessarily every
@@ -106,15 +109,12 @@ impl PackageSource {
     /// nothing currently exercises it — but it means an embedded snapshot
     /// that later gains an executable capability asks, the same as any
     /// other package would.
-    pub fn crosses_trust_boundary(&self) -> bool {
+    pub fn crosses_trust_boundary(&self, origin: crate::trust::SourceOrigin) -> bool {
+        if origin == crate::trust::SourceOrigin::Project {
+            return true;
+        }
         match self {
             Self::Local { .. } => false,
-            // A marketplace is a repository even when it is a clone on
-            // this disk, so a local source can arrive spelled as a Git
-            // one. The question is where the bytes are, not how the
-            // source is written down: a repository the operator has in
-            // front of them is the same posture as a directory they
-            // typed.
             Self::Git { url, .. } => !names_a_local_path(url),
             Self::Embedded { .. } => true,
         }
@@ -487,6 +487,7 @@ fn checked_directory(root: &Path) -> Result<PathBuf> {
 pub struct InspectedPackage {
     pub package_id: String,
     pub resources: Vec<crate::Resource>,
+    pub requirements: Vec<crate::requirement::Requirement>,
 }
 
 pub fn inspect_capabilities(package: &MaterializedPackage) -> Result<InspectedPackage> {
@@ -496,6 +497,7 @@ pub fn inspect_capabilities(package: &MaterializedPackage) -> Result<InspectedPa
     Ok(InspectedPackage {
         package_id: manifest.name,
         resources: crate::engine::package_resources_at(&id, package.root())?,
+        requirements: manifest.requirements,
     })
 }
 
@@ -507,9 +509,27 @@ mod local_path_urls {
     fn a_repository_on_this_machine_is_not_a_trust_boundary() {
         for url in ["/home/someone/ai", "/tmp/a:b/market"] {
             assert!(
-                !PackageSource::git(url).crosses_trust_boundary(),
+                !PackageSource::git(url)
+                    .crosses_trust_boundary(crate::trust::SourceOrigin::Operator),
                 "{url} was treated as remote"
             );
+        }
+    }
+
+    /// What a project declares crosses the boundary wherever its bytes
+    /// are: `path: .`, a repository on this disk, one with no `origin`.
+    #[test]
+    fn a_source_a_project_declares_is_a_trust_boundary_even_on_this_disk() {
+        for source in [
+            PackageSource::local("."),
+            PackageSource::local("/home/someone/clone"),
+            PackageSource::git("/home/someone/ai"),
+        ] {
+            assert!(
+                source.crosses_trust_boundary(crate::trust::SourceOrigin::Project),
+                "{source:?} declared by a project was trusted"
+            );
+            assert!(!source.crosses_trust_boundary(crate::trust::SourceOrigin::Operator));
         }
     }
 
@@ -525,7 +545,8 @@ mod local_path_urls {
             "file:///tmp/origin.git",
         ] {
             assert!(
-                PackageSource::git(url).crosses_trust_boundary(),
+                PackageSource::git(url)
+                    .crosses_trust_boundary(crate::trust::SourceOrigin::Operator),
                 "{url} was treated as local"
             );
         }

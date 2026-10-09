@@ -399,6 +399,9 @@ pub enum DeliveryOutcome {
     AwaitingRequest(AgentNotice),
     /// Nothing was written; the reason names why.
     Refused(String),
+    /// Nothing was written: the project's gate waits for the operator's
+    /// approval, and these are the commands to approve.
+    AwaitingApproval(crate::application::services::CommandsAwaitingApproval),
     /// The target is untouched and the owning agent has been told what to do.
     ReturnedToAgent(AgentNotice),
 }
@@ -453,11 +456,18 @@ pub struct AgentPlacement {
     /// What preparing the checkout could not do — a missing link target, a
     /// failed setup — none of which stops the launch.
     pub warnings: Vec<String>,
+    /// The project's commands, when the checkout was placed without them
+    /// because the operator has not approved them yet.
+    pub awaiting_approval: Option<crate::application::services::CommandsAwaitingApproval>,
     /// The agent's row as it stands the instant it exists, so a client can
     /// draw it before an evaluation has run. `None` only where the record
     /// could not be read back — never a reason to draw the agent as
     /// something else.
     pub view: Option<AgentView>,
+    /// The secret this launch of the agent carries in its environment,
+    /// beside its identity, issued by the placement and recorded only as a
+    /// digest. Empty until the placement is complete.
+    pub launch_key: String,
 }
 
 /// What an agent was placed as. There is no third case: a placement that

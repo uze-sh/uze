@@ -20,6 +20,12 @@
 /// the agent's own commands.
 pub const AGENT_IDENTITY_VARIABLE: &str = "UZE_AGENT";
 
+/// The secret the agent's launch was issued, stamped beside
+/// [`AGENT_IDENTITY_VARIABLE`]: the identifier says which agent a process
+/// claims to be, and only the launch that agent was started with holds
+/// this. Its record keeps a digest of it, never the secret.
+pub const AGENT_KEY_VARIABLE: &str = "UZE_AGENT_KEY";
+
 /// The pane a process runs in, stamped by the server on every pane it
 /// spawns so a `uze` started inside one opens a space here instead of a
 /// client within a client.
@@ -35,10 +41,11 @@ pub const SHIM_PID_VARIABLE: &str = "UZE_SHIM_PID";
 /// What a launch stamps and a pane never inherits: removed from the
 /// environment every spawned pane is seeded with, so a pane carries only
 /// what its own launch put there.
-pub const STAMPED_VARIABLES: [&str; 3] = [
+pub const STAMPED_VARIABLES: [&str; 4] = [
     SHIM_NAME_VARIABLE,
     SHIM_PID_VARIABLE,
     AGENT_IDENTITY_VARIABLE,
+    AGENT_KEY_VARIABLE,
 ];
 
 /// The environment a launch carries: applied to the tab's first process,
@@ -226,6 +233,7 @@ mod tests {
     #[test]
     fn the_agent_identity_is_among_what_a_pane_never_inherits() {
         assert!(STAMPED_VARIABLES.contains(&AGENT_IDENTITY_VARIABLE));
+        assert!(STAMPED_VARIABLES.contains(&AGENT_KEY_VARIABLE));
         assert!(STAMPED_VARIABLES.contains(&SHIM_PID_VARIABLE));
         assert!(!STAMPED_VARIABLES.contains(&PANE_VARIABLE));
     }

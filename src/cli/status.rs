@@ -624,6 +624,10 @@ pub(crate) struct ProjectStatus {
     pub(crate) report: StatusReport,
     pub(crate) steps_not_spelled_here:
         Vec<uze_application::application::services::StepNotSpelledHere>,
+    /// The commands the workspace will not run until the operator
+    /// approves them (ADR-055).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) commands_awaiting_approval: Option<uze_application::CommandsAwaitingApproval>,
 }
 
 pub(crate) fn render_status(status: &ProjectStatus) -> String {
@@ -696,6 +700,18 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             unspelled.platform,
         ));
     }
+    if let Some(awaiting) = &status.commands_awaiting_approval {
+        text.push_str(&format!(
+            "{} {} in agents.yaml {}: setup is skipped and delivery refused until you approve\n",
+            progress::warning_icon(),
+            count(awaiting.commands.len(), "command"),
+            if awaiting.changed {
+                "changed since you approved them"
+            } else {
+                "not approved on this machine"
+            },
+        ));
+    }
     if let Some(step) = status_next_step(status) {
         text.push('\n');
         if step.starts_with("uze ") {
@@ -733,6 +749,9 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
             "{} not spelled for this machine",
             count(status.steps_not_spelled_here.len(), "command")
         ));
+    }
+    if status.commands_awaiting_approval.is_some() {
+        return attention("commands await your approval".to_owned());
     }
     match &report.portability {
         Portability::Portable => format!(
@@ -871,6 +890,9 @@ pub(crate) fn status_next_step(status: &ProjectStatus) -> Option<&'static str> {
     }
     if !status.steps_not_spelled_here.is_empty() {
         return Some("spell those commands for this machine's shell in agents.yaml");
+    }
+    if status.commands_awaiting_approval.is_some() {
+        return Some("uze workspace allow");
     }
     match &report.portability {
         Portability::NoContext | Portability::VendorLocked { .. } => {

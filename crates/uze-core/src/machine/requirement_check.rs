@@ -126,7 +126,7 @@ pub fn status_of(requirement: &Requirement, answer: Option<&Answer>) -> Requirem
 }
 
 /// How each executable prints its version, where `--version` is not it.
-fn version_arguments(executable: &str) -> &'static [&'static str] {
+pub(crate) fn version_arguments(executable: &str) -> &'static [&'static str] {
     match executable {
         "java" => &["-version"],
         "go" => &["version"],
@@ -187,11 +187,17 @@ impl RequirementChecker {
     }
 
     fn resolve(&self, executable: &str) -> Option<PathBuf> {
-        self.search.iter().find_map(|directory| {
-            crate::harness_runtime::executable_candidates(directory, executable)
-                .into_iter()
-                .find(|candidate| crate::harness_runtime::is_executable_file(candidate))
-        })
+        // A relative entry resolves against the directory the command was
+        // started in, so probing through it would run a file the project
+        // there supplied.
+        self.search
+            .iter()
+            .filter(|directory| directory.is_absolute())
+            .find_map(|directory| {
+                crate::harness_runtime::executable_candidates(directory, executable)
+                    .into_iter()
+                    .find(|candidate| crate::harness_runtime::is_executable_file(candidate))
+            })
     }
 
     fn answer(&self, executable: &str, resolved: &Path) -> Option<Answer> {
@@ -603,6 +609,48 @@ mod tests {
 
         let elsewhere = RequirementChecker::searching(cache, vec![root.join("empty")]);
         assert_eq!(elsewhere.status(&requirement), RequirementStatus::Missing);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A relative search entry resolves against the directory the command
+    /// was started in, which a project supplies: nothing there is probed.
+    // The probed program is a `#!/bin/sh` script made executable by its
+    // mode bits, and the relative spelling climbs to `/`: Unix only.
+    #[cfg(unix)]
+    #[test]
+    fn a_relative_search_entry_is_never_probed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root =
+            std::env::temp_dir().join(format!("uze-requirement-relative-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let ran = root.join("ran");
+        let tool = bin.join("relative-probe-tool");
+        fs::write(
+            &tool,
+            format!("#!/bin/sh\ntouch '{}'\necho 'tool 1.0'\n", ran.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let here = std::env::current_dir().unwrap();
+        let mut relative = PathBuf::new();
+        for _ in here.components().skip(1) {
+            relative.push("..");
+        }
+        let relative = relative.join(bin.strip_prefix("/").unwrap());
+        assert!(relative.join("relative-probe-tool").is_file());
+
+        let checker = RequirementChecker::searching(root.join("cache.json"), vec![relative]);
+        assert_eq!(
+            checker.status(&Requirement::named("relative-probe-tool")),
+            RequirementStatus::Missing
+        );
+        assert!(
+            !ran.exists(),
+            "nothing reached through a relative entry ran"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }

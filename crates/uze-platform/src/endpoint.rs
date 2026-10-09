@@ -23,6 +23,12 @@ pub use imp::MAX_SOCKET_PATH;
 /// Reaches the server listening at `endpoint` directly: what a client
 /// that must not replace that server does instead of attaching.
 pub use imp::connect;
+/// Whether the process at the other end of an accepted connection runs as
+/// another user, as the kernel recorded it: true only when the platform
+/// says so. The endpoint's own permissions already admit nobody else; a
+/// server asks this as well so that a permission somebody loosened is not
+/// the only thing between another account and every pane.
+pub use imp::peer_is_another_user;
 /// An endpoint at a path of the caller's choosing, for a test that runs its
 /// own server.
 pub use imp::scratch_endpoint;
@@ -65,6 +71,56 @@ mod tests {
             Ok(_) => println!("connected"),
             Err(error) => println!("refused: {:?}: {error}", error.kind()),
         }
+    }
+
+    /// A shared runtime name another account created first — a file, a
+    /// directory of theirs — is stepped over to a directory nobody could
+    /// have predicted, and every later caller for the same address finds
+    /// that same one.
+    #[cfg(unix)]
+    #[test]
+    fn a_shared_runtime_name_somebody_else_took_does_not_shut_this_user_out() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-taken");
+        let deep = scratch.join("a".repeat(120));
+        std::fs::create_dir_all(&deep).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("XDG_RUNTIME_DIR", &scratch);
+        let namespace = format!("uze-taken-{}", std::process::id());
+        // SAFETY: no arguments, and it cannot fail.
+        let uid = unsafe { libc::getuid() };
+        let shared = format!("{namespace}-runtime-{uid}");
+        let taken = [
+            scratch.join(&shared),
+            std::env::temp_dir().join(&shared),
+            std::path::Path::new("/tmp").join(&shared),
+        ];
+        for path in &taken {
+            let _ = std::fs::write(path, b"");
+        }
+        let address = super::Address {
+            directory: &deep,
+            namespace: &namespace,
+            name: "w",
+        };
+
+        let chosen = super::endpoint(address).expect("a taken name is not fatal");
+        let directory = chosen.parent().unwrap().to_path_buf();
+        assert!(!taken.contains(&directory));
+        assert!(chosen.as_os_str().len() <= super::MAX_SOCKET_PATH);
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(
+                &std::fs::metadata(&directory).unwrap().permissions()
+            ) & 0o777,
+            0o700
+        );
+        assert_eq!(super::endpoint(address).unwrap(), chosen);
+        drop(super::bind(&chosen).expect("and it binds"));
+
+        for path in &taken {
+            let _ = std::fs::remove_file(path);
+        }
+        let _ = std::fs::remove_dir_all(&directory);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]

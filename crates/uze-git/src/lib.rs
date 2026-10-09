@@ -75,6 +75,15 @@ pub const DEFAULT_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 /// enough that a large push over a slow link is never the one cut off.
 pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// What every invocation, read or write, carries whatever the platform. A
+/// file-system monitor only makes a scan faster, and the program
+/// `core.fsmonitor` names is one the checkout's configuration chose, so it
+/// is never run. Hooks are left to writes: a write is UZE acting on the
+/// operator's behalf in a repository whose configuration is theirs (a
+/// slot's is checked for that before UZE runs Git there), and their
+/// `pre-push` or `post-checkout` is part of what that action means.
+const EVERY_INVOCATION: &[(&str, &str)] = &[("core.fsmonitor", "false")];
+
 /// The subcommands that reach a remote, and with it an SSH that may want a
 /// passphrase or a host-key answer.
 const NETWORK_SUBCOMMANDS: &[&str] = &["fetch", "pull", "push", "clone", "ls-remote"];
@@ -141,10 +150,61 @@ pub fn native_path(printed: &str) -> std::path::PathBuf {
 /// lock, and asks Git not to take its own optional index lock either, so a
 /// status view cannot block behind — or interfere with — a write in
 /// another checkout of the same repository.
+///
+/// A read is also how UZE looks at a directory it did not make — a
+/// slot an agent works in, a project unpacked from somewhere — so it runs
+/// nothing that directory's configuration names: no file-system monitor,
+/// no hook, no external diff or text conversion, and no bare repository
+/// found by walking up from `root` rather than asked for by name. A diff
+/// therefore shows a file's own bytes even where the operator configured a
+/// conversion for it: the price of looking without running anything.
 pub fn read(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
-    let mut command = base_command(root, args);
+    let hardened = hardened_read(args);
+    let mut command = base_command_with(root, READ_SETTINGS, &hardened);
     command.env("GIT_OPTIONAL_LOCKS", "0");
-    run(command, args)
+    run(command, &hardened)
+}
+
+/// The settings every read carries, beyond what every invocation does.
+/// `core.hooksPath` is completed with the platform's null device, which
+/// holds no hook of any name. `diff.ignoreSubmodules=dirty` keeps `status`
+/// and `diff` from descending into a submodule's work tree: a nested
+/// repository committed as a gitlink carries its own `.git`, whose
+/// configuration is whoever made it, and Git would run its filters there.
+const READ_SETTINGS: &[(&str, &str)] = &[
+    ("core.fsmonitor", "false"),
+    ("core.hooksPath", uze_platform::fs::NULL_DEVICE),
+    ("safe.bareRepository", "explicit"),
+    ("diff.ignoreSubmodules", "dirty"),
+];
+
+/// The subcommands that would hand content to a program the repository's
+/// configuration names — `diff.external`, a `diff.<driver>.textconv` —
+/// unless told not to.
+const DIFF_FAMILY: &[&str] = &["diff", "log", "show"];
+
+/// `args` with `--no-ext-diff --no-textconv` placed right after a
+/// [`DIFF_FAMILY`] subcommand, where Git reads them as its options.
+fn hardened_read<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut hardened = Vec::with_capacity(args.len() + 2);
+    let mut remaining = args.iter();
+    while let Some(argument) = remaining.next() {
+        hardened.push(*argument);
+        match *argument {
+            "-c" | "-C" | "--git-dir" | "--work-tree" | "--namespace" => {
+                hardened.extend(remaining.next());
+            }
+            option if option.starts_with('-') => {}
+            subcommand => {
+                if DIFF_FAMILY.contains(&subcommand) {
+                    hardened.extend(["--no-ext-diff", "--no-textconv"]);
+                }
+                hardened.extend(remaining);
+                break;
+            }
+        }
+    }
+    hardened
 }
 
 /// Runs a Git command that changes the repository, under the repository
@@ -263,6 +323,10 @@ pub fn locked<R>(
 }
 
 fn base_command(root: &Path, args: &[&str]) -> Command {
+    base_command_with(root, &[], args)
+}
+
+fn base_command_with(root: &Path, settings: &[(&str, &str)], args: &[&str]) -> Command {
     let mut command = Command::new("git");
     // Git for Windows cannot open a verbatim `\\?\C:\…` root.
     command
@@ -271,13 +335,18 @@ fn base_command(root: &Path, args: &[&str]) -> Command {
     // Every invocation, not only the one that made a checkout: a `-c`
     // lasts one command, and a long path read by `status` after `worktree
     // add` wrote it is the same long path.
-    for (key, value) in uze_platform::git::EVERY_INVOCATION {
+    for (key, value) in EVERY_INVOCATION
+        .iter()
+        .chain(uze_platform::git::EVERY_INVOCATION)
+        .chain(settings)
+    {
         command.arg("-c").arg(format!("{key}={value}"));
     }
     command.args(args);
     // A subprocess that stops to ask for a credential never gets an
     // answer: nothing here is attached to a terminal the operator can see.
     command.env("GIT_TERMINAL_PROMPT", "0");
+    command.env("GIT_PAGER", "cat");
     command.stdin(Stdio::null());
     command
 }
@@ -572,14 +641,201 @@ mod tests {
             .successful()
             .unwrap();
 
-        assert!(
-            read(
-                &remote,
-                &["rev-parse", "--verify", "--quiet", "refs/heads/main"]
-            )
+        let listed = read(&root, &["ls-remote", remote_path, "refs/heads/main"])
             .unwrap()
-            .is_success()
+            .successful()
+            .unwrap();
+        assert!(listed.contains("refs/heads/main"), "{listed}");
+    }
+
+    /// A read is how UZE looks at a directory someone else prepared, so
+    /// nothing that directory's configuration names may run on the way:
+    /// the monitor `status` would consult, the program `diff` would hand a
+    /// file to, and the conversion `log -p` and `show` would apply.
+    // The programs the fixture configures are POSIX shell scripts.
+    #[cfg(unix)]
+    #[test]
+    fn a_read_runs_nothing_the_repository_s_configuration_names() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-read-hardened");
+        let marker = root.join("ran");
+        let program = root.join("program.sh");
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\necho \"$0 $*\" >> '{}'\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let program = program.to_str().unwrap();
+        std::fs::write(root.join(".gitattributes"), "file diff=converted\n").unwrap();
+        for (key, value) in [
+            ("core.fsmonitor", program),
+            ("diff.external", program),
+            ("diff.converted.textconv", program),
+        ] {
+            write(&root, &["config", key, value])
+                .unwrap()
+                .successful()
+                .unwrap();
+        }
+        write(&root, &["add", ".gitattributes"]).unwrap();
+        write(&root, &["commit", "-qm", "attributes"]).unwrap();
+        std::fs::write(root.join("file"), b"changed").unwrap();
+
+        // The repository really is armed: Git left to its defaults runs it.
+        let armed = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["diff"])
+            .output()
+            .unwrap();
+        assert!(armed.status.success());
+        assert!(
+            marker.exists(),
+            "the fixture must configure a program Git runs"
         );
+        std::fs::remove_file(&marker).unwrap();
+
+        for args in [
+            &["status", "--porcelain"][..],
+            &["diff"],
+            &["diff", "HEAD"],
+            &["log", "-p", "-1"],
+            &["show", "HEAD"],
+        ] {
+            read(&root, args).unwrap();
+            assert!(
+                !marker.exists(),
+                "`git {}` ran {:?}",
+                args.join(" "),
+                std::fs::read_to_string(&marker).unwrap_or_default()
+            );
+        }
+    }
+
+    /// A nested repository committed as a gitlink brings a configuration
+    /// of its own, and a read never descends into it: whatever filter that
+    /// configuration names does not run when the outer checkout is looked at.
+    // The filter the fixture configures is a POSIX shell command.
+    #[cfg(unix)]
+    #[test]
+    fn a_read_never_runs_what_a_nested_repository_configures() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-read-nested");
+        let nested = root.join("nested");
+        let marker = root.join("ran");
+        let nested_git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&nested)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+        };
+        std::fs::create_dir(&nested).unwrap();
+        nested_git(&["init", "-q"]);
+        std::fs::write(nested.join(".gitattributes"), "x filter=armed\n").unwrap();
+        std::fs::write(nested.join("x"), "hi\n").unwrap();
+        let filter = format!("sh -c 'echo ran >> \"{}\"; cat'", marker.display());
+        nested_git(&["config", "filter.armed.clean", &filter]);
+        nested_git(&["add", "."]);
+        nested_git(&[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "nested",
+        ]);
+        write(&root, &["add", "nested"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        write(&root, &["commit", "-qm", "gitlink"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        let _ = std::fs::remove_file(&marker);
+        // Same size, so Git cannot tell it changed without hashing it, which
+        // is where the clean filter runs.
+        std::fs::write(nested.join("x"), "ho\n").unwrap();
+
+        let armed = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["status", "--porcelain"])
+            .output()
+            .unwrap();
+        assert!(armed.status.success());
+        assert!(
+            marker.exists(),
+            "the fixture must configure a filter Git runs"
+        );
+        std::fs::remove_file(&marker).unwrap();
+
+        for args in [&["status", "--porcelain"][..], &["diff", "HEAD"]] {
+            // Written again so the nested index the last run refreshed no
+            // longer vouches for the file.
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+            std::fs::write(nested.join("x"), "ho\n").unwrap();
+            read(&root, args).unwrap();
+            assert!(
+                !marker.exists(),
+                "`git {}` ran the nested filter",
+                args.join(" ")
+            );
+        }
+    }
+
+    /// A bare repository is only ever read by naming it, never found by
+    /// walking up from a directory handed to UZE: an archive can carry one
+    /// whose configuration is anybody's.
+    #[test]
+    fn a_read_never_discovers_a_bare_repository() {
+        let _environment = uze_testkit::env::scope();
+        let bare = uze_testkit::temp::scratch("git-read-bare");
+        write(&bare, &["init", "-q", "--bare", "."])
+            .unwrap()
+            .successful()
+            .unwrap();
+
+        assert!(
+            !read(&bare, &["rev-parse", "--git-dir"])
+                .unwrap()
+                .is_success()
+        );
+        assert!(
+            read(&bare, &["--git-dir", ".", "rev-parse", "--git-dir"])
+                .unwrap()
+                .is_success(),
+            "a bare repository named explicitly is still readable"
+        );
+    }
+
+    #[test]
+    fn diff_family_reads_are_told_not_to_hand_content_to_a_program() {
+        assert_eq!(
+            hardened_read(&["-c", "a=b", "diff", "--stat"]),
+            [
+                "-c",
+                "a=b",
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--stat"
+            ]
+        );
+        assert_eq!(
+            hardened_read(&["show", "HEAD:diff"]),
+            ["show", "--no-ext-diff", "--no-textconv", "HEAD:diff"]
+        );
+        assert_eq!(hardened_read(&["status", "diff"]), ["status", "diff"]);
     }
 
     /// The fetch a clock runs never queues behind a write, and never

@@ -40,7 +40,10 @@ pub(crate) fn run_market(app: &UzeApplication, action: MarketAction) -> Result<(
             } else {
                 "marketplace already added"
             };
-            print!("{}", progress::change_report("market add", &lines, outcome));
+            print!(
+                "{}",
+                progress::for_terminal(&progress::change_report("market add", &lines, outcome))
+            );
         }
         MarketAction::Host {
             alias,
@@ -120,7 +123,7 @@ pub(crate) fn run_market(app: &UzeApplication, action: MarketAction) -> Result<(
                     &format!("nothing to unlink: {name} was not linked"),
                 )
             };
-            print!("{report}");
+            print!("{}", progress::for_terminal(&report));
         }
         MarketAction::Inspect { name, format } => {
             let detail = app.marketplace().inspect(&name)?;

@@ -256,13 +256,7 @@ impl Attach<'_> {
         match self.model.space_rooted_at(&pending.project) {
             Some(space) => {
                 let _ = send_request(&mut self.stream, &ClientRequest::SelectSpace { space });
-                self.open_agent_tab(
-                    pending.label,
-                    pending.command,
-                    pending.cwd,
-                    &pending.agent,
-                    pending.size,
-                );
+                self.open_agent_tab(pending);
             }
             None => {
                 // The space has to exist before a tab can be opened in it,
@@ -299,38 +293,32 @@ impl Attach<'_> {
             return;
         };
         let _ = send_request(&mut self.stream, &ClientRequest::SelectSpace { space });
-        self.open_agent_tab(
-            pending.label,
-            pending.command,
-            pending.cwd,
-            &pending.agent,
-            pending.size,
-        );
+        self.open_agent_tab(pending);
     }
 
     /// The one place a `CreateTab` for an agent is sent: an agent tab
-    /// always carries the identity its placement recorded.
-    pub(super) fn open_agent_tab(
-        &mut self,
-        label: String,
-        command: Vec<String>,
-        cwd: PathBuf,
-        agent: &str,
-        size: (u16, u16),
-    ) {
-        let env = vec![(
-            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-            agent.to_owned(),
-        )];
+    /// always carries the identity its placement recorded, and the key its
+    /// placement issued.
+    pub(super) fn open_agent_tab(&mut self, pending: PendingAgentTab) {
+        let env = vec![
+            (
+                uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+                pending.agent,
+            ),
+            (
+                uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
+                pending.launch_key,
+            ),
+        ];
         let _ = send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
-                cwd: Some(cwd),
-                label,
+                cwd: Some(pending.cwd),
+                label: pending.label,
                 agent: None,
-                columns: size.0,
-                rows: size.1,
-                command: Some(command),
+                columns: pending.size.0,
+                rows: pending.size.1,
+                command: Some(pending.command),
                 env,
             },
         );
@@ -360,7 +348,21 @@ impl Attach<'_> {
         // What preparing the checkout could not do, said once — the tab
         // opens either way. A placement that could not do what was asked
         // never reaches here: it answered `Err` above and opened nothing.
-        match placement.warnings.first().cloned() {
+        // A checkout placed without the project's commands asks about
+        // them instead of saying it went without: the question is what the
+        // reader can act on.
+        let first_warning = placement
+            .warnings
+            .iter()
+            .find(|warning| {
+                placement.awaiting_approval.is_none()
+                    || warning.as_str() != uze_application::SETUP_AWAITS_APPROVAL
+            })
+            .cloned();
+        if let Some(awaiting) = placement.awaiting_approval.clone() {
+            self.model.commands_await(awaiting, true);
+        }
+        match first_warning {
             Some(text) => self
                 .model
                 .raise_toast(ToastKind::Warned, text, label.clone(), None),
@@ -393,6 +395,7 @@ impl Attach<'_> {
             command,
             cwd: placement.cwd,
             agent,
+            launch_key: placement.launch_key,
             size,
         };
         self.land_agent_in_its_own_space(pending);

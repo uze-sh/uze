@@ -20,8 +20,10 @@ pub enum Readiness {
 pub struct Policy<'a> {
     pub completion: CompletionBehavior,
     /// What runs in the task's checkout on the rebased commits, in order;
-    /// the first non-zero exit refuses delivery.
-    pub gate: &'a [uze_core::shell::ShellCommand],
+    /// the first non-zero exit refuses delivery. `None` while the operator
+    /// has not approved it, which refuses delivery before anything moves:
+    /// work its gate never checked must not land.
+    pub gate: Option<crate::approval::Approved<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,6 +66,8 @@ pub enum DeliveryFailure {
     /// The target already carries the branch's work under commits of its
     /// own — a squash or rebase merge made elsewhere.
     AlreadyDelivered,
+    /// The project's gate waits for the operator's approval.
+    GateAwaitingApproval,
     NoRemote,
     Git(String),
 }
@@ -89,6 +93,10 @@ impl fmt::Display for DeliveryFailure {
                 join_paths(files)
             ),
             Self::AlreadyDelivered => formatter.write_str("the target already carries this work"),
+            Self::GateAwaitingApproval => formatter.write_str(
+                "this project's gate awaits your approval; run `uze workspace allow` in the \
+                 project, or Review it in the workspace",
+            ),
             Self::NoRemote => formatter.write_str("the repository has no `origin` remote"),
             Self::Git(reason) => formatter.write_str(reason),
         }

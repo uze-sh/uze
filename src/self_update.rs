@@ -35,6 +35,20 @@
 //! still honours the variable so the offline fixture suite can drive a
 //! whole pass without a network — a developer's own build is not the
 //! threat this closes.
+//!
+//! The fixed origin is not the whole answer either: whoever can publish to
+//! that page — a stolen token, a compromised workflow — publishes the
+//! checksums too. So `SHASUMS256.txt` carries a signature,
+//! `SHASUMS256.txt.sig`, made with a key that never sits in CI unguarded,
+//! and nothing is unpacked until `ssh-keygen -Y verify` (the system's own,
+//! by path) accepts it against [`RELEASE_KEY`], the public key this binary
+//! was built with. No signature, a bad one, or no `ssh-keygen` all end the
+//! same way: nothing is installed.
+//!
+//! A release is installed in the background only once it has been the
+//! latest for [`SETTLE`]: a release found to be bad and pulled within that
+//! window never reaches a machine that was only waiting. `uze upgrade` is a
+//! person asking, and does not wait.
 
 use std::{
     env, fs,
@@ -70,6 +84,20 @@ const SOURCES: &str = "https://raw.githubusercontent.com/uze-sh/uze";
 const CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
 
 const RUNNING: &str = env!("CARGO_PKG_VERSION");
+
+/// How long a release must have been the latest before the background
+/// pass installs it.
+const SETTLE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The committed public key releases are signed with, as built into this
+/// binary. `release-signing.pub` holds it; until it holds a key, every
+/// release is refused.
+const RELEASE_KEY: &str = include_str!("../release-signing.pub");
+
+/// What a release signature is made for: `ssh-keygen -Y sign -n` binds a
+/// signature to it, so one the same key made for anything else (a commit,
+/// a file) is not a release signature.
+const SIGNATURE_NAMESPACE: &str = "uze-release";
 
 /// What the sidebar says about releases: that a newer release replaced
 /// this binary on disk and the next launch runs it. It is the only thing
@@ -274,6 +302,9 @@ struct Ledger {
     checked_at: u64,
     #[serde(default)]
     latest: Option<String>,
+    /// When `latest` was first answered with the release it names now.
+    #[serde(default)]
+    latest_since: u64,
     /// The last release the updater put in place.
     #[serde(default)]
     installed: Option<String>,
@@ -308,21 +339,30 @@ fn pass(
     let _span = tracing::info_span!("self_update.pass", running = RUNNING).entered();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
     if ask || now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs() {
-        let latest = releases.latest().or(ledger.latest);
+        let latest = releases.latest().or(ledger.latest.clone());
+        let since = if latest == ledger.latest {
+            ledger.latest_since
+        } else {
+            now
+        };
         // Stamped even when the question went unanswered: offline is a
         // state that lasts, and asking again on every launch changes
         // nothing about it.
         amend_ledger(home, |stored| {
             stored.checked_at = now;
             stored.latest = latest.clone();
+            stored.latest_since = since;
         });
         ledger.checked_at = now;
         ledger.latest = latest;
+        ledger.latest_since = since;
     }
+    let settled = now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs();
 
     let mut receipt = read_json::<Receipt>(&receipt_path(home))
         .filter(|receipt| this.is_some_and(|this| is_same_file(this, &receipt.binary)));
     if let (Some(owned), Some(latest), Policy::Install) = (&mut receipt, &ledger.latest, policy)
+        && settled
         && newer(latest, &owned.version)
     {
         match install_over(home, owned, latest, releases) {
@@ -474,6 +514,9 @@ fn upgrade_with(
         .latest()
         .ok_or_else(|| format!("cannot reach {RELEASES} to ask for the latest release"))?;
     amend_ledger(home, |stored| {
+        if stored.latest.as_deref() != Some(latest.as_str()) {
+            stored.latest_since = now;
+        }
         stored.checked_at = now;
         stored.latest = Some(latest.clone());
     });
@@ -536,7 +579,7 @@ impl Releases for Published {
     /// API: the redirect carries no rate limit and no JSON, and it is the
     /// same "latest" the installer resolves.
     fn latest(&self) -> Option<String> {
-        let output = system_tool("curl")
+        let output = uze_platform::tools::curl()
             .args([
                 "-fsSL",
                 "--max-time",
@@ -556,7 +599,8 @@ impl Releases for Published {
     }
 
     fn changelog(&self, version: &str) -> Option<String> {
-        let output = system_tool("curl")
+        let version = release_version(version)?;
+        let output = uze_platform::tools::curl()
             .args(["-fsSL", "--max-time", "15"])
             .arg(format!("{SOURCES}/v{version}/CHANGELOG.md"))
             .stdin(Stdio::null())
@@ -568,58 +612,133 @@ impl Releases for Published {
     }
 
     fn install(&self, version: &str, target: &Path, scratch: &Path) -> Result<(), String> {
+        let version =
+            release_version(version).ok_or_else(|| format!("{version:?} is not a release"))?;
         let archive = asset().ok_or("no release is built for this platform")?;
         let scratch = scratch.join("release").join(version);
         let _ = fs::remove_dir_all(&scratch);
-        let unpacked = scratch.join("unpacked");
-        fs::create_dir_all(&unpacked).map_err(|error| error.to_string())?;
+        fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
         let result = (|| {
             let download = format!("{}/download/v{version}", self.base);
-            fetch(&format!("{download}/{archive}"), &scratch.join(&archive))?;
-            fetch(
-                &format!("{download}/SHASUMS256.txt"),
-                &scratch.join("SHASUMS256.txt"),
-            )?;
-            let sums = fs::read_to_string(scratch.join("SHASUMS256.txt"))
-                .map_err(|error| error.to_string())?;
-            let expected =
-                expected_sum(&sums, &archive).ok_or(format!("no checksum for {archive}"))?;
-            let bytes = fs::read(scratch.join(&archive)).map_err(|error| error.to_string())?;
-            if sha256(&bytes) != expected {
-                return Err(format!("checksum mismatch for {archive}"));
+            for file in [archive.as_str(), SUMS, SIGNATURE] {
+                fetch(&format!("{download}/{file}"), &scratch.join(file))?;
             }
-            // Both GNU tar and the bsdtar Windows ships tell a gzip from a
-            // zip by its bytes.
-            let unpack = system_tool("tar")
-                .arg("-xf")
-                .arg(scratch.join(&archive))
-                .arg("-C")
-                .arg(&unpacked)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map_err(|error| error.to_string())?;
-            if !unpack.success() {
-                return Err(format!("cannot unpack {archive}"));
-            }
-            replace(
-                &unpacked.join(uze_platform::executable::file_name("uze")),
-                version,
-                target,
-            )
+            install_downloaded(&scratch, &archive, version, target, RELEASE_KEY)
         })();
         let _ = fs::remove_dir_all(&scratch);
         result
     }
 }
 
-fn system_tool(name: &str) -> Command {
-    uze_platform::tools::system(name)
+/// The checksums a release publishes, and the signature over them.
+const SUMS: &str = "SHASUMS256.txt";
+const SIGNATURE: &str = "SHASUMS256.txt.sig";
+
+/// Installs `archive`, already downloaded into `scratch` beside [`SUMS`]
+/// and [`SIGNATURE`], over `target` — once the checksums are proven signed
+/// by `key` and the archive proven to be the one they name. Nothing is
+/// unpacked before both hold.
+fn install_downloaded(
+    scratch: &Path,
+    archive: &str,
+    version: &str,
+    target: &Path,
+    key: &str,
+) -> Result<(), String> {
+    // Read once: the bytes the signature is checked over are the bytes the
+    // checksum is then read from.
+    let sums = fs::read(scratch.join(SUMS)).map_err(|error| error.to_string())?;
+    verify_signature(key, &sums, &scratch.join(SIGNATURE), scratch)?;
+    let sums = String::from_utf8_lossy(&sums);
+    let expected = expected_sum(&sums, archive).ok_or(format!("no checksum for {archive}"))?;
+    let bytes = fs::read(scratch.join(archive)).map_err(|error| error.to_string())?;
+    if sha256(&bytes) != expected {
+        return Err(format!("checksum mismatch for {archive}"));
+    }
+    let unpacked = scratch.join("unpacked");
+    fs::create_dir_all(&unpacked).map_err(|error| error.to_string())?;
+    // Both GNU tar and the bsdtar Windows ships tell a gzip from a
+    // zip by its bytes.
+    let unpack = uze_platform::tools::system("tar")
+        .arg("-xf")
+        .arg(scratch.join(archive))
+        .arg("-C")
+        .arg(&unpacked)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !unpack.success() {
+        return Err(format!("cannot unpack {archive}"));
+    }
+    replace(
+        &unpacked.join(uze_platform::executable::file_name("uze")),
+        version,
+        target,
+    )
+}
+
+/// The one `ssh-ed25519` line of a public key file, comments and blank
+/// lines aside. A file without one — the placeholder committed until a
+/// release key exists — names no key, and every signature is refused.
+fn release_key(file: &str) -> Option<&str> {
+    let mut keys = file
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    let key = keys.next()?;
+    (keys.next().is_none() && key.starts_with("ssh-ed25519 ")).then_some(key)
+}
+
+/// Whether `signature` is `key`'s signature over `message` in the
+/// [`SIGNATURE_NAMESPACE`], as the system's `ssh-keygen` judges it.
+fn verify_signature(
+    key: &str,
+    message: &[u8],
+    signature: &Path,
+    scratch: &Path,
+) -> Result<(), String> {
+    let key = release_key(key).ok_or("this build carries no release signing key")?;
+    if !signature.is_file() {
+        return Err(format!("the release publishes no {SIGNATURE}"));
+    }
+    let signers = scratch.join("allowed_signers");
+    fs::write(
+        &signers,
+        format!("{SIGNATURE_NAMESPACE} namespaces=\"{SIGNATURE_NAMESPACE}\" {key}\n"),
+    )
+    .map_err(|error| error.to_string())?;
+    let verdict = uze_platform::tools::system("ssh-keygen")
+        .args(["-Y", "verify", "-f"])
+        .arg(&signers)
+        .args(["-I", SIGNATURE_NAMESPACE, "-n", SIGNATURE_NAMESPACE, "-s"])
+        .arg(signature)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .and_then(|mut verifier| {
+            if let Some(mut input) = verifier.stdin.take() {
+                use std::io::Write as _;
+                // A verifier that exits early closes the pipe; its status
+                // is the answer either way.
+                let _ = input.write_all(message);
+            }
+            verifier.wait()
+        });
+    let _ = fs::remove_file(&signers);
+    match verdict {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => Err(format!("{SUMS} is not signed by the release key")),
+        Err(error) => Err(format!(
+            "cannot verify the release signature without OpenSSH's ssh-keygen: {error}"
+        )),
+    }
 }
 
 fn fetch(url: &str, to: &Path) -> Result<(), String> {
-    let status = system_tool("curl")
+    let status = uze_platform::tools::curl()
         .args(["-fsSL", "--max-time", "300", "-o"])
         .arg(to)
         .arg(url)
@@ -707,7 +826,39 @@ fn asset_for(os: &str, arch: &str, musl: bool) -> Option<String> {
 /// redirecting, names none.
 fn tag_version(url: &str) -> Option<String> {
     let version = url.trim().rsplit('/').next()?.strip_prefix('v')?;
-    precedence(version).map(|_| version.to_owned())
+    release_version(version).map(str::to_owned)
+}
+
+/// `version` when it is spelled as a release is: SemVer's
+/// `MAJOR.MINOR.PATCH[-PRERELEASE]`, numbers without leading zeros and
+/// identifiers of `[0-9A-Za-z-]`, and no build metadata. A release's
+/// version becomes a directory and a URL, so anything else — a `/`, a
+/// `..`, a `+` — is refused before it can name one.
+fn release_version(version: &str) -> Option<&str> {
+    let numeric = |part: &str| {
+        !part.is_empty()
+            && part.bytes().all(|byte| byte.is_ascii_digit())
+            && (part == "0" || !part.starts_with('0'))
+    };
+    let identifier = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && (!part.bytes().all(|byte| byte.is_ascii_digit()) || numeric(part))
+    };
+    if version.len() > 64 {
+        return None;
+    }
+    let (core, prerelease) = match version.split_once('-') {
+        Some((core, prerelease)) => (core, Some(prerelease)),
+        None => (version, None),
+    };
+    let parts: Vec<&str> = core.split('.').collect();
+    let valid = parts.len() == 3
+        && parts.iter().all(|part| numeric(part))
+        && prerelease.is_none_or(|prerelease| prerelease.split('.').all(identifier));
+    valid.then_some(version)
 }
 
 fn expected_sum(sums: &str, archive: &str) -> Option<String> {
@@ -898,6 +1049,50 @@ mod tests {
     }
 
     #[test]
+    fn a_version_becomes_a_path_only_when_it_is_spelled_as_a_release() {
+        for release in [
+            "1.0.0",
+            "0.0.0-alpha.10",
+            "1.0.0-beta.13",
+            "10.20.30-rc-1.x",
+        ] {
+            assert_eq!(release_version(release), Some(release));
+        }
+        for hostile in [
+            "1.0.0+build",
+            "1.0.0-beta+evil",
+            "1.0.0-../../x",
+            "1.0.0-a/b",
+            "1.0.0-a\\b",
+            "1.0.0-",
+            "1.0.0-a..b",
+            "01.0.0",
+            "1.0.0-01",
+            "1.0",
+            "1.0.0.0",
+            "v1.0.0",
+            " 1.0.0",
+            "",
+        ] {
+            assert_eq!(release_version(hostile), None, "{hostile:?}");
+        }
+        assert_eq!(
+            tag_version("https://github.com/uze-sh/uze/releases/tag/v1.0.0+evil"),
+            None,
+            "build metadata never becomes the latest release"
+        );
+        let refused = Published {
+            base: RELEASES.to_owned(),
+        }
+        .install(
+            "1.0.0-../../escape",
+            Path::new("unused"),
+            Path::new("unused"),
+        );
+        assert!(refused.is_err());
+    }
+
+    #[test]
     fn the_asset_is_the_one_the_installer_picks() {
         assert!(
             asset().is_some(),
@@ -966,6 +1161,7 @@ mod tests {
         Ledger {
             checked_at: 0,
             latest: latest.map(str::to_owned),
+            latest_since: 0,
             installed: installed.map(str::to_owned),
             acknowledged: seen.map(str::to_owned),
             told: None,
@@ -1077,10 +1273,19 @@ mod tests {
         .unwrap();
     }
 
+    /// `version` as the latest release since long before any pass a test
+    /// runs, so the background pass treats it as settled.
+    fn latest_since_long_ago(home: &UzeHome, version: &str) {
+        write_json(&ledger_path(home), &ledger(Some(version), None, None)).unwrap();
+    }
+
+    const SETTLED: u64 = 10_000 + SETTLE.as_secs();
+
     #[test]
     fn the_installers_binary_is_replaced_and_the_next_launch_is_told() {
         let (_dir, home, binary) = world();
         receipt(&home, &binary, RUNNING);
+        latest_since_long_ago(&home, "999.0.0");
         let releases = fake(Some("999.0.0"));
 
         let notice = pass(
@@ -1088,8 +1293,8 @@ mod tests {
             Policy::Install,
             Some(&binary),
             &releases,
-            10_000,
-            false,
+            SETTLED,
+            true,
         );
 
         assert_eq!(
@@ -1102,8 +1307,74 @@ mod tests {
 
         // Within the hour nothing is asked or installed again.
         let again = fake(Some("999.0.1"));
-        pass(&home, Policy::Install, Some(&binary), &again, 10_001, false);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &again,
+            SETTLED + 1,
+            false,
+        );
         assert!(again.installs.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_release_is_installed_in_the_background_only_once_it_has_settled() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+        let releases = fake(Some("999.0.0"));
+
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &releases,
+            10_000,
+            true,
+        );
+        assert!(
+            releases.installs.borrow().is_empty(),
+            "a release just published is not installed yet"
+        );
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &releases,
+            SETTLED - 1,
+            true,
+        );
+        assert!(
+            releases.installs.borrow().is_empty(),
+            "nor a day less a second later"
+        );
+
+        let newer_still = fake(Some("999.0.1"));
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &newer_still,
+            SETTLED,
+            true,
+        );
+        assert!(
+            newer_still.installs.borrow().is_empty(),
+            "a release that replaced the latest starts its own wait"
+        );
+
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &newer_still,
+            SETTLED + SETTLE.as_secs(),
+            true,
+        );
+        assert_eq!(
+            newer_still.installs.borrow().as_slice(),
+            [("999.0.1".to_owned(), binary.clone())]
+        );
     }
 
     #[test]
@@ -1112,6 +1383,7 @@ mod tests {
         receipt(&home, &binary, RUNNING);
         let elsewhere = dir.path().join("target-debug-uze");
         fs::write(&elsewhere, "").unwrap();
+        latest_since_long_ago(&home, "999.0.0");
         let releases = fake(Some("999.0.0"));
 
         let notice = pass(
@@ -1119,8 +1391,8 @@ mod tests {
             Policy::Install,
             Some(&elsewhere),
             &releases,
-            10_000,
-            false,
+            SETTLED,
+            true,
         );
 
         assert!(releases.installs.borrow().is_empty());
@@ -1131,6 +1403,7 @@ mod tests {
     fn notify_asks_but_never_replaces() {
         let (_dir, home, binary) = world();
         receipt(&home, &binary, RUNNING);
+        latest_since_long_ago(&home, "999.0.0");
         let releases = fake(Some("999.0.0"));
 
         let notice = pass(
@@ -1138,8 +1411,8 @@ mod tests {
             Policy::Notify,
             Some(&binary),
             &releases,
-            10_000,
-            false,
+            SETTLED,
+            true,
         );
 
         assert!(releases.installs.borrow().is_empty());
@@ -1150,6 +1423,7 @@ mod tests {
     fn a_failed_replacement_leaves_the_receipt_and_offers_the_release() {
         let (_dir, home, binary) = world();
         receipt(&home, &binary, RUNNING);
+        latest_since_long_ago(&home, "999.0.0");
         let releases = Fake {
             fails: true,
             ..fake(Some("999.0.0"))
@@ -1160,10 +1434,11 @@ mod tests {
             Policy::Install,
             Some(&binary),
             &releases,
-            10_000,
-            false,
+            SETTLED,
+            true,
         );
 
+        assert_eq!(releases.installs.borrow().len(), 1, "it was attempted");
         assert_eq!(notice, None);
         assert_eq!(
             read_json::<Receipt>(&receipt_path(&home)).unwrap().version,
@@ -1328,5 +1603,141 @@ mod tests {
             })
             .collect();
         assert!(leftovers.is_empty(), "nothing is left beside it");
+    }
+
+    /// A throwaway release key, made for this test alone.
+    struct Signer {
+        dir: TempDir,
+    }
+
+    impl Signer {
+        fn new(name: &str) -> Self {
+            let dir = TempDir::new(name);
+            let made = uze_platform::tools::system("ssh-keygen")
+                .args(["-q", "-t", "ed25519", "-N", "", "-C", "test", "-f"])
+                .arg(dir.path().join("key"))
+                .stdin(Stdio::null())
+                .status()
+                .expect("ssh-keygen, which verifying a release needs too");
+            assert!(made.success());
+            Self { dir }
+        }
+
+        fn public(&self) -> String {
+            format!(
+                "# a comment, as the committed file carries\n{}",
+                fs::read_to_string(self.dir.path().join("key.pub")).unwrap()
+            )
+        }
+
+        fn sign(&self, message: &Path, namespace: &str) {
+            let signed = uze_platform::tools::system("ssh-keygen")
+                .args(["-Y", "sign", "-n", namespace, "-f"])
+                .arg(self.dir.path().join("key"))
+                .arg(message)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap();
+            assert!(signed.success());
+        }
+    }
+
+    #[test]
+    fn the_checksums_count_only_when_the_release_key_signed_them() {
+        let release = Signer::new("release-key");
+        let stranger = Signer::new("stranger-key");
+        let dir = TempDir::new("release-signature");
+        let sums = dir.path().join(SUMS);
+        let signature = dir.path().join(SIGNATURE);
+        fs::write(&sums, "ab12  uze-x86_64-linux-gnu.tar.gz\n").unwrap();
+
+        let verify =
+            |key: &str| verify_signature(key, &fs::read(&sums).unwrap(), &signature, dir.path());
+
+        assert!(verify(&release.public()).is_err(), "no signature at all");
+
+        release.sign(&sums, SIGNATURE_NAMESPACE);
+        verify(&release.public()).expect("signed by the release key");
+        assert!(verify(&stranger.public()).is_err(), "a different key");
+        assert!(verify("").is_err(), "no key names no signer");
+        assert!(
+            verify(&format!("# PLACEHOLDER\n{}", release.public())).is_ok(),
+            "comments around the key are only comments"
+        );
+        assert!(
+            verify("# PLACEHOLDER: no release key has been generated yet.\n").is_err(),
+            "a build carrying the placeholder trusts nothing"
+        );
+
+        fs::write(&sums, "00ff  uze-x86_64-linux-gnu.tar.gz\n").unwrap();
+        assert!(
+            verify(&release.public()).is_err(),
+            "checksums changed after signing"
+        );
+
+        fs::write(&sums, "ab12  uze-x86_64-linux-gnu.tar.gz\n").unwrap();
+        fs::remove_file(&signature).unwrap();
+        release.sign(&sums, "git");
+        assert!(
+            verify(&release.public()).is_err(),
+            "the same key signing for another purpose"
+        );
+    }
+
+    /// The stand-in release is a shell script, which only Unix runs.
+    #[cfg(unix)]
+    #[test]
+    fn an_unsigned_release_is_never_unpacked_or_installed() {
+        let release = Signer::new("release-key-install");
+        let dir = TempDir::new("self-update-signed");
+        let scratch = dir.path().join("scratch");
+        let stage = dir.path().join("stage");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::create_dir_all(&stage).unwrap();
+        fs::write(stage.join("uze"), "#!/bin/sh\necho uze 2.0.0\n").unwrap();
+        let archive = "uze-test.tar.gz";
+        let packed = uze_platform::tools::system("tar")
+            .arg("-czf")
+            .arg(scratch.join(archive))
+            .arg("-C")
+            .arg(&stage)
+            .arg("uze")
+            .status()
+            .unwrap();
+        assert!(packed.success());
+        let sum = sha256(&fs::read(scratch.join(archive)).unwrap());
+        fs::write(scratch.join(SUMS), format!("{sum}  {archive}\n")).unwrap();
+        let target = dir.path().join("installed-uze");
+        fs::write(&target, "old").unwrap();
+
+        let unsigned = install_downloaded(&scratch, archive, "2.0.0", &target, &release.public());
+        assert!(unsigned.is_err(), "{unsigned:?}");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "old", "untouched");
+        assert!(!scratch.join("unpacked").exists(), "nothing was unpacked");
+
+        release.sign(&scratch.join(SUMS), SIGNATURE_NAMESPACE);
+        install_downloaded(&scratch, archive, "2.0.0", &target, &release.public())
+            .expect("a signed release installs");
+        assert!(fs::read_to_string(&target).unwrap().contains("uze 2.0.0"));
+    }
+
+    #[test]
+    fn the_installers_carry_the_key_the_binary_is_built_with() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let committed = release_key(RELEASE_KEY).unwrap_or("");
+        let carried = |file: &str, prefix: &str| {
+            let text = fs::read_to_string(root.join(file)).unwrap();
+            let line = text
+                .lines()
+                .map(str::trim)
+                .find_map(|line| line.strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("{file} carries no `{prefix}` line"))
+                .to_owned();
+            line.trim_matches('\'').to_owned()
+        };
+        assert_eq!(carried("install.sh", "UZE_RELEASE_KEY="), committed);
+        assert_eq!(carried("install.ps1", "$ReleaseKey = "), committed);
     }
 }

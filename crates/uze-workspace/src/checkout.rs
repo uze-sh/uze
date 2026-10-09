@@ -23,6 +23,7 @@
 //! branch kept — are the only ones offered.
 
 mod accounting;
+mod anchor;
 mod git_facts;
 mod integration;
 mod lifecycle;
@@ -30,6 +31,7 @@ mod pool;
 mod reconcile;
 
 pub use accounting::*;
+pub use anchor::{admin_dir, anchored, guard};
 pub use git_facts::*;
 pub use integration::*;
 pub use lifecycle::*;
@@ -57,7 +59,7 @@ use crate::{
 use record::{CheckoutRecord, Recorded};
 
 fn git(root: &Path, args: &[&str]) -> Result<String, AcquireError> {
-    uze_git::write(root, args)
+    crate::git::write(root, args)
         .map_err(|error| AcquireError::Git(error.to_string()))?
         .successful()
         .map(|stdout| stdout.trim().to_owned())

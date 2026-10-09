@@ -193,6 +193,32 @@ pub(crate) use windows::user_of;
 mod tests {
     use super::*;
 
+    /// A process a pane's program started belongs to that pane, even one
+    /// that left the program's session; the person's own processes, this
+    /// test among them, do not.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn what_a_pane_started_belongs_to_it_and_the_person_does_not() {
+        use std::io::BufRead;
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "sleep 30 & echo $!; setsid sleep 30 & echo $!; wait"])
+            .stdout(std::process::Stdio::piped());
+        let (mut leader, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
+        let mut next_pid = || -> u32 { said.next().unwrap().unwrap().trim().parse().unwrap() };
+        let in_session = next_pid();
+        let left_session = next_pid();
+
+        assert!(pane::belongs(in_session, leader.id(), None));
+        assert!(pane::belongs(left_session, leader.id(), None));
+        assert!(!pane::belongs(std::process::id(), leader.id(), None));
+
+        tree.end();
+        terminate(left_session);
+        let _ = leader.wait();
+    }
+
     /// What a detached child outlives: the console it was started from,
     /// closed. The launcher here has a console of its own, and closing it is
     /// ending its `conhost`, which takes every process attached to it, as

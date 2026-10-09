@@ -207,6 +207,15 @@ impl EvaluationPass<'_> {
         // before the isolation is borrowed, since a rename is the agent's
         // label as much as its branch.
         let slot = landing::slot_path(primary, agent.isolation()?);
+        // Every question below runs Git in the slot. One whose `.git` no
+        // longer names the project's repository answers to whoever
+        // rewrote it, so it is not asked at all.
+        if let Some(slot) = &slot
+            && let Err(reason) = checkout::anchored(primary, slot)
+        {
+            tracing::warn!(agent = %id.as_str(), %reason, "a checkout is no longer the project's");
+            return None;
+        }
         if let Some(actual) = slot.as_deref().and_then(checkout::current_branch)
             && actual != agent.isolation()?.branch
         {
@@ -360,7 +369,7 @@ impl EvaluationPass<'_> {
             && agent.state == WorkState::Ready
             && !agent.is_named()
             && let Some(derived) = landing::derived_name(primary, isolation, self.vocabulary)
-            && !checkout::branch_exists(primary, &derived)
+            && !checkout::name_is_taken(primary, &derived)
             && checkout::rename_branch(primary, &isolation.branch.clone(), &derived).is_ok()
         {
             agent.take_name(derived);

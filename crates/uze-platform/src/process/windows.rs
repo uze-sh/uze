@@ -486,6 +486,23 @@ impl Group {
     }
 }
 
+/// The job is the whole answer here: a parent pid on Windows may name a
+/// process that exited and whose number was handed on, so ancestry would
+/// count the person's own terminal into a pane.
+pub(super) fn belongs(pid: u32, _leader: u32, group: Option<&Group>) -> bool {
+    use windows_sys::Win32::System::JobObjects::IsProcessInJob;
+    let Some(group) = group else {
+        return false;
+    };
+    let Some(process) = open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
+        return false;
+    };
+    let mut inside = 0;
+    // SAFETY: both handles are valid; `inside` outlives the call.
+    let asked = unsafe { IsProcessInJob(process.0, group.0.0, &mut inside) };
+    asked != 0 && inside != 0
+}
+
 pub(super) fn foreground(
     _leader: u32,
     group: Option<&Group>,

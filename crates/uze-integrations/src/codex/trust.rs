@@ -95,21 +95,48 @@ pub(crate) fn review(config_toml: &Path, entry: &HookEntry) -> Option<Review> {
 /// Whether the person marked `project_root` untrusted in Codex — the one
 /// trust level that makes Codex skip the project's `AGENTS.md`.
 pub(crate) fn project_untrusted(config_toml: &Path, project_root: &Path) -> bool {
-    let Some(document) = std::fs::read_to_string(config_toml)
-        .ok()
-        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
-    else {
+    read_config(config_toml)
+        .and_then(|document| trust_level(&document, project_root))
+        .as_deref()
+        == Some("untrusted")
+}
+
+/// Whether the person trusted, in Codex, the project a launch from `cwd`
+/// sits in: Codex asks about the directory itself, then about the primary
+/// checkout of the repository it belongs to (`primary_checkout`, asked only
+/// when the directory has no level of its own), so a linked worktree takes
+/// its repository's trust (codex-rs `get_active_project`). Only an explicit
+/// `trusted` counts, since an unset level is every project nobody was ever
+/// asked about.
+pub(crate) fn project_trusted(
+    config_toml: &Path,
+    cwd: &Path,
+    primary_checkout: impl FnOnce() -> Option<std::path::PathBuf>,
+) -> bool {
+    let Some(document) = read_config(config_toml) else {
         return false;
     };
-    let canonical =
-        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
-    [project_root, canonical.as_path()].iter().any(|root| {
+    trust_level(&document, cwd)
+        .or_else(|| trust_level(&document, &primary_checkout()?))
+        .as_deref()
+        == Some("trusted")
+}
+
+fn read_config(config_toml: &Path) -> Option<toml_edit::DocumentMut> {
+    std::fs::read_to_string(config_toml).ok()?.parse().ok()
+}
+
+/// The level `config.toml` records for `root`, spelled as given or
+/// canonical.
+fn trust_level(document: &toml_edit::DocumentMut, root: &Path) -> Option<String> {
+    let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    [root, canonical.as_path()].iter().find_map(|root| {
         document
-            .get("projects")
-            .and_then(|projects| projects.get(root.display().to_string()))
-            .and_then(|project| project.get("trust_level"))
-            .and_then(|level| level.as_str())
-            == Some("untrusted")
+            .get("projects")?
+            .get(root.display().to_string())?
+            .get("trust_level")?
+            .as_str()
+            .map(str::to_owned)
     })
 }
 
@@ -208,6 +235,39 @@ fn write_sorted(value: &Value, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A linked worktree has no level of its own and takes its primary
+    /// checkout's, as Codex resolves it; a level on the directory itself
+    /// decides first, and only `trusted` counts.
+    #[test]
+    fn a_project_is_trusted_by_its_own_level_else_by_its_primary_checkout() {
+        let root = uze_testkit::temp::scratch("codex-project-trust");
+        let config = root.join("config.toml");
+        let (primary, slot, other) = (
+            root.join("repo"),
+            root.join("repo/.worktrees/a"),
+            root.join("other"),
+        );
+        std::fs::write(
+            &config,
+            format!(
+                "[projects.{:?}]\ntrust_level = \"trusted\"\n[projects.{:?}]\ntrust_level = \"untrusted\"\n",
+                primary.display().to_string(),
+                other.display().to_string()
+            ),
+        )
+        .unwrap();
+        assert!(project_trusted(&config, &primary, || None));
+        assert!(project_trusted(&config, &slot, || Some(primary.clone())));
+        assert!(!project_trusted(&config, &slot, || None));
+        assert!(!project_trusted(&config, &other, || Some(primary.clone())));
+        assert!(!project_trusted(
+            &root.join("absent.toml"),
+            &primary,
+            || None
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// A hash a real Codex 0.160.1 review recorded for a group UZE
     /// delivered (`experiments/codex/trust-store`, 2026-10-06).

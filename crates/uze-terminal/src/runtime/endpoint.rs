@@ -25,14 +25,14 @@ pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
         Arrival::Connect => match connect_waiting(&socket) {
             Ok(stream) => return Ok(stream),
             Err(cause) => match claim_holder() {
-                Some(pid) => {
+                Some(claimant) => {
                     tracing::warn!(
-                        pid,
+                        pid = claimant.pid,
                         socket = %socket.display(),
                         "a server holds this workspace and answers nowhere this build looks; \
                          retiring it"
                     );
-                    retire(pid, &socket);
+                    retire(claimant.pid, Some(claimant.started), &socket);
                 }
                 None => return Err(unreachable(&socket, Some(cause))),
             },
@@ -60,9 +60,9 @@ pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
                 socket = %socket.display(),
                 "the server here does not answer this build's handshake; retiring it"
             );
-            retire(pid, &socket);
+            retire(pid, None, &socket);
         }
-        Arrival::Replace(pid) => retire(pid, &socket),
+        Arrival::Replace(pid) => retire(pid, None, &socket),
         Arrival::Start => {}
     }
     start_server(seat)?;
@@ -110,6 +110,7 @@ pub(super) fn serves_this_build(socket: &Path) -> bool {
             columns: 0,
             rows: 0,
             seating: Seating::WhereItLeftOff,
+            key: server_key(),
         },
     );
     if asked.is_err() {
@@ -120,7 +121,10 @@ pub(super) fn serves_this_build(socket: &Path) -> bool {
     let deadline = Instant::now() + ANSWERS_WITHIN;
     let served = loop {
         match read_event(&mut stream) {
-            Ok(Some(ClientEvent::Snapshot { .. })) => break true,
+            // Turned away, which only a server that read this build's
+            // frame can do: it speaks the protocol, and replacing it over
+            // a refusal would end every agent it runs.
+            Ok(Some(ClientEvent::Snapshot { .. } | ClientEvent::Refused { .. })) => break true,
             Ok(Some(ClientEvent::Error { .. })) | Ok(None) | Err(_) => break false,
             // Anything else is a server talking, which is neither answer
             // yet — a repaint can reach a client before its snapshot does.
@@ -256,33 +260,30 @@ pub fn socket_path() -> Result<PathBuf, RuntimeError> {
 /// Asks the running server for a space at `seat` — created when
 /// none is — and answers with its label. For a `uze` started inside one of
 /// the server's own panes: it must not open a client inside a client, so
-/// it opens a space in the one it is already in and leaves. An error when
-/// no server is running.
+/// it opens a space in the one it is already in and leaves. The one
+/// request a process inside a pane is served (ADR-056), and answered with
+/// the label alone. An error when no server is running.
 pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
     let _span = tracing::info_span!("terminal.open_space", root = %seat.root.display()).entered();
     let mut stream = transport::connect(&socket_path()?)
         .map_err(|_| RuntimeError::Protocol("no running uze to open a space in".into()))?;
     send_request(
         &mut stream,
-        &ClientRequest::Attach {
+        &ClientRequest::OpenSpace {
             version: PROTOCOL_VERSION,
-            columns: 0,
-            rows: 0,
-            seating: crate::Seating::Open(seat),
+            seat,
         },
     )?;
-    let label = loop {
-        match read_event(&mut stream)? {
-            Some(ClientEvent::Snapshot { session }) => {
-                break session.selected_space().label.clone();
-            }
-            Some(ClientEvent::Error { message }) => return Err(RuntimeError::Protocol(message)),
-            Some(_) => {}
-            None => return Err(RuntimeError::Protocol("the server hung up".into())),
+    match read_event(&mut stream)? {
+        Some(ClientEvent::SpaceOpened { label }) => Ok(label),
+        Some(ClientEvent::Error { message } | ClientEvent::Refused { message }) => {
+            Err(RuntimeError::Protocol(message))
         }
-    };
-    let _ = send_request(&mut stream, &ClientRequest::Detach);
-    Ok(label)
+        Some(_) => Err(RuntimeError::Protocol(
+            "the server answered something other than a space".into(),
+        )),
+        None => Err(RuntimeError::Protocol("the server hung up".into())),
+    }
 }
 
 /// Stops the user's server, answering whether there was one to stop.
@@ -308,24 +309,30 @@ pub fn stop() -> Result<bool, RuntimeError> {
             // running: a server on an endpoint this build no longer names
             // still holds the workspace, and a `stop` that reported
             // success while it did is what left restarting the machine as
-            // the only way out. What the claim names is what is stopped;
-            // a claim that names nobody — a server older than the record
-            // — is said, never reported as success.
+            // the only way out. What the claim names is what is stopped,
+            // and only while it is held: a free claim still carries the
+            // pid of the last server to hold it, and that pid may belong
+            // to anything by now. A claim that names nobody — a server
+            // older than the record — is said, never reported as success.
+            if !workspace_is_claimed() {
+                return Ok(false);
+            }
             return match claim_holder() {
-                Some(pid) => {
-                    retire(pid, &socket);
+                Some(claimant) => {
+                    retire(claimant.pid, Some(claimant.started), &socket);
                     Ok(true)
                 }
-                None if workspace_is_claimed() => Err(unreachable(&socket, None)),
-                None => Ok(false),
+                None => Err(unreachable(&socket, None)),
             };
         }
         Err(error) => return Err(error.into()),
     };
-    write_message(&mut stream, &ClientRequest::Stop)?;
+    write_message(&mut stream, &ClientRequest::Stop { key: server_key() })?;
     match read_message::<_, ClientEvent>(&mut BufReader::new(stream))? {
         Some(ClientEvent::Stopped) => Ok(true),
-        Some(ClientEvent::Error { message }) => Err(RuntimeError::Protocol(message)),
+        Some(ClientEvent::Error { message } | ClientEvent::Refused { message }) => {
+            Err(RuntimeError::Protocol(message))
+        }
         _ => Err(RuntimeError::Protocol(
             "server did not acknowledge stop".into(),
         )),
@@ -406,6 +413,7 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     // progress finishes before the clearing.
     let _stopped = state.await_stop();
     transport::clear(&socket);
+    state.workspace.withdraw();
     Ok(())
 }
 

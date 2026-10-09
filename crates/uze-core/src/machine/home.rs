@@ -104,6 +104,15 @@ impl UzeHome {
         self.project_dir(project_id).join("agents.json")
     }
 
+    /// The project commands the operator approved for one project: the
+    /// digest of the exact `setup` and `gate` lines they read and agreed
+    /// to run. A record, because nothing else on the machine knows a
+    /// person said yes, and kept beside the project's other records so
+    /// forgetting the project forgets the approval with it.
+    pub fn approved_commands_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("approved-commands.json")
+    }
+
     /// One agent's recorded conversations, beside the agents that name it.
     /// A file per agent rather than one document for the project, so a
     /// launch is one write and forgetting a project is still one removal.
@@ -275,6 +284,13 @@ impl UzeHome {
         self.cache_dir().join("logs")
     }
 
+    /// The whole output of the last gate that refused an agent's work —
+    /// what the agent is pointed at instead of having it typed into its
+    /// pane. One per agent, replaced by the next refusal.
+    pub fn gate_log_path(&self, agent: &str) -> PathBuf {
+        self.logs_dir().join(format!("gate-{agent}.log"))
+    }
+
     /// Everything UZE *generates* for one harness to read: generated
     /// marketplaces, staged skill directories, the wrappers a bridge is
     /// made of.
@@ -437,7 +453,21 @@ impl UzeHome {
         [self.runtime_dir(), self.cache_dir()]
     }
 
+    /// Narrows an existing root to this user alone (`0700`; a protected ACL
+    /// on Windows). What is under it names every project, branch and agent
+    /// on the machine, and the terminal runtime's records carry the
+    /// commands and environment its tabs were launched with. A root that is
+    /// not there yet is left for [`UzeHome::ensure_layout`] to create.
+    pub fn keep_private(&self) -> Result<()> {
+        if !self.root.is_dir() {
+            return Ok(());
+        }
+        uze_platform::fs::create_private_dir_all(&self.root).map_err(UzeError::write(&self.root))
+    }
+
     pub fn ensure_layout(&self) -> Result<()> {
+        uze_platform::fs::create_private_dir_all(&self.root)
+            .map_err(UzeError::write(&self.root))?;
         for directory in [
             self.plugins_dir(),
             self.state_dir(),
@@ -495,6 +525,36 @@ fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The home is created for this user alone, and one an older build
+    /// or a permissive umask left open is narrowed the next time UZE runs.
+    // Unix file modes, which Windows does not keep.
+    #[cfg(unix)]
+    #[test]
+    fn the_home_is_this_users_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let scratch = uze_testkit::temp::scratch("home-private");
+
+        let fresh = UzeHome::at(scratch.join("fresh"));
+        fresh.ensure_layout().unwrap();
+        assert_eq!(mode(fresh.root()), 0o700);
+
+        let open = UzeHome::at(scratch.join("open"));
+        fs::create_dir_all(open.root()).unwrap();
+        fs::set_permissions(open.root(), fs::Permissions::from_mode(0o755)).unwrap();
+        open.keep_private().unwrap();
+        assert_eq!(mode(open.root()), 0o700);
+
+        let absent = UzeHome::at(scratch.join("absent"));
+        absent.keep_private().unwrap();
+        assert!(
+            !absent.root().exists(),
+            "keeping a home private never creates one"
+        );
+
+        let _ = fs::remove_dir_all(&scratch);
+    }
 
     /// A directory every platform reads as absolute.
     fn absolute(name: &str) -> std::path::PathBuf {

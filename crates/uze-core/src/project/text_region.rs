@@ -27,7 +27,7 @@ use std::{fs, path::Path};
 use crate::{
     error::{Result, UzeError},
     integration::{AttachmentInspection, AttachmentState},
-    persistence::write_atomic_preserving,
+    persistence::{contained_destination, write_atomic_within},
 };
 
 /// Why a region whose markers are duplicated, out of order, or only half
@@ -106,6 +106,9 @@ fn joined_text(lines: &[Line]) -> String {
 /// a tie. `Ok(None)` means the file does not exist yet — a legitimate,
 /// common state, not an error.
 fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
+    if fs::symlink_metadata(path).is_ok() {
+        contained_destination(holding_directory(path), path)?;
+    }
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -173,7 +176,18 @@ fn write_lines(path: &Path, lines: &[Line]) -> Result<()> {
             out.push_str(ending.separator());
         }
     }
-    write_atomic_preserving(path, out.as_bytes())
+    write_atomic_within(holding_directory(path), path, out.as_bytes())
+}
+
+/// The directory a region's file is contained by. A region lives in a file
+/// a project keeps at its root (`AGENTS.md`), so the directory holding it
+/// is the project: the file may be a link to another file inside it, never
+/// to one outside.
+fn holding_directory(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
 }
 
 /// Normalizes caller-supplied content into the exact physical lines that
@@ -261,6 +275,10 @@ fn read_region(
             Ok((lines, scan))
         }
         Ok(None) => Err(target_absent()),
+        Err(error @ UzeError::ProjectFileEscapes { .. }) => Err(AttachmentInspection {
+            state: AttachmentState::Conflict,
+            reason: error.to_string(),
+        }),
         Err(error) => Err(blocked(error.to_string())),
     }
 }
@@ -801,6 +819,64 @@ mod tests {
         lines
             .iter()
             .any(|line| line.text.starts_with("<!-- uze:begin ") && line.text.ends_with(" -->"))
+    }
+
+    // --- containment ---------------------------------------------------
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_region_file_linked_out_of_its_project_is_a_conflict_and_never_written() {
+        let base = uze_testkit::temp::scratch("region-escape");
+        let project = base.join("project");
+        let outside = base.join("outside");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let file = project.join("AGENTS.md");
+        std::os::unix::fs::symlink("../outside/AGENTS.md", &file).unwrap();
+
+        let refused = attach(&file, "pkg-a/instructions", "planted");
+        assert!(
+            matches!(refused, Err(UzeError::ProjectFileEscapes { .. })),
+            "{refused:?}"
+        );
+        assert!(
+            !outside.join("AGENTS.md").exists(),
+            "the dangling link was followed"
+        );
+
+        fs::write(outside.join("AGENTS.md"), "someone else's file\n").unwrap();
+        assert_eq!(
+            inspect(&file, "pkg-a/instructions", "planted").state,
+            AttachmentState::Conflict
+        );
+        let convergence = converge(
+            &file,
+            |_| true,
+            &[("pkg-a/instructions".to_owned(), "planted".to_owned())],
+        );
+        assert!(convergence.desired[0].write_failure.is_some());
+        assert_eq!(
+            fs::read_to_string(outside.join("AGENTS.md")).unwrap(),
+            "someone else's file\n"
+        );
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_region_file_linked_inside_its_project_is_written_through_the_link() {
+        let project = uze_testkit::temp::scratch("region-inner-link");
+        fs::create_dir_all(project.join("docs")).unwrap();
+        let file = project.join("AGENTS.md");
+        std::os::unix::fs::symlink("docs/AGENTS.md", &file).unwrap();
+        attach(&file, "pkg-a/instructions", "kept").unwrap();
+        assert!(fs::symlink_metadata(&file).unwrap().is_symlink());
+        assert!(
+            fs::read_to_string(project.join("docs/AGENTS.md"))
+                .unwrap()
+                .contains("kept")
+        );
     }
 
     // --- attach --------------------------------------------------------

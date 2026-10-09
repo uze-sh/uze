@@ -179,6 +179,14 @@ pub struct Agent {
     /// build that drops it is corrected from the checkout's own record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<AgentId>,
+    /// The digest of the secret this agent's latest launch was issued
+    /// ([`Agent::issue_launch_key`]): what a process proves it is this
+    /// agent with, since the identifier and the directory it claims are
+    /// both its own to choose. Additive rather than a new shape: an older
+    /// build that drops it leaves the agent refused until it is launched
+    /// again, which issues a new one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_key: Option<String>,
 }
 
 /// What an isolated agent has that an agent in the root does not: a
@@ -203,6 +211,14 @@ pub struct Isolation {
     /// repository's remote-tracking refs, so a push somebody else made
     /// counts exactly as much as one UZE made.
     pub published_as: Option<String>,
+    /// The commit UZE last pushed under `published_as`: the only remote tip
+    /// a delivery may overwrite. A branch whose remote tip is anything else
+    /// is somebody's — a colleague's of the same name, or commits pushed
+    /// by hand — and is pushed to only by fast-forward. Additive rather
+    /// than a new shape: an older build that drops it costs one force a
+    /// delivery will not make, never one it should not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_tip: Option<String>,
     /// The number of the request open on the forge for the published
     /// branch, once one was found. Read off the remote like every other
     /// readiness fact, never announced by the agent that opened it.
@@ -317,7 +333,26 @@ impl Agent {
             state: WorkState::Running,
             isolation: None,
             parent: None,
+            launch_key: None,
         }
+    }
+
+    /// Issues the secret a launch of this agent carries, keeping only its
+    /// digest: every earlier launch's secret stops being this agent's.
+    pub fn issue_launch_key(&mut self) -> std::io::Result<String> {
+        let secret = uze_platform::secret::token()?;
+        self.launch_key = Some(uze_core::digest::secret_sha256(&secret));
+        Ok(secret)
+    }
+
+    /// Whether `secret` is the one this agent's latest launch was issued.
+    pub fn admits_launch(&self, secret: &str) -> bool {
+        self.launch_key.as_deref().is_some_and(|recorded| {
+            uze_platform::secret::matches(
+                uze_core::digest::secret_sha256(secret).as_bytes(),
+                recorded.as_bytes(),
+            )
+        })
     }
 
     /// An agent launched straight into a checkout of its own, as a
@@ -348,6 +383,7 @@ impl Isolation {
             branch: generated_branch(id),
             checkout: None,
             published_as: None,
+            published_tip: None,
             published_request: None,
             request_branch: None,
             request_asked_at_unix: None,

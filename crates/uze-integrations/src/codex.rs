@@ -51,7 +51,7 @@ use crate::hooks::HookEntry;
 use crate::shared::agent::{
     PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried, projection_route,
 };
-use crate::shared::dialect::{AgentDialect, Shape, agent_block};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block, withheld};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::package_root::resolve_text;
@@ -200,11 +200,11 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn runtime_contribution(&self, ctx: &RuntimeContext) -> HarnessRuntimeContribution {
-        runtime::runtime_contribution(ctx, &self.harness_keys())
+        runtime::runtime_contribution(ctx, &self.harness_keys(), &self.config_toml_path())
     }
 
     fn runtime_contribution_would_activate(&self, ctx: &RuntimeContext) -> bool {
-        runtime::projection_would_activate(ctx)
+        runtime::projection_would_activate(ctx, &self.config_toml_path())
     }
 
     fn runtime_projects_project_context(&self) -> bool {
@@ -557,11 +557,16 @@ impl CodexIntegration {
     /// or an unknown key makes it ignore the file), so only the portable
     /// fields reach it.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
+        let keys = self.harness_keys();
         let not_carried = AgentDocument::parse(&resource.capability.payload)
-            .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
+            .map(|document| {
+                let mut lost = fields_not_carried(&document, PORTABLE_AGENT_FIELDS);
+                lost.extend(withheld(&CODEX_AGENT_DIALECT, &keys, &document));
+                lost
+            })
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = codex_agent_toml(resource, &label, &self.harness_keys());
+        let content = codex_agent_toml(resource, &label, &keys);
         agent_file_plan(
             &self.agents_dir,
             &label,
@@ -622,9 +627,14 @@ const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
             "model_reasoning_effort",
             Shape::OneOf(&["low", "medium", "high", "xhigh", "max", "ultra"]),
         ),
+        // A role is authored by a plugin or a project, so it may narrow the
+        // sandbox the operator runs Codex in but never leave it.
         (
             "sandbox_mode",
-            Shape::OneOf(&["read-only", "workspace-write", "danger-full-access"]),
+            Shape::Ceiling {
+                levels: &["read-only", "workspace-write", "danger-full-access"],
+                ceiling: "workspace-write",
+            },
         ),
     ],
     carries_unknown: false,

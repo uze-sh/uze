@@ -282,9 +282,13 @@ impl PortableHook {
 /// package declaring one is not installed here at all.
 pub fn guards_unspelled_here(package_root: &Path) -> Result<Vec<String>> {
     let manifest_path = package_root.join(HOOKS_FILE_NAME);
-    let Ok(bytes) = std::fs::read(&manifest_path) else {
+    if std::fs::symlink_metadata(&manifest_path).is_err() {
         return Ok(Vec::new());
-    };
+    }
+    // Bounded like every other read of a package, and an error rather than
+    // "no guards": a manifest that cannot be read is not one that declares
+    // nothing, and answering so would let its guards go unchecked.
+    let bytes = crate::store::read_package_file(&manifest_path)?;
     Ok(parse_manifest(&manifest_path, &bytes)?
         .into_iter()
         .filter(|hook| hook.effect.fails_closed() && hook.unspelled_here(package_root))
@@ -615,6 +619,13 @@ fn exec_form_defect(handler: &CommandHook) -> Option<String> {
 /// Parses and validates one package/project `hooks.json`. The returned order
 /// is deterministic: semantic event order then source group order.
 pub fn parse_manifest(path: &Path, bytes: &[u8]) -> Result<Vec<PortableHook>> {
+    let raw: serde_json::Value = crate::authored::json(bytes).map_err(|source| UzeError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if let Some(reason) = crate::authored::terminal_control_in(&raw) {
+        return invalid(path, &reason);
+    }
     let manifest: HookManifest = crate::authored::json(bytes).map_err(|source| UzeError::Json {
         path: path.to_path_buf(),
         source,

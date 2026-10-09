@@ -73,6 +73,9 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 unfired: &[],
             }),
             deny_exit: "0",
+            // Exit 2 blocks the call and hands stderr to the model: what is
+            // left when the document that would have said so is not.
+            unwritten_exit: "2",
         },
         // Claude's entries accept `command` + `args`, so the wrapper is
         // started directly with nothing to quote.

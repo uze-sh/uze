@@ -20,7 +20,7 @@
 ## 4. noyalib — evaluated, staying under a written exception
 
 - [x] 4.1 The exception is drafted in `design.md` ("`noyalib` stays, as a written exception"): what it is, why it is kept over each alternative that was evaluated, what limits the exposure to one module, and the three conditions that remove it. This closes `project-agent-environment` 9.6's "record the exception where `AGENTS.md` asks for it" as far as this change can: the text exists and is reviewable.
-- [ ] 4.2 Copy the exception's four sentences into `AGENTS.md`'s `## Dependencies` section, under the refuse list, so a reader of the policy finds the one crate that breaks it without leaving the page. Needs the repository owner: `AGENTS.md` is this project's own authored context, not a generated bridge.
+- [x] 4.2 Copy the exception's four sentences into `AGENTS.md`'s `## Dependencies` section, under the refuse list, so a reader of the policy finds the one crate that breaks it without leaving the page. Done at the owner's request during the 2026-10 security audit, as a "Written exceptions" list that also names the advisory fixed by moving to 0.0.53.
 - [ ] 4.3 Fail the build on the *next* one. A `0.0.x` direct dependency not named in a written-exception table should not be able to enter in passing inside a large change, which is exactly how this one did — either a `deny.toml` `[bans]` entry or a scan in `tests/architecture`.
 
 ## 5. Advisory hygiene

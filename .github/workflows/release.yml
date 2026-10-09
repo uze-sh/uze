@@ -12,8 +12,10 @@ name: Release
 # the tree has a release yet; when it does not, this workflow waits for `CI`'s
 # `Gate` to pass on that exact commit, then tags the commit
 # if needed, builds the eight archives on native runners, generates the
-# SBOM, signs the provenance, and creates the GitHub Release with the
-# archives and SHASUMS256.txt that install.sh and install.ps1 consume — under notes written
+# SBOM, signs the provenance, signs SHASUMS256.txt with the release key (in
+# the protected `release` environment), and creates the GitHub Release with
+# the archives, SHASUMS256.txt, its signature and the two installers that
+# uze.sh/i serves — under notes written
 # by git-cliff from `cliff.release.toml`: what changed, who changed it, what
 # breaks, and how to install and verify this exact version. Asking about the
 # release rather than the tag is what lets a publish that failed halfway be
@@ -45,8 +47,9 @@ on:
     # `Cargo.toml`, so merging it would not have retried the publish it
     # fixed.
 
-permissions:
-  contents: write
+# Nothing by default: each job asks for what it does, and the eight build
+# jobs, which run the most third-party code, ask for nothing beyond reading.
+permissions: {}
 
 concurrency:
   group: release
@@ -70,11 +73,13 @@ jobs:
           fetch-depth: 0
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          # cargo-release and git-cliff are pinned: the release changelog
-          # depends on `git-cliff -t` naming. The rest are what the
-          # `make check` pre-release-hook shells out to (see release.toml) —
-          # a gate that cannot run is a gate that does not gate.
-          tool: cargo-release@1.1.5,git-cliff@2.13.1,cargo-deny,cargo-about,ruff
+          # Every tool pinned: a job that pushes to this repository runs no
+          # binary chosen by whoever published last. cargo-release and
+          # git-cliff also because the release changelog depends on
+          # `git-cliff -t` naming. The rest are what the `make check`
+          # pre-release-hook shells out to (see release.toml) — a gate that
+          # cannot run is a gate that does not gate.
+          tool: cargo-release@1.1.5,git-cliff@2.13.1,cargo-deny@0.20.2,cargo-about@0.9.2,ruff@0.16.4
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -87,6 +92,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Bump, changelog, branch
         id: release
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
           # On a branch from the start: `cargo release` commits, and this one
@@ -95,7 +102,7 @@ jobs:
           # Runs the `make check` pre-release-hook first (see release.toml):
           # if the gate fails, nothing is bumped or committed. `--no-tag`
           # because the tag belongs on the merge commit, not on this branch.
-          cargo release "${{ inputs.bump }}" --execute --no-confirm --no-tag
+          cargo release "${BUMP}" --execute --no-confirm --no-tag
           version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)"
           [ -n "$version" ] || { echo "could not read version from Cargo.toml" >&2; exit 1; }
           tag="v${version}"
@@ -116,17 +123,19 @@ jobs:
       - name: Preview the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           git-cliff --config cliff.release.toml --unreleased \
-            -t "${{ steps.release.outputs.tag }}" -o "${RUNNER_TEMP}/notes.md"
+            -t "${TAG}" -o "${RUNNER_TEMP}/notes.md"
           cat "${RUNNER_TEMP}/notes.md"
       - name: Open the release pull request
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ steps.release.outputs.tag }}"
+          tag="${TAG}"
           # GitHub refuses a body over 65536 characters, and a release that
           # swept up a long stretch of history reaches that. Truncating the
           # preview is better than losing the pull request to it — the release
@@ -140,7 +149,7 @@ jobs:
           fi
           {
             printf '%s\n\n' "Version bump across every workspace crate, with the changelog for \`${tag}\` folded into the same commit."
-            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips, the SBOM, signed provenance and SHASUMS256.txt."
+            printf '%s\n\n' "Merging this tags the merge commit \`${tag}\` and publishes the release: six tarballs (Linux gnu/musl, macOS), the two Windows zips, the SBOM, signed provenance, the installers, SHASUMS256.txt and its signature."
             printf '%s\n' "---"
             printf '%s\n\n' "Below is the release page this will publish, exactly as generated:"
             cat "$notes"
@@ -166,10 +175,16 @@ jobs:
       version: ${{ steps.detect.outputs.version }}
       tag: ${{ steps.detect.outputs.tag }}
       release: ${{ steps.detect.outputs.release }}
+      # What every later job builds and publishes: the commit, never the
+      # tag's name, which is a pointer someone else could have moved.
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - name: The commit this run is about
+        id: commit
+        run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
       # `Cargo.toml` changes for many reasons; a release is the one whose
       # version has no *published release* behind it. Asking about the
       # release rather than the tag is what lets a half-finished attempt
@@ -206,17 +221,21 @@ jobs:
       #
       # `concurrency: release` already serialises this workflow, so the wait
       # costs latency and nothing else.
+      #
+      # Only GitHub Actions' own `Gate` counts (app 15368): any other app
+      # with `checks: write` can create a check run called `Gate` too.
       - name: Wait for the gate on this commit
         if: steps.detect.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ACTIONS_APP_ID: "15368"
         run: |
           set -euo pipefail
           deadline=$(( $(date +%s) + 3600 ))
           while :; do
             conclusion="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?check_name=Gate" \
-              --jq '.check_runs | map(select(.status == "completed")) | last | .conclusion // empty')"
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?check_name=Gate&app_id=${ACTIONS_APP_ID}" \
+              --jq ".check_runs | map(select(.status == \"completed\" and .app.id == ${ACTIONS_APP_ID})) | last | .conclusion // empty")"
             case "${conclusion}" in
               success)
                 echo "Gate passed for ${GITHUB_SHA}"
@@ -238,13 +257,23 @@ jobs:
           done
       # Only when it is missing: a tag that already points at this commit is
       # the earlier attempt's, and moving it would change what a `v*` means.
+      # A tag of that name on any *other* commit is refused outright: what
+      # Gate passed for is this commit, and publishing a release from
+      # whatever the tag names would publish something Gate never saw.
       - name: Create the tag
         if: steps.detect.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.detect.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ steps.detect.outputs.tag }}"
+          tag="${TAG}"
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "${tag} already exists — reusing it"
+            tagged="$(git rev-parse "refs/tags/${tag}^{commit}")"
+            if [ "${tagged}" != "${GITHUB_SHA}" ]; then
+              echo "::error::${tag} already names ${tagged}, not ${GITHUB_SHA} — refusing to release"
+              exit 1
+            fi
+            echo "${tag} already names ${GITHUB_SHA} — reusing it"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -257,6 +286,8 @@ jobs:
     needs: tag
     if: needs.tag.outputs.release == 'true'
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -310,18 +341,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Build exactly what was released and pushed by `prepare`.
-          ref: ${{ needs.tag.outputs.tag }}
+          # Build exactly the commit Gate passed for, by its hash.
+          ref: ${{ needs.tag.outputs.sha }}
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: release-${{ matrix.target }}
+      # No build cache, deliberately: a cache is written by every pull
+      # request's CI run and restored by key, so a shipped binary built on
+      # one is built partly from whatever wrote it. A release build costs
+      # minutes more and is built from source alone.
+      #
       # On Windows, `+crt-static` comes from `.cargo/config.toml`: the binary
       # needs no Visual C++ redistributable on the machine it lands on.
-      - run: cargo build --locked --release --bin uze --target ${{ matrix.target }}
+      - name: Build
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: cargo build --locked --release --bin uze --target "${BUILD_TARGET}"
       # Apache-2.0 4(a) and 4(d): whoever receives the binary has to receive
       # the licence and the NOTICE with it. Staging them beside the binary is
       # what puts them inside the tarball - the archive used to carry the
@@ -330,21 +367,27 @@ jobs:
       # worse than no pointer.
       - name: Package release archive
         if: matrix.archive != 'zip'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           mkdir -p dist staging
-          cp "target/${{ matrix.target }}/release/uze" staging/
+          cp "target/${BUILD_TARGET}/release/uze" staging/
           cp LICENSE NOTICE CREDITS.md staging/
-          tar -C staging -czf "dist/uze-${{ matrix.platform }}.tar.gz" \
+          tar -C staging -czf "dist/uze-${PLATFORM}.tar.gz" \
             uze LICENSE NOTICE CREDITS.md
       # Windows' own bsdtar, by path: a GNU tar earlier on PATH (Git's)
       # cannot write a zip.
       - name: Package release archive (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           New-Item -ItemType Directory -Force dist, staging | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
-          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-${{ matrix.platform }}.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
+          Copy-Item "target/$env:BUILD_TARGET/release/uze.exe", LICENSE, NOTICE, CREDITS.md staging/
+          & "$env:SystemRoot\System32\tar.exe" -a -cf "dist/uze-$env:PLATFORM.zip" -C staging uze.exe LICENSE NOTICE CREDITS.md
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -356,6 +399,10 @@ jobs:
     name: Publish release
     needs: [tag, package]
     runs-on: ubuntu-24.04
+    # The one job that holds the release signing key. The environment's
+    # protection (required reviewer, `main` only) is what stands between a
+    # change to this file and the key: see docs/versioning.md, "Signing".
+    environment: release
     permissions:
       contents: write
       # Signing the provenance: `id-token` mints the OIDC token that proves
@@ -369,12 +416,14 @@ jobs:
       # file or directory` after every target had built successfully.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # The tag, so the SBOM describes the tree the binaries were built
-          # from rather than whatever `main` has moved on to.
-          ref: ${{ needs.tag.outputs.tag }}
+          # The released commit, so the SBOM describes the tree the binaries
+          # were built from rather than whatever `main` has moved on to.
+          ref: ${{ needs.tag.outputs.sha }}
           # git-cliff reads the release notes out of the history between the
           # previous tag and this one; a shallow clone has neither.
           fetch-depth: 0
+          # `gh` publishes with its own token; nothing here pushes.
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: dist
@@ -384,7 +433,9 @@ jobs:
           # git-cliff pinned to the same version `propose` uses: both render
           # the same commits, and a reader comparing the changelog against the
           # release page should not be reading two different renderers.
-          tool: cargo-cyclonedx,git-cliff@2.13.1
+          # cargo-cyclonedx pinned because this job holds the signing key and
+          # mints the provenance token.
+          tool: cargo-cyclonedx@0.5.9,git-cliff@2.13.1
       # CREDITS.md answers "may I ship this" for a human; an SBOM answers
       # "what is in here" for a scanner, and a user auditing a CVE should not
       # have to parse prose to find out whether they are exposed.
@@ -393,20 +444,63 @@ jobs:
       - name: Generate the SBOM
         run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps --target all
       - name: Collect assets and checksums
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           mkdir -p assets
           mv dist/uze-*.tar.gz dist/uze-*.zip assets/
           cp uze.cdx.json assets/uze-sbom.cdx.json
+          # The installers uze.sh/i serves, from the released commit: a
+          # release's own assets, never `main`, which moves without a
+          # release and without a signature.
+          cp install.sh install.ps1 assets/
           # Scoop's manifest, from the Windows archives' own bytes.
-          python3 .github/scripts/scoop_manifest.py assets "${{ needs.tag.outputs.tag }}"
+          python3 .github/scripts/scoop_manifest.py assets "${TAG}"
           (
             cd assets
-            sha256sum *.tar.gz *.zip *.cdx.json uze.json > SHASUMS256.txt
+            sha256sum *.tar.gz *.zip *.cdx.json uze.json install.sh install.ps1 > SHASUMS256.txt
           )
           ls -l assets/
           cat assets/SHASUMS256.txt
+      # The signature the updater and both installers refuse to install
+      # without. The key is the `release` environment's secret, written to
+      # a file only this step can read and removed when it ends; the
+      # signature is then checked against the committed public key, so a
+      # secret that is not the key `release-signing.pub` names fails here
+      # rather than on every machine that tries to update.
+      - name: Sign the checksums
+        env:
+          UZE_RELEASE_SIGNING_KEY: ${{ secrets.UZE_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          public="$(grep -v '^#' release-signing.pub | sed '/^[[:space:]]*$/d')"
+          case "${public}" in
+            "ssh-ed25519 "*) ;;
+            *)
+              echo "::error::release-signing.pub holds no release key (still the placeholder) — refusing to publish an unsigned release"
+              exit 1
+              ;;
+          esac
+          for installer in "install.sh:UZE_RELEASE_KEY='${public}'" "install.ps1:\$ReleaseKey = '${public}'"; do
+            file="${installer%%:*}"
+            grep -qF "${installer#*:}" "${file}" || {
+              echo "::error::${file} does not carry the key release-signing.pub names"
+              exit 1
+            }
+          done
+          if [ -z "${UZE_RELEASE_SIGNING_KEY}" ]; then
+            echo "::error::the release environment has no UZE_RELEASE_SIGNING_KEY secret — refusing to publish an unsigned release"
+            exit 1
+          fi
+          key="$(mktemp -d)/key"
+          trap 'rm -rf -- "$(dirname "${key}")"' EXIT
+          ( umask 077 && printf '%s\n' "${UZE_RELEASE_SIGNING_KEY}" > "${key}" )
+          ssh-keygen -q -Y sign -n uze-release -f "${key}" assets/SHASUMS256.txt
+          printf 'uze-release namespaces="uze-release" %s\n' "${public}" > "${RUNNER_TEMP}/allowed_signers"
+          ssh-keygen -Y verify -f "${RUNNER_TEMP}/allowed_signers" -I uze-release -n uze-release \
+            -s assets/SHASUMS256.txt.sig < assets/SHASUMS256.txt
       # Signed provenance for each asset: which workflow, which commit, which
       # runner built it. Without it a tarball claiming to be uze is only as
       # trustworthy as the page it was downloaded from. Verified with
@@ -431,12 +525,25 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+          SHA: ${{ needs.tag.outputs.sha }}
         run: |
           set -euo pipefail
-          tag="${{ needs.tag.outputs.tag }}"
+          tag="${TAG}"
+          # The tag may not have moved since `tag` checked it: a release
+          # names its tag, and the tag must still name what was built.
+          tagged="$(git ls-remote origin "refs/tags/${tag}^{}" | cut -f1)"
+          if [ "${tagged}" != "${SHA}" ]; then
+            echo "::error::${tag} names '${tagged}', not the built ${SHA} — refusing to publish"
+            exit 1
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists — uploading assets"
-            gh release upload "$tag" assets/* --clobber
+            # Never replaced in place: an asset already published is what someone
+            # may already have downloaded and verified, and replacing it in
+            # place is exactly what a compromised run would do. With
+            # immutable releases on, GitHub refuses it as well.
+            echo "release $tag exists — uploading the assets it is missing"
+            gh release upload "$tag" assets/*
             # A repaired publish gets repaired notes too: the first attempt may
             # have written them before the assets it describes existed.
             gh release edit "$tag" --notes-file "${RUNNER_TEMP}/notes.md"
@@ -451,6 +558,7 @@ jobs:
             # when `UZE_VERSION` is unset. Flagging them would leave the
             # documented one-line install with nothing to fetch.
             gh release create "$tag" assets/* \
+              --verify-tag \
               --title "$tag" \
               --notes-file "${RUNNER_TEMP}/notes.md"
           fi

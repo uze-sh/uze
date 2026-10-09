@@ -37,7 +37,7 @@ impl Workspace<'_> {
         } else {
             PlacementKind::InPlace
         });
-        match kind {
+        let placed = match kind {
             PlacementKind::Isolated => self.place_in_slot(pane_cwd, harness, occupied),
             PlacementKind::InPlace => {
                 let root = canonical(pane_cwd);
@@ -62,10 +62,13 @@ impl Workspace<'_> {
                     cwd: root,
                     placement: Placement::InPlace { id: agent.id },
                     warnings,
+                    awaiting_approval: None,
                     view,
+                    launch_key: String::new(),
                 })
             }
-        }
+        };
+        self.keyed(placed?)
     }
 
     /// Brings the local target of the project at `cwd` in line with its
@@ -184,7 +187,9 @@ impl Workspace<'_> {
         // Outside the document's lock on purpose: the project's `setup` is
         // the one unbounded thing a launch runs, and every other mutation
         // would wait behind it.
-        let warnings = checkout::materialize(&primary, &acquired.path, &policy);
+        let consent = self.consent(&primary, &policy);
+        let warnings = checkout::materialize(&primary, &acquired.path, &consent);
+        let awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         let view = self.placed_view(&primary, task.id.as_str(), &policy);
         Ok(AgentPlacement {
             project: primary.clone(),
@@ -196,7 +201,9 @@ impl Workspace<'_> {
                 reused: !acquired.created,
             },
             warnings,
+            awaiting_approval,
             view,
+            launch_key: String::new(),
         })
     }
 
@@ -292,14 +299,16 @@ impl Workspace<'_> {
 
         // Outside the lock, like every other unbounded step: the
         // project's `setup` runs here, and so does the copy.
-        let mut warnings = checkout::materialize(&primary, &acquired.path, &policy);
+        let consent = self.consent(&primary, &policy);
+        let mut warnings = checkout::materialize(&primary, &acquired.path, &consent);
+        let awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         if carry == Carry::CopyOfChanges
             && let Err(reason) = checkout::carry_changes(&primary, &acquired.path)
         {
             warnings.push(reason);
         }
         let view = self.placed_view(&primary, id.as_str(), &policy);
-        Ok(AgentPlacement {
+        self.keyed(AgentPlacement {
             project: primary.clone(),
             cwd: acquired.path,
             placement: Placement::Isolated {
@@ -309,7 +318,9 @@ impl Workspace<'_> {
                 reused: !acquired.created,
             },
             warnings,
+            awaiting_approval,
             view,
+            launch_key: String::new(),
         })
     }
 
@@ -355,7 +366,9 @@ impl Workspace<'_> {
                         reused: true,
                     },
                     warnings: Vec::new(),
+                    awaiting_approval: None,
                     view: None,
+                    launch_key: String::new(),
                 });
             }
             let acquired = checkout::resume(
@@ -380,15 +393,51 @@ impl Workspace<'_> {
                 cwd: acquired.path,
                 placement,
                 warnings: Vec::new(),
+                awaiting_approval: None,
                 view: None,
+                launch_key: String::new(),
             })
         })?;
         // Preparing the checkout runs the project's `setup`; it waits for
         // nobody and nobody waits behind it.
         if let Some(acquired) = acquired_slot {
-            placement.warnings = checkout::materialize(&primary, &acquired.path, &policy);
+            let consent = self.consent(&primary, &policy);
+            placement.warnings = checkout::materialize(&primary, &acquired.path, &consent);
+            placement.awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         }
         placement.view = self.placed_view(&primary, placement.placement.agent().as_str(), &policy);
-        Ok(placement)
+        self.keyed(placement)
     }
+
+    /// Issues the placed agent's launch its secret: every placement is a
+    /// launch, and each one makes the secret before it the agent's no
+    /// longer. Refused, and nothing launched, when the record cannot take
+    /// it — an agent nobody can prove to be could not name or deliver its
+    /// work.
+    fn keyed(&self, mut placed: AgentPlacement) -> Result<AgentPlacement> {
+        let agent = placed.placement.agent().as_str().to_owned();
+        placed.launch_key = task::locked(&self.0.home, &placed.project, |store| {
+            let record = store
+                .agent_mut(&agent)
+                .ok_or_else(|| UzeError::UnknownTask(agent.clone()))?;
+            record.issue_launch_key().map_err(|error| {
+                UzeError::AgentPlacement(format!(
+                    "the agent's launch could not be issued a key: {error}"
+                ))
+            })
+        })?;
+        Ok(placed)
+    }
+}
+
+/// What a checkout placed without its approved commands carries, for the
+/// operator to answer.
+fn awaiting(
+    primary: &Path,
+    consent: &uze_workspace::approval::Consent<'_>,
+    checkout: &Path,
+) -> Option<CommandsAwaitingApproval> {
+    consent.awaiting().map(|awaiting| {
+        CommandsAwaitingApproval::of(primary, awaiting, Some(checkout.to_path_buf()))
+    })
 }

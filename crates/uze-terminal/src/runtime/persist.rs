@@ -122,8 +122,26 @@ pub(super) fn load_persisted_workspace_at(
 /// stays inside one filesystem, and the bytes reach the disk before the
 /// name does.
 pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let temporary = path.with_extension("json.tmp");
-    let mut file = fs::File::create(&temporary)?;
+    let temporary = path.with_extension(format!(
+        "{}.tmp",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+    ));
+    if let Some(parent) = path.parent() {
+        private_directory(parent)?;
+    }
+    // Private from its first byte: the workspace names every command and
+    // launch environment a tab was started with. A leftover temporary keeps
+    // whatever mode it was made with, so it goes first.
+    let _ = fs::remove_file(&temporary);
+    let mut file = uze_platform::fs::private_file(
+        fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(&temporary)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);

@@ -57,7 +57,7 @@ use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
     fields_not_carried, markdown_agent, projection_route,
 };
-use crate::shared::dialect::{AgentDialect, Shape, agent_block};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block, withheld};
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
@@ -557,11 +557,16 @@ impl OpenCodeIntegration {
     /// agent vanish (measured on 2.0.15 and 2.0.18) — so the file is named
     /// with the label and carries the portable fields only ([`OPENCODE_AGENT`]).
     fn agent_plan(&self, resource: &Resource) -> ExposurePlan {
+        let keys = self.harness_keys();
         let not_carried = AgentDocument::parse(&resource.capability.payload)
-            .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
+            .map(|document| {
+                let mut lost = fields_not_carried(&document, PORTABLE_AGENT_FIELDS);
+                lost.extend(withheld(&OPENCODE_AGENT_DIALECT, &keys, &document));
+                lost
+            })
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &OPENCODE_AGENT, &self.harness_keys());
+        let content = markdown_agent(&label, resource, &OPENCODE_AGENT, &keys);
         agent_file_plan(
             &self.agents_dir,
             &label,
@@ -809,11 +814,26 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "refuses or asks about a call through `permission.evaluate`, announces a new \
-               session and the end of a turn on its event bus, and continues a session \
-               given synthetic input",
+        fact: "fails a call whose `execute.before` renamed it to a tool that does not exist, \
+               before it runs and whether or not the tool asks for permission (`read` does \
+               not), relaying the name with the reason in it to the model and showing it as \
+               a refusal rather than a hook error",
         measured_on: VERSION,
-        proven_by: "contract/hooks.py::_deny",
+        proven_by: "contract/hooks.py::_deny_unprompted",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "asks the person about a call through `permission.evaluate` for a tool that \
+               asks for permission",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_ask",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "announces a new session and the end of a turn on its event bus, and continues \
+               a session given synthetic input",
+        measured_on: VERSION,
+        proven_by: "contract/hooks.py::_events",
     },
     HarnessFact {
         subject: "hooks",

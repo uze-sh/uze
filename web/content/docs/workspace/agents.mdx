@@ -84,6 +84,14 @@ workspace:
 If the checks fail or the rebase conflicts, nothing reaches the target and the
 agent gets the problem back.
 
+The checks, like `setup`, are commands from the repository, so uze runs them
+only after you approve them. The first time the workspace opens a project that
+declares any, it shows a **Review** button: read the exact lines, then approve
+them or not. Until you do, worktrees are prepared without `setup` and delivery
+waits. If someone changes the lines later, the workspace asks again. From a
+terminal, `uze workspace allow` does the same; see
+[Approving the commands](/docs/reference/project-files#approving-the-commands).
+
 ## Subagents
 
 An agent that splits its work across subagents asks uze for a checkout for

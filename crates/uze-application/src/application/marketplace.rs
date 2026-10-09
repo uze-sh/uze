@@ -655,12 +655,13 @@ impl Marketplace<'_> {
     ) -> Result<AddPluginReport> {
         self.0.begin_operation();
         let (plugin_name, marketplace_name) = uze_core::store::parse_plugin_marketplace_spec(spec)?;
-        let source = if marketplace_name == BUILT_IN_MARKETPLACE {
-            None
+        let (source, origin) = if marketplace_name == BUILT_IN_MARKETPLACE {
+            (None, uze_core::trust::SourceOrigin::Operator)
         } else {
             let record = uze_core::state::marketplace_get(&self.0.home, &marketplace_name)?
                 .ok_or_else(|| UzeError::UnknownMarketplace(marketplace_name.to_owned()))?;
-            Some(record.source)
+            let origin = record.origin();
+            (Some(record.source), origin)
         };
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let materialized = match source {
@@ -682,6 +683,7 @@ impl Marketplace<'_> {
             None,
             authority,
             name_authority,
+            origin,
         )
     }
 

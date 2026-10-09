@@ -82,6 +82,9 @@ impl uze_extensions::Host for WorkspaceHost {
     /// code surface ask the same one on their own clocks, and on a large
     /// checkout each is a walk of the whole tree.
     fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
+        if let Some(reason) = uze_application::unanchored_checkout(root) {
+            return Err(reason);
+        }
         let run = || {
             uze_git::read(root, args)
                 .map_err(|error| error.to_string())?
@@ -161,8 +164,8 @@ impl uze_extensions::Host for WorkspaceHost {
     ///
     /// Replaced by rename rather than written in place, so a save that
     /// fails partway leaves the file as it was instead of truncated.
-    fn write_file(&self, path: &Path, contents: &str) -> Result<(), String> {
-        let target = self.save_target(path)?;
+    fn write_file(&self, root: &Path, path: &Path, contents: &str) -> Result<(), String> {
+        let target = self.save_target(root, path)?;
         forget_statuses_around(path);
         replace_contents(&target, contents.as_bytes()).map_err(|error| error.to_string())
     }
@@ -173,38 +176,42 @@ impl uze_extensions::Host for WorkspaceHost {
     ///
     /// A symbolic link is removed as the link, never its target, so this
     /// reaches nothing outside the directory the path names.
-    fn delete_file(&self, path: &Path) -> Result<(), String> {
+    fn delete_file(&self, root: &Path, path: &Path) -> Result<(), String> {
+        let (_, resolved) = entry_within(root, path)?;
         if !path.is_file() {
             return Err(format!("{} is not a file", path.display()));
         }
         forget_statuses_around(path);
-        std::fs::remove_file(path).map_err(|error| error.to_string())
+        std::fs::remove_file(resolved).map_err(|error| error.to_string())
     }
 
-    fn delete_dir(&self, path: &Path) -> Result<(), String> {
+    fn delete_dir(&self, root: &Path, path: &Path) -> Result<(), String> {
+        let (_, resolved) = entry_within(root, path)?;
         // `symlink_metadata`, so a link to a directory is not followed
         // into deleting what it points at.
-        if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
+        if !std::fs::symlink_metadata(&resolved).is_ok_and(|meta| meta.is_dir()) {
             return Err(format!("{} is not a directory", path.display()));
         }
         forget_statuses_around(path);
-        std::fs::remove_dir_all(path).map_err(|error| error.to_string())
+        std::fs::remove_dir_all(resolved).map_err(|error| error.to_string())
     }
 
     /// Checked before the rename rather than left to it, because
     /// `rename(2)` replaces an existing file without a word.
-    fn rename_path(&self, from: &Path, to: &Path) -> Result<(), String> {
+    fn rename_path(&self, root: &Path, from: &Path, to: &Path) -> Result<(), String> {
         if from.parent() != to.parent() {
             return Err(format!(
                 "{} would move out of its directory",
                 from.display()
             ));
         }
-        if std::fs::symlink_metadata(to).is_ok() {
+        let (_, from_resolved) = entry_within(root, from)?;
+        let (_, to_resolved) = entry_within(root, to)?;
+        if std::fs::symlink_metadata(&to_resolved).is_ok() {
             return Err(format!("{} already exists", to.display()));
         }
         forget_statuses_around(from);
-        std::fs::rename(from, to).map_err(|error| error.to_string())
+        std::fs::rename(from_resolved, to_resolved).map_err(|error| error.to_string())
     }
 
     /// Through `uze-git`'s write path, under the repository lock, one path
@@ -213,6 +220,9 @@ impl uze_extensions::Host for WorkspaceHost {
     /// new name — leaves the index and then the disk. Asked of the commit
     /// rather than of the status, because the status is what just changed.
     fn restore_to_head(&self, root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        if let Some(reason) = uze_application::unanchored_checkout(root) {
+            return Err(reason);
+        }
         let write = |args: &[&str]| {
             uze_git::write(root, args)
                 .map_err(|error| error.to_string())?
@@ -220,7 +230,7 @@ impl uze_extensions::Host for WorkspaceHost {
         };
         // Refused before anything runs, so a list with one stray path in
         // it restores none rather than some.
-        if let Some(outside) = paths.iter().find(|path| !path.starts_with(root)) {
+        if let Some(outside) = paths.iter().find(|path| entry_within(root, path).is_err()) {
             return Err(format!(
                 "{} is outside {}",
                 outside.display(),
@@ -292,32 +302,53 @@ impl uze_extensions::Host for WorkspaceHost {
 
 impl WorkspaceHost {
     /// The file a save of `path` lands in. A symbolic link is followed
-    /// only to a file inside the repository the link sits in: the link is
-    /// something a checkout can carry, and following one anywhere would
-    /// let a cloned project point a save at any file its reader can write.
-    fn save_target(&self, path: &Path) -> Result<PathBuf, String> {
-        use uze_extensions::Host;
-
+    /// only to a file inside `root`: the link is something a checkout can
+    /// carry, and following one anywhere would let a cloned project point
+    /// a save at any file its reader can write.
+    fn save_target(&self, root: &Path, path: &Path) -> Result<PathBuf, String> {
         let not_a_file = || format!("{} is not a file", path.display());
-        let entry = std::fs::symlink_metadata(path).map_err(|_| not_a_file())?;
-        if entry.is_file() {
-            return Ok(path.to_path_buf());
+        let (root, entry) = entry_within(root, path)?;
+        let metadata = std::fs::symlink_metadata(&entry).map_err(|_| not_a_file())?;
+        if metadata.is_file() {
+            return Ok(entry);
         }
-        if !entry.file_type().is_symlink() {
+        if !metadata.file_type().is_symlink() {
             return Err(not_a_file());
         }
-        let target = std::fs::canonicalize(path).map_err(|_| not_a_file())?;
+        let target = uze_platform::path::canonical(&entry).map_err(|_| not_a_file())?;
         if !target.is_file() {
             return Err(not_a_file());
         }
-        let root = path
-            .parent()
-            .and_then(|directory| self.repository_root(directory).ok())
-            .and_then(|root| std::fs::canonicalize(root).ok());
-        match root {
-            Some(root) if target.starts_with(&root) => Ok(target),
-            _ => Err(format!("{} links outside its repository", path.display())),
+        if uze_platform::path::is_within(&target, &root) {
+            Ok(target)
+        } else {
+            Err(format!("{} links outside its repository", path.display()))
         }
+    }
+}
+
+/// `path` as the filesystem reaches it, with `root` resolved: its last name
+/// kept unfollowed so a link is acted on as the link, and refused unless
+/// both the path as spelled and the directory holding it, once every link
+/// is followed, lie in `root`.
+///
+/// The directory is what a checkout steers with: `docs` committed as a
+/// link to `$HOME` makes `docs/.bashrc` a regular file to anything that
+/// looks only at the last name.
+fn entry_within(root: &Path, path: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let outside = || format!("{} is outside {}", path.display(), root.display());
+    let resolved_root = uze_platform::path::canonical(root).map_err(|_| outside())?;
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(outside());
+    };
+    if !uze_platform::path::is_within(path, root) {
+        return Err(outside());
+    }
+    let parent = uze_platform::path::resolved(parent).map_err(|_| outside())?;
+    if uze_platform::path::is_within(&parent, &resolved_root) {
+        Ok((resolved_root, parent.join(name)))
+    } else {
+        Err(outside())
     }
 }
 
@@ -583,6 +614,51 @@ mod tests {
         );
     }
 
+    /// A slot whose `.git` was pointed at a repository of its occupant's
+    /// making is never read: Git would run what that repository
+    /// configures, in the workspace's process. A slot that still names the
+    /// project's repository is read as any checkout.
+    #[test]
+    fn a_slot_that_no_longer_names_the_project_s_repository_is_not_read() {
+        let repository = uze_testkit::git::Repository::new("host-unanchored");
+        repository.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "slot",
+            ".worktrees/slot",
+            "HEAD",
+        ]);
+        let slot = repository.root().join(".worktrees/slot");
+        assert!(
+            WorkspaceHost
+                .git(&slot, &["status", "--porcelain"], &[])
+                .is_ok()
+        );
+
+        let forged = uze_testkit::temp::scratch("host-unanchored-forged");
+        repository.git_in(&forged, &["init", "-q"]);
+        std::fs::write(
+            slot.join(".git"),
+            format!("gitdir: {}\n", forged.join(".git").display()),
+        )
+        .unwrap();
+
+        let refused = WorkspaceHost.git(&slot, &["status", "--porcelain"], &[]);
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|reason| reason.contains("names another repository")),
+            "{refused:?}"
+        );
+        assert!(
+            WorkspaceHost
+                .restore_to_head(&slot, &[slot.join("anything")])
+                .is_err()
+        );
+    }
+
     /// Every kind of change a reviewer throws away comes back as the last
     /// commit has it: an edit undone in the tree and the index, a deleted
     /// file back, and a staged or untracked new one gone from both.
@@ -655,26 +731,30 @@ mod tests {
         let nested = directory.join("nested");
         std::fs::create_dir_all(&nested).unwrap();
 
-        assert!(WorkspaceHost.write_file(&file, "after\n").is_ok());
+        assert!(
+            WorkspaceHost
+                .write_file(&directory, &file, "after\n")
+                .is_ok()
+        );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "after\n");
 
         assert!(
             WorkspaceHost
-                .write_file(&directory.join("invented.txt"), "x")
+                .write_file(&directory, &directory.join("invented.txt"), "x")
                 .is_err(),
             "saving never creates a file that was not there"
         );
         assert!(
-            WorkspaceHost.write_file(&nested, "x").is_err(),
+            WorkspaceHost.write_file(&directory, &nested, "x").is_err(),
             "a directory is not a file to be overwritten"
         );
         assert!(
-            WorkspaceHost.delete_file(&nested).is_err(),
+            WorkspaceHost.delete_file(&directory, &nested).is_err(),
             "a directory is never removed by the gesture that removes a file"
         );
         assert!(nested.is_dir(), "and it is still there afterwards");
 
-        assert!(WorkspaceHost.delete_file(&file).is_ok());
+        assert!(WorkspaceHost.delete_file(&directory, &file).is_ok());
         assert!(!file.exists());
         std::fs::remove_dir_all(&directory).ok();
     }
@@ -691,21 +771,29 @@ mod tests {
         let taken = directory.join("b.txt");
         std::fs::write(&taken, "b\n").unwrap();
 
-        assert!(WorkspaceHost.rename_path(&file, &taken).is_err());
+        assert!(
+            WorkspaceHost
+                .rename_path(&directory, &file, &taken)
+                .is_err()
+        );
         assert_eq!(std::fs::read_to_string(&taken).unwrap(), "b\n");
         assert!(
             WorkspaceHost
-                .rename_path(&file, &nested.join("a.txt"))
+                .rename_path(&directory, &file, &nested.join("a.txt"))
                 .is_err(),
             "a rename is not a move"
         );
 
         let renamed = directory.join("c.txt");
-        assert!(WorkspaceHost.rename_path(&file, &renamed).is_ok());
+        assert!(
+            WorkspaceHost
+                .rename_path(&directory, &file, &renamed)
+                .is_ok()
+        );
         assert!(!file.exists() && renamed.is_file());
         assert!(
             WorkspaceHost
-                .rename_path(&nested, &directory.join("moved"))
+                .rename_path(&directory, &nested, &directory.join("moved"))
                 .is_ok()
         );
         assert!(directory.join("moved").is_dir());
@@ -722,10 +810,10 @@ mod tests {
         std::fs::write(&file, "a\n").unwrap();
 
         assert!(
-            WorkspaceHost.delete_dir(&file).is_err(),
+            WorkspaceHost.delete_dir(&directory, &file).is_err(),
             "a file is not a directory"
         );
-        assert!(WorkspaceHost.delete_dir(&nested).is_ok());
+        assert!(WorkspaceHost.delete_dir(&directory, &nested).is_ok());
         assert!(!nested.exists() && file.is_file());
         std::fs::remove_dir_all(&directory).ok();
     }
@@ -740,7 +828,7 @@ mod tests {
         let link = directory.join("innocent");
         std::os::unix::fs::symlink(&outside, &link).unwrap();
 
-        assert!(WorkspaceHost.delete_dir(&link).is_err());
+        assert!(WorkspaceHost.delete_dir(&directory, &link).is_err());
         assert!(outside.join("kept").is_file());
         std::fs::remove_dir_all(&directory).ok();
         std::fs::remove_dir_all(&outside).ok();
@@ -757,11 +845,59 @@ mod tests {
         let link = directory.join("innocent.txt");
         std::os::unix::fs::symlink(&secret, &link).unwrap();
 
-        assert!(WorkspaceHost.write_file(&link, "overwritten\n").is_err());
+        assert!(
+            WorkspaceHost
+                .write_file(&directory, &link, "overwritten\n")
+                .is_err()
+        );
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched\n");
 
-        assert!(WorkspaceHost.delete_file(&link).is_ok());
+        assert!(WorkspaceHost.delete_file(&directory, &link).is_ok());
         assert!(secret.is_file(), "deleting a link leaves its target");
+        std::fs::remove_dir_all(&directory).ok();
+        std::fs::remove_dir_all(&outside).ok();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn no_write_reaches_through_a_directory_linked_out_of_the_root() {
+        let directory = scratch("uze-write-linked-dir");
+        let outside = scratch("uze-write-linked-dir-outside");
+        std::fs::create_dir_all(outside.join("sub")).unwrap();
+        let secret = outside.join(".bashrc");
+        std::fs::write(&secret, "untouched\n").unwrap();
+        std::os::unix::fs::symlink(&outside, directory.join("docs")).unwrap();
+        let through = directory.join("docs");
+
+        assert!(
+            WorkspaceHost
+                .write_file(&directory, &through.join(".bashrc"), "overwritten\n")
+                .is_err()
+        );
+        assert!(
+            WorkspaceHost
+                .rename_path(&directory, &through.join(".bashrc"), &through.join("moved"))
+                .is_err()
+        );
+        assert!(
+            WorkspaceHost
+                .delete_file(&directory, &through.join(".bashrc"))
+                .is_err()
+        );
+        assert!(
+            WorkspaceHost
+                .delete_dir(&directory, &through.join("sub"))
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched\n");
+        assert!(outside.join("sub").is_dir());
+        let inside = directory.join("kept.txt");
+        std::fs::write(&inside, "kept\n").unwrap();
+        assert!(
+            WorkspaceHost.write_file(&outside, &inside, "x").is_err(),
+            "a path is only ever written inside the root it is asked under"
+        );
         std::fs::remove_dir_all(&directory).ok();
         std::fs::remove_dir_all(&outside).ok();
     }
@@ -778,7 +914,7 @@ mod tests {
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o750)).unwrap();
 
         WorkspaceHost
-            .write_file(&script, "#!/bin/sh\necho saved\n")
+            .write_file(&directory, &script, "#!/bin/sh\necho saved\n")
             .unwrap();
 
         assert_eq!(

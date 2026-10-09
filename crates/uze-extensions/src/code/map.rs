@@ -1249,10 +1249,10 @@ mod tests {
         fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
             Err("not asked".to_owned())
         }
-        fn write_file(&self, _: &Path, _: &str) -> Result<(), String> {
+        fn write_file(&self, _root: &Path, _: &Path, _: &str) -> Result<(), String> {
             Err("not asked".to_owned())
         }
-        fn delete_file(&self, _: &Path) -> Result<(), String> {
+        fn delete_file(&self, _root: &Path, _: &Path) -> Result<(), String> {
             Err("not asked".to_owned())
         }
         fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {

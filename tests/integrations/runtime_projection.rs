@@ -168,6 +168,18 @@ fn a_project_agents_directory_reaches_every_harness_without_a_write_into_the_che
     let reviewer = "---\nname: house-reviewer\ndescription: Reviews the house\n---\nReview it.\n";
     fs::write(project.join(".agents/agents/reviewer.md"), reviewer).unwrap();
     let before = tree(&project);
+    // Codex is handed a project's roles only once the person trusted the
+    // folder in Codex, as it asks before reading a project's agents itself.
+    let codex_config = env.root().join("harnesses/.codex/config.toml");
+    fs::create_dir_all(codex_config.parent().unwrap()).unwrap();
+    fs::write(
+        &codex_config,
+        format!(
+            "[projects.{:?}]\ntrust_level = \"trusted\"\n",
+            project.display().to_string()
+        ),
+    )
+    .unwrap();
 
     let registry = IntegrationRegistry::isolated(&env.root().join("harnesses"), &home);
     for integration in registry.iter() {

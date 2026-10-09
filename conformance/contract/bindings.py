@@ -14,6 +14,7 @@ invisible, and a declaration that was never measured is a constant — the
 two ways a suite starts lying.
 """
 
+import subprocess
 import time
 from dataclasses import dataclass, field
 
@@ -204,6 +205,23 @@ class Bindings:
         agent here — how, is this harness's business.
         """
         raise NotImplementedError
+
+    def project_turn(self, cfg, prov_ip, prelude, prompt, cwd, delegating=False):
+        """One headless turn of `prompt` in a project of the person's at
+        `cwd`, after `prelude` ran, returning everything the container
+        printed.
+
+        A harness that asks before it reads a project (a folder trust) is
+        answered first, on screen, the way a person who opened that project
+        once answered it; how, is this harness's business. Default: the
+        harness asks nothing a headless turn would meet, so the turn runs
+        as `headless` does.
+        """
+        cmd = self.headless(cfg, prov_ip, prelude, prompt, cwd, delegating=delegating)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, errors="replace", timeout=480
+        )
+        return proc.stdout + proc.stderr
 
     def dispatch(self, label, prompt):
         """The provider mode and environment that make the next headless

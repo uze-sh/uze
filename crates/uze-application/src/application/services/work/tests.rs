@@ -33,7 +33,7 @@ impl World {
 
     /// An isolated agent, as a launch places one: its identity and its
     /// checkout.
-    fn agent(&self) -> (String, PathBuf) {
+    fn agent(&self) -> (String, PathBuf, String) {
         let placement = self
             .app
             .workspace()
@@ -47,14 +47,15 @@ impl World {
         (
             placement.placement.agent().as_str().to_owned(),
             placement.cwd,
+            placement.launch_key,
         )
     }
 
-    fn split(&self, agent: &(String, PathBuf), topic: &str) -> Result<SplitWork> {
+    fn split(&self, agent: &(String, PathBuf, String), topic: &str) -> Result<SplitWork> {
         self.app.workspace().split_work(claim(agent), topic, &[])
     }
 
-    fn join(&self, agent: &(String, PathBuf), topic: &str) -> Result<JoinedWork> {
+    fn join(&self, agent: &(String, PathBuf, String), topic: &str) -> Result<JoinedWork> {
         self.app.workspace().join_work(claim(agent), topic)
     }
 
@@ -74,9 +75,10 @@ impl World {
     }
 }
 
-fn claim(agent: &(String, PathBuf)) -> Claim<'_> {
+fn claim(agent: &(String, PathBuf, String)) -> Claim<'_> {
     Claim {
         id: &agent.0,
+        key: &agent.2,
         cwd: &agent.1,
     }
 }
@@ -112,10 +114,10 @@ fn only_an_isolated_agent_splits_and_only_from_its_own_checkout() {
     let agent = world.agent();
     let split = world.split(&agent, "parser").unwrap();
 
-    let stranger = ("nobody".to_owned(), agent.1.clone());
+    let stranger = ("nobody".to_owned(), agent.1.clone(), agent.2.clone());
     assert!(refusal(world.split(&stranger, "x")).contains("not an agent UZE launched"));
 
-    let from_the_child = (agent.0.clone(), split.path.clone());
+    let from_the_child = (agent.0.clone(), split.path.clone(), agent.2.clone());
     assert!(refusal(world.split(&from_the_child, "x")).contains("subagent's checkout"));
 
     let placement = world
@@ -131,6 +133,7 @@ fn only_an_isolated_agent_splits_and_only_from_its_own_checkout() {
     let in_the_root = (
         placement.placement.agent().as_str().to_owned(),
         world.root().to_path_buf(),
+        placement.launch_key.clone(),
     );
     assert!(refusal(world.split(&in_the_root, "x")).contains("operator's branch"));
 
@@ -165,7 +168,7 @@ fn a_joined_child_leaves_its_commits_and_no_merge_commit_and_frees_its_checkout(
             .unwrap()
             .is_empty()
     );
-    let (_, next) = world.agent();
+    let (_, next, _) = world.agent();
     assert_eq!(
         next, child.path,
         "the child's checkout went back to the pool"
@@ -228,6 +231,34 @@ fn a_conflicting_join_pauses_in_the_child_and_completes_once_resolved() {
     );
 }
 
+/// The split point is read back from the child's checkout record, which
+/// sits where the subagent can reach it: one rewritten into a Git option
+/// is refused, never handed to the rebase as one.
+#[test]
+fn a_split_point_that_is_not_a_commit_id_is_refused_before_git_sees_it() {
+    let world = World::new("work-join-forged-split");
+    let agent = world.agent();
+    let child = world.split(&agent, "parser").unwrap();
+    world.commit(&child.path, "parser.rs", "fn parse() {}\n");
+    world.commit(&agent.1, "notes.md", "meanwhile\n");
+    let marker = world.root().join("exec-ran");
+    let forged = format!("--exec=touch {}", marker.display());
+    record::write(
+        world.root(),
+        &child.path,
+        &CheckoutRecord {
+            path: child.path.clone(),
+            parent: None,
+            split_at: Some(forged),
+        },
+    )
+    .unwrap();
+
+    assert!(refusal(world.join(&agent, "parser")).contains("not a commit id"));
+    assert!(!marker.exists(), "the forged option ran");
+    assert!(!agent.1.join("parser.rs").exists());
+}
+
 #[test]
 fn a_join_refuses_what_it_cannot_do_cleanly() {
     let world = World::new("work-join-refused");
@@ -287,13 +318,13 @@ fn a_child_lives_as_long_as_its_agent() {
         "the agent is kept with the child holding work"
     );
 
-    let (_, next) = world.agent();
+    let (_, next, _) = world.agent();
     assert_eq!(next, clean.path, "the clean child went back to the pool");
     assert!(
         holding.path.join("work.rs").is_file(),
         "the child holding work is kept"
     );
-    let (_, after) = world.agent();
+    let (_, after, _) = world.agent();
     assert_ne!(after, holding.path);
     assert_ne!(
         after, agent.1,

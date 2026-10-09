@@ -3,15 +3,15 @@
     {
       "source": "/i",
       "has": [{ "type": "header", "key": "user-agent", "value": ".*PowerShell.*" }],
-      "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.ps1"
+      "destination": "https://github.com/uze-sh/uze/releases/latest/download/install.ps1"
     },
     {
       "source": "/i",
-      "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.sh"
+      "destination": "https://github.com/uze-sh/uze/releases/latest/download/install.sh"
     },
     {
       "source": "/i.ps1",
-      "destination": "https://raw.githubusercontent.com/uze-sh/uze/main/install.ps1"
+      "destination": "https://github.com/uze-sh/uze/releases/latest/download/install.ps1"
     }
   ],
   "headers": [

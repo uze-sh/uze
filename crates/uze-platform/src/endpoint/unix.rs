@@ -23,13 +23,50 @@ pub const MAX_SOCKET_PATH: usize = 100;
 /// dir and `/tmp` in turn. Falling back does not weaken isolation: the
 /// socket is named after `address.name`, so two endpoints stay two
 /// wherever they land.
+///
+/// The shared temp directories are a name any local user can take first,
+/// and one who does would otherwise shut this user out of their own
+/// workspace for as long as it stood. Past them is a directory of a name
+/// nobody can predict, made by this call alone, and remembered in
+/// `address.directory` so that every later caller for the same address
+/// finds the same one — asked before the shared names, so a name that is
+/// later freed does not split one workspace across two endpoints.
 pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
     let named = |root: &Path| root.join(format!("{}.sock", address.name));
+    let fits = |root: &Path| named(root).as_os_str().len() <= MAX_SOCKET_PATH;
     // SAFETY: `getuid` takes no arguments and cannot fail.
     let owner = unsafe { libc::getuid() };
     let private = format!("{}-runtime-{owner}", address.namespace);
-    let candidates = [
-        address.directory.to_path_buf(),
+    let remembered = address.directory.join(format!("{}.endpoint", address.name));
+    let mut refused = None;
+    let mut usable = |candidate: &Path| {
+        if !fits(candidate) {
+            return false;
+        }
+        // A sandboxed terminal can expose a runtime directory while
+        // denying writes below it, and a directory that already exists
+        // may be somebody else's — either way the next candidate is
+        // tried rather than the whole attach failing.
+        match fs::create_dir_all(candidate).and_then(|()| private_directory(candidate, owner)) {
+            Ok(()) => true,
+            Err(error) => {
+                refused = Some(error);
+                false
+            }
+        }
+    };
+    if usable(address.directory) {
+        return Ok(named(address.directory));
+    }
+    if let Some(chosen) = fs::read_to_string(&remembered)
+        .ok()
+        .map(|text| PathBuf::from(text.trim_end()))
+        .filter(|chosen| chosen.is_absolute() && fits(chosen))
+        .filter(|chosen| private_directory(chosen, owner).is_ok())
+    {
+        return Ok(named(&chosen));
+    }
+    let shared = [
         env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(env::temp_dir)
@@ -37,34 +74,40 @@ pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
         env::temp_dir().join(&private),
         PathBuf::from("/tmp").join(&private),
     ];
-    let mut refused = None;
-    candidates
+    if let Some(candidate) = shared.iter().find(|candidate| usable(candidate)) {
+        return Ok(named(candidate));
+    }
+    let fresh =
+        unpredictable_directory(&private, &fits).map_err(|error| refused.unwrap_or(error))?;
+    crate::fs::create_private_dir_all(address.directory)?;
+    let mut record = crate::fs::private_file(
+        fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(&remembered)?;
+    io::Write::write_all(&mut record, fresh.as_os_str().as_encoded_bytes())?;
+    Ok(named(&fresh))
+}
+
+/// A directory only this call created, under a name nobody can predict: in
+/// the system temp dir, or `/tmp` where that one's name is too long.
+fn unpredictable_directory(prefix: &str, fits: &dyn Fn(&Path) -> bool) -> io::Result<PathBuf> {
+    let token = crate::secret::token()?;
+    let name = format!("{prefix}-{}", &token[..16]);
+    let parent = [env::temp_dir(), PathBuf::from("/tmp")]
         .into_iter()
-        .find(|candidate| {
-            if named(candidate).as_os_str().len() > MAX_SOCKET_PATH {
-                return false;
-            }
-            // A sandboxed terminal can expose a runtime directory while
-            // denying writes below it, and a directory that already exists
-            // may be somebody else's — either way the next candidate is
-            // tried rather than the whole attach failing.
-            match fs::create_dir_all(candidate).and_then(|()| private_directory(candidate, owner)) {
-                Ok(()) => true,
-                Err(error) => {
-                    refused = Some(error);
-                    false
-                }
-            }
-        })
-        .map(|runtime| named(&runtime))
+        .find(|parent| fits(&parent.join(&name)))
         .ok_or_else(|| {
-            refused.unwrap_or_else(|| {
-                io::Error::other(
-                    "no runtime directory short enough for a socket path; \
-                     set XDG_RUNTIME_DIR to a shorter one",
-                )
-            })
-        })
+            io::Error::other(
+                "no runtime directory short enough for a socket path; \
+                 set XDG_RUNTIME_DIR to a shorter one",
+            )
+        })?;
+    let directory = parent.join(name);
+    crate::fs::create_private_dir(&directory)?;
+    Ok(directory)
 }
 
 /// Binds over whatever sits at the path — only ever called by the server
@@ -103,6 +146,12 @@ pub fn connect(endpoint: &Path) -> io::Result<Stream> {
 
 pub fn accept(listener: &Listener) -> io::Result<Stream> {
     listener.accept().map(|(stream, _)| stream)
+}
+
+pub fn peer_is_another_user(stream: &Stream) -> bool {
+    // SAFETY: no arguments, and it cannot fail.
+    let me = unsafe { libc::geteuid() };
+    crate::probe::socket_peer_uid(stream).is_some_and(|uid| uid != me)
 }
 
 pub fn peer_pid(stream: &Stream) -> Option<u32> {

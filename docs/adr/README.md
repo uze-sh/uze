@@ -123,6 +123,8 @@ naming them, and the absorbed records are listed under
 - [052 — What UZE persists is tiered by what deleting it costs, and only records climb](052-what-uze-persists-is-tiered-by-what-deleting-it-costs.md)
 - [053 — Isolation belongs to the agent, not to the space](053-isolation-belongs-to-the-agent-not-to-the-space.md)
 - [054 — Scope is reported, not positional](054-scope-is-reported-not-positional.md)
+- [055 — A project's commands run only once the operator approved them](055-a-projects-commands-run-only-once-the-operator-approved-them.md)
+- [056 — The terminal runtime serves the person, not the panes](056-the-terminal-runtime-serves-the-person-not-the-panes.md)
 
 ## Consolidated records
 

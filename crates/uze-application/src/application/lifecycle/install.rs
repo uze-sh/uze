@@ -11,7 +11,7 @@ use uze_core::{
         NoNameCollisionAuthority,
     },
     state,
-    trust::TrustAuthority,
+    trust::{SourceOrigin, TrustAuthority},
 };
 
 use crate::bootstrap;
@@ -47,6 +47,7 @@ impl Plugins<'_> {
             None,
             authority,
             &NoNameCollisionAuthority,
+            SourceOrigin::Operator,
         )
     }
 
@@ -59,6 +60,10 @@ impl Plugins<'_> {
     /// `active_name` requests a local name other than the package's own bare
     /// plugin name (ADR-036); an update uses it to keep an alias a past
     /// collision resolution gave the package.
+    ///
+    /// `origin` is who chose the source the bytes came from: every caller
+    /// says so, because the trust question follows the declaration and not
+    /// where the bytes sit.
     pub(crate) fn install_materialized(
         &self,
         materialized: uze_core::MaterializedPackage,
@@ -66,12 +71,15 @@ impl Plugins<'_> {
         active_name: Option<&str>,
         authority: &dyn TrustAuthority,
         name_authority: &dyn NameCollisionAuthority,
+        origin: SourceOrigin,
     ) -> Result<AddPluginReport> {
         // Trust is decided here — after the package is materialized and can
         // be inspected honestly, and strictly before anything is written to
-        // the Store or shown to a harness. Neither the Store nor any
+        // the Store or shown to a harness, or any executable it requires is
+        // started to read its version. Neither the Store nor any
         // integration knows this question exists.
-        self.0.authorize(&materialized, authority, &[], false)?;
+        self.0
+            .authorize(&materialized, authority, &[], false, origin)?;
         self.install_authorized(materialized, marketplace, active_name, name_authority)
     }
 
@@ -515,14 +523,15 @@ impl UzeApplication {
         authority: &dyn TrustAuthority,
         already_trusted: &[trust::ExecutableCapability],
         replacing_installed: bool,
+        origin: SourceOrigin,
     ) -> Result<()> {
         let provenance = materialized.provenance();
-        if !provenance.requested.crosses_trust_boundary() {
+        if !provenance.requested.crosses_trust_boundary(origin) {
             return Ok(());
         }
         let inspected = uze_core::acquisition::inspect_capabilities(materialized)?;
         let resources: Vec<&uze_core::Resource> = inspected.resources.iter().collect();
-        let executable = trust::executable_capabilities(&resources);
+        let executable = trust::package_executions(&resources, &inspected.requirements);
         if executable.is_empty() || !trust::introduces_new_execution(already_trusted, &executable) {
             return Ok(());
         }
@@ -530,6 +539,7 @@ impl UzeApplication {
             package_id: inspected.package_id.clone(),
             requested_source: provenance.requested.display(),
             resolved_source: provenance.resolved.display(),
+            origin,
             executable,
             // The operator is being asked about a *change* to something they
             // already have, not about a first install. Derived from the fact
@@ -548,12 +558,25 @@ impl UzeApplication {
                     .executable
                     .iter()
                     .map(|capability| {
-                        format!(
-                            "{} -> {} {}",
-                            capability.name,
-                            capability.command,
-                            capability.arguments.join(" ")
-                        )
+                        // Inert where it is composed, so every surface that
+                        // shows the detail — the CLI's error line, the TUI's
+                        // dialog — shows what the package wrote rather than
+                        // letting it act on the terminal.
+                        let inert = uze_core::authored::inert_line;
+                        let mut line = format!(
+                            "{} {} -> {}",
+                            capability.kind.label(),
+                            inert(&capability.name),
+                            inert(&capability.command)
+                        );
+                        for argument in &capability.arguments {
+                            line.push(' ');
+                            line.push_str(&inert(argument));
+                        }
+                        if let Some(code) = &capability.code {
+                            line.push_str(&format!(" [code {}]", inert(&code.entries.join(", "))));
+                        }
+                        line
                     })
                     .collect::<Vec<_>>()
                     .join("; "),

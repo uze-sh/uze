@@ -13,6 +13,13 @@
 //! contract `context-project-agent-reaches-model`). `CODEX_HOME` would
 //! reach the same roots by replacing the user's whole configuration, which
 //! is why it is not the mechanism.
+//!
+//! A `-c` layer is the operator's own configuration as far as Codex can
+//! tell, so it would hand a cloned repository's roles over without the
+//! folder trust Codex asks before it reads `.codex/agents` itself. They are
+//! handed over only once the person trusted the project in Codex, and a
+//! role never leaves the sandbox the operator runs Codex in
+//! (`sandbox_mode` is lowered to `workspace-write`, the dialect's ceiling).
 
 use std::{
     collections::HashSet,
@@ -36,8 +43,9 @@ use crate::shared::agent::project_agents;
 pub(super) fn runtime_contribution(
     ctx: &RuntimeContext,
     keys: &[&str],
+    config_toml: &Path,
 ) -> HarnessRuntimeContribution {
-    match project_agents_override(ctx, keys) {
+    match project_agents_override(ctx, keys, config_toml) {
         Ok(Some(value)) => HarnessRuntimeContribution {
             extra_args: vec![OsString::from("-c"), OsString::from(value)],
             ..HarnessRuntimeContribution::default()
@@ -49,15 +57,28 @@ pub(super) fn runtime_contribution(
 
 /// Whether a launch from `ctx.cwd` is handed project agents, answered
 /// without writing the role files the launch itself would refresh.
-pub(super) fn projection_would_activate(ctx: &RuntimeContext) -> bool {
+pub(super) fn projection_would_activate(ctx: &RuntimeContext, config_toml: &Path) -> bool {
     project_context::resolve(ctx.cwd)
         .resource_directory(AgentsDirectoryResource::Agents)
         .is_some()
+        && trusted(ctx.cwd, config_toml)
+}
+
+fn trusted(cwd: &Path, config_toml: &Path) -> bool {
+    super::trust::project_trusted(config_toml, cwd, || primary_checkout(cwd))
+}
+
+/// The primary checkout of the repository `cwd` is in: the parent of its
+/// common directory, which is `<primary>/.git` for a linked worktree too.
+fn primary_checkout(cwd: &Path) -> Option<PathBuf> {
+    let common = uze_git::repository::common_dir(cwd).ok()?;
+    (common.file_name()? == ".git").then(|| common.parent().map(Path::to_path_buf))?
 }
 
 fn project_agents_override(
     ctx: &RuntimeContext,
     keys: &[&str],
+    config_toml: &Path,
 ) -> std::result::Result<Option<String>, String> {
     let context = project_context::resolve(ctx.cwd);
     let Some(directory) = context.resource_directory(AgentsDirectoryResource::Agents) else {
@@ -66,6 +87,12 @@ fn project_agents_override(
     let agents = project_agents(&directory);
     if agents.is_empty() {
         return Ok(None);
+    }
+    if !trusted(ctx.cwd, config_toml) {
+        return Err(format!(
+            "the project's {} are not handed to Codex until you trust this folder in Codex",
+            directory.display()
+        ));
     }
     let roles = harness_runtime::prepare_projection(ctx.home, "codex", &context.root)
         .map_err(|error| error.to_string())?
@@ -148,7 +175,26 @@ mod tests {
     use uze_core::harness_runtime::RuntimeContext;
     use uze_core::home::UzeHome;
 
-    use super::{role_file_name, runtime_contribution};
+    use super::{projection_would_activate, role_file_name, runtime_contribution};
+
+    /// A Codex `config.toml` holding `level` for `project`.
+    fn codex_config(
+        root: &std::path::Path,
+        project: &std::path::Path,
+        level: &str,
+    ) -> std::path::PathBuf {
+        let config = root.join("codex/config.toml");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(
+            &config,
+            format!(
+                "[projects.{:?}]\ntrust_level = \"{level}\"\n",
+                project.display().to_string()
+            ),
+        )
+        .unwrap();
+        config
+    }
 
     fn project_with_agents(root: &std::path::Path) -> std::path::PathBuf {
         let project = root.join("project");
@@ -177,7 +223,9 @@ mod tests {
             home: &home,
         };
 
-        let contribution = runtime_contribution(&ctx, &["codex"]);
+        let config = codex_config(&root, &project, "trusted");
+
+        let contribution = runtime_contribution(&ctx, &["codex"], &config);
         assert!(contribution.note.is_none(), "{:?}", contribution.note);
         assert_eq!(contribution.extra_args[0], "-c");
         let value = contribution.extra_args[1].to_string_lossy().into_owned();
@@ -199,7 +247,7 @@ mod tests {
         );
 
         fs::remove_file(project.join(".agents/agents/reviewer.md")).unwrap();
-        let _ = runtime_contribution(&ctx, &["codex"]);
+        let _ = runtime_contribution(&ctx, &["codex"], &config);
         assert!(!role.exists(), "a role the project dropped is swept");
         let _ = fs::remove_dir_all(&root);
     }
@@ -217,9 +265,87 @@ mod tests {
                 home: &home,
             },
             &["codex"],
+            &codex_config(&root, &project, "trusted"),
         );
         assert!(contribution.is_passthrough());
         assert!(!home.runtime_dir().exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A `-c` layer reads to Codex as the operator's own configuration, so a
+    /// cloned repository's roles wait for the folder trust Codex itself
+    /// asks before reading a project's agents: unset is not trusted.
+    #[test]
+    fn project_agents_wait_for_the_person_to_trust_the_project_in_codex() {
+        let root = uze_testkit::temp::scratch("codex-project-agents-trust");
+        let project = project_with_agents(&root);
+        let home = UzeHome::at(root.join("uze-home"));
+        let ctx = RuntimeContext {
+            cwd: &project,
+            home: &home,
+        };
+        for config in [
+            root.join("codex/absent.toml"),
+            codex_config(&root, &root.join("elsewhere"), "trusted"),
+            codex_config(&root, &project, "untrusted"),
+        ] {
+            let contribution = runtime_contribution(&ctx, &["codex"], &config);
+            assert!(
+                contribution.extra_args.is_empty(),
+                "{:?}",
+                contribution.extra_args
+            );
+            assert!(
+                contribution
+                    .note
+                    .as_deref()
+                    .is_some_and(|note| note.contains("trust")),
+                "{:?}",
+                contribution.note
+            );
+            assert!(!projection_would_activate(&ctx, &config));
+            assert!(!home.runtime_dir().exists(), "no role file is written");
+        }
+        assert!(projection_would_activate(
+            &ctx,
+            &codex_config(&root, &project, "trusted")
+        ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Trusting a project hands its roles over, never a sandbox wider than
+    /// the one the operator runs Codex in.
+    #[test]
+    fn a_project_role_never_leaves_the_workspace_sandbox() {
+        let root = uze_testkit::temp::scratch("codex-project-agents-sandbox");
+        let project = project_with_agents(&root);
+        fs::write(
+            project.join(".agents/agents/reviewer.md"),
+            "---\nname: wide\ndescription: d\nharness:\n  codex:\n    sandbox_mode: danger-full-access\n    approval_policy: never\n---\nGo.\n",
+        )
+        .unwrap();
+        let home = UzeHome::at(root.join("uze-home"));
+        let contribution = runtime_contribution(
+            &RuntimeContext {
+                cwd: &project,
+                home: &home,
+            },
+            &["codex"],
+            &codex_config(&root, &project, "trusted"),
+        );
+        let value = contribution.extra_args[1].to_string_lossy().into_owned();
+        let parsed: toml_edit::DocumentMut = value.parse().unwrap();
+        let role = parsed["agents"]["wide"]["config_file"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let role = fs::read_to_string(role).unwrap();
+        assert!(
+            role.contains("sandbox_mode = \"workspace-write\""),
+            "{role}"
+        );
+        assert!(!role.contains("danger-full-access"), "{role}");
+        assert!(!role.contains("approval_policy"), "{role}");
         let _ = fs::remove_dir_all(&root);
     }
 

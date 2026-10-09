@@ -291,3 +291,197 @@ fn exec_form_handlers_run_from_their_words_and_javascript_in_the_harnesss_runtim
     }
     let _ = fs::remove_dir_all(root.parent().unwrap());
 }
+
+fn deciding(effect: HookEffect, command: &str) -> PortableHook {
+    PortableHook {
+        effect,
+        ..observing(command, 10)
+    }
+}
+
+/// `read` asks OpenCode for no permission, so a denial kept for the
+/// permission check never met it: the call is refused where its input is
+/// seen, by the name OpenCode looks the tool up by.
+#[test]
+fn a_denial_refuses_a_tool_that_never_asks_for_permission() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-refuse");
+    fs::create_dir_all(&root).unwrap();
+    let guard = deciding(
+        HookEffect::Deny,
+        "case \"$HOOK_PATH\" in *.env*) echo \"blocked: $HOOK_PATH\" >&2; exit 3 ;; esac",
+    );
+    let reported = drive(
+        &root,
+        &guard,
+        r#"const denied = { id: "call-1", tool: "read", input: { path: "/repo/.env" } };
+await hooks["execute.before"](denied);
+console.error(`denied ${denied.tool} ${JSON.stringify(denied.input ?? null)}`);
+const allowed = { id: "call-2", tool: "read", input: { path: "/repo/README.md" } };
+await hooks["execute.before"](allowed);
+console.error(`allowed ${allowed.tool} ${JSON.stringify(allowed.input)}`);"#,
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line == "denied read (refused by a hook: blocked: /repo/.env) null"),
+        "{reported:?}"
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line == r#"allowed read {"path":"/repo/README.md"}"#),
+        "{reported:?}"
+    );
+
+    let refused = drive(
+        &root,
+        &deciding(HookEffect::Transform, "echo not-an-input"),
+        r#"const event = { id: "call-3", tool: "read", input: { path: "/x" } };
+await hooks["execute.before"](event);
+console.error(`tool ${event.tool}`);"#,
+    );
+    assert!(
+        refused.iter().any(|line| line
+            .starts_with("tool read (refused by a hook: handler did not write a JSON object")),
+        "a rewrite that did not happen refuses the call: {refused:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The contract's bound on a `HOOK_*` value holds here as in the wrapper:
+/// past it a deny group closes rather than starting a handler it cannot
+/// hand the context to.
+#[test]
+fn an_input_too_large_for_the_environment_closes_a_deny_group() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-oversized");
+    fs::create_dir_all(&root).unwrap();
+    let reported = drive(
+        &root,
+        &deciding(HookEffect::Deny, "exit 0"),
+        &r#"const event = { id: "call-1", tool: "shell", input: { command: "ls #" + "x".repeat(LIMIT) } };
+await hooks["execute.before"](event);
+console.error(`tool ${event.tool}`);"#
+            .replace("LIMIT", &HOOK_VALUE_LIMIT.to_string()),
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line.contains("refused by a hook") && line.contains("larger than")),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The deadline ends what the handler started, not only the shell it was
+/// started from.
+#[test]
+fn a_handler_s_children_do_not_outlive_its_deadline() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-group");
+    fs::create_dir_all(&root).unwrap();
+    let pid = root.join("child.pid");
+    drive(
+        &root,
+        &observing(
+            &format!("sleep 30 & echo $! > '{}'; wait", pid.display()),
+            1,
+        ),
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });"#,
+    );
+    let child = fs::read_to_string(&pid).unwrap();
+    let running = || {
+        let alive = Command::new("ps")
+            .args(["-p", child.trim(), "-o", "stat="])
+            .output()
+            .expect("ps reports whether the child is still running");
+        let state = String::from_utf8_lossy(&alive.stdout).trim().to_owned();
+        !state.is_empty() && !state.starts_with('Z')
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while running() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        !running(),
+        "the handler's child was stopped with it: pid {child}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A package root with a space in it is one word to the handler's shell.
+#[test]
+fn a_package_root_with_a_space_reaches_the_handler_as_one_word() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-space").join("with space");
+    let scripts = root.join("scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    let guard = scripts.join("guard");
+    fs::write(&guard, "#!/bin/sh\necho \"blocked by guard\" >&2\nexit 3\n").unwrap();
+    fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).unwrap();
+    let reported = drive(
+        &root,
+        &deciding(HookEffect::Deny, "${PLUGIN_ROOT}/scripts/guard"),
+        r#"const event = { id: "call-1", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](event);
+console.error(`tool ${event.tool}`);"#,
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line == "tool shell (refused by a hook: blocked by guard)"),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root.parent().unwrap());
+}
+
+/// An `ask` is answered by OpenCode's permission prompt, which only a tool
+/// that asks for permission puts to the person: about any other tool the
+/// call is refused, never run unasked. A tool that asks still asks.
+#[test]
+fn an_ask_about_a_tool_with_no_permission_prompt_refuses_the_call() {
+    if !bun_available() {
+        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-ask");
+    fs::create_dir_all(&root).unwrap();
+    let reported = drive(
+        &root,
+        &deciding(HookEffect::Ask, "echo 'confirm this' >&2; exit 3"),
+        r#"const read = { id: "call-1", tool: "read", input: { path: "/repo/.env" } };
+await hooks["execute.before"](read);
+console.error(`read ${read.tool}`);
+const shell = { id: "call-2", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](shell);
+const check = { source: { type: "tool", id: "call-2" }, effect: "allow" };
+await hooks["permission.evaluate"](check);
+console.error(`shell ${shell.tool} ${check.effect}: ${check.message}`);"#,
+    );
+    assert!(
+        reported.iter().any(|line| line.starts_with(
+            "read read (refused by a hook: confirm this (OpenCode offers no permission prompt for `read`"
+        )),
+        "{reported:?}"
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line == "shell shell ask: confirm this"),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

@@ -155,6 +155,35 @@ const RULES: &[Rule] = &[
         budget: &[],
     },
     Rule {
+        name: "the workspace runs Git only through its slot guard",
+        scope: "crates/uze-workspace/src",
+        forbidden: "uze_git::read",
+        reason: "every question the workspace asks of a checkout runs Git in it, and \
+                 a slot's `.git` is its occupant's to rewrite: Git then runs what the \
+                 repository it names configures, in a process outside any sandbox. \
+                 The guard that refuses a slot no longer naming the project's \
+                 repository is only complete while nothing calls around it.",
+        remedy: "call `crate::git::read`, which checks the slot and then reads.",
+        sanctioned: &[(
+            "crates/uze-workspace/src/git.rs",
+            "the guard itself, and the one place it hands the call on",
+        )],
+        budget: &[],
+    },
+    Rule {
+        name: "the workspace writes with Git only through its slot guard",
+        scope: "crates/uze-workspace/src",
+        forbidden: "uze_git::write",
+        reason: "a write in a slot runs the hooks of the repository its `.git` names; \
+                 the guard is what keeps that the project's own.",
+        remedy: "call the matching `crate::git::write*`.",
+        sanctioned: &[(
+            "crates/uze-workspace/src/git.rs",
+            "the guard itself, and the one place it hands the call on",
+        )],
+        budget: &[],
+    },
+    Rule {
         name: "one module names a physical key",
         scope: "src",
         forbidden: "KeyCode",
@@ -620,6 +649,43 @@ fn chrome_is_built_from_the_widget_vocabulary() {
          means; never rebuild one at the call site, which is exactly how \
          the twenty-seven drifted.\n",
         raw.join("\n")
+    );
+}
+
+/// Every frame the client draws reaches the terminal through
+/// `TerminalSession::draw`, which takes out of it the controls ratatui lets
+/// through (a bidi override a plugin's name carries). A second ratatui
+/// `Terminal` would be a second way to the screen that skips that pass, so
+/// only `src/ui.rs` constructs one; tests draw on a `TestBackend`, which
+/// reaches no terminal.
+#[test]
+fn every_frame_reaches_the_terminal_through_one_session() {
+    let root = repository_root();
+    let mut constructed = Vec::new();
+    for (path, contents) in production_sources(&root.join("src")) {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative == "src/ui.rs" {
+            continue;
+        }
+        for (number, line) in contents.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or_default();
+            if (code.contains("Terminal::new(") || code.contains("Terminal::with_options("))
+                && !code.contains("TestBackend")
+            {
+                constructed.push(format!("  {relative}:{}", number + 1));
+            }
+        }
+    }
+    assert!(
+        constructed.is_empty(),
+        "\n\na ratatui Terminal constructed outside `src/ui.rs`:\n\n{}\n\n\
+         Draw through `TerminalSession::draw`, which settles the controls a \
+         frame still carries before it reaches the terminal.\n",
+        constructed.join("\n")
     );
 }
 

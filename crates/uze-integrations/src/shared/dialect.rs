@@ -9,6 +9,12 @@
 //! disagree. A value of the wrong shape for a field the harness is known to
 //! read is an error: the author wrote it for that harness, and the harness
 //! would drop the agent over it.
+//!
+//! An agent is authored by a plugin or a project, never by the operator, so
+//! nothing it declares may widen what the harness lets it do beyond what
+//! the operator granted: a field that would is withheld or lowered, and the
+//! delivery says so ([`withheld`]). Claude Code holds a plugin's own agents
+//! to the same rule.
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -36,8 +42,19 @@ pub(crate) enum Shape {
     /// `#rrggbb`.
     HexColor,
     /// An ordered list of `{action, resource, effect}` rules, `effect` one of
-    /// allow, deny, ask (OpenCode V2's `permissions`).
+    /// allow, deny, ask (OpenCode V2's `permissions`). Only the rules that
+    /// narrow are carried: an `allow` would grant the agent what the
+    /// operator's own configuration asks about or denies.
     Rules,
+    /// One of `levels`, ordered from the narrowest; a value above `ceiling`
+    /// is lowered to it.
+    Ceiling {
+        levels: &'static [&'static str],
+        ceiling: &'static str,
+    },
+    /// Widens what the harness lets the agent do; an authored agent never
+    /// grants it to itself, so it is left out whatever the value.
+    Withheld(&'static str),
     /// Read by the harness in a way that loses the agent: whatever the value,
     /// the harness drops an agent carrying the field. It is left out, and
     /// the reason is the warning.
@@ -57,44 +74,126 @@ pub(crate) fn agent_block(
     keys: &[&str],
     document: &AgentDocument,
 ) -> (serde_yaml::Mapping, Findings) {
+    let block = read_block(dialect, keys, document);
+    (block.carried, block.findings)
+}
+
+/// What the harness block would have granted the agent beyond what the
+/// operator did, each named as `harness.<key>.<field>` with what was taken
+/// from it: the loss a delivery reports as Degraded.
+pub(crate) fn withheld(
+    dialect: &AgentDialect,
+    keys: &[&str],
+    document: &AgentDocument,
+) -> Vec<String> {
+    read_block(dialect, keys, document).withheld
+}
+
+struct Block {
+    carried: serde_yaml::Mapping,
+    findings: Findings,
+    withheld: Vec<String>,
+}
+
+fn read_block(dialect: &AgentDialect, keys: &[&str], document: &AgentDocument) -> Block {
     let mut carried = serde_yaml::Mapping::new();
     let mut findings = Findings::default();
+    let mut withheld = Vec::new();
     for (key, value) in harness::fields_for(&document.frontmatter, keys) {
         let field = key.as_str();
         if harness::IDENTITY_FIELDS.contains(&field) {
             continue;
         }
+        let path = format!("harness.{}.{field}", keys[0]);
         match dialect.known.iter().find(|(known, _)| *known == field) {
-            Some((_, Shape::Refused(reason))) => findings.warnings.push(format!(
-                "`harness.{}.{field}` is left out: {reason}",
-                keys[0]
-            )),
+            Some((_, Shape::Refused(reason))) => findings
+                .warnings
+                .push(format!("`{path}` is left out: {reason}")),
+            Some((_, Shape::Withheld(reason))) => {
+                findings
+                    .warnings
+                    .push(format!("`{path}` is left out: {reason}"));
+                withheld.push(path);
+            }
             Some((_, shape)) => match conforms(*shape, &value) {
-                Ok(()) => {
-                    carried.insert(key, value);
-                }
+                Ok(()) => match narrowed(*shape, &value) {
+                    Some((narrowed, taken)) => {
+                        findings.warnings.push(format!(
+                            "`{path}` is narrowed: {taken}, which an agent cannot grant itself"
+                        ));
+                        withheld.push(format!("{path} ({taken})"));
+                        if let Some(narrowed) = narrowed {
+                            carried.insert(key, narrowed);
+                        }
+                    }
+                    None => {
+                        carried.insert(key, value);
+                    }
+                },
                 Err(expected) => findings.errors.push(format!(
-                    "`harness.{}.{field}` must be {expected}; the harness would not load the \
-                     agent with it",
-                    keys[0]
+                    "`{path}` must be {expected}; the harness would not load the agent with it"
                 )),
             },
             None if dialect.carries_unknown => {
                 findings.warnings.push(format!(
-                    "`harness.{}.{field}` is not a field UZE has verified on this harness; it \
-                     is delivered as written",
-                    keys[0]
+                    "`{path}` is not a field UZE has verified on this harness; it is delivered \
+                     as written"
                 ));
                 carried.insert(key, value);
             }
             None => findings.warnings.push(format!(
-                "`harness.{}.{field}` is not a field this harness reads, and it refuses an \
-                 agent carrying one; it is left out",
-                keys[0]
+                "`{path}` is not a field this harness reads, and it refuses an agent carrying \
+                 one; it is left out"
             )),
         }
     }
-    (carried, findings)
+    Block {
+        carried,
+        findings,
+        withheld,
+    }
+}
+
+/// A conforming value lowered to what an authored agent may hold, and what
+/// was taken from it; `None` when it already may. The lowered value is
+/// itself `None` when nothing of it is left to carry.
+fn narrowed(
+    shape: Shape,
+    value: &serde_yaml::Value,
+) -> Option<(Option<serde_yaml::Value>, String)> {
+    match shape {
+        Shape::Ceiling { levels, ceiling } => {
+            let asked = value.as_str()?;
+            let rank = |level: &str| levels.iter().position(|known| *known == level);
+            (rank(asked)? > rank(ceiling)?).then(|| {
+                (
+                    Some(serde_yaml::Value::String(ceiling.to_owned())),
+                    format!("`{asked}` is lowered to `{ceiling}`"),
+                )
+            })
+        }
+        Shape::Rules => {
+            let rules = value.as_sequence()?;
+            let narrowing: Vec<serde_yaml::Value> = rules
+                .iter()
+                .filter(|rule| {
+                    rule.get("effect").and_then(serde_yaml::Value::as_str) != Some("allow")
+                })
+                .cloned()
+                .collect();
+            let dropped = rules.len() - narrowing.len();
+            (dropped > 0).then(|| {
+                (
+                    (!narrowing.is_empty()).then(|| serde_yaml::Value::Sequence(narrowing)),
+                    format!(
+                        "{dropped} `allow` rule{} left out",
+                        if dropped == 1 { " is" } else { "s are" }
+                    ),
+                )
+            })
+        }
+        _ => None,
+    }
 }
 
 fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
@@ -106,7 +205,10 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
     let ok = match shape {
         Shape::Text => value.as_str().is_some_and(|text| !text.trim().is_empty()),
         Shape::TextOrList => value.as_str().is_some() || text_list(value),
-        Shape::OneOf(choices) => value.as_str().is_some_and(|text| choices.contains(&text)),
+        Shape::OneOf(choices)
+        | Shape::Ceiling {
+            levels: choices, ..
+        } => value.as_str().is_some_and(|text| choices.contains(&text)),
         Shape::Qualified => value
             .as_str()
             .and_then(|text| text.split_once('/'))
@@ -127,7 +229,7 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
                         .is_some_and(|effect| ["allow", "deny", "ask"].contains(&effect))
             })
         }),
-        Shape::Refused(_) => false,
+        Shape::Refused(_) | Shape::Withheld(_) => false,
     };
     if ok {
         return Ok(());
@@ -135,13 +237,18 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
     Err(match shape {
         Shape::Text => "text".to_owned(),
         Shape::TextOrList => "text or a list of text".to_owned(),
-        Shape::OneOf(choices) => format!("one of {}", choices.join(", ")),
+        Shape::OneOf(choices)
+        | Shape::Ceiling {
+            levels: choices, ..
+        } => {
+            format!("one of {}", choices.join(", "))
+        }
         Shape::Qualified => "`provider/model`".to_owned(),
         Shape::Flag => "true or false".to_owned(),
         Shape::Count => "a positive whole number".to_owned(),
         Shape::HexColor => "a `#rrggbb` color".to_owned(),
         Shape::Rules => "a list of `{action, resource, effect}` rules".to_owned(),
-        Shape::Refused(reason) => reason.to_owned(),
+        Shape::Refused(reason) | Shape::Withheld(reason) => reason.to_owned(),
     })
 }
 
@@ -281,6 +388,51 @@ mod tests {
         assert!(carried.is_empty());
         assert!(findings.errors.is_empty());
         assert!(findings.warnings[0].contains("the harness drops the agent"));
+    }
+
+    #[test]
+    fn nothing_an_agent_declares_widens_what_the_harness_lets_it_do() {
+        let dialect = AgentDialect {
+            known: &[
+                ("mode", Shape::Withheld("an agent cannot grant itself this")),
+                (
+                    "sandbox",
+                    Shape::Ceiling {
+                        levels: &["read-only", "workspace-write", "full"],
+                        ceiling: "workspace-write",
+                    },
+                ),
+                ("permissions", Shape::Rules),
+            ],
+            carries_unknown: false,
+        };
+        let doc = document(
+            "name: a\ndescription: d\nharness:\n  x:\n    mode: bypass\n    sandbox: full\n    \
+             permissions: [{action: shell, resource: '*', effect: allow}, {action: edit, \
+             resource: '*', effect: deny}]",
+        );
+        let (carried, findings) = agent_block(&dialect, &["x"], &doc);
+        assert!(findings.errors.is_empty(), "{findings:?}");
+        assert!(!carried.contains_key("mode"));
+        assert_eq!(carried["sandbox"].as_str(), Some("workspace-write"));
+        let rules = carried["permissions"].as_sequence().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["effect"].as_str(), Some("deny"));
+        assert_eq!(
+            withheld(&dialect, &["x"], &doc),
+            [
+                "harness.x.mode",
+                "harness.x.sandbox (`full` is lowered to `workspace-write`)",
+                "harness.x.permissions (1 `allow` rule is left out)",
+            ]
+        );
+
+        let within = document(
+            "name: a\ndescription: d\nharness:\n  x: { sandbox: read-only, permissions: \
+             [{action: shell, resource: '*', effect: ask}] }",
+        );
+        assert!(withheld(&dialect, &["x"], &within).is_empty());
+        assert_eq!(agent_block(&dialect, &["x"], &within).0.len(), 2);
     }
 
     #[test]

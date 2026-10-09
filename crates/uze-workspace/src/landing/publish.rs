@@ -22,34 +22,48 @@ pub(super) fn publish(
         .or_else(|| isolation.published_as.clone())
         .unwrap_or_else(|| {
             // A branch outside UZE's namespace was named by somebody, and
-            // a chosen name is never replaced by a derived one.
+            // a chosen name is never replaced by a derived one. A derived
+            // name somebody already has on the remote is not taken either.
             if isolation.branch.starts_with(crate::worktree::BRANCH_PREFIX) {
-                readable_branch_name(primary, isolation)
+                let derived = readable_branch_name(primary, isolation);
+                if derived != isolation.branch && checkout::name_is_taken(primary, &derived) {
+                    isolation.branch.clone()
+                } else {
+                    derived
+                }
             } else {
                 isolation.branch.clone()
             }
         });
     let refspec = format!("{}:refs/heads/{name}", isolation.branch);
+    let tip = checkout::tip_of(primary, &isolation.branch);
     // A branch already on the remote is one a delivery has since rebased,
     // so its history no longer descends from what the remote holds and a
-    // plain push is refused. Whether it is there is asked of Git rather
-    // than remembered: an agent that pushed the branch itself left UZE no
-    // record to remember, and the refusal landed on the operator as a
-    // failed delivery. `--force-with-lease` reads the same
-    // remote-tracking ref this did, so the two agree on what is being
-    // overwritten.
-    let push = if published.is_some() {
-        vec![
-            "push",
-            "--quiet",
-            "--force-with-lease",
-            REMOTE,
-            refspec.as_str(),
-        ]
-    } else {
-        vec!["push", "--quiet", REMOTE, refspec.as_str()]
-    };
-    git(primary, &push).map_err(DeliveryFailure::Git)?;
+    // plain push is refused. It is overwritten only when the remote still
+    // holds exactly the commit UZE pushed there last, and the lease names
+    // that commit rather than the remote-tracking ref: a tracking ref says
+    // what the remote held at the last fetch, not who put it there, and a
+    // colleague's branch of the same name passes that test. Anything else
+    // on the remote is pushed to only by fast-forward.
+    let lease = isolation
+        .published_tip
+        .as_ref()
+        .filter(|_| published.is_some() && isolation.published_as.as_deref() == Some(&name))
+        .map(|pushed| format!("--force-with-lease=refs/heads/{name}:{pushed}"));
+    let mut push = vec!["push", "--quiet"];
+    push.extend(lease.as_deref());
+    push.extend([REMOTE, refspec.as_str()]);
+    git(primary, &push).map_err(|reason| {
+        DeliveryFailure::Git(if published.is_some() && lease.is_none() {
+            format!(
+                "`{REMOTE}/{name}` holds commits UZE did not push there, and is only ever \
+                 fast-forwarded: {reason}"
+            )
+        } else {
+            reason
+        })
+    })?;
+    isolation.published_tip = (!tip.is_empty()).then_some(tip);
     isolation.published_as = Some(name.clone());
     isolation.forget_request_unless_for(Some(&name));
     if isolation.published_request.is_none() {
@@ -86,7 +100,7 @@ pub(super) fn discover_request(primary: &Path, tip: &str) -> Option<u32> {
     if tip.is_empty() {
         return None;
     }
-    let listing = uze_git::read(
+    let listing = crate::git::read(
         primary,
         &[
             "ls-remote",
@@ -142,13 +156,16 @@ pub(super) fn open_request_message(forge: Forge, isolation: &Isolation, branch: 
 /// uncommitted changes to — the one case a fast-forward would collide with
 /// the operator.
 pub(super) fn overlapping_files(primary: &Path, tip: &str, branch: &str) -> Vec<PathBuf> {
-    let changed: Vec<String> = uze_git::read(primary, &["diff", "--name-only", tip, branch, "--"])
-        .ok()
-        .and_then(|output| output.successful().ok())
-        .map(|stdout| stdout.lines().map(str::to_owned).collect())
-        .unwrap_or_default();
+    let changed: Vec<String> = crate::git::read(
+        primary,
+        &["diff", "--name-only", "--end-of-options", tip, branch, "--"],
+    )
+    .ok()
+    .and_then(|output| output.successful().ok())
+    .map(|stdout| stdout.lines().map(str::to_owned).collect())
+    .unwrap_or_default();
     let dirty: Vec<String> =
-        uze_git::read(primary, &["status", "--porcelain", "--untracked-files=no"])
+        crate::git::read(primary, &["status", "--porcelain", "--untracked-files=no"])
             .ok()
             .and_then(|output| output.successful().ok())
             .map(|stdout| {
@@ -167,7 +184,7 @@ pub(super) fn overlapping_files(primary: &Path, tip: &str, branch: &str) -> Vec<
 }
 
 pub(super) fn is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> bool {
-    uze_git::read(
+    crate::git::read(
         root,
         &["merge-base", "--is-ancestor", "--", ancestor, descendant],
     )
@@ -175,5 +192,5 @@ pub(super) fn is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> bool
 }
 
 pub(super) fn has_remote(root: &Path) -> bool {
-    uze_git::read(root, &["remote", "get-url", REMOTE]).is_ok_and(|output| output.is_success())
+    crate::git::read(root, &["remote", "get-url", REMOTE]).is_ok_and(|output| output.is_success())
 }

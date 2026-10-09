@@ -17,11 +17,17 @@ model-visible catalog with zero model calls; a user-only Skill must be absent
 from it and a default one present, with a sidecar-removal control proving the
 exclusion is caused by Codex reading UZE's policy sidecar.
 
+Phase D (project agents, untrusted): a headless turn in a project the person
+never trusted in Codex; its `.agents/agents` must reach neither the model
+request nor a role file, gated on the probe reaching the model. The trusted
+half is the context contract's (`CodexBindings.project_turn`).
+
 Every absence assertion here is guarded by a presence precondition in the
 same capture: an empty catalog hides nothing, it proves nothing.
 """
 import os
 import re
+import shlex
 import sys
 import time
 
@@ -504,6 +510,65 @@ echo ===== turn =====
     )
 
 
+def phase_untrusted_project_agents(cfg, prov_ip):
+    """A project nobody trusted in Codex gets none of its own agents.
+
+    Codex reads a project's `.codex/agents` only in a trusted folder, and
+    UZE's launcher hands `.agents/agents` over as a `-c` layer Codex takes
+    for the person's own configuration, so the launcher has to hold the
+    same line. The turn runs headless in a freshly cloned-like project the
+    person never opened: no trust was ever answered. The absence is gated
+    on the probe reaching the model, and read from the model request and
+    the filesystem, never from what UZE printed."""
+    from contract.context import (
+        AUTHORED_PROJECT,
+        _authored_prelude,
+    )
+    from shared.markers import CONTEXT_PROBE, PROJECT_AGENT
+
+    common.start_provider(cfg, "static")
+    prompt = f"{CONTEXT_PROBE} which notes does this project keep?"
+    final = f"""{_authored_prelude("codex")}
+cd {AUTHORED_PROJECT}
+set +e
+timeout 240 codex exec {shlex.quote(prompt)} 2>&1
+echo UZE_LAB_ROLE_FILES_BEGIN
+find /work/home/.uze/runtime -path '*/codex/agents/*' -name '*.toml' 2>/dev/null
+echo UZE_LAB_ROLE_FILES_END
+"""
+    cmd = codex_container(cfg, prov_ip, final, tty=False)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, errors="replace", timeout=480
+    )
+    output = proc.stdout + proc.stderr
+    with open(f"{cfg.outdir}/08_untrusted_project_agents.txt", "w") as f:
+        f.write(output)
+    seen = common.observed_markers(provider_struct(cfg), "context_markers")
+    reached = seen.get(CONTEXT_PROBE, False)
+    check(
+        "project-agents-untrusted-turn-reached-model",
+        reached,
+        "the probe turn in the untrusted project reached the model"
+        if reached
+        else f"the probe turn never reached the model: {output[-200:]!r}",
+    )
+    roles = (
+        output.split("UZE_LAB_ROLE_FILES_BEGIN", 1)[-1]
+        .split("UZE_LAB_ROLE_FILES_END", 1)[0]
+        .split()
+    )
+    withheld = reached and not seen.get(PROJECT_AGENT, False) and not roles
+    check(
+        "project-agents-untrusted-folder-receives-none",
+        withheld,
+        "an untrusted project's agents are neither offered to the model nor written as roles"
+        if withheld
+        else "not proven: the probe never reached the model"
+        if not reached
+        else f"offered: {seen.get(PROJECT_AGENT, False)}, role files: {roles}",
+    )
+
+
 def run(cfg, prov_ip):
     with describe("tui"):
         phase_tui(cfg, prov_ip)
@@ -513,5 +578,7 @@ def run(cfg, prov_ip):
         phase_skill_invocation_policy(cfg, prov_ip)
     with describe("explicit-route"):
         phase_explicit_route(cfg, prov_ip)
+    with describe("untrusted-project-agents"):
+        phase_untrusted_project_agents(cfg, prov_ip)
     # Hooks, session start included, are the hooks contract's
     # (`contract/hooks.py`).

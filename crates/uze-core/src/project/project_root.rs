@@ -21,15 +21,48 @@ use crate::{Result, UzeError, manifest::MANIFEST_FILE_NAME, project_context::AGE
 const GIT_MARKER: &str = ".git";
 
 pub fn resolve_project_root(cwd: &Path) -> Result<Option<PathBuf>> {
+    resolve_project_root_trusting(cwd, owned_here)
+}
+
+/// Whether this user, or the administrator, owns `marker`: what makes a
+/// file or directory outside every repository one to act on.
+pub fn owned_here(marker: &Path) -> bool {
+    uze_platform::fs::owned_by_user_or_administrator(marker).unwrap_or(false)
+}
+
+/// Whether a marker found walking up may be adopted: one inside a
+/// repository always, one outside every repository only when `owned` says
+/// this user (or the administrator) wrote it.
+pub(crate) fn adoptable(marker: &Path, owned: impl Fn(&Path) -> bool) -> bool {
+    let directory = marker.parent().unwrap_or(marker);
+    directory.ancestors().any(is_repository_root) || owned(marker)
+}
+
+/// [`resolve_project_root`], with who may have written a marker found
+/// outside every repository decided by `owned`.
+///
+/// Outside a repository nothing but the file's owner says whose it is: an
+/// `agents.yaml` in `/tmp` or a shared parent directory, written by another
+/// account, would otherwise make that account's declarations the project of
+/// whoever runs UZE below it. Inside a repository the clone is the operator's
+/// own act, and the trust question each declared plugin raises is asked
+/// there instead.
+fn resolve_project_root_trusting(
+    cwd: &Path,
+    owned: impl Fn(&Path) -> bool,
+) -> Result<Option<PathBuf>> {
     if !cwd.exists() {
         return Err(UzeError::MissingPath(cwd.to_path_buf()));
     }
+    let adoptable = |marker: &Path| adoptable(marker, &owned);
     let mut nearest_agents_md = None;
     let (_, root) = find_upward(cwd, |dir| {
-        if dir.join(MANIFEST_FILE_NAME).is_file() {
+        let manifest = dir.join(MANIFEST_FILE_NAME);
+        if manifest.is_file() && adoptable(&manifest) {
             return Some(dir.to_path_buf());
         }
-        if nearest_agents_md.is_none() && dir.join(AGENTS_MD_FILE_NAME).is_file() {
+        let agents_md = dir.join(AGENTS_MD_FILE_NAME);
+        if nearest_agents_md.is_none() && agents_md.is_file() && adoptable(&agents_md) {
             nearest_agents_md = Some(dir.to_path_buf());
         }
         // A repository root outranks an `AGENTS.md` remembered below it:
@@ -154,6 +187,35 @@ mod tests {
         let resolved = resolve_project_root(&sub).unwrap();
         assert_eq!(resolved, Some(root.canonical().unwrap()));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Outside every repository, a marker another account wrote is not a
+    /// project: the walk passes over it as though it were not there.
+    #[test]
+    fn a_marker_another_account_wrote_outside_a_repository_is_not_a_project() {
+        let outer = uze_testkit::temp::scratch("foreign-manifest");
+        let sub = outer.join("shared").join("mine");
+        fs::create_dir_all(&sub).unwrap();
+        let foreign_manifest = outer.join("shared").join(MANIFEST_FILE_NAME);
+        fs::write(&foreign_manifest, "workspace: {}\n").unwrap();
+        fs::write(outer.join("shared").join(AGENTS_MD_FILE_NAME), "# theirs\n").unwrap();
+        let shared = outer.join("shared").canonical().unwrap();
+        let foreign = |marker: &Path| marker.parent() != Some(shared.as_path());
+
+        let resolved = resolve_project_root_trusting(&sub, foreign).unwrap();
+        assert_eq!(resolved, None, "another account's markers adopted");
+        assert_eq!(
+            resolve_project_root_trusting(&sub, |_| true).unwrap(),
+            Some(outer.join("shared").canonical().unwrap())
+        );
+
+        // Inside a repository the same file is the clone's, and adopted.
+        fs::create_dir_all(outer.join(".git")).unwrap();
+        assert_eq!(
+            resolve_project_root_trusting(&sub, foreign).unwrap(),
+            Some(outer.join("shared").canonical().unwrap())
+        );
+        fs::remove_dir_all(outer).unwrap();
     }
 
     #[test]

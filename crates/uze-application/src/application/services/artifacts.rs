@@ -55,6 +55,17 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
             outside.display()
         ));
     }
+    if let Some(linked) = artifacts
+        .paths
+        .iter()
+        .find(|path| !resolves_inside(&root, path))
+    {
+        return ProjectArtifacts::Refused(format!(
+            "`workspace.artifacts` names `{}`, which is a link leading out of the project — every \
+             entry has to be a directory inside it",
+            linked.display()
+        ));
+    }
     ProjectArtifacts::Declared {
         directories: artifacts
             .paths
@@ -66,6 +77,14 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
             .collect(),
         project: root,
     }
+}
+
+/// Spelling alone cannot keep an entry inside: `docs` committed as a link
+/// to `$HOME` is spelled like any other directory. So the entry is
+/// followed through every link and must still land in the project. One
+/// that cannot be resolved is not followed either.
+fn resolves_inside(root: &Path, declared: &Path) -> bool {
+    uze_platform::path::resolves_within(&root.join(declared), root).unwrap_or(false)
 }
 
 /// A manifest is checked in and travels: a path that climbs out of the
@@ -130,6 +149,19 @@ mod tests {
             project_artifacts(project.path()),
             ProjectArtifacts::Undeclared
         );
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn an_entry_linked_out_of_the_project_refuses_the_declaration() {
+        let project = project("workspace:\n  artifacts: [docs]\n");
+        let outside = uze_testkit::temp::TempDir::new("project-artifacts-outside");
+        std::os::unix::fs::symlink(outside.path(), project.path().join("docs")).unwrap();
+        let ProjectArtifacts::Refused(reason) = project_artifacts(project.path()) else {
+            panic!("a link out of the project was followed");
+        };
+        assert!(reason.contains("`docs`"), "{reason}");
     }
 
     #[test]

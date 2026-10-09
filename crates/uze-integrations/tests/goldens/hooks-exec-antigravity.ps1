@@ -74,6 +74,16 @@ function First([object[]]$candidates) {
 function Text($value) {
   if ($null -eq $value) { '' } elseif ($value -is [string]) { $value } else { $json.Serialize($value) }
 }
+# A value is held to the contract's bound before it is exported, the same
+# bound in UTF-8 bytes as on every other platform; it also keeps it inside
+# the 32,767 characters Windows lets a variable hold, past which setting it
+# would fail with .NET's words rather than this wrapper's.
+function Set-Hook([string]$name, [string]$value) {
+  if ($utf8.GetByteCount($value) -gt 32000) {
+    Fail "hooks/exec: the tool input is larger than the 32000 bytes a HOOK_* variable carries"
+  }
+  [Environment]::SetEnvironmentVariable($name, $value)
+}
 
 # A payload that does not parse leaves every field empty, and a guard
 # written the documented way then sees nothing and allows: it is a failure
@@ -84,11 +94,11 @@ try {
   Fail 'hooks/exec: the harness payload is not JSON'
 }
 if ($payload -isnot [System.Collections.IDictionary]) { Fail 'hooks/exec: the harness payload is not JSON' }
-$env:HOOK_TOOL_NATIVE = Text (First @((Pick $payload @('toolCall', 'name')), $null))
-$env:HOOK_CWD = Text (First @((Pick $payload @('workspacePaths', 0)), $null))
+Set-Hook 'HOOK_TOOL_NATIVE' (Text (First @((Pick $payload @('toolCall', 'name')), $null)))
+Set-Hook 'HOOK_CWD' (Text (First @((Pick $payload @('workspacePaths', 0)), $null)))
 $toolInput = (First @((Pick $payload @('toolCall', 'args')), @{}))
-$env:HOOK_INPUT = if ($null -eq $toolInput) { '{}' } else { $json.Serialize($toolInput) }
-$env:HOOK_SOURCE = if ($hookEvent -eq 'session_start') { Text (Pick $payload @('source')) } else { '' }
+Set-Hook 'HOOK_INPUT' $(if ($null -eq $toolInput) { '{}' } else { $json.Serialize($toolInput) })
+Set-Hook 'HOOK_SOURCE' $(if ($hookEvent -eq 'session_start') { Text (Pick $payload @('source')) } else { '' })
 if ($hookEvent -eq 'session_start' -and -not $env:HOOK_SOURCE) { $env:HOOK_SOURCE = 'startup' }
 # The portable fields are read from the input, so a rewrite reads them again.
 function Portable-Fields {
@@ -97,11 +107,11 @@ $env:HOOK_COMMAND = ''
 $env:HOOK_PATH = ''
 $env:HOOK_QUERY = ''
 switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
-  'run_command' { $env:HOOK_TOOL = 'shell'; $env:HOOK_COMMAND = Text (Pick $toolInput @('CommandLine')) }
-  'view_file' { $env:HOOK_TOOL = 'file.read'; $env:HOOK_PATH = Text (Pick $toolInput @('AbsolutePath')) }
-  'write_to_file' { $env:HOOK_TOOL = 'file.write'; $env:HOOK_PATH = Text (Pick $toolInput @('TargetFile')) }
-  'replace_file_content' { $env:HOOK_TOOL = 'file.edit'; $env:HOOK_PATH = Text (Pick $toolInput @('TargetFile')) }
-  'search_web' { $env:HOOK_TOOL = 'search.web'; $env:HOOK_QUERY = Text (Pick $toolInput @('query')) }
+  'run_command' { $env:HOOK_TOOL = 'shell'; Set-Hook 'HOOK_COMMAND' (Text (Pick $toolInput @('CommandLine'))) }
+  'view_file' { $env:HOOK_TOOL = 'file.read'; Set-Hook 'HOOK_PATH' (Text (Pick $toolInput @('AbsolutePath'))) }
+  'write_to_file' { $env:HOOK_TOOL = 'file.write'; Set-Hook 'HOOK_PATH' (Text (Pick $toolInput @('TargetFile'))) }
+  'replace_file_content' { $env:HOOK_TOOL = 'file.edit'; Set-Hook 'HOOK_PATH' (Text (Pick $toolInput @('TargetFile'))) }
+  'search_web' { $env:HOOK_TOOL = 'search.web'; Set-Hook 'HOOK_QUERY' (Text (Pick $toolInput @('query'))) }
   'send_message' { $env:HOOK_TOOL = 'agent.message' }
 }
 }
@@ -160,12 +170,12 @@ foreach ($entry in $handlers) {
   if ($status -eq 0 -and $effect -eq 'transform' -and $output.Wait(1000) -and $output.Result.Trim()) {
     # A rewrite: the complete input, as one JSON object. The next handler
     # reads it as its HOOK_INPUT, and the last one is what the tool runs.
-    if ($output.Result.Length -gt 65536) { Fail "handler wrote more than 65536 characters: $handler" }
+    if ($utf8.GetByteCount($output.Result) -gt 32000) { Fail "handler wrote more than 32000 bytes: $handler" }
     $rewritten = $null
     try { $rewritten = $json.DeserializeObject($output.Result) } catch { $rewritten = $null }
     if ($rewritten -isnot [System.Collections.IDictionary]) { Fail "handler did not write a JSON object: $handler" }
     $toolInput = $rewritten
-    $env:HOOK_INPUT = $json.Serialize($toolInput)
+    Set-Hook 'HOOK_INPUT' ($json.Serialize($toolInput))
     $changed = $true
     Portable-Fields
   }

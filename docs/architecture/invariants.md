@@ -319,6 +319,19 @@ to a device or a FIFO is refused rather than read forever.
 > `tests/packages/containment.rs::a_link_chain_through_a_self_link_cannot_escape_the_root`
 > `tests/packages/containment.rs::a_manifest_linked_outside_the_package_is_refused_before_it_is_read`
 
+### A package names no path with what it declares
+
+An agent's frontmatter `name` becomes the file a harness reads it from, so
+one holding a path separator, `.`/`..` or a control character refuses the
+package at discovery rather than naming a file outside the harness's
+directory. A remote checkout is weighed before it is written: past its byte,
+file-count or depth budget it is refused.
+
+> `crates/uze-core/src/delivery/engine.rs::an_agent_naming_itself_a_path_refuses_the_package`
+> `crates/uze-core/src/capability/agent.rs::a_name_that_is_a_path_is_never_the_logical_name`
+> `crates/uze-core/src/package/acquisition/git.rs::a_tree_of_more_files_than_the_budget_is_refused_before_checkout`
+> `crates/uze-core/src/package/acquisition/git.rs::a_tree_nested_deeper_than_the_budget_is_refused_before_checkout`
+
 ### Package discovery never follows directory symlinks
 
 Discovery uses `symlink_metadata` and never descends into a symlink, which
@@ -363,20 +376,98 @@ anything is written or attached. A declarative package requires none.
 > `tests/packages/acquisition.rs::a_non_interactive_process_reports_trust_required_rather_than_assuming_consent`
 
 **This is a consent boundary, not a security sandbox, and not a provenance
-guarantee.** It is scoped to remote acquisition: `uze add ./local` is treated
-as an operator-controlled source and asks nothing, even with an MCP server.
-Cloning a repository by hand and installing the result as a local path
-deliberately changes the classification of that origin. UZE does not
-fingerprint downloads, mark them, track origins out of band, or persist trust
-decisions — and should not be described as if it did.
+guarantee.** A local path the operator typed (`uze add ./local`, a marketplace
+they registered with `market add`) is treated as an operator-controlled
+source and asks nothing, even with an MCP server. Cloning a repository by
+hand and installing the result as a local path deliberately changes the
+classification of that origin. UZE does not fingerprint downloads, mark them,
+or persist trust decisions — and should not be described as if it did.
 
 > `tests/packages/acquisition.rs::a_local_package_with_an_mcp_command_still_requires_no_trust`
+
+The boundary follows who declared the source, not where the bytes sit. A
+source a project's `agents.yaml` or `agents.lock` declares crosses it even on
+this disk — `path: .`, a repository with no `origin`, a Git URL naming a
+local directory — and so does a plugin of a marketplace such a project
+registered, however its install was asked for. A `path:` leaving the project
+is honoured only when this user (or the administrator) owns the directory.
+
+> `tests/project/consumer.rs::a_clone_declaring_its_own_hook_is_not_installed_without_consent`
+> `crates/uze-core/src/package/acquisition.rs::local_path_urls::a_source_a_project_declares_is_a_trust_boundary_even_on_this_disk`
+
+What is asked about is everything installing lets run: MCP servers, hooks, a
+Skill or agent whose frontmatter grants tools or hooks or whose text a
+harness executes on load (`` !`…` ``), and the version probe of every
+executable the package requires, which therefore never starts before
+consent. An approval covers the package's own code a command runs, by
+digest, not only the command line.
+
+> `crates/uze-core/src/package/trust.rs::tests::a_skill_that_runs_or_grants_something_is_an_executable_capability`
+> `crates/uze-core/src/package/trust.rs::tests::a_requirement_s_version_probe_is_asked_about`
+> `crates/uze-core/src/package/trust.rs::tests::rewriting_the_script_a_hook_runs_is_new_execution`
+
+Everything the trust question shows was written by somebody else, so it is
+printed inert: a control sequence in a command is spelled out, never
+performed, and `hooks.json`/`mcp.json` values carrying one are refused.
+
+> `src/cli/install.rs::tests::the_trust_evidence_never_lets_a_command_act_on_the_terminal`
+> `crates/uze-core/src/delivery/engine.rs::discovery_tests::a_terminal_control_in_a_declared_command_is_refused`
+
+The same holds for every report the CLI prints, under one last layer that
+passes only the colour it paints itself; for `--format json`, which writes
+every terminal control as a `\uXXXX` escape; and for the TUI, whose frame
+carries no control a cell could still hold (ratatui keeps zero-width bidi
+overrides).
+
+> `src/progress.rs::tests::only_this_module_s_painting_reaches_the_terminal`
+> `src/cli/output.rs::tests::json_output_carries_no_raw_terminal_control`
+> `src/ui/orchestrator/tests.rs::a_bidi_override_never_reaches_the_terminal`
+> `tests/architecture/layering.rs::every_frame_reaches_the_terminal_through_one_session`
 
 Consent is not inherited across an update. A revision introducing execution
 the installed one did not have asks again.
 
 > `tests/packages/acquisition.rs::an_update_introducing_executable_capability_asks_again`
 > `crates/uze-core/src/package/trust.rs::a_changed_environment_or_working_directory_introduces_new_execution`
+
+### An authored agent never widens what the harness lets it do
+
+A plugin or a project writes its agents; the operator grants permissions.
+No field an agent declares reaches a harness wider than that: a loose
+Claude agent carries none of the fields Claude ignores on a plugin's agent
+(`permissionMode`, `hooks`, `mcpServers`, `initialPrompt`), OpenCode
+`permissions` keep only the rules that narrow, and a Codex role's
+`sandbox_mode` stops at `workspace-write`. Each delivery that withheld or
+lowered something is Degraded and names it.
+
+> `tests/integrations/agents.rs::claude_never_lets_a_loose_plugin_agent_widen_its_own_permissions`
+> `tests/integrations/agents.rs::no_harness_lets_a_plugin_agent_grant_itself_more_than_the_operator_did`
+> `crates/uze-integrations/src/shared/dialect.rs::nothing_an_agent_declares_widens_what_the_harness_lets_it_do`
+
+A project's own agents reach Codex through a `-c` layer, which Codex takes
+as the operator's configuration; they are handed over only once the person
+trusted the project in Codex, and never with a sandbox wider than the
+workspace.
+
+> `crates/uze-integrations/src/codex/runtime.rs::project_agents_wait_for_the_person_to_trust_the_project_in_codex`
+> `crates/uze-integrations/src/codex/runtime.rs::a_project_role_never_leaves_the_workspace_sandbox`
+
+### A marker another account wrote outside every repository is not a project
+
+Walking up from a directory, an `agents.yaml` or `AGENTS.md` that sits
+outside every repository is adopted only when this user (or the
+administrator) owns it; one in a shared parent such as `/tmp` is passed over.
+
+> `crates/uze-core/src/project/project_root.rs::tests::a_marker_another_account_wrote_outside_a_repository_is_not_a_project`
+
+### No executable is found through a relative `PATH` entry
+
+`.` (or an empty entry) names the directory a command was started in, which
+a project supplies. Neither the harness shim nor the requirement probe
+resolves anything through one.
+
+> `crates/uze-core/src/machine/harness_runtime.rs::tests::a_relative_path_entry_never_resolves_a_harness`
+> `crates/uze-core/src/machine/requirement_check.rs::tests::a_relative_search_entry_is_never_probed`
 
 ### Acquisition never executes package code
 
@@ -500,13 +591,44 @@ a rejected package and a refused consent all mutate nothing.
 
 ### A file the operator owns keeps its link and its mode
 
-Shell rc files, `AGENTS.md`, `agents.yaml`, `config.toml` and the harness
-configs UZE merges into are written through their symlinks and keep their
+Shell rc files, `AGENTS.md`, `agents.yaml` (to a file inside their project,
+below), `config.toml` and the harness configs UZE merges into are written
+through their symlinks and keep their
 permissions: a dotfiles checkout stays the file that is edited, and a
 `0600` file holding a token never comes back world-readable. UZE's own
 records keep the plain atomic write.
 
 > `crates/uze-core/src/delivery/persistence.rs::a_preserving_write_goes_through_a_symlink_and_keeps_the_mode`
+
+### A project file is written only inside the project
+
+`AGENTS.md` and `agents.yaml` arrive with a clone, so a link among them is
+the repository's choice, not the operator's. Each is followed only to a file
+inside the directory that holds it; one that leads out is reported as a
+conflict, dangling or not, and nothing is written through it. Machine files
+(rc files, harness configs) keep following their links.
+
+> `crates/uze-core/src/project/text_region.rs::a_region_file_linked_out_of_its_project_is_a_conflict_and_never_written`
+> `crates/uze-core/src/project/manifest.rs::a_manifest_linked_out_of_its_project_is_refused_and_never_written`
+
+The same holds for every other path a checkout can steer: the isolation
+directory slots are placed in is a real, untracked directory inside the
+primary; a declared artifact directory resolves inside the project; and the
+code surface's save, delete and rename act only inside the root it shows,
+however the directories on the way are linked.
+
+> `crates/uze-workspace/src/checkout/tests.rs::an_isolation_directory_committed_as_a_link_places_no_checkout_outside_the_project`
+> `crates/uze-workspace/src/checkout/tests.rs::an_isolation_directory_the_repository_tracks_is_refused`
+> `crates/uze-application/src/application/services/artifacts.rs::an_entry_linked_out_of_the_project_refuses_the_declaration`
+> `src/ui/extension_host.rs::no_write_reaches_through_a_directory_linked_out_of_the_root`
+
+### A generated file is never written through a link
+
+A link at the path of a file UZE generates (an agent definition) is someone
+else's, dangling or not: it is a conflict, and the file is created with
+create-new semantics so a link that appears after the check is refused too.
+
+> `crates/uze-core/src/delivery/exposure.rs::a_link_at_a_generated_path_is_a_conflict_and_is_never_written_through`
 
 ### A blocked mutation says so in the exit status
 
@@ -546,6 +668,43 @@ and the checksum could not tell, since `SHASUMS256.txt` comes from the same
 root.
 
 > `src/self_update.rs::tests::an_untrusted_base_url_is_ignored`
+
+### Nothing a release names is unpacked before its signature verifies
+
+The fixed origin proves where the bytes came from, not who published them.
+`SHASUMS256.txt` must carry a signature by the release key the binary was
+built with (`release-signing.pub`, the same line `install.sh` and
+`install.ps1` carry), verified by the system's own `ssh-keygen` under the
+`uze-release` namespace before the checksum is read, and a missing
+signature, a stranger's, one made for another purpose, or a build that
+carries only the placeholder all install nothing. A release's version is
+refused unless it is spelled as one (`MAJOR.MINOR.PATCH[-PRERELEASE]`, no
+build metadata), because it becomes a directory and a URL, and the
+background pass installs a release only once it has been the latest for a
+day.
+
+> `src/self_update.rs::tests::the_checksums_count_only_when_the_release_key_signed_them`
+> `src/self_update.rs::tests::an_unsigned_release_is_never_unpacked_or_installed`
+> `src/self_update.rs::tests::the_installers_carry_the_key_the_binary_is_built_with`
+> `src/self_update.rs::tests::a_version_becomes_a_path_only_when_it_is_spelled_as_a_release`
+> `src/self_update.rs::tests::a_release_is_installed_in_the_background_only_once_it_has_settled`
+> `tests/scripts/installer-test.sh` (unsigned and forged releases refused)
+
+### A system tool is run by its path, and `curl` reads nothing but its arguments
+
+`uze_platform::tools::system` names a program inside the system's own
+directories (`/usr/bin`, `/bin`, NixOS's system profile; on Windows the
+directory `GetSystemDirectoryW` answers), never a bare name `PATH` would
+resolve. Every download through `tools::curl` passes `-q` first (no
+`.curlrc`), pins HTTPS for the request and its redirects, and runs without
+the `CURL_*` settings and `SSLKEYLOGFILE`. The proxy variables and the CA
+bundle are kept so a corporate proxy still works: what an install trusts
+is the release signature, not the transport.
+
+> `crates/uze-platform/src/tools.rs::tests::a_system_tool_is_named_by_its_path_never_looked_up_on_path`
+> `crates/uze-platform/src/tools.rs::tests::curl_reads_no_configuration_file_and_speaks_only_https`
+> `crates/uze-platform/src/tools.rs::tests::curl_runs_without_its_settings_but_keeps_the_proxy_and_ca`
+> `crates/uze-integrations/src/opencode/distribution.rs::tests::a_download_is_the_system_curl_reading_no_configuration`
 
 ### Ordinary shell usage is never a panic
 
@@ -938,6 +1097,31 @@ call like a `deny`.
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_rewrite_reaches_the_next_handler_and_the_harness`
 > `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::a_rewrite_replaces_the_input_the_tool_runs`
 
+### A closed group never fails open
+
+A `deny`, `ask` or `transform` group whose context cannot be built, whose
+handler cannot run or answer, or whose decision cannot be encoded refuses
+the call in the harness's own dialect. No `HOOK_*` value larger than an
+environment string may be is exported (a program could no longer start,
+the wrapper's own included); the reason is replaced by a constant rather
+than left out of the decision; a handler's answer is collected in a fresh
+directory only the user can enter, and with none the group closes. On
+OpenCode a denial is enforced where the input is seen, so a tool that asks
+for no permission is refused too, and a handler's deadline ends its whole
+process group. `${PLUGIN_ROOT}` reaches a handler line as one literal word
+wherever the author placed it.
+
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::an_input_too_large_for_the_environment_follows_the_groups_effect`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_reason_that_cannot_be_encoded_still_denies`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_denial_that_cannot_be_written_exits_with_the_blocking_status`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_s_output_is_collected_in_a_private_directory`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_package_root_with_a_space_reaches_the_handler_as_one_word`
+> `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_cannot_reach_the_harnesss_stdout`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::a_denial_refuses_a_tool_that_never_asks_for_permission`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::an_input_too_large_for_the_environment_closes_a_deny_group`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::a_handler_s_children_do_not_outlive_its_deadline`
+> `crates/uze-platform/src/shell.rs::a_substituted_value_is_read_back_literally_wherever_it_sits`
+
 ### A delivered hook runs without the packager
 
 The harness invokes a wrapper vendored in the delivered artifact, never the
@@ -1100,6 +1284,31 @@ never a fallback.
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
 > `src/ui/orchestrator/tests.rs::workspace_tests::an_agent_in_a_slot_is_left_unmarked_and_says_where_nowhere`
 
+### A project's commands run only once the operator approved those exact lines (ADR-055)
+
+`workspace.setup` and `workspace.gate` are shell lines from the repository,
+run with the operator's permissions outside any harness sandbox. None runs
+until the operator has approved the exact lines this platform would run, for
+that canonical project root: a checkout is placed without its setup and says
+why, and delivery is refused before anything moves. Any edit, addition or
+removal waits again; an unreadable or foreign record approves nothing. The
+places that run the commands take an `Approved` value only the consent check
+can make, and the verb that records one refuses an agent UZE launched and
+anything that is not a terminal. Every line shown for approval has its
+controls written out.
+
+> `crates/uze-workspace/src/approval.rs::tests::a_project_nobody_approved_runs_none_of_its_commands`
+> `crates/uze-workspace/src/approval.rs::tests::an_approval_covers_exactly_the_lines_it_was_given`
+> `crates/uze-workspace/src/approval.rs::tests::an_unreadable_approval_approves_nothing`
+> `crates/uze-workspace/src/approval.rs::tests::a_shown_command_writes_its_controls_out`
+> `crates/uze-workspace/src/checkout/tests.rs::an_unapproved_setup_is_not_run_and_the_checkout_says_so`
+> `crates/uze-workspace/src/landing/tests.rs::an_unapproved_gate_refuses_delivery_without_running`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_unapproved_gate_asks_for_approval_and_changes_nothing`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_unapproved_setup_waits_and_approving_it_prepares_the_checkout`
+> `tests/acceptance/command_approval.rs::an_agent_cannot_approve_its_projects_commands`
+> `tests/acceptance/command_approval.rs::approving_needs_a_person_at_a_terminal`
+> `src/ui/orchestrator/tests.rs::workspace_tests::only_the_operators_yes_approves_a_projects_commands`
+
 ### An agent in the root never acquires a slot and never creates a branch (`add-space-kinds`)
 
 An agent launched without isolation runs in the space's own directory, on
@@ -1168,6 +1377,7 @@ for itself and never relies on the clock.
 
 > `crates/uze-workspace/src/landing/tests.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
 > `crates/uze-workspace/src/landing/tests.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
+> `crates/uze-workspace/src/landing/tests.rs::a_target_nobody_stands_on_moves_only_forward`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_last_sync_left_it`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_project_that_does_not_isolate_is_never_synced`
 
@@ -1180,8 +1390,8 @@ agent pushed, and a request its own agent opened, count exactly as much as
 ones a delivery made — the operator is a party to this, and the button has to
 report the remote's state rather than UZE's history. Read from UZE's record
 of its own pushes, the delivery button went on offering to send commits the
-request already carried, and a delivery after an agent's own push was refused
-as a non-fast-forward. The one network question — is a request open — is
+request already carried. Reading is not overwriting, though: what the remote
+holds is replaced only where UZE pushed it (below). The one network question — is a request open — is
 asked only where the completion publishes, only for a branch that is on the
 remote, at most once a minute, and never again once answered.
 
@@ -1190,6 +1400,42 @@ remote, at most once a minute, and never again once answered.
 > `crates/uze-workspace/src/landing/tests.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
+
+### A remote branch is overwritten only where UZE put what is there
+
+Reading publication from the remote says what the remote holds, never who
+put it there: a colleague's branch of the same name passes that test. So a
+delivery force-pushes only with a lease on the commit UZE recorded pushing
+under that name, and anything else on the remote is pushed to by
+fast-forward or not at all. A name a remote already carries is refused when
+an agent asks for it and skipped when one is derived.
+
+> `crates/uze-workspace/src/landing/tests.rs::a_colleagues_branch_of_the_same_name_is_never_overwritten`
+> `crates/uze-workspace/src/landing/tests.rs::a_republish_replaces_only_the_commit_uze_pushed`
+> `crates/uze-application/src/application/services/tasks/tests.rs::naming_tests::a_name_only_the_remote_carries_is_refused`
+
+### A slot is run in only while it still names the project's repository
+
+A linked checkout finds its repository through its own `.git` file, which
+whoever works in it can rewrite, and Git runs what that repository's
+configuration names in whatever process asked. The workspace therefore
+finds a slot's administrative directory, and the record in it, from the
+primary repository's registry, and runs Git in a slot (to evaluate, deliver,
+join or show it) only while the slot's `.git` still names that directory:
+every Git call `uze-workspace` makes goes through the one guard that asks,
+and the workspace client's extension host asks it too. Every read additionally runs with no file-system monitor, no hook, no
+external diff or text conversion, no discovered bare repository and no
+descent into a nested repository committed as a gitlink, and a
+split point is a full object id handed to Git after `--end-of-options`.
+
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_slot_whose_git_file_was_repointed_is_no_longer_anyones_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_slot_whose_git_file_became_a_repository_is_not_anchored`
+> `src/ui/extension_host.rs::tests::a_slot_that_no_longer_names_the_project_s_repository_is_not_read`
+> `tests/architecture/layering.rs::architecture_rules_hold`
+> `crates/uze-git/src/lib.rs::tests::a_read_runs_nothing_the_repository_s_configuration_names`
+> `crates/uze-git/src/lib.rs::tests::a_read_never_discovers_a_bare_repository`
+> `crates/uze-git/src/lib.rs::tests::a_read_never_runs_what_a_nested_repository_configures`
+> `crates/uze-application/src/application/services/work/tests.rs::a_split_point_that_is_not_a_commit_id_is_refused_before_git_sees_it`
 
 ### Every surface reads one state, and a delivery in flight is the client's
 
@@ -1688,6 +1934,50 @@ reported as that agent, persisted as one, and was relaunched as one.
 > `crates/uze-terminal/src/runtime/tests.rs::a_pane_does_not_inherit_the_servers_shim_identity`
 > `crates/uze-terminal/src/runtime/tests.rs::foreground_status_ignores_a_shim_identity_stamped_for_another_process`
 
+### The runtime serves the person, and a pane may only open a space (ADR-056)
+
+Reaching the endpoint proves only that a process runs as this user. A
+connection whose peer the kernel places inside one of the runtime's panes
+may open a space and is told its label, nothing else; attaching and
+stopping take the key each server writes for the user alone beside its
+claim. Another user is refused before anything is read, and connections
+that have not yet said who they are are bounded.
+
+> `crates/uze-terminal/src/runtime/tests.rs::a_process_inside_a_pane_may_open_a_space_and_nothing_else`
+> `crates/uze-terminal/src/runtime/tests.rs::a_client_without_the_runtimes_key_is_refused`
+> `crates/uze-terminal/src/runtime/tests.rs::connections_that_never_say_who_they_are_are_bounded`
+> `crates/uze-platform/src/process.rs::tests::what_a_pane_started_belongs_to_it_and_the_person_does_not`
+
+### A stopped server's pid is never signalled
+
+`stop` and `attach` act on the pid the claim records only while the claim
+is held, and only when that pid still started at the moment the record
+says; a server that stops cleanly erases the record.
+
+> `crates/uze-terminal/src/runtime/tests.rs::a_free_claim_names_nobody_to_stop`
+> `crates/uze-terminal/src/runtime/tests.rs::a_claimant_is_named_by_its_start_time_as_well_as_its_pid`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_withdraws_its_record_when_it_lets_go`
+
+### What reaches a pane on UZE's behalf is text
+
+A notice UZE submits into an agent's pane (a conflict, a refusing gate, a
+request to open) carries no control character, is bounded, is framed as a
+paste where the pane asked for one, and points at the gate's log rather
+than quoting it.
+
+> `src/ui/orchestrator/input.rs::tests::a_notice_reaches_a_pane_as_text_and_one_submission`
+> `crates/uze-workspace/src/landing/tests.rs::a_gate_message_carries_no_keys_and_points_at_the_log`
+
+### An agent is its launch, not its identifier
+
+A claim to be an agent is the identifier, the directory and the secret
+that agent's latest launch was issued; the record keeps only the secret's
+digest. The identifier and the directory are the caller's to set, so
+neither proves anything without the key.
+
+> `crates/uze-workspace/src/conversation.rs::tests::a_claim_no_record_backs_has_no_owner`
+> `crates/uze-application/src/application/services/tasks/tests.rs::naming_tests::a_process_that_is_not_the_agent_has_nothing_to_name`
+
 ---
 
 ## Agent session continuity (`add-agent-session-continuity`)
@@ -1789,6 +2079,15 @@ published matrix reads that declaration rather than restating it.
 ---
 
 ## What UZE persists (`redesign-persisted-state`)
+
+### `$UZE_HOME` is the user's alone
+
+The home is created `0700` and one an older build or a permissive umask
+left open is narrowed on the next run: what is under it names every
+project, branch and agent on the machine, and the terminal runtime keeps
+every tab's command and launch environment, its claim and its key there.
+
+> `crates/uze-core/src/machine/home.rs::tests::the_home_is_this_users_alone`
 
 ### A record written in a shape this build knows is carried across, silently
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::{
+    approval::Approved,
     checkout::{acquire, tip_of},
     task::{AgentId, AgentStore, Base},
 };
@@ -80,14 +81,14 @@ fn agent_commits(repository: &Repository, isolation: &Isolation, file: &str, con
 fn handoff() -> Policy<'static> {
     Policy {
         completion: CompletionBehavior::Handoff,
-        gate: &[],
+        gate: Some(Approved::assumed(&[])),
     }
 }
 
 fn merge(gate: &[uze_core::shell::ShellCommand]) -> Policy<'_> {
     Policy {
         completion: CompletionBehavior::Merge,
-        gate,
+        gate: Some(Approved::assumed(gate)),
     }
 }
 
@@ -293,8 +294,80 @@ fn a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner() {
     assert_eq!(tip_of(primary, TARGET), before);
     assert_eq!(isolation.state, WorkState::GateFailed);
     assert!(
-        gate_failure_message(work(&isolation), "cargo test", "assertion failed: x")
+        gate_failure_message(work(&isolation), "cargo test", "assertion failed: x", None)
             .contains("assertion failed")
+    );
+}
+
+/// A gate nobody approved is never run, and refuses the delivery before
+/// anything moves: work its gate never checked must not land.
+#[test]
+fn an_unapproved_gate_refuses_delivery_without_running() {
+    let repository = repository("landing-gate-unapproved");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "gate unapproved");
+    agent_commits(&repository, work(&isolation), "a.rs", "");
+    let before = tip_of(primary, TARGET);
+    let state_before = isolation.state.clone();
+
+    let failure = deliver(
+        primary,
+        &mut isolation,
+        &Policy {
+            completion: CompletionBehavior::Merge,
+            gate: None,
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(failure, DeliveryFailure::GateAwaitingApproval);
+    assert!(
+        failure.to_string().contains("uze workspace allow"),
+        "{failure}"
+    );
+    assert_eq!(tip_of(primary, TARGET), before, "the target is untouched");
+    assert_eq!(isolation.state, state_before, "the work is where it was");
+}
+
+/// What a gate printed reaches an agent's pane as if typed there, so a
+/// message never carries a control character from it, and points at the
+/// log holding the output wherever there is one rather than quoting it.
+#[test]
+fn a_gate_message_carries_no_keys_and_points_at_the_log() {
+    let agent = crate::task::Agent::isolated(
+        "claude",
+        None,
+        crate::task::Base::Ref("main".into()),
+        String::new(),
+        "main".into(),
+    );
+    let isolation = work(&agent);
+    let output = "fine\n\x1b[201~\x1b]0;owned\x07\rrm -rf ~\r\x03\u{9b}31m";
+    let quoted = gate_failure_message(isolation, "make\rcheck", output, None);
+    assert!(
+        !quoted.chars().any(char::is_control),
+        "no control character survives: {quoted:?}"
+    );
+    assert!(
+        quoted.contains("rm -rf ~"),
+        "the words themselves are kept as text"
+    );
+
+    let log = Path::new("/somewhere/gate-abc.log");
+    let pointed = gate_failure_message(isolation, "make check", output, Some(log));
+    assert!(pointed.contains("/somewhere/gate-abc.log"));
+    assert!(
+        !pointed.contains("rm -rf"),
+        "the output is pointed at, not quoted"
+    );
+
+    let flood = "x".repeat(100_000);
+    assert!(
+        gate_failure_message(isolation, "make", &flood, None)
+            .chars()
+            .count()
+            < 2_000
     );
 }
 
@@ -618,6 +691,36 @@ fn a_target_carrying_its_own_commits_is_left_alone_and_reported() {
     );
 }
 
+/// A target nobody stands on is moved as a compare-and-swap of a
+/// fast-forward: onto a descendant of the commit read, and never under a
+/// checkout that has it out. `git branch --force` moved it anywhere.
+#[test]
+fn a_target_nobody_stands_on_moves_only_forward() {
+    let repository = repository("landing-ff-swap");
+    let primary = repository.root();
+    repository.git(&["switch", "-q", "-c", "sideways"]);
+    repository.commit_file("sideways.rs", "");
+    repository.git(&["switch", "-q", TARGET]);
+    repository.commit_file("released.rs", "");
+    repository.git(&["branch", "release"]);
+    let released = tip_of(primary, "release");
+    let ahead = repository.commit_file("ahead.rs", "");
+
+    assert!(fast_forward(primary, "release", "sideways").is_err());
+    assert_eq!(tip_of(primary, "release"), released, "never moved sideways");
+
+    repository.git(&["worktree", "add", "-q", ".worktrees/holder", "release"]);
+    assert!(
+        fast_forward(primary, "release", TARGET)
+            .is_err_and(|reason| reason.contains("checked out")),
+        "a checkout that has the branch out is not left behind its own HEAD"
+    );
+    repository.git(&["worktree", "remove", "--force", ".worktrees/holder"]);
+
+    fast_forward(primary, "release", TARGET).unwrap();
+    assert_eq!(tip_of(primary, "release"), ahead);
+}
+
 #[test]
 fn a_repository_with_no_remote_has_nothing_to_sync_against() {
     let repository = repository("landing-sync-local");
@@ -653,9 +756,10 @@ fn a_named_task_publishes_under_its_own_name() {
         "the derivation still has an answer of its own"
     );
 
+    let gate = steps(&[]);
     let policy = Policy {
         completion: CompletionBehavior::Pr,
-        gate: &steps(&[]),
+        gate: Some(Approved::assumed(&gate)),
     };
     let Delivered::AwaitingRequest { branch, .. } =
         deliver(primary, &mut isolation, &policy).unwrap()
@@ -667,6 +771,124 @@ fn a_named_task_publishes_under_its_own_name() {
         publication(primary, work(&isolation)).map(|published| published.branch),
         Some("fix/chosen-by-the-agent".to_owned()),
         "the remote holds the chosen name, not the derived one"
+    );
+}
+
+/// A colleague's branch, known here only as a remote-tracking ref,
+/// shares the name the agent chose. The name is taken, and the work is
+/// never force-pushed over theirs: the only remote tip a delivery may
+/// replace is one UZE recorded pushing.
+#[test]
+fn a_colleagues_branch_of_the_same_name_is_never_overwritten() {
+    let (repository, other) = published("landing-colleague-branch");
+    let primary = repository.root();
+    repository.git_in(&other, &["switch", "-q", "-c", "fix/shared-name"]);
+    fs::write(other.join("theirs.rs"), "").unwrap();
+    repository.git_in(&other, &["add", "."]);
+    repository.git_in(&other, &["commit", "-qm", "theirs"]);
+    repository.git_in(
+        &other,
+        &["push", "--quiet", "-u", REMOTE, "fix/shared-name"],
+    );
+    let theirs = repository.git_in(&other, &["rev-parse", "HEAD"]);
+    repository.git(&["fetch", "--quiet", REMOTE]);
+    assert!(!checkout::branch_exists(primary, "fix/shared-name"));
+    assert!(checkout::name_is_taken(primary, "fix/shared-name"));
+    assert!(!checkout::name_is_taken(primary, "fix/nobody-has-this"));
+
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "anything");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(&slot, &["branch", "--move", "fix/shared-name"]);
+    isolation.take_name("fix/shared-name".to_owned());
+    let policy = Policy {
+        completion: CompletionBehavior::Pr,
+        gate: Some(Approved::assumed(&[])),
+    };
+
+    let refused = deliver(primary, &mut isolation, &policy);
+    assert!(
+        matches!(&refused, Err(DeliveryFailure::Git(reason)) if reason.contains("did not push")),
+        "{refused:?}"
+    );
+    let remote = repository.git_in(&other, &["ls-remote", REMOTE, "refs/heads/fix/shared-name"]);
+    assert!(
+        remote.starts_with(&theirs),
+        "their branch was replaced: {remote}"
+    );
+}
+
+/// What UZE pushed it may push again after a rebase, and only that: a
+/// commit somebody else added on top of the published branch since is
+/// theirs, and the lease on the recorded commit refuses to drop it.
+#[test]
+fn a_republish_replaces_only_the_commit_uze_pushed() {
+    let (repository, other) = published("landing-republish");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "anything");
+    agent_commits_saying(&repository, work(&isolation), "a.rs", "fix(a): first");
+    let policy = Policy {
+        completion: CompletionBehavior::Pr,
+        gate: Some(Approved::assumed(&[])),
+    };
+    let Delivered::AwaitingRequest { branch, .. } =
+        deliver(primary, &mut isolation, &policy).unwrap()
+    else {
+        panic!("published, awaiting its request");
+    };
+    let pushed = tip_of(primary, &work(&isolation).branch);
+    assert_eq!(
+        work(&isolation).published_tip.as_deref(),
+        Some(pushed.as_str())
+    );
+
+    push_from(&repository, &other, "target-moved.rs");
+    agent_commits(&repository, work(&isolation), "b.rs", "");
+    deliver(primary, &mut isolation, &policy).unwrap();
+    let rebased = tip_of(primary, &work(&isolation).branch);
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(
+        remote.starts_with(&rebased),
+        "a rebased republish lands: {remote}"
+    );
+
+    repository.git_in(&other, &["fetch", "--quiet", REMOTE]);
+    repository.git_in(
+        &other,
+        &[
+            "switch",
+            "-q",
+            "-c",
+            "theirs",
+            &format!("{REMOTE}/{branch}"),
+        ],
+    );
+    fs::write(other.join("on-top.rs"), "").unwrap();
+    repository.git_in(&other, &["add", "."]);
+    repository.git_in(&other, &["commit", "-qm", "on top"]);
+    repository.git_in(
+        &other,
+        &["push", "--quiet", REMOTE, &format!("HEAD:{branch}")],
+    );
+    let on_top = repository.git_in(&other, &["rev-parse", "HEAD"]);
+    repository.git_in(&other, &["switch", "-q", TARGET]);
+    push_from(&repository, &other, "target-moved-again.rs");
+    repository.git(&["fetch", "--quiet", REMOTE]);
+    agent_commits(&repository, work(&isolation), "c.rs", "");
+
+    assert!(deliver(primary, &mut isolation, &policy).is_err());
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(
+        remote.starts_with(&on_top),
+        "their commit was dropped: {remote}"
     );
 }
 
@@ -742,9 +964,10 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
     repository.git_in(&other, &["push", "--quiet"]);
     let local_target_before = tip_of(primary, TARGET);
 
+    let gate = steps(&[exists("remote-only.txt")]);
     let policy = Policy {
         completion: CompletionBehavior::Pr,
-        gate: &steps(&[exists("remote-only.txt")]),
+        gate: Some(Approved::assumed(&gate)),
     };
     let Delivered::AwaitingRequest {
         branch,
@@ -891,7 +1114,7 @@ fn a_merge_request_is_discovered_the_same_way_a_pull_request_is() {
     );
     let policy = Policy {
         completion: CompletionBehavior::Pr,
-        gate: &[],
+        gate: Some(Approved::assumed(&[])),
     };
     deliver(primary, &mut isolation, &policy).unwrap();
     let tip = tip_of(primary, &work(&isolation).branch);
@@ -1132,7 +1355,7 @@ fn pr_without_a_remote_is_refused_before_anything_moves() {
     agent_commits(&repository, work(&isolation), "a.rs", "");
     let policy = Policy {
         completion: CompletionBehavior::Pr,
-        gate: &[],
+        gate: Some(Approved::assumed(&[])),
     };
     assert_eq!(
         deliver(primary, &mut isolation, &policy),

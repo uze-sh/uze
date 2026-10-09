@@ -140,8 +140,9 @@ scopes! {
     /// A modal asking for a line of text.
     TextPrompt => "text-prompt", "While typing an answer", Management,
         seals: true, text: true;
-    /// A modal asking a yes/no question.
-    Confirm => "confirm", "While being asked", Management, seals: true, text: false;
+    /// A modal asking a yes/no question, in either mode: the workspace
+    /// asks one before running a project's commands.
+    Confirm => "confirm", "While being asked", Both, seals: true, text: false;
 
     /// The workspace client, with nothing of uze's own open.
     Workspace => "workspace", "Workspace", Workspace, seals: false, text: false;

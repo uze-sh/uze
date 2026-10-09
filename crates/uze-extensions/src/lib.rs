@@ -199,25 +199,40 @@ pub trait Host {
     /// Replaces `path`'s contents. The file must already exist: this
     /// extension edits what a project has, and creating a path from a
     /// typed string is a separate grant nothing asks for yet.
-    fn write_file(&self, path: &std::path::Path, contents: &str) -> Result<(), String>;
+    ///
+    /// `root` is the directory the surface is showing, and every write
+    /// names it: a host refuses a path that, once the links a checkout
+    /// carries are followed, lands outside it.
+    fn write_file(
+        &self,
+        root: &std::path::Path,
+        path: &std::path::Path,
+        contents: &str,
+    ) -> Result<(), String>;
 
     /// Removes `path`. Files only — a directory removal is recursive by
     /// nature, and is [`Host::delete_dir`], a grant of its own.
-    fn delete_file(&self, path: &std::path::Path) -> Result<(), String>;
+    fn delete_file(&self, root: &std::path::Path, path: &std::path::Path) -> Result<(), String>;
 
     /// Removes the directory `path` and everything in it. Its own grant
     /// rather than a flag on [`Host::delete_file`], because "delete this"
     /// meaning "delete these four hundred" is a different thing to hand
     /// over. Refused by default: a host grants it by saying so.
-    fn delete_dir(&self, path: &std::path::Path) -> Result<(), String> {
+    fn delete_dir(&self, root: &std::path::Path, path: &std::path::Path) -> Result<(), String> {
+        let _ = root;
         Err(format!("{} cannot be deleted here", path.display()))
     }
 
     /// Gives `from` the name `to`, which must sit in the same directory
     /// and must not exist: this renames, it neither moves nor overwrites.
     /// Refused by default, for the reason [`Host::delete_dir`] is.
-    fn rename_path(&self, from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
-        let _ = to;
+    fn rename_path(
+        &self,
+        root: &std::path::Path,
+        from: &std::path::Path,
+        to: &std::path::Path,
+    ) -> Result<(), String> {
+        let _ = (root, to);
         Err(format!("{} cannot be renamed here", from.display()))
     }
 

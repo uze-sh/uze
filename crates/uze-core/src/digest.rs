@@ -7,7 +7,9 @@
 //! `std`'s `DefaultHasher`, whose algorithm the standard library explicitly
 //! does not promise to keep across versions.
 //!
-//! **Authentication** ([`tree_sha256`]) — the `integrity` a lock pins. Here
+//! **Authentication** ([`tree_sha256`], [`sha256`], [`secret_sha256`]) —
+//! the `integrity` a lock pins, what an operator's approval of a command
+//! line names, and what a record keeps of a secret. Here
 //! the question *is* "did somebody replace it", so a digest that is cheap to
 //! collide is worse than none: it would state a guarantee it cannot keep.
 //! This is the only reason `sha2` is a dependency, and the two must not be
@@ -30,6 +32,15 @@ pub fn fnv1a64(bytes: &[u8]) -> u64 {
 /// embeds in a name, so two call sites can never disagree on padding.
 pub fn short_hex(bytes: &[u8]) -> String {
     format!("{:016x}", fnv1a64(bytes))
+}
+
+/// The digest a secret is recorded as, as `sha256:<hex>`: what a record
+/// keeps so that whoever reads the record does not hold the secret too.
+pub fn secret_sha256(secret: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(secret.as_bytes());
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("sha256:{hex}")
 }
 
 /// The authenticating digest of a directory tree, as `sha256:<hex>`. Paths
@@ -66,7 +77,6 @@ pub type Links = std::collections::BTreeMap<std::path::PathBuf, std::path::PathB
 /// value wherever it was acquired.
 pub fn tree_sha256_with_links(root: &std::path::Path, links: &Links) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
 
     let mut entries = collect_entries(root, links)?;
     entries.sort_by(|left, right| left.path().cmp(right.path()));
@@ -96,9 +106,63 @@ pub fn tree_sha256_with_links(root: &std::path::Path, links: &Links) -> std::io:
         hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());
         hasher.update(&body);
     }
+    Ok(spelled_sha256(hasher))
+}
+
+/// The authenticating digest of `bytes`, as `sha256:<hex>`: for content a
+/// caller frames itself, where [`tree_sha256`] frames a directory tree.
+pub fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    spelled_sha256(hasher)
+}
+
+fn spelled_sha256(hasher: sha2::Sha256) -> String {
+    use sha2::Digest;
+    use std::fmt::Write as _;
     // Spelled byte by byte rather than through the digest's own `LowerHex`:
     // the crate stopped offering one in 0.11, and the written form is what
     // every `integrity` already pinned — it cannot move with a dependency.
+    let mut spelled = String::from("sha256:");
+    for byte in hasher.finalize() {
+        let _ = write!(spelled, "{byte:02x}");
+    }
+    spelled
+}
+
+/// The authenticating digest of some entries of a tree — each a file or a
+/// directory named relative to `root` — as `sha256:<hex>`: the code an
+/// approval to execute something was given over. A directory takes part as
+/// its [`tree_sha256`], a file as its bytes, each beside its name.
+pub fn entries_sha256(
+    root: &std::path::Path,
+    entries: &[std::path::PathBuf],
+) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let mut sorted = entries.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    let mut hasher = Sha256::new();
+    for entry in &sorted {
+        let spelled = crate::path::portable(entry);
+        hasher.update(
+            u64::try_from(spelled.len())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
+        hasher.update(spelled.as_bytes());
+        let path = root.join(entry);
+        let body = if std::fs::symlink_metadata(&path)?.is_dir() {
+            tree_sha256(&path)?.into_bytes()
+        } else {
+            std::fs::read(&path)?
+        };
+        hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(&body);
+    }
     let mut spelled = String::from("sha256:");
     for byte in hasher.finalize() {
         let _ = write!(spelled, "{byte:02x}");

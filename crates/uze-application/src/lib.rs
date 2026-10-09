@@ -8,11 +8,11 @@ pub mod bootstrap;
 pub use application::UzeApplication;
 pub use application::services::{
     AdoptedCheckout, AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, CheckoutOwner,
-    CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, DeclaredDirectory, DeliveryOutcome,
-    DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, KeptCheckout, NamedTask, Placement,
-    PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, RemovedCheckout,
-    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
-    project_artifacts,
+    CheckoutRefusal, CheckoutView, CheckoutsView, CleanUp, CommandsAwaitingApproval,
+    DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork,
+    KeptCheckout, NamedTask, Placement, PlacementKind, PreservedWork, ProjectArtifacts,
+    Reconciliation, ReleasedTask, RemovedCheckout, ShownCommand, SplitWork, SubagentCheckout,
+    TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these
@@ -27,6 +27,8 @@ pub use uze_core::{
     anchor::anchor_root_or_self,
     // An adaptive theme selection, and the observation it is decided by.
     appearance::{ADAPTIVE, Background},
+    // How text somebody else wrote reaches a terminal: inert.
+    authored::{inert, inert_line, is_terminal_control},
     // made of, so the CLI answers the same thing a `check` verb asks.
     authoring::{ScaffoldCapabilities, ValidationReport},
     capability::CapabilityKind,
@@ -59,9 +61,13 @@ pub use uze_core::{
     router::CompatibilityRoute,
     router::HarnessCapabilities,
     store::{parse_plugin_marketplace_spec, typed_name},
-    trust::{AlwaysTrust, NoTrustAuthority, TrustAuthority, TrustOutcome, TrustRequest},
+    trust::{
+        AlwaysTrust, CodeIdentity, ExecutableCapability, ExecutionKind, NoTrustAuthority,
+        SourceOrigin, TrustAuthority, TrustOutcome, TrustRequest,
+    },
 };
 pub use uze_workspace::{
+    checkout::SETUP_AWAITS_APPROVAL,
     client_layout::{
         ClientLayout, FirstStepsLayout, ManagementLayout, SidebarLayout, WorkspaceLayout,
     },
@@ -100,6 +106,18 @@ pub fn slot_key(cwd: &std::path::Path) -> std::path::PathBuf {
 /// is the thing they have to know about.
 pub fn is_isolated_checkout(cwd: &std::path::Path) -> bool {
     isolated_checkout(cwd).is_some()
+}
+
+/// Why Git may not be run under `path` on the workspace's behalf, or
+/// `None` when it may.
+///
+/// Only an isolated checkout is ever refused: one whose `.git` no longer
+/// names the project's repository, which is how whoever works in it would
+/// have the workspace — a process outside their sandbox — run a program
+/// their own repository configures. One with no `.git` at all is not
+/// refused: Git walks up from it to the project's own repository.
+pub fn unanchored_checkout(path: &std::path::Path) -> Option<String> {
+    uze_workspace::checkout::guard(path).err()
 }
 
 /// The root of the space a directory belongs to.

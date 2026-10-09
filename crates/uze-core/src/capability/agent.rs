@@ -122,11 +122,15 @@ impl AgentDocument {
 
 /// The agent's logical name from its path below `agents/` and its bytes.
 /// A definition whose frontmatter does not parse is named after its file,
-/// which is what a harness that still loads it calls it.
+/// which is what a harness that still loads it calls it, and so is one
+/// whose `name` could not be a file name (see [`unsafe_name`]): discovery
+/// refuses such a package, and nothing already stored can name a path with
+/// it either.
 pub fn logical_name(relative_to_agents: &Path, payload: &[u8]) -> Option<String> {
     let stem = relative_to_agents.file_stem()?.to_str()?;
     let name = AgentDocument::parse(payload)
         .and_then(|document| document.name)
+        .filter(|name| !unsafe_name(name))
         .unwrap_or_else(|| stem.to_owned());
     let mut segments = Vec::new();
     if let Some(parent) = relative_to_agents.parent() {
@@ -138,9 +142,53 @@ pub fn logical_name(relative_to_agents: &Path, payload: &[u8]) -> Option<String>
     Some(segments.join(":"))
 }
 
+/// Whether a frontmatter `name` could not stand as one file name.
+///
+/// The name becomes the label a harness reads the agent under, and the
+/// label names the file it is written to: `name: ../../.bashrc` would
+/// otherwise put a plugin's prompt wherever its author chose. A path
+/// separator of either platform, `.` or `..`, and any control character
+/// (NUL among them) are refused; what a filesystem merely spells
+/// differently is `file_name_for`'s to translate.
+pub fn unsafe_name(name: &str) -> bool {
+    name.is_empty()
+        || name == "."
+        || name == ".."
+        || name
+            .chars()
+            .any(|character| matches!(character, '/' | '\\') || character.is_control())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_that_is_a_path_is_never_the_logical_name() {
+        for (name, spelled) in [
+            ("../../.bashrc", "../../.bashrc"),
+            ("a/b", "a/b"),
+            ("/etc/passwd", "/etc/passwd"),
+            ("..", "'..'"),
+            ("a\\b", "'a\\b'"),
+            ("x\0y", "\"x\\0y\""),
+        ] {
+            let payload = format!("---\nname: {spelled}\n---\nbody\n");
+            assert_eq!(
+                AgentDocument::parse(payload.as_bytes()).and_then(|document| document.name),
+                Some(name.to_owned()),
+                "the fixture must carry {name:?}"
+            );
+            assert!(unsafe_name(name), "{name:?}");
+            assert_eq!(
+                logical_name(Path::new("reviewer.md"), payload.as_bytes()).as_deref(),
+                Some("reviewer"),
+                "{name:?}"
+            );
+        }
+        assert!(!unsafe_name("security"));
+        assert!(!unsafe_name("review:security"));
+    }
 
     #[test]
     fn a_flat_agent_is_named_after_its_file() {

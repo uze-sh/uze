@@ -307,6 +307,11 @@ pub(super) fn render(
             ],
         );
     }
+    // A question about what runs on this machine, over every surface it
+    // could otherwise be mistaken for part of.
+    if let Some(open) = &model.approval {
+        render_approval(frame, frame.area(), open, hits);
+    }
     // Over everything, the management modal included. Drawn beneath the
     // popups, a toast was covered by the very dropdowns that hang off the
     // strip above its corner, and one raised while a dialog was open sat

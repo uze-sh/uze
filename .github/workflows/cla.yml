@@ -14,20 +14,22 @@ on:
 # code must never be checked out or executed in this workflow. Nothing here
 # does: the action reads the pull request through the API and writes a
 # signature file to another repository.
-permissions:
-  actions: write
-  # The signature file lands on this repository's own `cla-signatures`
-  # branch, so the workflow's token is enough — no personal access token to
-  # mint, to scope, or to find expired on the day someone tries to sign.
-  contents: write
-  pull-requests: write
-  statuses: write
+permissions: {}
 
 jobs:
   cla:
     name: CLA signed
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      actions: write
+      # The signature file lands on this repository's own `cla-signatures`
+      # branch, so the workflow's token is enough — no personal access token
+      # to mint, to scope, or to find expired on the day someone tries to
+      # sign.
+      contents: write
+      pull-requests: write
+      statuses: write
     # `CLA_ACTIVE` is the switch, kept out of the file so the agreement can be
     # turned off without a commit — and so a fork of this repository never
     # asks anyone to sign an agreement with someone else.

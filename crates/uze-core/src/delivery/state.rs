@@ -375,6 +375,26 @@ pub struct MarketplaceRecord {
     /// existed reads back with no link, which is the truth about it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<PathBuf>,
+    /// Set when a project's `agents.yaml` or `agents.lock` registered this
+    /// marketplace and the operator never did: whoever wrote the project
+    /// chose its source, so what is installed through it is asked about as
+    /// a project's declaration ([`crate::trust::SourceOrigin::Project`])
+    /// even when the command naming the plugin was typed. Optional for the
+    /// reason `link` is: a registry written before it existed was written
+    /// by `market add`, which is the operator.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub declared_by_project: bool,
+}
+
+impl MarketplaceRecord {
+    /// Who chose this marketplace's source.
+    pub fn origin(&self) -> crate::trust::SourceOrigin {
+        if self.declared_by_project {
+            crate::trust::SourceOrigin::Project
+        } else {
+            crate::trust::SourceOrigin::Operator
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -393,14 +413,45 @@ pub fn marketplace_add(
     name: &str,
     source: crate::acquisition::PackageSource,
 ) -> Result<bool> {
+    register_marketplace(home, name, source, crate::trust::SourceOrigin::Operator)
+}
+
+/// [`marketplace_add`] for a marketplace a project's `agents.yaml` or
+/// `agents.lock` declares. Recorded as the project's choice, so what is
+/// installed through it keeps being asked about as such; one the operator
+/// already registered stays theirs.
+pub fn marketplace_add_declared(
+    home: &UzeHome,
+    name: &str,
+    source: crate::acquisition::PackageSource,
+) -> Result<bool> {
+    register_marketplace(home, name, source, crate::trust::SourceOrigin::Project)
+}
+
+fn register_marketplace(
+    home: &UzeHome,
+    name: &str,
+    source: crate::acquisition::PackageSource,
+    origin: crate::trust::SourceOrigin,
+) -> Result<bool> {
     if !crate::store::is_valid_package_name(name) {
         return Err(UzeError::InvalidMarketplaceName(name.to_owned()));
     }
     home.ensure_layout()?;
     let path = home.marketplaces_path();
     let mut registry: MarketplaceRegistry = read_json_or_default(&path)?;
+    let operator = origin == crate::trust::SourceOrigin::Operator;
     if let Some(existing) = registry.marketplaces.get_mut(name) {
+        // The operator adding a marketplace a project registered makes the
+        // source theirs; a project never takes one back from them.
+        let adopted = operator && existing.declared_by_project;
+        if adopted {
+            existing.declared_by_project = false;
+        }
         if existing.source == source {
+            if adopted {
+                write_json(&path, &registry)?;
+            }
             return Ok(false);
         }
         // The same repository in another spelling is the same marketplace:
@@ -424,6 +475,7 @@ pub fn marketplace_add(
             // Registering again never silently drops a link: only
             // `marketplace_unlink` removes one.
             link: registry.marketplaces.get(name).and_then(|r| r.link.clone()),
+            declared_by_project: !operator,
         },
     );
     write_json(&path, &registry)?;

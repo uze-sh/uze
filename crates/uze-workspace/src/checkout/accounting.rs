@@ -6,7 +6,7 @@ use super::*;
 /// has checked out — the primary checkout left out. Read from `git worktree
 /// list`, so a directory that exists but was never registered is none.
 pub fn linked_worktrees(primary: &Path) -> Vec<(PathBuf, Option<String>)> {
-    let Some(listing) = uze_git::read(primary, &["worktree", "list", "--porcelain"])
+    let Some(listing) = crate::git::read(primary, &["worktree", "list", "--porcelain"])
         .ok()
         .and_then(|output| output.successful().ok())
     else {
@@ -88,7 +88,7 @@ pub fn account(primary: &Path, harness_dirs: &[(&str, &str)]) -> Vec<AccountedCh
                 (Some((harness, _)), _) => Owner::Harness {
                     harness: (*harness).to_owned(),
                 },
-                (None, true) => match record::read(path) {
+                (None, true) => match record::read(primary, path) {
                     Recorded::Ours(CheckoutRecord {
                         parent: Some(parent),
                         ..
@@ -184,7 +184,7 @@ pub(super) fn slot_state(
 /// what would lose them. A question Git could not answer is taken as yes,
 /// as [`is_integrated`] takes it.
 pub fn holds_unbranched_commits(path: &Path) -> bool {
-    uze_git::read(
+    crate::git::read(
         path,
         &["rev-list", "--max-count=1", "HEAD", "--not", "--branches"],
     )

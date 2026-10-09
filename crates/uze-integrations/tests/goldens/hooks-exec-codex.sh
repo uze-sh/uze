@@ -28,8 +28,11 @@ deny_native() {                 # $1 reason, plain text; $2 decision (deny)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
   [ "$HOOK_EVENT" = session_start ] && { allow_native; exit 0; }
-  reason_json=$(json_string "$1")
-  printf '{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":%s}}' "$reason_json"
+  # The decision must not depend on starting a program: a reason that
+  # cannot be encoded is replaced, never left out of the document.
+  reason_json=$(json_string "$1") && [ -n "$reason_json" ] \
+    || reason_json='"hooks/exec: denied; the reason could not be encoded"'
+  printf '{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":%s}}' "$reason_json" || exit 2
   exit 2                                # this harness's block signal
 }
 
@@ -61,6 +64,9 @@ json_string() {
 }
 
 # --- the harness's payload becomes the hook context ----------------------
+# Inherited from the harness, any of these would already be exported, and
+# so handed to every program below whatever its size.
+unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 JQ=${HOOK_JQ:-jq}
 command -v "$JQ" >/dev/null 2>&1 || fail "hooks/exec: jq is not installed"
 JQ_READY=1
@@ -77,6 +83,18 @@ HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '.tool_input // {}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
   && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '.source // empty')
+# Whether every named variable fits the contract's bound, the same on
+# every platform: one Windows can hold, and far inside Linux's
+# MAX_ARG_STRLEN, past which no program starts at all, this wrapper's own
+# jq and sh included. A value that does not fit is never exported: the
+# group's effect decides, as for any context that cannot be built. Counted
+# in UTF-8 bytes.
+bounded() {
+  for name in "$@"; do
+    eval "value=\${$name}"
+    [ "$(LC_ALL=C; printf '%s' "${#value}")" -le 32000 ] || return 1
+  done
+}
 # The portable fields are read from the input, so a rewrite reads them again.
 portable_fields() {
   HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
@@ -85,6 +103,8 @@ portable_fields() {
     collaborationspawn_agent) HOOK_TOOL=agent.spawn; ;;
     collaborationsend_message) HOOK_TOOL=agent.message; ;;
   esac
+  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY \
+    || fail "hooks/exec: the tool input is larger than the 32000 bytes a HOOK_* variable carries"
   export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 }
 portable_fields
@@ -112,24 +132,19 @@ family() {                                       # $1 pid -> $1 and its issue
 
 # Where a handler's reason is collected: a file, never a pipe. Anything the
 # handler starts inherits a pipe, and one that outlives its deadline would
-# hold this shell open long past the deadline it just enforced. `set -C`
-# refuses a path that already exists, so a planted file or symlink is never
-# written through; with nowhere to write at all, the reason is dropped
-# rather than the hook.
-reasons=${TMPDIR:-/tmp}/hooks-exec.$$
-(set -C; : > "$reasons") 2>/dev/null || reasons=/dev/null
-# A transform handler answers with the rewritten input on stdout; nowhere
-# to keep it is a failure, never an unchanged call.
+# hold this shell open long past the deadline it just enforced. The file
+# sits in a directory made for this call and only this user can enter: a
+# predictable name in a shared directory is one somebody else can create
+# first. With nowhere private to write, a handler's answer cannot be read,
+# which is a failure like any other.
+workspace=$(mktemp -d "${TMPDIR:-/tmp}/hooks-exec.XXXXXX" 2>/dev/null) && [ -d "$workspace" ] \
+  || fail "hooks/exec: no private directory to collect a handler's answer in"
+discard_workspace() { rm -rf "$workspace"; }
+trap discard_workspace EXIT
+reasons=$workspace/reasons
+# A transform handler answers with the rewritten input on stdout.
 rewrites=/dev/null
-if [ "$effect" = transform ]; then
-  rewrites=${TMPDIR:-/tmp}/hooks-exec-out.$$
-  (set -C; : > "$rewrites") 2>/dev/null || fail "hooks/exec: nowhere to read a rewritten input"
-fi
-discard_reasons() {
-  [ "$reasons" = /dev/null ] || rm -f "$reasons"
-  [ "$rewrites" = /dev/null ] || rm -f "$rewrites"
-}
-trap discard_reasons EXIT
+[ "$effect" = transform ] && rewrites=$workspace/rewrites
 # A signal ends the wrapper. A trap that only cleaned up would return into
 # the loop and run the next handler for a harness that has stopped waiting.
 trap 'exit 130' INT
@@ -189,8 +204,8 @@ for entry in "$@"; do
   if [ "$status" = 0 ] && [ -s "$rewrites" ]; then
     # A rewrite: the complete input, as one JSON object. The next handler
     # reads it as its HOOK_INPUT, and the last one is what the tool runs.
-    [ "$(wc -c < "$rewrites")" -le 65536 ] \
-      || fail "handler wrote more than 65536 bytes: $handler"
+    [ "$(wc -c < "$rewrites")" -le 32000 ] \
+      || fail "handler wrote more than 32000 bytes: $handler"
     updated=$("$JQ" -ce 'if type == "object" then . else error end' < "$rewrites" 2>/dev/null) \
       || fail "handler did not write a JSON object: $handler"
     HOOK_INPUT=$updated

@@ -144,6 +144,9 @@ impl Attach<'_> {
                 .hit_at(mouse.column, mouse.row)
                 .is_some_and(WorkspaceHit::is_open_surfaces);
         match mouse {
+            _ if self.model.approval.is_some() => {
+                self.approval_press(mouse.column, mouse.row);
+            }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
                     self.model.hit_at(mouse.column, mouse.row),
@@ -1351,6 +1354,10 @@ impl Attach<'_> {
             | WorkspaceHit::WorkAnswer(_)
             | WorkspaceHit::WorkClose
             | WorkspaceHit::WorkBody => {}
+            WorkspaceHit::ReviewCommands => self.model.review_commands(),
+            // Only reachable while the question is open, which the guarded
+            // arm in `press` answers first.
+            WorkspaceHit::ApprovalAnswer(_) | WorkspaceHit::ApprovalBody => {}
             WorkspaceHit::ContextMenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already

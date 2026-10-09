@@ -3,6 +3,18 @@
 use super::*;
 
 impl Attach<'_> {
+    /// Submits `message` into `pane` as UZE's own words — see
+    /// [`notice_bytes`] for why it cannot be typed as it stands.
+    fn submit_notice(&mut self, pane: PaneId, message: &str) {
+        let bracketed = self
+            .model
+            .panes
+            .get(&pane)
+            .is_some_and(|snapshot| snapshot.bracketed_paste);
+        let bytes = crate::ui::orchestrator::input::notice_bytes(message, bracketed);
+        let _ = send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
+    }
+
     /// What the task evaluations answered: branches, targets, syncs and
     /// the tasks themselves, and any evaluation asked for again while
     /// one was out.
@@ -89,9 +101,7 @@ impl Attach<'_> {
             // one submission.
             for notice in evaluation.notices {
                 if let Some(pane) = self.model.pane_for_agent(&notice.task) {
-                    let mut bytes = notice.message.into_bytes();
-                    bytes.push(b'\r');
-                    let _ = send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
+                    self.submit_notice(pane, &notice.message);
                 }
             }
             self.model.dirty = true;
@@ -121,6 +131,12 @@ impl Attach<'_> {
                 // A delivery that failed is worth an offer: the branch is
                 // where it was, and trying again is the one thing the
                 // reader would go looking for.
+                // A gate nobody approved is a question, not an outcome:
+                // the toast that asks it is the one the reader needs.
+                if let DeliveryOutcome::AwaitingApproval(awaiting) = &report.outcome {
+                    self.model.commands_await(awaiting.clone(), true);
+                    continue;
+                }
                 let kind = match &report.outcome {
                     // Refused is the gate saying no, and returned is the
                     // work coming back for the agent to answer: neither is
@@ -143,9 +159,7 @@ impl Attach<'_> {
                 | DeliveryOutcome::AwaitingRequest(notice) = &report.outcome
                     && let Some(pane) = self.model.pane_for_agent(&notice.task)
                 {
-                    let mut bytes = notice.message.clone().into_bytes();
-                    bytes.push(b'\r');
-                    let _ = send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
+                    self.submit_notice(pane, &notice.message);
                 }
             }
             if resolution.reports.is_empty() {
@@ -239,6 +253,11 @@ impl Attach<'_> {
             self.home,
             unread.clone(),
             self.channels.unspelled_gates.sender.clone(),
+        );
+        spawn_commands_awaiting(
+            self.home,
+            unread.clone(),
+            self.channels.commands_awaiting.sender.clone(),
         );
         spawn_policy_region_sync(
             self.home,
@@ -405,6 +424,17 @@ impl Attach<'_> {
                 ),
                 None,
             );
+        }
+    }
+
+    /// A project's commands waiting for the operator, read where it
+    /// opens, and what approving them answered.
+    pub(super) fn absorb_command_approvals(&mut self) {
+        while let Ok(awaiting) = self.channels.commands_awaiting.receiver.try_recv() {
+            self.model.commands_await(awaiting, false);
+        }
+        while let Ok(resolution) = self.channels.approvals.receiver.try_recv() {
+            self.model.absorb_approval(resolution);
         }
     }
 

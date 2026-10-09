@@ -372,6 +372,7 @@ fn rename(view: &mut CodeView) {
     let to = renaming.path.with_file_name(renaming.name.trim());
     if to != renaming.path {
         view.queue.push_back(FileRequest::Rename {
+            root: view.root.clone(),
             from: renaming.path,
             to,
         });

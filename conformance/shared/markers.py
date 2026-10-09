@@ -82,7 +82,13 @@ LIFECYCLE = {
 HOOK_DENIALS = (
     *(
         f"lab-hook-denied:{label}"
-        for label in ("effect-guard", "effect-ask", "post-guard", "exec-guard")
+        for label in (
+            "effect-guard",
+            "effect-ask",
+            "post-guard",
+            "exec-guard",
+            "read-guard",
+        )
     ),
     # The wrapper's own reason when a guard cannot run (fail-closed): its
     # shell's exit, or, where a handler is spawned from its words with no
@@ -90,6 +96,11 @@ HOOK_DENIALS = (
     "handler failed (exit",
     "handler failed to start",
 )
+
+#: What the files the hooks contract's read scene opens hold: only the
+#: read tool's own output can carry one to the model (`contract/hooks.py`
+#: writes them into the project before the session starts).
+HOOK_READS = ("UZE_HOOK_READ_DENIED_BODY", "UZE_HOOK_READ_ALLOWED_BODY")
 
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")
 _MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
@@ -120,6 +131,7 @@ def summary(body):
         },
         "root_refs": sorted(set(_ROOT_REF.findall(body))),
         "hook_denials": {m: m in body for m in HOOK_DENIALS},
+        "hook_reads": {m: m in body for m in HOOK_READS},
         "lifecycle_markers": {
             m: m in body for markers in LIFECYCLE.values() for m in markers
         },

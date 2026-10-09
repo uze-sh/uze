@@ -24,6 +24,7 @@ pub mod mounts;
 pub mod path;
 pub mod probe;
 pub mod process;
+pub mod secret;
 pub mod shell;
 pub mod stdio;
 pub mod target;

@@ -45,16 +45,26 @@ pub enum FileRequest {
     /// [`FileRequest::Read`] left, asked for once the source is what is
     /// being shown.
     Colour(PathBuf),
+    /// Every write names the `root` the surface is showing, so the host
+    /// can refuse a path that a link inside the checkout leads out of it.
     Save {
+        root: PathBuf,
         path: PathBuf,
         contents: String,
     },
-    Delete(PathBuf),
+    Delete {
+        root: PathBuf,
+        path: PathBuf,
+    },
     /// Remove a directory and everything in it. Answered as
     /// [`FileAnswer::Deleted`], like a file.
-    DeleteDirectory(PathBuf),
+    DeleteDirectory {
+        root: PathBuf,
+        path: PathBuf,
+    },
     /// Give `from` the name `to`, in the same directory.
     Rename {
+        root: PathBuf,
         from: PathBuf,
         to: PathBuf,
     },
@@ -163,11 +173,13 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
             path: path.clone(),
             outcome: Err(reason.to_owned()),
         },
-        FileRequest::Delete(path) | FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
-            path: path.clone(),
-            outcome: Err(reason.to_owned()),
-        },
-        FileRequest::Rename { from, to } => FileAnswer::Renamed {
+        FileRequest::Delete { path, .. } | FileRequest::DeleteDirectory { path, .. } => {
+            FileAnswer::Deleted {
+                path: path.clone(),
+                outcome: Err(reason.to_owned()),
+            }
+        }
+        FileRequest::Rename { from, to, .. } => FileAnswer::Renamed {
             from: from.clone(),
             to: to.clone(),
             outcome: Err(reason.to_owned()),
@@ -216,20 +228,24 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             let file = read_and_colour(host, &path, usize::MAX);
             FileAnswer::Coloured { path, file }
         }
-        FileRequest::Save { path, contents } => FileAnswer::Saved {
-            outcome: host.write_file(&path, &contents),
+        FileRequest::Save {
+            root,
+            path,
+            contents,
+        } => FileAnswer::Saved {
+            outcome: host.write_file(&root, &path, &contents),
             path,
         },
-        FileRequest::Delete(path) => FileAnswer::Deleted {
-            outcome: host.delete_file(&path),
+        FileRequest::Delete { root, path } => FileAnswer::Deleted {
+            outcome: host.delete_file(&root, &path),
             path,
         },
-        FileRequest::DeleteDirectory(path) => FileAnswer::Deleted {
-            outcome: host.delete_dir(&path),
+        FileRequest::DeleteDirectory { root, path } => FileAnswer::Deleted {
+            outcome: host.delete_dir(&root, &path),
             path,
         },
-        FileRequest::Rename { from, to } => FileAnswer::Renamed {
-            outcome: host.rename_path(&from, &to),
+        FileRequest::Rename { root, from, to } => FileAnswer::Renamed {
+            outcome: host.rename_path(&root, &from, &to),
             from,
             to,
         },

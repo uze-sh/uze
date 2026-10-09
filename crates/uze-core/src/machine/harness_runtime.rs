@@ -138,7 +138,10 @@ pub(crate) fn resolve_real_executable_in(
     let running = std::env::current_exe()
         .and_then(|executable| executable.canonical())
         .ok();
-    for dir in search_path {
+    // A relative entry (`.`, or the empty one POSIX reads as `.`) names
+    // whatever directory this command was started in, which is a project
+    // somebody else may have written: never where a harness is found.
+    for dir in search_path.into_iter().filter(|dir| dir.is_absolute()) {
         // Canonicalizing is a filesystem round trip per `PATH` entry, and
         // on a WSL `PATH` carrying Windows directories each one crosses a
         // network filesystem. Only an entry that could *be* the shims
@@ -186,7 +189,7 @@ pub(crate) fn resolve_real_executable_in(
 
 /// The `PATH` entries a harness executable is looked for in, in order.
 ///
-/// Every entry as spelled, except those on a filesystem this machine
+/// Every absolute entry as spelled, except those on a filesystem this machine
 /// reaches over a network protocol — `9p`, which is how a Windows drive
 /// appears inside WSL. A harness UZE integrates is a program of this
 /// machine, with its state under `$HOME`; an executable on a mounted
@@ -200,6 +203,7 @@ pub fn harness_search_path() -> Vec<PathBuf> {
     };
     let remote = uze_platform::mounts::network_mount_points();
     std::env::split_paths(&path)
+        .filter(|dir| dir.is_absolute())
         .filter(|dir| !remote.iter().any(|mount| dir.starts_with(mount)))
         .collect()
 }
@@ -360,6 +364,44 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
 
 #[cfg(test)]
 mod tests {
+    /// `abs` spelled relative to this process's working directory, the
+    /// shape a `.`-style `PATH` entry has.
+    // Unix only: it climbs to `/` and descends, which a Windows path on
+    // another drive cannot.
+    #[cfg(unix)]
+    fn relative_from_here(abs: &std::path::Path) -> std::path::PathBuf {
+        let here = std::env::current_dir().unwrap();
+        let mut relative = std::path::PathBuf::new();
+        for _ in here.components().skip(1) {
+            relative.push("..");
+        }
+        relative.join(abs.strip_prefix("/").unwrap())
+    }
+
+    /// A relative `PATH` entry names whatever directory the command was
+    /// started in, so a harness is never found through one.
+    // Unix only, as `relative_from_here` is.
+    #[cfg(unix)]
+    #[test]
+    fn a_relative_path_entry_never_resolves_a_harness() {
+        let root = uze_testkit::temp::scratch("harness-relative-path");
+        let shims = root.join("shims");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let name = "uze-test-harness-relative";
+        uze_testkit::process::install_executable(&bin.join(name), b"#!/bin/sh\n");
+        let relative = relative_from_here(&bin);
+        assert!(relative.is_relative() && relative.join(name).is_file());
+
+        assert_eq!(
+            super::resolve_real_executable_in([relative], &[name], &shims),
+            None
+        );
+        assert!(super::resolve_real_executable_in([bin], &[name], &shims).is_some());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// A harness its installer put where no search path reaches is found
     /// at the location the integration documents, and a documented
     /// location that is UZE's own shim is not.

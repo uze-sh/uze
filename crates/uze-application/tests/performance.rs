@@ -375,6 +375,7 @@ fn the_agent_surface_meets_the_budget() {
             .name_task(
                 uze_workspace::conversation::Claim {
                     id: "budget",
+                    key: "budget",
                     cwd: &world.project,
                 },
                 "fix/budget",
@@ -385,9 +386,21 @@ fn the_agent_surface_meets_the_budget() {
         app.workspace()
             .list_work(uze_workspace::conversation::Claim {
                 id: "budget",
+                key: "budget",
                 cwd: &world.project,
             })
             .ok()
+    });
+}
+
+/// Withdrawing a project's approval of its commands is one file removed
+/// from the project's records — the operator's word, never a read of the
+/// repository.
+#[test]
+fn withdrawing_command_approval_meets_the_budget() {
+    let world = World::build("budget-command-approval");
+    world.within_budget("workspace revoke", |app| {
+        app.workspace().revoke_commands(&world.project)
     });
 }
 

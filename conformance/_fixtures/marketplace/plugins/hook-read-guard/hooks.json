@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "read-guard",
+        "matcher": "file.read",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe read-guard deny-marked",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/probe read-after allow",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

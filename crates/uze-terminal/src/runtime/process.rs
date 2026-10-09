@@ -176,13 +176,20 @@ pub(super) const RETIRE_WITHIN: Duration = Duration::from_secs(1);
 /// Ends a server this client cannot use: asked to stop first — its
 /// persisted workspace is what lets the fresh server restore the same tabs
 /// — and ended outright only if it has not let go of the endpoint and the
-/// claim promptly. A pid that is not running `uze` by the time it would be
-/// stopped is left alone.
-pub(super) fn retire(pid: u32, socket: &Path) {
+/// claim promptly.
+///
+/// `started` is when the process meant started, where the caller knows it
+/// from a record; otherwise it is read now, so that a pid recycled while
+/// this waits is not the one signalled next. A pid that is not running
+/// that same `uze` by the time it would be signalled is left alone.
+pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) {
+    let started = started.or_else(|| uze_platform::probe::started_at(pid));
+    let still_the_one =
+        || runs_uze(pid) && (started.is_none() || uze_platform::probe::started_at(pid) == started);
     let released = || listening_peer(socket) != Some(pid) && !workspace_is_claimed();
     let channel = stop_channel(socket);
     for ask_first in [true, false] {
-        if !runs_uze(pid) {
+        if !still_the_one() {
             return;
         }
         if ask_first {

@@ -94,9 +94,11 @@ fn bridged_handler(
             "timeout": handler.timeout,
         }),
         uze_core::hook::Invocation::Line(line) => serde_json::json!({
-            "command": uze_platform::shell::script_text(
-                &line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string()),
-            ),
+            "command": uze_platform::shell::script_text(&uze_platform::shell::substitute(
+                &line,
+                crate::shared::package_root::TOKEN,
+                &delivered_root.display().to_string(),
+            )),
             "timeout": handler.timeout,
         }),
         uze_core::hook::Invocation::Unrunnable(_) => serde_json::json!({
@@ -171,10 +173,12 @@ pub(crate) fn bridge_carries_groups(
 /// dependencies, deterministic — and naming nothing but the hook contract.
 ///
 /// Every event and effect rides OpenCode V2's own plugin API (anomalyco/
-/// opencode `v2`, measured on 2.0.24): the tool hooks for observing, and
-/// `permission.evaluate` for deciding — the tool hooks see the input but
-/// cannot refuse, and the permission hook can refuse or ask but carries no
-/// input, so the input is kept by call id between the two. A session's
+/// opencode `v2`, measured on 2.0.24): `execute.before` for observing,
+/// rewriting and denying, and `permission.evaluate` for asking — the tool
+/// hook sees the input but has no refusal of its own (a denial there
+/// renames the call to a tool that does not exist), and the permission
+/// hook can ask but carries no input and fires only for a tool that asks,
+/// so the input is kept by call id between the two. A session's
 /// start and the end of its turn are bus events (`session.created`,
 /// `session.execution.succeeded`); a denied stop is answered the way the
 /// harness's own plan plugin keeps a session going, with synthetic input.
@@ -189,12 +193,18 @@ pub(crate) fn opencode_bridge(
     let groups = serde_json::to_string(&bridge_hooks(target, hooks, plugin_root))
         .expect("generated groups serialize");
     let aliases = bridge_alias_table(target);
+    let prompting = match target.runner {
+        HookRunner::Bridge { prompting } => prompting,
+        HookRunner::Wrapper { .. } => &[],
+    };
+    let prompting = serde_json::to_string(prompting).expect("tool names serialize");
     // The shell a handler line is written for on this platform, decided
     // when the bridge is generated.
     let shell = serde_json::to_string(uze_platform::shell::ARGV).expect("shell words serialize");
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
     let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
+    let value_limit = wrapper::HOOK_VALUE_LIMIT;
     format!(
         r#"{BRIDGE_HEADER}
 // OpenCode V2 (opencode.ai/v2/docs/build/plugins) has no hooks.json: the
@@ -205,7 +215,9 @@ pub(crate) fn opencode_bridge(
 // decision leaves as an exit code — 0 allows, {deny_exit_code} denies with
 // the reason on stderr, anything else is a failure that follows the group's
 // effect (fail-closed for deny/ask, fail-open for observe/allow). Each
-// handler is bounded by the deadline its author declared.
+// handler is bounded by the deadline its author declared, and no HOOK_*
+// value is longer than {value_limit} bytes: past that the group's effect
+// decides, as on every other harness.
 //
 // The plugin is the definition object itself, with no import: OpenCode
 // 2.0.18 does not resolve `@opencode-ai/plugin` for a file in its plugin
@@ -215,6 +227,9 @@ pub(crate) fn opencode_bridge(
 const ROOT = {root};
 const GROUPS = {groups};
 const SHELL = {shell};
+// The tools that ask for permission before they act: the only calls an
+// `ask` group can put to the person.
+const PROMPTING = {prompting};
 
 // native tool name -> portable alias and its portable fields
 const ALIASES = {{
@@ -223,11 +238,12 @@ const ALIASES = {{
 
 const closed = (effect) => effect === "deny" || effect === "ask";
 
+// The hook context, or null when a value in it is longer than one
+// environment string may be: the contract's bound, the same on every
+// platform and every harness.
 function environment(group, native, input, source) {{
   const alias = ALIASES[native];
-  return {{
-    ...process.env,
-    PLUGIN_ROOT: ROOT,
+  const context = {{
     HOOK_HARNESS: "opencode",
     HOOK_EVENT: group.event,
     HOOK_TOOL: alias?.tool ?? "",
@@ -237,6 +253,22 @@ function environment(group, native, input, source) {{
     HOOK_SOURCE: source ?? "",
     ...(alias ? alias.fields(input ?? {{}}) : {{}}),
   }};
+  const bytes = new TextEncoder();
+  if (Object.values(context).some((value) => bytes.encode(value).length > {value_limit})) return null;
+  return {{ ...process.env, PLUGIN_ROOT: ROOT, ...context }};
+}}
+const OVERSIZED = "hooks: the tool input is larger than the {value_limit} bytes a HOOK_* variable carries";
+
+// A handler and everything it started: it runs as the leader of a process
+// group of its own, so the deadline reaches a child still holding a pipe.
+// Windows has no process groups; the tree is ended by pid instead.
+const WINDOWS = process.platform === "win32";
+function stop(proc) {{
+  try {{
+    if (WINDOWS) Bun.spawnSync(["taskkill", "/T", "/F", "/PID", String(proc.pid)]);
+    else process.kill(-proc.pid, "SIGKILL");
+  }} catch {{}}
+  proc.kill();
 }}
 
 // A handler's stderr, bounded like the sh wrapper's: the reason is a
@@ -273,6 +305,7 @@ async function handler(entry, timeout, env, rewrite) {{
   try {{
     proc = Bun.spawn(argv, {{
       cwd: ROOT,
+      detached: !WINDOWS,
       env: entry.bun ? {{ ...env, BUN_BE_BUN: "1" }} : env,
       stdin: "ignore",
       stdout: rewrite ? "pipe" : "ignore",
@@ -295,14 +328,14 @@ async function handler(entry, timeout, env, rewrite) {{
   const outcome = await Promise.race([answer, deadline]);
   clearTimeout(timer);
   if (outcome === "expired") {{
-    proc.kill();
+    stop(proc);
     stream.cancel().catch(() => {{}});
     return {{ failed: true, reason: `handler timed out after ${{timeout}}s: ${{command}}` }};
   }}
   const [stderr, code, stdout] = outcome;
   if (code === 0) {{
     if (!rewrite || stdout.trim() === "") return null;
-    if (stdout.length > {output_limit}) {{
+    if (new TextEncoder().encode(stdout).length > {output_limit}) {{
       return {{ failed: true, reason: `handler wrote more than {output_limit} bytes: ${{command}}` }};
     }}
     let rewritten;
@@ -325,6 +358,11 @@ async function handler(entry, timeout, env, rewrite) {{
 // denies for a fail-closed group and is reported for the others.
 async function run(group, native, input, source) {{
   const env = environment(group, native, input, source);
+  if (!env) {{
+    if (closed(group.effect)) return OVERSIZED;
+    console.error(`[hooks:${{group.id}}]`, OVERSIZED);
+    return null;
+  }}
   for (const entry of group.handlers) {{
     const answer = await handler(entry, entry.timeout, env);
     if (answer === null) continue;
@@ -344,14 +382,18 @@ function matches(group, event, native) {{
   );
 }}
 
-// Groups on `event` for `native`: the observing ones, the deciding ones and
-// the rewriting ones.
+// Groups on `event` for `native`: the observing ones, the deciding ones
+// (and of those the denying and the asking ones) and the rewriting ones.
 const observing = (event, native) =>
   GROUPS.filter((group) => matches(group, event, native) && !closed(group.effect));
 const deciding = (event, native) =>
   GROUPS.filter(
     (group) => matches(group, event, native) && closed(group.effect) && group.effect !== "transform",
   );
+const denying = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && group.effect === "deny");
+const asking = (event, native) =>
+  GROUPS.filter((group) => matches(group, event, native) && group.effect === "ask");
 const rewriting = (event, native) =>
   GROUPS.filter((group) => matches(group, event, native) && group.effect === "transform");
 
@@ -361,12 +403,25 @@ async function transform(group, native, input) {{
   let current = input;
   for (const entry of group.handlers) {{
     const env = environment(group, native, current);
+    if (!env) return {{ reason: OVERSIZED }};
     const answer = await handler(entry, entry.timeout, env, (rewritten) => {{
       current = rewritten;
     }});
     if (answer !== null) return {{ reason: answer.reason }};
   }}
   return {{ input: current }};
+}}
+
+// Refuses a call from `execute.before`, which has no refusal of its own:
+// OpenCode looks the tool up by the name this event carries once the hook
+// returns, so a name no tool has fails the call before it runs, with an
+// error that hands the model the reason. Not every tool asks for
+// permission (`read` never does), so this is the only refusal such a call
+// meets. A call reached through code mode was looked up before the hook;
+// without an input it fails to decode instead of running.
+function refuse(event, reason) {{
+  event.tool = `${{event.tool}} (refused by a hook: ${{reason}})`;
+  event.input = undefined;
 }}
 
 // A tool call's name and input, kept from `execute.before` until the
@@ -426,8 +481,7 @@ export default {{
       const call = {{ tool: event.tool, input: event.input }};
       CALLS.set(event.id, call);
       // A rewrite is what the tool then runs, as OpenCode's own input
-      // repair does it; a group that cannot rewrite closes the call, which
-      // the permission check refuses.
+      // repair does it; a group that cannot rewrite closes the call.
       for (const group of rewriting("pre_tool_use", event.tool)) {{
         const result = await transform(group, event.tool, call.input);
         if (result.reason) {{
@@ -441,9 +495,24 @@ export default {{
         const reason = await run(group, event.tool, event.input);
         if (reason) console.error(`[hooks:${{group.id}}]`, reason);
       }}
+      if (!call.refused) {{
+        const denied = await decide(denying("pre_tool_use", call.tool), call.tool, call.input);
+        if (denied) call.refused = denied.reason;
+      }}
+      // An `ask` about a tool that never asks for permission would never
+      // reach the person, and the call would run unasked: it is refused.
+      if (!call.refused && !PROMPTING.includes(call.tool)) {{
+        call.asked = true;
+        const asked = await decide(asking("pre_tool_use", call.tool), call.tool, call.input);
+        if (asked) {{
+          call.refused = `${{asked.reason}} (OpenCode offers no permission prompt for \`${{call.tool}}\`, so the call is refused rather than run unasked)`;
+        }}
+      }}
+      if (call.refused) refuse(event, call.refused);
     }});
-    // OpenCode asks every tool that touches the machine for permission
-    // before it runs; this is where a deciding group refuses or asks.
+    // Where a tool asks for permission, this is where an `ask` group asks,
+    // and a call `execute.before` refused stays refused should it run all
+    // the same.
     await ctx.permission.hook("evaluate", async (event) => {{
       if (event.source?.type !== "tool") return;
       const call = CALLS.get(event.source.id);
@@ -454,10 +523,11 @@ export default {{
         event.message = call.refused;
         return;
       }}
-      const denied = await decide(deciding("pre_tool_use", call.tool), call.tool, call.input);
-      if (!denied) return;
-      event.effect = denied.group.effect === "ask" ? "ask" : "deny";
-      event.message = denied.reason;
+      if (call.asked) return;
+      const asked = await decide(asking("pre_tool_use", call.tool), call.tool, call.input);
+      if (!asked) return;
+      event.effect = "ask";
+      event.message = asked.reason;
     }});
     await ctx.tool.hook("execute.after", async (event) => {{
       CALLS.delete(event.id);

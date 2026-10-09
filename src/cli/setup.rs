@@ -41,11 +41,17 @@ pub(crate) fn run_setup_command(
     match arguments {
         [] => run_setup(app, home, arguments, ProvisionRoute::Official, verbose).map(drop),
         [command] if command == "list" => {
-            print!("{}", render_harness_list(&app.health().harnesses()));
+            print!(
+                "{}",
+                progress::for_terminal(&render_harness_list(&app.health().harnesses()))
+            );
             Ok(())
         }
         [command, name] if command == "inspect" => {
-            print!("{}", render_harness_detail(&app.health().harness(name)?));
+            print!(
+                "{}",
+                progress::for_terminal(&render_harness_detail(&app.health().harness(name)?))
+            );
             Ok(())
         }
         [command] if command == "inspect" => {
@@ -339,7 +345,10 @@ pub(crate) fn run_setup(
     } else {
         format!("{} of {total} agents ready", ready)
     };
-    print!("{}", progress::change_report("setup", &lines, &outcome));
+    print!(
+        "{}",
+        progress::for_terminal(&progress::change_report("setup", &lines, &outcome))
+    );
     // A harness that was not provisioned is a failed setup, not a warning:
     // a caller that scripts `uze setup` (an image build, a bootstrap) must
     // never read "all ready" over a missing binary.
@@ -376,7 +385,7 @@ pub(crate) fn print_log_block(path: &std::path::Path, content: &str) {
         println!(
             "  {} {}",
             crate::progress::log_prefix(),
-            progress::label(line)
+            progress::label(uze_application::inert(line))
         );
     }
     if lines.len() > to_show {

@@ -170,6 +170,21 @@ Always check, and write the answer in the PR that adds it:
 
 None of this applies to a crate the workspace already depends on: use it.
 
+Written exceptions, each with what removes it:
+
+- **`noyalib`** (`0.0.x`, one author, renamed once from `serde_yml`) parses
+  `agents.yaml` and `agents.lock`, the first thing UZE reads in a repository
+  that may have just been cloned. Kept because `serde_yaml` is archived and
+  `yamlpath`/`yamlpatch` brings `tree-sitter` and a C grammar onto the
+  release matrix; its tests, vendored `yaml-test-suite` cases and
+  `#![forbid(unsafe_code)]` are the evidence. Contained:
+  `project/manifest/edit.rs` is the only file naming `noyalib::cst`, and it
+  refuses anchors, aliases, merge keys, tabs and document separators before
+  an edit. Track its advisories (`RUSTSEC-2026-0333` was fixed by moving to
+  0.0.53). The exception goes when the crate reaches `0.1`, goes twelve
+  months without a release or renames again, or a maintained YAML serde
+  crate with an editing model appears.
+
 ## Documentation hygiene
 
 Do not create permanent Markdown files for implementation notes,

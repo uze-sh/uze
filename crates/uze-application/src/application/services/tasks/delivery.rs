@@ -67,6 +67,19 @@ impl Workspace<'_> {
         if let Some(waiting) = self.unjoined_children(primary, task_id) {
             return self.refused_delivery(primary, policy, task_id, waiting);
         }
+        let consent = self.consent(primary, policy);
+        // Before the task is claimed: a gate the operator has not approved
+        // is a question for them, and nothing about the task changes while
+        // it is asked.
+        if consent.gate().is_none()
+            && let Some(awaiting) = consent.awaiting()
+        {
+            let mut report = self.refused_delivery(primary, policy, task_id, String::new())?;
+            report.outcome = DeliveryOutcome::AwaitingApproval(CommandsAwaitingApproval::of(
+                primary, awaiting, None,
+            ));
+            return Some(report);
+        }
         let claimed = task::locked(&self.0.home, primary, |store| {
             Ok(task_mut(store, task_id).and_then(|agent| {
                 // Claimed as it stands, then marked: the delivery reads
@@ -98,7 +111,7 @@ impl Workspace<'_> {
             }
         };
         let id = agent.id.clone();
-        let outcome = deliver_one(primary, policy, &id, &mut agent);
+        let outcome = deliver_one(&self.0.home, primary, &consent, &id, &mut agent);
         let mut report = DeliveryReport {
             task: AgentView::from_agent(
                 primary,
@@ -209,6 +222,23 @@ pub(super) fn superseded_delivery() -> String {
         .to_owned()
 }
 
+/// Writes what a refusing gate printed where its agent is pointed at, or
+/// `None` when it could not be written and the message has to quote it.
+fn keep_gate_output(home: &UzeHome, id: &AgentId, output: &str) -> Option<PathBuf> {
+    let log = home.gate_log_path(id.as_str());
+    let written = log
+        .parent()
+        .is_some_and(|logs| uze_platform::fs::create_private_dir_all(logs).is_ok())
+        && {
+            let _ = std::fs::remove_file(&log);
+            uze_platform::fs::private_file(std::fs::OpenOptions::new().write(true).create_new(true))
+                .open(&log)
+                .and_then(|mut file| std::io::Write::write_all(&mut file, output.as_bytes()))
+                .is_ok()
+        };
+    written.then_some(log)
+}
+
 /// Whether a delivery's outcome reached the record it was claimed from.
 pub(super) enum Recorded {
     Applied,
@@ -222,16 +252,15 @@ pub(super) enum Recorded {
 /// — the project's gate, then a fetch, a push or a merge — and it runs
 /// with the tasks document unlocked, under Git's own write lock alone.
 pub(super) fn deliver_one(
+    home: &UzeHome,
     primary: &Path,
-    policy: &WorktreePolicy,
+    consent: &uze_workspace::approval::Consent<'_>,
     id: &AgentId,
     agent: &mut Agent,
 ) -> DeliveryOutcome {
-    let completion = policy.completion;
-    let gate = policy.gate.clone();
     let policy = landing::Policy {
-        completion,
-        gate: &gate,
+        completion: consent.policy().completion,
+        gate: consent.gate(),
     };
     // Kept for the messages below, which describe the branch rather than
     // the outcome; delivery itself writes through the agent.
@@ -277,6 +306,7 @@ pub(super) fn deliver_one(
                     task.expect("delivery needs isolation"),
                     &command,
                     &output,
+                    keep_gate_output(home, id, &output).as_deref(),
                 ),
             })
         }

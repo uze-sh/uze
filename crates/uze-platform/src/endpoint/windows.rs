@@ -609,6 +609,16 @@ pub fn accept(listener: &Listener) -> io::Result<Stream> {
     listener.accept()
 }
 
+pub fn peer_is_another_user(stream: &Stream) -> bool {
+    let Ok(me) = current_user() else {
+        return false;
+    };
+    stream
+        .peer_pid()
+        .and_then(crate::process::user_of)
+        .is_some_and(|user| user != me)
+}
+
 pub fn peer_pid(stream: &Stream) -> Option<u32> {
     stream.peer_pid()
 }

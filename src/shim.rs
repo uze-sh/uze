@@ -136,8 +136,9 @@ pub fn run(shim_name: &str) -> ! {
 
     if let Some(note) = &contribution.note {
         eprintln!(
-            "uze: runtime projection unavailable ({note}); launching {shim_name} without \
-             portable context."
+            "uze: runtime projection unavailable ({}); launching {shim_name} without \
+             portable context.",
+            uze_core::authored::inert(note)
         );
     }
 
@@ -149,11 +150,19 @@ pub fn run(shim_name: &str) -> ! {
     // is only ever prepended where nothing sits in front of it to break.
     if original_args.is_empty()
         && let Some(integration) = &integration
-        && let Some(id) = owned_identity()
+        && let Some((id, key)) = owned_identity()
     {
-        let session = continuity::plan(&home, Claim { id: &id, cwd: &cwd }, *integration);
+        let session = continuity::plan(
+            &home,
+            Claim {
+                id: &id,
+                key: &key,
+                cwd: &cwd,
+            },
+            *integration,
+        );
         if let Some(note) = &session.note {
-            eprintln!("uze: {note}.");
+            eprintln!("uze: {}.", uze_core::authored::inert(note));
         }
         // Ahead of the contribution's own arguments: a harness whose resume
         // is a subcommand needs it at the front of the line.
@@ -173,7 +182,8 @@ pub fn run(shim_name: &str) -> ! {
     );
 }
 
-/// The agent identity this launch owns, if it carries one.
+/// The agent identity this launch owns, and the key it was issued, if it
+/// carries one.
 ///
 /// An identity has an owner: the process whose pid `UZE_SHIM_PID` names,
 /// stamped by this shim at `exec`. Before any shim runs there is no owner,
@@ -184,16 +194,17 @@ pub fn run(shim_name: &str) -> ! {
 /// resumes the enclosing agent's conversation. The variable cannot simply
 /// be removed for descendants, because the harness's own children — `uze
 /// agent work name` among them — are the ones that need it.
-fn owned_identity() -> Option<String> {
+fn owned_identity() -> Option<(String, String)> {
     let id = env::var(launch::AGENT_IDENTITY_VARIABLE).ok()?;
     if id.is_empty() {
         return None;
     }
+    let key = env::var(launch::AGENT_KEY_VARIABLE).unwrap_or_default();
     let owner = env::var(launch::SHIM_PID_VARIABLE).ok();
     let own_pid = std::process::id().to_string();
     match owner {
-        None => Some(id),
-        Some(pid) if pid == own_pid => Some(id),
+        None => Some((id, key)),
+        Some(pid) if pid == own_pid => Some((id, key)),
         Some(_) => None,
     }
 }
@@ -253,6 +264,6 @@ fn run_replacing_process(mut command: std::process::Command, executable: &Path) 
 }
 
 fn die(message: &str) -> ! {
-    eprintln!("uze: {message}");
+    eprintln!("uze: {}", uze_core::authored::inert(message));
     std::process::exit(127);
 }

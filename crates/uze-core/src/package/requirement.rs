@@ -53,13 +53,15 @@ impl Requirement {
             return Some("a requirement names no `executable`".to_owned());
         }
         if executable != self.executable
-            || executable
-                .chars()
-                .any(|character| character.is_whitespace() || matches!(character, '/' | '\\'))
+            || executable.chars().any(|character| {
+                character.is_whitespace()
+                    || matches!(character, '/' | '\\')
+                    || crate::authored::is_terminal_control(character)
+            })
         {
             return Some(format!(
                 "requirement `{}` must be a bare program name, found on `PATH`",
-                self.executable
+                crate::authored::inert_line(&self.executable)
             ));
         }
         if let Some(version) = &self.version

@@ -249,26 +249,19 @@ pub struct Owner {
 }
 
 /// What a process says about itself: the identifier its launch carried,
-/// and the directory it stands in. The two are verified together — the
-/// identifier says *which* agent, the directory says *where* it should be,
-/// and a claim the record contradicts is no claim at all.
+/// the secret it was issued, and the directory it stands in. All three are
+/// verified together — the identifier says *which* agent, the key proves
+/// the process was started by that agent's launch, the directory says
+/// *where* it should be — and a claim the record contradicts is no claim
+/// at all. The identifier and the directory are the caller's own to
+/// choose; the key is the one part another agent does not hold.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Claim<'a> {
     pub id: &'a str,
+    pub key: &'a str,
     pub cwd: &'a Path,
 }
 
-/// Whose agent is this process?
-///
-/// Ancestors of the claimed directory, nearest first, are asked whether a
-/// store keyed on them names the identifier; the first that does answers,
-/// provided the record's own directory contains the claimed one. A few
-/// `stat`s and one small read: no subprocess, nothing that scales with the
-/// Store, because a harness launch waits on this. `None` for a claim no
-/// record backs — an identifier nobody recorded, a directory the record
-/// does not allow — which is what keeps an ordinary invocation ordinary
-/// and keeps a process that edits its own environment inside the directory
-/// its record already gave it.
 /// The project whose task store the directory falls under: the nearest
 /// ancestor one is kept for. The same walk [`owner_of`] makes, for a claim
 /// it did not recognize.
@@ -279,6 +272,18 @@ pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// Whose agent is this process?
+///
+/// Ancestors of the claimed directory, nearest first, are asked whether a
+/// store keyed on them names the identifier; the first that does answers,
+/// provided the key is the one that agent's latest launch was issued and
+/// the record's own directory contains the claimed one. A few `stat`s and
+/// one small read: no subprocess, nothing that scales with the Store,
+/// because a harness launch waits on this. `None` for a claim no record
+/// backs — an identifier nobody recorded, a key that launch was not given,
+/// a directory the record does not allow — which is what keeps an ordinary
+/// invocation ordinary, and keeps a process that sets another agent's
+/// identifier and stands in its checkout from being taken for it.
 pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
     let cwd = claim
         .cwd
@@ -290,6 +295,9 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
         }
         let store = task::load(home, root).ok()?;
         let record = store.agent(claim.id)?;
+        if !record.admits_launch(claim.key) {
+            return None;
+        }
         let own = record.own_directory(root)?;
         let own = own.canonical().unwrap_or(own);
         cwd.starts_with(&own).then(|| Owner {
@@ -441,45 +449,37 @@ mod tests {
         let slot = primary.join(".worktrees").join("slot-1");
         fs::create_dir_all(&slot).unwrap();
         let mut store = AgentStore::default();
-        let task = task_named("slot-1");
+        let mut task = task_named("slot-1");
+        let key = task.issue_launch_key().unwrap();
         let id = task.id.as_str().to_owned();
+        let mut sibling = task_named("slot-2");
+        let sibling_key = sibling.issue_launch_key().unwrap();
         store.upsert(task);
+        store.upsert(sibling);
         task::save(&home, &primary, &store).unwrap();
+        let claim = |id, key, cwd| owner_of(&home, Claim { id, key, cwd });
 
+        assert!(claim(&id, &key, &slot).is_some(), "the agent itself");
         assert_eq!(
-            owner_of(
-                &home,
-                Claim {
-                    id: "unrecorded",
-                    cwd: &slot
-                }
-            ),
+            claim("unrecorded", &key, &slot),
             None,
             "an identifier nobody recorded"
         );
         assert_eq!(
-            owner_of(
-                &home,
-                Claim {
-                    id: &id,
-                    cwd: &primary
-                }
-            ),
+            claim(&id, &key, &primary),
             None,
             "the operator's own checkout is not the task's directory"
         );
         let elsewhere = project("conversation-no-owner-elsewhere");
         assert_eq!(
-            owner_of(
-                &home,
-                Claim {
-                    id: &id,
-                    cwd: &elsewhere
-                }
-            ),
+            claim(&id, &key, &elsewhere),
             None,
             "a directory outside the project"
         );
+        // The identifier and the directory are both the caller's to set;
+        // the key is what its launch alone was given.
+        assert_eq!(claim(&id, &sibling_key, &slot), None, "another agent's key");
+        assert_eq!(claim(&id, "", &slot), None, "no key at all");
     }
 
     #[test]
@@ -491,8 +491,10 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
 
         let mut store = AgentStore::default();
-        let previous = task_named("slot-1");
-        let current = task_named("slot-1");
+        let mut previous = task_named("slot-1");
+        let mut current = task_named("slot-1");
+        let previous_key = previous.issue_launch_key().unwrap();
+        let current_key = current.issue_launch_key().unwrap();
         let previous_id = previous.id.clone();
         let current_id = current.id.clone();
         store.upsert(previous);
@@ -503,6 +505,7 @@ mod tests {
             &home,
             Claim {
                 id: current_id.as_str(),
+                key: &current_key,
                 cwd: &nested,
             },
         )
@@ -515,6 +518,7 @@ mod tests {
             &home,
             Claim {
                 id: previous_id.as_str(),
+                key: &previous_key,
                 cwd: &slot,
             },
         )
@@ -530,7 +534,8 @@ mod tests {
             .unwrap();
         let nested = root.join("src");
         fs::create_dir_all(&nested).unwrap();
-        let agent = Agent::in_the_root("claude-code");
+        let mut agent = Agent::in_the_root("claude-code");
+        let key = agent.issue_launch_key().unwrap();
         let id = agent.id.clone();
         let mut store = AgentStore::default();
         store.upsert(agent);
@@ -540,6 +545,7 @@ mod tests {
             &home,
             Claim {
                 id: id.as_str(),
+                key: &key,
                 cwd: &nested,
             },
         )

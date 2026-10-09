@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hook-read-guard",
+  "description": "Conformance deny on the file.read alias: a guard that denies only a path carrying `lab-deny`, followed by a second handler that must not run after a denial. Reading is a tool some harnesses never ask permission for, so the denial has to hold without a prompt."
+}

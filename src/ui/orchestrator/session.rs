@@ -326,6 +326,7 @@ impl Attach<'_> {
         self.absorb_policy_regions();
         self.absorb_target_syncs();
         self.absorb_unspelled_gates();
+        self.absorb_command_approvals();
         self.absorb_launchers();
         self.schedule_surface_reads();
         if self.model.expire_agent_activity(Instant::now()) {

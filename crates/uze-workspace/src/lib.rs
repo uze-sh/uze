@@ -13,12 +13,14 @@
 //! anything here. `uze-terminal`, which owns the panes, is a different crate
 //! and knows nothing of this one.
 
+pub mod approval;
 pub mod checkout;
 pub mod client_layout;
 pub mod continuity;
 pub mod conversation;
 pub mod declaration;
 pub mod extensions;
+mod git;
 pub mod landing;
 pub mod notifications;
 pub mod prompt_history;

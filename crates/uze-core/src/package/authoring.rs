@@ -740,6 +740,17 @@ fn agent_faults(relative_to_agents: &Path, payload: &[u8]) -> Vec<String> {
                 .to_owned(),
         );
     }
+    if let Some(name) = frontmatter
+        .get("name")
+        .and_then(serde_yaml::Value::as_str)
+        .map(str::trim)
+        .filter(|name| crate::capability::agent::unsafe_name(name))
+    {
+        faults.push(format!(
+            "`name: {name}` is a path, not a name — install refuses an agent whose name holds a \
+             path separator, `.`/`..` or a control character"
+        ));
+    }
     if let Some(label) = crate::capability::agent::logical_name(relative_to_agents, payload) {
         for part in label.split(':') {
             if !store::is_valid_package_name(part) {

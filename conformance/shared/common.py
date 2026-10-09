@@ -369,6 +369,7 @@ def validate_marketplace(cfg):
         "hook-session-plugin": "./plugins/hook-session-plugin",
         "hook-rows": "./plugins/hook-rows",
         "hook-effects": "./plugins/hook-effects",
+        "hook-read-guard": "./plugins/hook-read-guard",
         "hook-exec": "./plugins/hook-exec",
         "hook-needs-python": "./plugins/hook-needs-python",
         "hook-events": "./plugins/hook-events",
@@ -406,6 +407,7 @@ def validate_marketplace(cfg):
             for plugin in (
                 "hook-rows",
                 "hook-effects",
+                "hook-read-guard",
                 "hook-events",
                 "hook-ask",
                 "hook-post-deny",

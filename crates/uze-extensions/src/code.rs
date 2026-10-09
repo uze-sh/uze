@@ -1358,6 +1358,7 @@ impl CodeView {
         }
         open.saving.push_back(open.revision());
         self.queue.push_back(FileRequest::Save {
+            root: self.root.clone(),
             path: open.path.clone(),
             contents: open.contents(),
         });
@@ -1673,8 +1674,14 @@ fn answer_delete(view: &mut CodeView, yes: bool) {
     };
     match yes {
         true => view.queue.push_back(match deleting.directory {
-            true => FileRequest::DeleteDirectory(deleting.path),
-            false => FileRequest::Delete(deleting.path),
+            true => FileRequest::DeleteDirectory {
+                root: view.root.clone(),
+                path: deleting.path,
+            },
+            false => FileRequest::Delete {
+                root: view.root.clone(),
+                path: deleting.path,
+            },
         }),
         false => view.notice = Some(Span::new("delete cancelled", Role::Muted)),
     }

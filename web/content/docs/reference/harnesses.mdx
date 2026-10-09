@@ -173,7 +173,9 @@ OpenCode has no plugin system: UZE delivers every capability to OpenCode's own n
 | skills | lists a skill's supporting files only when its directory is not a link | 2.0.18 |
 | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 2.0.24 |
 | hooks | runs a delivered tool hook through the bridge plugin, relaying the V2 tool's own name and input, before and after the call | 2.0.24 |
-| hooks | refuses or asks about a call through `permission.evaluate`, announces a new session and the end of a turn on its event bus, and continues a session given synthetic input | 2.0.24 |
+| hooks | fails a call whose `execute.before` renamed it to a tool that does not exist, before it runs and whether or not the tool asks for permission (`read` does not), relaying the name with the reason in it to the model and showing it as a refusal rather than a hook error | 2.0.24 |
+| hooks | asks the person about a call through `permission.evaluate` for a tool that asks for permission | 2.0.24 |
+| hooks | announces a new session and the end of a turn on its event bus, and continues a session given synthetic input | 2.0.24 |
 | hooks | runs the input a plugin assigns to `execute.before`'s `input` | 2.0.24 |
 
 </div>

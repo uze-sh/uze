@@ -1,7 +1,7 @@
 {
   "name": "release-tags",
   "target": "tag",
-  "enforcement": "disabled",
+  "enforcement": "active",
   "conditions": {
     "ref_name": {
       "include": ["refs/tags/v*"],

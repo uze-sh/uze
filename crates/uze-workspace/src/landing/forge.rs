@@ -86,7 +86,7 @@ impl Forge {
 /// process, so it belongs where the rest of a view's Git reads are and
 /// never on a render path.
 pub fn forge(primary: &Path) -> Forge {
-    uze_git::read(primary, &["remote", "get-url", REMOTE])
+    crate::git::read(primary, &["remote", "get-url", REMOTE])
         .ok()
         .and_then(|output| output.successful().ok())
         .map(|url| Forge::from_remote_url(url.trim()))

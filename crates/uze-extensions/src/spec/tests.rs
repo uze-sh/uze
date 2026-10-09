@@ -46,11 +46,11 @@ impl Host for DiskHost {
         Ok(entries)
     }
 
-    fn write_file(&self, _path: &Path, _contents: &str) -> Result<(), String> {
+    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
         unreachable!("the spec surface writes nothing")
     }
 
-    fn delete_file(&self, _path: &Path) -> Result<(), String> {
+    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
         unreachable!("the spec surface deletes nothing")
     }
 
