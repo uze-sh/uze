@@ -75,6 +75,11 @@ pub(super) struct Server {
     /// Connections that have yet to say who they are — see
     /// [`MAX_UNATTACHED`].
     pub(super) unattached: std::sync::atomic::AtomicUsize,
+    /// Held for writing from the moment a pane's program starts until the
+    /// pane is in [`Server::panes`], and for reading by [`Server::origin_of`]:
+    /// a program that connects the instant it starts is still asked about
+    /// as one of this server's panes, never taken for the person.
+    pub(super) registering: std::sync::RwLock<()>,
 }
 
 impl Server {
@@ -117,6 +122,7 @@ impl Server {
             set_aside: Mutex::new(set_aside),
             key,
             unattached: std::sync::atomic::AtomicUsize::new(0),
+            registering: std::sync::RwLock::new(()),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -635,6 +641,9 @@ impl Server {
         let Some(peer) = transport::peer_pid(stream) else {
             return Origin::Outside;
         };
+        // A pane whose program has started but is not in the map yet is
+        // waited for rather than missed.
+        let _settled = self.registering.read().expect("registering poisoned");
         // Asked after the map's lock is released: each answer reads the
         // process table, and the input and damage paths wait on that lock.
         let runtimes: Vec<Arc<PaneRuntime>> = self
@@ -793,6 +802,7 @@ impl Server {
             .pane(pane_id)
             .cloned()
             .ok_or_else(|| RuntimeError::Protocol("unknown pane".into()))?;
+        let registering = self.registering.write().expect("registering poisoned");
         let runtime = PaneRuntime::spawn(
             pane_id,
             pane.cwd,
@@ -839,6 +849,7 @@ impl Server {
             }
             panes.insert(pane_id, Arc::clone(&runtime))
         };
+        drop(registering);
         // The replaced runtime's reader and reaper end with it rather than
         // with the server.
         if let Some(replaced) = replaced {

@@ -2273,8 +2273,11 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
     );
 }
 
+/// The file once it exists. The bound is a ceiling, not an expectation: what
+/// writes it is a program a pane starts, which on a loaded runner can be a
+/// whole test binary taking seconds to come up.
 fn read_when_written(path: &Path) -> String {
-    for _ in 0..500 {
+    for _ in 0..3000 {
         if let Ok(content) = std::fs::read_to_string(path) {
             return content;
         }
