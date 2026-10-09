@@ -69,6 +69,11 @@ pub const SHELF_TRAILER_LABEL: &str = "Uze-Label";
 /// which is the reason the limit exists at all.
 pub const SUBJECT_MAX_CHARS: usize = 32;
 
+/// The most words a name's subject may carry. Two is the useful default;
+/// three leaves room for a necessary qualifier without turning the label
+/// into a task description.
+pub const SUBJECT_MAX_WORDS: usize = 3;
+
 /// The branch types a project's names may use.
 ///
 /// Closed, in both spellings, because a name proposed by a model has to be
@@ -246,6 +251,9 @@ fn validate_subject(subject: &str) -> std::result::Result<(), NameRefusal> {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
         return refuse("it is not lowercase letters, digits and single hyphens");
+    }
+    if subject.split('-').count() > SUBJECT_MAX_WORDS {
+        return refuse("it has more than three words");
     }
     Ok(())
 }
@@ -542,7 +550,8 @@ impl WorktreePolicy {
             "- As soon as a user message gives the conversation a clear topic — normally the \
              first message — name your work: \
              `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
-             subject is one or two words naming the intention, not a description of the task — \
+             subject is ideally one or two words, never more than three, naming the intention, \
+             not a description of the task — \
              `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The \
              command always updates your label. In a checkout of your own it also renames your \
              branch; in the operator's checkout only your label changes. Work that reaches a \
@@ -918,6 +927,24 @@ mod naming_tests {
                 "{proposed} should be refused as a malformed subject"
             );
         }
+    }
+
+    #[test]
+    fn a_subject_has_at_most_three_words() {
+        assert_eq!(
+            conventional().accept("fix/keep-agent-names").unwrap(),
+            "fix/keep-agent-names"
+        );
+        assert_eq!(
+            conventional().accept("fix/one-two-three").unwrap(),
+            "fix/one-two-three"
+        );
+        assert!(matches!(
+            conventional().accept("fix/one-two-three-four"),
+            Err(NameRefusal::MalformedSubject {
+                reason: "it has more than three words"
+            })
+        ));
     }
 
     #[test]

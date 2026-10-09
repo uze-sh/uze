@@ -2841,18 +2841,18 @@ mod derived_naming_tests {
         let (app, repository) = project("derive-basic", "  branch: conventional\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
-        commits(&repository, &checkout, "feat(api): answer ping with pong");
+        commits(&repository, &checkout, "feat(api): answer ping now");
 
         let evaluation = app
             .workspace()
             .evaluate_tasks(&root, std::slice::from_ref(&checkout));
 
         let task = evaluation.tasks.last().unwrap();
-        assert_eq!(task.branch, "feat/answer-ping-with-pong");
-        assert_eq!(task.label, "answer ping with pong");
+        assert_eq!(task.branch, "feat/answer-ping-now");
+        assert_eq!(task.label, "answer ping now");
         assert_eq!(
             checkout::current_branch(&checkout).as_deref(),
-            Some("feat/answer-ping-with-pong"),
+            Some("feat/answer-ping-now"),
             "Git is where the rename happened"
         );
         assert_eq!(
@@ -2873,7 +2873,7 @@ mod derived_naming_tests {
             .name_task(placed.claim(), "fix/chosen-first")
             .unwrap();
         let checkout = placed.checkout.clone();
-        commits(&repository, &checkout, "feat(api): answer ping with pong");
+        commits(&repository, &checkout, "feat(api): answer ping now");
 
         let evaluation = app
             .workspace()
@@ -2893,7 +2893,7 @@ mod derived_naming_tests {
         let (app, repository) = project("derive-refused", "  branch: [ui, fix]\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
-        commits(&repository, &checkout, "feat(api): answer ping with pong");
+        commits(&repository, &checkout, "feat(api): answer ping now");
 
         let evaluation = app
             .workspace()
@@ -2910,11 +2910,9 @@ mod derived_naming_tests {
         );
     }
 
-    /// An undeclared vocabulary is conventional, so first-commit derivation
-    /// gives an otherwise unnamed worktree a readable branch.
     #[test]
-    fn a_project_without_a_manifest_derives_a_conventional_name() {
-        let (app, repository) = project("derive-undeclared", "  delivery: handoff\n");
+    fn a_commit_with_more_than_three_words_leaves_the_generated_name() {
+        let (app, repository) = project("derive-too-many-words", "  branch: conventional\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
         commits(&repository, &checkout, "feat(api): answer ping with pong");
@@ -2923,9 +2921,33 @@ mod derived_naming_tests {
             .workspace()
             .evaluate_tasks(&root, std::slice::from_ref(&checkout));
 
+        assert!(
+            evaluation
+                .tasks
+                .last()
+                .unwrap()
+                .branch
+                .starts_with("agent/"),
+            "automatic naming follows the same three-word contract as an agent"
+        );
+    }
+
+    /// An undeclared vocabulary is conventional, so first-commit derivation
+    /// gives an otherwise unnamed worktree a readable branch.
+    #[test]
+    fn a_project_without_a_manifest_derives_a_conventional_name() {
+        let (app, repository) = project("derive-undeclared", "  delivery: handoff\n");
+        let root = repository.root().to_path_buf();
+        let checkout = placed(&app, &root).checkout;
+        commits(&repository, &checkout, "feat(api): answer ping now");
+
+        let evaluation = app
+            .workspace()
+            .evaluate_tasks(&root, std::slice::from_ref(&checkout));
+
         assert_eq!(
             evaluation.tasks.last().unwrap().branch,
-            "feat/answer-ping-with-pong"
+            "feat/answer-ping-now"
         );
     }
 
@@ -2936,7 +2958,7 @@ mod derived_naming_tests {
         let (app, repository) = project("derive-dirty", "  branch: conventional\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
-        commits(&repository, &checkout, "feat(api): answer ping with pong");
+        commits(&repository, &checkout, "feat(api): answer ping now");
         std::fs::write(checkout.join("later.rs"), "in progress").unwrap();
 
         let evaluation = app
@@ -2954,9 +2976,9 @@ mod derived_naming_tests {
     fn a_colliding_derived_name_leaves_the_branch_as_it_was() {
         let (app, repository) = project("derive-collision", "  branch: conventional\n");
         let root = repository.root().to_path_buf();
-        repository.git(&["branch", "feat/answer-ping-with-pong"]);
+        repository.git(&["branch", "feat/answer-ping-now"]);
         let checkout = placed(&app, &root).checkout;
-        commits(&repository, &checkout, "feat(api): answer ping with pong");
+        commits(&repository, &checkout, "feat(api): answer ping now");
 
         let evaluation = app
             .workspace()

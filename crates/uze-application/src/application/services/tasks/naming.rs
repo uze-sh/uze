@@ -153,7 +153,7 @@ pub(super) fn refusal_words(refusal: &NameRefusal, vocabulary: &BranchVocabulary
             vocabulary.spelled()
         ),
         NameRefusal::MalformedSubject { reason } => format!(
-            "the subject is one or two words naming the intention, and {reason} — \
+            "the subject is ideally one or two words, never more than three, naming the intention, and {reason} — \
              try something like `fix/branch-naming`"
         ),
     }
