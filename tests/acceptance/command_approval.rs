@@ -13,7 +13,9 @@ use crate::util::uze_bin;
 fn declaring_commands(env: &TestEnvironment) -> PathBuf {
     std::fs::write(
         env.project.join("agents.yaml"),
-        "workspace:\n  setup: touch pwned\n  gate: make test\n",
+        "workspace:\n  \
+         setup:\n    posix: touch pwned\n    windows: New-Item pwned -ItemType File\n  \
+         gate:\n    posix: make test\n    windows: make test\n",
     )
     .unwrap();
     env.project.clone()

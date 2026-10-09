@@ -966,7 +966,7 @@ mod status_output_tests {
         let project = uze_testkit::temp::scratch("status-awaiting-approval");
         std::fs::write(
             project.join("agents.yaml"),
-            "workspace:\n  gate: make test\n",
+            "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
         )
         .unwrap();
         let home = super::UzeHome::at(project.join(".uze-home"));

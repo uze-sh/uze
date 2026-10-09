@@ -283,10 +283,16 @@ mod tests {
 
     fn policy(setup: &[&str], gate: &[&str]) -> WorktreePolicy {
         WorktreePolicy {
-            setup: setup.iter().map(|line| (*line).into()).collect(),
-            gate: gate.iter().map(|line| (*line).into()).collect(),
+            setup: setup.iter().map(|line| both_shells(line)).collect(),
+            gate: gate.iter().map(|line| both_shells(line)).collect(),
             ..WorktreePolicy::default()
         }
+    }
+
+    /// Never run here, so one text stands for both spellings: what these
+    /// prove is that every platform has a line to approve.
+    fn both_shells(line: &str) -> ShellCommand {
+        ShellCommand::spelled(line, line)
     }
 
     #[test]

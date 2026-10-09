@@ -26,7 +26,8 @@ fn workflows() -> Vec<(String, String)> {
                     .strip_prefix(&root)
                     .unwrap_or(&path)
                     .display()
-                    .to_string();
+                    .to_string()
+                    .replace('\\', "/");
                 files.push((name, fs::read_to_string(&path).unwrap()));
             }
         }

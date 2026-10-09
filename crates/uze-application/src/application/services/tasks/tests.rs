@@ -1731,7 +1731,8 @@ mod task_service_tests {
 
         std::fs::write(
             root.join("agents.yaml"),
-            "workspace:\n  setup: touch prepared && touch more\n",
+            "workspace:\n  setup:\n    posix: touch prepared && touch more\n    \
+             windows: New-Item prepared, more -ItemType File -Force\n",
         )
         .unwrap();
         assert!(
