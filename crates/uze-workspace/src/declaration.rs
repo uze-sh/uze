@@ -547,7 +547,6 @@ mod tests {
             setup: vec!["pnpm install".into()],
             gate: vec!["pnpm test".into()],
             slots: Some(3),
-            spare: Some(2),
             idle_days: Some(3),
         };
         let reference = fs::read_to_string(concat!(

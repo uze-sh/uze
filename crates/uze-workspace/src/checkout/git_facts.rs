@@ -58,11 +58,11 @@ pub fn is_dirty(root: &Path) -> bool {
 }
 
 /// Whether `root` holds uncommitted changes that are somebody's work — the
-/// question a checkout is parked or freed by. Content UZE derives and can
+/// question a checkout is shelved or freed by. Content UZE derives and can
 /// produce again is not: a lock that only gained or lost entries, which is
 /// all `install` does to it, and an instruction file that changed only
 /// inside the regions UZE manages. Left alone, those are what a slot
-/// collects just by having UZE run in it, and each parked the slot for
+/// collects just by having UZE run in it, and each held the slot for
 /// good. A question Git could not answer is taken as yes.
 pub fn holds_uncommitted_work(root: &Path) -> bool {
     let Some(status) = crate::git::read(root, &["status", "--porcelain=v1", "-z"])

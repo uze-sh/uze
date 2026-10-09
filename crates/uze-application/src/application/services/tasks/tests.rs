@@ -164,7 +164,7 @@ mod placement_tests {
         let abandoned_branch = repository.branch_of(&first.cwd);
         let released = app.workspace().release_abandoned_tasks(&root, &[], &[]);
         assert_eq!(released.len(), 1);
-        assert!(!released[0].parked, "an empty checkout holds nothing");
+        assert!(!released[0].unfinished, "an empty checkout holds nothing");
 
         let second = app
             .workspace()
@@ -230,31 +230,39 @@ mod placement_tests {
     }
 
     #[test]
-    fn an_agent_that_left_work_behind_parks_its_slot() {
-        let repository = repository("release-park");
+    fn an_agent_that_left_work_behind_frees_its_slot_with_the_work_shelved() {
+        let repository = repository("release-shelve");
         let root = repository.root().to_path_buf();
-        let app = application("release-park-home");
+        let app = application("release-shelve-home");
 
         let abandoned = app
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
+        let id = slot(&abandoned).as_str().to_owned();
         std::fs::write(abandoned.cwd.join("draft.rs"), b"unsaved").unwrap();
         let released = app.workspace().release_abandoned_tasks(&root, &[], &[]);
         assert_eq!(released.len(), 1);
-        assert!(released[0].parked);
+        assert!(released[0].unfinished);
 
         let next = app
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        assert_ne!(
+        assert_eq!(
             next.cwd, abandoned.cwd,
-            "a parked checkout is never offered to a new agent"
+            "its checkout goes to the next agent"
         );
         assert!(
-            abandoned.cwd.join("draft.rs").is_file(),
-            "the work it holds is preserved"
+            !next.cwd.join("draft.rs").exists(),
+            "carrying none of its work"
+        );
+        assert_eq!(
+            repository
+                .git(&["show", &format!("refs/uze/shelf/{id}:draft.rs")])
+                .trim(),
+            "unsaved",
+            "the work it held is on its shelf"
         );
     }
 
@@ -625,7 +633,7 @@ mod placement_tests {
     /// paused in the checkout, replaying work the target already carries.
     /// Nothing of the agent's is at stake — the branch still names every
     /// commit it made — so the rebase is abandoned and the task reads as
-    /// delivered, whether its agent is still there or it was parked.
+    /// delivered, whether its agent is still there or it ended unfinished.
     #[test]
     fn a_rebase_paused_on_delivered_work_is_abandoned() {
         for parked in [false, true] {
@@ -646,7 +654,7 @@ mod placement_tests {
                 "replaying the branch onto its own squash conflicts"
             );
             let (state, occupied) = if parked {
-                (WorkState::Parked, Vec::new())
+                (WorkState::Shelved, Vec::new())
             } else {
                 (
                     WorkState::Conflicted {
@@ -727,7 +735,7 @@ mod placement_tests {
                 .try_git_in(&placed.cwd, &["rebase", "main"])
                 .is_err()
         );
-        recorded(&app, &root, &id, WorkState::Parked);
+        recorded(&app, &root, &id, WorkState::Shelved);
 
         let task = app
             .workspace()
@@ -852,13 +860,10 @@ mod placement_tests {
         repository.git_in(&first.cwd, &["commit", "-qm", "kept"]);
         std::fs::remove_dir_all(&first.cwd).unwrap();
 
-        // What the TUI does once no pane is in front of the checkout.
-        let released = app.workspace().release_abandoned_tasks(&root, &[], &[]);
-        assert!(
-            released
-                .iter()
-                .any(|task| task.id == task_id && task.parked)
-        );
+        // What the TUI does once no pane is in front of the checkout: the
+        // reconciliation it starts with finds the directory gone and ends
+        // the task by what its branch holds.
+        app.workspace().release_abandoned_tasks(&root, &[], &[]);
         let task = app
             .workspace()
             .tasks(&root)
@@ -866,7 +871,7 @@ mod placement_tests {
             .find(|task| task.id == task_id)
             .unwrap();
         assert_eq!(task.checkout, None, "the directory is gone");
-        assert_eq!(task.state, WorkStateView::Parked);
+        assert_eq!(task.state, WorkStateView::Shelved);
 
         let resumed = app.workspace().resume_task(&root, &task_id, &[]).unwrap();
         assert!(resumed.cwd.join("kept.rs").is_file(), "the commit is back");
@@ -885,46 +890,39 @@ mod placement_tests {
         assert_eq!(task.state, WorkStateView::Running, "live again");
     }
 
-    /// Parked says "no agent left". A pane sitting in the task's checkout
-    /// says otherwise, and wins: the evaluation reads the task as live
-    /// again instead of leaving a working agent marked as set aside.
+    /// A released task keeps no checkout: a pane later found in the
+    /// directory it left is whoever took that checkout since, never the
+    /// unfinished task coming back to life.
     #[test]
-    fn a_parked_task_with_a_pane_in_its_checkout_is_live_again() {
-        let repository = repository("place-parked-live");
+    fn a_pane_in_a_checkout_a_task_left_does_not_revive_it() {
+        let repository = repository("place-left-checkout");
         let root = repository.root().to_path_buf();
-        let app = application("place-parked-live-home");
+        let app = application("place-left-checkout-home");
         let first = app
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
         let task_id = slot(&first).as_str().to_owned();
         std::fs::write(first.cwd.join("work.rs"), b"fn work() {}").unwrap();
-        // Released as if no pane were there: parked, since it holds work.
         let released = app.workspace().release_abandoned_tasks(&root, &[], &[]);
         assert!(
             released
                 .iter()
-                .any(|task| task.id == task_id && task.parked)
+                .any(|task| task.id == task_id && task.unfinished)
         );
 
-        let state_of = |occupied: &[PathBuf]| {
-            app.workspace()
-                .evaluate_tasks(&root, occupied)
-                .tasks
-                .into_iter()
-                .find(|task| task.id == task_id)
-                .unwrap()
-                .state
-        };
+        let state = app
+            .workspace()
+            .evaluate_tasks(&root, &[first.cwd.join("src")])
+            .tasks
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .unwrap()
+            .state;
         assert_eq!(
-            state_of(&[]),
-            WorkStateView::Parked,
-            "nobody there: stays put"
-        );
-        assert_eq!(
-            state_of(&[first.cwd.join("src")]),
-            WorkStateView::Uncommitted,
-            "a pane inside makes it that agent's task again"
+            state,
+            WorkStateView::Shelved,
+            "it is not back until it is resumed"
         );
     }
 }
@@ -1116,7 +1114,7 @@ mod task_service_tests {
         let app = application("preserved-vanished-home");
         let project = uze_testkit::temp::scratch("preserved-vanished");
         std::fs::create_dir_all(&project).unwrap();
-        let id = record_an_agent(&app, &project, WorkState::Parked, None);
+        let id = record_an_agent(&app, &project, WorkState::Shelved, None);
         std::fs::remove_dir_all(&project).unwrap();
 
         let preserved = app.workspace().preserved_work();
@@ -1972,7 +1970,7 @@ mod task_service_tests {
         );
         assert_eq!(
             evaluation.tasks[0].state,
-            WorkStateView::Parked,
+            WorkStateView::Shelved,
             "and the commits in that checkout are what it is adopted as holding"
         );
     }

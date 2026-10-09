@@ -249,15 +249,24 @@ fn is_agents_turn(state: &WorkState) -> bool {
     checkout::is_live(state) && *state != WorkState::Integrating
 }
 
-/// Ends the children of an agent that ended: each holding nothing its
-/// agent's branch lacks goes back to the pool, and each holding work is
-/// parked — and then so is the agent, whose checkout is the only way that
-/// work reaches the target. Returns whether any child was parked.
-fn release_children(primary: &Path, store: &mut AgentStore, parent: &str) -> bool {
-    let mut parked_a_child = false;
+/// Ends the children of an agent that ended, each giving its checkout back
+/// with its work kept on its branch and shelf. A child holding work leaves
+/// its agent unfinished too, whatever the agent's own branch holds: the
+/// agent is the only way that work reaches the target. Returns whether any
+/// child ended unfinished.
+fn release_children(
+    primary: &Path,
+    store: &mut AgentStore,
+    parent: &str,
+    presence: &checkout::Presence,
+) -> bool {
+    let mut unfinished_child = false;
     for child in store.agents.iter_mut() {
+        let holds_a_checkout = child
+            .isolation()
+            .is_some_and(|isolation| isolation.checkout.is_some());
         if child.parent.as_ref().map(AgentId::as_str) != Some(parent)
-            || !checkout::is_live(&child.state)
+            || !(checkout::is_live(&child.state) || holds_a_checkout)
         {
             continue;
         }
@@ -265,14 +274,36 @@ fn release_children(primary: &Path, store: &mut AgentStore, parent: &str) -> boo
             .isolation()
             .map(|isolation| isolation.target.clone())
             .unwrap_or_default();
-        if checkout::release(primary, child, &into) == checkout::SlotState::Parked {
-            parked_a_child = true;
+        checkout::release(primary, child, &into, presence);
+        if child.state == WorkState::Shelved {
+            unfinished_child = true;
         }
     }
-    if parked_a_child && let Some(agent) = task_mut(store, parent) {
-        agent.state = WorkState::Parked;
+    if unfinished_child && let Some(agent) = task_mut(store, parent) {
+        agent.state = WorkState::Shelved;
     }
-    parked_a_child
+    unfinished_child
+}
+
+/// Whether nothing is in front of `agent` any more and its checkout is
+/// still to be given back: a live agent no pane holds and no tab was
+/// launched for, or an ended one still naming a checkout nobody sits in.
+/// A delivery in flight owns its agent until it answers, and a subagent's
+/// checkout ends with its agent rather than on its own.
+fn is_abandoned(primary: &Path, agent: &Agent, occupied: &[PathBuf], echoed: &[String]) -> bool {
+    let Some(task) = agent.isolation() else {
+        return false;
+    };
+    if agent.parent.is_some() || agent.state == WorkState::Integrating {
+        return false;
+    }
+    let in_its_slot = landing::slot_path(primary, task)
+        .is_some_and(|slot| occupied.iter().any(|pane| pane.starts_with(&slot)));
+    let launched_for = echoed.iter().any(|echo| echo == agent.id.as_str());
+    if in_its_slot || launched_for {
+        return false;
+    }
+    checkout::is_live(&agent.state) || task.checkout.is_some()
 }
 
 /// The branch this project delivers into: what it declared, else whatever

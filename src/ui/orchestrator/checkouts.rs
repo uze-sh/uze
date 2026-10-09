@@ -21,7 +21,7 @@ pub(super) enum CheckoutChange {
         path: PathBuf,
         name: String,
     },
-    /// A parked agent's subagent, joined into that agent.
+    /// An unfinished agent's subagent, joined into that agent.
     Join {
         parent_id: String,
         parent: String,
@@ -100,7 +100,7 @@ pub(super) fn cleaned_up(checkout: &CheckoutView) -> bool {
 }
 
 /// The join a subagent's checkout offers: into its agent, once that agent
-/// is parked. A running agent joins its own.
+/// has ended unfinished. A running agent joins its own.
 pub(super) fn join_of(checkout: &CheckoutView) -> Option<CheckoutChange> {
     match &checkout.owner {
         CheckoutOwner::Subagent {
@@ -143,7 +143,7 @@ pub(super) fn describe_change(outcome: &CheckoutOutcome) -> (ToastKind, String, 
             if adopted.free {
                 format!("{name} is UZE's now, and free for the next agent")
             } else {
-                format!("{name} is UZE's now, parked until its work is dealt with")
+                format!("{name} is UZE's now, and free once its work is kept")
             },
         ),
         CheckoutOutcome::Adopted {

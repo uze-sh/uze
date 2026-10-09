@@ -9,21 +9,20 @@ use crate::{approval::Consent, worktree::PolicyStep};
 pub const SETUP_AWAITS_APPROVAL: &str = "setup was not run: this project's commands await your \
      approval (`uze workspace allow` in the project, or Review in the workspace)";
 
-/// How many free slots are kept, and for how long. Decided from the slots
-/// as they stand, never from a history of how many were used: a rule with
-/// no memory has nothing to get wrong about the past.
+/// How long a free slot is kept. Decided from the slots as they stand,
+/// never from a history of how many were used: a rule with no memory has
+/// nothing to get wrong about the past. With no count to keep, the slots a
+/// project has are the most it had in use at once within that age.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Pool {
-    /// Free slots kept warm for the next agents, the most recently used.
-    pub spare: usize,
-    /// Unused this long, even a spare gives its disk back.
+    /// Unused this long since it was last placed or released, a free slot
+    /// gives its disk back.
     pub idle: Duration,
 }
 
 impl Default for Pool {
     fn default() -> Self {
         Self {
-            spare: 2,
             idle: Duration::from_secs(3 * 24 * 60 * 60),
         }
     }
@@ -33,9 +32,6 @@ impl Pool {
     pub fn declared_by(policy: Option<&WorktreePolicy>) -> Self {
         let default = Self::default();
         Self {
-            spare: policy
-                .and_then(|policy| policy.spare)
-                .unwrap_or(default.spare),
             idle: policy
                 .and_then(|policy| policy.idle_days)
                 .map_or(default.idle, |days| {
@@ -95,9 +91,32 @@ pub enum SlotState {
     /// Clean, and everything on its branch is in the target or was
     /// declared done: the next agent may take it.
     Free,
-    /// Holds work nobody delivered: uncommitted changes, or commits the
-    /// target lacks. Only the operator moves it on.
-    Parked,
+    /// Held by something that has to clear before it can be handed on.
+    Pinned { reason: Pin },
+}
+
+/// What keeps a checkout nobody is assigned to from being handed on.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Pin {
+    /// A process is working inside it.
+    InUse,
+    /// Git has an operation paused in it.
+    Paused(&'static str),
+    /// Its agent's work could not be shelved, and is still in it.
+    Unshelved(String),
+    /// Its agent left work in it that no release has kept yet.
+    AwaitingRelease,
+}
+
+impl fmt::Display for Pin {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InUse => formatter.write_str("a process is working inside it"),
+            Self::Paused(operation) => write!(formatter, "{operation} is paused in it"),
+            Self::Unshelved(reason) => formatter.write_str(reason),
+            Self::AwaitingRelease => formatter.write_str("its agent's work is about to be kept"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,7 +139,7 @@ pub struct Acquired {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AcquireError {
-    /// Every slot is occupied or parked and the declared cap is reached.
+    /// Every slot is in use or pinned and the declared cap is reached.
     CapReached { cap: usize },
     /// The repository has no commit to branch from, or Git refused.
     Git(String),
@@ -131,7 +150,7 @@ impl fmt::Display for AcquireError {
         match self {
             Self::CapReached { cap } => write!(
                 formatter,
-                "every one of the {cap} declared checkouts is in use; deliver or park a task first"
+                "every one of the {cap} declared checkouts is in use; close an agent to free one"
             ),
             Self::Git(reason) => formatter.write_str(reason),
         }
@@ -204,6 +223,7 @@ pub fn acquire(
         Start::Branching { base_tip },
         cap,
         presence,
+        None,
     )
 }
 
@@ -215,15 +235,24 @@ pub fn acquire(
 pub fn resume(
     primary: &Path,
     store: &AgentStore,
+    task: &AgentId,
     isolation: &Isolation,
     cap: Option<usize>,
     presence: &Presence,
 ) -> Result<Acquired, AcquireError> {
     if !branch_exists(primary, &isolation.branch) {
-        return Err(AcquireError::Git(format!(
-            "branch {} no longer exists; there is nothing to resume",
-            isolation.branch
-        )));
+        // A branch deleted by hand while its work sat on the shelf comes
+        // back where the shelf was cut, which is where that work stands on.
+        let Some(shelf) = shelf::shelf_of(primary, task.as_str()) else {
+            return Err(AcquireError::Git(format!(
+                "branch {} no longer exists; there is nothing to resume",
+                isolation.branch
+            )));
+        };
+        git(
+            primary,
+            &["branch", "--", &isolation.branch, &format!("{shelf}^1")],
+        )?;
     }
     take(
         primary,
@@ -232,6 +261,7 @@ pub fn resume(
         Start::Existing,
         cap,
         presence,
+        isolation.last_checkout.as_ref(),
     )
 }
 
@@ -243,6 +273,7 @@ pub(super) fn take(
     start: Start<'_>,
     cap: Option<usize>,
     presence: &Presence,
+    prefer: Option<&CheckoutId>,
 ) -> Result<Acquired, AcquireError> {
     // Reuse resets a slot's working tree to this commit, so a base nobody
     // could resolve is refused before a slot is chosen rather than handed
@@ -256,16 +287,18 @@ pub(super) fn take(
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         let existing = slots(primary, store, presence);
-        if let Some(free) = existing
-            .iter()
-            .filter(|slot| slot.state == SlotState::Free)
-            .max_by_key(|slot| modified_at(&slot.path))
+        let free = || existing.iter().filter(|slot| slot.state == SlotState::Free);
+        if let Some(free) = free()
+            .find(|slot| Some(&slot.id) == prefer)
+            .or_else(|| free().max_by_key(|slot| modified_at(&slot.path)))
         {
             return reuse(primary, free, branch, start);
         }
         if let Some(cap) = cap
             && existing.len() >= cap
         {
+            // Every slot counts against the cap here: the free ones were
+            // just ruled out, so what remains is in use or pinned.
             return Err(AcquireError::CapReached { cap });
         }
         create(primary, branch, start)
@@ -281,7 +314,7 @@ pub(super) fn reuse(
 ) -> Result<Acquired, AcquireError> {
     let root = &slot.path;
     // `--discard-changes` because a free slot may still hold edits that
-    // never parked it — UZE's own regions of `AGENTS.md`, a lock that moved
+    // never held it — UZE's own regions of `AGENTS.md`, a lock that moved
     // no pin — and a plain switch refuses over them or carries them into
     // the next task. The index and the tree land on the new tip in the
     // same step, which is what a `reset --hard` after it used to do.
@@ -309,6 +342,7 @@ pub(super) fn reuse(
     // Rewritten, not kept: a subagent's record names an agent this new
     // holder is not the child of.
     record::write(primary, root, &CheckoutRecord::made_at(root)).map_err(AcquireError::Git)?;
+    stamp(root);
     Ok(Acquired {
         id: slot.id.clone(),
         path: root.clone(),
@@ -353,6 +387,7 @@ pub(super) fn create(
         );
         return Err(AcquireError::Git(reason));
     }
+    stamp(&path);
     Ok(Acquired {
         id,
         path,
@@ -490,4 +525,11 @@ pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<St
             }),
     );
     warnings
+}
+
+/// Marks a slot as used now: its idle age counts from here, since nothing
+/// an agent does below the slot's top directory moves that directory's own
+/// time.
+pub(super) fn stamp(slot: &Path) {
+    let _ = uze_platform::fs::set_modified(slot, SystemTime::now());
 }

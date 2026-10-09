@@ -28,7 +28,7 @@ impl Workspace<'_> {
                     .agents
                     .iter()
                     .filter(|agent| {
-                        checkout::is_live(&agent.state) || agent.state == WorkState::Parked
+                        checkout::is_live(&agent.state) || agent.state == WorkState::Shelved
                     })
                     .filter_map(|agent| agent.parent.clone())
                     .collect(),
@@ -163,8 +163,8 @@ pub(super) struct EvaluationPass<'a> {
     /// The checkout directories a live pane still sits in.
     pub(super) occupied: &'a [PathBuf],
     pub(super) owners: BTreeSet<AgentId>,
-    /// Agents a subagent still holds a checkout for. One parked for its
-    /// children is parked for their work, however level its own branch is.
+    /// Agents a subagent still holds a checkout for. One unfinished for its
+    /// children is unfinished for their work, however level its own branch is.
     pub(super) holding_children: BTreeSet<AgentId>,
     pub(super) vocabulary: &'a BranchVocabulary,
     pub(super) completion: CompletionBehavior,
@@ -234,22 +234,22 @@ impl EvaluationPass<'_> {
         // reconsidered: a freed slot handed to a new agent belongs to that
         // agent's task, not to the one that used to sit there. `Parked` is
         // nobody's turn by definition and stays put — unless a pane sits in
-        // its checkout (`occupied`): parked means "no agent left", and an
+        // its checkout (`occupied`): unfinished means "no agent left", and an
         // agent that is there makes it a lie, whichever way it got there —
         // a release that raced the tab opening, a resume.
         let ended_owner = matches!(*state, WorkState::Integrated | WorkState::Closed)
             && self.owners.contains(&id);
-        let parked_with_agent = *state == WorkState::Parked
+        let parked_with_agent = *state == WorkState::Shelved
             && slot
                 .as_ref()
                 .is_some_and(|slot| self.occupied.iter().any(|pane| pane.starts_with(slot)));
-        let parked_alone = *state == WorkState::Parked && !parked_with_agent;
+        let parked_alone = *state == WorkState::Shelved && !parked_with_agent;
         if !(is_agents_turn(state) || ended_owner || parked_with_agent || parked_alone) {
             return None;
         }
         // Parked is nobody's turn, but its work can still reach the target
         // without it — a request opened before its agent left, merged on
-        // the forge. Left parked, it was listed as preserved work for good
+        // the forge. Left unfinished, it was listed as preserved work for good
         // and its slot never went back to the pool.
         if parked_alone {
             if !self.holding_children.contains(&id) {

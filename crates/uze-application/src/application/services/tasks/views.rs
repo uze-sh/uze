@@ -33,9 +33,9 @@ pub enum PlacementKind {
 pub struct ReleasedTask {
     pub id: String,
     pub label: String,
-    /// `true` when the checkout held work and was parked for the operator
-    /// instead of going back to the pool.
-    pub parked: bool,
+    /// `true` when the task ended holding work — kept on its branch or a
+    /// shelf, and listed as unfinished — rather than nothing at all.
+    pub unfinished: bool,
 }
 
 /// The delivery target against its upstream: commits a pull would bring
@@ -257,7 +257,7 @@ pub(super) fn drawn_state(
     // Parked says only that nobody is there. A rebase paused in the
     // checkout is what the operator will find, and "uncommitted changes"
     // sent them looking for edits that were really conflict markers.
-    if *state == WorkState::Parked
+    if *state == WorkState::Shelved
         && let Some(files) =
             landing::slot_path(primary, task).and_then(|slot| landing::paused_rebase(&slot))
     {
@@ -296,7 +296,7 @@ pub enum WorkStateView {
     },
     GateFailed,
     Integrated,
-    Parked,
+    Shelved,
     /// The agent is gone and its branch held nothing to deliver.
     Closed,
 }
@@ -324,7 +324,7 @@ impl WorkStateView {
             Self::Integrating => Some("already delivering"),
             Self::Integrated => Some("already delivered"),
             Self::Closed => Some("branch holds nothing"),
-            Self::Parked => Some("parked — resume it first"),
+            Self::Shelved => Some("unfinished — resume it first"),
         }
     }
 }
@@ -341,7 +341,7 @@ impl From<&WorkState> for WorkStateView {
             },
             WorkState::GateFailed => Self::GateFailed,
             WorkState::Integrated => Self::Integrated,
-            WorkState::Parked => Self::Parked,
+            WorkState::Shelved => Self::Shelved,
             WorkState::Closed => Self::Closed,
         }
     }

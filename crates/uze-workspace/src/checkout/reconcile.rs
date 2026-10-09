@@ -16,7 +16,7 @@ pub struct Reconciliation {
 
 /// Brings `store` in line with the isolation directory: records the
 /// checkouts UZE can show it made, adopts recorded checkouts without a task
-/// (parked when they hold work), marks tasks without a checkout from where
+/// (shelved when they hold work), marks tasks without a checkout from where
 /// their branch stands, and prunes Git's registry only after every
 /// directory has been looked at.
 #[tracing::instrument(name = "checkout.reconcile", level = "debug", skip_all)]
@@ -67,9 +67,17 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
             continue;
         }
         let holds_work = holds_uncommitted_work(path)
+            || holds_unbranched_commits(path)
             || branch
                 .as_deref()
                 .is_some_and(|branch| !is_integrated(primary, target, branch));
+        // A released slot belongs to nobody by design: clean, detached, its
+        // agent's work kept elsewhere. One still on a branch, or holding
+        // work, stands for a task whose record was lost, and is recorded so
+        // a release can keep what it holds and free it.
+        if !holds_work && branch.is_none() {
+            continue;
+        }
         // A generated branch is labelled by the identifier it carries; one
         // somebody named is labelled by that name, never by the slot's id.
         let label = match branch.as_deref() {
@@ -96,7 +104,7 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
         // from it either: empty means it ended with nothing, not that its
         // work reached the target.
         agent.state = if holds_work {
-            WorkState::Parked
+            WorkState::Shelved
         } else {
             WorkState::Closed
         };
@@ -123,22 +131,48 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
         report.orphaned.push(id);
     }
 
-    // A slot outlives the tasks that ran in it, and each went on naming it.
-    // Only the newest stands there now; an earlier one still reading as
-    // live answered every question about "the task in this checkout" as
-    // well — an evaluation renamed it after the slot's current branch, so a
-    // task long gone carried the new agent's name, and discarding it would
-    // have deleted the new agent's branch.
-    let owners = store.slot_owners();
-    for agent in store.agents.iter_mut() {
-        let handed_over = !owners.contains(&agent.id);
-        let holds_a_slot = agent
-            .isolation()
-            .is_some_and(|isolation| isolation.checkout.is_some());
-        if holds_a_slot && handed_over {
+    // A slot outlives the tasks that ran in it, and a store an earlier build
+    // wrote can still have several naming one. The holder is the one whose
+    // branch the checkout has — a fact of Git's, where the store's order is
+    // only what was recorded — and otherwise the one recorded last; every
+    // other one ends by what its own branch and shelf hold. An earlier one
+    // still reading as live answered every question about "the task in this
+    // checkout" as well — an evaluation renamed it after the slot's current
+    // branch, and discarding it would have deleted the new agent's branch.
+    for (path, branch) in &registered {
+        let id = CheckoutId::adopted(&slot_name(path));
+        let naming: Vec<AgentId> = store
+            .agents
+            .iter()
+            .filter(|agent| {
+                agent
+                    .isolation()
+                    .is_some_and(|isolation| isolation.checkout.as_ref() == Some(&id))
+            })
+            .map(|agent| agent.id.clone())
+            .collect();
+        if naming.len() < 2 {
+            continue;
+        }
+        let holder = naming
+            .iter()
+            .find(|candidate| {
+                store
+                    .agent(candidate.as_str())
+                    .and_then(Agent::isolation)
+                    .is_some_and(|isolation| Some(&isolation.branch) == branch.as_ref())
+            })
+            .or(naming.last())
+            .cloned();
+        for agent in store
+            .agents
+            .iter_mut()
+            .filter(|agent| naming.contains(&agent.id) && Some(&agent.id) != holder.as_ref())
+        {
             end_without_checkout(primary, target, agent);
         }
     }
+    report.adopted.extend(adopt_shelves(primary, store, target));
 
     let _ = git(primary, &["worktree", "prune"]);
     report
@@ -207,18 +241,47 @@ pub(super) fn restore_parents(
 }
 
 /// Ends a task that no longer has a checkout of its own, by what its
-/// branch still holds.
+/// branch and its shelf still hold.
 pub(super) fn end_without_checkout(primary: &Path, target: &str, agent: &mut Agent) {
     let Some(isolation) = agent.isolation_mut() else {
         return;
     };
-    isolation.checkout = None;
-    let branch = isolation.branch.clone();
-    // A delivery already recorded stays recorded: its branch has nothing
-    // of its own left precisely because the target has it all.
-    if branch_exists(primary, &branch) && !is_integrated(primary, target, &branch) {
-        agent.state = WorkState::Parked;
-    } else if agent.state != WorkState::Integrated {
-        agent.state = WorkState::Closed;
+    if let Some(checkout) = isolation.checkout.take() {
+        isolation.last_checkout = Some(checkout);
     }
+    settle_without_checkout(primary, target, agent);
+}
+
+/// Records a shelved task for every shelf no recorded task holds, under
+/// the task the shelf names: a store that was lost or written by a build
+/// that dropped the task still lists the work.
+pub(super) fn adopt_shelves(primary: &Path, store: &mut AgentStore, target: &str) -> Vec<AgentId> {
+    let mut adopted = Vec::new();
+    for found in shelf::list(primary) {
+        if store.agent(&found.task).is_some() {
+            continue;
+        }
+        let id = AgentId::adopted(&found.task);
+        let mut agent = Agent::in_the_root("");
+        agent.id = id.clone();
+        agent.label = if found.label.is_empty() {
+            found.task.clone()
+        } else {
+            found.label.clone()
+        };
+        let mut isolation = Isolation::cut(
+            &id,
+            Base::Ref(target.to_owned()),
+            tip_of(primary, &format!("{}^1", found.commit)),
+            target.to_owned(),
+        );
+        if !found.branch.is_empty() {
+            isolation.branch = found.branch.clone();
+        }
+        agent.isolation = Some(isolation);
+        agent.state = WorkState::Shelved;
+        adopted.push(id);
+        store.upsert(agent);
+    }
+    adopted
 }

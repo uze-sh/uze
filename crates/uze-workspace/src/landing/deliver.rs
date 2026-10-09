@@ -283,6 +283,14 @@ pub fn settle_delivered(primary: &Path, state: &mut WorkState, isolation: &mut I
     {
         return false;
     }
+    // The branch's commits reached the target; work kept on a shelf beside
+    // them did not, and is not delivered by their arriving.
+    if checkout::shelf::list(primary).iter().any(|found| {
+        found.branch == isolation.branch
+            && !checkout::shelf::is_in_target(primary, &found.commit, &isolation.target)
+    }) {
+        return false;
+    }
     if let Some(slot) = slot_path(primary, isolation) {
         if paused_rebase(&slot).is_some() && !abort_rebase(primary, &slot) {
             return false;

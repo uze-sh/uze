@@ -650,7 +650,7 @@ pub(super) fn spawn_checkout_change(
                         parent: parent.clone(),
                         answer: workspace.map_err(Clone::clone).and_then(|workspace| {
                             workspace
-                                .join_parked_work(&project, parent_id, topic)
+                                .join_unfinished_work(&project, parent_id, topic)
                                 .map_err(|refusal| refusal.to_string())
                         }),
                     },

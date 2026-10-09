@@ -62,7 +62,7 @@ so at `info`, and that is the line worth reading:
 | `an agent's work changed` (`from`, `to`, `label`) | the task evaluation, on a state or name change |
 | `an agent no pane holds was released` | the occupancy reconciliation |
 | `an agent no tab runs any more was ended` | the occupancy reconciliation |
-| `merged branches and spare slots were removed` | the slot collection |
+| `merged branches, idle slots and delivered shelves were removed` | the slot collection |
 | `managed regions were rewritten` | any write to a managed region of `AGENTS.md` and its kin |
 
 A failure is a failure whoever asked: an `err` on a silenced span is

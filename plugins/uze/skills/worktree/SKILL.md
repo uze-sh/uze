@@ -151,9 +151,11 @@ join into; run its subagents one after another instead.
 ## Retire checkouts safely
 
 Checkouts are UZE's to reuse and remove; leave them. A subagent's checkout
-goes back to the pool when you join it, or when you end with it clean; one
-still holding work is kept for the operator. Never remove a checkout
-yourself, and never force removal to discard uncommitted work.
+goes back to the pool when you join it, or when you end; whatever it still
+holds is kept for you on its branch and a shelf, and comes back beside you
+when you are resumed. Never remove a checkout yourself, and never force
+removal to discard uncommitted work. Commit as you go all the same: a shelf
+keeps unfinished work, a commit says what it is.
 
 Finish with a compact handoff: your branch, its tip commit, the checks you
 ran, and any file another agent is likely to have touched too.

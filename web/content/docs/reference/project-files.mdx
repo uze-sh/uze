@@ -112,8 +112,7 @@ reports it.
 | `setup` | none | Prepares a worktree, run in it after linking, once you [approve it](#approving-the-commands). A failure warns; it never blocks a launch |
 | `gate` | none | Run in the task's worktree on the rebased commits, once you [approve it](#approving-the-commands). A non-zero exit refuses delivery |
 | `slots` | peak concurrency | The most worktrees that may exist at once |
-| `spare` | `2` | Free worktrees kept warm for the next agents, the most recently used first. Every other free one is removed, its branch kept |
-| `idle_days` | `3` | Days a free worktree may sit unused before it is removed too |
+| `idle_days` | `3` | Days a free worktree may sit unused, since an agent last left it, before it is removed, its branch kept. Until then it is reused, so a project keeps as many worktrees as it had agents at once |
 | `artifacts` | none | Where the project keeps what describes it; see [below](#artifacts) |
 
 Every key but `artifacts` is about a worktree, so none of them does anything for
@@ -134,7 +133,6 @@ workspace:
     - pnpm test
     - pnpm lint
   slots: 3
-  spare: 2
   idle_days: 3
   artifacts: docs
 ```

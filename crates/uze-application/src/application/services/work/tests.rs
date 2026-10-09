@@ -247,9 +247,8 @@ fn a_split_point_that_is_not_a_commit_id_is_refused_before_git_sees_it() {
         world.root(),
         &child.path,
         &CheckoutRecord {
-            path: child.path.clone(),
-            parent: None,
             split_at: Some(forged),
+            ..CheckoutRecord::made_at(&child.path)
         },
     )
     .unwrap();
@@ -288,6 +287,9 @@ fn a_child_lives_as_long_as_its_agent() {
     let clean = world.split(&agent, "clean").unwrap();
     let holding = world.split(&agent, "holding").unwrap();
     world.commit(&holding.path, "work.rs", "fn work() {}\n");
+    let branch = world
+        .repository
+        .git_in(&holding.path, &["branch", "--show-current"]);
 
     let released = world.app.workspace().release_abandoned_tasks(
         world.root(),
@@ -314,21 +316,26 @@ fn a_child_lives_as_long_as_its_agent() {
         .release_abandoned_tasks(world.root(), &[], &[]);
     assert_eq!(released.len(), 1);
     assert!(
-        released[0].parked,
-        "the agent is kept with the child holding work"
+        released[0].unfinished,
+        "the agent ends unfinished with the child holding work"
     );
 
-    let (_, next, _) = world.agent();
-    assert_eq!(next, clean.path, "the clean child went back to the pool");
-    assert!(
-        holding.path.join("work.rs").is_file(),
-        "the child holding work is kept"
+    let directories: std::collections::BTreeSet<PathBuf> =
+        [agent.1.clone(), clean.path.clone(), holding.path.clone()].into();
+    let next: std::collections::BTreeSet<PathBuf> = (0..3).map(|_| world.agent().1).collect();
+    assert_eq!(
+        next, directories,
+        "the agent and both children gave their checkouts back"
     );
-    let (_, after, _) = world.agent();
-    assert_ne!(after, holding.path);
-    assert_ne!(
-        after, agent.1,
-        "an agent kept for its child keeps its checkout"
+    assert!(
+        world
+            .repository
+            .try_git_in(
+                world.root(),
+                &["cat-file", "-e", &format!("{}:work.rs", branch.trim())]
+            )
+            .is_ok(),
+        "the child's work stays on its branch"
     );
 }
 
@@ -352,57 +359,40 @@ fn an_agent_is_not_delivered_while_a_child_holds_unjoined_work() {
     }
 }
 
-/// An agent that ended with a subagent holding work is parked with it; the
-/// operator joins the two from outside, naming the agent rather than
-/// speaking as it.
+/// An agent that ended with a subagent holding work keeps no checkout: both
+/// are freed, the subagent's commits on its branch. The operator's join has
+/// nothing to join into until the agent is resumed, which brings the
+/// subagent back beside it, and the agent joins its own.
 #[test]
-fn the_operator_joins_a_parked_agents_subagent_into_its_kept_checkout() {
-    let world = World::new("work-join-parked");
+fn an_unfinished_agents_subagent_comes_back_with_it_and_is_joined() {
+    let world = World::new("work-join-unfinished");
     let agent = world.agent();
     let child = world.split(&agent, "parser").unwrap();
     world.commit(&child.path, "parser.rs", "fn parse() {}\n");
     let workspace = world.app.workspace();
 
     assert!(
-        refusal(workspace.join_parked_work(world.root(), &agent.0, "parser"))
+        refusal(workspace.join_unfinished_work(world.root(), &agent.0, "parser"))
             .contains("still running"),
         "a running agent joins its own"
     );
 
     workspace.release_abandoned_tasks(world.root(), &[], &[]);
-    let view = workspace.checkouts(world.root(), &[]).unwrap();
-    let owner = view
-        .checkouts
-        .iter()
-        .map(|checkout| &checkout.owner)
-        .find(|owner| matches!(owner, crate::CheckoutOwner::Subagent { .. }))
-        .expect("the subagent's checkout is listed");
-    assert_eq!(
-        owner,
-        &crate::CheckoutOwner::Subagent {
-            parent: workspace
-                .evaluate_tasks(world.root(), &[])
-                .tasks
-                .iter()
-                .find(|task| task.id == agent.0)
-                .map(|task| task.label.clone())
-                .unwrap(),
-            parent_id: agent.0.clone(),
-            topic: Some("parser".to_owned()),
-            joinable: true,
-        }
+    assert!(
+        refusal(workspace.join_unfinished_work(world.root(), &agent.0, "parser"))
+            .contains("resume it"),
+        "an unfinished agent keeps no checkout to join into"
     );
 
+    let resumed = workspace.resume_task(world.root(), &agent.0, &[]).unwrap();
+    let again = (
+        agent.0.clone(),
+        resumed.cwd.clone(),
+        resumed.launch_key.clone(),
+    );
     assert_eq!(
-        workspace
-            .join_parked_work(world.root(), &agent.0, "parser")
-            .unwrap(),
+        world.join(&again, "parser").unwrap(),
         JoinedWork::Joined { commits: 1 }
     );
-    assert!(agent.1.join("parser.rs").is_file());
-    assert!(
-        refusal(workspace.join_parked_work(world.root(), &agent.0, "parser"))
-            .contains("no subagent working on `parser`"),
-        "a joined subagent is gone"
-    );
+    assert!(resumed.cwd.join("parser.rs").is_file());
 }

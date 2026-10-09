@@ -10,15 +10,21 @@ flowchart TD
   recorded -->|yes| slot{A subagent's?}
   slot -->|yes| child[Held for its agent<br/>until joined or its agent ends]
   slot -->|no| inuse{A process working inside?}
-  inuse -->|yes| occupied[Occupied]
-  inuse -->|no| work{Uncommitted work,<br/>or commits the target lacks?}
-  work -->|yes| parked[Parked<br/>only the operator discards it]
+  inuse -->|yes, its agent's| occupied[Occupied]
+  inuse -->|yes, nobody's agent| pinned
+  inuse -->|no| paused{A rebase, merge, pick<br/>or bisect paused in it?}
+  paused -->|yes| pinned[Pinned, with its reason<br/>nothing reset, nothing reused]
+  paused -->|no| work{Its agent gone,<br/>leaving work in it?}
+  work -->|a submodule or nested repository,<br/>or the shelf could not be written| pinned
+  work -->|yes| shelve[Released: uncommitted work to<br/>refs/uze/shelf/task, commits on its branch,<br/>the checkout detached and cleaned]
   work -->|only a lock that moved no pin,<br/>or managed regions| free
   work -->|no| free[Free]
-  free --> spare{Among the spare slots,<br/>and used within the idle age?}
-  spare -->|yes| kept[Kept warm for the next agent]
-  spare -->|no| removed[Directory removed, branch kept]
+  shelve --> free
+  free --> idle{Used within the idle age?}
+  idle -->|yes| kept[Kept for the next agent]
+  idle -->|no| removed[Directory removed, branch kept]
   click recorded href "crates/uze-workspace/src/checkout/record.rs"
   click inuse href "crates/uze-core/src/machine/process_cwd.rs"
-  click spare href "crates/uze-workspace/src/checkout.rs"
+  click idle href "crates/uze-workspace/src/checkout.rs"
+  click shelve href "crates/uze-workspace/src/checkout/shelf.rs"
   click child href "crates/uze-workspace/src/checkout/subagent.rs"

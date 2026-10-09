@@ -71,6 +71,13 @@ impl Workspace<'_> {
         let (primary, target) = self.project_of(cwd).ok()?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
+        let pinned: Vec<(PathBuf, String)> = checkout::slots(&primary, &store, presence)
+            .into_iter()
+            .filter_map(|slot| match slot.state {
+                checkout::SlotState::Pinned { reason } => Some((slot.path, reason.to_string())),
+                _ => None,
+            })
+            .collect();
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
         // Measured side by side: a walk is one system call per file, and a
         // project's checkouts hold hundreds of thousands of them between
@@ -106,6 +113,10 @@ impl Workspace<'_> {
                     removal_refusal: self
                         .removal_refusal(&primary, found, &store, presence)
                         .map(|refusal| refusal.to_string()),
+                    kept_because: pinned
+                        .iter()
+                        .find(|(path, _)| same(path, &found.path))
+                        .map(|(_, reason)| reason.clone()),
                 }
             })
             .collect();
@@ -233,14 +244,14 @@ impl Workspace<'_> {
                 let agent = store.get(parent);
                 let child = slot_holder(store, path).filter(|child| {
                     child.parent.as_ref() == Some(parent)
-                        && (checkout::is_live(&child.state) || child.state == WorkState::Parked)
+                        && (checkout::is_live(&child.state) || child.state == WorkState::Shelved)
                 });
                 CheckoutOwner::Subagent {
                     parent: agent.map_or_else(|| parent.to_string(), |agent| agent.label.clone()),
                     parent_id: parent.to_string(),
                     topic: child.map(|child| child.label.clone()),
                     joinable: child.is_some()
-                        && agent.is_some_and(|agent| agent.state == WorkState::Parked),
+                        && agent.is_some_and(|agent| agent.state == WorkState::Shelved),
                 }
             }
             Owner::Harness { harness } => CheckoutOwner::Harness {
@@ -382,7 +393,7 @@ pub struct CheckoutView {
     pub task: Option<String>,
     /// `None` for a detached `HEAD`.
     pub branch: Option<String>,
-    /// Uncommitted work, as a slot is parked or freed by: content UZE
+    /// Uncommitted work, as a slot is shelved or freed by: content UZE
     /// derives and can write again is not work.
     pub dirty: bool,
     /// Everything its `HEAD` carries is already in the target.
@@ -400,6 +411,10 @@ pub struct CheckoutView {
     /// Why removing it would be refused as it stands now; `None` when it
     /// may be removed. Removal inspects again before it acts.
     pub removal_refusal: Option<String>,
+    /// Why UZE keeps one of its own checkouts as it is rather than handing
+    /// it to the next agent, when nobody is assigned to it: a paused
+    /// operation, somebody working inside, or work a shelf could not take.
+    pub kept_because: Option<String>,
 }
 
 /// Who a checkout belongs to.
@@ -416,7 +431,7 @@ pub enum CheckoutOwner {
         parent_id: String,
         /// The subagent's topic, while it still holds this checkout.
         topic: Option<String>,
-        /// Its agent is parked, so the operator may join it there.
+        /// Its agent ended unfinished, so the operator may join it there.
         joinable: bool,
     },
     /// A harness's own isolation, left to that harness.

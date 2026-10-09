@@ -21,7 +21,7 @@ use super::*;
 /// `branch -D` and `reset --hard` over an agent's committed work.
 ///
 /// Remembered per pair of commits for the life of the process. Evaluation
-/// asks it of every parked branch on every pass, and the squash question
+/// asks it of every shelved branch on every pass, and the squash question
 /// costs up to five Git processes a branch; the answer can only change when
 /// one of the two commits does, and resolving them is one process. Only a
 /// complete answer is remembered — one that fell closed is asked again.
@@ -235,7 +235,7 @@ pub(super) fn every_commit_is_there(listing: &str) -> bool {
 /// the merge base, so it carries exactly what the branch adds and nothing
 /// of how it was written.
 ///
-/// Its dates are pinned: evaluation asks this of every parked task on every
+/// Its dates are pinned: evaluation asks this of every shelved task on every
 /// pass, and a probe dated by the clock was a new object each time — loose
 /// objects piling up in the operator's repository until Git collected them.
 pub(super) fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> Option<bool> {

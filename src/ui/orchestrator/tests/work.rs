@@ -32,7 +32,28 @@ fn checkout(name: &str, owner: CheckoutOwner) -> CheckoutView {
         bytes: 2048,
         adoptable: false,
         removal_refusal: None,
+        kept_because: None,
     }
+}
+
+/// A checkout UZE keeps as it is says why, since nothing else on its row
+/// would tell the operator what is holding it.
+#[test]
+fn a_kept_checkout_says_what_keeps_it() {
+    let mut held = checkout(".worktrees/paused", slot(None, false));
+    held.kept_because = Some("a rebase is paused in it".to_owned());
+    let lines = drawn(&showing(vec![held]));
+    let row = row_of(&lines, "branch-paused");
+    assert!(
+        lines[row].contains("kept: a rebase"),
+        "{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines[..row].iter().any(|line| line.contains("NEEDS YOU")),
+        "a kept checkout waits on the operator: {}",
+        lines.join("\n")
+    );
 }
 
 fn slot(holder: Option<&str>, live: bool) -> CheckoutOwner {
@@ -217,8 +238,8 @@ fn the_sidebar_lists_every_project_with_what_needs_you_and_its_size() {
         vec![matched, checkout("by-hand", CheckoutOwner::Operator)],
         vec![
             preserved(PROJECT, "t1", "yesterday", WorkStateView::Uncommitted),
-            preserved(OTHER, "t3", "elsewhere", WorkStateView::Parked),
-            preserved(OTHER, "t4", "older", WorkStateView::Parked),
+            preserved(OTHER, "t3", "elsewhere", WorkStateView::Shelved),
+            preserved(OTHER, "t4", "older", WorkStateView::Shelved),
         ],
     );
     let lines = drawn(&model);
@@ -285,7 +306,7 @@ fn projects_are_moved_between_by_key_and_by_click_and_each_is_read_once() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-projects"));
     let model = showing_with(
         Vec::new(),
-        vec![preserved(OTHER, "t3", "elsewhere", WorkStateView::Parked)],
+        vec![preserved(OTHER, "t3", "elsewhere", WorkStateView::Shelved)],
     );
     let mut driven = driven(model, &home).on_a_roomy_terminal();
 
@@ -388,9 +409,9 @@ fn every_row_is_listed_under_what_it_asks_of_you() {
     holding.ahead = 2;
     let mut theirs = checkout(".worktrees/t1", slot(Some("t1"), false));
     theirs.task = Some("t1".to_owned());
-    let mut kept = preserved(PROJECT, "t1", "first", WorkStateView::Parked);
+    let mut kept = preserved(PROJECT, "t1", "first", WorkStateView::Shelved);
     kept.branch = "branch-t1".to_owned();
-    let mut gone = preserved(PROJECT, "t9", "lost checkout", WorkStateView::Parked);
+    let mut gone = preserved(PROJECT, "t9", "lost checkout", WorkStateView::Shelved);
     gone.checkout = None;
     let model = showing_with(
         vec![
@@ -473,7 +494,7 @@ fn the_cards_count_what_the_rows_show_and_wear_their_marks() {
             checkout(".worktrees/free", slot(None, false)),
             checkout(".worktrees/mine", CheckoutOwner::Operator),
         ],
-        vec![preserved(PROJECT, "t2", "kept", WorkStateView::Parked)],
+        vec![preserved(PROJECT, "t2", "kept", WorkStateView::Shelved)],
     ));
     let labels = row_of(&lines, "Needs you");
     for label in ["In progress", "Free", "Can remove", "On disk"] {
@@ -517,7 +538,7 @@ fn each_row_offers_only_what_applies_to_it() {
             checkout(".worktrees/child", subagent(true)),
             checkout(".worktrees/t1", slot(Some("t1"), false)),
         ],
-        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Parked)],
+        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Shelved)],
     );
     let selected_on = |model: &mut WorkspaceModel, branch: &str| {
         let work = model.work.as_ref().unwrap();
@@ -570,7 +591,7 @@ fn the_same_key_discards_a_task_and_removes_a_checkout_and_says_which() {
             checkout(".worktrees/done", CheckoutOwner::Operator),
             checkout(".worktrees/t1", slot(Some("t1"), false)),
         ],
-        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Parked)],
+        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Shelved)],
     );
     let mut driven = driven(model, &home);
 
@@ -608,7 +629,7 @@ fn the_same_key_discards_a_task_and_removes_a_checkout_and_says_which() {
 
 #[test]
 fn a_task_whose_checkout_is_gone_is_discarded_as_a_branch() {
-    let mut gone = preserved(PROJECT, "t9", "lost", WorkStateView::Parked);
+    let mut gone = preserved(PROJECT, "t9", "lost", WorkStateView::Shelved);
     gone.checkout = None;
     let mut model = showing_with(Vec::new(), vec![gone]);
     model.work.as_mut().unwrap().asking = Some(WorkQuestion::Discard);
@@ -695,11 +716,11 @@ fn a_clean_up_asks_with_what_would_go_and_how_much() {
 }
 
 #[test]
-fn a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered() {
+fn an_unfinished_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-join"));
     let model = showing(vec![checkout(".worktrees/child", subagent(true))]);
     let lines = drawn(&model);
-    assert!(lines[row_of(&lines, "branch-child")].contains("parked"));
+    assert!(lines[row_of(&lines, "branch-child")].contains("unfinished"));
     let mut driven = driven(model, &home);
 
     press(&mut driven, Action::JoinCheckout);
@@ -728,7 +749,7 @@ fn the_work_key_and_the_space_menu_open_on_the_spaces_project() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-work-open"));
     let mut model = model_of(session(PROJECT));
     model.remembered.preserved_work =
-        vec![preserved(OTHER, "t3", "elsewhere", WorkStateView::Parked)];
+        vec![preserved(OTHER, "t3", "elsewhere", WorkStateView::Shelved)];
     let mut driven = driven(model, &home);
 
     let chord = uze_keys::active()
@@ -766,7 +787,7 @@ fn with_no_space_it_opens_on_the_first_project_that_needs_you() {
     let mut model = WorkspaceModel::default();
     model.remembered.preserved_work = vec![
         preserved(PROJECT, "t1", "delivering", WorkStateView::Integrating),
-        preserved(OTHER, "t3", "elsewhere", WorkStateView::Parked),
+        preserved(OTHER, "t3", "elsewhere", WorkStateView::Shelved),
     ];
     model.work = Some(WorkOverlay::open(None));
     assert_eq!(front_key(&model), PathBuf::from(OTHER));

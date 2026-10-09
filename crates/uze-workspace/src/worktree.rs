@@ -47,6 +47,23 @@ pub const CHECKOUT_RECORD_FILE: &str = "uze-checkout.json";
 /// reviewers, and says what it is, not what made it.
 pub const BRANCH_PREFIX: &str = "agent/";
 
+/// Where an agent's unfinished work is kept once its checkout goes back to
+/// the pool: one commit per task, `refs/uze/shelf/<task>` (`checkout::shelf`).
+/// A record, by what deleting it costs, and the third thing UZE keeps in
+/// the repository's own Git directory beside the line it adds to
+/// `info/exclude` and the record in `worktrees/<admin>/`. Shared by every
+/// worktree of the repository, so a shelf made in one checkout is resumed
+/// in another. `refs/uze/sync/` is where the target's fetch lands; the two
+/// names never meet.
+pub const SHELF_REFS: &str = "refs/uze/shelf/";
+
+/// The trailers a shelf's commit describes itself with, so a shelf whose
+/// task record was lost is still listed under its own name. Additive: a
+/// key this build does not know is ignored.
+pub const SHELF_TRAILER_TASK: &str = "Uze-Task";
+pub const SHELF_TRAILER_BRANCH: &str = "Uze-Branch";
+pub const SHELF_TRAILER_LABEL: &str = "Uze-Label";
+
 /// The longest a name's subject may be. Long enough for two or three
 /// words, short enough that a sidebar shows it whole beside its siblings —
 /// which is the reason the limit exists at all.
@@ -383,12 +400,10 @@ pub struct WorktreePolicy {
     /// concurrency is the only bound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slots: Option<usize>,
-    /// How many free checkouts are kept warm for the next agents.
-    /// Undeclared, two.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spare: Option<usize>,
-    /// After how many days unused a free checkout gives its disk back.
-    /// Undeclared, three.
+    /// After how many days unused since it was last placed or released a
+    /// free checkout gives its disk back. Undeclared, three. With no count
+    /// of free checkouts to keep, a project keeps as many as it had in use
+    /// at once within that age.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_days: Option<u64>,
 }

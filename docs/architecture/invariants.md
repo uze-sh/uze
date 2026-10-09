@@ -1359,7 +1359,7 @@ its own, so a delivered branch stays "ahead" of it forever. Integration is
 therefore read from the patch the target carries — the branch's own commits,
 then the single patch a squash would have made of them — and that is what
 frees a slot, prunes a branch and keeps a delivered task delivered. Read by
-reachability alone, one squash merge parked a slot for the life of the
+reachability alone, one squash merge held a slot for the life of the
 repository and every new agent paid for a checkout of its own.
 
 > `crates/uze-workspace/src/checkout/tests.rs::a_squash_merged_branch_frees_its_slot_and_is_pruned`
@@ -1510,33 +1510,75 @@ in `/`, so the checkout it was first started from is not held for its life.
 > `crates/uze-application/src/application/services/checkouts/tests.rs::a_checkout_somebody_is_working_in_is_not_removed`
 > `crates/uze-terminal/src/runtime/tests.rs::the_server_works_in_no_checkout`
 
-### Content UZE derives never parks a checkout
+### Content UZE derives is never work
 
-Deciding whether a checkout is free or parked, a lock that only gained or
-lost entries and an instruction file changed only inside UZE's managed
-regions are not work: they are what a slot collects by having UZE run in
-it, and each parked the slot for good. A lock that moves a plugin's pin is
-work, since moving pins is what `update` exists for. Rebasing, joining and
-delivering still require a tree with nothing uncommitted at all.
+Deciding whether a checkout holds work, and what goes on its shelf, a lock
+that only gained or lost entries and an instruction file changed only inside
+UZE's managed regions are not work: they are what a slot collects by having
+UZE run in it. A lock that moves a plugin's pin is work, since moving pins is
+what `update` exists for, and is shelved. Rebasing, joining and delivering
+still require a tree with nothing uncommitted at all.
 
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_lock_that_only_gained_an_entry_leaves_the_slot_free`
-> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_moved_pin_parks_the_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_moved_pin_is_shelved`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_reprojected_region_leaves_the_slot_free`
-> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_hand_edit_beside_a_region_parks_the_slot`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_hand_edit_beside_a_region_is_shelved`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_managed_region_alone_is_not_shelved_and_a_hand_edit_is`
 
-### The pool keeps a few spare slots and no more
+### An agent's work is kept in Git, never in a checkout
 
-At most `workspace.spare` free slots (two by default), the most recently
-used, are kept warm; every other free slot's directory is removed on the
-next collection, and a free slot unused past `workspace.idle_days` (three
-by default) is removed too. Decided from the slots as they stand, with no
-record of past use; branches are kept, and parked or occupied slots are
-never touched.
+An agent that ends gives its checkout back. Its commits stay on its branch;
+its uncommitted work, new files included and ignored ones left in place, is
+written to `refs/uze/shelf/<task>` with plumbing, from a copy of the
+checkout's index, without moving the branch, touching the stash or dropping
+an earlier shelf. Only then is the checkout detached and cleaned for the next
+agent. The release is the one path that resets a checkout, and it reads the
+process table under the repository lock first: a process inside — an agent
+another client launched among them — leaves both the checkout and its agent
+as they were. A paused operation, work a shelf cannot hold, or a shelf that
+could not be written pins the checkout instead, with its reason. Resuming
+prefers the checkout the task left, recreates a branch deleted by hand, and
+refuses, keeping the shelf, when the shelf no longer applies. A shelf whose
+every path the target carries is collected; a shelf nothing records is
+adopted back under the task it names.
 
-> `crates/uze-workspace/src/checkout/accounting_tests.rs::closing_agents_leaves_spares_for_the_next_ones`
-> `crates/uze-workspace/src/checkout/accounting_tests.rs::spares_beyond_the_declared_number_are_removed`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::tracked_deleted_and_new_files_are_kept_and_ignored_ones_are_not`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_new_shelf_keeps_the_earlier_one_as_its_second_parent`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_shelf_that_conflicts_changes_nothing_and_names_the_file`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_shelf_is_in_the_target_only_path_by_path`
+> `crates/uze-workspace/src/checkout/tests.rs::an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept`
+> `crates/uze-application/tests/slot_lifecycle.rs::a_week_of_agents_never_holds_more_checkouts_than_agents`
+> `crates/uze-application/tests/slot_lifecycle.rs::an_agent_another_client_launched_is_never_released_under_it`
+> `crates/uze-application/tests/slot_lifecycle.rs::shelved_work_is_resumed_somewhere_else`
+> `crates/uze-application/tests/slot_lifecycle.rs::a_shelf_that_does_not_apply_is_kept`
+> `crates/uze-application/tests/slot_lifecycle.rs::a_lost_task_store_lists_the_shelf_again`
+
+### A slot has one holder, never decided by the clock
+
+A released task lets go of its checkout, and a reused slot is held by the
+task last placed in it. Where a store an earlier build wrote names one slot
+from several tasks, the task whose branch the checkout has holds it. Creation
+time decides nothing: a clock that steps back once ended an agent still at
+work.
+
+> `crates/uze-application/tests/slot_lifecycle.rs::the_clock_going_back_does_not_move_a_slot`
+> `crates/uze-application/tests/slot_lifecycle.rs::a_slot_two_records_name_belongs_to_the_branch_checked_out`
+
+### The pool keeps free checkouts until they go idle
+
+Every free checkout is kept until it has gone unused, since it was last
+placed or released, for `workspace.idle_days` (three by default), so a
+project keeps as many checkouts as it had agents working at once. There is no
+count of free checkouts to keep. Decided from the checkouts as they stand,
+with no record of past use; branches are kept, and pinned or occupied
+checkouts are never touched.
+
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::closing_agents_leaves_their_checkouts_for_the_next_ones`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::every_free_checkout_younger_than_the_idle_age_stays`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::an_idle_project_gives_its_disk_back`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::work_is_never_trimmed`
+> `crates/uze-application/tests/slot_lifecycle.rs::four_agents_four_checkouts`
+> `crates/uze-application/tests/slot_lifecycle.rs::a_checkout_used_for_days_is_not_trimmed_on_release`
 
 ### A subagent's checkout belongs to its agent
 
@@ -1547,7 +1589,8 @@ commit and none of the agent's own commits twice. A child is held until it
 is joined or its agent ends, whether or not anything is working in it; it
 is never evaluated, named or delivered on its own. An agent is not
 delivered while a child holds unjoined work, and one that ends with such a
-child is parked with it. A parent an older build dropped is restored from
+child ends unfinished with it; resuming the agent brings the child back
+beside it, to be joined. A parent an older build dropped is restored from
 the checkout's record.
 
 > `crates/uze-application/src/application/services/work/tests.rs::a_subagent_gets_a_checkout_cut_from_its_agents_commit`
@@ -1561,10 +1604,11 @@ the checkout's record.
 
 ### Nothing that can hold work is removed automatically
 
-A dirty orphan is parked with every file preserved. A branch with commits the
-target lacks outlives its directory. The two automatic removals are a branch
-fully reachable from the target and the directory of a free slot the pool
-does not keep (below), whose branch stays.
+A dirty orphan is kept whole until its work is on a shelf. A branch with
+commits the target lacks outlives its directory, and so does a branch a shelf
+stands on. The automatic removals are a branch fully reachable from the
+target, a shelf the target already carries, and the directory of a free slot
+gone idle (above), whose branch stays.
 
 Both removals are authorized by one predicate, and it fails closed: a
 question Git could not answer — most often a `workspace.target` this clone
@@ -1572,15 +1616,16 @@ does not have — is answered "not integrated", never "nothing ahead". Read
 the other way, a declared target the repository lacks made every branch in
 it collectable.
 
-> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_holding_work_is_parked_with_every_file_preserved`
+> `crates/uze-workspace/src/checkout/tests.rs::a_checkout_holding_work_is_kept_whole_until_its_work_is_shelved`
 > `crates/uze-workspace/src/checkout/tests.rs::an_unintegrated_branch_outlives_its_directory`
-> `crates/uze-workspace/src/checkout/tests.rs::a_parked_slot_is_never_removed_for_being_idle`
+> `crates/uze-workspace/src/checkout/tests.rs::a_slot_holding_work_not_yet_kept_is_never_removed_for_being_idle`
+> `crates/uze-application/tests/slot_lifecycle.rs::an_integrated_branch_with_a_shelf_still_holds_work`
 > `crates/uze-workspace/src/checkout/tests.rs::an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not`
 > `crates/uze-workspace/src/checkout/tests.rs::a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot`
 
 ### Reconciliation adopts before it prunes
 
-Checkouts nobody recorded become tasks — parked when they hold work — and a
+Checkouts nobody recorded become tasks — unfinished when they hold work — and a
 legacy checkout keeps its branch name, since it may have been pushed. Git's
 worktree registry is pruned only after every directory has been looked at, so
 a stale entry can never be dropped before its work is.
@@ -2746,7 +2791,7 @@ in front, delivering a whole space — so leaving a move unbound never
 leaves a keyboard user without it.
 
 > `src/ui/orchestrator/tests/work.rs::a_clean_up_asks_with_what_would_go_and_how_much`
-> `src/ui/orchestrator/tests/work.rs::a_parked_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered`
+> `src/ui/orchestrator/tests/work.rs::an_unfinished_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered`
 
 ### Leaving uze is never one bare keystroke away
 

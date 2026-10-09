@@ -15,8 +15,10 @@ about: |
   gone is *why* the work needs finding.
 
   What the machine must show: after the agent's tab is closed and the agent
-  parked, the work is still on disk on its own branch, the records still
-  name the repository they belong to, and the list still has it.
+  ended unfinished, the work is still in the repository on its own branch,
+  the records still name the repository they belong to, and the list still
+  has it. The checkout itself goes back to the pool: work is kept in Git,
+  never in a directory.
 
 world:
   project: demo-app
@@ -74,12 +76,12 @@ scenes:
           " > {world}/branch
         say: the branch the work is on, read from the record
       - key: "C-w"
-        say: close the tab the agent was in, which parks it
+        say: close the tab the agent was in, which ends it unfinished
         # What the gesture *causes*: the agent is gone and its work is
         # not, which is the toast UZE raises and the whole claim of this
         # journey. `uze` proved only that a screen was still drawn — true
         # on Linux by accident of what else was on it, and false on macOS.
-        expect: parked
+        expect: work kept
         expect_timeout: 25
         pause: 2.0
     then:
@@ -96,9 +98,10 @@ scenes:
           run: git -C {project} branch --list "$(cat {world}/branch)"
           stdout_contains: agent/
         about: and the branch the work is on is still in the repository
-      - file: "{project}/.worktrees/*/src/kept.rs"
-        count: 1
-        about: with the commit still in its checkout
+      - cmd:
+          run: git -C {project} show "$(cat {world}/branch):src/kept.rs"
+          stdout_contains: "pub fn kept"
+        about: with the commit on it, whatever became of the checkout
 
   - scene: the work is found again without the tab that held it
     when:
@@ -114,4 +117,4 @@ scenes:
       - tasks: { count: 1 }
         about: the record is still the one agent's, untouched by the tab going
       - agents: { count: 1, isolated: 1 }
-        about: and it is still isolated, on its own branch, with its own checkout
+        about: and it is still isolated, on its own branch

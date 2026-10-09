@@ -23,9 +23,22 @@ use uze_core::path::Canonical as _;
 pub fn carry_changes(primary: &Path, slot: &Path) -> Result<(), String> {
     // Read rather than written, and taken *untrimmed*: a patch's final
     // newline is part of it, and `git apply` refuses one that lost it.
-    let patch = crate::git::read(primary, &["diff", "HEAD"])
-        .map_err(|error| error.to_string())?
-        .successful()?;
+    // Plumbing, with binary content in full: porcelain `diff` follows the
+    // operator's `diff.noprefix`, external drivers and text conversions,
+    // any of which makes a patch `apply` cannot read back.
+    let patch = crate::git::read(
+        primary,
+        &[
+            "diff-index",
+            "-p",
+            "--binary",
+            "--full-index",
+            "--no-renames",
+            "HEAD",
+        ],
+    )
+    .map_err(|error| error.to_string())?
+    .successful()?;
     if !patch.trim().is_empty() {
         crate::git::write_with_stdin(slot, &["apply", "--"], &patch)
             .map_err(|error| error.to_string())?
@@ -87,28 +100,76 @@ pub(super) fn keep_derived_instructions_behind(primary: &Path, slot: &Path) -> R
 pub struct Collected {
     pub branches: Vec<String>,
     pub slots: Vec<CheckoutId>,
+    pub shelves: Vec<String>,
 }
 
-/// The two removals that cannot lose work, as one critical section: a
-/// branch whose every commit is in the target, and the directory of a free
-/// slot the `pool` does not keep, its branch kept.
+/// The removals that cannot lose work, as one critical section: the
+/// directory of a free slot unused past the pool's idle age, its branch
+/// kept; a branch whose every commit is in the target and that no shelf
+/// stands on; and a shelf whose every change the target already carries.
 ///
-/// Both are safe on their own; taking the write lock once around them is
-/// what keeps a branch from being pruned in the moment a concurrent
-/// acquisition is creating it.
+/// Slots first, so a trimmed slot's integrated branch is no longer checked
+/// out by the time branches are pruned, and goes in the same pass. Taking
+/// the write lock once around all three is what keeps a branch from being
+/// pruned in the moment a concurrent acquisition is creating it.
 #[tracing::instrument(name = "checkout.collect", level = "debug", skip_all)]
 pub fn collect(
     primary: &Path,
-    store: &AgentStore,
+    store: &mut AgentStore,
     target: &str,
     pool: Pool,
     presence: &Presence,
 ) -> Collected {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || Collected {
-        branches: prune_integrated_branches(primary, store, target),
-        slots: trim_free_slots(primary, store, pool, presence),
+    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        let slots = trim_free_slots(primary, store, pool, presence);
+        let shelves = collect_shelves(primary, store, target);
+        let branches = prune_integrated_branches(primary, store, target);
+        // A task whose branch just went for being in the target is settled
+        // here, while the branch's fate is still known: read later, a
+        // branch that is gone says nothing about where its commits went.
+        for agent in store.agents.iter_mut().filter(|agent| {
+            agent.state == WorkState::Shelved
+                && agent
+                    .isolation()
+                    .is_some_and(|isolation| branches.contains(&isolation.branch))
+        }) {
+            let into = agent
+                .isolation()
+                .map_or_else(|| target.to_owned(), |isolation| isolation.target.clone());
+            settle_without_checkout(primary, &into, agent);
+        }
+        Collected {
+            branches,
+            slots,
+            shelves,
+        }
     })
     .unwrap_or_default()
+}
+
+/// Removes every shelf whose work the target already has, unless a live
+/// task is about to restore it. Returns the tasks whose shelf went.
+pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
+    if tip_of(primary, target).is_empty() {
+        return Vec::new();
+    }
+    shelf::list(primary)
+        .into_iter()
+        .filter(|found| {
+            !store
+                .agent(&found.task)
+                .is_some_and(|agent| is_live(&agent.state))
+        })
+        .filter(|found| {
+            let into = store
+                .agent(&found.task)
+                .and_then(Agent::isolation)
+                .map_or(target, |isolation| isolation.target.as_str());
+            shelf::is_in_target(primary, &found.commit, into)
+        })
+        .filter(|found| shelf::drop_shelf(primary, &found.task, &found.commit).is_ok())
+        .map(|found| found.task)
+        .collect()
 }
 
 /// Deletes every branch UZE can account for — one under the `agent/`
@@ -135,6 +196,23 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         .filter_map(|agent| agent.isolation())
         .map(|isolation| isolation.branch.as_str())
         .collect();
+    // A branch a shelf stands on is the shelf's base: pruned, the shelf
+    // could only be restored by recreating it.
+    let mut shelved: Vec<String> = shelf::list(primary)
+        .into_iter()
+        .map(|found| found.branch)
+        .collect();
+    // So is the branch a subagent's work is to be joined into: the agent's
+    // own, kept while any child of it still holds work.
+    shelved.extend(
+        store
+            .isolated()
+            .filter(|child| child.parent.is_some())
+            .filter_map(|child| {
+                let isolation = child.isolation()?;
+                holds_work(primary, child, &isolation.target).then(|| isolation.target.clone())
+            }),
+    );
     let tips = BranchTips::read(primary);
     let mut removed = Vec::new();
     // The prefix is no longer the whole answer: a named task's branch left
@@ -153,6 +231,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         if !tips.contains(&branch)
             || checked_out.contains(&branch)
             || live.contains(&branch.as_str())
+            || shelved.contains(&branch)
         {
             continue;
         }
@@ -172,9 +251,9 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
     removed
 }
 
-/// Removes the directory of every free slot the `pool` does not keep —
-/// beyond its spares, the most recently used first, or unused past its idle
-/// age — keeping each one's branch. Returns the slots removed.
+/// Removes the directory of every free slot unused past the pool's idle
+/// age, keeping each one's branch, and keeps the index of every other free
+/// slot fresh. Returns the slots removed.
 pub fn trim_free_slots(
     primary: &Path,
     store: &AgentStore,
@@ -182,22 +261,21 @@ pub fn trim_free_slots(
     presence: &Presence,
 ) -> Vec<CheckoutId> {
     let now = SystemTime::now();
-    let mut free: Vec<(SystemTime, Slot)> = slots(primary, store, presence)
+    let mut removed = Vec::new();
+    for slot in slots(primary, store, presence)
         .into_iter()
         .filter(|slot| slot.state == SlotState::Free)
-        .map(|slot| (modified_at(&slot.path), slot))
-        .collect();
-    free.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
-    let mut removed = Vec::new();
-    for (kept, (modified, slot)) in free.into_iter().enumerate() {
-        let idle = now.duration_since(modified).unwrap_or_default();
-        if kept < pool.spare && idle < pool.idle {
-            // A spare is what the next placement switches, and one whose
-            // files were written in the same second as its index reads as
-            // possibly changed until the index is written again: every
-            // status hashes every file, and the switch does too. Written
-            // here, where nobody waits for it, instead of by the placement
-            // that would otherwise pay for it.
+    {
+        let idle = now
+            .duration_since(modified_at(&slot.path))
+            .unwrap_or_default();
+        if idle < pool.idle {
+            // A kept slot is what the next placement switches, and one
+            // whose files were written in the same second as its index
+            // reads as possibly changed until the index is written again:
+            // every status hashes every file, and the switch does too.
+            // Written here, where nobody waits for it, instead of by the
+            // placement that would otherwise pay for it.
             let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
             continue;
         }
@@ -255,47 +333,155 @@ pub fn empty_trash(primary: &Path) {
     }
 }
 
-/// Ends `task` because nothing is in front of its checkout any more: the
-/// slot goes back to the pool when it holds nothing, and is parked for the
-/// operator when it holds work.
+/// What releasing an agent's checkout did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Released {
+    /// The checkout went back to the pool; `shelved` when its work had to
+    /// be kept on a shelf first. The task holds no checkout any more.
+    Freed { shelved: bool },
+    /// Something keeps the checkout as it is; the task is ended and still
+    /// holds it, so the next pass tries again.
+    Pinned(Pin),
+    /// Somebody is working in the checkout: nothing was done, and the task
+    /// was not ended.
+    InUse,
+}
+
+/// Ends `task` because nothing is in front of its checkout any more, and
+/// gives the checkout back to the pool with its work kept: uncommitted
+/// changes on a shelf, commits on the branch.
 ///
-/// This is what an agent's departure means for its slot, and the only
-/// transition besides delivery that frees one. Without it a task stays live
-/// for as long as its record does — its slot occupied, its directory never
-/// reused, and every new agent paying for a working tree of its own.
-pub fn release(primary: &Path, agent: &mut Agent, target: &str) -> SlotState {
+/// The only path that resets a slot, and so the only one that asks the
+/// machine rather than a client: under the repository's write lock, right
+/// before anything changes, a process working inside — an agent another
+/// client launched, one still running its `setup`, a shell somebody left —
+/// leaves the checkout and the task exactly as they were.
+pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Presence) -> Released {
+    let id = agent.id.as_str().to_owned();
+    let label = agent.label.clone();
     let Some(isolation) = agent.isolation() else {
-        return SlotState::Free;
+        return Released::Freed { shelved: false };
     };
-    let directory = isolation
-        .checkout
+    let branch = isolation.branch.clone();
+    let checkout = isolation.checkout.clone();
+    let directory = checkout
         .as_ref()
         .map(|checkout| checkout.directory(primary))
         .filter(|path| path.is_dir());
-    let holds_work = directory
-        .is_some_and(|path| holds_uncommitted_work(&path) || holds_unbranched_commits(&path))
-        || (branch_exists(primary, &isolation.branch)
-            && !is_integrated(primary, target, &isolation.branch));
-    if is_live(&agent.state) {
-        agent.state = if holds_work {
-            WorkState::Parked
-        } else {
-            WorkState::Closed
+    let Some(directory) = directory else {
+        settle_without_checkout(primary, target, agent);
+        return Released::Freed { shelved: false };
+    };
+    let outcome = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        if presence.inside(&directory) || Presence::observe().inside(&directory) {
+            return Released::InUse;
+        }
+        if let Some(operation) = paused_operation(&directory) {
+            return Released::Pinned(Pin::Paused(operation));
+        }
+        let shelving = match shelf::shelve(&directory, &id, &label, &branch) {
+            Ok(shelving) => shelving,
+            Err(refusal) => {
+                let reason = refusal.to_string();
+                let mut pinned = CheckoutRecord::made_at(&directory);
+                if let Recorded::Ours(recorded) = record::read(primary, &directory) {
+                    pinned = recorded;
+                }
+                pinned.pinned = Some(reason.clone());
+                let _ = record::write(primary, &directory, &pinned);
+                return Released::Pinned(Pin::Unshelved(reason));
+            }
         };
+        let shelved = matches!(shelving, shelf::Shelving::Kept(_));
+        // The tree is read again against what was kept: anything written
+        // between the shelf and now is somebody at work, and is not reset.
+        if let shelf::Shelving::Kept(commit) = &shelving
+            && shelf::tree_of_work(&directory).ok()
+                != Some(tip_of(&directory, &format!("{commit}^{{tree}}")))
+        {
+            return Released::InUse;
+        }
+        if git(
+            &directory,
+            &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
+        )
+        .is_err()
+            || git(&directory, &["clean", "--quiet", "-fd"]).is_err()
+        {
+            return Released::Pinned(Pin::Unshelved(
+                "its checkout could not be reset after its work was kept".to_owned(),
+            ));
+        }
+        let _ = record::write(primary, &directory, &CheckoutRecord::made_at(&directory));
+        stamp(&directory);
+        Released::Freed { shelved }
+    })
+    .unwrap_or(Released::InUse);
+    match &outcome {
+        Released::InUse => {}
+        Released::Pinned(_) => {
+            if is_live(&agent.state) {
+                agent.state = WorkState::Shelved;
+            }
+        }
+        Released::Freed { .. } => {
+            let isolation = agent.isolation_mut().expect("checked isolated above");
+            isolation.last_checkout = isolation.checkout.take();
+            settle_without_checkout(primary, target, agent);
+        }
     }
-    // Work the operator declared done keeps its branch and frees its slot,
-    // exactly as `slot_state` reads it: the commits are not lost, they are
-    // simply nobody's turn any more.
-    if holds_work && agent.state != WorkState::Integrated {
-        SlotState::Parked
+    outcome
+}
+
+/// Whether `agent` still holds work nobody delivered: commits on its branch
+/// the target lacks, or a shelf with changes the target lacks. The one
+/// answer release, settlement, pruning and delivery all ask.
+pub fn holds_work(primary: &Path, agent: &Agent, target: &str) -> bool {
+    let Some(isolation) = agent.isolation() else {
+        return false;
+    };
+    (branch_exists(primary, &isolation.branch)
+        && !is_integrated(primary, target, &isolation.branch))
+        || shelf::shelf_of(primary, agent.id.as_str())
+            .is_some_and(|commit| !shelf::is_in_target(primary, &commit, target))
+}
+
+/// Records how a task that holds no checkout ended, from what its branch
+/// and its shelf hold: shelved while either holds work; integrated when it
+/// had work that is in the target now; closed when it never had any.
+pub fn settle_without_checkout(primary: &Path, target: &str, agent: &mut Agent) {
+    let had_work = agent.state == WorkState::Shelved
+        || agent.state == WorkState::Integrated
+        || agent.isolation().is_some_and(|isolation| {
+            let tip = tip_of(primary, &isolation.branch);
+            !tip.is_empty() && tip != isolation.base_commit
+        });
+    agent.state = if holds_work(primary, agent, target) {
+        WorkState::Shelved
+    } else if had_work {
+        WorkState::Integrated
     } else {
-        SlotState::Free
-    }
+        WorkState::Closed
+    };
+}
+
+/// Gives back a slot a placement took but could not use, without touching
+/// any ref: unlike [`discard`], the task's shelf and branch are its own and
+/// stay.
+pub fn untake(primary: &Path, slot: &Path) {
+    let _ = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        let _ = git(
+            slot,
+            &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
+        );
+        let _ = git(slot, &["clean", "--quiet", "-fd"]);
+    });
 }
 
 /// The one removal that loses work, and therefore the one only an operator
-/// takes on a named task: the checkout directory, forced, and the branch.
-pub fn discard(primary: &Path, isolation: &Isolation) -> Result<(), String> {
+/// takes on a named task: the checkout directory, forced, the branch and
+/// the shelf.
+pub fn discard(primary: &Path, task: &str, isolation: &Isolation) -> Result<(), String> {
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         if let Some(checkout) = &isolation.checkout {
             let path = checkout.directory(primary);
@@ -316,6 +502,9 @@ pub fn discard(primary: &Path, isolation: &Isolation) -> Result<(), String> {
         if branch_exists(primary, &isolation.branch) {
             git(primary, &["branch", "-D", "--", &isolation.branch])
                 .map_err(|error| error.to_string())?;
+        }
+        if let Some(commit) = shelf::shelf_of(primary, task) {
+            shelf::drop_shelf(primary, task, &commit)?;
         }
         Ok(())
     })
@@ -456,6 +645,6 @@ pub(super) fn same_directory(left: &Path, right: &Path) -> bool {
 pub fn is_live(state: &WorkState) -> bool {
     !matches!(
         state,
-        WorkState::Integrated | WorkState::Parked | WorkState::Closed
+        WorkState::Integrated | WorkState::Shelved | WorkState::Closed
     )
 }

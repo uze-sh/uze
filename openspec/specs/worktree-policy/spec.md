@@ -98,7 +98,7 @@ beyond the spare slots `checkout-accounting` keeps, while keeping its
 branch. A checkout in which any process is working SHALL NOT be removed. Discarding work SHALL happen only on an explicit operator
 action naming the task.
 
-#### Scenario: A dirty orphan is parked, not deleted
+#### Scenario: A dirty orphan is preserved, not deleted
 - **WHEN** startup finds a checkout with uncommitted changes and no live agent
 - **THEN** the checkout is parked and every file in it is preserved
 

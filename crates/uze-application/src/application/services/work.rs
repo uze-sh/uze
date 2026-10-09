@@ -118,9 +118,9 @@ impl Workspace<'_> {
                 &caller.primary,
                 &acquired.path,
                 &CheckoutRecord {
-                    path: acquired.path.clone(),
                     parent: Some(caller.agent.clone()),
                     split_at: Some(head.clone()),
+                    ..CheckoutRecord::made_at(&acquired.path)
                 },
             )
             .map_err(|reason| refused(&reason))?;
@@ -143,11 +143,16 @@ impl Workspace<'_> {
         self.join_child(&caller.primary, &caller.agent, topic)
     }
 
-    /// The operator's join: a parked agent's subagent on `topic`, joined
+    /// The operator's join: an unfinished agent's subagent on `topic`, joined
     /// into that agent's kept checkout. A running agent joins its own, so
-    /// only a parked one is joined from outside.
-    #[tracing::instrument(name = "workspace.join_parked_work", skip_all, fields(cwd = %cwd.display(), parent, topic), err)]
-    pub fn join_parked_work(&self, cwd: &Path, parent: &str, topic: &str) -> Result<JoinedWork> {
+    /// only an unfinished one is joined from outside.
+    #[tracing::instrument(name = "workspace.join_unfinished_work", skip_all, fields(cwd = %cwd.display(), parent, topic), err)]
+    pub fn join_unfinished_work(
+        &self,
+        cwd: &Path,
+        parent: &str,
+        topic: &str,
+    ) -> Result<JoinedWork> {
         let primary = worktree::primary_checkout(cwd)
             .ok_or_else(|| refused("not inside a Git working tree"))?;
         let store = task::load(&self.0.home, &primary)?;
@@ -162,9 +167,21 @@ impl Workspace<'_> {
                 agent.label
             )));
         }
-        if agent.state != WorkState::Parked {
+        if agent.state != WorkState::Shelved {
             return Err(refused(&format!(
                 "{} has ended and no longer keeps a checkout to join into",
+                agent.label
+            )));
+        }
+        // An unfinished agent keeps no checkout: its work is on its branch
+        // and shelf. Resuming it brings its subagents back beside it, and
+        // joining them is then its own to do.
+        if agent
+            .isolation()
+            .is_none_or(|isolation| isolation.checkout.is_none())
+        {
+            return Err(refused(&format!(
+                "{} keeps no checkout now; resume it, and it joins its own subagents",
                 agent.label
             )));
         }
@@ -249,20 +266,16 @@ impl Workspace<'_> {
                             primary,
                             &directory,
                             &CheckoutRecord {
-                                path: directory.clone(),
                                 parent: Some(parent_agent.clone()),
                                 split_at: Some(split_at),
+                                ..CheckoutRecord::made_at(&directory)
                             },
                         );
                     }
                     let into = parent.branch.clone();
-                    // A child parked with its agent is not live, so release
-                    // leaves its state alone; joined, it holds nothing.
-                    if checkout::release(primary, child, &into) == checkout::SlotState::Free
-                        && child.state == WorkState::Parked
-                    {
-                        child.state = WorkState::Closed;
-                    }
+                    // Joined, it holds nothing its agent's branch lacks, and
+                    // the release records it so.
+                    checkout::release(primary, child, &into, &Presence::observe());
                     Ok(JoinedWork::Joined { commits })
                 }
             }
@@ -363,7 +376,7 @@ fn is_child_of(agent: &Agent, parent: &AgentId) -> bool {
 }
 
 fn holds_its_checkout(agent: &Agent) -> bool {
-    checkout::is_live(&agent.state) || agent.state == WorkState::Parked
+    checkout::is_live(&agent.state) || agent.state == WorkState::Shelved
 }
 
 fn live_child<'a>(store: &'a AgentStore, parent: &AgentId, topic: &str) -> Option<&'a Agent> {
