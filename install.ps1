@@ -258,7 +258,21 @@ public static extern IntPtr SendMessageTimeout(
             $start.RedirectStandardInput = $true
             $start.RedirectStandardOutput = $true
             $start.RedirectStandardError = $true
-            $verifier = [Diagnostics.Process]::Start($start)
+            # Windows PowerShell opens the child's stdin as a writer in the
+            # console's input encoding and flushes that encoding's preamble
+            # as it starts: under code page 65001 the message would reach
+            # ssh-keygen with a BOM after it and never verify. A preamble-free
+            # encoding for the length of the start, then the person's back.
+            $consoleInput = $null
+            try {
+                $consoleInput = [Console]::InputEncoding
+                [Console]::InputEncoding = New-Object Text.UTF8Encoding $false
+            } catch { $consoleInput = $null }
+            try {
+                $verifier = [Diagnostics.Process]::Start($start)
+            } finally {
+                if ($consoleInput) { [Console]::InputEncoding = $consoleInput }
+            }
             $sums = [IO.File]::ReadAllBytes((Join-Path $scratch 'SHASUMS256.txt'))
             $verifier.StandardInput.BaseStream.Write($sums, 0, $sums.Length)
             $verifier.StandardInput.Close()
