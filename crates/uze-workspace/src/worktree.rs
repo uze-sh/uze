@@ -548,7 +548,7 @@ impl WorktreePolicy {
         }
         format!(
             "- As soon as a user message gives the conversation a clear topic — normally the \
-             first message — name your work: \
+             first message — name your work before replying: \
              `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
              subject is ideally one or two words, never more than three, naming the intention, \
              not a description of the task — \
@@ -557,7 +557,8 @@ impl WorktreePolicy {
              branch; in the operator's checkout only your label changes. Work that reaches a \
              commit still unnamed is named by UZE from that commit's subject. Name it again with \
              the same command whenever the work turns out to be something else — the last name \
-             given is the one that stands.\n",
+             given is the one that stands. Invoke the command directly; do not merely say you \
+             will name the work.\n",
             types = self.branch.spelled()
         )
     }
@@ -1038,6 +1039,10 @@ mod naming_tests {
         assert!(
             first_bullet.contains("uze agent work name"),
             "the clause must name the command: {first_bullet}"
+        );
+        assert!(
+            first_bullet.contains("before replying"),
+            "the clause must make naming an action, not a promise: {first_bullet}"
         );
         assert!(
             !text.contains("first action"),
