@@ -18,6 +18,7 @@ from contract import declared
 from shared.common import (
     check,
     check_absence,
+    concurrently,
     describe,
     observed_markers,
     provider_struct,
@@ -69,8 +70,21 @@ trap 'echo {RESIDUE_BEGIN}; cd /work/home && find {" ".join(HARNESS_HOMES)} -pat
 
 def assert_contract(cfg, prov_ip, bindings):
     with describe("lifecycle"):
-        _assert_update(cfg, bindings)
-        _assert_removal(cfg, bindings)
+        # Two worlds that share nothing, the turns at once; the checks read
+        # what each observed, in this order.
+        turns = concurrently(
+            cfg,
+            {
+                "lifecycle-update": lambda world: _turn(
+                    world, bindings, "update", UPDATE
+                ),
+                "lifecycle-remove": lambda world: _turn(
+                    world, bindings, "remove", REMOVE
+                ),
+            },
+        )
+        _assert_update(bindings, *turns["lifecycle-update"])
+        _assert_removal(bindings, *turns["lifecycle-remove"])
     start_provider(cfg, "static")
 
 
@@ -98,10 +112,9 @@ def _turn(cfg, bindings, tag, prelude):
     )
 
 
-def _assert_update(cfg, bindings):
+def _assert_update(bindings, seen, skills, _output):
     """After `uze update`, the model is offered the new Skill and agent and
     never the old ones."""
-    seen, skills, _ = _turn(cfg, bindings, "update", UPDATE)
     # The control: a plugin the update did not touch is still offered, so
     # an absence below is the update's doing and not an empty request.
     control = bool(skills.get("flow:commit"))
@@ -142,10 +155,9 @@ def _assert_update(cfg, bindings):
         )
 
 
-def _assert_removal(cfg, bindings):
+def _assert_removal(bindings, seen, skills, output):
     """After `uze remove -m`, the harness offers nothing of the plugin and
     keeps nothing of it on disk."""
-    seen, skills, output = _turn(cfg, bindings, "remove", REMOVE)
     control = bool(skills.get("flow:commit"))
     check(
         "lifecycle-removal-control-offered",

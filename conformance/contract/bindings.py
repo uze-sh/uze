@@ -68,7 +68,37 @@ class Bindings:
     #: Seconds to wait after `ready_markers` before typing. Prompts render
     #: before the surfaces behind them finish loading, and input sent into
     #: that window is lost — a per-harness fact, measured, not guessed.
+    #: With `input_markers` it is the ceiling of that wait, not its length.
     warmup = 0.0
+
+    #: Text only a prompt that accepts input carries — never a dialog, a
+    #: splash or a screen still loading what is behind it. Empty means the
+    #: harness shows no such thing, and `warmup` is slept in full.
+    input_markers = ()
+
+    def await_input(self, tui):
+        """Waits until the screen shows the prompt accepts input.
+
+        The warmup was slept in full before every typed turn, whatever the
+        screen said — 25 seconds a session on OpenCode. Where the harness
+        draws something only its ready prompt carries (`input_markers`),
+        this ends on it, read off the screen as it stands now; the warmup
+        stays the bound, so a harness that never draws it waits exactly as
+        long as before. Never on silence: a harness that pauses before its
+        session starts (Codex, after its trust dialog) is quiet while it
+        cannot take a turn.
+        """
+        if not self.input_markers:
+            time.sleep(self.warmup)
+            return
+        wanted = [squash(marker) for marker in self.input_markers]
+        deadline = time.monotonic() + self.warmup
+        while not any(marker in squash(tui.shown()) for marker in wanted):
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            # Reading is what grows the record `shown` renders.
+            tui.screen(min(0.5, left), first_byte=min(0.5, left))
 
     def prepare(self, tui):
         """Anything between launch and a usable prompt — an onboarding flow,
@@ -127,7 +157,7 @@ class Bindings:
     #: is not a constant in the contract.
     exit_key_gap = 0.5
 
-    def rejoin(self, tui):
+    def rejoin(self, tui, already=""):
         """What proves the *next* process reached its prompt.
 
         Not `prepare`: that one drives a first run — the colour scheme, the
@@ -151,9 +181,20 @@ class Bindings:
         and rendered its whole prompt on a form feed. Sent only after the
         plain wait failed, because a key sent at a harness that is already
         fine is a key it has to do something with.
+
+        It starts from `already`: what the read that saw the first process
+        end took off the screen after it. A harness that paints its whole
+        prompt in that same burst and then waits has already said it is
+        ready, and waiting for a frame it will not send again sat out the
+        full budget — 45 seconds on Antigravity 1.3.2 — until the form feed
+        below brought the prompt back.
         """
         markers = list(self.rejoin_markers or self.ready_markers)
-        _, plain, matched = tui.wait_for(markers, tries=8, accumulate=True)
+        matched = next((m for m in markers if m in already), None)
+        plain = already
+        if not matched:
+            _, more, matched = tui.wait_for(markers, tries=8, accumulate=True)
+            plain = f"{already}\n{more}" if already else more
         if not matched:
             tui.child.send("\x0c")
             _, plain, matched = tui.wait_for(markers, tries=8, accumulate=True)
@@ -294,7 +335,7 @@ class Bindings:
     def hook_turn(self, tui, prompt, tries=40):
         """Sends `prompt` and drives the turn to its end, accepting every
         approval the harness asks for on the way."""
-        time.sleep(self.warmup)
+        self.await_input(tui)
         before = self._finals_shown(tui)
         tui.type(prompt)
         tui.submit()

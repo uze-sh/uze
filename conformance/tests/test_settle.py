@@ -27,7 +27,7 @@ def feeding(chunks, endless=False):
     """
     queue = itertools.cycle(chunks) if endless else iter(list(chunks))
 
-    def screen(wait=0.5):
+    def screen(wait=0.5, first_byte=None):
         time.sleep(wait)
         return (next(queue, ""), "")
 

@@ -87,6 +87,11 @@ def codex_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin", tty=True
     return cmd
 
 
+#: Painted only once the session a launch with no trust dialog serves
+#: exists (squashed, as the reads compare it).
+WELCOME = "Togetstarted,describeatask"
+
+
 def drive_onboarding(child):
     """auth.json seed skips the login screen; the directory-trust prompt is
     dismissed with Enter (its default first option) until the directory is
@@ -131,6 +136,20 @@ def drive_onboarding(child):
     the text a read returned, and the prompt is the signal again, but only
     after the dialog was answered, or when it keeps arriving with no dialog
     at all (a directory trusted already).
+
+    It does not keep arriving in codex-cli 0.161 or 0.162. A launch that
+    opens no dialog (the contract's `/work`, which is not a repository)
+    paints the prompt once, in its first frame, and later frames redraw only
+    the cells that changed, so the prompt is in one read and never in a
+    third. Every such launch spent the rest of the 30 reads idle at a ready
+    prompt, each a 6 s wait for a byte that never came: ~120 s per launch,
+    measured 2026-10-09 (`experiments/codex/boot-stall`). What says that
+    launch is ready is the welcome, "To get started, describe a task": it is
+    painted once the session exists, after the pause in which codex starts
+    it (~9 s), and never earlier, unlike the prompt and "? for shortcuts",
+    which the first frame already carries. A launch that answers the dialog
+    never shows the welcome, so that branch is unchanged. The 30 reads stay
+    as the upper bound for a launch that shows neither.
     """
     screen = make_screen(child)
     raw = ""
@@ -163,7 +182,8 @@ def drive_onboarding(child):
         quiet_reads = quiet_reads + 1 if not chunk else 0
         if answered and (prompt or quiet_reads >= 2):
             break
-        if not answered and prompt_reads >= 3:
+        welcomed = WELCOME in common.ansi_strip(raw).replace(" ", "")
+        if not answered and (welcomed or prompt_reads >= 3):
             break
     return raw, shown
 

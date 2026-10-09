@@ -105,23 +105,63 @@ def answer_first_run(child, screen):
     seen, which every fresh world is — the folder trust, whose "Yes, I trust
     this folder" is preselected. Text typed while any of them is up goes to
     the dialog, never to the prompt. Returns the screen after them, or
-    `None` when the onboarding never appeared."""
+    `None` when the onboarding never appeared.
+
+    Each answer waits for the screen it is meant for rather than for a
+    fixed nap: the naps (3s, 5s and 5s, each followed by a read of up to 3s)
+    were paid in full by every session of the vertical, though each screen
+    is up in well under a second. They stay as the ceilings."""
     try:
         child.expect("Choose your color scheme", timeout=150)
     except Exception:
         return None
     child.send("\r")
-    time.sleep(3)
+    await_screen(child, ["[Done]"], 3)
     child.send("\t\t")
     time.sleep(0.7)
     child.send("\r")
-    time.sleep(5)
-    _, plain = screen(3)
-    if "trust the contents" in plain:
+    plain, matched = await_screen(child, ["trust the contents", PROMPT_MARKER], 8)
+    if matched == "trust the contents":
         child.send("\r")
-        time.sleep(5)
-        _, plain = screen(3)
+        plain, _ = await_screen(child, [PROMPT_MARKER], 8)
     return plain
+
+
+#: What agy's prompt shows under its input line, and no dialog does.
+PROMPT_MARKER = "? for shortcuts"
+
+
+def await_screen(child, markers, seconds, settle=0.6):
+    """Reads until one of `markers` is on screen and the frame that carried
+    it has finished arriving, or `seconds` run out. Returns the plain text
+    read and the marker found (`None` past the ceiling)."""
+    raw = ""
+    deadline = time.monotonic() + seconds
+    found = None
+    while time.monotonic() < deadline:
+        try:
+            raw += child.read_nonblocking(
+                size=250000, timeout=max(0.05, deadline - time.monotonic())
+            )
+        except pexpect.EOF:
+            break
+        except Exception:
+            continue
+        plain = common.squash(common.ansi_strip(raw))
+        found = next((m for m in markers if common.squash(m) in plain), None)
+        if found:
+            break
+    if found:
+        # The rest of the frame: a TUI paints one screen in several writes.
+        while True:
+            try:
+                more = child.read_nonblocking(size=250000, timeout=settle)
+            except Exception:
+                break
+            if not more:
+                break
+            raw += more
+    return common.ansi_strip(raw), found
 
 
 def phase_tui(cfg, prov_ip):

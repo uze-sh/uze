@@ -31,6 +31,7 @@ import subprocess
 from contract import declared
 from shared.common import (
     check,
+    concurrently,
     describe,
     observed_markers,
     provider_struct,
@@ -73,9 +74,21 @@ uze install >/work/context-install.log 2>&1 || true
 
 def assert_contract(cfg, prov_ip, bindings):
     with describe("context"):
-        _assert_agents_md(cfg, bindings)
-        _assert_project_directory(cfg, bindings)
-        _assert_long_agents_md(cfg, bindings)
+        # Three projects that share nothing, each turn in a world of its
+        # own; the checks read what each one observed, in this order.
+        turns = concurrently(
+            cfg,
+            {
+                "context-turn": lambda world: _agents_md_turn(world, bindings),
+                "context-project": lambda world: authored_turn(
+                    world, bindings, "context-project-skill"
+                ),
+                "context-long": lambda world: _long_agents_md_turn(world, bindings),
+            },
+        )
+        _assert_agents_md(bindings, *turns["context-turn"])
+        _assert_project_directory(bindings, *turns["context-project"])
+        _assert_long_agents_md(bindings, *turns["context-long"])
     start_provider(cfg, "static")
 
 
@@ -102,12 +115,9 @@ trap 'echo {STATUS_BEGIN}; uze status --format json 2>/dev/null; echo {STATUS_EN
 """
 
 
-def _assert_long_agents_md(cfg, bindings):
-    """What UZE says about a long `AGENTS.md` agrees with what the harness
-    did with it: a harness that put the last line in front of the model is
-    reported as reading it, and one that did not is reported as not.
-
-    UZE's report is the subject; the harness's request is the measure."""
+def _long_agents_md_turn(cfg, bindings):
+    """One headless turn in a project whose `AGENTS.md` is long; returns
+    the context markers its requests carried and the container's output."""
     prov_ip = start_provider(cfg, "static")
     prompt = f"{CONTEXT_PROBE} what is the last rule here?"
     cmd = bindings.headless(cfg, prov_ip, LONG_PRELUDE, prompt, LONG_PROJECT)
@@ -117,7 +127,15 @@ def _assert_long_agents_md(cfg, bindings):
     output = proc.stdout + proc.stderr
     with open(os.path.join(cfg.outdir, "context-long.out"), "w") as f:
         f.write(output)
-    seen = observed_markers(provider_struct(cfg), "context_markers")
+    return observed_markers(provider_struct(cfg), "context_markers"), output
+
+
+def _assert_long_agents_md(bindings, seen, output):
+    """What UZE says about a long `AGENTS.md` agrees with what the harness
+    did with it: a harness that put the last line in front of the model is
+    reported as reading it, and one that did not is reported as not.
+
+    UZE's report is the subject; the harness's request is the measure."""
     head = seen.get(CONTEXT, False)
     tail = seen.get(CONTEXT_TAIL, False)
     start = output.rfind(STATUS_BEGIN)
@@ -148,7 +166,9 @@ def _assert_long_agents_md(cfg, bindings):
     )
 
 
-def _assert_agents_md(cfg, bindings):
+def _agents_md_turn(cfg, bindings):
+    """One headless turn in a project with an `AGENTS.md`; returns the
+    context markers its requests carried and the container's output."""
     prov_ip = start_provider(cfg, "static")
     prompt = f"{CONTEXT_PROBE} what is the house rule here?"
     cmd = bindings.headless(cfg, prov_ip, PRELUDE, prompt, PROJECT)
@@ -158,8 +178,10 @@ def _assert_agents_md(cfg, bindings):
     output = proc.stdout + proc.stderr
     with open(os.path.join(cfg.outdir, "context-turn.out"), "w") as f:
         f.write(output)
+    return observed_markers(provider_struct(cfg), "context_markers"), output
 
-    seen = observed_markers(provider_struct(cfg), "context_markers")
+
+def _assert_agents_md(bindings, seen, output):
     reached = seen.get(CONTEXT_PROBE, False)
     check(
         "context-turn-reached-model",
@@ -248,8 +270,7 @@ def authored_turn(cfg, bindings, evidence):
     return observed_markers(provider_struct(cfg), "context_markers"), output
 
 
-def _assert_project_directory(cfg, bindings):
-    seen, output = authored_turn(cfg, bindings, "context-project-skill")
+def _assert_project_directory(bindings, seen, output):
     reached = seen.get(CONTEXT_PROBE, False)
     check(
         "context-project-skill-turn-reached-model",

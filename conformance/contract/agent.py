@@ -44,6 +44,7 @@ import subprocess
 from contract import declared
 from shared.common import (
     check,
+    concurrently,
     describe,
     observed_markers,
     provider_struct,
@@ -67,7 +68,7 @@ def assert_contract(cfg, prov_ip, bindings):
     start_provider(cfg, "static")
 
 
-def _assert_block_model(cfg, bindings, label, body):
+def _assert_block_model(struct, bindings, label, body):
     """The agent ran on the model its `harness.<id>` block gave this harness.
 
     Read off the request that carried its body: the model is what the
@@ -77,7 +78,7 @@ def _assert_block_model(cfg, bindings, label, body):
     models = sorted(
         {
             request_model(request)
-            for request in provider_struct(cfg)
+            for request in struct
             if request.get("summary", {}).get("agent_markers", {}).get(body)
         }
         - {None}
@@ -155,10 +156,26 @@ def _assert_exposure(cfg, bindings):
 
 
 def _assert_dispatch(cfg, bindings, exposed):
-    """One turn per agent in which the model dispatches it by its label."""
+    """One turn per agent in which the model dispatches it by its label.
+
+    The turns run at once, each in a world of its own (`isolated_world`):
+    nothing one dispatch does can reach another's provider, which is the
+    isolation running them one after the other gave them — and four
+    sequential headless turns were most of this contract's minute.
+    """
+    turns = concurrently(
+        cfg,
+        {
+            f"agent-{shape}": lambda world, shape=shape: _dispatch(
+                world, bindings, shape
+            )
+            for shape in AGENTS
+            if exposed.get(shape)
+        },
+    )
     for shape, (label, body) in AGENTS.items():
         name = f"agent-{shape}-dispatch-delivers-body"
-        if not exposed.get(shape):
+        if f"agent-{shape}" not in turns:
             # Dispatching a label the harness never offered cannot tell a
             # broken dispatch from a missing agent, and it is the missing
             # agent the exposure check already reported. A harness that
@@ -171,11 +188,8 @@ def _assert_dispatch(cfg, bindings, exposed):
                 f"not dispatched: `{label}` was never offered to the model",
             )
             continue
-        prompt = f"{AGENT_PROBE} delegate to {label}"
-        mode, env = bindings.dispatch(label, prompt)
-        prov_ip = start_provider(cfg, mode, env)
-        output = _turn(cfg, prov_ip, bindings, f"dispatch-{shape}", prompt)
-        arrived = _reached_model(cfg).get(body, False)
+        output, struct = turns[f"agent-{shape}"]
+        arrived = observed_markers(struct, "agent_markers").get(body, False)
         declared.presence(
             bindings,
             name,
@@ -187,4 +201,15 @@ def _assert_dispatch(cfg, bindings, exposed):
             f"{output[-200:]}".replace("\n", " "),
         )
         if shape == "vendor-fields" and arrived:
-            _assert_block_model(cfg, bindings, label, body)
+            _assert_block_model(struct, bindings, label, body)
+
+
+def _dispatch(world, bindings, shape):
+    """Dispatches `shape`'s agent in `world`; returns what the container
+    printed and every request its provider recorded."""
+    label, _ = AGENTS[shape]
+    prompt = f"{AGENT_PROBE} delegate to {label}"
+    mode, env = bindings.dispatch(label, prompt)
+    prov_ip = start_provider(world, mode, env)
+    output = _turn(world, prov_ip, bindings, f"dispatch-{shape}", prompt)
+    return output, provider_struct(world)

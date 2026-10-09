@@ -9,7 +9,7 @@ from contract.bindings import Bindings, hook_prelude
 from contract.tui import Tui
 from shared.common import docker_base
 
-from .scenarios import PERMISSION_PROMPTS, agy_setup, answer_first_run
+from .scenarios import PERMISSION_PROMPTS, PROMPT_MARKER, agy_setup, answer_first_run
 
 
 class AntigravityBindings(Bindings):
@@ -20,6 +20,8 @@ class AntigravityBindings(Bindings):
     launch = "exec agy"
     ready_markers = ("Antigravity CLI",)
     warmup = 3.0
+    #: The hint under agy's input line; no dialog draws it (1.3.2).
+    input_markers = (PROMPT_MARKER,)
     #: An interrupt, then this harness's own exit verb when that was not
     #: enough — `agy` treats a lone interrupt as "clear the line".
     exit_keys = ("\x03", "/exit\r")
@@ -61,7 +63,7 @@ class AntigravityBindings(Bindings):
     def skill_catalog(self, tui):
         """`/skills` lists every Skill a person can invoke. The leading `/`
         is sent alone: typing it with the rest loses the palette trigger."""
-        time.sleep(self.warmup)
+        self.await_input(tui)
         tui.child.send("/")
         time.sleep(1.2)
         tui.type("skills", per_char=0.15)

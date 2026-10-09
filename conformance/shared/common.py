@@ -7,12 +7,14 @@ TLS-intercepted providers, PTY screen/waiter helpers, and the evidence
 `check()` accumulator.
 """
 
+import concurrent.futures
 import contextlib
 import copy
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import pexpect
@@ -182,7 +184,11 @@ def settle_and_quiet(screen, quiet=None, budget=None):
     stream = ""
     shown = render_screen(stream)
     while time.monotonic() < deadline:
-        t, _p = screen(0.5)
+        # Half a second for the first byte too: the screen's own default
+        # blocks six for it, so on a screen that had already gone quiet the
+        # first read alone outlasted the window, and every settle cost six
+        # seconds where it asks for two and a half.
+        t, _p = screen(0.5, first_byte=0.5)
         changed = False
         if t:
             stream += t
@@ -578,6 +584,39 @@ def isolated_world(cfg, tag):
         subprocess.run(["docker", "network", "rm", world.net], capture_output=True)
 
 
+#: The run's evidence files are folded into by read-modify-write; worlds
+#: running at once hand theirs over one at a time.
+_EVIDENCE = threading.Lock()
+
+
+def concurrently(cfg, jobs):
+    """Runs each of `jobs` ({tag: job}) at once, each in a world of its own
+    (`isolated_world`), and returns {tag: what job(world) returned}.
+
+    For turns that share nothing — independent headless containers, each
+    with its own provider — whose order was only ever the order they were
+    written in. A job does the I/O and returns what it observed, read off
+    its own provider; the checks are made afterwards, in order, by the
+    caller, so the run reads exactly as it did. Before a world goes, the
+    tools its harness declared (and, with `--discovery`, its raw requests)
+    are folded into the run's evidence like any other provider's.
+    """
+
+    def run(tag, job):
+        with isolated_world(cfg, tag) as world:
+            try:
+                return job(world)
+            finally:
+                with _EVIDENCE:
+                    pull_declared_tools(world)
+                    if world.discovery:
+                        pull_captures(world)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs) or 1) as pool:
+        futures = {tag: pool.submit(run, tag, job) for tag, job in jobs.items()}
+        return {tag: future.result() for tag, future in futures.items()}
+
+
 def start_provider(cfg, mode, extra_env=None):
     """Runs the synthetic provider container on the internal net.
 
@@ -768,7 +807,7 @@ def start_provider(cfg, mode, extra_env=None):
             "python",
             "/app/fp.py",
         )
-    time.sleep(2)
+    _await_provider_listening(cfg)
     return subprocess.check_output(
         [
             "docker",
@@ -779,6 +818,49 @@ def start_provider(cfg, mode, extra_env=None):
         ],
         text=True,
     ).strip()
+
+
+#: The ports each provider serves (`harnesses/<h>/provider.py`):
+#: Antigravity's Gemini plane on 9999 and its control plane on 443.
+PROVIDER_PORTS = {
+    "claude": (443,),
+    "codex": (443,),
+    "opencode": (9999,),
+    "antigravity": (9999, 443),
+}
+
+
+def _await_provider_listening(cfg, budget=10.0):
+    """Returns once every port the provider serves is listening.
+
+    A harness started before then fails its first request, so the Lab
+    used to sleep two seconds after every provider start, whether the
+    process took a tenth of that or more — and a vertical starts one per
+    phase, dozens per leg. Read from the container's own socket table, so
+    no provider has to announce anything; past `budget` the run goes on
+    exactly as the sleep let it.
+    """
+    wanted = {f"{port:04X}" for port in PROVIDER_PORTS.get(cfg.harness, ())}
+    if not wanted:
+        time.sleep(2)
+        return True
+    deadline = time.monotonic() + budget
+    while time.monotonic() < deadline:
+        table = subprocess.run(
+            ["docker", "exec", cfg.prov_name, "cat", "/proc/net/tcp", "/proc/net/tcp6"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        # `local_address` is `<ip>:<port>` in hex; state `0A` is LISTEN.
+        listening = {
+            fields[1].rsplit(":", 1)[1]
+            for fields in (line.split() for line in table.splitlines())
+            if len(fields) > 3 and fields[3] == "0A"
+        }
+        if wanted <= listening:
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def observed_markers(struct, field):
@@ -1446,7 +1528,7 @@ def render_screen(text, columns=240, rows=200):
 
 
 def make_screen(child, settle=0.6):
-    def screen(wait=2.2):
+    def screen(wait=2.2, first_byte=6):
         """One screen: everything the harness wrote, up to `wait` seconds.
 
         `read_nonblocking` already blocks until the first byte arrives, so
@@ -1469,10 +1551,13 @@ def make_screen(child, settle=0.6):
         a containerised TUI is a finished frame; shaving it further would buy
         a fraction of a second per read and pay for it in a check that fails
         once a fortnight.
+
+        `first_byte` bounds the wait for anything at all, separately from
+        `wait`: a waiter's budget counts on it, a quiet window must not.
         """
         deadline = time.monotonic() + wait
         try:
-            t = child.read_nonblocking(size=250000, timeout=6)
+            t = child.read_nonblocking(size=250000, timeout=first_byte)
         except Exception:
             t = ""
         while t and time.monotonic() < deadline:
