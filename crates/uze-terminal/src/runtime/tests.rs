@@ -4183,3 +4183,58 @@ fn the_largest_scroll_a_peer_can_send_is_survived() {
     server.stop_panes();
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+/// A server this client started is waited on for as long as it is alive and
+/// has yet to bind, not for the two seconds a server already running gets:
+/// it opens its panes first, which on a loaded machine outlasts any clock.
+// Unix only: the stand-in for a starting server is `sleep`.
+#[cfg(unix)]
+#[test]
+fn a_server_still_starting_is_waited_on_past_the_running_one_s_budget() {
+    let scratch = uze_testkit::temp::socket_scratch("starting");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "starting.sock");
+    let mut starting = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let late = super::READY_WITHIN + Duration::from_secs(1);
+    let binding = socket.clone();
+    let listener = thread::spawn(move || {
+        thread::sleep(late);
+        super::transport::bind(&binding).unwrap()
+    });
+
+    let connected = super::process::connect_starting(&socket, &mut starting);
+
+    assert!(connected.is_ok(), "{:?}", connected.err());
+    let _listener = listener.join().unwrap();
+    let _ = starting.kill();
+    let _ = starting.wait();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that exits before binding lost the claim to another one, and
+/// the client waits for that one as for any running server, not for the
+/// whole of a start.
+// Unix only: the stand-in for a server that exits at once is `true`.
+#[cfg(unix)]
+#[test]
+fn a_server_that_exits_before_binding_is_not_waited_on() {
+    let scratch = uze_testkit::temp::socket_scratch("exited");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "exited.sock");
+    let mut exited = std::process::Command::new("true").spawn().unwrap();
+    let _ = exited.wait();
+    let started = Instant::now();
+
+    let connected = super::process::connect_starting(&socket, &mut exited);
+
+    assert!(connected.is_err());
+    assert!(
+        started.elapsed() < super::process::STARTING_WITHIN / 2,
+        "waited {:?}",
+        started.elapsed()
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}

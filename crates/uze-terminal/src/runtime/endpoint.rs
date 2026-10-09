@@ -65,8 +65,8 @@ pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
         Arrival::Replace(pid) => retire(pid, None, &socket),
         Arrival::Start => {}
     }
-    start_server(seat)?;
-    connect_waiting(&socket)
+    let mut started = start_server(seat)?;
+    connect_starting(&socket, &mut started)
 }
 
 /// How long the server at the endpoint has to answer whether it can serve
