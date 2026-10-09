@@ -60,8 +60,10 @@ impl WrapperTemplate for PosixWrapper {
                     ..
                 },
             deny_exit,
+            unwritten_exit,
             ..
         } = dialect;
+        let value_limit = HOOK_VALUE_LIMIT;
         // Where the harness takes no rewritten input a transform group is
         // never delivered; the wrapper still answers it, closed.
         let transform_document = transform_document
@@ -101,8 +103,11 @@ deny_native() {{                 # $1 reason, plain text; $2 decision (deny)
   # A session start decides nothing: a denial there is a report, and the
   # session opens as if the handler had allowed.
   [ "$HOOK_EVENT" = session_start ] && {{ allow_native; exit 0; }}
-  reason_json=$(json_string "$1")
-  {deny_document}
+  # The decision must not depend on starting a program: a reason that
+  # cannot be encoded is replaced, never left out of the document.
+  reason_json=$(json_string "$1") && [ -n "$reason_json" ] \
+    || reason_json='"hooks/exec: denied; the reason could not be encoded"'
+  {deny_document} || exit {unwritten_exit}
   exit {deny_exit}                                # this harness's block signal
 }}
 
@@ -134,6 +139,9 @@ json_string() {{
 }}
 
 # --- the harness's payload becomes the hook context ----------------------
+# Inherited from the harness, any of these would already be exported, and
+# so handed to every program below whatever its size.
+unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports}
 JQ=${{HOOK_JQ:-jq}}
 command -v "$JQ" >/dev/null 2>&1 || fail "hooks/exec: jq is not installed"
 JQ_READY=1
@@ -150,11 +158,25 @@ HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '{input_filter}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
   && HOOK_SOURCE=$(printf '%s' "$payload" | "$JQ" -r '{source_filter}')
+# Whether every named variable fits the contract's bound, the same on
+# every platform: one Windows can hold, and far inside Linux's
+# MAX_ARG_STRLEN, past which no program starts at all, this wrapper's own
+# jq and sh included. A value that does not fit is never exported: the
+# group's effect decides, as for any context that cannot be built. Counted
+# in UTF-8 bytes.
+bounded() {{
+  for name in "$@"; do
+    eval "value=\${{$name}}"
+    [ "$(LC_ALL=C; printf '%s' "${{#value}}")" -le {value_limit} ] || return 1
+  done
+}}
 # The portable fields are read from the input, so a rewrite reads them again.
 portable_fields() {{
   HOOK_TOOL= {field_defaults}
   case "$HOOK_TOOL_NATIVE" in                     # the portable vocabulary
 {aliases}  esac
+  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports} \
+    || fail "hooks/exec: the tool input is larger than the {value_limit} bytes a HOOK_* variable carries"
   export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports}
 }}
 portable_fields
@@ -182,24 +204,19 @@ family() {{                                       # $1 pid -> $1 and its issue
 
 # Where a handler's reason is collected: a file, never a pipe. Anything the
 # handler starts inherits a pipe, and one that outlives its deadline would
-# hold this shell open long past the deadline it just enforced. `set -C`
-# refuses a path that already exists, so a planted file or symlink is never
-# written through; with nowhere to write at all, the reason is dropped
-# rather than the hook.
-reasons=${{TMPDIR:-/tmp}}/hooks-exec.$$
-(set -C; : > "$reasons") 2>/dev/null || reasons=/dev/null
-# A transform handler answers with the rewritten input on stdout; nowhere
-# to keep it is a failure, never an unchanged call.
+# hold this shell open long past the deadline it just enforced. The file
+# sits in a directory made for this call and only this user can enter: a
+# predictable name in a shared directory is one somebody else can create
+# first. With nowhere private to write, a handler's answer cannot be read,
+# which is a failure like any other.
+workspace=$(mktemp -d "${{TMPDIR:-/tmp}}/hooks-exec.XXXXXX" 2>/dev/null) && [ -d "$workspace" ] \
+  || fail "hooks/exec: no private directory to collect a handler's answer in"
+discard_workspace() {{ rm -rf "$workspace"; }}
+trap discard_workspace EXIT
+reasons=$workspace/reasons
+# A transform handler answers with the rewritten input on stdout.
 rewrites=/dev/null
-if [ "$effect" = transform ]; then
-  rewrites=${{TMPDIR:-/tmp}}/hooks-exec-out.$$
-  (set -C; : > "$rewrites") 2>/dev/null || fail "hooks/exec: nowhere to read a rewritten input"
-fi
-discard_reasons() {{
-  [ "$reasons" = /dev/null ] || rm -f "$reasons"
-  [ "$rewrites" = /dev/null ] || rm -f "$rewrites"
-}}
-trap discard_reasons EXIT
+[ "$effect" = transform ] && rewrites=$workspace/rewrites
 # A signal ends the wrapper. A trap that only cleaned up would return into
 # the loop and run the next handler for a harness that has stopped waiting.
 trap 'exit 130' INT

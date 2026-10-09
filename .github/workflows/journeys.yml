@@ -109,6 +109,8 @@ jobs:
       TERM: xterm-256color
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # A slice that already passed against this content, on this runner
       # image, is not performed again — the push to `main` after a merge is
       # the case this exists for. The runner image is in the key because the
@@ -121,18 +123,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FRESH: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+          PLATFORM: ${{ matrix.platform }}
+          SHARD: ${{ matrix.shard }}/${{ matrix.of }}
         run: |
           fresh=()
           if [ "${FRESH}" = true ]; then fresh=(--fresh); fi
-          python3 .github/scripts/proof.py journeys --platform "${{ matrix.platform }}" \
-            --shard "${{ matrix.shard }}/${{ matrix.of }}" --runner "${ImageOS}-${ImageVersion}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
+          python3 .github/scripts/proof.py journeys --platform "${PLATFORM}" \
+            --shard "${SHARD}" --runner "${ImageOS}-${ImageVersion}" "${fresh[@]}" >> "${GITHUB_OUTPUT}"
           cat "${GITHUB_OUTPUT}"
       - name: Already proven
         if: steps.proof.outputs.proven != ''
         env:
           PROVEN: ${{ steps.proof.outputs.proven }}
+          PLATFORM: ${{ matrix.platform }}
+          SHARD: ${{ matrix.shard }}/${{ matrix.of }}
         run: |
-          echo "::notice title=Journeys ${{ matrix.platform }} ${{ matrix.shard }}/${{ matrix.of }} already proven::passed in ${PROVEN}"
+          echo "::notice title=Journeys ${PLATFORM} ${SHARD} already proven::passed in ${PROVEN}"
           echo "Reused: nothing this slice reads changed since ${PROVEN}" >> "${GITHUB_STEP_SUMMARY}"
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         if: steps.proof.outputs.proven == ''

@@ -217,7 +217,8 @@ pub(super) fn integration_between(root: &Path, target: &str, branch: &str) -> Op
 /// there — what a rebase merge, and a fast-forward of a single commit,
 /// leave behind.
 pub(super) fn patch_is_in(root: &Path, target: &str, branch: &str) -> Option<bool> {
-    read(root, &["cherry", target, branch]).map(|listing| every_commit_is_there(&listing))
+    read(root, &["cherry", "--end-of-options", target, branch])
+        .map(|listing| every_commit_is_there(&listing))
 }
 
 /// `git cherry` marks a commit `-` when the target already has its patch.
@@ -239,8 +240,17 @@ pub(super) fn every_commit_is_there(listing: &str) -> bool {
 /// objects piling up in the operator's repository until Git collected them.
 pub(super) fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> Option<bool> {
     let base = read(root, &["merge-base", "--", target, branch])?;
-    let tree = read(root, &["rev-parse", &format!("{branch}^{{tree}}")])?;
-    let probe = uze_git::write_with_env(
+    let tree = read(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &format!("{branch}^{{tree}}"),
+        ],
+    )?;
+    let probe = crate::git::write_with_env(
         root,
         &[
             "-c",
@@ -267,7 +277,7 @@ pub(super) fn squashed_patch_is_in(root: &Path, target: &str, branch: &str) -> O
 
 /// A read whose failure is simply no answer.
 pub(super) fn read(root: &Path, args: &[&str]) -> Option<String> {
-    uze_git::read(root, args)
+    crate::git::read(root, args)
         .ok()?
         .successful()
         .ok()
@@ -275,7 +285,7 @@ pub(super) fn read(root: &Path, args: &[&str]) -> Option<String> {
 }
 
 pub fn branch_exists(root: &Path, branch: &str) -> bool {
-    uze_git::read(
+    crate::git::read(
         root,
         &[
             "rev-parse",
@@ -288,8 +298,31 @@ pub fn branch_exists(root: &Path, branch: &str) -> bool {
     .is_ok_and(|output| output.is_success())
 }
 
+/// Whether `branch` is a name somebody already has: a local branch, or one
+/// a remote is known to carry. A name taken only on a remote is a
+/// colleague's branch the next fetch brings in, and work published under
+/// it would land on top of theirs.
+pub fn name_is_taken(root: &Path, branch: &str) -> bool {
+    if branch_exists(root, branch) {
+        return true;
+    }
+    let Some(remotes) = read(root, &["remote"]) else {
+        return false;
+    };
+    let candidates: Vec<String> = remotes
+        .lines()
+        .map(|remote| format!("refs/remotes/{remote}/{branch}"))
+        .collect();
+    if candidates.is_empty() {
+        return false;
+    }
+    let mut args = vec!["for-each-ref", "--count=1", "--format=%(refname)"];
+    args.extend(candidates.iter().map(String::as_str));
+    read(root, &args).is_some_and(|found| !found.is_empty())
+}
+
 pub(super) fn agent_branches(root: &Path) -> Vec<String> {
-    uze_git::read(
+    crate::git::read(
         root,
         &[
             "for-each-ref",

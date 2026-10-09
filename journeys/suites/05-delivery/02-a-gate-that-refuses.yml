@@ -21,7 +21,8 @@ world:
       delivery: merge
       slots: 3
       gate:
-        - sh -c 'test ! -f src/ping.rs'
+        - posix: test ! -f src/ping.rs
+          windows: if (Test-Path src/ping.rs) { exit 1 }
 
 scenes:
   - scene: an agent whose work the project's checks will reject
@@ -30,6 +31,16 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
+      - click: "Review"
+        say: |
+          the project's gate is a command from the repository, and nothing
+          runs it until the operator has read it and said yes
+        expect: "Run this project's commands?"
+        expect_timeout: 20
+      - click: "Approve"
+        occurrence: last
+        expect: commands approved
+        expect_timeout: 20
       - click: "new"
         in: sidebar
         expect: new agent

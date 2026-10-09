@@ -71,6 +71,19 @@ pub fn foreground(
     imp::foreground(leader, group.map(|group| &group.0), passes_on)
 }
 
+/// Whether `pid` is one of the processes of the pane whose program is
+/// `leader`, however far from that program it went: what tells a request
+/// made from inside a pane from one made by the person at the terminal.
+///
+/// On Unix the pane's program leads a session of its own, which every
+/// process it starts stays in unless it leaves on purpose, and one that
+/// leaves is still found below `leader` while the process that started it
+/// lives. On Windows the pane's Job Object holds every process started in
+/// it, and nothing leaves a job that was not made to let it.
+pub fn belongs(pid: u32, leader: u32, group: Option<&Group>) -> bool {
+    imp::belongs(pid, leader, group.map(|group| &group.0))
+}
+
 impl Group {
     /// Takes `pid` (just spawned) and what it will start as one unit, or
     /// `None` where it cannot be: on Unix a program that does not lead a

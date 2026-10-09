@@ -34,6 +34,7 @@ impl WrapperTemplate for PowerShellWrapper {
         let transform_document = transform_document
             .unwrap_or("Deny-Native 'hooks/exec: this harness takes no rewritten input'");
         let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
+        let value_limit = wrapper::HOOK_VALUE_LIMIT;
         let deny_exit = dialect.deny_exit;
         let harness = target.key();
         let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
@@ -59,7 +60,7 @@ impl WrapperTemplate for PowerShellWrapper {
             for (portable, native_field) in binding.fields {
                 let variable = uze_core::hook::hook_field_variable(portable);
                 aliases.push_str(&format!(
-                    "; $env:{variable} = Text (Pick $toolInput @('{native_field}'))"
+                    "; Set-Hook '{variable}' (Text (Pick $toolInput @('{native_field}')))"
                 ));
             }
             aliases.push_str(" }\n");
@@ -141,6 +142,16 @@ function First([object[]]$candidates) {{
 function Text($value) {{
   if ($null -eq $value) {{ '' }} elseif ($value -is [string]) {{ $value }} else {{ $json.Serialize($value) }}
 }}
+# A value is held to the contract's bound before it is exported, the same
+# bound in UTF-8 bytes as on every other platform; it also keeps it inside
+# the 32,767 characters Windows lets a variable hold, past which setting it
+# would fail with .NET's words rather than this wrapper's.
+function Set-Hook([string]$name, [string]$value) {{
+  if ($utf8.GetByteCount($value) -gt {value_limit}) {{
+    Fail "hooks/exec: the tool input is larger than the {value_limit} bytes a HOOK_* variable carries"
+  }}
+  [Environment]::SetEnvironmentVariable($name, $value)
+}}
 
 # A payload that does not parse leaves every field empty, and a guard
 # written the documented way then sees nothing and allows: it is a failure
@@ -151,11 +162,11 @@ try {{
   Fail 'hooks/exec: the harness payload is not JSON'
 }}
 if ($payload -isnot [System.Collections.IDictionary]) {{ Fail 'hooks/exec: the harness payload is not JSON' }}
-$env:HOOK_TOOL_NATIVE = Text {tool}
-$env:HOOK_CWD = Text {cwd}
+Set-Hook 'HOOK_TOOL_NATIVE' (Text {tool})
+Set-Hook 'HOOK_CWD' (Text {cwd})
 $toolInput = {input}
-$env:HOOK_INPUT = if ($null -eq $toolInput) {{ '{{}}' }} else {{ $json.Serialize($toolInput) }}
-$env:HOOK_SOURCE = if ($hookEvent -eq 'session_start') {{ Text (Pick $payload @('source')) }} else {{ '' }}
+Set-Hook 'HOOK_INPUT' $(if ($null -eq $toolInput) {{ '{{}}' }} else {{ $json.Serialize($toolInput) }})
+Set-Hook 'HOOK_SOURCE' $(if ($hookEvent -eq 'session_start') {{ Text (Pick $payload @('source')) }} else {{ '' }})
 {implied_source}# The portable fields are read from the input, so a rewrite reads them again.
 function Portable-Fields {{
 $env:HOOK_TOOL = ''
@@ -217,12 +228,12 @@ foreach ($entry in $handlers) {{
   if ($status -eq 0 -and $effect -eq 'transform' -and $output.Wait(1000) -and $output.Result.Trim()) {{
     # A rewrite: the complete input, as one JSON object. The next handler
     # reads it as its HOOK_INPUT, and the last one is what the tool runs.
-    if ($output.Result.Length -gt {output_limit}) {{ Fail "handler wrote more than {output_limit} characters: $handler" }}
+    if ($utf8.GetByteCount($output.Result) -gt {output_limit}) {{ Fail "handler wrote more than {output_limit} bytes: $handler" }}
     $rewritten = $null
     try {{ $rewritten = $json.DeserializeObject($output.Result) }} catch {{ $rewritten = $null }}
     if ($rewritten -isnot [System.Collections.IDictionary]) {{ Fail "handler did not write a JSON object: $handler" }}
     $toolInput = $rewritten
-    $env:HOOK_INPUT = $json.Serialize($toolInput)
+    Set-Hook 'HOOK_INPUT' ($json.Serialize($toolInput))
     $changed = $true
     Portable-Fields
   }}

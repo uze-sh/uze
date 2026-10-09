@@ -60,8 +60,12 @@ pub enum Recorded {
     Absent,
 }
 
-pub fn read(checkout: &Path) -> Recorded {
-    let Some(file) = record_file(checkout) else {
+/// What `checkout`'s administrative directory, as `primary` registers it,
+/// says about who made it. A checkout whose `.git` no longer names that
+/// directory carries no record: whatever its own `.git` leads to is
+/// whoever rewrote it, not UZE.
+pub fn read(primary: &Path, checkout: &Path) -> Recorded {
+    let Some(file) = record_file(primary, checkout) else {
         return Recorded::Absent;
     };
     match uze_document::read::<CheckoutRecord>(&file) {
@@ -75,14 +79,9 @@ pub fn read(checkout: &Path) -> Recorded {
 
 /// Writes `record` for `checkout`, unless a record this build cannot read
 /// is already there: that one is a newer build's, and never written over.
-pub fn write(checkout: &Path, record: &CheckoutRecord) -> Result<(), String> {
-    let file = record_file(checkout).ok_or_else(|| {
-        format!(
-            "{} is not a linked worktree, so it has no record to carry",
-            checkout.display()
-        )
-    })?;
-    if read(checkout) == Recorded::Unreadable {
+pub fn write(primary: &Path, checkout: &Path, record: &CheckoutRecord) -> Result<(), String> {
+    let file = super::anchor::admin_dir(primary, checkout)?.join(CHECKOUT_RECORD_FILE);
+    if read(primary, checkout) == Recorded::Unreadable {
         return Err(format!(
             "{} carries a checkout record this build cannot read",
             file.display()
@@ -92,15 +91,13 @@ pub fn write(checkout: &Path, record: &CheckoutRecord) -> Result<(), String> {
     crate::persistence::write_atomic(&file, &payload).map_err(|error| error.to_string())
 }
 
-/// The record's file in `checkout`'s administrative directory, read from
-/// the `.git` file Git leaves in every linked worktree. The primary
-/// checkout's `.git` is a directory, and it has no record: it is the
+/// The record's file in `checkout`'s administrative directory, found from
+/// `primary` ([`super::anchor`]). The primary checkout has none: it is the
 /// operator's, never a slot.
-fn record_file(checkout: &Path) -> Option<PathBuf> {
-    let pointer = std::fs::read_to_string(checkout.join(".git")).ok()?;
-    let admin = pointer.lines().next()?.strip_prefix("gitdir:")?.trim();
-    let admin = checkout.join(admin);
-    admin.is_dir().then(|| admin.join(CHECKOUT_RECORD_FILE))
+fn record_file(primary: &Path, checkout: &Path) -> Option<PathBuf> {
+    super::anchor::admin_dir(primary, checkout)
+        .ok()
+        .map(|admin| admin.join(CHECKOUT_RECORD_FILE))
 }
 
 fn same_place(recorded: &Path, checkout: &Path) -> bool {

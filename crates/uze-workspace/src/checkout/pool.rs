@@ -3,7 +3,11 @@
 use super::*;
 use uze_core::shell::ShellCommand;
 
-use crate::worktree::PolicyStep;
+use crate::{approval::Consent, worktree::PolicyStep};
+
+/// What a checkout placed without its setup says about it.
+pub const SETUP_AWAITS_APPROVAL: &str = "setup was not run: this project's commands await your \
+     approval (`uze workspace allow` in the project, or Review in the workspace)";
 
 /// How many free slots are kept, and for how long. Decided from the slots
 /// as they stand, never from a history of how many were used: a rule with
@@ -151,7 +155,7 @@ pub fn slots(primary: &Path, store: &AgentStore, presence: &Presence) -> Vec<Slo
     let tips = BranchTips::read(primary);
     isolated_checkouts(primary)
         .into_iter()
-        .filter(|(path, _)| matches!(record::read(path), Recorded::Ours(_)))
+        .filter(|(path, _)| matches!(record::read(primary, path), Recorded::Ours(_)))
         .map(|(path, branch)| {
             let id = CheckoutId::adopted(&slot_name(&path));
             let state = slot_state(
@@ -257,7 +261,7 @@ pub(super) fn take(
             .filter(|slot| slot.state == SlotState::Free)
             .max_by_key(|slot| modified_at(&slot.path))
         {
-            return reuse(free, branch, start);
+            return reuse(primary, free, branch, start);
         }
         if let Some(cap) = cap
             && existing.len() >= cap
@@ -269,7 +273,12 @@ pub(super) fn take(
     .map_err(|error| AcquireError::Git(error.to_string()))?
 }
 
-pub(super) fn reuse(slot: &Slot, branch: &str, start: Start<'_>) -> Result<Acquired, AcquireError> {
+pub(super) fn reuse(
+    primary: &Path,
+    slot: &Slot,
+    branch: &str,
+    start: Start<'_>,
+) -> Result<Acquired, AcquireError> {
     let root = &slot.path;
     // `--discard-changes` because a free slot may still hold edits that
     // never parked it — UZE's own regions of `AGENTS.md`, a lock that moved
@@ -299,7 +308,7 @@ pub(super) fn reuse(slot: &Slot, branch: &str, start: Start<'_>) -> Result<Acqui
     git(root, &["clean", "--quiet", "-fd"])?;
     // Rewritten, not kept: a subagent's record names an agent this new
     // holder is not the child of.
-    record::write(root, &CheckoutRecord::made_at(root)).map_err(AcquireError::Git)?;
+    record::write(primary, root, &CheckoutRecord::made_at(root)).map_err(AcquireError::Git)?;
     Ok(Acquired {
         id: slot.id.clone(),
         path: root.clone(),
@@ -320,6 +329,7 @@ pub(super) fn create(
     let _ = git(primary, &["worktree", "prune"]);
     let id = CheckoutId::generate();
     let relative = format!("{WORKTREES_DIRECTORY}/{id}");
+    isolation_directory_is_the_projects_own(primary, &relative)?;
     let mut add = vec!["worktree", "add", "--quiet"];
     match start {
         Start::Branching { base_tip } => add.extend(["-b", branch, "--", &relative, base_tip]),
@@ -330,7 +340,7 @@ pub(super) fn create(
     let path = primary.join(relative);
     // Unrecorded, the directory would be nobody's to reuse or remove for
     // good; one that cannot carry its record is not kept at all.
-    if let Err(reason) = record::write(&path, &CheckoutRecord::made_at(&path)) {
+    if let Err(reason) = record::write(primary, &path, &CheckoutRecord::made_at(&path)) {
         let _ = git(
             primary,
             &[
@@ -351,15 +361,71 @@ pub(super) fn create(
     })
 }
 
+/// Refuses to place a slot anywhere but a directory of the primary's own.
+///
+/// The isolation directory is a name inside a repository somebody else may
+/// have authored: committed as a link, it would send every new checkout
+/// (and the project's `setup`, which runs in it) wherever the link points;
+/// committed as content, the slots would sit among tracked files a reset of
+/// the primary rewrites. So it must be a real directory or nothing, Git must
+/// track nothing under it, and the slot it names must resolve inside the
+/// primary.
+fn isolation_directory_is_the_projects_own(
+    primary: &Path,
+    relative: &str,
+) -> Result<(), AcquireError> {
+    let directory = primary.join(WORKTREES_DIRECTORY);
+    let refuse = |why: &str| {
+        Err(AcquireError::Git(format!(
+            "`{WORKTREES_DIRECTORY}` in {} {why}; UZE places checkouts only in a directory of the \
+             project's own, so remove it from the repository and try again",
+            primary.display()
+        )))
+    };
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return refuse("is a link"),
+        Ok(metadata) if !metadata.is_dir() => return refuse("is not a directory"),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(AcquireError::Git(format!(
+                "could not read {}: {error}",
+                directory.display()
+            )));
+        }
+    }
+    let tracked = crate::git::read(
+        primary,
+        &["ls-files", "-z", "--cached", "--", WORKTREES_DIRECTORY],
+    )
+    .map_err(AcquireError::Git)?
+    .successful()
+    .map_err(AcquireError::Git)?;
+    if !tracked.is_empty() {
+        return refuse("is tracked by the repository");
+    }
+    let inside = uze_platform::path::resolves_within(&primary.join(relative), primary)
+        .map_err(|error| AcquireError::Git(error.to_string()))?;
+    if !inside {
+        return refuse("leads outside the project");
+    }
+    Ok(())
+}
+
 /// A checkout's preparation, in order: links from the primary, then the
 /// declared setup command. Every problem is a warning — a checkout without
 /// its `.env` or its dependencies is still better than no agent — and the
 /// warnings are what the tab shows. A gate this machine cannot run is said
 /// here too, when the work starts, rather than first at its delivery.
+///
+/// Setup runs only as the operator approved it (see [`crate::approval`]):
+/// a checkout whose project's commands wait for an answer is placed
+/// without them, and says so.
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 #[tracing::instrument(name = "checkout.materialize", level = "debug", skip_all)]
-pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String> {
+pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<String> {
+    let policy = consent.policy();
     let mut warnings = Vec::new();
     for link in &policy.link {
         let source = primary.join(link);
@@ -387,7 +453,14 @@ pub fn materialize(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<
     // In order, and stopping at the first failure: a later step almost
     // always assumes the earlier one ran, so continuing would produce a
     // second, more confusing warning about the same cause.
-    for step in &policy.setup {
+    let setup = match consent.setup() {
+        Some(approved) => approved.commands(),
+        None => {
+            warnings.push(SETUP_AWAITS_APPROVAL.to_owned());
+            &[]
+        }
+    };
+    for step in setup {
         // Never run in a shell it was not written for: the checkout is
         // still placed, and says which step it went without.
         let Some(line) = step.here() else {

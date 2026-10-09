@@ -112,6 +112,16 @@ Only the first 4096 bytes of a handler's stderr become the reason; a handler
 that writes megabytes is still a decision, not a document the harness has to
 parse.
 
+No `HOOK_*` value is longer than 32,000 bytes (counted in UTF-8), on every
+platform and every harness. Windows holds an environment variable to 32,767
+characters and Linux starts no program whose environment holds a string past
+128 KiB, so one bound that fits both is what keeps a call a guard sees on one
+machine the call it sees on another. A larger tool input (a big file written
+in one call, say) cannot be handed to a handler at all. That is a
+context that cannot be built, and the group's effect decides: a `deny`,
+`ask` or `transform` group refuses the call, an `observe` or `allow` group
+lets it through without running its handlers.
+
 ### Rewriting a call
 
 A handler in a `transform` group answers the same way, plus one thing: on
@@ -120,7 +130,7 @@ object in the harness's own shape: what it read from `HOOK_INPUT`, changed.
 Nothing on stdout leaves the input as it was. The handlers of the group run
 in order, and each one reads the rewrite before it as its `HOOK_INPUT` (and
 its portable fields); the last rewrite is what the tool runs. Stdout that is
-not one JSON object, or that is longer than 64 KiB, is a handler failure.
+not one JSON object, or that is longer than 32,000 bytes, is a handler failure.
 The input is the harness's own because a rewrite in portable terms could not
 be mapped back: a portable `command` is `command` on one harness and
 `CommandLine` on another.
@@ -256,10 +266,14 @@ not refused for it. A `SessionStart` group that waits only for a start the
 harness never announces (a resume or a clear, on a harness that announces
 only a new session) is reported Unsupported the same way.
 
-On OpenCode V2 the decisions ride two halves of its plugin API: the tool
-hook sees the input but cannot refuse, and `permission.evaluate` can refuse
-or ask but carries no input, so the bridge keeps the input by call id
-between the two. Its permission prompt shows the call and not the request's
+On OpenCode V2 the decisions ride two halves of its plugin API. The tool
+hook sees the input and is where a `deny` group and a failed rewrite refuse
+the call: it has no refusal of its own, so the bridge renames the call to a
+tool that does not exist, which fails it before it runs with the reason in
+the error the model reads. That matters because not every tool asks for
+permission (`read` never does). `permission.evaluate` can ask but carries no
+input and fires only for a tool that asks, so the bridge keeps the input by
+call id for an `ask` group. Its permission prompt shows the call and not the request's
 message, so a handler's reason for asking is not on screen there (the
 reason for a denial reaches the model as on every harness).
 
@@ -277,14 +291,14 @@ stated) · **—** = not expressible.
 | matcher | native, regex on the tool name | native | native, regex (`"*"` matches all) | in-plugin |
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
 | `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |
-| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | native (`permission.evaluate` → `deny`, input kept from `execute.before`) |
+| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | adapted (`execute.before` renames the call to a tool that does not exist; also refused at `permission.evaluate` when the tool asks) |
 | `PreToolUse` ask | native (`permissionDecision: ask`; the prompt shows the reason) | — (0.160.1 rejects `permissionDecision: ask` in `PreToolUse`, and its `PermissionRequest` hook takes `allow`/`deny` only: codex-rs `hooks/src/engine/output_parser.rs`) | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
-| `PreToolUse` transform | native (`allow` + `updatedInput`) | native (`allow` + `updatedInput`, `hookEventName` required; only `command` is read for a shell call) | native (`allow` + `overwrite`, a hook result field the docs do not list, measured every run) | native (`execute.before`'s input reassigned, as OpenCode's own input repair does; a failed rewrite is refused at `permission.evaluate`) |
+| `PreToolUse` transform | native (`allow` + `updatedInput`) | native (`allow` + `updatedInput`, `hookEventName` required; only `command` is read for a shell call) | native (`allow` + `overwrite`, a hook result field the docs do not list, measured every run) | native (`execute.before`'s input reassigned, as OpenCode's own input repair does; a failed rewrite is refused there like a denial) |
 | `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`; a denial reaches the model as synthetic input) |
 | `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
 | `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | native through the undocumented `SessionStart` key (flat; once per new conversation, at its first model call; `startup` only — a `--continue` announces nothing), measured every run | native (`session.created` of a top-level session; `startup` only — a resumed session announces nothing) |
 | a denial's exit status | 2 (the documented block signal) | 2 | **0** — the decision is the stdout document, and any non-zero exit is logged as a *failed* hook | n/a |
-| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin (`permission.evaluate`) |
+| fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin (`execute.before`) |
 | handler context | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment | `HOOK_*` environment |
 
 ### Session start

@@ -31,12 +31,17 @@ pub(super) fn deliver_locked(
         // is theirs to ask for.
         return Err(DeliveryFailure::NotReady(Readiness::Running));
     };
+    let slot =
+        slot_path(primary, isolation).ok_or(DeliveryFailure::NotReady(Readiness::Running))?;
+    checkout::anchored(primary, &slot).map_err(DeliveryFailure::Git)?;
     match readiness(primary, isolation) {
         Readiness::Ready { base, .. } => isolation.base_commit = base,
         other => return Err(DeliveryFailure::NotReady(other)),
     }
-    let slot =
-        slot_path(primary, isolation).ok_or(DeliveryFailure::NotReady(Readiness::Running))?;
+    let gate = policy
+        .gate
+        .ok_or(DeliveryFailure::GateAwaitingApproval)?
+        .commands();
     *state = WorkState::Integrating;
     let tip = target_tip(primary, isolation, policy.completion)?;
     // Merged elsewhere — squashed on the forge before the local target
@@ -47,7 +52,7 @@ pub(super) fn deliver_locked(
         return Err(DeliveryFailure::AlreadyDelivered);
     }
     rebase_in_slot(primary, &slot, state, isolation, &tip)?;
-    for step in policy.gate {
+    for step in gate {
         // A gate with no spelling for this platform refuses delivery: it
         // cannot be run, and work it never checked must not land.
         let (passed, output) = match step.here() {
@@ -116,6 +121,7 @@ pub fn refresh(
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         let slot =
             slot_path(primary, isolation).ok_or(DeliveryFailure::NotReady(Readiness::Running))?;
+        checkout::anchored(primary, &slot).map_err(DeliveryFailure::Git)?;
         match readiness(primary, isolation) {
             Readiness::Ready { base, .. } => isolation.base_commit = base,
             // Nothing committed yet, but clean: following the target costs
@@ -202,7 +208,7 @@ pub(super) fn rebase_in_slot(
     } else {
         vec!["rebase", "--quiet", "--", tip]
     };
-    match uze_git::write(slot, &rebase) {
+    match crate::git::write(slot, &rebase) {
         Ok(output) if output.is_success() => {
             isolation.base_commit = tip.to_owned();
             Ok(true)
@@ -236,7 +242,7 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
     // and asking Git where that is answers for both. This is read three
     // times per agent on every evaluation pass, which is the cadence that
     // makes the difference between one spawn and two worth having.
-    let git_dir = uze_git::read(slot, &["rev-parse", "--git-dir"])
+    let git_dir = crate::git::read(slot, &["rev-parse", "--git-dir"])
         .ok()
         .and_then(|output| output.successful().ok())?;
     let git_dir = uze_git::native_path(git_dir.trim());
@@ -251,7 +257,7 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
     if !in_progress {
         return None;
     }
-    let files = uze_git::read(slot, &["diff", "--name-only", "--diff-filter=U"])
+    let files = crate::git::read(slot, &["diff", "--name-only", "--diff-filter=U"])
         .ok()
         .and_then(|output| output.successful().ok())
         .map(|stdout| stdout.lines().map(PathBuf::from).collect())
@@ -303,7 +309,7 @@ pub fn mark_delivered(primary: &Path, state: &mut WorkState, isolation: &mut Iso
 
 pub(super) fn abort_rebase(primary: &Path, slot: &Path) -> bool {
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        uze_git::write(slot, &["rebase", "--abort"]).is_ok_and(|output| output.is_success())
+        crate::git::write(slot, &["rebase", "--abort"]).is_ok_and(|output| output.is_success())
     })
     .unwrap_or(false)
 }
@@ -325,19 +331,60 @@ pub fn conflict_message(isolation: &Isolation, files: &[PathBuf], target_moved: 
 
 /// The message written into the owning agent's pane when the gate refused
 /// its rebased commits.
-pub fn gate_failure_message(isolation: &Isolation, command: &str, output: &str) -> String {
-    let tail: String = output
-        .lines()
-        .rev()
-        .take(12)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join(" | ");
+///
+/// What the gate printed is the project's, and reaches the pane as if the
+/// operator had typed it, so it is pointed at rather than quoted: `log`
+/// holds the whole of it. Only where that could not be written is a tail
+/// quoted, as plain text — no control character survives, so nothing in
+/// it can act as a key.
+pub fn gate_failure_message(
+    isolation: &Isolation,
+    command: &str,
+    output: &str,
+    log: Option<&Path>,
+) -> String {
+    let evidence = match log {
+        Some(log) => format!("The full output is in {}.", log.display()),
+        None => {
+            let tail: String = output
+                .lines()
+                .rev()
+                .take(12)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ");
+            format!("Last lines: {}", plain_text(&tail, GATE_TAIL_CHARS))
+        }
+    };
     format!(
         "The project's checks failed on your branch after it was rebased onto {target}: \
-         `{command}`. Fix them on this branch, commit, and end your turn. Last lines: {tail}",
+         `{command}`. Fix them on this branch, commit, and end your turn. {evidence}",
         target = isolation.target,
+        command = plain_text(command, GATE_TAIL_CHARS),
     )
+}
+
+/// How much of the gate's own words a message quotes.
+const GATE_TAIL_CHARS: usize = 1_000;
+
+/// `text` with every control character a terminal acts on replaced by a
+/// space, and cut to `limit` characters.
+fn plain_text(text: &str, limit: usize) -> String {
+    let mut plain: String = text
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(limit)
+        .collect();
+    if text.chars().count() > limit {
+        plain.push('…');
+    }
+    plain
 }

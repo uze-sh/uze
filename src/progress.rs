@@ -126,6 +126,71 @@ pub fn unpainted(text: &str) -> String {
     plain
 }
 
+/// `text` as it may reach the terminal: the colour and weight this module
+/// paints with kept, every other control spelled out.
+///
+/// The last layer under every report a command prints. A report is
+/// composed from what manifests, packages, harnesses and subprocesses said,
+/// and a field that missed [`uze_application::inert`] on its way in must
+/// still not move the cursor, erase a line, retitle the window or reorder
+/// what follows it. Only Select Graphic Rendition passes, since that is all
+/// this module writes, and not its "conceal" attribute, which would hide
+/// the text it precedes.
+pub fn for_terminal(text: &str) -> std::borrow::Cow<'_, str> {
+    let acts = |character: char| uze_application::is_terminal_control(character);
+    if !text.chars().any(acts) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut rest = text;
+    while let Some(character) = rest.chars().next() {
+        if character == '\u{1b}'
+            && let Some(length) = painted_sequence(rest)
+        {
+            out.push_str(&rest[..length]);
+            rest = &rest[length..];
+            continue;
+        }
+        if acts(character) {
+            out.push_str(&format!("\\u{{{:x}}}", u32::from(character)));
+        } else {
+            out.push(character);
+        }
+        rest = &rest[character.len_utf8()..];
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// The length of the SGR sequence `text` opens with (`ESC [ … m`), when it
+/// is one and does not conceal.
+fn painted_sequence(text: &str) -> Option<usize> {
+    let parameters = text.strip_prefix("\u{1b}[")?;
+    let end = parameters
+        .find(|character: char| !(character.is_ascii_digit() || matches!(character, ';' | ':')))?;
+    if parameters.as_bytes()[end] != b'm' {
+        return None;
+    }
+    let mut fields = parameters[..end].split(';');
+    let mut conceals = false;
+    while let Some(field) = fields.next() {
+        match field {
+            // A colour's own fields are numbers, not attributes.
+            "38" | "48" | "58" => match fields.next() {
+                Some("5") => {
+                    fields.next();
+                }
+                Some("2") => {
+                    fields.nth(2);
+                }
+                _ => {}
+            },
+            "8" => conceals = true,
+            _ => {}
+        }
+    }
+    (!conceals).then_some(2 + end + 1)
+}
+
 /// The columns `text` occupies once drawn.
 pub fn width(text: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(unpainted(text).as_str())
@@ -311,7 +376,11 @@ pub fn report_section(name: &str) -> String {
 /// it, muted, where it is.
 pub fn report_title(name: &str, detail: Option<&str>) -> String {
     match detail {
-        Some(detail) => format!("{}  {}\n", title(name), label(detail)),
+        Some(detail) => format!(
+            "{}  {}\n",
+            title(name),
+            label(uze_application::inert_line(detail))
+        ),
         None => format!("{}\n", title(name)),
     }
 }
@@ -347,8 +416,11 @@ pub enum Change {
     Failed,
 }
 
-/// One line of a change report: `+ flow@market 3f2a91c`.
+/// One line of a change report: `+ flow@market 3f2a91c`. The subject and
+/// detail are what a manifest, a package or a harness named, so both are
+/// printed inert.
 pub fn change(kind: Change, subject: &str, detail: Option<&str>) -> String {
+    let subject = uze_application::inert_line(subject);
     let mark = match kind {
         Change::Added => success_text("+"),
         Change::Removed => label("-"),
@@ -357,7 +429,10 @@ pub fn change(kind: Change, subject: &str, detail: Option<&str>) -> String {
         Change::Failed => error_icon(),
     };
     match detail {
-        Some(detail) => format!("{mark} {subject}   {}\n", label(detail)),
+        Some(detail) => format!(
+            "{mark} {subject}   {}\n",
+            label(uze_application::inert(detail))
+        ),
         None => format!("{mark} {subject}\n"),
     }
 }
@@ -388,10 +463,16 @@ pub fn change_report(verb: &str, lines: &str, outcome: &str) -> String {
 }
 
 /// One `key   value` line, the key padded by what it shows rather than by
-/// the bytes its colour adds.
+/// the bytes its colour adds. The value is data — a path, a source — and
+/// printed inert.
 pub fn key_value(key: &str, value: impl AsRef<str>) -> String {
     let pad = 14usize.saturating_sub(width(key)).max(1);
-    format!("  {}{}{}", label(key), " ".repeat(pad + 2), value.as_ref())
+    format!(
+        "  {}{}{}",
+        label(key),
+        " ".repeat(pad + 2),
+        uze_application::inert(value.as_ref())
+    )
 }
 
 /// The spinner currently drawing, if one is. A question asked while a
@@ -508,6 +589,7 @@ fn say(bar: &ProgressBar, line: &str) {
     if quiet() {
         return;
     }
+    let line = for_terminal(line);
     if bar.is_hidden() {
         eprintln!("{line}");
     } else {
@@ -661,16 +743,25 @@ pub fn uninterrupted<T>(question: impl FnOnce() -> T) -> T {
 /// A one-line outcome: `✓ theme dracula`.
 pub fn success(msg: &str) {
     if !quiet() {
-        println!("{} {}", success_icon(), msg);
+        println!("{} {}", success_icon(), for_terminal(msg));
     }
 }
+/// A warning on stderr. `msg` is never painted by its caller and often
+/// carries what a harness, a package or a subprocess said, so it is printed
+/// inert: a control sequence in it is shown, not performed.
 pub fn warn(msg: &str) {
-    eprintln!("{} {}", warning_icon(), msg);
+    eprintln!("{} {}", warning_icon(), uze_application::inert(msg));
 }
 /// The one way a failure is said: `error: …` on stderr, and under it, when
-/// there is one, the command that answers it.
+/// there is one, the command that answers it. The message is printed
+/// inert, for the reason [`warn`] is: an error's reason quotes manifests,
+/// packages and subprocess output nobody on this machine wrote.
 pub fn error(msg: &str, hint: Option<&str>) {
-    eprintln!("{} {msg}", paint("error:", danger().bold()));
+    eprintln!(
+        "{} {}",
+        paint("error:", danger().bold()),
+        uze_application::inert(msg)
+    );
     if let Some(hint) = hint {
         eprintln!("{}", next_step(hint));
     }
@@ -712,6 +803,41 @@ pub fn glyph_width(symbol: Symbol) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A report keeps the colour this module paints and nothing else: an
+    /// erase, a cursor move, an OSC title, a C1 introducer, a bidi override
+    /// and a concealing SGR are spelled out.
+    #[test]
+    fn only_this_module_s_painting_reaches_the_terminal() {
+        let painted = "\u{1b}[1m\u{1b}[38;2;8;8;8mok\u{1b}[0m";
+        assert_eq!(for_terminal(painted), painted);
+        let hostile = "a\u{1b}[2Kb\u{1b}]0;t\u{7}c\u{9b}1Ad\u{202e}e\u{1b}[8mhidden\rf\n";
+        let shown = for_terminal(hostile);
+        for raw in ['\u{7}', '\u{9b}', '\u{202e}', '\r'] {
+            assert!(!shown.contains(raw), "{shown:?}");
+        }
+        assert!(
+            !shown.contains("\u{1b}[2K") && !shown.contains("\u{1b}[8m"),
+            "{shown:?}"
+        );
+        assert!(shown.ends_with("f\n"), "{shown:?}");
+    }
+
+    /// A name a manifest or package wrote, carrying an escape that would
+    /// erase the line and an OSC that would retitle the terminal, reaches
+    /// a report spelled out.
+    #[test]
+    fn a_name_somebody_else_wrote_is_printed_inert() {
+        let hostile = "flow\u{1b}[2K\u{1b}]0;owned\u{7}";
+        for line in [
+            change(Change::Added, hostile, Some(hostile)),
+            key_value("Source", hostile),
+            report_title("Plugin", Some(hostile)),
+        ] {
+            assert!(!unpainted(&line).contains('\u{7}'), "{line:?}");
+            assert!(line.contains("flow\\u{1b}[2K"), "{line:?}");
+        }
+    }
 
     #[test]
     fn the_cli_and_the_tui_resolve_a_shared_token_to_the_same_colour() {

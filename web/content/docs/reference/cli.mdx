@@ -60,7 +60,12 @@ uze market host [alias] [url]      # the hosts owner/repo resolves against
 ```bash
 uze workspace               # open the workspace
 uze workspace stop          # stop the workspace and every process in it
+uze workspace allow [dir]   # read this project's setup and gate commands, and approve them
+uze workspace revoke [dir]  # withdraw that approval
 ```
+
+`allow` needs a person at a terminal, and refuses inside an agent uze launched:
+the commands a project runs are yours to approve, never its agents'.
 
 ## Setup and health
 

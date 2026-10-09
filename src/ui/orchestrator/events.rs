@@ -4,7 +4,10 @@ use super::*;
 
 impl WorkspaceModel {
     pub(super) fn apply(&mut self, event: ClientEvent, identities: &[AgentIdentity]) {
-        if !matches!(event, ClientEvent::Error { .. }) {
+        if !matches!(
+            event,
+            ClientEvent::Error { .. } | ClientEvent::Refused { .. }
+        ) {
             self.error = None;
         }
         if let ClientEvent::Damage(damage) = event {
@@ -46,8 +49,10 @@ impl WorkspaceModel {
             }
             ClientEvent::Damage(_) => unreachable!("absorbed above"),
             ClientEvent::SelectionText { pane, text } => self.copy(pane, text),
-            ClientEvent::Error { message } => self.error = Some(message),
-            ClientEvent::Detached | ClientEvent::Stopped => {}
+            ClientEvent::Error { message } | ClientEvent::Refused { message } => {
+                self.error = Some(message)
+            }
+            ClientEvent::Detached | ClientEvent::Stopped | ClientEvent::SpaceOpened { .. } => {}
         }
     }
     /// Every pane the session holds, across its spaces.

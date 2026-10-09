@@ -72,7 +72,7 @@ scenes:
           slot=$(ls -d {project}/.worktrees/*/ | head -1)
           cd "$slot"
           {uze} agent work name fix/branch-naming
-        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT] }
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT, UZE_AGENT_KEY] }
         say: the agent names its work from inside its own checkout
       - wait: screen
         until: "branch naming"
@@ -102,7 +102,7 @@ scenes:
           slot=$(ls -d {project}/.worktrees/*/ | head -1)
           cd "$slot"
           {uze} agent work name fix/second-thoughts
-        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT] }
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT, UZE_AGENT_KEY] }
         say: the agent names its work again, having found out what it is
     then:
       - cmd:

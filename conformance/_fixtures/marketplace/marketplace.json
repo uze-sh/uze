@@ -39,6 +39,10 @@
       "source": "./plugins/hook-effects"
     },
     {
+      "name": "hook-read-guard",
+      "source": "./plugins/hook-read-guard"
+    },
+    {
       "name": "hook-exec",
       "source": "./plugins/hook-exec"
     },

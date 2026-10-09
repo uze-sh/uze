@@ -109,8 +109,8 @@ reports it.
 | `target` | the branch the primary checkout is on when the task is created | The branch finished work targets |
 | `branch` | `agent` | The vocabulary an agent's own name for its work is judged against: a preset (`conventional`, `gitflow`, `flat`, `agent`) or your own list of types. `agent` names no work |
 | `link` | none | Ignored files a fresh worktree links from the primary checkout, like `.env` |
-| `setup` | none | Prepares a worktree, run in it after linking. A failure warns; it never blocks a launch |
-| `gate` | none | Run in the task's worktree on the rebased commits. A non-zero exit refuses delivery |
+| `setup` | none | Prepares a worktree, run in it after linking, once you [approve it](#approving-the-commands). A failure warns; it never blocks a launch |
+| `gate` | none | Run in the task's worktree on the rebased commits, once you [approve it](#approving-the-commands). A non-zero exit refuses delivery |
 | `slots` | peak concurrency | The most worktrees that may exist at once |
 | `spare` | `2` | Free worktrees kept warm for the next agents, the most recently used first. Every other free one is removed, its branch kept |
 | `idle_days` | `3` | Days a free worktree may sit unused before it is removed too |
@@ -160,6 +160,26 @@ workspace:
 A step with no spelling for the machine it runs on is not run there. A `setup`
 step is skipped with a warning naming it; a `gate` step refuses the delivery,
 because work nothing checked never lands. `uze status` lists every such step.
+
+### Approving the commands
+
+`setup` and `gate` are shell lines from the repository, and they run with your
+permissions. So uze runs none of them until you have read the exact lines and
+said yes, once per project on each machine. Until then a worktree is placed
+without its `setup`, and nothing is delivered. The workspace asks with a
+**Review** button when it opens the project, and `uze workspace allow` asks
+from a terminal:
+
+```bash
+uze workspace allow     # show this project's setup and gate lines, and approve them
+uze workspace revoke    # withdraw the approval; nothing runs until it is given again
+```
+
+The approval names those exact lines. Change one, add one or remove one, and
+the workspace asks again before anything runs. An agent cannot approve its own
+project's commands: `uze workspace allow` refuses inside an agent uze launched,
+and needs a person at a terminal to answer. `uze status` says when a project's
+commands are waiting for you.
 
 <Callout type="warn">
   A `link` entry must be relative, stay inside the repository, **and be ignored

@@ -4,8 +4,10 @@
 #   curl -fsSL https://uze.sh/i | sh
 #
 # Downloads the prebuilt `uze` binary for this machine from GitHub
-# Releases, verifies its SHA-256 checksum, and installs it into the user
-# binary directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64.
+# Releases, verifies the release's signature over its checksums and the
+# archive's SHA-256 checksum, and installs it into the user binary
+# directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64. Needs
+# OpenSSH's `ssh-keygen` (8.1 or later) to check the signature.
 #
 # Environment overrides:
 #   UZE_VERSION   Pin a release (e.g. 1.0.0-beta.1); default: latest.
@@ -17,6 +19,14 @@
 set -eu
 
 DEFAULT_BASE_URL="https://github.com/uze-sh/uze/releases"
+
+# The public key every release's SHASUMS256.txt is signed with: the key
+# line of `release-signing.pub`, which a test holds equal to this one. A
+# checksum file is only as trustworthy as whoever could publish it, so the
+# signature is what says the release is uze's. Empty until the first
+# release key exists, and an empty key installs nothing.
+UZE_RELEASE_KEY=''
+SIGNATURE_NAMESPACE="uze-release"
 
 # --- presentation -------------------------------------------------------------
 # The same rule `src/progress.rs` applies to the CLI itself (`color_enabled`),
@@ -165,6 +175,9 @@ need curl
 need tar
 need mktemp
 need install
+need ssh-keygen
+[ -n "$UZE_RELEASE_KEY" ] ||
+  die "this installer carries no release signing key, so it cannot verify a release"
 
 # SHA-256 has two spellings and this script needs whichever one is here:
 # `sha256sum` is GNU coreutils and is not on a stock macOS, which ships
@@ -228,6 +241,13 @@ fi
 
 # --- download -----------------------------------------------------------------
 base_url="${UZE_BASE_URL:-$DEFAULT_BASE_URL}"
+# HTTPS only, redirects included, unless a mirror or a test fixture was
+# named on purpose: the signature is checked either way.
+if [ -n "${UZE_BASE_URL:-}" ]; then
+  protocols="=https,http,file"
+else
+  protocols="=https"
+fi
 if [ -n "${UZE_VERSION:-}" ]; then
   path="download/v${UZE_VERSION}"
 else
@@ -243,13 +263,29 @@ printf '%s%s%s\n' "$MUTED" "$(centred 'Agents come and go. Your work stays.')" "
 say ""
 note "${base_url}/${path}/${archive}"
 
+# `-q` first, so no `.curlrc` adds a CA bundle or `--insecure` to this.
+download() {
+  curl -q -fsSL --proto "$protocols" --proto-redir "$protocols" --tlsv1.2 \
+    "${base_url}/${path}/$1" -o "${tmpdir}/$1"
+}
 fetch() {
-  curl -fsSL "${base_url}/${path}/${archive}" -o "${tmpdir}/${archive}" &&
-    curl -fsSL "${base_url}/${path}/SHASUMS256.txt" -o "${tmpdir}/SHASUMS256.txt"
+  download "$archive" && download SHASUMS256.txt && download SHASUMS256.txt.sig
 }
 step "Downloading ${archive}" "Downloaded ${archive}" fetch
 
 # --- verification -------------------------------------------------------------
+authenticate() {
+  printf '%s namespaces="%s" %s\n' "$SIGNATURE_NAMESPACE" "$SIGNATURE_NAMESPACE" \
+    "$UZE_RELEASE_KEY" >"${tmpdir}/allowed_signers"
+  ssh-keygen -Y verify -f "${tmpdir}/allowed_signers" -I "$SIGNATURE_NAMESPACE" \
+    -n "$SIGNATURE_NAMESPACE" -s "${tmpdir}/SHASUMS256.txt.sig" \
+    <"${tmpdir}/SHASUMS256.txt" >/dev/null 2>&1 || {
+    echo "SHASUMS256.txt is not signed by the uze release key" >&2
+    return 1
+  }
+}
+step "Verifying the release signature" "Release signature verified" authenticate
+
 verify() {
   expected="$(grep -F "  ${archive}" "${tmpdir}/SHASUMS256.txt" | head -n 1 | cut -d' ' -f1)"
   [ -n "$expected" ] || {

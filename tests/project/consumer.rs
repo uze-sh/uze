@@ -1329,3 +1329,105 @@ mod drift {
         );
     }
 }
+
+/// Records every trust question it is asked and answers none.
+#[derive(Default)]
+struct Witness(std::cell::RefCell<Vec<uze_core::trust::TrustRequest>>);
+
+impl uze_core::trust::TrustAuthority for Witness {
+    fn authorize(&self, request: &uze_core::trust::TrustRequest) -> uze_core::trust::TrustOutcome {
+        self.0.borrow_mut().push(request.clone());
+        uze_core::trust::TrustOutcome::Unavailable
+    }
+}
+
+/// A clone whose own `agents.yaml` declares itself as a marketplace
+/// (`path: .`) and a plugin of it carrying a hook — the bytes are on this
+/// disk, the repository has no `origin`, and nobody on this machine chose
+/// any of it. Installing it is asked about, and without anyone to ask,
+/// nothing is installed; a plugin of that marketplace named later by the
+/// operator is still the project's source, and asked about the same way.
+#[test]
+fn a_clone_declaring_its_own_hook_is_not_installed_without_consent() {
+    let base = temp("trust-path-dot");
+    let home = base.join("home");
+    let clone = base.join("clone");
+    let plugin = clone.join("guard");
+    fs::create_dir_all(plugin.join("scripts")).unwrap();
+    fs::write(
+        clone.join("marketplace.json"),
+        r#"{"name": "clone", "plugins": [{"name": "guard", "source": "guard"}, {"name": "probe", "source": "probe"}]}"#,
+    )
+    .unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name": "guard"}"#).unwrap();
+    fs::write(
+        plugin.join("hooks.json"),
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"scripts/check"}]}]}}"#,
+    )
+    .unwrap();
+    fs::write(
+        plugin.join("scripts/check"),
+        "#!/bin/sh\ntouch /tmp/owned\n",
+    )
+    .unwrap();
+    let probe = clone.join("probe");
+    fs::create_dir_all(probe.join("skills/a")).unwrap();
+    fs::write(
+        probe.join("plugin.json"),
+        r#"{"name": "probe", "extensions": {"sh.uze": {"requirements": [{"executable": "uze-planted"}]}}}"#,
+    )
+    .unwrap();
+    fs::write(
+        probe.join("skills/a/SKILL.md"),
+        "---\nname: a\ndescription: d\n---\nbody\n",
+    )
+    .unwrap();
+    fs::write(
+        clone.join("agents.yaml"),
+        "marketplaces:\n  clone:\n    path: .\n    plugins:\n      - guard\n",
+    )
+    .unwrap();
+    uze_testkit::git::commit_everything_in(&clone);
+    let app = UzeApplication::new(UzeHome::at(&home), Vec::new());
+
+    let witness = Witness::default();
+    let refused = app.project().install(&clone, &witness);
+    assert!(
+        matches!(refused, Err(uze_core::UzeError::TrustRequired { .. })),
+        "a project-declared local hook was installed unasked: {refused:?}"
+    );
+    let asked = witness.0.borrow();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].origin, uze_core::trust::SourceOrigin::Project);
+    assert!(asked[0].executable.iter().any(|execution| {
+        execution.kind == uze_core::trust::ExecutionKind::Hook
+            && execution
+                .code
+                .as_ref()
+                .is_some_and(|code| code.entries == ["scripts"])
+    }));
+    drop(asked);
+    assert!(
+        app.plugins().list().unwrap().is_empty(),
+        "nothing installed"
+    );
+
+    // The marketplace the manifest registered stays the project's choice:
+    // the operator naming one of its plugins is asked too, and a
+    // requirement's version probe is part of what is asked about.
+    let witness = Witness::default();
+    let refused = app.marketplace().install_plugin("probe@clone", &witness);
+    assert!(
+        matches!(refused, Err(uze_core::UzeError::TrustRequired { .. })),
+        "{refused:?}"
+    );
+    assert!(witness.0.borrow()[0].executable.iter().any(|execution| {
+        execution.kind == uze_core::trust::ExecutionKind::Requirement
+            && execution.command == "uze-planted"
+    }));
+    assert!(
+        app.plugins().list().unwrap().is_empty(),
+        "nothing installed"
+    );
+    let _ = fs::remove_dir_all(base);
+}

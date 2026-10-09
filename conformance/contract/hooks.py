@@ -29,7 +29,7 @@ import json
 import subprocess
 
 from contract import declared
-from shared import common, vocabulary
+from shared import common, markers, vocabulary
 from shared.common import check, check_absence, declare, describe, provider_struct
 
 #: Where the scripted tools leave their side effects, inside the project.
@@ -49,6 +49,8 @@ def assert_contract(cfg, prov_ip, bindings):
         effects = set(expected["effects"])
         if "deny" in effects:
             _deny(cfg, bindings, expected)
+            if expected["aliases"].get("file.read"):
+                _deny_unprompted(cfg, bindings, expected)
             _fail_closed(cfg, bindings, expected)
             _exec_form(cfg, bindings, expected)
             _unmet_requirement(cfg, bindings, expected)
@@ -91,14 +93,14 @@ def relayed(cfg, text):
 PROMPT = "run the lab checks"
 
 
-def _scene(cfg, bindings, tag, plugin, calls, prompt=PROMPT, probe=None):
+def _scene(cfg, bindings, tag, plugin, calls, prompt=PROMPT, probe=None, before=""):
     """Runs one turn in which the model makes `calls`, with `plugin`
     installed. Returns (records, side effects, turn) read while the harness
     is still alive; with `probe`, what `probe(cfg)` answered then too, as a
     fourth element."""
     mode, env = bindings.sequence(calls, prompt)
     prov_ip = common.start_provider(cfg, mode, env)
-    with bindings.hook_session(cfg, prov_ip, plugin, tag) as tui:
+    with bindings.hook_session(cfg, prov_ip, plugin, tag, before) as tui:
         plain, ready = bindings.prepare(tui)
         check(
             f"hooks-{tag}-ready",
@@ -274,6 +276,84 @@ def _deny(cfg, bindings, expected):
             "the allowed command left its file"
             if "allowed" in side
             else f"side: {sorted(side)}",
+        )
+
+
+def _deny_unprompted(cfg, bindings, expected):
+    """A denial holds on a tool the harness never asks permission for.
+    Reading is one on some harnesses, and a harness's permission check is
+    the natural place to refuse a call, so a deny group that only refuses
+    there lets every unprompted read through. The denied file's body
+    reaching the model is the read having run; the allowed one's is the
+    proof that a read's output would have."""
+    read = expected["aliases"]["file.read"]
+    project = bindings.hook_project
+    denied_body, allowed_body = markers.HOOK_READS
+    files = {"lab-deny-read.txt": denied_body, "lab-allow-read.txt": allowed_body}
+    before = "\n".join(
+        f"printf '%s\\n' {body} > {project}/{name}" for name, body in files.items()
+    )
+    template = bindings.call(read["call"])
+
+    def reading(name):
+        return {
+            "tool": vocabulary.call_tool(read),
+            "args": json.loads(
+                json.dumps(template).replace(
+                    f"{project}/README.md", f"{project}/{name}"
+                )
+            ),
+        }
+
+    with describe("deny-unprompted"):
+        found, _, turn = _scene(
+            cfg,
+            bindings,
+            "deny-unprompted",
+            "hook-read-guard",
+            [reading(name) for name in files],
+            before=before,
+        )
+        settled = turn is not None and turn.settled
+        guard = found.get("read-guard", [])
+        guard_denied = [r for r in guard if MARKED in r.get("HOOK_PATH", "")]
+        reason = relayed(cfg, f"{DENIED}read-guard")
+        bodies = common.observed_markers(provider_struct(cfg), "hook_reads")
+        check(
+            "hooks-deny-unprompted-guard-ran",
+            bool(guard_denied),
+            "the guard ran on the marked path" if guard_denied else f"records: {guard}",
+        )
+        check(
+            "hooks-deny-unprompted-reason-relayed",
+            reason,
+            "the denial reached the conversation"
+            if reason
+            else "no request carried it",
+        )
+        check(
+            "hooks-deny-unprompted-allowed-read-ran",
+            bool(bodies.get(allowed_body)),
+            "the allowed file's body reached the model"
+            if bodies.get(allowed_body)
+            else "no request carried the allowed file's body",
+        )
+        check_absence(
+            "hooks-deny-unprompted-tool-blocked",
+            not bodies.get(denied_body),
+            settled,
+            proof=bool(guard_denied) and reason and bool(bodies.get(allowed_body)),
+            detail="the denied file was never read"
+            if not bodies.get(denied_body)
+            else "its body reached the model",
+        )
+        after = found.get("read-after", [])
+        check_absence(
+            "hooks-deny-unprompted-first-deny-wins",
+            not any(MARKED in r.get("HOOK_PATH", "") for r in after),
+            settled,
+            proof=bool(guard_denied),
+            detail=f"handlers after the denial: {after}",
         )
 
 

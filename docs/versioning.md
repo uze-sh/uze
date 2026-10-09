@@ -65,8 +65,11 @@ to `main`, reads the version in the tree and asks whether it has a published
 it stops there. When it does not:
 
    - the annotated `v<v>` tag is created on the merge commit, which is the
-     commit carrying version bump + changelog + lockfile — or reused, when
-     an earlier attempt got that far before failing;
+     commit carrying version bump + changelog + lockfile, or reused when an
+     earlier attempt got that far before failing. A `v<v>` tag that names
+     any other commit stops the release: `Gate` passed for this commit, so
+     this commit is what gets built, and every later job checks it out by
+     its hash, never by the tag's name;
    - the six artifacts (Linux `x86_64`/`aarch64` × `gnu`/`musl`, and macOS
      `x86_64`/`aarch64`) are built
      from that tag on native runners and published as
@@ -83,9 +86,17 @@ it stops there. When it does not:
      is signed for every asset (`gh attestation verify <file> --repo
      uze-sh/uze`), and the GitHub Release — named `v<v>`, the same
      identifier the tag, the changelog and `install.sh` all use — is
-     created with the tarballs, the SBOM, `SHASUMS256.txt` and the notes
-     described below. Re-runs upload assets with `--clobber` and rewrite
-     the notes, so a failed publish can be repaired in place.
+     created with the tarballs, the SBOM, `install.sh` and `install.ps1`,
+     `SHASUMS256.txt`, its signature `SHASUMS256.txt.sig` (see
+     [Signing](#signing)) and the notes described below. A re-run uploads
+     only the assets a release is missing and rewrites the notes; it never
+     replaces an asset already published (no `--clobber`), and with
+     immutable releases on GitHub refuses that anyway.
+
+The eight build jobs run with read-only permissions, no persisted Git
+credentials and no build cache, since a cache is written by every pull
+request's CI run; only the jobs that push the tag and publish the release
+can write, and only `publish` holds the signing key.
 
 Asking about the release rather than the tag is what makes the repair
 possible: the first attempt at `v0.0.0-alpha.1` tagged the commit and then
@@ -129,9 +140,16 @@ The version is deliberately absent from the asset name: the default install
 resolves `releases/latest/download/<asset>`, a URL that only works when the
 filename is the same in every release.
 
+`https://uze.sh/i` serves `install.sh` (and `install.ps1` to PowerShell)
+from the latest release's own assets, not from `main`: the installer a
+person pipes into a shell is the one that was released with the binary it
+installs.
+
 `install.sh` picks the artifact for the host (`uname -s`/`uname -m`, musl
-detection via `ldd --version`), verifies the SHA-256 against `SHASUMS256.txt`
-and refuses to install on mismatch, then installs to `$XDG_BIN_HOME` or
+detection via `ldd --version`), verifies the signature over
+`SHASUMS256.txt` with `ssh-keygen -Y verify` against the release key it
+carries, verifies the SHA-256 against `SHASUMS256.txt`, refuses to install
+when either fails, then installs to `$XDG_BIN_HOME` or
 `~/.local/bin` (`UZE_BIN_DIR` overrides; `UZE_VERSION` pins a release;
 `UZE_BASE_URL` points at a mirror). It opens with the same
 centred header `uze --help` does, reports one step at a time — download,
@@ -140,6 +158,51 @@ check on every line already settled, closes on the two commands worth
 running next, and falls back to a plain, escape-free transcript whenever
 stdout is not a terminal or `NO_COLOR` is set, which is what CI and the
 fixture suite read. That suite is `make test-installer` (also gating CI).
+
+## Signing
+
+`SHASUMS256.txt` says the archives arrived whole; it cannot say they are
+uze's, because whoever can publish to the release page publishes the
+checksums too. So every release also carries `SHASUMS256.txt.sig`, an
+OpenSSH signature (`ssh-keygen -Y sign`, namespace `uze-release`) made with
+a key that lives only in the `release` environment's
+`UZE_RELEASE_SIGNING_KEY` secret and offline with the maintainer. The
+public half is committed once, in `release-signing.pub`: the binary embeds
+it when it is built, `install.sh` and `install.ps1` carry the same line,
+and a test (`the_installers_carry_the_key_the_binary_is_built_with`) holds
+the three equal.
+
+Every reader verifies with the system's own OpenSSH (8.1 or later), so no
+cryptography is added to the binary: the updater runs `ssh-keygen` from the
+system's directories by path, `install.sh` the one on `PATH`, `install.ps1`
+the one under `System32\OpenSSH`. No signature, a signature by any other key
+or for any other purpose, or no `ssh-keygen` at all, and nothing is
+installed. A machine without OpenSSH's client is told to install it.
+
+Until `release-signing.pub` holds a key, it holds a placeholder: the
+installers and the updater refuse every release, and the `publish` job
+refuses to publish one. Making the key is the maintainer's, once:
+
+```sh
+ssh-keygen -t ed25519 -C uze-release -f uze-release   # set a passphrase for the offline copy
+```
+
+The public half (`uze-release.pub`) replaces the placeholder line in
+`release-signing.pub` and the empty key in `install.sh`
+(`UZE_RELEASE_KEY='…'`) and `install.ps1` (`$ReleaseKey = '…'`). The private
+half goes into the secret without a passphrase (CI cannot type one), from a
+copy that is deleted afterwards; the passphrase-protected original stays
+offline:
+
+```sh
+cp uze-release ci-key && ssh-keygen -p -f ci-key -N ''   # asks for the passphrase
+gh secret set UZE_RELEASE_SIGNING_KEY --env release < ci-key && shred -u ci-key
+```
+
+Rotating the key is the same steps with a new key, released before the old
+one is retired: a binary trusts the key it was built with, so a binary
+built before the rotation installs nothing signed only by the new key, and
+must be reinstalled with `install.sh`.
 
 ## Staying current
 
@@ -158,8 +221,9 @@ mentions — once per release, on stderr, and never after `uze agent` or
 `terminal`, whose reader is not a person at a prompt.
 
 "Latest" is where `releases/latest` redirects, the same answer the
-installer resolves. The archive is verified against `SHASUMS256.txt` the
-way the installer verifies it, the binary inside is made to report the
+installer resolves. `SHASUMS256.txt` is verified against the release key
+the binary was built with, the archive against `SHASUMS256.txt`, both the
+way the installer verifies them, the binary inside is made to report the
 release it claims to be, and only then is it renamed over the old file —
 beside it, on the same filesystem, so the swap is one rename and a pane's
 shim never runs a half-written binary. Anything already running keeps the
@@ -170,6 +234,11 @@ opens that release's notes in a modal — its own section of the
 `~/.uze/cache/release-notes.md` — from which the release page opens. That is the only thing they say about releases: one that
 is merely available, or that this binary will not install itself, is left
 to `uze upgrade`. The first CLI command after an update mentions it once.
+
+The background check installs a release only once it has been the latest
+for a day (`SETTLE` in `src/self_update.rs`): a release found to be bad and
+pulled within that day never reaches a machine that was only waiting for
+it. `uze upgrade` does not wait.
 
 One consequence is worth knowing before it happens: when a release changes
 the terminal protocol, the first client of the new release replaces the

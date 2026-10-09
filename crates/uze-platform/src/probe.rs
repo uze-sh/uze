@@ -71,6 +71,15 @@ pub fn parent_of(pid: u32) -> Option<u32> {
     platform::parent_of(pid)
 }
 
+/// When `pid` started, as an opaque stamp: equal for one process however
+/// often it is asked, and different for a later process the kernel handed
+/// the same pid. What makes a recorded pid safe to signal later, since a
+/// pid alone names whoever holds the number now. `None` where the platform
+/// does not say.
+pub fn started_at(pid: u32) -> Option<u64> {
+    platform::started_at(pid)
+}
+
 /// The process group in the foreground of the terminal `pid` is attached
 /// to: the one a person typing there talks to. `None` with no terminal, or
 /// where the kernel keeps no such thing (Windows; see
@@ -158,6 +167,14 @@ mod platform {
 
     pub(super) fn parent_of(pid: u32) -> Option<u32> {
         parent_in(std::path::Path::new(&format!("/proc/{pid}")))
+    }
+
+    /// `starttime`, the nineteenth field after the state: clock ticks since
+    /// boot, fixed for the life of the process.
+    pub(super) fn started_at(pid: u32) -> Option<u64> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let (_, after_name) = stat.rsplit_once(')')?;
+        after_name.split_whitespace().nth(19)?.parse().ok()
     }
 
     /// `tpgid`, the sixth field after the command name; `-1` with no
@@ -349,6 +366,24 @@ mod platform {
             )
         };
         (read == size).then_some(info.pbi_ppid)
+    }
+
+    pub(super) fn started_at(pid: u32) -> Option<u64> {
+        let pid = libc::pid_t::try_from(pid).ok()?;
+        // SAFETY: plain C data for which all-zero is valid.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        // SAFETY: `info` is `size` bytes, the size this flavor fills.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast::<libc::c_void>(),
+                size,
+            )
+        };
+        (read == size).then(|| info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec)
     }
 
     pub(super) fn terminal_foreground_of(pid: u32) -> Option<u32> {
@@ -579,6 +614,10 @@ mod platform {
         None
     }
 
+    pub(super) fn started_at(_pid: u32) -> Option<u64> {
+        None
+    }
+
     pub(super) fn terminal_foreground_of(_pid: u32) -> Option<u32> {
         None
     }
@@ -676,6 +715,31 @@ mod platform {
             )
         };
         (status >= 0).then_some(basic.InheritedFromUniqueProcessId as u32)
+    }
+
+    /// The creation time Windows keeps for the process, in 100ns ticks.
+    pub(super) fn started_at(pid: u32) -> Option<u64> {
+        use windows_sys::Win32::{
+            Foundation::FILETIME,
+            System::Threading::{GetProcessTimes, PROCESS_QUERY_LIMITED_INFORMATION},
+        };
+        // SAFETY: null on failure, otherwise owned by `Process`.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return None;
+        }
+        let process = Process(handle);
+        let empty = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (empty, empty, empty, empty);
+        // SAFETY: valid handle; every out-pointer is a live FILETIME.
+        let ok = unsafe {
+            GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user)
+        };
+        (ok != 0)
+            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 
     /// A console has no foreground group to name.
@@ -851,6 +915,17 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
+    /// A process keeps one start stamp for its life, and two processes
+    /// alive at once never share one with the same pid.
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[test]
+    fn a_process_keeps_its_start_time() {
+        let own = std::process::id();
+        let stamp = super::started_at(own).expect("this process says when it started");
+        assert_eq!(super::started_at(own), Some(stamp));
+        assert_eq!(super::started_at(u32::MAX - 1), None, "no such process");
+    }
+
     #[cfg(unix)]
     use super::value_in_environment_block;
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]

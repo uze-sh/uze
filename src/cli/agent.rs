@@ -255,25 +255,38 @@ pub(crate) fn delivered_as(identity: &str) -> (&'static str, String) {
     ("file", path.to_owned())
 }
 
-/// The identity the agent's launch carried, inherited by every process the
-/// harness starts — this one included. Without it there is no agent to
-/// answer: a person's shell, or a harness started by hand, is not an agent
-/// UZE launched.
-pub(crate) fn launched_agent(refusal: fn(String) -> uze_application::UzeError) -> Result<String> {
-    std::env::var(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
-        .ok()
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| refusal("this process is not an agent UZE launched".to_owned()))
+/// The identity the agent's launch carried, and the key it was issued,
+/// inherited by every process the harness starts — this one included.
+/// Without them there is no agent to answer: a person's shell, or a
+/// harness started by hand, is not an agent UZE launched.
+pub(crate) fn launched_agent(
+    refusal: fn(String) -> uze_application::UzeError,
+) -> Result<(String, String)> {
+    let stamped = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    match (
+        stamped(uze_terminal::launch::AGENT_IDENTITY_VARIABLE),
+        stamped(uze_terminal::launch::AGENT_KEY_VARIABLE),
+    ) {
+        (Some(id), Some(key)) => Ok((id, key)),
+        _ => Err(refusal(
+            "this process is not an agent UZE launched".to_owned(),
+        )),
+    }
 }
 
 pub(crate) fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> Result<()> {
     let cwd = cwd()?;
     match action {
         AgentWorkAction::Name { name, format } => {
-            let id = launched_agent(uze_application::UzeError::TaskNaming)?;
-            let named = app
-                .workspace()
-                .name_task(uze_application::Claim { id: &id, cwd: &cwd }, &name)?;
+            let (id, key) = launched_agent(uze_application::UzeError::TaskNaming)?;
+            let named = app.workspace().name_task(
+                uze_application::Claim {
+                    id: &id,
+                    key: &key,
+                    cwd: &cwd,
+                },
+                &name,
+            )?;
             emit(format, &NamedTaskReport::from(&named), |_| {
                 match &named.branch {
                     Some(branch) => format!(
@@ -290,24 +303,36 @@ pub(crate) fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> R
             });
         }
         AgentWorkAction::Split { topic } => {
-            let id = launched_agent(uze_application::UzeError::AgentWork)?;
+            let (id, key) = launched_agent(uze_application::UzeError::AgentWork)?;
             let split = app.workspace().split_work(
-                uze_application::Claim { id: &id, cwd: &cwd },
+                uze_application::Claim {
+                    id: &id,
+                    key: &key,
+                    cwd: &cwd,
+                },
                 &topic,
                 &[],
             )?;
             for warning in &split.warnings {
-                eprintln!("{} {warning}", progress::warning_icon());
+                eprintln!(
+                    "{} {}",
+                    progress::warning_icon(),
+                    uze_application::inert(&warning.to_string())
+                );
             }
             // The path alone, so `cd "$(uze agent work split <topic>)"` works.
             println!("{}", split.path.display());
         }
         AgentWorkAction::Join { topic } => {
-            let id = launched_agent(uze_application::UzeError::AgentWork)?;
-            match app
-                .workspace()
-                .join_work(uze_application::Claim { id: &id, cwd: &cwd }, &topic)?
-            {
+            let (id, key) = launched_agent(uze_application::UzeError::AgentWork)?;
+            match app.workspace().join_work(
+                uze_application::Claim {
+                    id: &id,
+                    key: &key,
+                    cwd: &cwd,
+                },
+                &topic,
+            )? {
                 uze_application::JoinedWork::Joined { commits } => println!(
                     "{} joined {commits} commit{} from `{topic}`",
                     progress::success_icon(),
@@ -328,10 +353,12 @@ pub(crate) fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> R
             }
         }
         AgentWorkAction::List { format } => {
-            let id = launched_agent(uze_application::UzeError::AgentWork)?;
-            let children = app
-                .workspace()
-                .list_work(uze_application::Claim { id: &id, cwd: &cwd })?;
+            let (id, key) = launched_agent(uze_application::UzeError::AgentWork)?;
+            let children = app.workspace().list_work(uze_application::Claim {
+                id: &id,
+                key: &key,
+                cwd: &cwd,
+            })?;
             let report: Vec<SubagentReport> = children.iter().map(SubagentReport::from).collect();
             emit(format, &report, |_| {
                 children

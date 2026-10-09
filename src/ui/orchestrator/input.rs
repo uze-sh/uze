@@ -121,6 +121,40 @@ pub(super) fn forward_paste<W: io::Write>(stream: &mut W, model: &WorkspaceModel
     );
 }
 
+/// What UZE submits into an agent's pane on its own behalf — a conflict to
+/// resolve, a gate that refused, a request to open — as the bytes to send.
+///
+/// The text comes partly from elsewhere (a file name in a conflict, a
+/// branch, a forge's reply), and whatever reaches a PTY is a keystroke: an
+/// `ESC` or a carriage return inside it would act as the operator pressing
+/// those keys. So it reaches the pane as plain text — every control
+/// character a space, the length bounded — framed as a paste where the
+/// pane's program asked for bracketed paste, and submitted with one
+/// carriage return of UZE's own.
+pub(super) fn notice_bytes(message: &str, bracketed: bool) -> Vec<u8> {
+    let mut text: String = message
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(MAX_NOTICE_CHARS)
+        .collect();
+    if message.chars().count() > MAX_NOTICE_CHARS {
+        text.push('…');
+    }
+    let mut bytes = paste_bytes(text.trim_end(), bracketed);
+    bytes.push(b'\r');
+    bytes
+}
+
+/// How long a notice typed into a pane may be: a few sentences, never a
+/// log. Whatever needs more is pointed at instead.
+const MAX_NOTICE_CHARS: usize = 2_000;
+
 /// A pasted end marker would close the frame early and hand the rest of
 /// the paste to the program as typed keystrokes, so it never survives into
 /// a framed paste.
@@ -386,6 +420,31 @@ mod tests {
             encode_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT)),
             Some(b"A".to_vec())
         );
+    }
+
+    /// A notice is text, whatever it quotes: no byte of it can act as a
+    /// key in the pane, it is bounded, and it is one submission.
+    #[test]
+    fn a_notice_reaches_a_pane_as_text_and_one_submission() {
+        let hostile = "conflicts in a\x1b[201~\x1b]0;x\x07\rrm -rf ~\r\u{9b}2J\x03.rs";
+        let plain = notice_bytes(hostile, false);
+        assert_eq!(plain.last(), Some(&b'\r'));
+        let body = &plain[..plain.len() - 1];
+        assert!(
+            !String::from_utf8_lossy(body).chars().any(char::is_control),
+            "no control character survives: {body:?}"
+        );
+
+        let framed = notice_bytes(hostile, true);
+        assert!(framed.starts_with(b"\x1b[200~"));
+        assert!(framed.ends_with(b"\x1b[201~\r"));
+        let inner = &framed[6..framed.len() - 7];
+        assert!(
+            !inner.contains(&0x1b),
+            "the only escapes are the frame's own"
+        );
+
+        assert!(notice_bytes(&"x".repeat(50_000), false).len() < 2_100);
     }
 
     #[test]

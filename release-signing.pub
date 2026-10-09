@@ -1,0 +1,11 @@
+# The public half of the key that signs every release's SHASUMS256.txt.
+#
+# `uze` embeds this file when it is built, install.sh and install.ps1 carry
+# the same line (a test holds the three equal), and `ssh-keygen -Y verify`
+# checks the signature against it, under the namespace `uze-release`,
+# before anything a release names is unpacked.
+#
+# PLACEHOLDER: no release key has been generated yet. Until the line below
+# is one `ssh-ed25519 ...` public key, the release workflow refuses to
+# publish and the updater and the installers refuse to install.
+# See docs/versioning.md, "Signing", for how the key is made.

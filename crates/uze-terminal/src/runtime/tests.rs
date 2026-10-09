@@ -214,6 +214,7 @@ fn a_server_of_another_build_is_retired_and_lets_go_of_the_workspace() {
 
     retire(
         old.pid(),
+        None,
         &super::transport::scratch_endpoint(&scratch, "test.sock"),
     );
 
@@ -243,7 +244,7 @@ fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
     let mut old = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &uze_home);
     assert!(workspace_is_claimed());
     assert_eq!(
-        super::claim_holder(),
+        super::claim_holder().map(|claimant| claimant.pid),
         Some(old.pid()),
         "the claim names who holds it, which `flock` cannot"
     );
@@ -259,6 +260,98 @@ fn a_server_answering_at_no_endpoint_this_build_names_is_still_stopped() {
     );
     assert!(!old.process.wait().unwrap().success(), "it was ended");
 
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A claim nobody holds still carries the pid of the last server to hold
+/// it, and that pid belongs to whoever the kernel handed it to since —
+/// routinely another `uze`. `stop` with no server answering used to read
+/// the stale record, find a process named `uze` there and signal it.
+#[test]
+fn a_free_claim_names_nobody_to_stop() {
+    let scratch = uze_testkit::temp::socket_scratch("stop-free-claim");
+    let elsewhere = scratch.join("elsewhere");
+    let uze_home = scratch.join("home");
+    for directory in [&elsewhere, &uze_home] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+
+    // A live `uze`, holding a workspace of its own and not this one.
+    let bystander = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &elsewhere);
+    let started = uze_platform::probe::started_at(bystander.pid()).unwrap_or_default();
+    std::fs::create_dir_all(workspace_lock_path().parent().unwrap()).unwrap();
+    std::fs::write(
+        workspace_lock_path(),
+        format!("{} {started}", bystander.pid()),
+    )
+    .unwrap();
+    assert!(!workspace_is_claimed());
+
+    assert_eq!(super::claim_holder(), None, "a free claim names nobody");
+    assert!(
+        !super::stop().expect("nothing running is not a failure"),
+        "and there was nothing to stop"
+    );
+    bystander.release();
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that stopped cleanly leaves no pid behind in the claim for a
+/// later reader to mistake for it.
+#[test]
+fn a_server_withdraws_its_record_when_it_lets_go() {
+    let scratch = uze_testkit::temp::socket_scratch("claim-withdrawn");
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+
+    let claim = WorkspaceLock::acquire().expect("the claim is free");
+    assert!(
+        super::parse_claimant(&std::fs::read_to_string(workspace_lock_path()).unwrap()).is_some()
+    );
+    claim.withdraw();
+    drop(claim);
+    assert_eq!(std::fs::read_to_string(workspace_lock_path()).unwrap(), "");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A held claim whose record names a pid that has since started over —
+/// the number recycled into another `uze` — names nobody either.
+#[test]
+fn a_claimant_is_named_by_its_start_time_as_well_as_its_pid() {
+    let scratch = uze_testkit::temp::socket_scratch("claimant-start");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+
+    let holder = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &uze_home);
+    let recorded = super::parse_claimant(&std::fs::read_to_string(workspace_lock_path()).unwrap())
+        .expect("the holder recorded its pid and when it started");
+    assert_eq!(recorded.pid, holder.pid());
+    assert_eq!(super::claim_holder(), Some(recorded));
+
+    std::fs::write(
+        workspace_lock_path(),
+        format!("{} {}", recorded.pid, recorded.started + 1),
+    )
+    .unwrap();
+    assert_eq!(
+        super::claim_holder(),
+        None,
+        "the same pid started at another moment is another process"
+    );
+    std::fs::write(workspace_lock_path(), format!("{}", recorded.pid)).unwrap();
+    assert_eq!(
+        super::claim_holder(),
+        None,
+        "and a pid alone vouches for nothing"
+    );
+
+    holder.release();
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
@@ -809,6 +902,7 @@ fn only_asking_to_open_a_space_may_create_one() {
                 columns: 80,
                 rows: 24,
                 seating,
+                key: super::server_key(),
             },
         )
         .unwrap();
@@ -888,6 +982,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::Open(seat_at(&elsewhere)),
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -1042,6 +1137,7 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -1369,6 +1465,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -1959,6 +2056,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
             columns: 0,
             rows: 0,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -2058,6 +2156,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
             columns: 0,
             rows: 0,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
         crate::ClientRequest::Select {
             pane,
@@ -2489,6 +2588,7 @@ fn a_process_that_is_not_uze_is_never_signalled() {
     let bystander = ReadyProcess::spawn(Path::new("/bin/sh"));
     retire(
         bystander.pid(),
+        None,
         &super::transport::scratch_endpoint(&scratch, "test.sock"),
     );
 
@@ -2607,11 +2707,16 @@ fn an_asker_is_never_mistaken_for_a_server() {
     let asker = open();
     super::try_lock(&asker, super::LockMode::Shared).expect("an asker takes it shared");
     assert!(!held_by_a_server(&starting).unwrap());
+    // Released on the description rather than by closing it: a fork made
+    // by a test running beside this one holds a copy of every descriptor
+    // until it execs, and a copy keeps a lock that a close would not end.
+    super::unlock(&asker);
     drop(asker);
 
     let server = open();
     super::try_lock(&server, super::LockMode::Exclusive).expect("a server takes it exclusively");
     assert!(held_by_a_server(&starting).unwrap());
+    super::unlock(&server);
     drop(server);
 
     let _ = std::fs::remove_dir_all(&scratch);
@@ -2967,6 +3072,7 @@ fn a_client_is_told_what_the_runtime_could_not_carry() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -3144,6 +3250,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
             columns: 0,
             rows: 0,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -3391,6 +3498,7 @@ fn a_peer_the_server_refuses_is_hung_up_on() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -3535,7 +3643,7 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let mut stream = super::attach(&seat_at(&project)).expect("the client attaches");
 
     assert_eq!(
-        super::claim_holder(),
+        super::claim_holder().map(|claimant| claimant.pid),
         Some(serving.pid()),
         "to the server that was already there, which still holds the workspace"
     );
@@ -3546,6 +3654,7 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
             columns: 80,
             rows: 24,
             seating: crate::Seating::WhereItLeftOff,
+            key: super::server_key(),
         },
     )
     .unwrap();
@@ -3626,6 +3735,7 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
         columns: 200,
         rows: 50,
         seating: crate::Seating::Open(seat_at(Path::new("/some/ordinary/project/path"))),
+        key: super::server_key(),
     })
     .unwrap();
     assert!(
@@ -3767,4 +3877,364 @@ mod windows_panes {
         };
         assert!(ended, "the reader outlived its pane");
     }
+}
+
+/// What a connection was answered, in a word: enough to tell served from
+/// refused without depending on what either says.
+fn first_answer_to(socket: &Path, request: &crate::ClientRequest) -> String {
+    let Ok(mut stream) = super::transport::connect(socket) else {
+        return "unreachable".into();
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    if send_request(&mut stream, request).is_err() {
+        return "unsent".into();
+    }
+    let answer = match read_event(&mut stream) {
+        Ok(Some(crate::ClientEvent::Snapshot { .. })) => "attached".to_owned(),
+        Ok(Some(crate::ClientEvent::Refused { .. })) => "refused".to_owned(),
+        Ok(Some(crate::ClientEvent::Stopped)) => "stopped".to_owned(),
+        Ok(Some(crate::ClientEvent::SpaceOpened { label })) => format!("opened {label}"),
+        Ok(Some(other)) => format!("answered {other:?}"),
+        Ok(None) => "hung up".to_owned(),
+        Err(error) => format!("failed {error}"),
+    };
+    let _ = send_request(&mut stream, &crate::ClientRequest::Detach);
+    answer
+}
+
+fn attach_with(key: String) -> crate::ClientRequest {
+    crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns: 0,
+        rows: 0,
+        seating: crate::Seating::WhereItLeftOff,
+        key,
+    }
+}
+
+/// A server of this test's own, listening at the endpoint its `UZE_HOME`
+/// names.
+fn listening_server(project: &Path) -> (Arc<Server>, PathBuf) {
+    let socket = socket_path().unwrap();
+    let (server, _damage) = Server::new(seat_at(project), socket.clone()).unwrap();
+    let server = Arc::new(server);
+    let listener = bind_endpoint(&socket).unwrap();
+    let accepting = Arc::clone(&server);
+    thread::spawn(move || super::accept_connections(listener, accepting));
+    (server, socket)
+}
+
+/// ADR-056: any process of this user can reach the endpoint, so reaching
+/// it proves nothing. Attaching — every pane's contents, input into every
+/// agent, tabs that run any command — and stopping the runtime take the
+/// key the server wrote for the person's own clients.
+#[test]
+fn a_client_without_the_runtimes_key_is_refused() {
+    let scratch = uze_testkit::temp::socket_scratch("keyed");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+
+    assert_eq!(
+        first_answer_to(&socket, &attach_with(String::new())),
+        "refused"
+    );
+    assert_eq!(
+        first_answer_to(&socket, &attach_with("0".repeat(64))),
+        "refused"
+    );
+    assert_eq!(
+        first_answer_to(
+            &socket,
+            &crate::ClientRequest::Stop {
+                key: "guess".into()
+            }
+        ),
+        "refused"
+    );
+    assert!(
+        !*server.stopped.lock().unwrap(),
+        "a refused stop stops nothing"
+    );
+    assert_eq!(
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        "attached"
+    );
+    assert!(
+        serves_this_build(&socket),
+        "a refusal is still an answer in this build's protocol, never a reason to replace it"
+    );
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// What a probe run inside a pane reports to.
+const PANE_PROBE: &str = "UZE_TERMINAL_TEST_PANE_PROBE";
+
+/// ADR-056: a process inside a pane is classified by the kernel's account
+/// of who connected, not by anything it can say — so reading the key, as
+/// any process of this user can, gets it nothing. It may open a space,
+/// which is what a `uze` typed into a pane does, and is told nothing else.
+// Unix only: the probe waits on the pane with `sleep` after it reports.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn a_process_inside_a_pane_may_open_a_space_and_nothing_else() {
+    let scratch = uze_testkit::temp::socket_scratch("pane-origin");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let elsewhere = scratch.join("elsewhere");
+    for directory in [&uze_home, &project, &elsewhere] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _socket) = listening_server(&project);
+    let report = scratch.join("report");
+
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+    let probe = Launch::Program {
+        argv: vec![
+            std::env::current_exe().unwrap().display().to_string(),
+            "--ignored".into(),
+            "--exact".into(),
+            "--nocapture".into(),
+            "runtime::tests::probes_the_runtime_from_inside_a_pane".into(),
+        ],
+        env: vec![
+            (PANE_PROBE.into(), report.display().to_string()),
+            ("UZE_HOME".into(), uze_home.display().to_string()),
+        ],
+    };
+    server.spawn_pane(pane, probe).unwrap();
+    let answers = read_when_written(&report);
+    let answers: Vec<&str> = answers.lines().collect();
+
+    assert_eq!(answers[0], "refused", "attaching, even with the key");
+    assert_eq!(answers[1], "refused", "stopping, even with the key");
+    assert!(
+        answers[2].starts_with("opened "),
+        "opening a space is served: {answers:?}"
+    );
+    assert!(!*server.stopped.lock().unwrap());
+    assert!(
+        server
+            .session
+            .lock()
+            .expect("session poisoned")
+            .space_for(&seat_at(&elsewhere))
+            .is_some(),
+        "and the space it asked for is there"
+    );
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Not a test of its own: the program a pane runs for the test above.
+#[test]
+#[ignore = "run inside a pane by a_process_inside_a_pane_may_open_a_space_and_nothing_else"]
+fn probes_the_runtime_from_inside_a_pane() {
+    let Some(report) = std::env::var_os(PANE_PROBE).map(PathBuf::from) else {
+        return;
+    };
+    let socket = socket_path().unwrap();
+    let elsewhere = report.parent().unwrap().join("elsewhere");
+    let answers = [
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        first_answer_to(
+            &socket,
+            &crate::ClientRequest::Stop {
+                key: super::server_key(),
+            },
+        ),
+        first_answer_to(
+            &socket,
+            &crate::ClientRequest::OpenSpace {
+                version: crate::PROTOCOL_VERSION,
+                seat: seat_at(&elsewhere),
+            },
+        ),
+    ];
+    let partial = report.with_extension("partial");
+    std::fs::write(&partial, answers.join("\n")).unwrap();
+    std::fs::rename(&partial, &report).unwrap();
+    // Held open until the pane is stopped, so the pane is not replaced
+    // by a shell while the test still reads it.
+    thread::sleep(Duration::from_secs(30));
+}
+
+use std::time::Instant;
+
+/// A peer that opens connections and never says who it is holds a thread
+/// for each until the handshake deadline; past a bound it is turned away
+/// at once, and a client that does say who it is still gets in once those
+/// are gone.
+#[test]
+fn connections_that_never_say_who_they_are_are_bounded() {
+    let scratch = uze_testkit::temp::socket_scratch("unattached");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+
+    let silent: Vec<super::Stream> = (0..super::MAX_UNATTACHED)
+        .map(|_| super::transport::connect(&socket).unwrap())
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server.unattached.load(std::sync::atomic::Ordering::Acquire) < super::MAX_UNATTACHED {
+        assert!(
+            Instant::now() < deadline,
+            "the silent connections were never accepted"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    let turned_away = first_answer_to(&socket, &attach_with(super::server_key()));
+    assert!(
+        turned_away == "hung up" || turned_away.contains("reset"),
+        "one past the bound is closed without being read: {turned_away}"
+    );
+    drop(silent);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server.unattached.load(std::sync::atomic::Ordering::Acquire) > 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the silent connections were never let go"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        "attached"
+    );
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A scroll is a delta the emulator adds before it clamps, so the largest
+/// one a peer can send overflowed inside it — a panic under the pane's
+/// lock, which poisoned the pane for every later request.
+// Unix only: the pane's scrollback is filled by a POSIX shell.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn the_largest_scroll_a_peer_can_send_is_survived() {
+    let scratch = uze_testkit::temp::socket_scratch("scroll-bound");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+    let lines = Launch::Program {
+        argv: vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            "i=0; while [ $i -lt 300 ]; do echo $i; i=$((i+1)); done; exec sleep 30".into(),
+        ],
+        env: Vec::new(),
+    };
+    server.spawn_pane(pane, lines).unwrap();
+    let runtime = server.runtime(pane).expect("the pane runs");
+    use alacritty_terminal::grid::Dimensions;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while runtime.terminal.lock().unwrap().grid().history_size() < 100 {
+        assert!(
+            Instant::now() < deadline,
+            "the pane never filled its scrollback"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    // Off the live end, so the next delta is added to an offset above zero.
+    runtime.scroll(1);
+
+    runtime.scroll(i32::MAX);
+    runtime.scroll(i32::MIN);
+    runtime.scroll(i32::MAX);
+    assert!(
+        runtime.terminal.lock().is_ok(),
+        "the pane is still usable after the largest scrolls"
+    );
+
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server this client started is waited on for as long as it is alive and
+/// has yet to bind, not for the two seconds a server already running gets:
+/// it opens its panes first, which on a loaded machine outlasts any clock.
+// Unix only: the stand-in for a starting server is `sleep`.
+#[cfg(unix)]
+#[test]
+fn a_server_still_starting_is_waited_on_past_the_running_one_s_budget() {
+    let scratch = uze_testkit::temp::socket_scratch("starting");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "starting.sock");
+    let mut starting = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let late = super::READY_WITHIN + Duration::from_secs(1);
+    let binding = socket.clone();
+    let listener = thread::spawn(move || {
+        thread::sleep(late);
+        super::transport::bind(&binding).unwrap()
+    });
+
+    let connected = super::process::connect_starting(&socket, &mut starting);
+
+    assert!(connected.is_ok(), "{:?}", connected.err());
+    let _listener = listener.join().unwrap();
+    let _ = starting.kill();
+    let _ = starting.wait();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that exits before binding lost the claim to another one, and
+/// the client waits for that one as for any running server, not for the
+/// whole of a start.
+// Unix only: the stand-in for a server that exits at once is `true`.
+#[cfg(unix)]
+#[test]
+fn a_server_that_exits_before_binding_is_not_waited_on() {
+    let scratch = uze_testkit::temp::socket_scratch("exited");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "exited.sock");
+    let mut exited = std::process::Command::new("true").spawn().unwrap();
+    let _ = exited.wait();
+    let started = Instant::now();
+
+    let connected = super::process::connect_starting(&socket, &mut exited);
+
+    assert!(connected.is_err());
+    assert!(
+        started.elapsed() < super::process::STARTING_WITHIN / 2,
+        "waited {:?}",
+        started.elapsed()
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
 }

@@ -1175,6 +1175,16 @@ mod task_service_tests {
         .unwrap();
     }
 
+    /// Approves the commands the project declares, as the operator would
+    /// after reading them.
+    fn approved(app: &UzeApplication, root: &Path) {
+        let awaiting = app
+            .workspace()
+            .commands_awaiting_approval(root)
+            .expect("the project declares commands to approve");
+        app.workspace().approve_commands(&awaiting).unwrap();
+    }
+
     fn launched(app: &UzeApplication, root: &Path) -> (String, PathBuf) {
         let placement = app
             .workspace()
@@ -1618,6 +1628,7 @@ mod task_service_tests {
         );
         let root = repository.root().to_path_buf();
         let app = application("svc-gate-home");
+        approved(&app, &root);
         let (id, slot) = launched(&app, &root);
         agent_commits(&repository, &slot, "a.rs", "");
         app.workspace().evaluate_tasks(&root, &[]);
@@ -1634,6 +1645,102 @@ mod task_service_tests {
         app.workspace().evaluate_tasks(&root, &[]);
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert_eq!(report.outcome, DeliveryOutcome::Merged);
+    }
+
+    /// A cloned repository's gate is somebody else's shell line: delivery
+    /// waits for the operator to approve it, leaves the task as it was
+    /// while it waits, and goes through once the lines are approved.
+    #[test]
+    fn an_unapproved_gate_asks_for_approval_and_changes_nothing() {
+        let repository = repository("svc-gate-unapproved");
+        let witness = uze_testkit::temp::scratch("svc-gate-unapproved-witness").join("ran");
+        declare(
+            &repository,
+            &format!(
+                "  delivery: merge\n  gate:\n    posix: touch {path}\n    \
+                 windows: New-Item {path} -ItemType File\n",
+                path = witness.display()
+            ),
+        );
+        let root = repository.root().to_path_buf();
+        let app = application("svc-gate-unapproved-home");
+        let (id, slot) = launched(&app, &root);
+        agent_commits(&repository, &slot, "a.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
+        let target_before = repository.head();
+
+        let report = app.workspace().deliver_task(&root, &id).unwrap();
+        let DeliveryOutcome::AwaitingApproval(awaiting) = &report.outcome else {
+            panic!("{:?}", report.outcome);
+        };
+        assert!(!witness.exists(), "the gate never ran");
+        assert_eq!(state_of(&app, &root, &id), WorkStateView::Ready);
+        assert_eq!(repository.head(), target_before);
+        assert_eq!(awaiting.commands.len(), 1);
+        assert_eq!(
+            awaiting.commands[0].step,
+            uze_workspace::worktree::PolicyStep::Gate
+        );
+
+        app.workspace().approve_commands(awaiting).unwrap();
+        let report = app.workspace().deliver_task(&root, &id).unwrap();
+        assert_eq!(report.outcome, DeliveryOutcome::Merged);
+        assert!(witness.exists(), "the approved gate ran");
+    }
+
+    /// The same for setup: the checkout is placed without it, the
+    /// placement carries the question, and answering it prepares the
+    /// checkout that went without.
+    #[test]
+    fn an_unapproved_setup_waits_and_approving_it_prepares_the_checkout() {
+        let repository = repository("svc-setup-unapproved");
+        declare(
+            &repository,
+            "  setup:\n    posix: touch prepared\n    \
+             windows: New-Item prepared -ItemType File\n",
+        );
+        let root = repository.root().to_path_buf();
+        let app = application("svc-setup-unapproved-home");
+
+        let placement = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
+            .unwrap();
+        assert!(!placement.cwd.join("prepared").exists(), "setup never ran");
+        let awaiting = placement
+            .awaiting_approval
+            .clone()
+            .expect("the placement carries the question");
+        assert_eq!(awaiting.checkout.as_deref(), Some(placement.cwd.as_path()));
+        assert!(
+            placement
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("approval")),
+            "{:?}",
+            placement.warnings
+        );
+
+        let warnings = app.workspace().approve_commands(&awaiting).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(
+            placement.cwd.join("prepared").is_file(),
+            "setup ran on approval"
+        );
+        assert!(app.workspace().commands_awaiting_approval(&root).is_none());
+
+        std::fs::write(
+            root.join("agents.yaml"),
+            "workspace:\n  setup:\n    posix: touch prepared && touch more\n    \
+             windows: New-Item prepared, more -ItemType File -Force\n",
+        )
+        .unwrap();
+        assert!(
+            app.workspace()
+                .commands_awaiting_approval(&root)
+                .is_some_and(|awaiting| awaiting.changed),
+            "an edited command waits again"
+        );
     }
 
     #[test]
@@ -1918,6 +2025,7 @@ mod task_service_tests {
         );
         let root = repository.root().to_path_buf();
         let app = application("svc-lock-launch-home");
+        approved(&app, &root);
 
         let placement = app
             .workspace()
@@ -2099,6 +2207,7 @@ mod task_service_tests {
                 directory.display()
             ),
         );
+        approved(&app, &root);
         let (id, slot) = launched(&app, &root);
         agent_commits(&repository, &slot, "work.rs", "");
         app.workspace().evaluate_tasks(&root, &[]);
@@ -2150,6 +2259,7 @@ mod task_service_tests {
         );
         let root = repository.root().to_path_buf();
         let app = application("svc-slow-gate-home");
+        approved(&app, &root);
         let home = app.home.clone();
         let (id, slot) = launched(&app, &root);
         agent_commits(&repository, &slot, "work.rs", "");
@@ -2316,6 +2426,7 @@ mod naming_tests {
     /// An agent placed in a slot: what its launch claims, and its checkout.
     pub(super) struct Placed {
         pub(super) id: String,
+        pub(super) key: String,
         pub(super) checkout: PathBuf,
     }
 
@@ -2323,24 +2434,27 @@ mod naming_tests {
         pub(super) fn claim(&self) -> Claim<'_> {
             Claim {
                 id: &self.id,
+                key: &self.key,
                 cwd: &self.checkout,
             }
         }
 
         fn claim_in<'a>(&'a self, cwd: &'a Path) -> Claim<'a> {
-            Claim { id: &self.id, cwd }
+            Claim {
+                id: &self.id,
+                key: &self.key,
+                cwd,
+            }
         }
     }
 
     pub(super) fn placed(app: &UzeApplication, root: &Path) -> Placed {
-        let id = app
+        let placement = app
             .workspace()
             .place_new_agent(root, Some(PlacementKind::Isolated), "claude-code", &[])
-            .unwrap()
-            .placement
-            .agent()
-            .as_str()
-            .to_owned();
+            .unwrap();
+        let key = placement.launch_key.clone();
+        let id = placement.placement.agent().as_str().to_owned();
         let checkout = app
             .workspace()
             .tasks(root)
@@ -2348,7 +2462,7 @@ mod naming_tests {
             .find(|task| task.id == id)
             .and_then(|task| task.checkout)
             .expect("the placed agent has a checkout");
-        Placed { id, checkout }
+        Placed { id, key, checkout }
     }
 
     fn branch_of(checkout: &Path) -> String {
@@ -2414,15 +2528,30 @@ mod naming_tests {
     fn a_process_that_is_not_the_agent_has_nothing_to_name() {
         let (app, repository) = naming_project("naming-primary");
         let root = repository.root().to_path_buf();
+        let other = placed(&app, &root);
         let placed = placed(&app, &root);
         let before = branch_of(&placed.checkout);
 
         let refusals = [
             Claim {
                 id: "nobody",
+                key: &placed.key,
                 cwd: &placed.checkout,
             },
             placed.claim_in(&root),
+            // Another agent's identifier, standing in that agent's own
+            // checkout — both of which any process may set — without the
+            // key that agent's launch was issued.
+            Claim {
+                id: &other.id,
+                key: &placed.key,
+                cwd: &other.checkout,
+            },
+            Claim {
+                id: &placed.id,
+                key: "",
+                cwd: &placed.checkout,
+            },
         ];
         for claim in refusals {
             let error = app
@@ -2433,6 +2562,10 @@ mod naming_tests {
             assert!(error.contains("not an agent UZE launched"), "{error}");
         }
         assert_eq!(branch_of(&placed.checkout), before, "nothing was renamed");
+        assert!(
+            branch_of(&other.checkout).starts_with("agent/"),
+            "least of all the other agent's branch"
+        );
         assert_eq!(branch_of(&root), "main", "and never the operator's branch");
     }
 
@@ -2453,6 +2586,7 @@ mod naming_tests {
             .name_task(
                 Claim {
                     id: &id,
+                    key: &placed.launch_key,
                     cwd: &placed.cwd,
                 },
                 "fix/in-place",
@@ -2488,6 +2622,7 @@ mod naming_tests {
             .name_task(
                 Claim {
                     id: &id,
+                    key: &placed.launch_key,
                     cwd: &placed.cwd,
                 },
                 "fix/not-mine",
@@ -2598,6 +2733,26 @@ mod naming_tests {
 
         assert!(error.contains("already exists"), "{error}");
         assert_eq!(branch_of(&checkout), before);
+    }
+
+    /// A name only a remote carries is a colleague's branch the next fetch
+    /// brings in; taking it would publish this work on top of theirs.
+    #[test]
+    fn a_name_only_the_remote_carries_is_refused() {
+        let (app, repository) = naming_project("naming-remote-collision");
+        repository.with_origin("main");
+        repository.git(&["update-ref", "refs/remotes/origin/fix/theirs", "HEAD"]);
+        let placed = placed(&app, repository.root());
+        let before = branch_of(&placed.checkout);
+
+        let error = app
+            .workspace()
+            .name_task(placed.claim(), "fix/theirs")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("on its remote"), "{error}");
+        assert_eq!(branch_of(&placed.checkout), before);
     }
 
     /// A project that declares no vocabulary keeps exactly the behaviour it

@@ -7,6 +7,7 @@
 
 mod agent_surface;
 mod canonical_package;
+mod command_approval;
 mod engine;
 mod fresh_project;
 mod lifecycle;

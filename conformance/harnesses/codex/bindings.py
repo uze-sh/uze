@@ -5,6 +5,8 @@ import shlex
 import subprocess
 import time
 
+import pexpect
+
 from contract import continuity
 from contract.bindings import Bindings, hook_prelude
 from contract.tui import Tui
@@ -127,6 +129,43 @@ set +e
 timeout 240 codex exec {shlex.quote(prompt)} 2>&1
 """
         return codex_container(cfg, prov_ip, final, plugins=plugins, tty=False)
+
+    #: Printed once the person's own session in the project has ended, so
+    #: the driver knows the next key would reach the shell, not Codex.
+    PROJECT_OPENED = "UZE_LAB_CODEX_PROJECT_OPENED"
+
+    def project_turn(self, cfg, prov_ip, prelude, prompt, cwd, delegating=False):
+        """Codex reads a project's own agents only in a folder the person
+        trusted, and asks on the first interactive launch there; `codex
+        exec` never asks. So the person opens the project once through the
+        launcher, answers the folder trust on screen (`prepare`, the hook
+        review included), leaves, and the headless turn runs in the same
+        home afterwards."""
+        final = f"""{prelude}
+cd {cwd}
+set +e
+codex
+echo {self.PROJECT_OPENED}
+timeout 240 codex exec {shlex.quote(prompt)} 2>&1
+"""
+        tui = Tui(cfg, codex_container(cfg, prov_ip, final), "codex-project")
+        output = ""
+        try:
+            output, _ = self.prepare(tui)
+            for key in self.exit_keys + self.exit_keys:
+                tui.child.send(key)
+                index = tui.child.expect(
+                    [self.PROJECT_OPENED, pexpect.EOF, pexpect.TIMEOUT], timeout=15
+                )
+                output += tui.child.before or ""
+                if index != 2:
+                    break
+            tui.child.expect(pexpect.EOF, timeout=420)
+            return output + (tui.child.before or "")
+        except pexpect.TIMEOUT:
+            return output + (tui.child.before or "")
+        finally:
+            tui.close()
 
     def dispatch(self, label, prompt):
         """Codex 0.158 dispatches with `spawn_agent` in its `collaboration`

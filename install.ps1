@@ -3,8 +3,10 @@
 #   irm https://uze.sh/i | iex
 #
 # Downloads the prebuilt `uze.exe` for this machine from GitHub Releases,
-# verifies its SHA-256 checksum, installs it into the user's programs
-# directory and puts that directory on the user's Path. Windows PowerShell
+# verifies the release's signature over its checksums (with the OpenSSH
+# client Windows ships) and the archive's SHA-256 checksum, installs it
+# into the user's programs directory and puts that directory on the user's
+# Path. Windows PowerShell
 # 5.1 or PowerShell 7; Windows 10 22H2 or Windows 11, x64 and ARM64.
 #
 # Uninstall (the binary, its Path entry, the harness launchers, and the
@@ -40,6 +42,12 @@ param(
     $ProgressPreference = 'SilentlyContinue'
 
     $DefaultBaseUrl = 'https://github.com/uze-sh/uze/releases'
+    # The public key every release's SHASUMS256.txt is signed with: the key
+    # line of `release-signing.pub`, which a test holds equal to this one.
+    # Empty until the first release key exists, and an empty key installs
+    # nothing.
+    $ReleaseKey = ''
+    $SignatureNamespace = 'uze-release'
     $BuildFloor = 19045
 
     # --- presentation ---------------------------------------------------------
@@ -190,6 +198,15 @@ public static extern IntPtr SendMessageTimeout(
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
         throw 'uze needs Git: install it first (winget install Git.Git) and open a new terminal'
     }
+    if (-not $ReleaseKey) {
+        throw 'this installer carries no release signing key, so it cannot verify a release'
+    }
+    # Windows' own OpenSSH client, by the system directory the kernel
+    # names rather than by Path or by an environment variable.
+    $sshKeygen = Join-Path ([Environment]::SystemDirectory) 'OpenSSH\ssh-keygen.exe'
+    if (-not (Test-Path -LiteralPath $sshKeygen)) {
+        throw "uze needs the OpenSSH client to verify a release: $sshKeygen is missing (Settings, Optional features, OpenSSH Client)"
+    }
     $archive = "uze-$arch-windows.zip"
 
     # --- download -------------------------------------------------------------
@@ -221,8 +238,51 @@ public static extern IntPtr SendMessageTimeout(
         }
 
         Step "Downloading $archive" "Downloaded $archive" {
-            Get-ReleaseFile "$baseUrl/$releasePath/$archive" (Join-Path $scratch $archive)
-            Get-ReleaseFile "$baseUrl/$releasePath/SHASUMS256.txt" (Join-Path $scratch 'SHASUMS256.txt')
+            foreach ($file in @($archive, 'SHASUMS256.txt', 'SHASUMS256.txt.sig')) {
+                Get-ReleaseFile "$baseUrl/$releasePath/$file" (Join-Path $scratch $file)
+            }
+        }
+
+        # The checksums are only as trustworthy as whoever could publish
+        # them: the signature is what says the release is uze's. The bytes
+        # are handed to ssh-keygen as they are, never through a PowerShell
+        # pipeline, which would re-encode them.
+        Step 'Verifying the release signature' 'Release signature verified' {
+            $signers = Join-Path $scratch 'allowed_signers'
+            [IO.File]::WriteAllText($signers,
+                "$SignatureNamespace namespaces=`"$SignatureNamespace`" $ReleaseKey`n",
+                (New-Object Text.UTF8Encoding $false))
+            $start = New-Object Diagnostics.ProcessStartInfo $sshKeygen
+            $start.Arguments = "-Y verify -f `"$signers`" -I $SignatureNamespace -n $SignatureNamespace -s `"$(Join-Path $scratch 'SHASUMS256.txt.sig')`""
+            $start.UseShellExecute = $false
+            $start.RedirectStandardInput = $true
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            # Windows PowerShell opens the child's stdin as a writer in the
+            # console's input encoding and flushes that encoding's preamble
+            # as it starts: under code page 65001 the message would reach
+            # ssh-keygen with a BOM after it and never verify. A preamble-free
+            # encoding for the length of the start, then the person's back.
+            $consoleInput = $null
+            try {
+                $consoleInput = [Console]::InputEncoding
+                [Console]::InputEncoding = New-Object Text.UTF8Encoding $false
+            } catch { $consoleInput = $null }
+            try {
+                $verifier = [Diagnostics.Process]::Start($start)
+            } finally {
+                if ($consoleInput) { [Console]::InputEncoding = $consoleInput }
+            }
+            $sums = [IO.File]::ReadAllBytes((Join-Path $scratch 'SHASUMS256.txt'))
+            $verifier.StandardInput.BaseStream.Write($sums, 0, $sums.Length)
+            $verifier.StandardInput.Close()
+            $errors = $verifier.StandardError.ReadToEndAsync()
+            [void]$verifier.StandardOutput.ReadToEnd()
+            $verifier.WaitForExit()
+            $reason = $errors.Result.Trim()
+            if ($verifier.ExitCode -ne 0) {
+                throw "SHASUMS256.txt is not signed by the uze release key ($reason)"
+            }
         }
 
         Step 'Verifying checksum' 'Checksum verified' {

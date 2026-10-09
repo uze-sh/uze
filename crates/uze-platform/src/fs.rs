@@ -16,7 +16,11 @@ pub const NULL_DEVICE: &str = "NUL";
 
 /// Creates `directory` (and its parents) so that only this user can enter
 /// it: mode `0700` on Unix; on Windows a protected ACL granting this user
-/// alone, which what is created inside inherits.
+/// alone, which what is created inside inherits. A `directory` that is
+/// already there is narrowed to its owner: what it lets other users do is
+/// taken away, and what it lets the owner do is left as it is. One a
+/// permissive umask or an older build made is otherwise private in name
+/// only.
 pub fn create_private_dir_all(directory: &Path) -> io::Result<()> {
     imp::create_private_dir(directory, true)
 }
@@ -40,6 +44,14 @@ pub fn private_file(options: &mut OpenOptions) -> &mut OpenOptions {
 /// replaced had.
 pub fn restrict_to_owner(path: &Path) -> io::Result<()> {
     imp::restrict_to_owner(path)
+}
+
+/// Whether `path` belongs to this user or to the machine's administrator
+/// (`root`; the Administrators group on Windows), who can already change
+/// anything this user can. A file anybody else wrote is not one to act on
+/// as though this user had.
+pub fn owned_by_user_or_administrator(path: &Path) -> io::Result<bool> {
+    imp::owned_by_user_or_administrator(path)
 }
 
 /// Opens `path` for reading without ever blocking on it: a FIFO planted
@@ -140,6 +152,16 @@ mod imp {
 
     pub(super) fn create_private_dir(directory: &Path, recursive: bool) -> io::Result<()> {
         if recursive && directory.is_dir() {
+            use std::os::unix::fs::PermissionsExt;
+            // Only what reaches other users is taken away: the owner's own
+            // bits are the owner's, a read-only directory among them.
+            let mode = std::fs::metadata(directory)?.mode() & 0o7777;
+            if mode & 0o077 != 0 {
+                std::fs::set_permissions(
+                    directory,
+                    std::fs::Permissions::from_mode(mode & !0o077),
+                )?;
+            }
             return Ok(());
         }
         DirBuilder::new()
@@ -155,6 +177,13 @@ mod imp {
     pub(super) fn restrict_to_owner(path: &Path) -> io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    }
+
+    pub(super) fn owned_by_user_or_administrator(path: &Path) -> io::Result<bool> {
+        let owner = std::fs::metadata(path)?.uid();
+        // SAFETY: getuid cannot fail and touches no memory.
+        let user = unsafe { libc::getuid() };
+        Ok(owner == user || owner == 0)
     }
 
     pub(super) fn open_without_blocking(path: &Path) -> io::Result<File> {
@@ -316,6 +345,60 @@ mod imp {
             return Err(io::Error::last_os_error());
         }
         Ok(())
+    }
+
+    /// The well-known SID of the built-in Administrators group, which owns
+    /// what an elevated token creates.
+    const ADMINISTRATORS: &str = "S-1-5-32-544";
+
+    pub(super) fn owned_by_user_or_administrator(path: &Path) -> io::Result<bool> {
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::{
+                Authorization::{ConvertSidToStringSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT},
+                OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+            },
+        };
+        let target = crate::win::wide(path.as_os_str());
+        let mut owner: PSID = std::ptr::null_mut();
+        let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+        // SAFETY: `target` is NUL-terminated; `owner` points into
+        // `descriptor`, which is freed with LocalFree below.
+        let status = unsafe {
+            GetNamedSecurityInfoW(
+                target.as_ptr(),
+                SE_FILE_OBJECT,
+                OWNER_SECURITY_INFORMATION,
+                &mut owner,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut descriptor,
+            )
+        };
+        if status != 0 {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
+        let mut text: *mut u16 = std::ptr::null_mut();
+        // SAFETY: `owner` is valid while `descriptor` is; `text` is freed
+        // with LocalFree below.
+        let converted = unsafe { ConvertSidToStringSidW(owner, &mut text) };
+        let sid = (converted != 0).then(|| {
+            // SAFETY: a NUL-terminated wide string from the conversion.
+            unsafe {
+                let len = (0..).take_while(|&i| *text.add(i) != 0).count();
+                String::from_utf16_lossy(std::slice::from_raw_parts(text, len))
+            }
+        });
+        // SAFETY: both were allocated by the calls above with LocalAlloc.
+        unsafe {
+            if !text.is_null() {
+                LocalFree(text.cast());
+            }
+            LocalFree(descriptor);
+        }
+        let sid = sid.ok_or_else(io::Error::last_os_error)?;
+        Ok(sid == ADMINISTRATORS || sid == crate::process::current_user()?)
     }
 
     pub(super) fn open_without_blocking(path: &Path) -> io::Result<File> {
@@ -567,6 +650,20 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What this user just wrote is theirs; the filesystem root, owned by
+    /// the administrator, counts as trusted too.
+    #[test]
+    fn a_file_this_user_wrote_is_owned_by_them() {
+        let root = uze_testkit::temp::scratch("platform-owned");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("mine");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(owned_by_user_or_administrator(&file).unwrap());
+        assert!(owned_by_user_or_administrator(&root).unwrap());
+        assert!(owned_by_user_or_administrator(&root.join("absent")).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     /// A private directory is still this user's to use: what is created in
     /// it, and a file narrowed to its owner, read back.

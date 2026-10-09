@@ -15,6 +15,8 @@ uze-platform = { path = "../uze-platform" }
 sha2 = "0.11"
 tracing = "0.1"
 uze-core = { path = "../uze-core" }
+# The repository a project sits in, which Codex resolves its trust through.
+uze-git = { path = "../uze-git" }
 # `preserve_order` backs `Value`'s maps with an IndexMap instead of a
 # BTreeMap. Every JSON config UZE merges into is a file the *user* owns and
 # organised; without it a read-modify-write re-emits their whole document

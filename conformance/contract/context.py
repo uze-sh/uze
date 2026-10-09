@@ -232,20 +232,17 @@ def checkout_status(output):
 
 def authored_turn(cfg, bindings, evidence):
     """One headless turn in the project that authored its `.agents/`,
-    launched through UZE's launcher. Returns the context markers the model
+    launched through UZE's launcher, in a project the person has opened
+    once (`project_turn`). Returns the context markers the model
     requests carried and the container's output; the output is kept as
     `<evidence>.out`. The turn is a delegating one, so a harness that offers
     agents only to a dispatcher offers the project's here."""
     prov_ip = start_provider(cfg, "static")
     prompt = f"{CONTEXT_PROBE} which notes does this project keep?"
     prelude = _authored_prelude(bindings.launcher_name())
-    cmd = bindings.headless(
+    output = bindings.project_turn(
         cfg, prov_ip, prelude, prompt, AUTHORED_PROJECT, delegating=True
     )
-    proc = subprocess.run(
-        cmd, capture_output=True, text=True, errors="replace", timeout=480
-    )
-    output = proc.stdout + proc.stderr
     with open(os.path.join(cfg.outdir, f"{evidence}.out"), "w") as f:
         f.write(output)
     return observed_markers(provider_struct(cfg), "context_markers"), output

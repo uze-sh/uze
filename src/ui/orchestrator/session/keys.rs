@@ -22,6 +22,10 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
+        if self.model.approval.is_some() {
+            scopes.push(Scope::Confirm);
+            return scopes;
+        }
         let surface = if self.model.support_dropdown.is_some() {
             Scope::AgentDrawer
         } else if self.model.root_picker.is_some() {
@@ -125,7 +129,10 @@ impl Attach<'_> {
     /// pane's; with a picker or a menu open it dismisses, which is that
     /// surface's own "anything else means no".
     pub(super) fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
-        if self.model.action_index.is_some() {
+        if self.model.approval.is_some() {
+            // Nothing the question did not ask for reaches anything: not
+            // the pane behind it, and not an answer.
+        } else if self.model.action_index.is_some() {
             self.model.action_index = None;
             self.model.dirty = true;
         } else if self.model.support_dropdown.is_some() {
@@ -244,6 +251,10 @@ impl Attach<'_> {
                 Outcome::OpenLink(url) => crate::ui::worker::open_link(url, |_, _| {}),
             }
             self.model.dirty = true;
+            return Flow::Continue;
+        }
+        if self.model.approval.is_some() {
+            self.approval_action(action);
             return Flow::Continue;
         }
         if self.model.support_dropdown.is_some() {

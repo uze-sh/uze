@@ -20,6 +20,7 @@ passes for the wrong reason — the harness would simply start a second
 conversation and the earlier turn would be absent.
 """
 
+import hashlib
 import time
 
 from shared.common import check, describe, provider_struct
@@ -36,6 +37,12 @@ SLOT = f"{PROJECT}/.worktrees/{SLOT_NAME}"
 #: `uze_terminal::launch::AGENT_IDENTITY_VARIABLE`, spelled here because
 #: the scene composes the launch the way the workspace client does.
 AGENT_IDENTITY_VARIABLE = "UZE_AGENT"
+#: `uze_terminal::launch::AGENT_KEY_VARIABLE`: the identity alone owns no
+#: conversation, so the relaunch carries the key the seeded record's digest
+#: names, as a launch the workspace composed would.
+AGENT_KEY_VARIABLE = "UZE_AGENT_KEY"
+LAUNCH_KEY = "uze-lab-continuity-key"
+LAUNCH_KEY_DIGEST = "sha256:" + hashlib.sha256(LAUNCH_KEY.encode()).hexdigest()
 
 #: Sentinels only one turn each carries. The proof is one model request
 #: holding both: the second process's own turn, and the first process's turn
@@ -101,6 +108,7 @@ cat > {records}/agents.json <<'UZE_EOF'
       "created_at_unix": 1,
       "ended_at_unix": null,
       "state": {{ "state": "running" }},
+      "launch_key": "{LAUNCH_KEY_DIGEST}",
       "isolation": {{
         "base": {{ "kind": "ref", "value": "main" }},
         "base_commit": "",
@@ -151,7 +159,10 @@ def relaunch_command(harness, args=""):
     identity with no owner yet is exactly what a launch UZE composed looks
     like to the first shim that reads it.
     """
-    run = f"{AGENT_IDENTITY_VARIABLE}={SLOT_NAME} {launcher(harness)} {args}".strip()
+    run = (
+        f"{AGENT_IDENTITY_VARIABLE}={SLOT_NAME} {AGENT_KEY_VARIABLE}={LAUNCH_KEY} "
+        f"{launcher(harness)} {args}"
+    ).strip()
     return f"{run}; printf '\\n{ENDED_MARKER}\\n'; {run}"
 
 

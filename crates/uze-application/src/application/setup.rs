@@ -121,6 +121,7 @@ impl UzeApplication {
             None,
             &trust::NoTrustAuthority,
             &uze_core::naming::NoNameCollisionAuthority,
+            trust::SourceOrigin::Operator,
         ) {
             Ok(_) => Ok(true),
             Err(error) => {

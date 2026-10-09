@@ -54,7 +54,7 @@ use crate::hooks::HookEntry;
 use crate::shared::agent::{
     MarkdownAgent, agent_file_plan, agent_label, delivered_agent, markdown_agent, projection_route,
 };
-use crate::shared::dialect::{AgentDialect, Shape, agent_block};
+use crate::shared::dialect::{AgentDialect, Shape, agent_block, withheld};
 use crate::shared::marketplace;
 use crate::shared::mcp::McpEntry;
 use crate::shared::process::{VersionToken, detect_version, real_executable};
@@ -404,10 +404,7 @@ impl IntegrationPort for ClaudeIntegration {
             return None;
         }
         let document = AgentDocument::parse(&resource.capability.payload)?;
-        let ignored: Vec<&str> = ["permissionMode", "hooks", "mcpServers", "initialPrompt"]
-            .into_iter()
-            .filter(|field| document.frontmatter.contains_key(field))
-            .collect();
+        let ignored = plugin_agent_ignored(&document, &self.harness_keys());
         (!ignored.is_empty()).then(|| {
             (
                 CompatibilityRoute::Degraded,
@@ -595,13 +592,23 @@ impl IntegrationPort for ClaudeIntegration {
     }
 }
 
-/// A Claude user agent outside a plugin: named by its frontmatter `name`,
-/// which becomes the label, and keeping every authored field — Claude's
-/// format is the canonical one.
+/// What Claude Code ignores on an agent a plugin ships (plugin components
+/// reference, "Ignored fields"): each would let the agent's author widen
+/// what Claude lets it do, which only the operator grants.
+const PLUGIN_AGENT_IGNORED: [&str; 4] = ["permissionMode", "hooks", "mcpServers", "initialPrompt"];
+
+const PLUGIN_AGENT_IGNORED_REASON: &str = "Claude Code ignores it on an agent a plugin ships, and \
+     UZE delivers a plugin's agent under the same rule wherever it lands";
+
+/// A plugin's agent delivered outside the plugin, as a Claude user agent:
+/// named by its frontmatter `name`, which becomes the label, and keeping
+/// every authored field but those Claude ignores on a plugin's agent.
+/// Claude would honour them in a user agent, so a plugin could otherwise
+/// grant itself, by being delivered loose, what its envelope denies it.
 const CLAUDE_USER_AGENT: MarkdownAgent = MarkdownAgent {
     name_in_frontmatter: true,
     set: &[],
-    keep: |_| true,
+    keep: |field| !PLUGIN_AGENT_IGNORED.contains(&field),
     dialect: &CLAUDE_AGENT_DIALECT,
 };
 
@@ -616,28 +623,50 @@ pub(crate) const CLAUDE_AGENT_DIALECT: AgentDialect = AgentDialect {
         ("color", Shape::Text),
         (
             "permissionMode",
-            Shape::OneOf(&["default", "acceptEdits", "plan", "bypassPermissions"]),
+            Shape::Withheld(PLUGIN_AGENT_IGNORED_REASON),
+        ),
+        ("hooks", Shape::Withheld(PLUGIN_AGENT_IGNORED_REASON)),
+        ("mcpServers", Shape::Withheld(PLUGIN_AGENT_IGNORED_REASON)),
+        (
+            "initialPrompt",
+            Shape::Withheld(PLUGIN_AGENT_IGNORED_REASON),
         ),
     ],
     carries_unknown: true,
 };
 
+/// The authored fields a plugin's agent does not carry, at the root and in
+/// its `harness.claude-code` block.
+fn plugin_agent_ignored(document: &AgentDocument, keys: &[&str]) -> Vec<String> {
+    PLUGIN_AGENT_IGNORED
+        .into_iter()
+        .filter(|field| document.frontmatter.contains_key(field))
+        .map(str::to_owned)
+        .chain(withheld(&CLAUDE_AGENT_DIALECT, keys, document))
+        .collect()
+}
+
 impl ClaudeIntegration {
     /// Only reached when the package is not delivered as a plugin: Claude
     /// names a user agent after its frontmatter `name`, so the generated
-    /// definition is named with the label and keeps every other field,
-    /// Claude's own format being the canonical one.
+    /// definition is named with the label and keeps every other field
+    /// a plugin's agent may hold, Claude's own format being the canonical
+    /// one.
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
+        let keys = self.harness_keys();
+        let not_carried = AgentDocument::parse(&resource.capability.payload)
+            .map(|document| plugin_agent_ignored(&document, &keys))
+            .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT, &self.harness_keys());
+        let content = markdown_agent(&label, resource, &CLAUDE_USER_AGENT, &keys);
         agent_file_plan(
             &self.agents_dir,
             &label,
             "md",
             content,
             projection_route(
-                "Claude Code natively discovers Markdown subagents from its user agents directory; outside a plugin UZE writes the definition there under the agent's label, receipt-owned by its content.",
-                &[],
+                "Claude Code natively discovers Markdown subagents from its user agents directory; outside a plugin UZE writes the definition there under the agent's label, receipt-owned by its content, without the fields Claude ignores on a plugin's agent (permissionMode, hooks, mcpServers, initialPrompt), since a user agent would honour them.",
+                &not_carried,
             ),
         )
     }

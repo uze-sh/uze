@@ -40,6 +40,8 @@ struct Engine {
     stream: Stream,
     reader: Stream,
     session: Option<Session>,
+    /// The key each launched agent's placement issued, by agent.
+    launch_keys: std::collections::BTreeMap<String, String>,
     _guard: ProcessEnvGuard<'static>,
 }
 
@@ -103,6 +105,7 @@ impl Engine {
             stream,
             reader,
             session: None,
+            launch_keys: std::collections::BTreeMap::new(),
             _guard: guard,
         };
         engine.wait_for_session();
@@ -194,13 +197,21 @@ impl Engine {
                 // The launch carries the agent's identity, as the client's
                 // does: what the sweep reads back to know the task is still
                 // somebody's.
-                env: vec![(
-                    uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-                    task.as_str().to_owned(),
-                )],
+                env: vec![
+                    (
+                        uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+                        task.as_str().to_owned(),
+                    ),
+                    (
+                        uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
+                        placement.launch_key.clone(),
+                    ),
+                ],
             },
         )
         .unwrap();
+        self.launch_keys
+            .insert(task.as_str().to_owned(), placement.launch_key.clone());
         self.wait_for_tab_in(&slot);
         wait_until("the agent played its script", || started.exists());
         (task.as_str().to_owned(), slot)
@@ -369,6 +380,7 @@ fn connect(project: &Path) -> (Stream, Stream) {
             seating: uze_terminal::Seating::Open(uze_terminal::SpaceSeat {
                 root: project.to_path_buf(),
             }),
+            key: uze_terminal::server_key(),
         },
     )
     .unwrap();
@@ -406,6 +418,17 @@ fn three_agents_deliver_into_a_linear_target_around_the_operators_edits() {
          windows: \"if (-not (Test-Path README.md)) { exit 1 }\"\n",
     );
     let project = engine.project().to_path_buf();
+    // The operator read the project's gate and approved it (ADR-055).
+    let awaiting = engine
+        .app()
+        .workspace()
+        .commands_awaiting_approval(&project)
+        .expect("the gate waits for the operator");
+    engine
+        .app()
+        .workspace()
+        .approve_commands(&awaiting)
+        .unwrap();
     // The operator is mid-edit in the primary the whole time.
     fs::write(project.join("README.md"), "# engine, edited\n").unwrap();
     fs::write(project.join("scratch.txt"), "untracked\n").unwrap();
@@ -571,6 +594,10 @@ fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
         .args(["agent", "work", "join", "parser"])
         .current_dir(&slot)
         .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &agent)
+        .env(
+            uze_terminal::launch::AGENT_KEY_VARIABLE,
+            &engine.launch_keys[&agent],
+        )
         .output()
         .unwrap();
     assert!(

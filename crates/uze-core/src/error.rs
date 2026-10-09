@@ -37,6 +37,13 @@ pub enum UzeError {
     },
     #[error("invalid portable hook manifest at {path}: {reason}")]
     InvalidHookManifest { path: PathBuf, reason: String },
+    #[error(
+        "marketplace `{marketplace}` is declared at {path}, outside the project and owned by \
+         another account; a project may declare a directory of its own, or one this user owns"
+    )]
+    ForeignDeclaredPath { marketplace: String, path: PathBuf },
+    #[error("invalid MCP server declaration at {path}: {reason}")]
+    InvalidMcpManifest { path: PathBuf, reason: String },
     #[error("invalid requirement in {path}: {reason}")]
     InvalidRequirement { path: PathBuf, reason: String },
     #[error(
@@ -52,6 +59,11 @@ pub enum UzeError {
     },
     #[error("bundle manifest is missing in {0}")]
     MissingManifest(PathBuf),
+    #[error(
+        "the agent at {path} names itself `{name}`, which is not a file name; a package's \
+         agent `name` holds no path separator, `.`/`..` or control character"
+    )]
+    UnsafeAgentName { path: PathBuf, name: String },
     #[error("unsafe path reference in {path}: {reference}")]
     UnsafePathReference { path: PathBuf, reference: String },
     #[error("Agent Plugin manifest is missing a string name: {0}")]
@@ -175,6 +187,11 @@ pub enum UzeError {
     /// undo it.
     #[error("could not place the agent: {0}")]
     AgentPlacement(String),
+    /// A project's commands could not be approved or withdrawn: nothing to
+    /// approve, or nobody there to ask. The approval is a person's answer
+    /// (ADR-055), so no flag stands in for one.
+    #[error("{0}")]
+    CommandApproval(String),
     #[error("unsupported state schema {found} in {path}; this uze writes {expected}")]
     UnsupportedStateSchema {
         path: PathBuf,
@@ -322,6 +339,14 @@ pub enum UzeError {
         "a managed text region's content differs from what was requested; user content at {0} was preserved"
     )]
     ManagedRegionDrift(PathBuf),
+    /// A project file is a link to somewhere outside the project. A
+    /// refusal about this one file, never a failure of the machine: running
+    /// the command again changes nothing until the link does.
+    #[error(
+        "{path} resolves to {target}, outside the project; UZE writes a project's files only \
+         inside it, so replace the link with a file or point it inside the project"
+    )]
+    ProjectFileEscapes { path: PathBuf, target: PathBuf },
     #[error("{markers} at {0}", markers = crate::text_region::MALFORMED_MARKERS)]
     ManagedRegionConflict(PathBuf),
     #[error(

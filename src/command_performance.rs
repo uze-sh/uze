@@ -169,6 +169,14 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "workspace allow",
+        PerformanceClass::JustifiedSlow(
+            "waits for a person to read the project's commands and answer; the question is \
+             the command",
+        ),
+    ),
+    ("workspace revoke", PerformanceClass::Budgeted),
+    (
         "terminal serve",
         PerformanceClass::JustifiedSlow("internal persistent terminal server process"),
     ),
@@ -295,6 +303,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     (
         "market host",
         "crates/uze-application/tests/performance.rs::market_host_meets_the_budget",
+    ),
+    (
+        "workspace revoke",
+        "crates/uze-application/tests/performance.rs::withdrawing_command_approval_meets_the_budget",
     ),
 ];
 

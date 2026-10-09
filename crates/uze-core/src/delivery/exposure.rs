@@ -322,7 +322,7 @@ impl ManagedArtifact {
                 fs::read_link(path).is_ok_and(|resolved| resolved == *target)
             }
             Self::GeneratedFile { path, content } => {
-                fs::read(path).is_ok_and(|existing| existing == content.as_bytes())
+                inspect_generated_file(path, content).state == AttachmentState::Matched
             }
             Self::GeneratedTree { path, digest } => {
                 inspect_generated_tree(path, digest).state == AttachmentState::Matched
@@ -334,21 +334,57 @@ impl ManagedArtifact {
 
 /// Writes the file when it is absent and accepts it when it already says
 /// exactly this; anything else at the path is not UZE's to replace.
+///
+/// A link at the path is someone else's, even one that dangles: writing
+/// through it would put a generated file wherever the link points. The
+/// path is read without following it, and created with `create_new`, which
+/// refuses a link that appeared after that read rather than following it.
 fn attach_generated_file(path: &Path, content: &str) -> Result<()> {
-    match fs::read(path) {
-        Ok(existing) if existing == content.as_bytes() => Ok(()),
-        Ok(_) => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.is_file() => {
+            Err(UzeError::ManagedEntryConflict(path.to_path_buf()))
+        }
+        Ok(_) => match fs::read(path) {
+            Ok(existing) if existing == content.as_bytes() => Ok(()),
+            Ok(_) => Err(UzeError::ManagedEntryConflict(path.to_path_buf())),
+            Err(source) => Err(UzeError::Read {
+                path: path.to_path_buf(),
+                source,
+            }),
+        },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
             }
-            fs::write(path, content).map_err(UzeError::write(path))
+            create_new_file(path, content)
         }
         Err(source) => Err(UzeError::Read {
             path: path.to_path_buf(),
             source,
         }),
     }
+}
+
+fn create_new_file(path: &Path, content: &str) -> Result<()> {
+    use std::io::Write as _;
+    let mut file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(UzeError::ManagedEntryConflict(path.to_path_buf()));
+        }
+        Err(source) => {
+            return Err(UzeError::Write {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    file.write_all(content.as_bytes())
+        .map_err(UzeError::write(path))
 }
 
 /// Writes the tree `build` produces at `path`, replacing it whole, and
@@ -860,6 +896,44 @@ mod generated_file_tests {
             AttachmentState::Missing
         );
         assert!(!path.exists());
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_at_a_generated_path_is_a_conflict_and_is_never_written_through() {
+        let root = uze_testkit::temp::scratch("generated-file-link");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let agents = root.join("agents");
+        fs::create_dir_all(&agents).unwrap();
+        let path = agents.join("reviewer.md");
+        let content = "---\nname: flow:reviewer\n---\nReview.\n";
+        std::os::unix::fs::symlink(outside.join("planted.md"), &path).unwrap();
+        let artifact = ManagedArtifact::GeneratedFile {
+            path: path.clone(),
+            content: content.to_owned(),
+        };
+
+        assert!(matches!(
+            artifact.attach_standard(),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert!(
+            !outside.join("planted.md").exists(),
+            "the dangling link was followed"
+        );
+        assert_eq!(artifact.inspect_standard().state, AttachmentState::Conflict);
+
+        fs::write(outside.join("planted.md"), content).unwrap();
+        assert!(matches!(
+            artifact.attach_standard(),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert!(
+            !artifact.is_in_place(),
+            "a link to identical bytes is not ours"
+        );
     }
 
     /// A label is matched against the name that holds it, never read back

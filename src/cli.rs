@@ -12,6 +12,7 @@ mod output;
 mod report;
 mod setup;
 mod status;
+mod workspace;
 
 pub(crate) use agent::*;
 pub(crate) use config::*;
@@ -23,3 +24,4 @@ pub(crate) use output::*;
 pub(crate) use report::*;
 pub(crate) use setup::*;
 pub(crate) use status::*;
+pub(crate) use workspace::*;

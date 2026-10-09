@@ -52,7 +52,7 @@ pub(super) fn workspace_lock_path() -> PathBuf {
 /// the descriptor is opened close-on-exec, and `portable-pty` closes every
 /// descriptor above stdio in the child before `exec` besides.
 pub(super) struct WorkspaceLock {
-    pub(super) _file: fs::File,
+    pub(super) file: fs::File,
 }
 
 impl WorkspaceLock {
@@ -62,7 +62,7 @@ impl WorkspaceLock {
             match try_lock(&file, LockMode::Exclusive) {
                 Ok(()) => {
                     record_claimant(&mut file);
-                    return Ok(Self { _file: file });
+                    return Ok(Self { file });
                 }
                 Err(LockRefusal::Interrupted) => {}
                 Err(LockRefusal::Unsupported(error)) => return Err(RuntimeError::Io(error)),
@@ -81,7 +81,8 @@ impl WorkspaceLock {
     }
 }
 
-/// Writes this server's pid into the claim it has just taken.
+/// Writes this server's pid, and when it started, into the claim it has
+/// just taken.
 ///
 /// The lock alone proves a server is alive and says nothing about which
 /// one, and `flock` names no holder. A client that cannot reach the
@@ -91,26 +92,65 @@ impl WorkspaceLock {
 /// found nothing, and reported nothing to stop while the old server held
 /// the workspace shut. Restarting the machine was the only way out.
 ///
+/// The start time is what makes the pid safe to act on later: a pid alone
+/// names whoever the kernel handed the number to since, and a `uze` client
+/// is exactly the kind of process that gets it.
+///
 /// Best-effort by construction: the claim is the lock, never this. What
 /// is written here is a lead, and every reader corroborates it against
 /// the process table before acting on it (see [`claim_holder`]).
 pub(super) fn record_claimant(file: &mut fs::File) {
     let pid = std::process::id();
     let _ = file.set_len(0);
-    let _ = write!(file, "{pid}");
+    match uze_platform::probe::started_at(pid) {
+        Some(started) => {
+            let _ = write!(file, "{pid} {started}");
+        }
+        None => {
+            let _ = write!(file, "{pid}");
+        }
+    }
     let _ = file.flush();
 }
 
-/// The pid recorded in the claim, when the process table still says it is
-/// a `uze`. `None` where nothing was recorded, the pid died, or it was
-/// recycled by something else — in which case the claim is either free or
-/// held by a server that predates this record, and the caller has to say
-/// so rather than signal a stranger.
-pub(super) fn claim_holder() -> Option<u32> {
+impl WorkspaceLock {
+    /// Erases the lead [`record_claimant`] wrote, once this server is done:
+    /// the lock is released by the kernel when the process ends, but the
+    /// bytes stay, naming a pid that will belong to somebody else.
+    pub(super) fn withdraw(&self) {
+        let _ = self.file.set_len(0);
+    }
+}
+
+/// A server named by the claim: the pid it recorded and when that process
+/// started.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Claimant {
+    pub(super) pid: u32,
+    pub(super) started: u64,
+}
+
+/// The server the claim names, while it holds the claim and the process
+/// table still says that pid is the same `uze` that recorded it. `None`
+/// where the claim is free, nothing was recorded, the record carries no
+/// start time, the pid died, or it was recycled — in which case the
+/// caller has to say so rather than signal a stranger.
+pub(super) fn claim_holder() -> Option<Claimant> {
+    if !workspace_is_claimed() {
+        return None;
+    }
     let recorded = fs::read_to_string(workspace_lock_path()).ok()?;
-    let pid: u32 = recorded.trim().parse().ok()?;
-    runs_uze(pid).then_some(())?;
-    Some(pid)
+    let claimant = parse_claimant(&recorded)?;
+    (runs_uze(claimant.pid)
+        && uze_platform::probe::started_at(claimant.pid) == Some(claimant.started))
+    .then_some(claimant)
+}
+
+pub(super) fn parse_claimant(recorded: &str) -> Option<Claimant> {
+    let mut fields = recorded.split_whitespace();
+    let pid = fields.next()?.parse().ok()?;
+    let started = fields.next()?.parse().ok()?;
+    fields.next().is_none().then_some(Claimant { pid, started })
 }
 
 /// Whether a live server holds the workspace claim. A filesystem that
@@ -147,13 +187,22 @@ pub(super) fn held_by_a_server(file: &fs::File) -> io::Result<bool> {
 pub(super) fn open_workspace_lock() -> io::Result<fs::File> {
     let path = workspace_lock_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        private_directory(parent)?;
     }
-    fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)
+    uze_platform::fs::private_file(
+        fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true),
+    )
+    .open(&path)
+}
+
+/// Creates `directory` for this user alone, or narrows it to them: what
+/// the runtime keeps there — the workspace with every tab's command and
+/// launch environment, the claim, the key — is nobody else's to read.
+pub(super) fn private_directory(directory: &Path) -> io::Result<()> {
+    uze_platform::fs::create_private_dir_all(directory)
 }
 
 pub(super) use uze_platform::lock::Mode as LockMode;

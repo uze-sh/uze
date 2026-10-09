@@ -25,6 +25,11 @@ pub(crate) struct WrapperDialect {
     /// permission prompt, and the command runs anyway (measured on 1.1.24,
     /// `command_hook_executor.go`). So the code is a per-harness fact.
     pub(crate) deny_exit: &'static str,
+    /// The status the wrapper exits with when the decision document itself
+    /// could not be written. Where [`Self::deny_exit`] is 0 the document is
+    /// the whole denial, so failing to write it must not read as an
+    /// allowance wherever the harness has a status that blocks.
+    pub(crate) unwritten_exit: &'static str,
 }
 
 /// Where the harness's payload keeps what the hook context is made of, as
@@ -42,9 +47,21 @@ pub(crate) struct PayloadPaths {
     pub(crate) implied_source: Option<&'static str>,
 }
 
-/// The most a `transform` handler may write as the rewritten input; past
-/// it the handler has failed, and the group closes.
-pub(crate) const TRANSFORM_OUTPUT_LIMIT: usize = 64 * 1024;
+/// The most one `HOOK_*` value may carry into a handler's environment, in
+/// UTF-8 bytes, on every platform alike. Windows holds an environment
+/// variable to 32,767 UTF-16 units, and a string never has more UTF-16
+/// units than UTF-8 bytes, so a value inside this bound fits there; Linux's
+/// `MAX_ARG_STRLEN` (128 KiB), which no program starts past, the wrapper's
+/// own `jq` and `sh` included, is further still. A value past it is never
+/// exported: the group's effect decides, as for any context that cannot be
+/// built. One bound for every platform, so a call a guard sees on one is
+/// the call it sees on all.
+pub(crate) const HOOK_VALUE_LIMIT: usize = 32_000;
+
+/// The most a `transform` handler may write as the rewritten input, in
+/// bytes; past it the handler has failed, and the group closes. The rewrite
+/// becomes the next handler's `HOOK_INPUT`, so it is that bound.
+pub(crate) const TRANSFORM_OUTPUT_LIMIT: usize = HOOK_VALUE_LIMIT;
 
 /// What the wrapper writes on stdout to deny, and when nothing is denied, in
 /// one template's language.

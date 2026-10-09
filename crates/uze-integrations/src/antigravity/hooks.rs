@@ -71,6 +71,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // The decision is the stdout document; a non-zero exit is a
             // failed hook here, not a block.
             deny_exit: "0",
+            // No status blocks here: any non-zero exit is a failed hook and
+            // the call runs. The document is written by a shell builtin with a
+            // reason that cannot fail to encode, so this is the last resort
+            // of a closed stdout, and says so in the hook log.
+            unwritten_exit: "2",
         },
         // The shared `hooks.json` is a map of named hooks, not an array of
         // group entries per event.

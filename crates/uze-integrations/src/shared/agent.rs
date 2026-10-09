@@ -121,6 +121,22 @@ pub(crate) fn delivered_agent(path: &Path) -> Result<AgentDocument, String> {
         .ok_or_else(|| format!("the frontmatter of {} does not parse", path.display()))
 }
 
+/// The largest project agent definition read. A definition is a prompt a
+/// model loads, so this is far past any real one; it is what keeps a file
+/// in a cloned project from answering the read with gigabytes.
+const MAX_PROJECT_AGENT_BYTES: u64 = 1024 * 1024;
+
+/// A project agent definition's bytes, when it is a regular file of a
+/// readable size. A FIFO or a device named `*.md` would otherwise hold the
+/// launch that reads it for as long as it pleases.
+fn read_definition(path: &Path) -> Option<Vec<u8>> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_PROJECT_AGENT_BYTES {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
 /// One agent a project authored in its own `.agents/agents/`.
 pub(crate) struct ProjectAgent {
     /// Its logical name: the frontmatter `name`, else the file stem. No
@@ -143,7 +159,12 @@ pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
             continue;
         };
         for path in entries.flatten().map(|entry| entry.path()) {
-            if path.is_dir() {
+            // Not followed into a linked directory: a project is cloned, and
+            // two links to `.` would make this walk branch without end.
+            let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.is_dir() {
                 pending.push(path);
             } else if path.extension().is_some_and(|extension| extension == "md") {
                 files.push(path);
@@ -153,9 +174,7 @@ pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
     files.sort();
     let mut agents: Vec<ProjectAgent> = Vec::new();
     for path in files {
-        let Some(document) = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| AgentDocument::parse(&bytes))
+        let Some(document) = read_definition(&path).and_then(|bytes| AgentDocument::parse(&bytes))
         else {
             continue;
         };
@@ -170,4 +189,36 @@ pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
         }
     }
     agents
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_cloned_project_cannot_make_the_agent_walk_endless_or_unbounded() {
+        let directory = uze_testkit::temp::scratch("project-agents-hostile");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("reviewer.md"),
+            "---\nname: reviewer\ndescription: Reviews.\n---\nReview.\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(".", directory.join("a")).unwrap();
+        std::os::unix::fs::symlink(".", directory.join("b")).unwrap();
+        let oversized = format!(
+            "---\nname: huge\ndescription: d\n---\n{}",
+            "x".repeat(MAX_PROJECT_AGENT_BYTES as usize)
+        );
+        std::fs::write(directory.join("huge.md"), oversized).unwrap();
+
+        let labels: Vec<String> = project_agents(&directory)
+            .into_iter()
+            .map(|agent| agent.label)
+            .collect();
+        assert_eq!(labels, ["reviewer"]);
+        std::fs::remove_dir_all(&directory).ok();
+    }
 }

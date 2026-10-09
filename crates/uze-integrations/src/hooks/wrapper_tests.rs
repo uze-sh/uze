@@ -933,3 +933,287 @@ fn an_exec_form_python_guard_receives_its_words_and_denies() {
         let _ = fs::remove_dir_all(root.parent().unwrap());
     }
 }
+
+/// The decision a harness reads off a denial, in its own dialect.
+fn decision_of(target: HookTarget, stdout: &str) -> serde_json::Value {
+    let document: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|error| panic!("{target}: the decision is not JSON ({error}): {stdout}"));
+    if target == crate::antigravity::HOOKS {
+        document["decision"].clone()
+    } else {
+        document["hookSpecificOutput"]["permissionDecision"].clone()
+    }
+}
+
+/// A tool input larger than one environment string may be used to be
+/// exported as `HOOK_INPUT` all the same: past Linux's `MAX_ARG_STRLEN` no
+/// program could start, the decision document came out malformed, and the
+/// harnesses that read it on exit 0 ran the call. The bound is the one
+/// every platform holds, so a byte past it is refused here as on Windows.
+#[test]
+fn an_input_too_large_for_the_environment_follows_the_groups_effect() {
+    let huge = format!("cat .env # {}", "x".repeat(HOOK_VALUE_LIMIT));
+    for target in TARGETS {
+        let root = package(&format!("wrapper-huge-{target}"));
+        for effect in [HookEffect::Deny, HookEffect::Transform] {
+            let handlers: &[&str] = if effect == HookEffect::Deny {
+                &["guard", "audit"]
+            } else {
+                &["rewrite", "audit"]
+            };
+            let hook = group(effect, handlers);
+            let answer = run_wrapper(target, &root, &hook, &payload(target, &huge), None);
+            assert_eq!(
+                answer.exit,
+                block_exit(target),
+                "{target} {effect:?}: {}",
+                answer.stderr
+            );
+            assert_eq!(
+                decision_of(target, &answer.stdout),
+                "deny",
+                "{target} {effect:?}: the call is refused"
+            );
+            assert!(
+                answer.stderr.contains("larger than"),
+                "{target} {effect:?}: the reason says why: {}",
+                answer.stderr
+            );
+        }
+        let open = group(HookEffect::Observe, &["audit"]);
+        let answer = run_wrapper(target, &root, &open, &payload(target, &huge), None);
+        assert_eq!(answer.exit, 0, "{target}: an observe group fails open");
+        assert!(
+            !root.join("audit.log").exists(),
+            "{target}: no handler ran with a context it could not be handed"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// An input just inside the bound reaches the handler whole: the bound is
+/// on what the environment can carry, and nothing short of it is cut.
+#[test]
+fn an_input_inside_the_bound_is_handed_over_whole() {
+    let command = format!("ls # {}", "x".repeat(HOOK_VALUE_LIMIT - 64));
+    for target in TARGETS {
+        let root = package(&format!("wrapper-bound-{target}"));
+        let hook = group(HookEffect::Deny, &["audit"]);
+        let answer = run_wrapper(target, &root, &hook, &payload(target, &command), None);
+        assert_eq!(answer.exit, 0, "{target}: {}", answer.stderr);
+        assert_eq!(
+            fs::read_to_string(root.join("audit.log")).unwrap(),
+            format!("{target}\t{command}\n"),
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// Where a handler's output is collected is a directory only this user
+/// can enter, made fresh for the call: a predictable name in a shared
+/// directory is one another user can create first.
+#[test]
+fn a_handler_s_output_is_collected_in_a_private_directory() {
+    let target = crate::claude::HOOKS;
+    let root = package("wrapper-private");
+    let temp = root.join("tmp");
+    fs::create_dir_all(&temp).unwrap();
+    write_script(
+        &root.join("scripts").join("where"),
+        "ls -ld \"$(dirname \"$(readlink /proc/$$/fd/2 2>/dev/null || echo /nowhere/x)\")\" \
+         > \"$PLUGIN_ROOT/where.txt\" 2>&1\nexit 0",
+    );
+    let hook = group(HookEffect::Deny, &["where"]);
+    let wrapper = root.join("hooks").join("exec");
+    materialize_wrapper(&wrapper, &wrapper_source(target).unwrap()).unwrap();
+    let mut child = Command::new("/bin/sh")
+        .arg(&wrapper)
+        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .env("TMPDIR", &temp)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload(target, "ls").as_bytes())
+            .unwrap();
+    }
+    let answer = child.wait_with_output().unwrap();
+    assert_eq!(answer.status.code(), Some(0), "{answer:?}");
+    if Path::new("/proc/self/fd").exists() {
+        let listing = fs::read_to_string(root.join("where.txt")).unwrap();
+        assert!(
+            listing.starts_with("drwx------"),
+            "the handler's stderr is collected in a private directory: {listing}"
+        );
+        assert!(
+            listing.contains(&temp.display().to_string()),
+            "under the caller's TMPDIR: {listing}"
+        );
+    }
+    assert_eq!(
+        fs::read_dir(&temp).unwrap().count(),
+        0,
+        "nothing is left behind"
+    );
+
+    let unwritable = root.join("unwritable");
+    fs::create_dir_all(&unwritable).unwrap();
+    fs::set_permissions(&unwritable, fs::Permissions::from_mode(0o500)).unwrap();
+    let mut child = Command::new("/bin/sh")
+        .arg(&wrapper)
+        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .env("TMPDIR", &unwritable)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload(target, "ls").as_bytes())
+            .unwrap();
+    }
+    let answer = child.wait_with_output().unwrap();
+    // Root ignores the mode, and then there is a place to write after all.
+    if fs::write(unwritable.join("probe"), "").is_err() {
+        assert_eq!(
+            decision_of(target, &String::from_utf8_lossy(&answer.stdout)),
+            "deny",
+            "with nowhere private to collect a reason, a deny group closes"
+        );
+    }
+    fs::set_permissions(&unwritable, fs::Permissions::from_mode(0o700)).unwrap();
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The harness reads the wrapper's stdout as its decision; a handler
+/// that could reach that descriptor could write one of its own.
+#[test]
+fn a_handler_cannot_reach_the_harnesss_stdout() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-stdout-{target}"));
+        write_script(
+            &root.join("scripts").join("forge"),
+            "for fd in 1 3 4 5 6 7 8 9; do\n  eval \"printf '%s' FORGED >&$fd\" 2>/dev/null\ndone\nexit 0",
+        );
+        let hook = group(HookEffect::Deny, &["forge"]);
+        let answer = run_wrapper(target, &root, &hook, &payload(target, "ls"), None);
+        assert_eq!(answer.exit, 0, "{target}: {}", answer.stderr);
+        assert!(
+            !answer.stdout.contains("FORGED"),
+            "{target}: only the wrapper writes the decision: {:?}",
+            answer.stdout
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// A package root with a space in it is one word to the handler's
+/// shell, whether the author left `${PLUGIN_ROOT}` bare or quoted it.
+#[test]
+fn a_package_root_with_a_space_reaches_the_handler_as_one_word() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-space-{target}")).join("with space");
+        let scripts = root.join("scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        write_script(
+            &scripts.join("guard"),
+            "case \"$HOOK_COMMAND\" in\n  *.env*) echo \"blocked: $HOOK_COMMAND\" >&2; exit 3 ;;\nesac\nexit 0",
+        );
+        for line in [
+            "${PLUGIN_ROOT}/scripts/guard",
+            "sh \"${PLUGIN_ROOT}/scripts/guard\"",
+            "sh '${PLUGIN_ROOT}/scripts/guard'",
+        ] {
+            let hook = group(HookEffect::Deny, &[line]);
+            let answer = run_wrapper(target, &root, &hook, &payload(target, "cat .env"), None);
+            assert!(
+                answer.stderr.contains("blocked: cat .env"),
+                "{target} `{line}`: the guard itself ran and denied: {}",
+                answer.stderr
+            );
+        }
+        let _ = fs::remove_dir_all(root.parent().unwrap());
+    }
+}
+
+/// The decision cannot depend on a program starting: when the reason
+/// cannot be encoded the document still goes out, with a constant one.
+#[test]
+fn a_reason_that_cannot_be_encoded_still_denies() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-unencoded-{target}"));
+        let jq = root.join("jq-that-cannot-encode");
+        write_script(&jq, "case \"$*\" in *-Rsa*) exit 1 ;; esac\nexec jq \"$@\"");
+        let hook = group(HookEffect::Deny, &["guard"]);
+        let answer = run_wrapper(
+            target,
+            &root,
+            &hook,
+            &payload(target, "cat .env"),
+            Some(jq.to_str().unwrap()),
+        );
+        assert_eq!(
+            answer.exit,
+            block_exit(target),
+            "{target}: {}",
+            answer.stderr
+        );
+        assert_eq!(decision_of(target, &answer.stdout), "deny", "{target}");
+        assert!(
+            answer.stdout.contains("the reason could not be encoded"),
+            "{target}: {}",
+            answer.stdout
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+/// Where a denial is the stdout document alone, a document that could not
+/// be written leaves the call to the exit status, which must then block.
+#[test]
+fn a_denial_that_cannot_be_written_exits_with_the_blocking_status() {
+    let target = crate::claude::HOOKS;
+    let root = package("wrapper-unwritten");
+    let hook = group(HookEffect::Deny, &["guard"]);
+    let wrapper = root.join("hooks").join("exec");
+    materialize_wrapper(&wrapper, &wrapper_source(target).unwrap()).unwrap();
+    let mut child = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("exec /bin/sh \"$@\" >&-")
+        .arg("sh")
+        .arg(&wrapper)
+        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload(target, "cat .env").as_bytes())
+            .unwrap();
+    }
+    let answer = child.wait_with_output().unwrap();
+    assert_eq!(
+        answer.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&answer.stderr)
+    );
+    let _ = fs::remove_dir_all(root);
+}

@@ -455,6 +455,7 @@ mod tests {
                     None,
                     &AlwaysTrust,
                     &uze_core::naming::NoNameCollisionAuthority,
+                    uze_core::trust::SourceOrigin::Operator,
                 )
                 .unwrap();
         }

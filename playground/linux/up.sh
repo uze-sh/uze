@@ -43,7 +43,8 @@ tar -czf "$stage/$archive" -C "$built" uze
 stage_release "$stage" "$stage/$archive"
 stage_market "$stage"
 stage_sessions "$stage"
-cp "${repo_root}/install.sh" "${playground_root}/linux/prepare.sh" "$built/playground-mcp" "$stage/"
+stage_installer "$stage" "${repo_root}/install.sh"
+cp "${playground_root}/linux/prepare.sh" "$built/playground-mcp" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
 
 rootfs="${world}/cache/$(basename "$rootfs_url")"

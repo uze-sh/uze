@@ -100,6 +100,7 @@ pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAge
                 &agent.integration,
                 uze_application::Claim {
                     id: &agent.id,
+                    key: &agent.key,
                     cwd: &agent.cwd,
                 },
             );
@@ -245,6 +246,58 @@ pub(super) fn spawn_unspelled_gates(
     });
 }
 
+/// Asks, for each directory first seen, whether its project's commands
+/// wait for the operator's approval. Off the frame: reading the policy
+/// asks Git whether the files it links are ignored.
+pub(super) fn spawn_commands_awaiting(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<uze_application::CommandsAwaitingApproval>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.commands_awaiting", parent: &parent);
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        for directory in directories {
+            if let Some(awaiting) = app.workspace().commands_awaiting_approval(&directory) {
+                let _ = sender.send(awaiting);
+            }
+        }
+    });
+}
+
+/// Records the operator's approval and prepares the checkout that waited
+/// for it, which runs the project's setup: nothing a frame waits on.
+pub(super) fn spawn_command_approval(
+    home: &UzeHome,
+    awaiting: uze_application::CommandsAwaitingApproval,
+    sender: mpsc::Sender<ApprovalResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.command_approval").entered();
+        let project = awaiting.project.clone();
+        // Answered on every path: the header says the checkout is being
+        // prepared until this arrives.
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.workspace().approve_commands(&awaiting))
+                    .map_err(|error| error.to_string())
+            },
+            Err("approving failed".to_owned()),
+        );
+        let _ = sender.send(ApprovalResolution { project, outcome });
+    });
+}
+
 /// Asks the registry, once, which names a harness launched through a shim
 /// runs under. Off the frame: composing the application reads the machine.
 pub(super) fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {
@@ -267,6 +320,8 @@ pub(super) fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<Stri
 pub(super) struct LaunchedAgent {
     pub(super) integration: String,
     pub(super) id: String,
+    /// The key the tab's launch carries, as the server echoes it.
+    pub(super) key: String,
     pub(super) cwd: PathBuf,
 }
 

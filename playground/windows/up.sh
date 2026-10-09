@@ -70,7 +70,8 @@ with zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as archive:
 PY
 stage_release "$stage" "$stage/uze-x86_64-windows.zip"
 stage_market "$stage"
-cp "${repo_root}/install.ps1" "${playground_root}/windows/prepare.ps1" \
+stage_installer "$stage" "${repo_root}/install.ps1"
+cp "${playground_root}/windows/prepare.ps1" \
   "${playground_root}/windows/setup-user.ps1" "$built/playground-mcp.exe" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
 stage_sessions "$stage"

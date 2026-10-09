@@ -2,6 +2,41 @@
 
 use super::*;
 
+/// Where a connection comes from — see [`Server::origin_of`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Origin {
+    Pane,
+    Outside,
+}
+
+/// How many connections may be open at once before saying who they are.
+///
+/// Each holds a thread until [`HANDSHAKE_DEADLINE`] passes, and a peer
+/// opening them in a loop would otherwise hold as many threads as it
+/// liked. Far above anything a person's own clients open: they attach,
+/// or ask one thing and leave.
+pub(super) const MAX_UNATTACHED: usize = 32;
+
+/// One connection counted against [`MAX_UNATTACHED`] until it is dropped.
+pub(super) struct Unattached<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> Unattached<'a> {
+    pub(super) fn admit(count: &'a std::sync::atomic::AtomicUsize) -> Option<Self> {
+        let before = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        if before >= MAX_UNATTACHED {
+            count.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            return None;
+        }
+        Some(Self(count))
+    }
+}
+
+impl Drop for Unattached<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
 pub(super) struct Server {
     pub(super) session: Mutex<Session>,
     pub(super) panes: Mutex<BTreeMap<PaneId, Arc<PaneRuntime>>>,
@@ -11,7 +46,7 @@ pub(super) struct Server {
     pub(super) stop_requested: Condvar,
     pub(super) socket: PathBuf,
     /// Held for as long as this server exists — see [`WorkspaceLock`].
-    pub(super) _workspace: WorkspaceLock,
+    pub(super) workspace: WorkspaceLock,
     /// Serializes [`Server::persist`], so two structural changes landing at
     /// once cannot rename an older picture of the workspace over a newer
     /// one, and holds the bytes last written: selecting a tab broadcasts
@@ -35,6 +70,11 @@ pub(super) struct Server {
     /// unless `UZE_LOG` is set. An operator watched every space disappear
     /// with no sentence anywhere.
     pub(super) set_aside: Mutex<Option<uze_document::SetAside>>,
+    /// What a client proves it is the person's own with — see [`ServerKey`].
+    pub(super) key: ServerKey,
+    /// Connections that have yet to say who they are — see
+    /// [`MAX_UNATTACHED`].
+    pub(super) unattached: std::sync::atomic::AtomicUsize,
 }
 
 impl Server {
@@ -45,6 +85,9 @@ impl Server {
         // Taken before anything is read: restoring a workspace a live
         // server already holds is what turns one set of agents into two.
         let workspace_lock = WorkspaceLock::acquire()?;
+        // Minted only once the claim is this server's: the key on disk is
+        // always the serving one's.
+        let key = ServerKey::mint()?;
         // A previous run's shape, if this workspace has one — see
         // `persisted_state_path` for why a crash, a `kill -9`, or a reboot
         // still leaves this behind even though nothing else about a pane's
@@ -67,11 +110,13 @@ impl Server {
             stopped: Mutex::new(false),
             stop_requested: Condvar::new(),
             socket,
-            _workspace: workspace_lock,
+            workspace: workspace_lock,
             persisting: Mutex::new(None),
             damage,
             palette: Arc::new(Mutex::new(Palette::default())),
             set_aside: Mutex::new(set_aside),
+            key,
+            unattached: std::sync::atomic::AtomicUsize::new(0),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -153,17 +198,12 @@ impl Server {
         drop(panes);
         match serde_json::to_vec(&workspace) {
             Ok(json) if written.as_ref() == Some(&json) => {}
-            Ok(json) => {
-                if let Some(parent) = path.parent() {
-                    let _ = fs::create_dir_all(parent);
+            Ok(json) => match write_atomically(&path, &json) {
+                Ok(()) => *written = Some(json),
+                Err(error) => {
+                    tracing::warn!(path = %path.display(), %error, "could not persist the workspace")
                 }
-                match write_atomically(&path, &json) {
-                    Ok(()) => *written = Some(json),
-                    Err(error) => {
-                        tracing::warn!(path = %path.display(), %error, "could not persist the workspace")
-                    }
-                }
-            }
+            },
             Err(error) => {
                 tracing::warn!(%error, "could not describe the workspace to persist it")
             }
@@ -172,14 +212,21 @@ impl Server {
 
     pub(super) fn handle_client(self: Arc<Self>, stream: Stream) {
         let _span = tracing::info_span!("terminal.client").entered();
+        if transport::peer_is_another_user(&stream) {
+            tracing::warn!("refused a terminal connection from another user");
+            return;
+        }
+        let Some(unattached) = Unattached::admit(&self.unattached) else {
+            tracing::warn!(
+                "too many terminal connections have yet to say who they are; refused one"
+            );
+            return;
+        };
+        let origin = self.origin_of(&stream);
         let reader_stream = match stream.try_clone() {
             Ok(value) => value,
             Err(_) => return,
         };
-        let (outbox, receiver) = Outbox::new();
-        let events = Arc::new(outbox);
-        let backlog = events.backlog();
-        thread::spawn(move || forward_events(stream, &receiver, &backlog));
 
         // A deadline on the handshake only — see [`HANDSHAKE_DEADLINE`] —
         // and a frame limit sized for what a handshake actually says rather
@@ -187,23 +234,41 @@ impl Server {
         // vouched for this peer yet.
         let mut reader = BufReader::new(Handshake::new(reader_stream, HANDSHAKE_DEADLINE));
         let first = read_message_within::<_, ClientRequest>(&mut reader, MAX_HANDSHAKE_FRAME);
+        // Answered on the socket rather than through a writer thread: a
+        // connection that is turned away, or that only ever asked one
+        // thing, is never given one.
+        let mut answer = |event: &ClientEvent| {
+            if let Err(error) = write_message(reader.get_mut().socket(), event) {
+                tracing::warn!(%error, "could not answer a terminal connection");
+            }
+        };
+        if let Ok(Some(request)) = &first
+            && let Some(message) = self.refusal(origin, request)
+        {
+            tracing::warn!(kind = request.kind(), ?origin, %message, "refused a terminal request");
+            answer(&ClientEvent::Refused { message });
+            return;
+        }
         let attached = match first {
+            Ok(Some(ClientRequest::OpenSpace { version, seat })) => {
+                answer(&if version == PROTOCOL_VERSION {
+                    self.open_space_and_say(&seat)
+                } else {
+                    ClientEvent::Error {
+                        message: "incompatible terminal runtime protocol".into(),
+                    }
+                });
+                return;
+            }
             // Stopping needs no client and no session: the workspace claim
             // makes a live server refuse every replacement of the same
             // build, so `uze workspace stop` failing to be heard by one
             // nobody attached to left no way back in but a manual `kill`.
-            Ok(Some(ClientRequest::Stop)) => {
-                // Answered on the socket rather than through the writer
-                // thread: the acknowledgement has to be on the wire before
-                // the accept loop is woken, or the process can exit out
-                // from under a frame still sitting in a channel. Nothing
-                // else is ever sent on this connection — no client was
-                // registered — so there is nothing for this to interleave
-                // with.
-                let answered = write_message(reader.get_mut().socket(), &ClientEvent::Stopped);
-                if let Err(error) = answered {
-                    tracing::warn!(%error, "could not acknowledge a stop request");
-                }
+            Ok(Some(ClientRequest::Stop { .. })) => {
+                // The acknowledgement has to be on the wire before the
+                // accept loop is woken, or the process can exit out from
+                // under a frame still sitting in a channel.
+                answer(&ClientEvent::Stopped);
                 self.shut_down();
                 return;
             }
@@ -212,7 +277,12 @@ impl Server {
                 columns,
                 rows,
                 seating,
+                key: _,
             })) if version == PROTOCOL_VERSION => {
+                let (outbox, receiver) = Outbox::new();
+                let events = Arc::new(outbox);
+                let backlog = events.backlog();
+                thread::spawn(move || forward_events(stream, &receiver, &backlog));
                 let client = self
                     .next_client
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -274,19 +344,20 @@ impl Server {
                         reason: moved.reason,
                     });
                 }
-                Some(client)
+                Some((client, events))
             }
             Ok(Some(ClientRequest::Attach { .. })) => {
-                events.reply(ClientEvent::Error {
+                answer(&ClientEvent::Error {
                     message: "incompatible terminal runtime protocol".into(),
                 });
                 None
             }
             _ => None,
         };
-        let Some(client) = attached else {
+        let Some((client, events)) = attached else {
             return;
         };
+        drop(unattached);
         // Attached, so silence is a person reading rather than a peer
         // holding threads it never intends to use.
         reader.get_mut().attached();
@@ -536,12 +607,14 @@ impl Server {
                         self.broadcast_session();
                     }
                 }
-                ClientRequest::Stop => {
+                ClientRequest::Stop { .. } => {
                     events.reply(ClientEvent::Stopped);
                     self.shut_down();
                     break;
                 }
-                ClientRequest::Attach { .. } => {}
+                // First frames, and only first frames: an attached client
+                // already said who it is.
+                ClientRequest::Attach { .. } | ClientRequest::OpenSpace { .. } => {}
             }
         }
         for pane in selecting {
@@ -551,6 +624,83 @@ impl Server {
             .lock()
             .expect("clients poisoned")
             .retain(|attached| attached.id != client);
+    }
+
+    /// Where a connection comes from, as the kernel says: a process inside
+    /// one of this server's panes, or anything else. Asked of the peer's
+    /// pid, which the kernel stamped on the connection and the peer cannot
+    /// choose. A platform that names no peer answers `Outside`, and the key
+    /// is then all that stands in the way.
+    pub(super) fn origin_of(&self, stream: &Stream) -> Origin {
+        let Some(peer) = transport::peer_pid(stream) else {
+            return Origin::Outside;
+        };
+        // Asked after the map's lock is released: each answer reads the
+        // process table, and the input and damage paths wait on that lock.
+        let runtimes: Vec<Arc<PaneRuntime>> = self
+            .panes
+            .lock()
+            .expect("panes poisoned")
+            .values()
+            .cloned()
+            .collect();
+        if runtimes.iter().any(|runtime| runtime.holds(peer)) {
+            Origin::Pane
+        } else {
+            Origin::Outside
+        }
+    }
+
+    /// Why a first frame is not served, or `None` when it is. A frame from
+    /// another build is let through to be told so: the answer to it is
+    /// "incompatible", which a client acts on by replacing this server,
+    /// and a refusal would hide that.
+    pub(super) fn refusal(&self, origin: Origin, request: &ClientRequest) -> Option<String> {
+        let key = match request {
+            ClientRequest::OpenSpace { .. } => return None,
+            ClientRequest::Attach { version, .. } if *version != PROTOCOL_VERSION => return None,
+            ClientRequest::Attach { key, .. } | ClientRequest::Stop { key } => key,
+            _ => return None,
+        };
+        if origin == Origin::Pane {
+            return Some(
+                "a process inside a uze pane may open a space and nothing else; \
+                 attach from a terminal of your own"
+                    .into(),
+            );
+        }
+        (!self.key.admits(key)).then(|| {
+            format!(
+                "this client did not offer the runtime's key ({}); \
+                 open uze again from a terminal of your own",
+                key_path().display()
+            )
+        })
+    }
+
+    /// Opens the space at `seat` for a connection that asked for nothing
+    /// else, and answers with its label alone.
+    pub(super) fn open_space_and_say(&self, seat: &SpaceSeat) -> ClientEvent {
+        let space = match self.ensure_space(seat, PLACEHOLDER_PANE_SIZE) {
+            Ok(OpenedSpace::Existing(space)) => space,
+            Ok(OpenedSpace::Created(NewSpace { space, .. })) => {
+                self.broadcast_session();
+                space
+            }
+            Err(error) => {
+                return ClientEvent::Error {
+                    message: format!("could not open a space at {}: {error}", seat.root.display()),
+                };
+            }
+        };
+        let label = self
+            .session
+            .lock()
+            .expect("session poisoned")
+            .space(space)
+            .map(|space| space.label.clone())
+            .unwrap_or_default();
+        ClientEvent::SpaceOpened { label }
     }
 
     /// The space at `seat`, created — with its first shell pane, spawned at
@@ -1084,6 +1234,7 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
             if *stopped {
                 break;
             }
+            server.key.keep();
             if transport::identity(&server.socket) == bound {
                 continue;
             }

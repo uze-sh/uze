@@ -34,14 +34,38 @@ version() {
   sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "${repo_root}/Cargo.toml"
 }
 
-# `<stage>/release/download/v<version>/<archive>` beside its SHASUMS256.txt:
-# the layout install.sh and install.ps1 download from, served from a path.
+# `<stage>/release/download/v<version>/<archive>` beside its SHASUMS256.txt
+# and that file's signature: the layout install.sh and install.ps1 download
+# from, served from a path. Signed by a throwaway key kept beside the stage
+# (never inside it, so the world never holds the private half), which
+# `stage_installer` puts in the installer in place of the release key.
 stage_release() {
   local stage="$1" archive="$2"
   local dir="${stage}/release/download/v$(version)"
+  local key
+  key="$(playground_release_key "$stage")"
   mkdir -p "$dir"
   mv "$archive" "$dir/"
   (cd "$dir" && sha256sum "$(basename "$archive")" > SHASUMS256.txt)
+  rm -f "$dir/SHASUMS256.txt.sig"
+  ssh-keygen -q -Y sign -n uze-release -f "$key" "$dir/SHASUMS256.txt" 2>/dev/null
+}
+
+playground_release_key() {
+  local key
+  key="$(dirname "$1")/playground-release-key"
+  [ -f "$key" ] || ssh-keygen -q -t ed25519 -N '' -C uze-playground -f "$key"
+  printf '%s' "$key"
+}
+
+# `installer` copied into `<stage>`, carrying the playground's key where the
+# shipped one carries the release key.
+stage_installer() {
+  local stage="$1" installer="$2" public
+  public="$(cat "$(playground_release_key "$stage").pub")"
+  sed -e "s|^UZE_RELEASE_KEY=.*|UZE_RELEASE_KEY='${public}'|" \
+    -e "s|^\([[:space:]]*\)[\$]ReleaseKey = .*|\1\$ReleaseKey = '${public}'|" \
+    "$installer" > "${stage}/$(basename "$installer")"
 }
 
 # The sessions signed in on this machine, lent to the world under

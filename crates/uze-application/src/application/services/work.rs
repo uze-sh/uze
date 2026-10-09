@@ -115,6 +115,7 @@ impl Workspace<'_> {
             .map_err(|refusal| refused(&refusal.to_string()))?;
             isolation.checkout = Some(acquired.id.clone());
             record::write(
+                &caller.primary,
                 &acquired.path,
                 &CheckoutRecord {
                     path: acquired.path.clone(),
@@ -126,7 +127,8 @@ impl Workspace<'_> {
             store.upsert(child);
             Ok(acquired)
         })?;
-        let warnings = checkout::materialize(&caller.primary, &acquired.path, &policy);
+        let consent = self.consent(&caller.primary, &policy);
+        let warnings = checkout::materialize(&caller.primary, &acquired.path, &consent);
         Ok(SplitWork {
             path: acquired.path,
             warnings,
@@ -184,6 +186,9 @@ impl Workspace<'_> {
                 .ok_or_else(|| refused("the subagent's record has no checkout"))?;
             let directory = child_directory(child, primary)?;
             let branch = isolation.branch.clone();
+            for checkout in [&parent.directory, &directory] {
+                checkout::anchored(primary, checkout).map_err(|reason| refused(&reason))?;
+            }
             if checkout::is_dirty(&parent.directory) {
                 return Err(refused(
                     "this checkout has uncommitted changes; commit them before joining",
@@ -218,7 +223,7 @@ impl Workspace<'_> {
                      finish first"
                 )));
             }
-            let split_at = match record::read(&directory) {
+            let split_at = match record::read(primary, &directory) {
                 Recorded::Ours(CheckoutRecord {
                     split_at: Some(split_at),
                     ..
@@ -241,6 +246,7 @@ impl Workspace<'_> {
                             isolation.base_commit = split_at.clone();
                         }
                         let _ = record::write(
+                            primary,
                             &directory,
                             &CheckoutRecord {
                                 path: directory.clone(),

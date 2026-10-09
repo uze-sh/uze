@@ -65,6 +65,8 @@ jobs:
       pending: ${{ steps.plan.outputs.pending }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -170,11 +172,14 @@ jobs:
       KEY: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].key }}
       VERSION: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].version }}
       PROVEN: ${{ fromJSON(needs.image.outputs.plan)[format('{0}-{1}', matrix.harness, matrix.part)].proven }}
+      HARNESS: ${{ matrix.harness }}
+      PART: ${{ matrix.part }}
+      LABEL: ${{ matrix.label }}
     steps:
       - name: Already proven
         if: env.PROVEN != ''
         run: |
-          echo "::notice title=${{ matrix.label }} (${{ matrix.part }}) already proven::${VERSION} passed in ${PROVEN}"
+          echo "::notice title=${LABEL} (${PART}) already proven::${VERSION} passed in ${PROVEN}"
           {
             echo "Passed against ${VERSION} in ${PROVEN}"
             echo
@@ -182,6 +187,8 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: env.PROVEN == ''
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: env.PROVEN == ''
         with:
@@ -199,7 +206,7 @@ jobs:
       - name: Run the ${{ matrix.harness }} ${{ matrix.part }} half
         if: env.PROVEN == ''
         run: |
-          python3 conformance/lab.py --harness ${{ matrix.harness }} --part ${{ matrix.part }} --write-summary --retry-once
+          python3 conformance/lab.py --harness "${HARNESS}" --part "${PART}" --write-summary --retry-once
         env:
           AGY_OUTDIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1
           UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/evidence

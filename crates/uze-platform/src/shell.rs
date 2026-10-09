@@ -80,6 +80,15 @@ pub fn quote(fragment: &str) -> String {
     imp::quote(fragment)
 }
 
+/// `line` with every `placeholder` in it replaced by `value`, spelled so
+/// this shell reads `value` back literally wherever the placeholder sat:
+/// bare, inside double quotes or inside single quotes. A plain textual
+/// replacement split a path with a space into two words, and one with a
+/// quote or a `$` could end the author's string and run the rest.
+pub fn substitute(line: &str, placeholder: &str, value: &str) -> String {
+    imp::substitute(line, placeholder, value)
+}
+
 /// The program and arguments that run a script file this shell reads:
 /// the script itself on Unix, PowerShell told to run it on Windows, where a
 /// script is not an executable.
@@ -169,6 +178,53 @@ mod imp {
 
     pub(super) fn script(path: &str) -> (String, Vec<String>) {
         (path.to_owned(), Vec::new())
+    }
+
+    /// A bare value is single-quoted when it needs to be; inside double
+    /// quotes the four characters they still expand are escaped; inside
+    /// single quotes nothing expands, so only a quote needs splicing.
+    pub(super) fn substitute(line: &str, placeholder: &str, value: &str) -> String {
+        let plain = value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+:@%=,".contains(c));
+        let mut spelled = String::with_capacity(line.len());
+        let mut quoting: Option<char> = None;
+        let mut rest = line;
+        while let Some(character) = rest.chars().next() {
+            if !placeholder.is_empty()
+                && let Some(after) = rest.strip_prefix(placeholder)
+            {
+                match quoting {
+                    None if plain => spelled.push_str(value),
+                    None => spelled.push_str(&quote(value)),
+                    Some('"') => {
+                        for c in value.chars() {
+                            if matches!(c, '\\' | '"' | '$' | '`') {
+                                spelled.push('\\');
+                            }
+                            spelled.push(c);
+                        }
+                    }
+                    Some(_) => spelled.push_str(&value.replace('\'', "'\\''")),
+                }
+                rest = after;
+                continue;
+            }
+            rest = &rest[character.len_utf8()..];
+            spelled.push(character);
+            match (quoting, character) {
+                (None, '\'' | '"') => quoting = Some(character),
+                (Some(open), close) if open == close => quoting = None,
+                (None | Some('"'), '\\') => {
+                    if let Some(escaped) = rest.chars().next() {
+                        rest = &rest[escaped.len_utf8()..];
+                        spelled.push(escaped);
+                    }
+                }
+                _ => {}
+            }
+        }
+        spelled
     }
 
     pub(super) fn sealed_script_line(path: &str, arguments: &[String]) -> String {
@@ -308,6 +364,62 @@ mod imp {
         }
         quoted.push('\'');
         quoted
+    }
+
+    /// What PowerShell reads as a double quote, typographic ones included.
+    const DOUBLE_QUOTES: [char; 4] = ['"', '\u{201C}', '\u{201D}', '\u{201E}'];
+
+    /// A bare value has each character PowerShell would read as syntax
+    /// escaped with a backtick, which keeps it one word in a command's name
+    /// as in an argument; inside double quotes the backtick, the `$` and
+    /// the quotes are escaped; inside single quotes a quote is doubled.
+    pub(super) fn substitute(line: &str, placeholder: &str, value: &str) -> String {
+        let mut spelled = String::with_capacity(line.len());
+        let mut quoting: Option<bool> = None; // Some(true) single, Some(false) double
+        let mut rest = line;
+        while let Some(character) = rest.chars().next() {
+            if !placeholder.is_empty()
+                && let Some(after) = rest.strip_prefix(placeholder)
+            {
+                for c in value.chars() {
+                    let escaped = match quoting {
+                        None => {
+                            c.is_whitespace()
+                                || SINGLE_QUOTES.contains(&c)
+                                || DOUBLE_QUOTES.contains(&c)
+                                || "`$;&|(){}@,<>#".contains(c)
+                        }
+                        Some(false) => c == '`' || c == '$' || DOUBLE_QUOTES.contains(&c),
+                        Some(true) => false,
+                    };
+                    if escaped {
+                        spelled.push('`');
+                    }
+                    spelled.push(c);
+                    if quoting == Some(true) && SINGLE_QUOTES.contains(&c) {
+                        spelled.push(c);
+                    }
+                }
+                rest = after;
+                continue;
+            }
+            rest = &rest[character.len_utf8()..];
+            spelled.push(character);
+            match quoting {
+                None if SINGLE_QUOTES.contains(&character) => quoting = Some(true),
+                None if DOUBLE_QUOTES.contains(&character) => quoting = Some(false),
+                Some(true) if SINGLE_QUOTES.contains(&character) => quoting = None,
+                Some(false) if DOUBLE_QUOTES.contains(&character) => quoting = None,
+                None | Some(false) if character == '`' => {
+                    if let Some(escaped) = rest.chars().next() {
+                        rest = &rest[escaped.len_utf8()..];
+                        spelled.push(escaped);
+                    }
+                }
+                _ => {}
+            }
+        }
+        spelled
     }
 
     /// The call operator, then bare words and single-quoted strings, in
@@ -509,6 +621,36 @@ mod tests {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
+        }
+    }
+
+    /// Wherever the placeholder sits, the shell reads the value back as
+    /// one literal word: bare, in double quotes, in single quotes.
+    #[test]
+    fn a_substituted_value_is_read_back_literally_wherever_it_sits() {
+        let echo = spelling("printf '%s|' ", "Write-Output ");
+        for value in [
+            "/plain/root",
+            "/a b/it's \"$HOME\" `x` ;",
+            "C:\\Users\\D’Angelo x",
+        ] {
+            for (template, expected) in [
+                ("@", value.to_owned()),
+                ("@/x", format!("{value}/x")),
+                ("\"@/x\"", format!("{value}/x")),
+                ("'@/x'", format!("{value}/x")),
+            ] {
+                let line = format!("{echo}{}", substitute(template, "@", value));
+                let output = command(&line).output().unwrap();
+                let read = String::from_utf8_lossy(&output.stdout);
+                let read = read.trim_end().trim_end_matches('|');
+                assert_eq!(
+                    read,
+                    expected,
+                    "{line}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
         }
     }
 

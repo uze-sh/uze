@@ -105,12 +105,17 @@ irm https://uze.sh/i | iex   # Windows (experimental)
 Pin this release by setting `UZE_VERSION={{ version | trim_start_matches(pat="v") }}` in the environment
 before running it.
 {% endif %}
-The installer picks the host's target and refuses a binary whose SHA-256 does
-not match `SHASUMS256.txt`. Windows needs Git for Windows.
+The installer picks the host's target, verifies the release key's signature over
+`SHASUMS256.txt` and refuses a binary whose SHA-256 does not match it. It needs
+OpenSSH's `ssh-keygen`; Windows also needs Git for Windows.
 
 ## Verify
 
+`SHASUMS256.txt` is signed with the release key (`release-signing.pub`):
+
 ```sh
+printf 'uze-release namespaces="uze-release" %s\\n' "$(grep -v '^#' release-signing.pub)" > allowed_signers
+ssh-keygen -Y verify -f allowed_signers -I uze-release -n uze-release -s SHASUMS256.txt.sig < SHASUMS256.txt
 sha256sum --ignore-missing -c SHASUMS256.txt
 gh attestation verify <asset> --repo uze-sh/uze
 ```

@@ -31,6 +31,7 @@ use crate::{
 mod endpoint;
 mod framing;
 mod host;
+mod key;
 mod lock;
 mod outbox;
 mod pane;
@@ -41,6 +42,8 @@ use uze_platform::endpoint as transport;
 
 pub use endpoint::*;
 pub use framing::*;
+pub use key::server_key;
+use key::*;
 use lock::*;
 use outbox::*;
 use pane::*;

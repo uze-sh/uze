@@ -276,6 +276,7 @@ mod tests {
             "main".into(),
         );
         task.isolation_mut().unwrap().checkout = Some(CheckoutId::adopted("slot-1"));
+        launched_with_test_key(&mut task);
         let id = task.id.as_str().to_owned();
         let mut store = AgentStore::default();
         store.upsert(task);
@@ -283,8 +284,19 @@ mod tests {
         (home, primary, slot, id)
     }
 
+    /// The key every agent these tests record was issued.
+    const TEST_KEY: &str = "the-launch-key";
+
+    fn launched_with_test_key(agent: &mut Agent) {
+        agent.launch_key = Some(uze_core::digest::secret_sha256(TEST_KEY));
+    }
+
     fn claim<'a>(id: &'a str, cwd: &'a Path) -> Claim<'a> {
-        Claim { id, cwd }
+        Claim {
+            id,
+            key: TEST_KEY,
+            cwd,
+        }
     }
 
     fn recorded(home: &UzeHome, primary: &Path) -> Option<SessionId> {
@@ -414,6 +426,7 @@ mod tests {
             "main".into(),
         );
         second.isolation_mut().unwrap().checkout = Some(CheckoutId::adopted("slot-1"));
+        launched_with_test_key(&mut second);
         let second_id = second.id.as_str().to_owned();
         let mut store = task::load(&home, &primary).unwrap();
         store.upsert(second);

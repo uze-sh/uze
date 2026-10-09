@@ -182,13 +182,12 @@ fn validate(policy: &WorktreePolicy, path: &Path) -> Result<()> {
 fn reject_unignored_links(root: &Path, path: &Path, policy: &WorktreePolicy) -> Result<()> {
     for link in &policy.link {
         let spelled = link.to_string_lossy();
-        let answer =
-            uze_git::read(root, &["check-ignore", "--quiet", "--", &spelled]).map_err(|error| {
-                UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!("`workspace.link` names `{spelled}`, but {error}"),
-                }
-            })?;
+        let answer = crate::git::read(root, &["check-ignore", "--quiet", "--", &spelled]).map_err(
+            |error| UzeError::MalformedManifest {
+                path: path.to_path_buf(),
+                reason: format!("`workspace.link` names `{spelled}`, but {error}"),
+            },
+        )?;
         match answer.code {
             Some(0) => {}
             Some(1) => {

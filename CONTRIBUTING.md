@@ -233,7 +233,9 @@ format the API imports.
 
 `main.json` forbids deleting the branch, force-pushing it, merge commits and
 rebase merges (squash only, which is what the history already is), and
-requires exactly one status check: `Gate`. That is the job `ci.yml` closes
+requires exactly one status check: `Gate`, reported by GitHub Actions
+(integration `15368`), since any app allowed to write checks can report one
+of that name. That is the job `ci.yml` closes
 every run with, and it is green when every other job either passed or was
 not needed, so an expensive tier that a documentation change never triggers
 does not leave the pull request waiting on a check that never arrives.
@@ -247,10 +249,13 @@ moving one changes what a user installs under a version they already have.
 **These files are a reference for re-import, not a deployment.** Live
 enforcement is a repository setting, so the two can drift: a rule changed in
 the UI does not change the file, and merging a change to the file does not
-change the repository. Both ship with `"enforcement": "disabled"` for that
-reason: importing one is never what turns it on. Nothing in the repository
-can tell you what is enforced right now; `gh api /repos/:owner/:repo/rulesets`
-can, and is the only thing that can.
+change the repository. Both are written with `"enforcement": "active"`,
+which is what they are meant to be live: a ruleset that was imported and
+left disabled protects nothing, and the release workflow's own checks (the
+`Gate` it waits for, the tag it refuses to reuse on another commit) assume
+both hold. Nothing in the repository can tell you what is enforced right
+now; `gh api /repos/:owner/:repo/rulesets` can, and is the only thing that
+can.
 
 ## Security
 

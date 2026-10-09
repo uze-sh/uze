@@ -243,10 +243,15 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
         fn list_dir(&self, _: &std::path::Path) -> Result<Vec<crate::DirEntry>, String> {
             Ok(Vec::new())
         }
-        fn write_file(&self, _: &std::path::Path, _: &str) -> Result<(), String> {
+        fn write_file(
+            &self,
+            _root: &std::path::Path,
+            _: &std::path::Path,
+            _: &str,
+        ) -> Result<(), String> {
             Ok(())
         }
-        fn delete_file(&self, _: &std::path::Path) -> Result<(), String> {
+        fn delete_file(&self, _root: &std::path::Path, _: &std::path::Path) -> Result<(), String> {
             Ok(())
         }
         fn restore_to_head(
@@ -779,10 +784,15 @@ impl Host for Written {
             })
             .collect())
     }
-    fn write_file(&self, _: &std::path::Path, _: &str) -> Result<(), String> {
+    fn write_file(
+        &self,
+        _root: &std::path::Path,
+        _: &std::path::Path,
+        _: &str,
+    ) -> Result<(), String> {
         Ok(())
     }
-    fn delete_file(&self, _: &std::path::Path) -> Result<(), String> {
+    fn delete_file(&self, _root: &std::path::Path, _: &std::path::Path) -> Result<(), String> {
         Ok(())
     }
     fn restore_to_head(&self, _: &std::path::Path, _: &[std::path::PathBuf]) -> Result<(), String> {

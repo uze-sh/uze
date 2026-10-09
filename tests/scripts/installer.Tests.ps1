@@ -4,11 +4,43 @@
 # PowerShell 7 alike (the `installer-windows` job runs both).
 
 BeforeAll {
-    $script:installer = Join-Path $PSScriptRoot '..\..\install.ps1' | Resolve-Path
+    $script:committed = Join-Path $PSScriptRoot '..\..\install.ps1' | Resolve-Path
     $script:version = '9.9.9'
     $script:shell = (Get-Process -Id $PID).Path
     $script:root = Join-Path ([IO.Path]::GetTempPath()) ("uze-installer-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $root | Out-Null
+
+    # A throwaway release key, and install.ps1 as it would ship once a real
+    # one exists, carrying this key in its place. A second key stands for
+    # anyone else who could publish to the release page.
+    $script:sshKeygen = Join-Path ([Environment]::SystemDirectory) 'OpenSSH\ssh-keygen.exe'
+    # One command line, spelled exactly: the two PowerShells pass an empty
+    # argument to a native program differently, and `-N ""` is one.
+    function script:Invoke-SshKeygen([string]$CommandLine) {
+        $start = New-Object Diagnostics.ProcessStartInfo $sshKeygen
+        $start.Arguments = $CommandLine
+        $start.UseShellExecute = $false
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $process = [Diagnostics.Process]::Start($start)
+        $errors = $process.StandardError.ReadToEndAsync()
+        [void]$process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "ssh-keygen $CommandLine failed: $($errors.Result)" }
+    }
+    function script:New-Key([string]$Name) {
+        $path = Join-Path $root $Name
+        Invoke-SshKeygen "-q -t ed25519 -N `"`" -C $Name -f `"$path`""
+        $path
+    }
+    $script:releaseKey = New-Key 'release-key'
+    $script:strangerKey = New-Key 'stranger-key'
+    $publicKey = (Get-Content -Raw "$releaseKey.pub").Trim()
+    $script:installer = Join-Path $root 'install.ps1'
+    $text = [IO.File]::ReadAllText($committed)
+    if ($text -notmatch "(?m)^\s*\`$ReleaseKey = '.*'\s*$") { throw 'install.ps1 has no $ReleaseKey line to stand a key in' }
+    $text = $text -replace "(?m)^(\s*)\`$ReleaseKey = '.*'", "`$1`$`$ReleaseKey = '$publicKey'"
+    [IO.File]::WriteAllText($installer, $text, (New-Object Text.UTF8Encoding $false))
 
     # A stand-in uze.exe that answers `--version` and nothing else. Built by
     # Windows PowerShell, whose Add-Type writes a console program.
@@ -33,7 +65,7 @@ public static class Program {
     $script:archive = "uze-$arch-windows.zip"
     $script:release = Join-Path $root 'release'
 
-    function script:Publish-Release([string]$Checksum) {
+    function script:Publish-Release([string]$Checksum, [string]$SignedBy = $releaseKey) {
         $download = Join-Path $release "download\v$version"
         Remove-Item -Recurse -Force $release -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Path $download | Out-Null
@@ -43,14 +75,21 @@ public static class Program {
         try { [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archiveFile, $built, 'uze.exe') }
         finally { $archiveFile.Dispose() }
         if (-not $Checksum) { $Checksum = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() }
-        Set-Content -LiteralPath (Join-Path $download 'SHASUMS256.txt') "$Checksum  $archive" -Encoding Ascii
+        $sums = Join-Path $download 'SHASUMS256.txt'
+        # LF, as the release job writes it on Linux: some Windows builds of
+        # ssh-keygen read the message on stdin in text mode, and a CRLF file
+        # would be verified as other bytes than the ones it signed.
+        [IO.File]::WriteAllText($sums, "$Checksum  $archive`n", (New-Object Text.ASCIIEncoding))
+        if ($SignedBy) {
+            Invoke-SshKeygen "-q -Y sign -n uze-release -f `"$SignedBy`" `"$sums`""
+        }
     }
 
     # The user's Path is the machine's, so every test leaves it as it was.
     $script:savedPath = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment').GetValue(
         'Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-    function script:Invoke-Installer([string[]]$Arguments = @(), [hashtable]$Environment = @{}) {
+    function script:Invoke-Installer([string[]]$Arguments = @(), [hashtable]$Environment = @{}, [string]$Script = $installer) {
         $variables = @{
             UZE_BASE_URL        = ([Uri]$release).AbsoluteUri
             UZE_VERSION         = $version
@@ -68,7 +107,7 @@ public static class Program {
             # What the installer writes on stderr is its answer, read below;
             # under a caller's `Stop` (CI runs steps so) it would throw here.
             $ErrorActionPreference = 'Continue'
-            $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $installer @Arguments 2>&1
+            $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $Script @Arguments 2>&1
             [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output | Out-String) }
         } finally {
             foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
@@ -118,6 +157,45 @@ Describe 'install.ps1' {
         $run = Invoke-Installer
         $run.Code | Should -Not -Be 0
         $run.Output | Should -Match 'checksum mismatch'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    It 'refuses a release with no signature and installs nothing' {
+        Publish-Release -SignedBy ''
+        $run = Invoke-Installer
+        $run.Code | Should -Not -Be 0
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    It 'refuses checksums signed by any key but the release key' {
+        Publish-Release -SignedBy $strangerKey
+        $run = Invoke-Installer
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'not signed by the uze release key'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    It 'refuses checksums altered after they were signed' {
+        $sums = Join-Path $release "download\v$version\SHASUMS256.txt"
+        $zip = Join-Path $release "download\v$version\$archive"
+        # Another archive and its true checksum, under the signature of the
+        # checksums it replaced.
+        Add-Content -LiteralPath $zip -Value 'tampered' -Encoding Ascii
+        Set-Content -LiteralPath $sums "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower())  $archive" -Encoding Ascii
+        $run = Invoke-Installer
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'not signed by the uze release key'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    It 'installs nothing while it carries no release key' {
+        if ([IO.File]::ReadAllText($committed) -notmatch "(?m)^\s*\`$ReleaseKey = ''\s*$") {
+            Set-ItResult -Skipped -Because 'the committed installer carries a release key'
+            return
+        }
+        $run = Invoke-Installer -Script $committed
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'no release signing key'
         Join-Path $bin 'uze.exe' | Should -Not -Exist
     }
 

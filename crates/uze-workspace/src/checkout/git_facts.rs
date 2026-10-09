@@ -22,7 +22,7 @@ pub fn rename_branch(primary: &Path, from: &str, to: &str) -> crate::Result<()> 
 /// branch when it has no commit yet, which is the case that must be told
 /// apart from "no branch at all".
 pub fn current_branch(root: &Path) -> Option<String> {
-    let branch = uze_git::read(root, &["symbolic-ref", "--short", "--quiet", "HEAD"])
+    let branch = crate::git::read(root, &["symbolic-ref", "--short", "--quiet", "HEAD"])
         .ok()?
         .successful()
         .ok()?;
@@ -32,7 +32,7 @@ pub fn current_branch(root: &Path) -> Option<String> {
 
 /// The commit `reference` resolves to in `root`.
 pub fn tip_of(root: &Path, reference: &str) -> String {
-    uze_git::read(
+    crate::git::read(
         root,
         &[
             "rev-parse",
@@ -51,7 +51,7 @@ pub fn tip_of(root: &Path, reference: &str) -> String {
 /// Uncommitted changes, tracked or untracked-but-not-ignored. What rebasing,
 /// joining and delivering ask: they need a tree with nothing at all in it.
 pub fn is_dirty(root: &Path) -> bool {
-    uze_git::read(root, &["status", "--porcelain"])
+    crate::git::read(root, &["status", "--porcelain"])
         .ok()
         .and_then(|output| output.successful().ok())
         .is_none_or(|status| !status.trim().is_empty())
@@ -65,7 +65,7 @@ pub fn is_dirty(root: &Path) -> bool {
 /// collects just by having UZE run in it, and each parked the slot for
 /// good. A question Git could not answer is taken as yes.
 pub fn holds_uncommitted_work(root: &Path) -> bool {
-    let Some(status) = uze_git::read(root, &["status", "--porcelain=v1", "-z"])
+    let Some(status) = crate::git::read(root, &["status", "--porcelain=v1", "-z"])
         .ok()
         .and_then(|output| output.successful().ok())
     else {
@@ -146,7 +146,7 @@ pub(super) enum Committed {
 
 /// A top-level file as `HEAD` has it.
 pub(super) fn committed_text(root: &Path, name: &str) -> Committed {
-    let Some(listed) = uze_git::read(root, &["ls-tree", "--name-only", "HEAD", "--", name])
+    let Some(listed) = crate::git::read(root, &["ls-tree", "--name-only", "HEAD", "--", name])
         .ok()
         .and_then(|output| output.successful().ok())
     else {
@@ -155,7 +155,7 @@ pub(super) fn committed_text(root: &Path, name: &str) -> Committed {
     if listed.trim().is_empty() {
         return Committed::Absent;
     }
-    uze_git::read(root, &["show", &format!("HEAD:{name}")])
+    crate::git::read(root, &["show", &format!("HEAD:{name}")])
         .ok()
         .and_then(|output| output.successful().ok())
         .map_or(Committed::Unknown, Committed::Text)
@@ -174,7 +174,7 @@ pub struct UpstreamDivergence {
 }
 
 pub fn upstream_divergence(root: &Path) -> Option<UpstreamDivergence> {
-    let counts = uze_git::read(
+    let counts = crate::git::read(
         root,
         &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
     )
@@ -197,9 +197,15 @@ pub fn upstream_divergence(root: &Path) -> Option<UpstreamDivergence> {
 /// one, so a count that fell back to zero read as "this branch is fully in
 /// the target" for *every* branch in the repository.
 pub fn commits_ahead_checked(root: &Path, target: &str, branch: &str) -> Option<usize> {
-    uze_git::read(
+    crate::git::read(
         root,
-        &["rev-list", "--count", &format!("{target}..{branch}"), "--"],
+        &[
+            "rev-list",
+            "--count",
+            "--end-of-options",
+            &format!("{target}..{branch}"),
+            "--",
+        ],
     )
     .ok()
     .and_then(|output| output.successful().ok())

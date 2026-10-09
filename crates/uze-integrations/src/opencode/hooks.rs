@@ -6,8 +6,9 @@ use crate::hooks::{HookRunner, HookTarget, UNBOUND};
 
 /// OpenCode V2 has no declarative hook file, so UZE generates an owned,
 /// rebuildable plugin (the bridge) that rides the plugin API: the tool
-/// hooks observe a call, `permission.evaluate` decides on it (deny or ask,
-/// with the input the tool hook kept by call id), and the bus events
+/// hook observes a call and refuses it on a denial (whether or not the
+/// tool asks for permission), `permission.evaluate` asks about it (with the
+/// input the tool hook kept by call id), and the bus events
 /// `session.created` and `session.execution.succeeded` are a new session
 /// and the end of a turn (anomalyco/opencode `v2`, 2.0.24). A resumed
 /// session announces nothing, so `startup` is the only source. `transform`
@@ -30,8 +31,17 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
     ],
     tools: TOOLS,
     session_sources: &["startup"],
-    runner: HookRunner::Bridge,
+    runner: HookRunner::Bridge {
+        prompting: PROMPTING,
+    },
 };
+
+/// The tools that put a call to `permission.evaluate` before they act
+/// (`permission.assert` in each tool's own source, anomalyco/opencode `v2`;
+/// `read` has none), the one place an `ask` can be answered. Measured by the
+/// Lab's `hooks-ask-*` checks on `shell` and its `hooks-deny-unprompted-*`
+/// checks on `read`.
+const PROMPTING: &[&str] = &["shell", "write", "edit", "grep", "websearch", "subagent"];
 
 /// Measured, never recalled: every native name and field here is the one a
 /// Lab census saw a call reach the bridge with (`hook_tools` in

@@ -262,8 +262,21 @@ impl PaneRuntime {
     pub(super) fn scroll(&self, lines: i32) -> bool {
         let mut terminal = self.terminal.lock().expect("terminal poisoned");
         let before = terminal.grid().display_offset();
-        terminal.scroll_display(Scroll::Delta(lines));
+        // The emulator adds the delta to its offset before clamping it, so
+        // a peer's `i32::MAX` overflowed inside it — a panic in a debug
+        // build, under this lock, poisoning the pane for good. Nothing
+        // scrolls further than the lines the pane holds.
+        let reach = i32::try_from(terminal.grid().total_lines()).unwrap_or(i32::MAX);
+        terminal.scroll_display(Scroll::Delta(lines.clamp(-reach, reach)));
         terminal.grid().display_offset() != before
+    }
+
+    /// Whether `pid` is one of this pane's processes — see
+    /// [`uze_platform::process::pane::belongs`].
+    pub(super) fn holds(&self, pid: u32) -> bool {
+        self.leader.is_some_and(|leader| {
+            uze_platform::process::pane::belongs(pid, leader, self.group.as_deref())
+        })
     }
 
     pub(super) fn select(&self, gesture: SelectionGesture) -> bool {

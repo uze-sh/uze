@@ -23,8 +23,8 @@ pub struct Reconciliation {
 pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconciliation {
     let mut report = Reconciliation::default();
     let registered = isolated_checkouts(primary);
-    record_on_sight(&registered, store);
-    restore_parents(&registered, store);
+    record_on_sight(primary, &registered, store);
+    restore_parents(primary, &registered, store);
 
     for (path, branch) in &registered {
         let id = CheckoutId::adopted(&slot_name(path));
@@ -63,7 +63,7 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
         }
         // A checkout without UZE's record is somebody else's, whatever it
         // is called: adopting it would make it a slot the next agent resets.
-        if !matches!(record::read(path), Recorded::Ours(_)) {
+        if !matches!(record::read(primary, path), Recorded::Ours(_)) {
             continue;
         }
         let holds_work = holds_uncommitted_work(path)
@@ -149,9 +149,13 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
 /// by inference never had — and the `agent-<n>` of the builds before slots.
 /// A standing rule rather than a one-time step, because an older build on
 /// the same machine goes on making slots it does not record.
-pub(super) fn record_on_sight(registered: &[(PathBuf, Option<String>)], store: &AgentStore) {
+pub(super) fn record_on_sight(
+    primary: &Path,
+    registered: &[(PathBuf, Option<String>)],
+    store: &AgentStore,
+) {
     for (path, _) in registered {
-        if record::read(path) != Recorded::Absent {
+        if record::read(primary, path) != Recorded::Absent {
             continue;
         }
         let id = CheckoutId::adopted(&slot_name(path));
@@ -162,7 +166,7 @@ pub(super) fn record_on_sight(registered: &[(PathBuf, Option<String>)], store: &
                     .is_some_and(|isolation| isolation.checkout.as_ref() == Some(&id))
         });
         if (launched_here || id.is_legacy())
-            && let Err(reason) = record::write(path, &CheckoutRecord::made_at(path))
+            && let Err(reason) = record::write(primary, path, &CheckoutRecord::made_at(path))
         {
             tracing::warn!(checkout = %path.display(), %reason, "could not record a checkout UZE made");
         }
@@ -173,13 +177,17 @@ pub(super) fn record_on_sight(registered: &[(PathBuf, Option<String>)], store: &
 /// an older build knows nothing of `parent` and drops it on its next save.
 /// Only the holder still starting at the record's split point is the child
 /// the record describes; one an older build placed there since is not.
-pub(super) fn restore_parents(registered: &[(PathBuf, Option<String>)], store: &mut AgentStore) {
+pub(super) fn restore_parents(
+    primary: &Path,
+    registered: &[(PathBuf, Option<String>)],
+    store: &mut AgentStore,
+) {
     for (path, _) in registered {
         let Recorded::Ours(CheckoutRecord {
             parent: Some(parent),
             split_at: Some(split_at),
             ..
-        }) = record::read(path)
+        }) = record::read(primary, path)
         else {
             continue;
         };

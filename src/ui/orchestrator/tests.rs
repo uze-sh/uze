@@ -8978,10 +8978,10 @@ mod workspace_tests {
                     name: "notes.txt".to_owned(),
                 }])
             }
-            fn write_file(&self, _: &Path, _: &str) -> Result<(), String> {
+            fn write_file(&self, _root: &Path, _: &Path, _: &str) -> Result<(), String> {
                 Err("read only".to_owned())
             }
-            fn delete_file(&self, _: &Path) -> Result<(), String> {
+            fn delete_file(&self, _root: &Path, _: &Path) -> Result<(), String> {
                 Err("read only".to_owned())
             }
             fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
@@ -11488,6 +11488,105 @@ mod workspace_tests {
         );
         assert!(driven.attach.model.manage.is_some(), "and the modal stayed");
     }
+
+    /// A project whose `agents.yaml` declares commands, with an escape
+    /// sequence hidden in one of them, and the question about it as the
+    /// application would ask it.
+    fn project_awaiting_approval(
+        label: &str,
+    ) -> (UzeHome, PathBuf, uze_application::CommandsAwaitingApproval) {
+        let home = UzeHome::at(uze_testkit::temp::scratch(&format!("{label}-home")));
+        let project = uze_testkit::temp::scratch(label);
+        std::fs::write(
+            project.join("agents.yaml"),
+            "workspace:\n  \
+             setup:\n    posix: \"make\\e[2J\"\n    windows: \"make\\e[2J\"\n  \
+             gate:\n    posix: make test\n    windows: make test\n",
+        )
+        .unwrap();
+        let awaiting = uze_application::UzeApplication::new(home.clone(), Vec::new())
+            .workspace()
+            .commands_awaiting_approval(&project)
+            .expect("an unapproved project waits");
+        (home, project, awaiting)
+    }
+
+    /// The question is said once a session, stays until answered, and the
+    /// dialog it opens shows every line with its controls written out —
+    /// a command that clears the screen must not be able to hide itself
+    /// from the person approving it.
+    #[test]
+    fn a_projects_commands_are_asked_about_once_and_shown_escaped() {
+        let (home, _project, awaiting) = project_awaiting_approval("orchestrator-approval-ask");
+        let mut driven = driven(WorkspaceModel::default(), &home);
+
+        driven.attach.model.commands_await(awaiting.clone(), false);
+        driven.attach.model.commands_await(awaiting, false);
+        let stack = driven.attach.model.toast_stack();
+        assert_eq!(stack.len(), 1, "said once: {stack:?}");
+        let said = format!("{stack:?}");
+        assert!(said.contains("Review"), "it offers the question: {said}");
+        assert_eq!(
+            driven.attach.model.toast_offer(0),
+            Some(WorkspaceHit::ReviewCommands)
+        );
+
+        driven.attach.model.review_commands();
+        let screen = frame_rows(&mut driven.attach.model).join("\n");
+        assert!(screen.contains("Run this project"), "{screen}");
+        assert!(screen.contains("make test"), "{screen}");
+        assert!(
+            screen.contains("\\u{1b}[2J"),
+            "the escape is written out: {screen}"
+        );
+        assert!(!screen.contains('\u{1b}'), "and never drawn raw");
+    }
+
+    /// Only the operator's yes records anything: the way out leaves the
+    /// project waiting, and approving records exactly the lines shown.
+    #[test]
+    fn only_the_operators_yes_approves_a_projects_commands() {
+        let (home, project, awaiting) = project_awaiting_approval("orchestrator-approval-answer");
+        let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+        let mut driven = driven(WorkspaceModel::default(), &home);
+        driven.attach.model.commands_await(awaiting, false);
+
+        // Through the keymap, as the operator presses them: the dialog's
+        // own scope is what answers, and it opens on the way out.
+        let enter = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        );
+        let right = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Right,
+            crossterm::event::KeyModifiers::NONE,
+        );
+        driven.attach.model.review_commands();
+        driven.press_key(enter);
+        assert!(driven.attach.model.approval.is_none(), "the dialog closed");
+        assert!(
+            app.workspace()
+                .commands_awaiting_approval(&project)
+                .is_some(),
+            "enter on the way out approves nothing"
+        );
+
+        driven.attach.model.review_commands();
+        driven.press_key(right);
+        driven.press_key(enter);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app
+            .workspace()
+            .commands_awaiting_approval(&project)
+            .is_some()
+            || !format!("{:?}", driven.attach.model.toast_stack()).contains("approved")
+        {
+            assert!(Instant::now() < deadline, "the approval must be answered");
+            std::thread::sleep(Duration::from_millis(10));
+            driven.pump();
+        }
+        assert!(driven.attach.model.remembered.commands_awaiting.is_empty());
+    }
 }
 
 mod prompt_buffer_tests {
@@ -11956,4 +12055,33 @@ mod drawer_tests {
                 .is_empty()
         );
     }
+}
+
+/// A plugin name carrying a right-to-left override draws as its letters:
+/// the override, which ratatui keeps because it is zero-width, never
+/// reaches the terminal to reorder the row.
+#[test]
+fn a_bidi_override_never_reaches_the_terminal() {
+    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 12, 1));
+    buffer.set_string(0, 0, "ab\u{202e}cd", ratatui::style::Style::default());
+    let mut drawn = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 12, 1));
+    ratatui::widgets::Widget::render(
+        ratatui::text::Line::raw("ab\u{202e}cd\u{1b}[2K"),
+        drawn.area,
+        &mut drawn,
+    );
+    assert!(
+        drawn
+            .content
+            .iter()
+            .any(|cell| cell.symbol().contains('\u{202e}')),
+        "ratatui itself keeps the override, so this pass is what removes it"
+    );
+    crate::ui::settle_controls(&mut drawn);
+    let row: String = drawn.content.iter().map(|cell| cell.symbol()).collect();
+    assert!(
+        !row.chars().any(uze_application::is_terminal_control),
+        "{row:?}"
+    );
+    assert!(row.starts_with("abcd"), "{row:?}");
 }

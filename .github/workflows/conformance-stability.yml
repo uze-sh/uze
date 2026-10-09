@@ -35,6 +35,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Build the Lab harness image
         run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
       - name: Hand it to the verticals
@@ -66,6 +68,8 @@ jobs:
             label: OpenCode
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: lab-image-stability
@@ -82,19 +86,21 @@ jobs:
       # failure line is `✕`) and accepted any `N/M asserted PASS` line,
       # including 46/49.
       - name: Run 3 consecutive gate runs
+        env:
+          HARNESS: ${{ matrix.harness }}
         run: |
-          mkdir -p /tmp/stability/${{ matrix.harness }}
+          mkdir -p "/tmp/stability/${HARNESS}"
           fails=0
           for i in 1 2 3; do
-            log=/tmp/stability/${{ matrix.harness }}/run$i.log
-            if python3 conformance/lab.py --harness ${{ matrix.harness }} --write-summary \
+            log="/tmp/stability/${HARNESS}/run$i.log"
+            if python3 conformance/lab.py --harness "${HARNESS}" --write-summary \
                  > "$log" 2>&1; then
               echo "run $i clean"
             else
               echo "flake in run $i:"; tail -n 12 "$log"; fails=$((fails+1))
             fi
           done
-          echo "stability: $((3-fails))/3 clean for ${{ matrix.harness }}"
+          echo "stability: $((3-fails))/3 clean for ${HARNESS}"
           exit $fails
       - name: Upload stability logs
         if: always()

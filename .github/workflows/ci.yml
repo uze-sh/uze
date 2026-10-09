@@ -88,6 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # `git diff` against the pull request's base needs both commits.
           fetch-depth: 0
       - id: filter
@@ -183,6 +184,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # The comment beside a pinned SHA is the version Dependabot reads, here
       # and in every other workflow. `# master` is not one, so the robot
       # followed that branch's HEAD and proposed each bump as one forty-digit
@@ -200,6 +203,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -238,6 +243,8 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.platforms) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -259,7 +266,7 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest@0.9.146
       # `.cargo/config.toml` pins `jobs = 2` as a courtesy to a 4-vCPU WSL
       # box. A hosted macOS runner is not that box, and this leg is the
       # slowest in stage 1.
@@ -345,6 +352,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # `rust-version` in Cargo.toml is a promise to anyone pinned to that
       # release. Every other job runs `stable`, so without this one the
       # promise is never tested and a newer language feature breaks it
@@ -377,6 +386,8 @@ jobs:
       CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -388,7 +399,7 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov@0.9.0
       # No `--skip`. Three used to sit here. `foreground_status_reports_*`
       # read whichever shell the runner reported and waited five seconds for
       # it; it now pins `SHELL` and waits on a deadline. `real_codex_dogfood_*`
@@ -420,6 +431,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # A prebuilt binary, not `rustsec/audit-check`: that action builds
       # cargo-audit from source on every run with a fresh resolution, so
       # any crate in cargo-audit's own tree publishing a broken release
@@ -429,7 +442,7 @@ jobs:
       - name: Install cargo-audit
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          tool: cargo-audit
+          tool: cargo-audit@0.22.2
       - run: cargo audit
 
   licences:
@@ -440,6 +453,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
@@ -453,7 +468,7 @@ jobs:
       - name: Install cargo-deny and cargo-about
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          tool: cargo-deny,cargo-about
+          tool: cargo-deny@0.20.2,cargo-about@0.9.2
       # Licences, advisories, bans and sources — the policy lives in
       # deny.toml, including the two `unmaintained` advisories accepted
       # there with a written reason.
@@ -483,6 +498,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # gitleaks walks commits, not the worktree; a shallow clone would
           # silently scan almost nothing and still report success.
           fetch-depth: 0
@@ -516,6 +532,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
       - name: Lint the installer
@@ -533,6 +551,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # Pinned: a new analyzer rule or a Pester change is a change to this
       # job, made on purpose. Each PowerShell keeps its own module path.
       - name: Install the pinned modules (PowerShell 7)
@@ -579,6 +599,8 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: web/package.json
@@ -594,10 +616,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install ruff
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
         with:
-          tool: ruff
+          tool: ruff@0.16.4
       - run: ruff format --check conformance/ .github/scripts/
       - run: ruff check conformance/ .github/scripts/
       - run: python3 -m pip install --user pexpect
@@ -694,8 +718,10 @@ jobs:
       - conformance
     steps:
       - name: Every job either passed or was not needed
+        env:
+          BROKEN: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
-          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+          if [ "${BROKEN}" = true ]; then
             echo "::error::a job in this run failed or was cancelled"
             exit 1
           fi
@@ -705,7 +731,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          unfinished="$(gh api --paginate "repos/${GH_REPO}/actions/runs/${{ github.run_id }}/jobs?filter=latest&per_page=100" \
+          unfinished="$(gh api --paginate "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" \
             --jq '.jobs[]
                   | select(.conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "startup_failure")
                   | "\(.name): \(.conclusion)"')"

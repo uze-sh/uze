@@ -224,8 +224,17 @@ impl TerminalSession {
         self.terminal.size().map_err(io_error)
     }
 
+    /// Draws one frame. The only way a frame reaches the terminal: this is
+    /// the one ratatui `Terminal` the client constructs, so the control
+    /// pass below cannot be forgotten by a surface.
     pub(crate) fn draw(&mut self, render: impl FnOnce(&mut ratatui::Frame<'_>)) -> Result<()> {
-        self.terminal.draw(render).map(|_| ()).map_err(io_error)
+        self.terminal
+            .draw(|frame| {
+                render(frame);
+                settle_controls(frame.buffer_mut());
+            })
+            .map(|_| ())
+            .map_err(io_error)
     }
 
     /// The terminal's own bell, through the handle the frames go through
@@ -779,6 +788,28 @@ impl ReleaseNotice<'_> {
                 mark,
                 1,
             ),
+        }
+    }
+}
+
+/// Takes every control a cell still carries out of it, last, over the whole
+/// frame: every frame the client draws passes here, through
+/// [`TerminalSession::draw`]. ratatui drops the C0 and C1 controls itself, but a bidi override
+/// or isolate is zero-width, so it is appended to the cell before it and
+/// reaches the terminal, where it reorders the rest of the row: a plugin's
+/// name or description could make what follows it read as something else.
+/// Width is settled by the time a cell exists, so the control is removed
+/// rather than spelled out; the CLI, which lays text out after escaping it,
+/// spells it.
+pub(crate) fn settle_controls(buffer: &mut ratatui::buffer::Buffer) {
+    for cell in &mut buffer.content {
+        let symbol = cell.symbol();
+        if symbol.chars().any(uze_application::is_terminal_control) {
+            let kept: String = symbol
+                .chars()
+                .filter(|character| !uze_application::is_terminal_control(*character))
+                .collect();
+            cell.set_symbol(if kept.is_empty() { " " } else { &kept });
         }
     }
 }

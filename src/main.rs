@@ -254,6 +254,9 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
         silence_stdout();
     }
     let home = UzeHome::from_env()?;
+    // Best-effort: a home this user cannot narrow is reported by whatever
+    // writes into it next, with the path that failed.
+    let _ = home.keep_private();
     let argv: Vec<String> = argv_lossy().into_iter().skip(1).collect();
     // The two processes that outlive the gesture that started them keep a
     // journal; everything else may write to stderr like any other
@@ -306,7 +309,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
                 uze::self_update::changelog().to_owned(),
             ],
         ]);
-        eprintln!("\n{rows}");
+        eprintln!("\n{}", progress::for_terminal(&rows));
     }
     result
 }
@@ -368,6 +371,12 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                     progress::success("no workspace running");
                 }
                 Ok(())
+            }
+            Some(WorkspaceAction::Allow { path }) => {
+                allow_project_commands(&UzeApplication::from_env(home)?, &context_path(path))
+            }
+            Some(WorkspaceAction::Revoke { path }) => {
+                revoke_project_commands(&UzeApplication::from_env(home)?, &context_path(path))
             }
         };
     }
@@ -462,7 +471,10 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                     {
                         print!(
                             "{}",
-                            render_requirement_gaps_of(&app, plugins.iter().map(String::as_str))
+                            progress::for_terminal(&render_requirement_gaps_of(
+                                &app,
+                                plugins.iter().map(String::as_str)
+                            ))
                         );
                     }
                     if let Some(failure) = undelivered_failure(report.undelivered()) {
@@ -495,22 +507,18 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                 }
             });
             if matches!(format, OutputFormat::Text) {
-                print!(
-                    "{}",
-                    render_requirement_gaps_of(
-                        &app,
-                        report.outcomes.iter().filter_map(|outcome| {
-                            use uze_application::application::UpdateOutcome;
-                            match outcome {
-                                UpdateOutcome::Moved { plugin, .. }
-                                | UpdateOutcome::FollowedLink { plugin, .. } => {
-                                    Some(plugin.as_str())
-                                }
-                                _ => None,
-                            }
-                        })
-                    )
+                let gaps = render_requirement_gaps_of(
+                    &app,
+                    report.outcomes.iter().filter_map(|outcome| {
+                        use uze_application::application::UpdateOutcome;
+                        match outcome {
+                            UpdateOutcome::Moved { plugin, .. }
+                            | UpdateOutcome::FollowedLink { plugin, .. } => Some(plugin.as_str()),
+                            _ => None,
+                        }
+                    }),
                 );
+                print!("{}", progress::for_terminal(&gaps));
             }
             if let Some(failure) = undelivered_failure(report.undelivered()) {
                 return Err(failure);
@@ -593,6 +601,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                     Ok(report) => {
                         let status = ProjectStatus {
                             steps_not_spelled_here: app.workspace().steps_not_spelled_here(&root),
+                            commands_awaiting_approval: app
+                                .workspace()
+                                .commands_awaiting_approval(&report.root),
                             report,
                         };
                         emit(format, &status, render_status);
@@ -871,6 +882,7 @@ mod status_output_tests {
         ProjectStatus {
             report,
             steps_not_spelled_here: Vec::new(),
+            commands_awaiting_approval: None,
         }
     }
 
@@ -945,6 +957,29 @@ mod status_output_tests {
     #[test]
     fn a_healthy_project_is_owed_nothing() {
         assert!(status_next_step(&report(present(), Portability::Portable)).is_none());
+    }
+
+    /// A person who runs `uze status` and nothing else learns the workspace
+    /// will not run the project's commands, and the verb that answers it.
+    #[test]
+    fn commands_awaiting_approval_are_owed_the_verb_that_approves_them() {
+        let project = uze_testkit::temp::scratch("status-awaiting-approval");
+        std::fs::write(
+            project.join("agents.yaml"),
+            "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
+        )
+        .unwrap();
+        let home = super::UzeHome::at(project.join(".uze-home"));
+        let mut status = report(present(), Portability::Portable);
+        status.commands_awaiting_approval = super::UzeApplication::new(home, Vec::new())
+            .workspace()
+            .commands_awaiting_approval(&project);
+        assert!(status.commands_awaiting_approval.is_some());
+
+        assert_eq!(status_next_step(&status), Some("uze workspace allow"));
+        let rendered = super::progress::unpainted(&render_status(&status));
+        assert!(rendered.contains("1 command in agents.yaml"), "{rendered}");
+        assert!(rendered.contains("approve"), "{rendered}");
     }
 }
 

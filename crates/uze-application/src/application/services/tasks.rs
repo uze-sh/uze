@@ -11,7 +11,7 @@ use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use uze_core::{Result, UzeError, anchor, manifest};
+use uze_core::{Result, UzeError, UzeHome, anchor, manifest};
 
 use uze_workspace::{
     checkout, client_layout,
@@ -22,7 +22,7 @@ use uze_workspace::{
     worktree::{self, BranchVocabulary, CompletionBehavior, NameRefusal, WorktreePolicy},
 };
 
-use super::{AgentIdentity, Workspace, WorkspaceEntry};
+use super::{AgentIdentity, CommandsAwaitingApproval, Workspace, WorkspaceEntry};
 
 mod delivery;
 mod evaluation;

@@ -75,6 +75,15 @@ const GIT_OUTPUT_CAP: usize = 8 * 1024 * 1024;
 /// enforce a package-size policy.
 const MAX_MATERIALIZED_BYTES: u64 = 512 * 1024 * 1024;
 
+/// Upper bound on how many files a checkout writes. The byte budget alone
+/// does not bound it: Git stores one empty blob once however many names
+/// point at it, so a small repository can still ask for millions of inodes.
+const MAX_MATERIALIZED_ENTRIES: u64 = 100_000;
+
+/// Upper bound on how deeply a checkout nests. Every walk of a package
+/// descends it, and no plugin layout needs more than a handful of levels.
+const MAX_MATERIALIZED_DEPTH: u64 = 64;
+
 /// Rejects a URL carrying inline credentials before it is ever used, logged
 /// or persisted.
 ///
@@ -399,26 +408,60 @@ pub(super) fn assert_tree_within_size_budget(
     commit: &str,
     subdirectory: Option<&str>,
 ) -> Result<()> {
-    if tree_bytes(reach, repository, commit, subdirectory)? > MAX_MATERIALIZED_BYTES {
-        return Err(UzeError::AcquisitionFailed(format!(
-            "materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes"
-        )));
+    let weight = tree_weight(reach, repository, commit, subdirectory)?;
+    let refused = if weight.bytes > MAX_MATERIALIZED_BYTES {
+        format!("materialized repository exceeds {MAX_MATERIALIZED_BYTES} bytes")
+    } else if weight.entries > MAX_MATERIALIZED_ENTRIES {
+        format!("materialized repository holds more than {MAX_MATERIALIZED_ENTRIES} files")
+    } else if weight.depth > MAX_MATERIALIZED_DEPTH {
+        format!("materialized repository nests deeper than {MAX_MATERIALIZED_DEPTH} directories")
+    } else {
+        return Ok(());
+    };
+    Err(UzeError::AcquisitionFailed(refused))
+}
+
+/// What a checkout would write: its bytes, its file count and its deepest
+/// path, counted only until one of them passes its budget, which is all
+/// the answer needs.
+#[derive(Clone, Copy, Debug, Default)]
+struct TreeWeight {
+    bytes: u64,
+    entries: u64,
+    depth: u64,
+}
+
+impl TreeWeight {
+    fn over_budget(&self) -> bool {
+        self.bytes > MAX_MATERIALIZED_BYTES
+            || self.entries > MAX_MATERIALIZED_ENTRIES
+            || self.depth > MAX_MATERIALIZED_DEPTH
     }
-    Ok(())
 }
 
 /// The bytes a checkout of `commit`, or of `subdirectory` within it, would
-/// write — counted only until they pass the budget, which is all the
-/// answer needs.
-///
-/// Streamed: a tree listing grows with the file count, not the byte count,
-/// so a repository well within budget can still list past any output cap.
+/// write.
+#[cfg(test)]
 fn tree_bytes(
     reach: Reach,
     repository: &Path,
     commit: &str,
     subdirectory: Option<&str>,
 ) -> Result<u64> {
+    tree_weight(reach, repository, commit, subdirectory).map(|weight| weight.bytes)
+}
+
+/// The [`TreeWeight`] of a checkout of `commit`, or of `subdirectory`
+/// within it.
+///
+/// Streamed: a tree listing grows with the file count, not the byte count,
+/// so a repository well within budget can still list past any output cap.
+fn tree_weight(
+    reach: Reach,
+    repository: &Path,
+    commit: &str,
+    subdirectory: Option<&str>,
+) -> Result<TreeWeight> {
     reject_option_shaped(commit, "commit")?;
     let mut arguments = vec!["--literal-pathspecs", "ls-tree", "-r", "-l", "-z", commit];
     if let Some(subdirectory) = subdirectory {
@@ -428,16 +471,28 @@ fn tree_bytes(
         reach,
         &arguments,
         Some(repository),
-        0u64,
-        |total, record| {
-            *total = total.saturating_add(record_size(record));
-            if *total > MAX_MATERIALIZED_BYTES {
+        TreeWeight::default(),
+        |weight, record| {
+            weight.bytes = weight.bytes.saturating_add(record_size(record));
+            weight.entries += 1;
+            weight.depth = weight.depth.max(record_depth(record));
+            if weight.over_budget() {
                 ControlFlow::Break(())
             } else {
                 ControlFlow::Continue(())
             }
         },
     )
+}
+
+/// How many names deep an `ls-tree` record's path is.
+fn record_depth(record: &[u8]) -> u64 {
+    record
+        .splitn(2, |byte| *byte == b'\t')
+        .nth(1)
+        .map_or(0, |path| {
+            path.iter().filter(|byte| **byte == b'/').count() as u64 + 1
+        })
 }
 
 /// The size an `ls-tree -l` record declares — `<mode> <type> <object>
@@ -1639,6 +1694,47 @@ mod tests {
         assert!(
             listed.is_err(),
             "the fixture must list past the output cap to prove anything"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tree_of_more_files_than_the_budget_is_refused_before_checkout() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-entries-over");
+        fs::create_dir_all(&root).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let tree = repeated_tree(&root, 0, MAX_MATERIALIZED_ENTRIES as usize + 1, 8);
+
+        let refused = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(
+            matches!(&refused, Err(UzeError::AcquisitionFailed(reason)) if reason.contains("files")),
+            "{refused:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tree_nested_deeper_than_the_budget_is_refused_before_checkout() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-depth-over");
+        let deep = (0..=MAX_MATERIALIZED_DEPTH).fold(root.clone(), |path, _| path.join("d"));
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("leaf"), "x").unwrap();
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["add", "-A"]);
+        git(&["commit", "--quiet", "-m", "deep"]);
+        let commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
+
+        let refused = assert_tree_within_size_budget(Reach::LOCAL, &root, &commit, None);
+        assert!(
+            matches!(&refused, Err(UzeError::AcquisitionFailed(reason)) if reason.contains("deeper")),
+            "{refused:?}"
         );
 
         let _ = fs::remove_dir_all(root);

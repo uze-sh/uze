@@ -51,12 +51,17 @@ fn managed_slot(env: &TestEnvironment) -> (PathBuf, PathBuf, String) {
         .isolation_mut()
         .expect("an isolated agent carries its isolation")
         .checkout = Some(CheckoutId::adopted("slot-1"));
+    recorded.launch_key = Some(uze_core::digest::secret_sha256(LAUNCH_KEY));
     let id = recorded.id.as_str().to_owned();
     let mut store = AgentStore::default();
     store.upsert(recorded);
     task::save(&UzeHome::at(&env.uze_home), &primary, &store).unwrap();
     (primary, slot, id)
 }
+
+/// The secret the managed task's launch was issued, which a composed
+/// launch carries beside its identity.
+const LAUNCH_KEY: &str = "the-launch-key";
 
 /// A stand-in that writes a transcript named by the conversation it was
 /// told to start, under the directory its vendor keeps them in — the same
@@ -114,7 +119,9 @@ fn launch(env: &TestEnvironment, shim: &Path, cwd: &Path, args: &[&str], launch:
     }
     match launch {
         Launch::Composed { identity } => {
-            command.env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, identity);
+            command
+                .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, identity)
+                .env(uze_terminal::launch::AGENT_KEY_VARIABLE, LAUNCH_KEY);
         }
         Launch::ByHand => {}
         // An identity already owned by another pid — the enclosing launch's
@@ -122,6 +129,7 @@ fn launch(env: &TestEnvironment, shim: &Path, cwd: &Path, args: &[&str], launch:
         Launch::Nested { identity } => {
             command
                 .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, identity)
+                .env(uze_terminal::launch::AGENT_KEY_VARIABLE, LAUNCH_KEY)
                 .env(uze_terminal::launch::SHIM_PID_VARIABLE, "1");
         }
     }

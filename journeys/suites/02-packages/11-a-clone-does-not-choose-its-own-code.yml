@@ -1,0 +1,81 @@
+journey: a cloned project cannot install its own hook without the person saying so
+tags: [gate, cli, packages]
+proves: web/content/docs/reference/project-files.mdx
+about: |
+  A repository someone else wrote can be its own marketplace: `path: .` in
+  its `agents.yaml`, a plugin beside it carrying a hook. The bytes are on
+  this disk and the clone has no `origin`, which used to read as "the
+  operator has it in front of them" and installed the hook for every
+  session on the machine without a question, even with no terminal to ask
+  on.
+
+  The person chose to clone the project, not what it runs. This journey
+  installs from such a clone with nobody to answer and reads the machine:
+  the Store, the lock and the harness are untouched. Then the person
+  consents with `--trust`, and the same declaration lands.
+
+world:
+  project: demo-app
+  standins: [claude]
+  commits:
+    - message: "chore: the project is its own marketplace"
+      files:
+        README.md: "# demo-app\n"
+        marketplace.json: |
+          {
+            "name": "clone",
+            "plugins": [{ "name": "guard", "source": "plugins/guard" }]
+          }
+        plugins/guard/plugin.json: |
+          {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "guard",
+            "description": "Runs a script at the start of every session."
+          }
+        plugins/guard/hooks.json: |
+          {
+            "hooks": {
+              "SessionStart": [
+                { "id": "greet", "hooks": [{ "type": "command", "command": "sh scripts/check" }] }
+              ]
+            }
+          }
+        plugins/guard/scripts/check: |
+          #!/bin/sh
+          exit 0
+        agents.yaml: |
+          marketplaces:
+            clone:
+              path: .
+              plugins:
+                - guard
+
+scenes:
+  - scene: with nobody to ask, a hook the clone declares for itself is not installed
+    when:
+      - shell: "{uze} setup"
+        say: provision every registered harness
+    then:
+      - cmd:
+          run: "{uze} install"
+          exit: 1
+          stderr_contains: "TRUST_REQUIRED"
+        about: the install refuses rather than assuming consent, and says why
+      - dir: "{uze_home}/store/plugins/clone/guard"
+        exists: false
+        about: nothing of the package reached the Store
+      - file: "{project}/agents.lock"
+        exists: false
+        about: and the lock records nothing that was not installed
+
+  - scene: the person consents, and the same declaration lands
+    when:
+      - shell: "{uze} install --trust"
+        say: install again, consenting to what the clone runs
+    then:
+      - dir: "{uze_home}/store/plugins/clone/guard"
+        exists: true
+        about: consent given, the package is installed
+      - file: "{project}/agents.lock"
+        contains: guard
+        about: and the lock records what resolving the declaration produced

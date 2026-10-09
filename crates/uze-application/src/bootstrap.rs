@@ -20,12 +20,11 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use uze_core::{
     MaterializedPackage, PackageSource, Provenance, ResolvedSource, Result, UzeError,
-    acquisition::marketplace,
+    acquisition::{self, marketplace},
 };
 
 include!(concat!(env!("OUT_DIR"), "/embedded_marketplace.rs"));
@@ -178,21 +177,22 @@ fn embedded_file(relative: &Path) -> Option<&'static [u8]> {
         .map(|(_, bytes)| *bytes)
 }
 
+/// Extracts the snapshot into a directory only this user can enter, made
+/// by this call: what is extracted here is installed as a plugin next, so
+/// a directory another account created first under the same name, or a
+/// file it placed there, would be bytes UZE installs as its own.
 fn extract_embedded_snapshot() -> Result<PathBuf> {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock after epoch")
-        .as_nanos();
-    let scratch = std::env::temp_dir().join(format!(
-        "uze-embedded-marketplace-{}-{nonce}",
-        std::process::id()
-    ));
+    let scratch = acquisition::scratch_directory()?;
     for (relative, bytes) in EMBEDDED_MARKETPLACE_FILES {
         let destination = scratch.join(relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
         }
-        fs::write(&destination, bytes).map_err(UzeError::write(destination))?;
+        let mut file =
+            uze_platform::fs::private_file(fs::OpenOptions::new().write(true).create_new(true))
+                .open(&destination)
+                .map_err(UzeError::write(&destination))?;
+        std::io::Write::write_all(&mut file, bytes).map_err(UzeError::write(destination))?;
     }
     Ok(scratch)
 }
@@ -229,6 +229,22 @@ fn collect_files_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What is extracted is installed as a plugin next, so it lands in a
+    /// directory this call made and only this user can enter, in files
+    /// only this user can read.
+    // Unix file modes, which Windows does not keep.
+    #[cfg(unix)]
+    #[test]
+    fn the_snapshot_is_extracted_where_only_this_user_reaches() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let root = extract_embedded_snapshot().unwrap();
+        assert_eq!(mode(&root), 0o700);
+        let (relative, _) = EMBEDDED_MARKETPLACE_FILES[0];
+        assert_eq!(mode(&root.join(relative)) & 0o077, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     /// The official marketplace is the reference every author is pointed
     /// at, so it is held to its own check with nothing left to say: no

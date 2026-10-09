@@ -66,7 +66,7 @@ pub(super) fn which_uze() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-pub(super) fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
+pub(super) fn start_server(seat: &SpaceSeat) -> Result<std::process::Child, RuntimeError> {
     let detached =
         uze_platform::process::spawn_detached(&mut server_command(&server_executable()?, seat))?;
     if !detached.outlives_host {
@@ -74,7 +74,7 @@ pub(super) fn start_server(seat: &SpaceSeat) -> Result<(), RuntimeError> {
             "this terminal does not let processes leave it; the uze server will end when it closes"
         );
     }
-    Ok(())
+    Ok(detached.child)
 }
 
 pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::process::Command {
@@ -101,6 +101,45 @@ pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::proces
 /// restoring its panes, or one whose socket a cleaner took and whose
 /// [`spawn_endpoint_watch`] has yet to put it back.
 pub(super) const READY_WITHIN: Duration = Duration::from_secs(2);
+
+/// How long a server this client has just started has to bind its
+/// endpoint. It restores or opens its panes first, and a pane's first
+/// process on a loaded machine (a cold `conhost` on Windows) can take
+/// seconds; the server being alive, not a clock, is what the wait is on, so
+/// this only bounds one that hangs.
+pub(super) const STARTING_WITHIN: Duration = Duration::from_secs(30);
+
+/// Connects to the server `started`, waiting while it is alive and has yet
+/// to bind. One that exits first lost the claim to a server another client
+/// started at the same moment, which is then the one to wait for.
+pub(super) fn connect_starting(
+    socket: &Path,
+    started: &mut std::process::Child,
+) -> Result<Stream, RuntimeError> {
+    let deadline = Instant::now() + STARTING_WITHIN;
+    loop {
+        match transport::connect(socket) {
+            Ok(stream) => return Ok(stream),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                if matches!(started.try_wait(), Ok(Some(_))) {
+                    return connect_waiting(socket);
+                }
+                if Instant::now() >= deadline {
+                    return Err(RuntimeError::Protocol(
+                        "terminal server did not become ready".into(),
+                    ));
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
 
 pub(super) fn connect_waiting(socket: &Path) -> Result<Stream, RuntimeError> {
     let deadline = Instant::now() + READY_WITHIN;
@@ -176,13 +215,20 @@ pub(super) const RETIRE_WITHIN: Duration = Duration::from_secs(1);
 /// Ends a server this client cannot use: asked to stop first — its
 /// persisted workspace is what lets the fresh server restore the same tabs
 /// — and ended outright only if it has not let go of the endpoint and the
-/// claim promptly. A pid that is not running `uze` by the time it would be
-/// stopped is left alone.
-pub(super) fn retire(pid: u32, socket: &Path) {
+/// claim promptly.
+///
+/// `started` is when the process meant started, where the caller knows it
+/// from a record; otherwise it is read now, so that a pid recycled while
+/// this waits is not the one signalled next. A pid that is not running
+/// that same `uze` by the time it would be signalled is left alone.
+pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) {
+    let started = started.or_else(|| uze_platform::probe::started_at(pid));
+    let still_the_one =
+        || runs_uze(pid) && (started.is_none() || uze_platform::probe::started_at(pid) == started);
     let released = || listening_peer(socket) != Some(pid) && !workspace_is_claimed();
     let channel = stop_channel(socket);
     for ask_first in [true, false] {
-        if !runs_uze(pid) {
+        if !still_the_one() {
             return;
         }
         if ask_first {

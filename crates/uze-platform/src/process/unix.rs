@@ -199,6 +199,37 @@ impl Group {
     }
 }
 
+pub(super) fn belongs(pid: u32, leader: u32, _group: Option<&Group>) -> bool {
+    let (Some(process), Some(leader_pid)) = (single(pid), single(leader)) else {
+        return false;
+    };
+    // SAFETY: `getsid` reads the session of a positive pid and touches no
+    // memory of ours.
+    let session = unsafe { libc::getsid(process) };
+    session == leader_pid || descends_from(pid, leader)
+}
+
+/// How far up from a process [`descends_from`] looks before giving up. A
+/// process tree deeper than this is not one a pane makes.
+const DEEPEST_ANCESTRY: usize = 128;
+
+/// Whether `ancestor` started `pid`, or started what started it. Only as
+/// good as the platform's record of parents, which names a pid and not the
+/// process that held it.
+fn descends_from(pid: u32, ancestor: u32) -> bool {
+    let mut current = pid;
+    for _ in 0..DEEPEST_ANCESTRY {
+        if current == ancestor {
+            return true;
+        }
+        match crate::probe::parent_of(current) {
+            Some(parent) if parent != current && parent > 1 => current = parent,
+            _ => return false,
+        }
+    }
+    false
+}
+
 pub(super) fn foreground(
     leader: u32,
     _group: Option<&Group>,

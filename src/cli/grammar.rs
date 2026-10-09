@@ -353,6 +353,22 @@ pub(crate) enum AgentArtifactsAction {
 pub(crate) enum WorkspaceAction {
     /// Stop this workspace's server and every process in it
     Stop,
+    /// Approve the commands this project's agents.yaml runs
+    ///
+    /// `setup` runs in every checkout the workspace prepares and `gate`
+    /// before any work is delivered, with your permissions. Until you have
+    /// read them and said yes, checkouts are placed without setup and
+    /// nothing is delivered. Shows the exact lines and asks; an edit to any
+    /// of them asks again. Only a person at a terminal can answer.
+    Allow {
+        /// Project directory. Defaults to the current directory.
+        path: Option<PathBuf>,
+    },
+    /// Withdraw this project's approval of its commands
+    Revoke {
+        /// Project directory. Defaults to the current directory.
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

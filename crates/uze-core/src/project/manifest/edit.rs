@@ -20,7 +20,7 @@ use noyalib::{
     cst::{Document, parse_document},
 };
 
-use crate::{Result, UzeError, persistence::write_atomic_preserving};
+use crate::{Result, UzeError, persistence::write_atomic_within};
 
 /// A manifest open for editing: the authored bytes plus the tree that
 /// knows where each declaration sits in them.
@@ -288,8 +288,14 @@ impl ManifestDocument {
         Ok(())
     }
 
+    /// Writes the document back. `agents.yaml` sits at the project's root,
+    /// so the directory holding it is what it may not lead out of.
     pub fn save(&self) -> Result<()> {
-        write_atomic_preserving(&self.path, self.document.source().as_bytes())
+        let root = match self.path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        };
+        write_atomic_within(root, &self.path, self.document.source().as_bytes())
     }
 
     fn refusal(&self, path: &str, reason: String) -> UzeError {

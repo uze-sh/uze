@@ -66,6 +66,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 }],
             }),
             deny_exit: "2",
+            unwritten_exit: "2",
         },
         // Codex's entries carry a command string only: one quoted shell line.
         entry: EntryShape::EventLine,

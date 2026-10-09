@@ -169,7 +169,7 @@ pub(crate) const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
         progress::CommandGroup::Workspace,
         &[(
             "workspace",
-            "[stop]",
+            "[stop|allow]",
             "Open the terminal workspace where agents run",
         )],
     ),

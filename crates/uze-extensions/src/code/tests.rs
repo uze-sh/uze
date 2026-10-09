@@ -388,7 +388,10 @@ fn a_row_of_the_tree_offers_its_actions() {
     handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
     assert_eq!(
         view.take_request(),
-        Some(FileRequest::Delete(PathBuf::from("/w/src/main.rs")))
+        Some(FileRequest::Delete {
+            root: PathBuf::from("/w"),
+            path: PathBuf::from("/w/src/main.rs"),
+        })
     );
 }
 
@@ -430,7 +433,10 @@ fn a_directory_is_deleted_whole_after_asking() {
     handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
     assert_eq!(
         view.peek_request(),
-        Some(&FileRequest::DeleteDirectory(PathBuf::from("/w/src")))
+        Some(&FileRequest::DeleteDirectory {
+            root: PathBuf::from("/w"),
+            path: PathBuf::from("/w/src"),
+        })
     );
     settle(&mut view, &machine);
 
@@ -478,6 +484,7 @@ fn renaming_a_directory_keeps_it_open_under_its_new_name() {
     assert_eq!(
         view.peek_request(),
         Some(&FileRequest::Rename {
+            root: PathBuf::from("/w"),
             from: PathBuf::from("/w/src/ui"),
             to: PathBuf::from("/w/src/view"),
         })
@@ -841,11 +848,11 @@ impl Host for RepositoryHost {
         unreachable!("what the repository tests read, they read through `git`")
     }
 
-    fn write_file(&self, _path: &Path, _contents: &str) -> Result<(), String> {
+    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
         unreachable!("reading a repository writes nothing")
     }
 
-    fn delete_file(&self, _path: &Path) -> Result<(), String> {
+    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
         unreachable!("reading a repository deletes nothing")
     }
 
@@ -884,11 +891,11 @@ impl Host for StillRepository {
         Ok(Vec::new())
     }
 
-    fn write_file(&self, _path: &Path, _contents: &str) -> Result<(), String> {
+    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
         unreachable!("reading a repository writes nothing")
     }
 
-    fn delete_file(&self, _path: &Path) -> Result<(), String> {
+    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
         unreachable!("reading a repository deletes nothing")
     }
 
@@ -1082,19 +1089,19 @@ impl Host for FakeMachine {
             .ok_or_else(|| format!("no such directory: {}", path.display()))
     }
 
-    fn write_file(&self, path: &Path, contents: &str) -> Result<(), String> {
+    fn write_file(&self, _root: &Path, path: &Path, contents: &str) -> Result<(), String> {
         self.files
             .borrow_mut()
             .insert(path.to_path_buf(), contents.to_owned());
         Ok(())
     }
 
-    fn delete_file(&self, path: &Path) -> Result<(), String> {
+    fn delete_file(&self, _root: &Path, path: &Path) -> Result<(), String> {
         self.files.borrow_mut().remove(path);
         Ok(())
     }
 
-    fn delete_dir(&self, path: &Path) -> Result<(), String> {
+    fn delete_dir(&self, _root: &Path, path: &Path) -> Result<(), String> {
         self.directories
             .borrow_mut()
             .retain(|listed, _| !listed.starts_with(path));
@@ -1105,7 +1112,7 @@ impl Host for FakeMachine {
         Ok(())
     }
 
-    fn rename_path(&self, from: &Path, to: &Path) -> Result<(), String> {
+    fn rename_path(&self, _root: &Path, from: &Path, to: &Path) -> Result<(), String> {
         let moved = |path: &Path| match path.strip_prefix(from) {
             Ok(rest) => to.join(rest),
             Err(_) => path.to_path_buf(),
@@ -1746,7 +1753,7 @@ fn deleting_is_asked_in_the_confirm_dialog() {
     assert!(
         view.queue
             .iter()
-            .all(|request| !matches!(request, FileRequest::Delete(_)))
+            .all(|request| !matches!(request, FileRequest::Delete { .. }))
     );
     assert!(super::view(&view, space()).confirm.is_none());
 

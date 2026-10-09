@@ -1,0 +1,35 @@
+#!/bin/sh
+# probe <label> <answer>: records that this handler ran, then answers.
+#
+# The record is a file only this handler writes, holding every HOOK_* value
+# the harness handed it: the presence proof the Lab reads from the
+# container, which neither the prompt nor the scripted call can carry.
+#
+# <answer>: `allow` exits 0; `deny` denies; `deny-marked` denies only a
+# command or path carrying `lab-deny` (read from the alias's own portable
+# field, never HOOK_INPUT, so a wrong field mapping fails instead of
+# denying anyway). `rewrite` answers with the call's own input, every
+# `lab-side/from` in it made `lab-side/to`: a transform in the harness's
+# native shape.
+label=$1
+answer=$2
+dir=/work/hook-markers
+mkdir -p "$dir"
+record="$dir/$label.${HOOK_EVENT:-unknown}.$$"
+env | grep "^HOOK_" | sort > "$record"
+case "$answer" in
+  rewrite)
+    printf '%s' "$HOOK_INPUT" \
+      | jq -c 'walk(if type == "string" then gsub("lab-side/from"; "lab-side/to") else . end)'
+    exit 0 ;;
+  deny)
+    echo "lab-hook-denied:$label tool=$HOOK_TOOL" >&2
+    exit 3 ;;
+  deny-marked)
+    case "$HOOK_COMMAND$HOOK_PATH" in
+      *lab-deny*)
+        echo "lab-hook-denied:$label tool=$HOOK_TOOL" >&2
+        exit 3 ;;
+    esac ;;
+esac
+exit 0

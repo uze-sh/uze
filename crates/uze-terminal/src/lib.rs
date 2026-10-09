@@ -16,7 +16,8 @@ pub use protocol::{
 };
 pub use runtime::{
     RuntimeError, Stream, attach, connect, host_pane, host_panes_with, open_space,
-    put_first_on_pane_path, read_event, send_request, serve, socket_path, stop, stream_pair,
+    put_first_on_pane_path, read_event, send_request, serve, server_key, socket_path, stop,
+    stream_pair,
 };
 pub use state::{
     NewSpace, Pane, PaneId, Session, Space, SpaceId, SpaceSeat, Tab, TabId, Workspace,

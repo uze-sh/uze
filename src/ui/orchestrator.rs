@@ -66,6 +66,7 @@ pub(super) use reads::*;
 mod activity;
 mod agents;
 mod answers;
+mod approval;
 mod events;
 mod notices;
 
@@ -210,6 +211,7 @@ const AGENT_REDRAW_GRACE: Duration = Duration::from_millis(1000);
 const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
+use approval::*;
 mod checkouts;
 mod input;
 mod render;
@@ -262,6 +264,8 @@ struct PendingAgentTab {
     command: Vec<String>,
     cwd: PathBuf,
     agent: String,
+    /// The secret the placement issued this launch (`UZE_AGENT_KEY`).
+    launch_key: String,
     size: (u16, u16),
 }
 
@@ -344,6 +348,7 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
             report.task.forge.request_term().unwrap_or("request")
         ),
         DeliveryOutcome::Refused(reason) => reason.clone(),
+        DeliveryOutcome::AwaitingApproval(_) => "the gate waits for your approval".to_owned(),
         DeliveryOutcome::ReturnedToAgent(_) => "back to its agent".to_owned(),
     }
 }
@@ -457,6 +462,7 @@ pub(crate) fn attach_workspace(
                 Landing::AtLaunchDirectory => seating_at(seat),
                 Landing::WhereItLeftOff => uze_terminal::Seating::WhereItLeftOff,
             },
+            key: uze_terminal::server_key(),
         },
     )
     .map_err(runtime_error)?;
@@ -786,6 +792,13 @@ pub(super) enum WorkspaceHit {
     /// generic over whatever action that row is, same pattern
     /// [`WorkspaceHit::PickAgent`] uses for the agent picker.
     ContextMenuAction(usize),
+    /// A toast's offer to read a project's commands that wait for the
+    /// operator's approval: opens the question about them.
+    ReviewCommands,
+    /// One of the answers to that question: `true` approves.
+    ApprovalAnswer(bool),
+    /// The question itself, which a click on answers nothing.
+    ApprovalBody,
     /// The sidebar's "+ space" control — opens the root picker
     /// ([`WorkspaceModel::root_picker`]), since a space is born from a
     /// directory and that directory is chosen, not typed blind.
@@ -1164,6 +1177,9 @@ fn agent_contexts(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<L
             Some(LaunchedAgent {
                 integration: integration.to_owned(),
                 id,
+                key: launch_variable(tab, uze_terminal::launch::AGENT_KEY_VARIABLE)
+                    .unwrap_or_default()
+                    .to_owned(),
                 cwd,
             })
         })
@@ -1174,10 +1190,15 @@ fn agent_contexts(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<L
 /// identity the client stamped when it created the tab. `None` for a
 /// shell, and for a tab whose agent exited and was respawned as one.
 fn launched_agent_id(tab: &Tab) -> Option<&str> {
+    launch_variable(tab, uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
+}
+
+/// One variable of the launch a tab was created with, as the server echoes it.
+fn launch_variable<'a>(tab: &'a Tab, variable: &str) -> Option<&'a str> {
     tab.env
         .iter()
-        .find(|(name, _)| name == uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
-        .map(|(_, id)| id.as_str())
+        .find(|(name, _)| name == variable)
+        .map(|(_, value)| value.as_str())
 }
 
 /// What the header is saying: the work in flight, and nothing else.
@@ -1311,6 +1332,11 @@ struct Channels {
     target_syncs: Answers<TargetSyncReport>,
     /// A project's gates this machine cannot run, read where it opens.
     unspelled_gates: Answers<UnspelledGates>,
+    /// A project's commands that wait for the operator's approval, read
+    /// where it opens.
+    commands_awaiting: Answers<uze_application::CommandsAwaitingApproval>,
+    /// Recording an approval, and the setup it lets run.
+    approvals: Answers<ApprovalResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
 }
@@ -1455,6 +1481,10 @@ struct Remembered {
     /// The projects already said to have a gate this machine cannot run,
     /// so it is said once a session.
     unspelled_gates_reported: BTreeSet<PathBuf>,
+    /// Each project whose commands wait for the operator's approval, with
+    /// the lines they would approve. Said once a session per project; the
+    /// question stays here until it is answered yes.
+    commands_awaiting: BTreeMap<PathBuf, uze_application::CommandsAwaitingApproval>,
     /// The names a harness launched through the workspace's shim runs
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
@@ -1597,6 +1627,10 @@ struct WorkspaceModel {
     /// Open state of the right-click close-confirmation popup; `None` when
     /// closed. Same "click outside discards" rule as `renaming`.
     context_menu: Option<ContextMenu>,
+    /// The open question about a project's commands (see `approval`).
+    /// Seals the client while it is open: an answer only ever comes from
+    /// the operator's own click or keystroke.
+    approval: Option<ApprovalDialog>,
     /// Open state of the code surface; `None` when closed. Drawn where the
     /// pane is, with the sidebar and the strip live around it — so unlike
     /// `renaming`/`agent_picker`/`context_menu` a click outside it is not a
@@ -2015,6 +2049,7 @@ impl WorkspaceModel {
             && self.status_catalog.is_none()
             && self.work.is_none()
             && self.context_menu.is_none()
+            && self.approval.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()
             && self.manage.is_none()

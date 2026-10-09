@@ -6,9 +6,12 @@ impl Workspace<'_> {
     /// Names the work of the agent a claim identifies.
     ///
     /// The claim is verified the way every reader verifies one: the store
-    /// names its identifier and the directory is the record's own. The
-    /// stamp says which agent and the directory says where, so a process
-    /// editing its own environment cannot reach another agent's branch.
+    /// names its identifier, the key is the one that agent's launch was
+    /// issued, and the directory is the record's own. The identifier and
+    /// the directory are the caller's to choose — any process can stamp
+    /// another agent's identity and stand in its checkout — so it is the key,
+    /// held only by the launch it was issued to, that keeps one agent from
+    /// renaming another's branch.
     /// An agent that is not isolated takes the name as its label alone:
     /// it works on the operator's branch, which already has the name it
     /// will keep, so there is nothing in Git to rename — but the operator
@@ -51,9 +54,9 @@ impl Workspace<'_> {
                 ));
             }
             if task.branch != branch {
-                if checkout::branch_exists(&primary, &branch) {
+                if checkout::name_is_taken(&primary, &branch) {
                     return Err(UzeError::TaskNaming(format!(
-                        "`{branch}` already exists in this repository"
+                        "`{branch}` already exists in this repository or on its remote"
                     )));
                 }
                 checkout::rename_branch(&primary, &task.branch.clone(), &branch)?;

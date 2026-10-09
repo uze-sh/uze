@@ -11,7 +11,7 @@ use crate::{PaneId, Session, SpaceId, TabId};
 /// [`crate::attach`] replaces a server of another build before connecting;
 /// this is what a client that connects without it — a `uze` nested in a
 /// pane, a test — still meets.
-pub const PROTOCOL_VERSION: u16 = 19;
+pub const PROTOCOL_VERSION: u16 = 20;
 
 /// The colours a client draws a pane's default and indexed cells in. Plain
 /// `(r, g, b)` triples: this runtime holds no opinion about appearance, it
@@ -97,6 +97,10 @@ pub enum ClientRequest {
         rows: u16,
         /// Where this client is to land.
         seating: Seating,
+        /// The serving runtime's key ([`crate::server_key`]): what a
+        /// process proves it is the person's own client with, rather than
+        /// something running in a pane. See ADR-056.
+        key: String,
     },
     Detach,
     Input {
@@ -202,7 +206,19 @@ pub enum ClientRequest {
         space: SpaceId,
         label: String,
     },
-    Stop,
+    /// Ends the runtime. A first frame, carrying the same key as `Attach`.
+    Stop {
+        key: String,
+    },
+    /// Opens a space at `seat` — created when none is there — and answers
+    /// with its label alone, as [`ClientEvent::SpaceOpened`]. A first
+    /// frame, and the one thing a process inside a pane may ask: a `uze`
+    /// typed into a pane opens a space and leaves, and it is shown nothing
+    /// of the workspace and given nothing to type into.
+    OpenSpace {
+        version: u16,
+        seat: crate::SpaceSeat,
+    },
 }
 
 impl ClientRequest {
@@ -227,7 +243,8 @@ impl ClientRequest {
             Self::SelectSpace { .. } => "select_space",
             Self::CloseSpace { .. } => "close_space",
             Self::RenameSpace { .. } => "rename_space",
-            Self::Stop => "stop",
+            Self::Stop { .. } => "stop",
+            Self::OpenSpace { .. } => "open_space",
         }
     }
 }
@@ -295,6 +312,18 @@ pub enum ClientEvent {
         text: String,
     },
     Error {
+        message: String,
+    },
+    /// The answer to [`ClientRequest::OpenSpace`]: the space's label.
+    SpaceOpened {
+        label: String,
+    },
+    /// The runtime understood the request and will not serve it: a first
+    /// frame from a process inside a pane, or one without the runtime's
+    /// key. Its own event rather than an [`ClientEvent::Error`] because a
+    /// client deciding whether the runtime speaks its protocol must not
+    /// read a refusal as "no" and replace a live runtime over it.
+    Refused {
         message: String,
     },
 }
@@ -403,6 +432,7 @@ mod tests {
             seating: Seating::Open(crate::SpaceSeat {
                 root: std::path::PathBuf::from("/tmp/w"),
             }),
+            key: "k".into(),
         };
         assert_eq!(
             serde_json::from_str::<ClientRequest>(&serde_json::to_string(&request).unwrap())

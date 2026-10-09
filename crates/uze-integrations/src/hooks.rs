@@ -77,7 +77,13 @@ pub(crate) enum HookRunner {
     },
     /// UZE's generated plugin is the runner: the harness has no command
     /// hooks to start a wrapper from.
-    Bridge,
+    Bridge {
+        /// The native tools measured to ask the harness for permission
+        /// before they act: the only ones an `ask` can wait for. Any other
+        /// tool's call is refused where an `ask` group asks about it, since
+        /// no prompt would ever be put to the person.
+        prompting: &'static [&'static str],
+    },
 }
 
 /// The form a command-hook harness's shared config gives one entry.
@@ -188,7 +194,7 @@ pub(crate) fn generated_requirements(
             continue;
         };
         for handler in &hook.handlers {
-            if matches!(target.runner, HookRunner::Bridge) && runs_in_own_runtime(handler) {
+            if matches!(target.runner, HookRunner::Bridge { .. }) && runs_in_own_runtime(handler) {
                 continue;
             }
             if let Invocation::Argv {
@@ -228,7 +234,7 @@ impl HookTarget {
             executes_handlers_in_order: true,
             // The bridge rewrites `execute.before`'s input itself; a
             // wrapper needs the harness's document for a rewrite.
-            supports_input_transform: matches!(self.runner, HookRunner::Bridge)
+            supports_input_transform: matches!(self.runner, HookRunner::Bridge { .. })
                 || wrapper::transforms_here(self),
             unfired: wrapper::unfired_here(self)
                 .iter()
@@ -246,14 +252,14 @@ impl HookTarget {
     pub(super) const fn dialect(self) -> Option<WrapperDialect> {
         match self.runner {
             HookRunner::Wrapper { dialect, .. } => Some(*dialect),
-            HookRunner::Bridge => None,
+            HookRunner::Bridge { .. } => None,
         }
     }
 
     fn entry_shape(self) -> Option<EntryShape> {
         match self.runner {
             HookRunner::Wrapper { entry, .. } => Some(entry),
-            HookRunner::Bridge => None,
+            HookRunner::Bridge { .. } => None,
         }
     }
 
@@ -478,9 +484,11 @@ pub(crate) fn handler_line(
         uze_platform::shell::FAMILY,
         &uze_core::launcher::python_answers,
     ) {
-        Invocation::Line(line) => {
-            line.replace("${PLUGIN_ROOT}", &delivered_root.display().to_string())
-        }
+        Invocation::Line(line) => uze_platform::shell::substitute(
+            &line,
+            crate::shared::package_root::TOKEN,
+            &delivered_root.display().to_string(),
+        ),
         Invocation::Argv { argv, .. } => match argv.split_first() {
             Some((program, arguments)) => uze_platform::shell::command_line(program, arguments),
             None => String::new(),

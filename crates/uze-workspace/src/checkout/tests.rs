@@ -19,6 +19,54 @@ fn an_exclude_file_that_is_not_text_keeps_every_byte_it_had() {
     assert!(written.ends_with(format!("/{WORKTREES_DIRECTORY}/\n").as_bytes()));
 }
 
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(unix)]
+#[test]
+fn an_isolation_directory_committed_as_a_link_places_no_checkout_outside_the_project() {
+    let repository = repository("isolation-link");
+    let primary = repository.root();
+    let outside = uze_testkit::temp::scratch("isolation-link-outside");
+    std::os::unix::fs::symlink(&outside, primary.join(WORKTREES_DIRECTORY)).unwrap();
+    repository.git(&["add", WORKTREES_DIRECTORY]);
+    repository.git(&["commit", "-q", "-m", "link"]);
+
+    let mut agent = task("escape");
+    let base = tip_of(primary, TARGET);
+    isolation(&mut agent).base_commit = base.clone();
+    let refused = acquire(
+        primary,
+        &AgentStore::default(),
+        isolation(&mut agent),
+        &base,
+        None,
+        &nobody(),
+    );
+    assert!(refused.is_err(), "a checkout was placed through the link");
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+}
+
+#[test]
+fn an_isolation_directory_the_repository_tracks_is_refused() {
+    let repository = repository("isolation-tracked");
+    let primary = repository.root();
+    repository.commit_file(&format!("{WORKTREES_DIRECTORY}/README"), "mine");
+
+    let mut agent = task("tracked");
+    let base = tip_of(primary, TARGET);
+    isolation(&mut agent).base_commit = base.clone();
+    let Err(refused) = acquire(
+        primary,
+        &AgentStore::default(),
+        isolation(&mut agent),
+        &base,
+        None,
+        &nobody(),
+    ) else {
+        panic!("a checkout was placed among tracked files");
+    };
+    assert!(refused.to_string().contains("tracked"), "{refused}");
+}
+
 /// A repository whose `.gitignore` already ignores `target/`, the way a
 /// Rust project does — the artifact reuse exists to preserve.
 fn repository(label: &str) -> Repository {
@@ -765,7 +813,7 @@ fn a_checkout_on_a_named_branch_is_adopted_under_its_name() {
         "HEAD",
     ]);
     let slot = primary.join(".worktrees/k3y4ap");
-    record::write(&slot, &CheckoutRecord::made_at(&slot)).unwrap();
+    record::write(repository.root(), &slot, &CheckoutRecord::made_at(&slot)).unwrap();
     let mut store = AgentStore::default();
     let report = reconcile(primary, &mut store, TARGET);
     assert_eq!(report.adopted.len(), 1);
@@ -1010,6 +1058,47 @@ fn setting_up(setup: uze_core::shell::ShellCommand) -> WorktreePolicy {
     }
 }
 
+/// Prepares `slot` as an operator who approved `policy`'s commands would
+/// have it prepared.
+fn prepared(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String> {
+    let home = crate::home::UzeHome::at(uze_testkit::temp::scratch("approved-home"));
+    crate::approval::approve(
+        &home,
+        primary,
+        &crate::approval::ProjectCommands::of(policy),
+    )
+    .unwrap();
+    materialize(
+        primary,
+        slot,
+        &crate::approval::consent(&home, primary, policy),
+    )
+}
+
+/// A cloned repository's `setup` is somebody else's shell line: placing a
+/// checkout before the operator approved it runs nothing, and says why.
+#[test]
+fn an_unapproved_setup_is_not_run_and_the_checkout_says_so() {
+    let repository = repository("slots-setup-unapproved");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "unapproved");
+    let policy = setting_up(uze_core::shell::ShellCommand::spelled(
+        "touch pwned",
+        "New-Item pwned -ItemType File | Out-Null",
+    ));
+    let home = crate::home::UzeHome::at(uze_testkit::temp::scratch("unapproved-home"));
+
+    let warnings = materialize(
+        primary,
+        &slot.path,
+        &crate::approval::consent(&home, primary, &policy),
+    );
+
+    assert!(!slot.path.join("pwned").exists(), "setup never ran");
+    assert_eq!(warnings, vec![SETUP_AWAITS_APPROVAL.to_owned()]);
+}
+
 #[test]
 fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     let repository = repository("slots-materialize");
@@ -1018,7 +1107,7 @@ fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     let mut store = AgentStore::default();
     let (_, slot) = launch(&repository, &mut store, "materialize");
 
-    let warnings = materialize(primary, &slot.path, &linking(&[".env", ".env.local"]));
+    let warnings = prepared(primary, &slot.path, &linking(&[".env", ".env.local"]));
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains(".env.local"));
     let linked = slot.path.join(".env");
@@ -1028,7 +1117,7 @@ fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     fs::write(primary.join(".env"), "SECRET=2\n").unwrap();
     assert_eq!(fs::read_to_string(&linked).unwrap(), "SECRET=2\n");
     assert!(
-        materialize(primary, &slot.path, &linking(&[".env"])).is_empty(),
+        prepared(primary, &slot.path, &linking(&[".env"])).is_empty(),
         "idempotent"
     );
 }
@@ -1039,7 +1128,7 @@ fn a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent() {
     let primary = repository.root();
     let mut store = AgentStore::default();
     let (_, slot) = launch(&repository, &mut store, "setup");
-    let warnings = materialize(
+    let warnings = prepared(
         primary,
         &slot.path,
         &setting_up(uze_core::shell::ShellCommand::spelled(
@@ -1053,7 +1142,7 @@ fn a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent() {
         "touch prepared",
         "New-Item prepared -ItemType File | Out-Null",
     );
-    assert!(materialize(primary, &slot.path, &setting_up(prepare)).is_empty());
+    assert!(prepared(primary, &slot.path, &setting_up(prepare)).is_empty());
     assert!(
         slot.path.join("prepared").exists(),
         "setup runs in the checkout"
@@ -1112,7 +1201,7 @@ fn a_checkout_placed_where_its_gate_cannot_run_says_so() {
         )],
         ..WorktreePolicy::default()
     };
-    let warnings = materialize(primary, &slot.path, &policy);
+    let warnings = prepared(primary, &slot.path, &policy);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
         warnings[0].contains("gate `make check`") && warnings[0].contains("cannot be delivered"),

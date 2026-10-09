@@ -23,18 +23,18 @@ use uze_core::path::Canonical as _;
 pub fn carry_changes(primary: &Path, slot: &Path) -> Result<(), String> {
     // Read rather than written, and taken *untrimmed*: a patch's final
     // newline is part of it, and `git apply` refuses one that lost it.
-    let patch = uze_git::read(primary, &["diff", "HEAD"])
+    let patch = crate::git::read(primary, &["diff", "HEAD"])
         .map_err(|error| error.to_string())?
         .successful()?;
     if !patch.trim().is_empty() {
-        uze_git::write_with_stdin(slot, &["apply", "--"], &patch)
+        crate::git::write_with_stdin(slot, &["apply", "--"], &patch)
             .map_err(|error| error.to_string())?
             .successful()
             .map_err(|error| {
                 format!("the changes could not be carried into the checkout: {error}")
             })?;
     }
-    for relative in uze_git::read(
+    for relative in crate::git::read(
         primary,
         &["ls-files", "--others", "--exclude-standard", "-z"],
     )
@@ -379,7 +379,7 @@ pub fn removal_refusal(primary: &Path, path: &Path, presence: &Presence) -> Opti
     {
         return Some(Refusal::NotRegistered);
     }
-    if record::read(path) == Recorded::Unreadable {
+    if record::read(primary, path) == Recorded::Unreadable {
         return Some(Refusal::Unreadable);
     }
     if presence.inside(path) {
@@ -436,12 +436,13 @@ pub fn adopt(primary: &Path, path: &Path) -> Result<(), Refusal> {
         });
     };
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        match record::read(&registered) {
+        match record::read(primary, &registered) {
             Recorded::Ours(_) => return Err(Refusal::AlreadyRecorded),
             Recorded::Unreadable => return Err(Refusal::Unreadable),
             Recorded::Absent => {}
         }
-        record::write(&registered, &CheckoutRecord::made_at(&registered)).map_err(Refusal::Failed)
+        record::write(primary, &registered, &CheckoutRecord::made_at(&registered))
+            .map_err(Refusal::Failed)
     })
     .map_err(|error| Refusal::Failed(error.to_string()))?
 }

@@ -86,6 +86,7 @@ fn an_agent_names_its_work_through_the_real_binary() {
         .expect("an isolated agent carries its isolation");
     isolation.checkout = Some(CheckoutId::adopted("manual"));
     isolation.branch = "agent/zulqgq".to_owned();
+    let launch_key = recorded.issue_launch_key().unwrap();
     let identity = recorded.id.as_str().to_owned();
     let mut store = AgentStore::default();
     store.upsert(recorded);
@@ -107,10 +108,28 @@ fn an_agent_names_its_work_through_the_real_binary() {
         String::from_utf8_lossy(&refused.stderr)
     );
 
+    // Nor is one that stamps the agent's identity and stands in its
+    // checkout, both of which any process may do, without the key the
+    // agent's launch was issued.
+    let impostor = env
+        .command(uze_bin())
+        .current_dir(&slot)
+        .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &identity)
+        .env(uze_terminal::launch::AGENT_KEY_VARIABLE, "a-guess")
+        .args(["agent", "work", "name", "fix/branch-naming"])
+        .output()
+        .expect("uze must run");
+    assert!(!impostor.status.success());
+    assert_eq!(
+        git(&slot, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "agent/zulqgq"
+    );
+
     let output = env
         .command(uze_bin())
         .current_dir(&slot)
         .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &identity)
+        .env(uze_terminal::launch::AGENT_KEY_VARIABLE, &launch_key)
         .args(["agent", "work", "name", "fix/branch-naming"])
         .output()
         .expect("uze must run");

@@ -2,10 +2,15 @@
 # Offline fixture test for install.sh.
 #
 # Serves synthetic release artifacts (fake `uze` binaries, real SHA-256
-# sums, corrupt checksums) over localhost HTTP and exercises the installer:
+# sums signed by a throwaway release key, corrupt checksums, missing and
+# forged signatures) over localhost HTTP and exercises the installer:
 # glibc and musl detection, macOS on both architectures, pinned versions,
-# checksum-mismatch refusal, and unsupported platform fail-closed paths.
-# Zero network access required.
+# signature and checksum refusal, and unsupported platform fail-closed
+# paths. Zero network access required.
+#
+# The installer under test is install.sh with the throwaway key in place of
+# the one it ships with; the shipped one is run too, to prove that a key it
+# does not carry installs nothing.
 #
 # Usage: sh tests/scripts/installer-test.sh
 
@@ -21,6 +26,7 @@ need python3
 need curl
 need tar
 need sha256sum
+need ssh-keygen
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/uze-installer-test.XXXXXX")"
 server_pid=""
@@ -32,12 +38,33 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+# --- release keys ----------------------------------------------------------------
+ssh-keygen -q -t ed25519 -N '' -C uze-release-test -f "$work/release-key"
+ssh-keygen -q -t ed25519 -N '' -C stranger -f "$work/stranger-key"
+release_key="$(cat "$work/release-key.pub")"
+
+# install.sh as it would ship once a release key exists, with the
+# throwaway key in that key's place.
+keyed="$work/install.sh"
+sed "s|^UZE_RELEASE_KEY=.*|UZE_RELEASE_KEY='${release_key}'|" "$installer" >"$keyed"
+grep -qF "UZE_RELEASE_KEY='${release_key}'" "$keyed" || {
+  printf 'install.sh has no UZE_RELEASE_KEY line to stand a key in\n' >&2
+  exit 1
+}
+
+sign() { # $1=dir  $2=key
+  rm -f "$1/SHASUMS256.txt.sig"
+  ssh-keygen -q -Y sign -n uze-release -f "$2" "$1/SHASUMS256.txt" >/dev/null 2>&1
+}
+
 # --- fixture tree --------------------------------------------------------------
 site="$work/site"
 latest="$site/latest/download"
 pinned="$site/download/v9.9.9"
 bad="$site/bad/latest/download"
-mkdir -p "$latest" "$pinned" "$bad"
+unsigned="$site/unsigned/latest/download"
+forged="$site/forged/latest/download"
+mkdir -p "$latest" "$pinned" "$bad" "$unsigned" "$forged"
 
 make_fake_bin() { # $1=fake dir  $2=version string printed by `uze --version`
   mkdir -p "$1"
@@ -67,12 +94,24 @@ mk_tarball "$pinned" x86_64-linux-gnu "$work/pinned/fake-bin"
 mk_tarball "$bad" x86_64-linux-gnu "$work/corrupt/fake-bin"
 mk_tarball "$latest" aarch64-macos "$work/macos-arm/fake-bin"
 mk_tarball "$latest" x86_64-macos "$work/macos-intel/fake-bin"
+mk_tarball "$unsigned" x86_64-linux-gnu "$work/corrupt/fake-bin"
+mk_tarball "$forged" x86_64-linux-gnu "$work/corrupt/fake-bin"
 mk_sums "$latest"
 mk_sums "$pinned"
 mk_sums "$bad"
+mk_sums "$unsigned"
+mk_sums "$forged"
 
-# Corrupt every checksum of the "bad" site: the installer must refuse.
+# Corrupt every checksum of the "bad" site, and sign what is left: the
+# checksum is what must refuse it.
 sed -i 's/^/00/' "$bad/SHASUMS256.txt"
+
+sign "$latest" "$work/release-key"
+sign "$pinned" "$work/release-key"
+sign "$bad" "$work/release-key"
+# Signed by a key that is not the release's: whoever can publish checksums
+# can publish a signature, and only the key says whose it is.
+sign "$forged" "$work/stranger-key"
 
 # --- local server ---------------------------------------------------------------
 # `-u`: the startup line must reach the log file immediately, or the port
@@ -112,7 +151,7 @@ check() { # $1=description  $2=result (0 = pass)
 run_installer() { # $1=log file; rest = KEY=VALUE environment overrides
   log="$1"
   shift
-  env "$@" sh "$installer" >"$log" 2>&1 || return $?
+  env "$@" sh "$keyed" >"$log" 2>&1 || return $?
 }
 
 fake_uname() { # $1=fake bin dir  $2=os  $3=arch
@@ -128,6 +167,18 @@ archive_glibc="uze-$(uname -m | sed 's/^amd64$/x86_64/;s/^arm64$/aarch64/')-linu
 # Syntax door check.
 sh -n "$installer"
 check "install.sh parses cleanly under /bin/sh" $?
+
+# The installer as committed carries whatever key `release-signing.pub`
+# does. Until that is a key, it must install nothing at all.
+if ! grep -q "^UZE_RELEASE_KEY=''$" "$installer"; then
+  check "the committed installer carries a release key" 0
+elif env UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin0" sh "$installer" >"$work/out0.log" 2>&1; then
+  check "an installer with no release key refuses to install" 1
+else
+  check "an installer with no release key refuses to install" 0
+  grep -q "no release signing key" "$work/out0.log"
+  check "and says it carries none" $?
+fi
 
 # Default (glibc, latest) happy path.
 run_installer "$work/out1.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin1" UZE_HOME="$work/home1"
@@ -196,6 +247,24 @@ if [ -e "$work/bin4/uze" ]; then
 else
   check "no binary installed on mismatch" 0
 fi
+
+# A release with no signature, or one signed by any other key, is refused
+# before anything is unpacked.
+for site_name in unsigned forged; do
+  if run_installer "$work/out-${site_name}.log" UZE_BASE_URL="$base/${site_name}" \
+    UZE_BIN_DIR="$work/bin-${site_name}"; then
+    check "the ${site_name} release is refused" 1
+  else
+    check "the ${site_name} release is refused" 0
+  fi
+  if [ -e "$work/bin-${site_name}/uze" ]; then
+    check "no binary installed from the ${site_name} release" 1
+  else
+    check "no binary installed from the ${site_name} release" 0
+  fi
+done
+grep -q "not signed by the uze release key" "$work/out-forged.log"
+check "a forged signature is diagnosed" $?
 
 # Unsupported architecture fails closed.
 fake_uname "$work/arch-bin" "Linux" "mips"

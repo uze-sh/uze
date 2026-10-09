@@ -48,6 +48,47 @@ pub fn is_within(path: &Path, root: &Path) -> bool {
             .is_some_and(|rest| rest.starts_with(std::path::MAIN_SEPARATOR))
 }
 
+/// Where `path` lands once every link on the way is followed, spelled
+/// canonically, for a path that need not exist yet: a dangling link still
+/// says where a write through it would go, and a missing tail is joined
+/// onto the deepest ancestor that does exist.
+pub fn resolved(path: &Path) -> io::Result<PathBuf> {
+    const MAX_HOPS: usize = 40;
+    let mut current = path.to_path_buf();
+    for _ in 0..MAX_HOPS {
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                let target = std::fs::read_link(&current)?;
+                current = match current.parent() {
+                    Some(parent) if !is_anchored(&target) => parent.join(target),
+                    _ => target,
+                };
+            }
+            Ok(_) => return canonical(&current),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return match (current.parent(), current.file_name()) {
+                    (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
+                        Ok(resolved(parent)?.join(name))
+                    }
+                    _ => Err(error),
+                };
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::other(format!(
+        "too many levels of symbolic links at {}",
+        path.display()
+    )))
+}
+
+/// Whether `path`, followed through every link, still lands inside `root`
+/// followed the same way. Spelling alone cannot answer it: a project file
+/// committed as a link to `../elsewhere` is spelled inside the project.
+pub fn resolves_within(path: &Path, root: &Path) -> io::Result<bool> {
+    Ok(is_within(&resolved(path)?, &canonical(root)?))
+}
+
 /// A path as a command-line tool printed it, in this platform's spelling.
 pub fn from_tool_output(printed: &str) -> PathBuf {
     imp::from_tool_output(printed)
@@ -135,6 +176,30 @@ mod tests {
         assert!(is_anchored(Path::new("/etc")));
         assert!(!is_anchored(Path::new("packages/inner")));
         assert!(!is_anchored(Path::new("../escape")));
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_the_root_is_not_within_it_even_when_it_dangles() {
+        let base =
+            std::env::temp_dir().join(format!("uze-platform-resolved-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let root = base.join("project");
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::os::unix::fs::symlink("../outside/AGENTS.md", root.join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink("docs/AGENTS.md", root.join("INNER.md")).unwrap();
+        std::os::unix::fs::symlink("..", root.join("up")).unwrap();
+
+        assert!(!resolves_within(&root.join("AGENTS.md"), &root).unwrap());
+        assert!(resolves_within(&root.join("INNER.md"), &root).unwrap());
+        assert!(resolves_within(&root.join("new/missing.md"), &root).unwrap());
+        assert!(!resolves_within(&root.join("up/x/y.md"), &root).unwrap());
+        assert_eq!(
+            resolved(&root.join("AGENTS.md")).unwrap(),
+            canonical(&base).unwrap().join("outside/AGENTS.md")
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[cfg(windows)]

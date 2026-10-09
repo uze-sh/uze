@@ -29,6 +29,8 @@ pub struct ProcessSpec {
     pub output: ProcessOutput,
     /// Set on top of the inherited environment.
     pub environment: Vec<(String, String)>,
+    /// Removed from the inherited environment.
+    pub removed_environment: Vec<String>,
     /// How long to wait before each further attempt after an unsuccessful
     /// exit; empty for a single attempt. A timeout is never attempted again.
     pub retry_pauses: &'static [Duration],
@@ -45,12 +47,19 @@ impl ProcessSpec {
             timeout: Duration::from_secs(300),
             output: ProcessOutput::Quiet,
             environment: Vec::new(),
+            removed_environment: Vec::new(),
             retry_pauses: &[],
         }
     }
 
     pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.environment.push((key.into(), value.into()));
+        self
+    }
+
+    pub fn without_env(mut self, keys: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.removed_environment
+            .extend(keys.into_iter().map(Into::into));
         self
     }
 
@@ -158,6 +167,9 @@ fn run_once(mut command: Command, spec: &ProcessSpec) -> Result<ProcessResult> {
         .args(&spec.arguments)
         .envs(spec.environment.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::null());
+    for key in &spec.removed_environment {
+        command.env_remove(key);
+    }
     let process_error = |source| UzeError::Process {
         program: spec.program.clone(),
         source,

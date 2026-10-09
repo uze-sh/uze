@@ -5,7 +5,7 @@ use std::fs;
 
 use uze_core::{
     MaterializedPackage, Result,
-    trust::{self, TrustAuthority},
+    trust::{self, SourceOrigin, TrustAuthority},
 };
 
 use crate::application::services::Plugins;
@@ -84,7 +84,14 @@ impl Plugins<'_> {
             Some(materialized) => materialized?,
             None => self.acquire(&installed.provenance.requested)?,
         };
-        self.replace_with(id, materialized, authority)
+        // Who chose the marketplace is who chose what this update brings:
+        // one a project registered stays the project's choice however the
+        // update was asked for.
+        let origin = uze_core::state::marketplace_get(&self.0.home, installed.id.marketplace())
+            .ok()
+            .flatten()
+            .map_or(SourceOrigin::Operator, |record| record.origin());
+        self.replace_with(id, materialized, authority, origin)
     }
 
     /// Replaces `id`'s installed revision with bytes the caller already
@@ -103,6 +110,7 @@ impl Plugins<'_> {
         id: &str,
         materialized: uze_core::MaterializedPackage,
         authority: &dyn TrustAuthority,
+        origin: SourceOrigin,
     ) -> Result<UpdatePluginReport> {
         let installed = self.0.package_by_name(id)?;
         // An update is a version change, never a re-namespacing (ADR-036):
@@ -115,7 +123,7 @@ impl Plugins<'_> {
 
         let previous = executable_capabilities_of(&installed)?;
         self.0
-            .authorize(&materialized, authority, &previous, true)?;
+            .authorize(&materialized, authority, &previous, true, origin)?;
 
         // Asked here rather than from inside the install below, which is the
         // only other place that asks it: preparing a harness needs nothing
@@ -137,7 +145,7 @@ impl Plugins<'_> {
         let trusted_now = executable_capabilities_of(&installed)?;
         if trusted_now != previous {
             self.0
-                .authorize(&materialized, authority, &trusted_now, true)?;
+                .authorize(&materialized, authority, &trusted_now, true, origin)?;
         }
 
         // What is left can still fail with the package already removed — the
@@ -263,7 +271,10 @@ fn executable_capabilities_of(
 ) -> Result<Vec<trust::ExecutableCapability>> {
     let resources = uze_core::engine::package_resources(package)?;
     let resources: Vec<&uze_core::Resource> = resources.iter().collect();
-    Ok(trust::executable_capabilities(&resources))
+    let requirements = uze_core::store::read_plugin_manifest(&package.root)
+        .map(|manifest| manifest.requirements)
+        .unwrap_or_default();
+    Ok(trust::package_executions(&resources, &requirements))
 }
 
 impl Plugins<'_> {
