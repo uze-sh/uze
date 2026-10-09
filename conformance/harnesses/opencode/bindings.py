@@ -10,6 +10,9 @@ from contract.tui import Tui
 
 from .scenarios import opencode_container
 
+#: What OpenCode's web search asks before its first search.
+WEB_SEARCH_QUESTION = "Allow OpenCode to search the web"
+
 
 class OpenCodeBindings(Bindings):
     harness = "opencode"
@@ -17,8 +20,13 @@ class OpenCodeBindings(Bindings):
     #: What OpenCode V2 puts in front of a person before a call a plugin
     #: asks about ("△ Permission required", then "Allow once", "Always
     #: allow", "Reject"), answered with Enter on the preselected "Allow
-    #: once" (2.0.24).
-    approval_prompts = ("Permission required",)
+    #: once" (2.0.24). And the question its `websearch` asks the first
+    #: time it runs ("Web Search — Allow OpenCode to search the web for
+    #: up-to-date information?", 2.0.26): nobody answered it, so every run
+    #: sat ~55s until OpenCode cancelled it itself and the tool returned
+    #: "Web search cancelled". A person dismisses it (`approve`), which is
+    #: that same answer, given at once.
+    approval_prompts = ("Permission required", WEB_SEARCH_QUESTION)
     #: Started as its own binary, the way a person who only uses the
     #: package manager starts it: the plugins must reach it with no shim on
     #: `PATH`. What only the workspace's launch carries is the continuity
@@ -37,10 +45,15 @@ class OpenCodeBindings(Bindings):
     #: (`experiments/relaunch_probe`): the second process rendered its
     #: status bar and nothing else this vertical was looking for.
     rejoin_markers = ("Build", "UZE Conformance Model")
-    #: The prompt renders long before the skill and MCP surfaces finish
-    #: loading, and input typed into that window is dropped. Measured, not
-    #: guessed: 25s is what a working manual probe needed.
+    #: The prompt rendered long before the skill and MCP surfaces finished
+    #: loading, and input typed into that window was dropped: 25s is what a
+    #: working manual probe needed (V1). Kept as the ceiling `await_input`
+    #: waits under.
     warmup = 25.0
+    #: The status bar names the model once the session has read the Lab's
+    #: provider configuration; the splash and the bare prompt do not
+    #: (2.0.26). Measured with no wait at all, every typed contract held.
+    input_markers = ("UZE Conformance Model",)
 
     def session(self, cfg, prov_ip):
         return Tui(
@@ -89,7 +102,7 @@ export PATH=/tmp/lab-bin:$PATH
         return Tui(cfg, opencode_container(cfg, prov_ip, final), "opencode-continuity")
 
     def skill_catalog(self, tui):
-        time.sleep(self.warmup)
+        self.await_input(tui)
         tui.type("/skills")
         time.sleep(1)
         tui.submit()
@@ -122,10 +135,10 @@ export PATH=/tmp/lab-bin:$PATH
         """`/mcps` — plural here — opens the MCP toggle surface.
 
         The warmup applies to every surface, not just the first: each
-        contract opens its own session, so each pays the same wait before
-        the surfaces behind the prompt have loaded.
+        contract opens its own session, so each waits for the surfaces
+        behind its prompt to load.
         """
-        time.sleep(self.warmup)
+        self.await_input(tui)
         tui.type("/mcps")
         time.sleep(1)
         tui.submit()
@@ -156,6 +169,15 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
             "TOOL_ARGS": json.dumps(args),
             "TOOL_TRIGGER": prompt,
         }
+
+    def approve(self, tui, prompt):
+        """Allows a call once with Enter; dismisses the web search question
+        with Esc, which its own footer offers ("esc dismiss") — the Lab's
+        world is offline, and the search would have nowhere to go."""
+        if prompt == WEB_SEARCH_QUESTION:
+            tui.child.send("\x1b")
+            return
+        tui.submit()
 
     def hook_session(self, cfg, prov_ip, plugin, tag, before=""):
         final = f"{hook_prelude(self.hook_project)}\n{before}\ncd {self.hook_project} && {self.launch}"

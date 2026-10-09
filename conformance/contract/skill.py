@@ -126,7 +126,7 @@ def _assert_catalog(cfg, prov_ip, bindings):
         )
 
 
-def _await_marker(cfg, marker, timeout=45.0, gap=2.0):
+def _await_marker(cfg, marker, timeout=45.0, gap=0.5):
     """Waits for `marker` to appear in the provider's structural summary.
 
     A request lands when the harness sends it, not when the driver stops
@@ -137,12 +137,12 @@ def _await_marker(cfg, marker, timeout=45.0, gap=2.0):
     as the marker is seen; a `False` here means it never arrived within the
     window, which is what an absence needs too.
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     while True:
         markers = observed_markers(provider_struct(cfg), "skill_markers")
         if markers.get(marker):
             return True
-        if time.time() >= deadline:
+        if time.monotonic() >= deadline:
             return False
         time.sleep(gap)
 
@@ -208,21 +208,31 @@ def _assert_invocation(cfg, prov_ip, bindings):
 
         rendered = invoke(tui, MODEL_ONLY)
         tui.snapshot("invoke-model-only", rendered)
-        # The same window the positives are given, so an absence means it
-        # never arrived rather than that nobody waited; the two invocations
-        # before it reaching the model are what prove this one could have.
+        settled = tui.quiet()
+        # The window an absence needs closes on the next invocation reaching
+        # the model, not on a clock: one session sends its turns in order,
+        # so once a Skill invoked *after* this one has arrived, this one's
+        # body would have arrived before it. Waiting out a fixed window here
+        # cost every harness that refuses locally its full length. When the
+        # next one never arrives, its own wait is the window, and it is no
+        # shorter than the one this used to wait.
+        root_rendered = invoke(tui, ROOT_SKILL)
+        tui.snapshot("invoke-root", root_rendered)
+        delivered = _await_root_body(cfg)
+        # The two invocations before it reaching the model are what prove
+        # this one could have.
         declared.absence(
             bindings,
             "skill-model-only-is-not-invocable",
             "model-only-is-not-invocable",
-            _await_marker(cfg, body_marker(MODEL_ONLY)),
-            settled=tui.quiet(),
+            _await_marker(cfg, body_marker(MODEL_ONLY), timeout=0),
+            settled=settled,
             proof=invoked,
             detail=f"`{MODEL_ONLY}` declares user: false, so invoking it "
             "must not reach the model",
         )
 
-        _assert_plugin_root(cfg, tui, invoke)
+        _assert_plugin_root(cfg, root_rendered, delivered)
 
     start_provider(cfg, "static")
 
@@ -260,7 +270,7 @@ def _read_in_harness(cfg, path):
     return out.stdout if out.returncode == 0 else None
 
 
-def _assert_plugin_root(cfg, tui, invoke):
+def _assert_plugin_root(cfg, rendered, delivered):
     """A Skill that names a file of its plugin through the plugin root.
 
     The canonical Skill writes `${PLUGIN_ROOT}`; what a harness hands its
@@ -273,9 +283,6 @@ def _assert_plugin_root(cfg, tui, invoke):
     placeholder could be in — and off the harness's own filesystem, in the
     container the turn ran in, never off UZE's report.
     """
-    rendered = invoke(tui, ROOT_SKILL)
-    tui.snapshot("invoke-root", rendered)
-    delivered = _await_root_body(cfg)
     check(
         "skill-root-skill-is-invocable",
         bool(delivered),
@@ -317,16 +324,16 @@ def _assert_plugin_root(cfg, tui, invoke):
     )
 
 
-def _await_root_body(cfg, timeout=45.0, gap=2.0):
+def _await_root_body(cfg, timeout=45.0, gap=0.5):
     """The summaries of every request that carried the root Skill's body,
     waiting for the first one the way `_await_marker` does."""
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     while True:
         delivered = [
             request["summary"]
             for request in provider_struct(cfg)
             if request.get("summary", {}).get("root_markers", {}).get(ROOT_SKILL_BODY)
         ]
-        if delivered or time.time() >= deadline:
+        if delivered or time.monotonic() >= deadline:
             return delivered
         time.sleep(gap)

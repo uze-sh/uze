@@ -15,8 +15,6 @@ the deterministic suite against real Git, and the scene lays the same
 shape down by hand so the run measures the harness, never the engine.
 """
 
-import time
-
 from shared.common import check, describe, observed_markers, provider_struct
 
 #: Where the scene's project lives inside the container, and its one slot.
@@ -86,7 +84,7 @@ def _assert_in_slot(cfg, prov_ip, bindings):
         )
         if not matched:
             return
-        time.sleep(bindings.warmup)
+        bindings.await_input(tui)
 
         # One turn, typed the way UZE types a notice into a pane: the
         # request it produces has to carry the declaration (context from

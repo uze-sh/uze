@@ -17,6 +17,9 @@ class ClaudeBindings(Bindings):
     launch = "exec claude"
     ready_markers = ("Opus", "API Usage Billing", "❯")
     warmup = 6.0
+    #: The status line under the prompt names the billing the session runs
+    #: on; no first-run dialog draws it (2.1.295).
+    input_markers = ("API Usage Billing",)
 
     def session(self, cfg, prov_ip):
         return Tui(cfg, claude_container(cfg, prov_ip, self.launch), "claude-contract")
@@ -45,7 +48,7 @@ class ClaudeBindings(Bindings):
         namespace prefix opens its completions. `/skills` is the management
         view and lists every Skill whatever its policy, so it cannot tell a
         model-only Skill from an invocable one."""
-        time.sleep(self.warmup)
+        self.await_input(tui)
         tui.type("/flow:")
         catalog = tui.collect(reads=4)
         tui.child.send("\x1b")

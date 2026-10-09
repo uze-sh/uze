@@ -21,7 +21,6 @@ conversation and the earlier turn would be absent.
 """
 
 import hashlib
-import time
 
 from shared.common import check, describe, provider_struct
 
@@ -185,7 +184,7 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
         )
         if not matched:
             return
-        time.sleep(bindings.warmup)
+        bindings.await_input(tui)
 
         tui.type(f"{FIRST_MARKER}: remember this word and say it back later")
         tui.submit()
@@ -205,7 +204,9 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
         if not ended:
             return
 
-        plain, matched = bindings.rejoin(tui)
+        # What the exit read already took off the screen after the first
+        # process ended is the second process's, and may be its prompt.
+        plain, matched = bindings.rejoin(tui, plain.split(ENDED_MARKER, 1)[-1])
         check(
             "continuity-second-process-ready",
             bool(matched),
@@ -215,7 +216,7 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
         )
         if not matched:
             return
-        time.sleep(bindings.warmup)
+        bindings.await_input(tui)
 
         tui.type(f"{SECOND_MARKER}: what was the word?")
         tui.submit()

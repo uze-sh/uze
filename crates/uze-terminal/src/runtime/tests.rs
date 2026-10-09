@@ -4105,8 +4105,16 @@ fn connections_that_never_say_who_they_are_are_bounded() {
         thread::sleep(Duration::from_millis(10));
     }
     let turned_away = first_answer_to(&socket, &attach_with(super::server_key()));
+    // Closed on accept, so which side of the close the client's write lands
+    // on is the scheduler's: the write itself fails ("unsent", a broken
+    // pipe), or the read after it sees the end or a reset. Each is a
+    // connection closed unread; an answer or a read that times out is not.
+    let closed_unread = turned_away == "unsent"
+        || turned_away == "hung up"
+        || turned_away.contains("reset")
+        || turned_away.contains("Broken pipe");
     assert!(
-        turned_away == "hung up" || turned_away.contains("reset"),
+        closed_unread,
         "one past the bound is closed without being read: {turned_away}"
     );
     drop(silent);
