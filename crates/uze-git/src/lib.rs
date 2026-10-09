@@ -779,11 +779,17 @@ mod tests {
         );
         std::fs::remove_file(&marker).unwrap();
 
-        for args in [&["status", "--porcelain"][..], &["diff", "HEAD"]] {
-            // Written again so the nested index the last run refreshed no
-            // longer vouches for the file.
-            std::thread::sleep(std::time::Duration::from_millis(1100));
-            std::fs::write(nested.join("x"), "ho\n").unwrap();
+        for (age, args) in [(1, &["status", "--porcelain"][..]), (2, &["diff", "HEAD"])] {
+            // Stamped with a time of its own, so the nested index the last
+            // run refreshed no longer vouches for the file.
+            std::fs::File::options()
+                .write(true)
+                .open(nested.join("x"))
+                .unwrap()
+                .set_modified(
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(60 * age),
+                )
+                .unwrap();
             read(&root, args).unwrap();
             assert!(
                 !marker.exists(),
