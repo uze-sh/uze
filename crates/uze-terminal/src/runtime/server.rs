@@ -17,6 +17,10 @@ pub(super) enum Origin {
 /// or ask one thing and leave.
 pub(super) const MAX_UNATTACHED: usize = 32;
 
+/// How long closing a tab waits for its processes to be reaped before
+/// the session is broadcast without them (see [`Server::stop_runtimes`]).
+pub(super) const REAP_GRACE: Duration = Duration::from_secs(1);
+
 /// One connection counted against [`MAX_UNATTACHED`] until it is dropped.
 pub(super) struct Unattached<'a>(&'a std::sync::atomic::AtomicUsize);
 
@@ -741,11 +745,35 @@ impl Server {
         self.update_selection(client, |selection| selection.space = Some(created.space));
     }
 
+    /// Ends `panes` and returns once each was reaped, or after
+    /// [`REAP_GRACE`]: the session broadcast that follows is what tells a
+    /// client a tab closed, and a client that reads the process table on
+    /// hearing it — to give the agent's checkout back — must not still
+    /// find the agent there. A kill is immediate; the grace is only for a
+    /// process the kernel holds in a wait it cannot interrupt.
     pub(super) fn stop_runtimes(&self, panes: &[PaneId]) {
-        let mut runtimes = self.panes.lock().expect("panes poisoned");
-        for pane in panes {
-            if let Some(runtime) = runtimes.remove(pane) {
-                runtime.stop();
+        let reapers: Vec<_> = {
+            let mut runtimes = self.panes.lock().expect("panes poisoned");
+            panes
+                .iter()
+                .filter_map(|pane| runtimes.remove(pane))
+                .map(|runtime| runtime.stop())
+                .collect()
+        };
+        let (reaped, each_reaped) = mpsc::channel();
+        let waiting = reapers.len();
+        for reaper in reapers {
+            let reaped = reaped.clone();
+            thread::spawn(move || {
+                let _ = reaper.join();
+                let _ = reaped.send(());
+            });
+        }
+        let deadline = Instant::now() + REAP_GRACE;
+        for _ in 0..waiting {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if each_reaped.recv_timeout(left).is_err() {
+                break;
             }
         }
     }
