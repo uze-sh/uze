@@ -105,6 +105,7 @@ impl Workspace<'_> {
                     branch: found.branch.clone(),
                     dirty: facts.dirty,
                     in_target: facts.in_target,
+                    held_by_a_branch: facts.held_by_a_branch,
                     ahead: facts.ahead,
                     in_use: facts.in_use,
                     last_changed,
@@ -290,6 +291,7 @@ impl Workspace<'_> {
 struct Facts {
     dirty: bool,
     in_target: bool,
+    held_by_a_branch: bool,
     ahead: usize,
     in_use: bool,
 }
@@ -300,6 +302,9 @@ impl Facts {
         Self {
             dirty: checkout::holds_uncommitted_work(&found.path),
             in_target,
+            held_by_a_branch: found.branch.is_none()
+                && !in_target
+                && !checkout::holds_unbranched_commits(&found.path),
             ahead: if in_target {
                 0
             } else {
@@ -398,6 +403,10 @@ pub struct CheckoutView {
     pub dirty: bool,
     /// Everything its `HEAD` carries is already in the target.
     pub in_target: bool,
+    /// Detached at a commit some branch reaches: what its `HEAD` carries
+    /// is kept on that branch, not here — a slot released after its agent
+    /// committed, ready for the next.
+    pub held_by_a_branch: bool,
     /// Commits its `HEAD` has that the target lacks; zero once it is in
     /// the target, even when a squash left them counted.
     pub ahead: usize,

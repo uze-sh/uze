@@ -26,6 +26,7 @@ fn checkout(name: &str, owner: CheckoutOwner) -> CheckoutView {
         )),
         dirty: false,
         in_target: true,
+        held_by_a_branch: false,
         ahead: 0,
         in_use: false,
         last_changed: None,
@@ -52,6 +53,45 @@ fn a_kept_checkout_says_what_keeps_it() {
     assert!(
         lines[..row].iter().any(|line| line.contains("NEEDS YOU")),
         "a kept checkout waits on the operator: {}",
+        lines.join("\n")
+    );
+}
+
+/// A slot released after its agent committed is detached at that agent's
+/// commit, which the agent's branch keeps: it is ready for the next agent,
+/// not work waiting on the operator. Detached at a commit no branch
+/// reaches, it is.
+#[test]
+fn a_released_slot_detached_at_kept_commits_is_ready_for_the_next_agent() {
+    let detached = |held_by_a_branch| {
+        let mut released = checkout(".worktrees/released", slot(None, false));
+        released.branch = None;
+        released.in_target = false;
+        released.ahead = 1;
+        released.held_by_a_branch = held_by_a_branch;
+        released
+    };
+    let heading_above = |lines: &[String]| {
+        let at = row_of(lines, "detached");
+        lines[..at].iter().rev().find_map(|line| {
+            ["NEEDS YOU", "READY FOR THE NEXT AGENT"]
+                .into_iter()
+                .find(|heading| line.contains(heading))
+        })
+    };
+
+    let lines = drawn(&showing(vec![detached(true)]));
+    assert_eq!(
+        heading_above(&lines),
+        Some("READY FOR THE NEXT AGENT"),
+        "{}",
+        lines.join("\n")
+    );
+    let lines = drawn(&showing(vec![detached(false)]));
+    assert_eq!(
+        heading_above(&lines),
+        Some("NEEDS YOU"),
+        "{}",
         lines.join("\n")
     );
 }

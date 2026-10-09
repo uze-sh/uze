@@ -46,7 +46,9 @@ impl Standing {
         };
         // A checkout UZE keeps as it is waits on something only the operator
         // can see to, however clean it reads.
-        let holds_work = checkout.dirty || !checkout.in_target || checkout.kept_because.is_some();
+        let holds_work = checkout.dirty
+            || !(checkout.in_target || checkout.held_by_a_branch)
+            || checkout.kept_because.is_some();
         match &checkout.owner {
             CheckoutOwner::Agent { live: true, .. } => Self::InProgress,
             CheckoutOwner::Subagent { joinable: true, .. } => Self::NeedsYou,
