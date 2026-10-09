@@ -68,7 +68,7 @@ pub fn shelve(slot: &Path, task: &str, label: &str, branch: &str) -> Result<Shel
         return Err(Unshelvable::Uncapturable(what));
     }
     let failed = |reason: String| Unshelvable::Failed(reason);
-    let tree = tree_of_work(slot).map_err(failed)?;
+    let tree = work_tree(slot)?;
     let head = tip_of(slot, "HEAD");
     if head.is_empty() {
         return Err(failed("the checkout has no commit".into()));
@@ -102,15 +102,47 @@ pub fn shelve(slot: &Path, task: &str, label: &str, branch: &str) -> Result<Shel
 /// index and working tree hold over `HEAD`, untracked files the repository
 /// does not ignore included, content UZE derives left as `HEAD` has it.
 pub fn tree_of_work(slot: &Path) -> Result<String, String> {
-    let git_dir = git_dir(slot).ok_or_else(|| "its Git directory could not be read".to_owned())?;
-    let index = TemporaryIndex::copied_from(&git_dir)?;
-    let env = [("GIT_INDEX_FILE", index.as_str())];
-    plumbing(slot, &["add", "--all", "--", ":/"], &env)?;
-    for derived in derived_paths(slot) {
-        plumbing(slot, &["reset", "--quiet", "HEAD", "--", derived], &env)?;
-    }
-    plumbing(slot, &["write-tree"], &env)
+    work_tree(slot).map_err(|refusal| refusal.to_string())
 }
+
+fn work_tree(slot: &Path) -> Result<String, Unshelvable> {
+    let failed = |reason: String| Unshelvable::Failed(reason);
+    let git_dir =
+        git_dir(slot).ok_or_else(|| failed("its Git directory could not be read".to_owned()))?;
+    let index = TemporaryIndex::copied_from(&git_dir).map_err(failed)?;
+    let env = [("GIT_INDEX_FILE", index.as_str())];
+    plumbing(slot, &["add", "--all", "--", ":/"], &env).map_err(failed)?;
+    for derived in derived_paths(slot) {
+        plumbing(slot, &["reset", "--quiet", "HEAD", "--", derived], &env).map_err(failed)?;
+    }
+    if let Some(nested) = nested_repository(slot, &env).map_err(failed)? {
+        return Err(Unshelvable::Uncapturable(format!("repository `{nested}`")));
+    }
+    plumbing(slot, &["write-tree"], &env).map_err(failed)
+}
+
+/// A repository `add` swept in as a bare commit id: a gitlink the index
+/// holds and `HEAD` does not. Read from what was added rather than from
+/// `status`, which names only the outermost untracked directory and so
+/// never sees a repository nested further down inside it.
+fn nested_repository(slot: &Path, env: &[(&str, &str)]) -> Result<Option<String>, String> {
+    let listing = plumbing(
+        slot,
+        &["diff-index", "--cached", "-z", "--no-renames", "HEAD"],
+        env,
+    )?;
+    let mut fields = listing.split('\0');
+    while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
+        let mut modes = meta.trim_start_matches(':').split(' ');
+        let (old, new) = (modes.next(), modes.next());
+        if new == Some(GITLINK_MODE) && old != Some(GITLINK_MODE) {
+            return Ok(Some(path.to_owned()));
+        }
+    }
+    Ok(None)
+}
+
+const GITLINK_MODE: &str = "160000";
 
 /// What putting a shelf back produced.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -179,6 +211,21 @@ pub fn drop_shelf(root: &Path, task: &str, expected: &str) -> Result<(), String>
     write(root, &["update-ref", "-d", &shelf_ref(task), expected]).map(|_| ())
 }
 
+/// Takes back the shelf `written` for `task`, leaving the ref where it
+/// stood before: at `earlier`, or absent. Compare-and-swap, like every move
+/// of the ref.
+pub fn unshelve(
+    root: &Path,
+    task: &str,
+    written: &str,
+    earlier: Option<&str>,
+) -> Result<(), String> {
+    match earlier {
+        Some(earlier) => swap_ref(root, &shelf_ref(task), earlier, written),
+        None => drop_shelf(root, task, written),
+    }
+}
+
 /// Every shelf in the repository, read in one process. Each record ends
 /// in two NULs, which neither a ref name nor a commit message holds.
 pub fn list(primary: &Path) -> Vec<Shelf> {
@@ -226,7 +273,7 @@ pub fn shelf_of(primary: &Path, task: &str) -> Option<String> {
 /// Whether everything `shelf` holds is already in `target`: the commits
 /// it was cut from, and, path by path, every change it made on top of
 /// them — deletions and renames each as the two paths they are. Compared
-/// by blob, never by pathspec, so a file named like a pattern is only ever
+/// by mode and blob, never by pathspec, so a file named like a pattern is only ever
 /// itself.
 pub fn is_in_target(primary: &Path, shelf: &str, target: &str) -> bool {
     let parent = tip_of(primary, &format!("{shelf}^1"));
@@ -325,6 +372,8 @@ fn changed_paths(root: &Path, from: &str, to: &str) -> Result<Vec<String>, Strin
         .collect())
 }
 
+/// Each path's mode and object: a file made executable is a change even
+/// when its bytes are not.
 fn blobs(root: &Path, commit: &str) -> Option<HashMap<String, String>> {
     let listing = read_untrimmed(root, &["ls-tree", "-r", "-z", "--full-tree", commit]).ok()?;
     Some(
@@ -332,8 +381,9 @@ fn blobs(root: &Path, commit: &str) -> Option<HashMap<String, String>> {
             .split('\0')
             .filter_map(|entry| {
                 let (meta, path) = entry.split_once('\t')?;
-                let object = meta.split(' ').nth(2)?;
-                Some((path.to_owned(), object.to_owned()))
+                let mut fields = meta.split(' ');
+                let (mode, object) = (fields.next()?, fields.nth(1)?);
+                Some((path.to_owned(), format!("{mode} {object}")))
             })
             .collect(),
     )
@@ -349,8 +399,7 @@ fn swap_ref(root: &Path, reference: &str, new: &str, earlier: &str) -> Result<()
 }
 
 fn git_dir(slot: &Path) -> Option<PathBuf> {
-    let dir = read(slot, &["rev-parse", "--absolute-git-dir"]).ok()?;
-    Some(uze_git::native_path(&dir))
+    uze_git::repository::git_dir(slot).ok()
 }
 
 /// A copy of a checkout's index in its own Git directory, removed when

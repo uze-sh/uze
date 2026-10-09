@@ -232,7 +232,7 @@ impl EvaluationPass<'_> {
         // `Closed` is the same story with nothing delivered — the checkout
         // it ended in can be written in again. Only the *current* owner is
         // reconsidered: a freed slot handed to a new agent belongs to that
-        // agent's task, not to the one that used to sit there. `Parked` is
+        // agent's task, not to the one that used to sit there. `Shelved` is
         // nobody's turn by definition and stays put — unless a pane sits in
         // its checkout (`occupied`): unfinished means "no agent left", and an
         // agent that is there makes it a lie, whichever way it got there —
@@ -247,13 +247,13 @@ impl EvaluationPass<'_> {
         if !(is_agents_turn(state) || ended_owner || parked_with_agent || parked_alone) {
             return None;
         }
-        // Parked is nobody's turn, but its work can still reach the target
+        // Shelved is nobody's turn, but its work can still reach the target
         // without it — a request opened before its agent left, merged on
         // the forge. Left unfinished, it was listed as preserved work for good
         // and its slot never went back to the pool.
         if parked_alone {
             if !self.holding_children.contains(&id) {
-                landing::settle_delivered(primary, state, task);
+                landing::settle_delivered(primary, id.as_str(), state, task);
             }
             return None;
         }
@@ -263,7 +263,7 @@ impl EvaluationPass<'_> {
         let paused = slot
             .as_ref()
             .is_some_and(|slot| landing::paused_rebase(slot).is_some());
-        if paused && landing::settle_delivered(primary, state, task) {
+        if paused && landing::settle_delivered(primary, id.as_str(), state, task) {
             return None;
         }
         self.read_readiness(state, task, ended_owner);

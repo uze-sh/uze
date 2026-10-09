@@ -237,6 +237,39 @@ fn a_nested_repository_cannot_be_shelved() {
 }
 
 #[test]
+fn a_repository_nested_deep_in_a_new_directory_cannot_be_shelved() {
+    let (repository, slot, branch) = slot("shelf-nested-deep");
+    let nested = slot.join("vendor").join("lib");
+    fs::create_dir_all(&nested).unwrap();
+    repository.git_in(&nested, &["init", "--quiet"]);
+    fs::write(nested.join("lib.rs"), "fn lib() {}\n").unwrap();
+    repository.git_in(
+        &nested,
+        &[
+            "-c",
+            "user.name=Vendor",
+            "-c",
+            "user.email=vendor@uze.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "vendored",
+        ],
+    );
+    fs::write(nested.join("edited.rs"), "fn edited() {}\n").unwrap();
+
+    assert!(
+        matches!(
+            shelve(&slot, TASK, "label", &branch),
+            Err(Unshelvable::Uncapturable(what)) if what.contains("vendor/lib")
+        ),
+        "only its commit id would be kept, and its edits left in the slot"
+    );
+    assert_eq!(shelf_of(repository.root(), TASK), None);
+}
+
+#[test]
 fn a_shelf_lists_itself_from_its_own_commit() {
     let (repository, slot, branch) = slot("shelf-list");
     fs::write(slot.join("new.rs"), "").unwrap();
@@ -270,6 +303,37 @@ fn a_shelf_is_in_the_target_only_path_by_path() {
 
     repository.commit_file("[x].md", "same\n");
     assert!(is_in_target(repository.root(), &commit, "main"));
+}
+
+// The executable bit is a Unix mode: Windows has no such bit to set.
+#[cfg(unix)]
+#[test]
+fn a_file_made_executable_is_not_in_a_target_that_has_it_plain() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (repository, slot, branch) = slot("shelf-mode");
+    let script = slot.join("kept.rs");
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let commit = shelved(&repository, &slot, &branch);
+
+    assert!(
+        !is_in_target(repository.root(), &commit, "main"),
+        "the same bytes with another mode are still the agent's change"
+    );
+}
+
+#[test]
+fn a_taken_back_shelf_leaves_the_ref_where_it_stood() {
+    let (repository, slot, branch) = slot("shelf-unshelve");
+    fs::write(slot.join("first.rs"), "").unwrap();
+    let first = shelved(&repository, &slot, &branch);
+    fs::write(slot.join("second.rs"), "").unwrap();
+    let second = shelved(&repository, &slot, &branch);
+
+    unshelve(repository.root(), TASK, &second, Some(&first)).unwrap();
+    assert_eq!(shelf_of(repository.root(), TASK), Some(first.clone()));
+    unshelve(repository.root(), TASK, &first, None).unwrap();
+    assert_eq!(shelf_of(repository.root(), TASK), None);
 }
 
 #[test]

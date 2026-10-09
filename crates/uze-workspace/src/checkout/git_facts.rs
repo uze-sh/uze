@@ -30,6 +30,18 @@ pub fn current_branch(root: &Path) -> Option<String> {
     (!branch.is_empty()).then(|| branch.to_owned())
 }
 
+/// The branch `root` is working on: the one checked out, or, while a
+/// rebase is paused with `HEAD` detached, the one that rebase is rewriting.
+pub fn branch_at_work(root: &Path) -> Option<String> {
+    current_branch(root).or_else(|| {
+        let git_dir = uze_git::repository::git_dir(root).ok()?;
+        ["rebase-merge", "rebase-apply"].iter().find_map(|state| {
+            let head = fs::read_to_string(git_dir.join(state).join("head-name")).ok()?;
+            head.trim().strip_prefix("refs/heads/").map(str::to_owned)
+        })
+    })
+}
+
 /// The commit `reference` resolves to in `root`.
 pub fn tip_of(root: &Path, reference: &str) -> String {
     crate::git::read(

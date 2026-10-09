@@ -191,10 +191,7 @@ pub(super) fn slot_state(
 /// The operation Git has paused in `root`, if any: a checkout in the middle
 /// of one holds a state no shelf can carry.
 pub fn paused_operation(root: &Path) -> Option<&'static str> {
-    let git_dir = crate::git::read(root, &["rev-parse", "--absolute-git-dir"])
-        .ok()
-        .and_then(|output| output.successful().ok())?;
-    let git_dir = uze_git::native_path(git_dir.trim());
+    let git_dir = uze_git::repository::git_dir(root).ok()?;
     [
         ("rebase-merge", "a rebase"),
         ("rebase-apply", "a rebase"),

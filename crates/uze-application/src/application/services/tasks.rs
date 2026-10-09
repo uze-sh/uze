@@ -289,12 +289,24 @@ fn release_children(
 /// still to be given back: a live agent no pane holds and no tab was
 /// launched for, or an ended one still naming a checkout nobody sits in.
 /// A delivery in flight owns its agent until it answers, and a subagent's
-/// checkout ends with its agent rather than on its own.
-fn is_abandoned(primary: &Path, agent: &Agent, occupied: &[PathBuf], echoed: &[String]) -> bool {
+/// checkout ends with its agent rather than on its own — or, when it was
+/// still in use as its agent ended, on a later pass, once its agent has.
+fn is_abandoned(
+    primary: &Path,
+    store: &AgentStore,
+    agent: &Agent,
+    occupied: &[PathBuf],
+    echoed: &[String],
+) -> bool {
     let Some(task) = agent.isolation() else {
         return false;
     };
-    if agent.parent.is_some() || agent.state == WorkState::Integrating {
+    let its_agent_is_at_work = agent.parent.as_ref().is_some_and(|parent| {
+        store
+            .agent(parent.as_str())
+            .is_some_and(|parent| checkout::is_live(&parent.state))
+    });
+    if its_agent_is_at_work || agent.state == WorkState::Integrating {
         return false;
     }
     let in_its_slot = landing::slot_path(primary, task)

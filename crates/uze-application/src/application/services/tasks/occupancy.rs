@@ -142,7 +142,7 @@ impl Workspace<'_> {
                 }
                 let Some(index) = store.agents.iter().position(|agent| {
                     !looked_at.contains(&agent.id)
-                        && is_abandoned(&primary, agent, occupied, echoed)
+                        && is_abandoned(&primary, store, agent, occupied, echoed)
                 }) else {
                     return Ok(None);
                 };
@@ -152,6 +152,14 @@ impl Workspace<'_> {
                 let was_live = checkout::is_live(&agent.state);
                 let outcome = checkout::release(&primary, agent, &target, &presence);
                 let mut unfinished = agent.state == WorkState::Shelved;
+                let parent = agent.parent.clone();
+                // A subagent released after its agent: its work reaches the
+                // target only through that agent, which is unfinished too.
+                if unfinished
+                    && let Some(parent) = parent.and_then(|parent| task_mut(store, parent.as_str()))
+                {
+                    parent.state = WorkState::Shelved;
+                }
                 if outcome != checkout::Released::InUse
                     && release_children(&primary, store, id.as_str(), &presence)
                 {

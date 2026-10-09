@@ -1118,6 +1118,35 @@ mod slots {
         );
     }
 
+    /// A checkout pinned by a paused rebase stays the task's, and resuming
+    /// the task goes back into it to finish the rebase: `HEAD` is detached
+    /// there, but the rebase is rewriting the task's branch.
+    #[test]
+    fn a_checkout_pinned_by_a_paused_rebase_is_resumed_in_place() {
+        let mut world = World::new("slot-paused-resume");
+        let agent = world.open();
+        world.commit(&agent.cwd, "README.md", "the agent's line\n");
+        world.repo.commit_file("README.md", "the target's line\n");
+        assert!(
+            world
+                .repo
+                .try_git_in(&agent.cwd, &["rebase", "main"])
+                .is_err()
+        );
+        world.close(&agent);
+        assert_eq!(world.record(&agent).state, "Shelved");
+
+        let resumed = world.resume(&agent).expect("the agent resumes");
+
+        assert_eq!(resumed.cwd, agent.cwd, "back where the rebase is paused");
+        assert!(git_path(&world, &agent.cwd, "rebase-merge").exists());
+        assert_eq!(
+            world.record(&agent).state,
+            "Running",
+            "an agent at work again is not unfinished"
+        );
+    }
+
     /// A process working inside a checkout pins it: nothing is shelved or
     /// reset under it, whoever launched it.
     #[test]
@@ -1774,6 +1803,90 @@ mod children {
             world.checkouts_holding("lexer.rs", "half a lexer").len(),
             1,
             "the child's work is back in a checkout of its own"
+        );
+    }
+
+    /// A child somebody was still in when its agent ended is released on a
+    /// later pass, once nobody is, and its agent is unfinished with it.
+    #[test]
+    fn a_child_in_use_as_its_agent_ends_is_released_later() {
+        let mut world = World::new("child-in-use");
+        let agent = world.open();
+        let child = world
+            .app
+            .workspace()
+            .split_work(world.claim(&agent), "parser", &world.held())
+            .unwrap();
+        world.write(&child.path, "parser.rs", "half a parser");
+        let subagent = Agent {
+            id: String::new(),
+            cwd: child.path.clone(),
+            key: String::new(),
+        };
+        world.panes.push(subagent.clone());
+
+        world.close(&agent);
+        assert_eq!(
+            std::fs::read_to_string(child.path.join("parser.rs")).unwrap(),
+            "half a parser",
+            "nothing is shelved under somebody at work"
+        );
+
+        world.panes.retain(|pane| pane.cwd != subagent.cwd);
+        world.sweep();
+
+        let child_record = world
+            .records()
+            .into_iter()
+            .find(|record| record.id != agent.id)
+            .expect("the child is recorded");
+        assert_eq!(
+            child_record.checkout, None,
+            "the child's checkout went back"
+        );
+        assert_eq!(child_record.state, "Shelved");
+        assert_eq!(world.record(&agent).state, "Shelved");
+        assert!(
+            world.status(&child.path).is_empty(),
+            "its work left the slot"
+        );
+        assert_eq!(world.shelves(), 1, "and is on the child's shelf");
+    }
+
+    /// A resume that cannot bring every child back gives back every
+    /// checkout it took on the way, the agent's own included: nothing
+    /// holds the agent's work outside its shelf, which stays.
+    #[test]
+    fn a_resume_that_fails_partway_takes_nothing() {
+        let mut world = World::declaring("child-resume-partial", "  slots: 2\n");
+        let agent = world.open();
+        let child = world
+            .app
+            .workspace()
+            .split_work(world.claim(&agent), "lexer", &world.held())
+            .unwrap();
+        world.write(&agent.cwd, "agent.rs", "the agent's half");
+        world.write(&child.path, "lexer.rs", "the child's half");
+        world.close(&agent);
+        assert_eq!(world.shelves(), 2);
+        let other = world.open();
+
+        let refused = world.resume(&agent);
+
+        assert!(refused.is_err(), "the cap leaves no room for the child");
+        assert!(
+            world
+                .checkouts_holding("agent.rs", "the agent's half")
+                .is_empty(),
+            "the agent's work is not left in a checkout nothing names"
+        );
+        assert_eq!(world.shelves(), 2, "both shelves still hold the work");
+        assert_eq!(world.record(&agent).state, "Shelved");
+        world.close(&other);
+        let resumed = world.resume(&agent).expect("with room, the agent resumes");
+        assert_eq!(
+            std::fs::read_to_string(resumed.cwd.join("agent.rs")).unwrap(),
+            "the agent's half"
         );
     }
 

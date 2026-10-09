@@ -274,21 +274,27 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
 /// puts the checkout back exactly where the agent left it. A checkout with
 /// changes of its own is never touched.
 ///
-/// Only for a task that has something to settle — one parked, or with a
+/// Only for a task that has something to settle — one shelved, or with a
 /// rebase paused: a branch with no commits of its own reads as integrated
 /// too, and a live agent that has committed nothing yet is not done.
-pub fn settle_delivered(primary: &Path, state: &mut WorkState, isolation: &mut Isolation) -> bool {
+pub fn settle_delivered(
+    primary: &Path,
+    task: &str,
+    state: &mut WorkState,
+    isolation: &mut Isolation,
+) -> bool {
     if !checkout::branch_exists(primary, &isolation.branch)
         || !checkout::is_integrated(primary, &isolation.target, &isolation.branch)
     {
         return false;
     }
     // The branch's commits reached the target; work kept on a shelf beside
-    // them did not, and is not delivered by their arriving.
-    if checkout::shelf::list(primary).iter().any(|found| {
-        found.branch == isolation.branch
-            && !checkout::shelf::is_in_target(primary, &found.commit, &isolation.target)
-    }) {
+    // them did not, and is not delivered by their arriving. The task's own
+    // shelf, by its ref: the branch a shelf names is the one it had when
+    // it was cut, and a branch renamed since names it no more.
+    if checkout::shelf::shelf_of(primary, task)
+        .is_some_and(|commit| !checkout::shelf::is_in_target(primary, &commit, &isolation.target))
+    {
         return false;
     }
     if let Some(slot) = slot_path(primary, isolation) {

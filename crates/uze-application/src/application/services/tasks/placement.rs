@@ -360,12 +360,18 @@ impl Workspace<'_> {
                 .as_mut()
                 .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
             // Answered with the checkout it has only while that checkout
-            // is still on its branch: a slot released under a record that
-            // was not rewritten is somebody else's, detached and clean.
+            // is still on its branch — or rebasing it, paused — since a
+            // slot released under a record that was not rewritten is
+            // somebody else's, detached and clean.
             if let (Some(existing), Some(checkout)) =
                 (landing::slot_path(&primary, task), task.checkout.clone())
-                && checkout::current_branch(&existing).as_deref() == Some(task.branch.as_str())
+                && checkout::branch_at_work(&existing).as_deref() == Some(task.branch.as_str())
             {
+                // Pinned when it ended, so it kept the checkout and was
+                // recorded unfinished; somebody is at work in it again.
+                if *state == WorkState::Shelved {
+                    *state = WorkState::Running;
+                }
                 return Ok(AgentPlacement {
                     project: primary.clone(),
                     cwd: existing,
@@ -388,6 +394,7 @@ impl Workspace<'_> {
                 put_back(&primary, &acquired.path, &shelf)?;
                 restored.push((id.as_str().to_owned(), shelf));
             }
+            let mut taken = vec![acquired.path.clone()];
             task.checkout = Some(acquired.id.clone());
             task.last_checkout = None;
             *state = WorkState::Running;
@@ -398,13 +405,19 @@ impl Workspace<'_> {
                 reused: !acquired.created,
             };
             acquired_slot = Some(acquired.clone());
-            restored.extend(resume_children(
-                &primary,
-                store,
-                &id,
-                policy.slots,
-                &presence,
-            )?);
+            // All or nothing: the record is not written when this fails,
+            // and a slot left holding restored work under a record that
+            // never names it would be adopted and shelved again as a task
+            // of its own, while the shelf it came from still stands.
+            match resume_children(&primary, store, &id, policy.slots, &presence, &mut taken) {
+                Ok(children) => restored.extend(children),
+                Err(error) => {
+                    for slot in &taken {
+                        checkout::untake(&primary, slot);
+                    }
+                    return Err(error);
+                }
+            }
             Ok(AgentPlacement {
                 project: primary.clone(),
                 cwd: acquired.path,
@@ -498,6 +511,7 @@ fn resume_children(
     parent: &AgentId,
     cap: Option<usize>,
     presence: &checkout::Presence,
+    taken: &mut Vec<PathBuf>,
 ) -> Result<Vec<(String, String)>> {
     let mut restored = Vec::new();
     let children: Vec<AgentId> = store
@@ -523,6 +537,7 @@ fn resume_children(
         }
         let acquired = checkout::resume(primary, &current, &child_id, isolation, cap, presence)
             .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+        taken.push(acquired.path.clone());
         checkout::record::write(
             primary,
             &acquired.path,

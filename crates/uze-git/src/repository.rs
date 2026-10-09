@@ -1,12 +1,12 @@
-//! The two questions about a repository whose answer cannot change while
+//! The three questions about a repository whose answer cannot change while
 //! the path asked about is still there.
 //!
-//! Both are a `git rev-parse`, both cost a process, and both are asked on a
+//! Each is a `git rev-parse`, each costs a process, and each is asked on a
 //! timer rather than once: the workspace client resolves a checkout's root
 //! on every badge refresh, and every Git write resolves the common
-//! directory to find the write lock. Over one run of the gate journeys they
-//! were 890 of 3484 Git invocations — a quarter of them — for two answers
-//! that never differed.
+//! directory to find the write lock. Over one run of the gate journeys the
+//! first two were 890 of 3484 Git invocations — a quarter of them — for two
+//! answers that never differed.
 //!
 //! Remembered per path asked, and only when Git answered. A failure is
 //! never remembered: a directory that is not a repository yet is exactly
@@ -25,14 +25,16 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-/// Which of the two stable answers is wanted. Part of the key, so one
-/// memo serves both without either shadowing the other.
+/// Which of the stable answers is wanted. Part of the key, so one memo
+/// serves them all without any shadowing another.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Question {
     /// `rev-parse --show-toplevel`.
     Root,
     /// `rev-parse --path-format=absolute --git-common-dir`.
     CommonDir,
+    /// `rev-parse --absolute-git-dir`.
+    GitDir,
 }
 
 fn remembered() -> &'static Mutex<HashMap<(Question, PathBuf), PathBuf>> {
@@ -57,6 +59,13 @@ pub fn common_dir(cwd: &Path) -> Result<PathBuf, String> {
         cwd,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )
+}
+
+/// The checkout's own Git directory, absolute — `<primary>/.git` for the
+/// primary, `<primary>/.git/worktrees/<name>` for a linked worktree: where
+/// its index, its `HEAD` and any operation Git paused in it live.
+pub fn git_dir(cwd: &Path) -> Result<PathBuf, String> {
+    answer(Question::GitDir, cwd, &["rev-parse", "--absolute-git-dir"])
 }
 
 fn answer(question: Question, cwd: &Path, args: &[&str]) -> Result<PathBuf, String> {

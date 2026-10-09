@@ -275,8 +275,12 @@ pub fn trim_free_slots(
             // reads as possibly changed until the index is written again:
             // every status hashes every file, and the switch does too.
             // Written here, where nobody waits for it, instead of by the
-            // placement that would otherwise pay for it.
-            let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
+            // placement that would otherwise pay for it; and once, since an
+            // index written well after the slot was last stamped has no
+            // file of that second left to doubt.
+            if index_may_be_racy(&slot.path) {
+                let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
+            }
             continue;
         }
         if set_aside(primary, &slot.path) {
@@ -284,6 +288,13 @@ pub fn trim_free_slots(
         }
     }
     removed
+}
+
+fn index_may_be_racy(slot: &Path) -> bool {
+    let Ok(git_dir) = uze_git::repository::git_dir(slot) else {
+        return true;
+    };
+    modified_at(&git_dir.join("index")) <= modified_at(slot) + Duration::from_secs(1)
 }
 
 /// Where a collected slot waits for its bytes to be deleted: inside the
@@ -369,6 +380,8 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         .map(|checkout| checkout.directory(primary))
         .filter(|path| path.is_dir());
     let Some(directory) = directory else {
+        let isolation = agent.isolation_mut().expect("checked isolated above");
+        isolation.last_checkout = isolation.checkout.take();
         settle_without_checkout(primary, target, agent);
         return Released::Freed { shelved: false };
     };
@@ -379,6 +392,7 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         if let Some(operation) = paused_operation(&directory) {
             return Released::Pinned(Pin::Paused(operation));
         }
+        let earlier = shelf::shelf_of(primary, &id);
         let shelving = match shelf::shelve(&directory, &id, &label, &branch) {
             Ok(shelving) => shelving,
             Err(refusal) => {
@@ -395,10 +409,13 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         let shelved = matches!(shelving, shelf::Shelving::Kept(_));
         // The tree is read again against what was kept: anything written
         // between the shelf and now is somebody at work, and is not reset.
+        // The shelf goes back to what it was, or a task still at work would
+        // carry a snapshot it has since moved past as unfinished work.
         if let shelf::Shelving::Kept(commit) = &shelving
             && shelf::tree_of_work(&directory).ok()
                 != Some(tip_of(&directory, &format!("{commit}^{{tree}}")))
         {
+            let _ = shelf::unshelve(primary, &id, commit, earlier.as_deref());
             return Released::InUse;
         }
         if git(
@@ -475,6 +492,7 @@ pub fn untake(primary: &Path, slot: &Path) {
             &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
         );
         let _ = git(slot, &["clean", "--quiet", "-fd"]);
+        let _ = record::write(primary, slot, &CheckoutRecord::made_at(slot));
     });
 }
 

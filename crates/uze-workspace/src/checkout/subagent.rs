@@ -26,13 +26,9 @@ pub enum JoinOutcome {
 /// Whether a rebase or a merge is under way in `root`: a checkout in the
 /// middle of either has no commit to split from.
 pub fn operation_in_progress(root: &Path) -> bool {
-    let Some(git_dir) = crate::git::read(root, &["rev-parse", "--absolute-git-dir"])
-        .ok()
-        .and_then(|output| output.successful().ok())
-    else {
+    let Ok(git_dir) = uze_git::repository::git_dir(root) else {
         return true;
     };
-    let git_dir = uze_git::native_path(git_dir.trim());
     ["rebase-merge", "rebase-apply", "MERGE_HEAD"]
         .iter()
         .any(|state| git_dir.join(state).exists())
