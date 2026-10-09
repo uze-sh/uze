@@ -76,7 +76,10 @@ public static class Program {
         finally { $archiveFile.Dispose() }
         if (-not $Checksum) { $Checksum = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() }
         $sums = Join-Path $download 'SHASUMS256.txt'
-        Set-Content -LiteralPath $sums "$Checksum  $archive" -Encoding Ascii
+        # LF, as the release job writes it on Linux: some Windows builds of
+        # ssh-keygen read the message on stdin in text mode, and a CRLF file
+        # would be verified as other bytes than the ones it signed.
+        [IO.File]::WriteAllText($sums, "$Checksum  $archive`n", (New-Object Text.ASCIIEncoding))
         if ($SignedBy) {
             Invoke-SshKeygen "-q -Y sign -n uze-release -f `"$SignedBy`" `"$sums`""
         }
