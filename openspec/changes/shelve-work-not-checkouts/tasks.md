@@ -1,6 +1,6 @@
 ## 0. Prerequisite
 
-- [ ] 0.1 Archive `account-for-every-checkout` (its code is merged in #128) so `checkout-accounting` exists in `openspec/specs/` before this change's delta is applied; its two open tasks (3.4 conformance, 10.2 journey) are carried as follow-ups named in its archive note.
+- [x] 0.1 Archive `account-for-every-checkout` (its code is merged in #128) so `checkout-accounting` exists in `openspec/specs/` before this change's delta is applied; its two open tasks (3.4 conformance, 10.2 journey) are carried as follow-ups named in its archive note.
 
 ## 1. Regression suite first
 

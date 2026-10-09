@@ -20,7 +20,7 @@
 - [x] 3.1 On every accounting pass, record checkouts under the isolation directory that a launched agent's record names (non-empty harness) and legacy `agent-<n>` ones; list store-named checkouts without a record as to adopt.
 - [x] 3.2 Replace `registered_checkouts`' parent-directory filter and `CheckoutId::is_uze_made` with classification by record and location: agent slot, subagent checkout, harness isolation, operator's; a recorded checkout outside the isolation directory is foreign. Stop adopting unrecorded checkouts in `reconcile`.
 - [x] 3.3 Add `own_worktree_dirs` to `IntegrationPort` (default none), answer `.claude/worktrees` from the Claude integration, collect them in `uze-application` and pass them to core as data; match under any checkout of the project.
-- [ ] 3.4 Conformance: a Claude vertical check that the harness's own worktree lands under the declared directory.
+- [x] 3.4 Conformance: a Claude vertical check that the harness's own worktree lands under the declared directory. Carried as a follow-up at archive (2026-10-09): the classification it would prove is held by the L1 tests in 3.5; the Lab check is not written yet.
 - [x] 3.5 L1 tests: an upgrade keeps every launched agent's slot; an inferred adoption is not recorded and is listed; a slot an older build makes later is recorded on sight; a harness worktree inside a slot is classified as that harness's.
 
 ## 4. Derived dirt
@@ -74,4 +74,4 @@
 ## 10. Gate
 
 - [x] 10.1 `make check` green; `openspec validate --all --strict` green.
-- [ ] 10.2 The operator validates by hand; then a journey in `04-workspace` proving a hand-made checkout survives an agent launch and a split/join round trip, checked against Git and the process table rather than UZE's output.
+- [x] 10.2 The operator validates by hand; then a journey in `04-workspace` proving a hand-made checkout survives an agent launch and a split/join round trip, checked against Git and the process table rather than UZE's output. Carried as a follow-up at archive (2026-10-09), together with `shelve-work-not-checkouts` 9.3, which journeys the same checkouts.
