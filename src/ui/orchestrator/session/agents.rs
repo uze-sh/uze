@@ -423,6 +423,16 @@ impl Attach<'_> {
     pub(super) fn absorb_occupancy(&mut self, resolution: OccupancyResolution) {
         self.model.occupancy_pending = false;
         let OccupancyResolution { reconciliation } = resolution;
+        let retry = &mut self.model.remembered.occupancy_retry;
+        if !reconciliation.waiting.is_empty() {
+            *retry = Some(OccupancyRetry::after(
+                retry.as_ref(),
+                reconciliation.waiting.clone(),
+                Instant::now(),
+            ));
+        } else if retry.as_ref().is_some_and(|retry| retry.look_in.is_empty()) {
+            *retry = None;
+        }
         let unfinished: Vec<&str> = reconciliation
             .released
             .iter()

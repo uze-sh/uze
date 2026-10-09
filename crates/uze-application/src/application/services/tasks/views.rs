@@ -12,6 +12,11 @@ pub struct Reconciliation {
     /// Empty is the ordinary answer.
     pub changed: Vec<PathBuf>,
     pub released: Vec<ReleasedTask>,
+    /// The directories whose repository has an agent no pane is in front
+    /// of, whose checkout something was still working in: an agent's own
+    /// process taking its moment to exit, as often as not. Nothing else
+    /// asks again, so the caller does, a little later.
+    pub waiting: Vec<PathBuf>,
 }
 
 /// The canonical spelling of a directory: the key every record of it is

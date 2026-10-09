@@ -37,7 +37,10 @@ impl Workspace<'_> {
             if !seen.insert(primary) {
                 continue;
             }
-            let released = self.release_abandoned_tasks(cwd, held, echoed);
+            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            if waiting {
+                reconciliation.waiting.push(cwd.clone());
+            }
             if !released.is_empty() {
                 reconciliation.changed.push(cwd.clone());
                 reconciliation.released.extend(released);
@@ -127,12 +130,24 @@ impl Workspace<'_> {
         occupied: &[PathBuf],
         echoed: &[String],
     ) -> Vec<ReleasedTask> {
+        self.release_abandoned(cwd, occupied, echoed).0
+    }
+
+    /// [`Self::release_abandoned_tasks`], and whether any of them was
+    /// found in use and left as it was.
+    fn release_abandoned(
+        &self,
+        cwd: &Path,
+        occupied: &[PathBuf],
+        echoed: &[String],
+    ) -> (Vec<ReleasedTask>, bool) {
         let Some((primary, policy)) = self.repository_context(cwd) else {
-            return Vec::new();
+            return (Vec::new(), false);
         };
         let target = target_of(&primary, &policy);
         let presence = checkout::Presence::observe_with(occupied);
         let mut released = Vec::new();
+        let mut in_use = false;
         let mut looked_at: Vec<AgentId> = Vec::new();
         let mut reconciled = false;
         loop {
@@ -174,6 +189,7 @@ impl Workspace<'_> {
                 break;
             };
             looked_at.push(id.clone());
+            in_use |= outcome == checkout::Released::InUse;
             let ended_now = was_live && outcome != checkout::Released::InUse;
             let freed_now = matches!(outcome, checkout::Released::Freed { shelved: true });
             if ended_now || freed_now {
@@ -184,7 +200,7 @@ impl Workspace<'_> {
                 });
             }
         }
-        released
+        (released, in_use)
     }
 
     /// Takes out the safe removals: the directory of every free slot gone

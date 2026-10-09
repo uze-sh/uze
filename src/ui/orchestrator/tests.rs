@@ -12089,3 +12089,40 @@ fn a_bidi_override_never_reaches_the_terminal() {
     );
     assert!(row.starts_with("abcd"), "{row:?}");
 }
+
+#[cfg(test)]
+mod occupancy_retry_tests {
+    use crate::ui::orchestrator::OccupancyRetry;
+    use std::{
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn a_checkout_still_in_use_is_asked_about_again_later_each_time() {
+        let now = Instant::now();
+        let repository = PathBuf::from("/repository");
+        let first = OccupancyRetry::after(None, vec![repository.clone()], now);
+        assert_eq!(first.wait, Duration::from_secs(2));
+        assert_eq!(first.due, now + Duration::from_secs(2));
+
+        let mut previous = first;
+        for _ in 0..10 {
+            previous = OccupancyRetry::after(Some(&previous), vec![repository.clone()], now);
+        }
+        assert_eq!(
+            previous.wait,
+            Duration::from_secs(60),
+            "a shell left open is asked about once a minute, never less often"
+        );
+        assert_eq!(previous.look_in, vec![repository]);
+    }
+
+    #[test]
+    fn a_retry_still_owed_keeps_its_repository_beside_a_new_one() {
+        let now = Instant::now();
+        let owed = OccupancyRetry::after(None, vec![PathBuf::from("/a")], now);
+        let next = OccupancyRetry::after(Some(&owed), vec![PathBuf::from("/b")], now);
+        assert_eq!(next.look_in, vec![PathBuf::from("/b"), PathBuf::from("/a")]);
+    }
+}

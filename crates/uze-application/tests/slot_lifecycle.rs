@@ -1175,6 +1175,25 @@ mod slots {
         );
     }
 
+    /// A release that finds somebody still in the checkout says so, since
+    /// the client is the only one that will ask again.
+    #[test]
+    fn a_release_found_in_use_names_its_repository_to_ask_again() {
+        let mut world = World::new("slot-in-use-retry");
+        let agent = world.open();
+        let _somebody = stay_inside(&agent.cwd);
+        world.panes.retain(|pane| pane.id != agent.id);
+
+        let reconciliation = world.app.workspace().reconcile_occupancy(
+            std::slice::from_ref(&agent.cwd),
+            &world.held(),
+            &world.echoed(),
+        );
+
+        assert_eq!(reconciliation.waiting, vec![agent.cwd.clone()]);
+        assert_eq!(world.record(&agent).state, "Running");
+    }
+
     /// An agent another client of the space launched is not in this
     /// client's panes, but it is at work: this client must not release it.
     #[test]
