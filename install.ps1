@@ -265,9 +265,9 @@ public static extern IntPtr SendMessageTimeout(
             $errors = $verifier.StandardError.ReadToEndAsync()
             [void]$verifier.StandardOutput.ReadToEnd()
             $verifier.WaitForExit()
-            [void]$errors.Result
+            $reason = $errors.Result.Trim()
             if ($verifier.ExitCode -ne 0) {
-                throw 'SHASUMS256.txt is not signed by the uze release key'
+                throw "SHASUMS256.txt is not signed by the uze release key ($reason)"
             }
         }
 

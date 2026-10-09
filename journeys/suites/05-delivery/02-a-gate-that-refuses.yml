@@ -21,7 +21,8 @@ world:
       delivery: merge
       slots: 3
       gate:
-        - sh -c 'test ! -f src/ping.rs'
+        - posix: test ! -f src/ping.rs
+          windows: if (Test-Path src/ping.rs) { exit 1 }
 
 scenes:
   - scene: an agent whose work the project's checks will reject
