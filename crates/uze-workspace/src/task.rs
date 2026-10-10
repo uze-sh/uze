@@ -753,8 +753,14 @@ pub fn locked_reporting<T>(
         }
         Err(error) => return Err(error.into()),
     };
+    let read = store.clone();
     let outcome = mutate(&mut store)?;
-    save(home, project_root, &store)?;
+    // Most passes change nothing, and each write is a synced replacement
+    // of the whole document: written only when there is something to say,
+    // or when what was there had to be set aside and is gone.
+    if store != read || recovery.set_aside.is_some() || !path.exists() {
+        save(home, project_root, &store)?;
+    }
     Ok((outcome, recovery))
 }
 
