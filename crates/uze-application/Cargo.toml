@@ -26,3 +26,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 uze-testkit = { path = "../uze-testkit" }
+# Counts the Git processes a pass starts, for the budgets that keep a
+# pass from growing with the project's history.
+uze-git = { path = "../uze-git" }

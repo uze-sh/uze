@@ -24,6 +24,7 @@ impl Workspace<'_> {
                 in_the_root: OnceCell::new(),
                 occupied,
                 owners: store.slot_owners(),
+                refs: checkout::Refs::read(&primary),
                 holding_children: store
                     .agents
                     .iter()
@@ -163,6 +164,9 @@ pub(super) struct EvaluationPass<'a> {
     /// The checkout directories a live pane still sits in.
     pub(super) occupied: &'a [PathBuf],
     pub(super) owners: BTreeSet<AgentId>,
+    /// The repository's branches and shelves, read once for every task the
+    /// pass settles rather than by a process per task.
+    pub(super) refs: checkout::Refs,
     /// Agents a subagent still holds a checkout for. One unfinished for its
     /// children is unfinished for their work, however level its own branch is.
     pub(super) holding_children: BTreeSet<AgentId>,
@@ -253,7 +257,7 @@ impl EvaluationPass<'_> {
         // and its slot never went back to the pool.
         if parked_alone {
             if !self.holding_children.contains(&id) {
-                landing::settle_delivered(primary, id.as_str(), state, task);
+                landing::settle_delivered(primary, &self.refs, id.as_str(), state, task);
             }
             return None;
         }
@@ -263,7 +267,7 @@ impl EvaluationPass<'_> {
         let paused = slot
             .as_ref()
             .is_some_and(|slot| landing::paused_rebase(slot).is_some());
-        if paused && landing::settle_delivered(primary, id.as_str(), state, task) {
+        if paused && landing::settle_delivered(primary, &self.refs, id.as_str(), state, task) {
             return None;
         }
         self.read_readiness(state, task, ended_owner);

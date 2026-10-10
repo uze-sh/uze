@@ -1937,6 +1937,83 @@ mod children {
     }
 }
 
+mod budget {
+    use super::*;
+
+    /// An agent that ended unfinished, with a subagent that did too: the
+    /// history every pass walks, and the shape that used to cost a Git
+    /// process per record on every one of them.
+    fn leave_unfinished(world: &mut World, n: usize) {
+        let agent = world.open();
+        let child = world
+            .app
+            .workspace()
+            .split_work(world.claim(&agent), &format!("part{n}"), &world.held())
+            .unwrap();
+        world.commit(&child.path, &format!("part{n}.rs"), "fn part() {}\n");
+        world.write(&agent.cwd, &format!("half{n}.rs"), "half");
+        world.close(&agent);
+    }
+
+    /// The Git processes one idle occupancy pass and one evaluation start,
+    /// once the history has settled.
+    fn idle_cost(world: &World) -> (usize, usize) {
+        world.sweep();
+        // An index written in the second its slot was last stamped is
+        // refreshed once, on whichever pass meets it: a fact about the
+        // clock, which a budget must not count.
+        for slot in world.slots() {
+            world.age_slot(
+                &world.root.join(".worktrees").join(slot),
+                Duration::from_secs(3600),
+            );
+        }
+        let before = uze_git::processes_started_on_this_thread();
+        world.app.workspace().reconcile_occupancy(
+            std::slice::from_ref(&world.root),
+            &world.held(),
+            &world.echoed(),
+        );
+        let occupancy = uze_git::processes_started_on_this_thread() - before;
+        let before = uze_git::processes_started_on_this_thread();
+        let _ = world
+            .app
+            .workspace()
+            .evaluate_tasks(&world.root, &world.held());
+        (
+            occupancy,
+            uze_git::processes_started_on_this_thread() - before,
+        )
+    }
+
+    /// What a pass costs does not grow with what the project has done: the
+    /// tasks and shelves it remembers are answered from one reading of the
+    /// repository, never a process apiece.
+    #[test]
+    fn an_idle_pass_costs_the_same_however_long_the_history() {
+        // One world at a time: a fixture repository holds the process's
+        // environment until it is dropped.
+        let cost_after = |label: &str, agents: usize| {
+            let mut world = World::new(label);
+            for n in 0..agents {
+                leave_unfinished(&mut world, n);
+            }
+            idle_cost(&world)
+        };
+        let (short_occupancy, short_evaluation) = cost_after("budget-short", 1);
+        let (long_occupancy, long_evaluation) = cost_after("budget-long", 6);
+
+        assert_eq!(
+            long_occupancy, short_occupancy,
+            "an idle occupancy pass grew with the history"
+        );
+        assert_eq!(
+            long_evaluation, short_evaluation,
+            "an evaluation grew with the history"
+        );
+    }
+}
+
 /// Sets a recorded agent's work state as the store spells it.
 fn set_state(agent: &mut serde_json::Value, state: &str) {
     match agent.get_mut("state") {

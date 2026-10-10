@@ -123,7 +123,7 @@ impl BranchTips {
     }
 }
 
-fn integrated_commits(root: &Path, target: String, branch: String) -> bool {
+pub(super) fn integrated_commits(root: &Path, target: String, branch: String) -> bool {
     let question = IntegrationQuestion {
         root: root.to_path_buf(),
         target,

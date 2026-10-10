@@ -150,11 +150,12 @@ pub fn collect(
 /// Removes every shelf whose work the target already has, unless a live
 /// task is about to restore it. Returns the tasks whose shelf went.
 pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    if tip_of(primary, target).is_empty() {
+    let refs = Refs::read(primary);
+    if refs.shelves.is_empty() || tip_of(primary, target).is_empty() {
         return Vec::new();
     }
-    shelf::list(primary)
-        .into_iter()
+    refs.shelves
+        .iter()
         .filter(|found| {
             !store
                 .agent(&found.task)
@@ -165,10 +166,10 @@ pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<
                 .agent(&found.task)
                 .and_then(Agent::isolation)
                 .map_or(target, |isolation| isolation.target.as_str());
-            shelf::is_in_target(primary, &found.commit, into)
+            refs.carries(primary, &found.commit, into)
         })
         .filter(|found| shelf::drop_shelf(primary, &found.task, &found.commit).is_ok())
-        .map(|found| found.task)
+        .map(|found| found.task.clone())
         .collect()
 }
 
@@ -196,11 +197,13 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         .filter_map(|agent| agent.isolation())
         .map(|isolation| isolation.branch.as_str())
         .collect();
+    let refs = Refs::read(primary);
     // A branch a shelf stands on is the shelf's base: pruned, the shelf
     // could only be restored by recreating it.
-    let mut shelved: Vec<String> = shelf::list(primary)
-        .into_iter()
-        .map(|found| found.branch)
+    let mut shelved: Vec<String> = refs
+        .shelves
+        .iter()
+        .map(|found| found.branch.clone())
         .collect();
     // So is the branch a subagent's work is to be joined into: the agent's
     // own, kept while any child of it still holds work.
@@ -210,10 +213,11 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
             .filter(|child| child.parent.is_some())
             .filter_map(|child| {
                 let isolation = child.isolation()?;
-                holds_work(primary, child, &isolation.target).then(|| isolation.target.clone())
+                holds_work_among(&refs, primary, child, &isolation.target)
+                    .then(|| isolation.target.clone())
             }),
     );
-    let tips = BranchTips::read(primary);
+    let tips = &refs.tips;
     let mut removed = Vec::new();
     // The prefix is no longer the whole answer: a named task's branch left
     // it behind (`worktree::BranchVocabulary`), and a branch nobody can
@@ -242,7 +246,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
             .filter_map(Agent::isolation)
             .find(|isolation| isolation.branch == branch)
             .map_or(target, |isolation| isolation.target.as_str());
-        if is_integrated_among(&tips, primary, into, &branch)
+        if is_integrated_among(tips, primary, into, &branch)
             && git(primary, &["branch", "-D", "--", &branch]).is_ok()
         {
             removed.push(branch);
@@ -454,13 +458,54 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
 /// the target lacks, or a shelf with changes the target lacks. The one
 /// answer release, settlement, pruning and delivery all ask.
 pub fn holds_work(primary: &Path, agent: &Agent, target: &str) -> bool {
+    holds_work_among(&Refs::read(primary), primary, agent, target)
+}
+
+/// [`holds_work`] for a pass that asks it of many tasks: answered from
+/// `refs`, read once, instead of by a Git process per task per question —
+/// which grew every pass with every task the project ever recorded.
+pub fn holds_work_among(refs: &Refs, primary: &Path, agent: &Agent, target: &str) -> bool {
     let Some(isolation) = agent.isolation() else {
         return false;
     };
-    (branch_exists(primary, &isolation.branch)
-        && !is_integrated(primary, target, &isolation.branch))
-        || shelf::shelf_of(primary, agent.id.as_str())
-            .is_some_and(|commit| !shelf::is_in_target(primary, &commit, target))
+    (refs.tips.contains(&isolation.branch)
+        && !is_integrated_among(&refs.tips, primary, target, &isolation.branch))
+        || refs
+            .shelf_of(agent.id.as_str())
+            .is_some_and(|commit| !refs.carries(primary, commit, target))
+}
+
+/// The repository's branches and shelves as one pass reads them: two
+/// processes, however many tasks the pass then asks about.
+pub struct Refs {
+    pub tips: BranchTips,
+    pub shelves: Vec<shelf::Shelf>,
+}
+
+impl Refs {
+    pub fn read(primary: &Path) -> Self {
+        Self {
+            tips: BranchTips::read(primary),
+            shelves: shelf::list(primary),
+        }
+    }
+
+    /// The commit `task`'s shelf points at, if it has one.
+    pub fn shelf_of(&self, task: &str) -> Option<&str> {
+        self.shelves
+            .iter()
+            .find(|shelf| shelf.task == task)
+            .map(|shelf| shelf.commit.as_str())
+    }
+
+    /// Whether `target` already carries everything `shelf` holds, with the
+    /// target resolved from these tips where they name it.
+    pub fn carries(&self, primary: &Path, shelf: &str, target: &str) -> bool {
+        match self.tips.local(target) {
+            Some(commit) => shelf::is_in_commit(primary, shelf, commit),
+            None => shelf::is_in_target(primary, shelf, target),
+        }
+    }
 }
 
 /// Records how a task that holds no checkout ended, from what its branch

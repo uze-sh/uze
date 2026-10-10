@@ -272,26 +272,69 @@ pub fn shelf_of(primary: &Path, task: &str) -> Option<String> {
 
 /// Whether everything `shelf` holds is already in `target`: the commits
 /// it was cut from, and, path by path, every change it made on top of
-/// them — deletions and renames each as the two paths they are. Compared
-/// by mode and blob, never by pathspec, so a file named like a pattern is only ever
-/// itself.
+/// them — deletions and renames each as the two paths they are, a mode as
+/// much as the bytes. Never by pathspec, so a file named like a pattern is
+/// only ever itself.
 pub fn is_in_target(primary: &Path, shelf: &str, target: &str) -> bool {
+    let target = tip_of(primary, &format!("{target}^{{commit}}"));
+    is_in_commit(primary, shelf, &target)
+}
+
+/// [`is_in_target`] against a target already resolved to its commit, as a
+/// pass holding the repository's branch tips has it.
+///
+/// Remembered per pair of commits for the life of the process: neither can
+/// change, so neither can the answer, and every collection and evaluation
+/// asks it again of every shelf the project keeps.
+pub fn is_in_commit(primary: &Path, shelf: &str, target: &str) -> bool {
+    if target.is_empty() {
+        return false;
+    }
+    let question = (primary.to_path_buf(), shelf.to_owned(), target.to_owned());
+    let remembered = IN_TARGET
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&question)
+        .copied();
+    if let Some(answer) = remembered {
+        return answer;
+    }
+    let Some(answer) = carried_by(primary, shelf, target) else {
+        return false;
+    };
+    let mut remembered = IN_TARGET
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if remembered.len() >= REMEMBERED_INTEGRATIONS {
+        remembered.clear();
+    }
+    remembered.insert(question, answer);
+    answer
+}
+
+type InTargetQuestion = (PathBuf, String, String);
+
+static IN_TARGET: std::sync::LazyLock<std::sync::Mutex<HashMap<InTargetQuestion, bool>>> =
+    std::sync::LazyLock::new(std::sync::Mutex::default);
+
+/// `None` when Git could not answer: only a complete answer is remembered.
+fn carried_by(primary: &Path, shelf: &str, target: &str) -> Option<bool> {
     let parent = tip_of(primary, &format!("{shelf}^1"));
-    if parent.is_empty() || !is_integrated(primary, target, &parent) {
-        return false;
+    if parent.is_empty() {
+        return None;
     }
-    let Ok(changed) = changed_paths(primary, &parent, shelf) else {
-        return false;
-    };
+    if !integrated_commits(primary, target.to_owned(), parent.clone()) {
+        return Some(false);
+    }
+    let changed = changed_paths(primary, &parent, shelf).ok()?;
     if changed.is_empty() {
-        return true;
+        return Some(true);
     }
-    let (Some(ours), Some(theirs)) = (blobs(primary, shelf), blobs(primary, target)) else {
-        return false;
-    };
-    changed
-        .iter()
-        .all(|path| ours.get(path) == theirs.get(path))
+    let differing: std::collections::HashSet<String> = changed_paths(primary, target, shelf)
+        .ok()?
+        .into_iter()
+        .collect();
+    Some(changed.iter().all(|path| !differing.contains(path)))
 }
 
 /// Whether `slot` holds work a shelf cannot capture: a submodule with
@@ -370,23 +413,6 @@ fn changed_paths(root: &Path, from: &str, to: &str) -> Result<Vec<String>, Strin
         .filter(|path| !path.is_empty())
         .map(str::to_owned)
         .collect())
-}
-
-/// Each path's mode and object: a file made executable is a change even
-/// when its bytes are not.
-fn blobs(root: &Path, commit: &str) -> Option<HashMap<String, String>> {
-    let listing = read_untrimmed(root, &["ls-tree", "-r", "-z", "--full-tree", commit]).ok()?;
-    Some(
-        listing
-            .split('\0')
-            .filter_map(|entry| {
-                let (meta, path) = entry.split_once('\t')?;
-                let mut fields = meta.split(' ');
-                let (mode, object) = (fields.next()?, fields.nth(1)?);
-                Some((path.to_owned(), format!("{mode} {object}")))
-            })
-            .collect(),
-    )
 }
 
 /// Compare-and-swap: `earlier` empty means the ref must not exist yet.

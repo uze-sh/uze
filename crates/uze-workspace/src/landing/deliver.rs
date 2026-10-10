@@ -279,12 +279,13 @@ pub fn paused_rebase(slot: &Path) -> Option<Vec<PathBuf>> {
 /// too, and a live agent that has committed nothing yet is not done.
 pub fn settle_delivered(
     primary: &Path,
+    refs: &checkout::Refs,
     task: &str,
     state: &mut WorkState,
     isolation: &mut Isolation,
 ) -> bool {
-    if !checkout::branch_exists(primary, &isolation.branch)
-        || !checkout::is_integrated(primary, &isolation.target, &isolation.branch)
+    if !refs.tips.contains(&isolation.branch)
+        || !checkout::is_integrated_among(&refs.tips, primary, &isolation.target, &isolation.branch)
     {
         return false;
     }
@@ -292,8 +293,9 @@ pub fn settle_delivered(
     // them did not, and is not delivered by their arriving. The task's own
     // shelf, by its ref: the branch a shelf names is the one it had when
     // it was cut, and a branch renamed since names it no more.
-    if checkout::shelf::shelf_of(primary, task)
-        .is_some_and(|commit| !checkout::shelf::is_in_target(primary, &commit, &isolation.target))
+    if refs
+        .shelf_of(task)
+        .is_some_and(|commit| !refs.carries(primary, commit, &isolation.target))
     {
         return false;
     }
