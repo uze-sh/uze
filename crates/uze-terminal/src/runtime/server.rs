@@ -760,22 +760,17 @@ impl Server {
                 .map(|runtime| runtime.stop())
                 .collect()
         };
-        let (reaped, each_reaped) = mpsc::channel();
-        let waiting = reapers.len();
-        for reaper in reapers {
-            let reaped = reaped.clone();
-            thread::spawn(move || {
+        if reapers.is_empty() {
+            return;
+        }
+        let (reaped, all_reaped) = mpsc::channel();
+        thread::spawn(move || {
+            for reaper in reapers {
                 let _ = reaper.join();
-                let _ = reaped.send(());
-            });
-        }
-        let deadline = Instant::now() + REAP_GRACE;
-        for _ in 0..waiting {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if each_reaped.recv_timeout(left).is_err() {
-                break;
             }
-        }
+            let _ = reaped.send(());
+        });
+        let _ = all_reaped.recv_timeout(REAP_GRACE);
     }
 
     pub(super) fn selection_of(&self, client: u64) -> Selection {
