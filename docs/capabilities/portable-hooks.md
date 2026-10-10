@@ -196,13 +196,13 @@ compatibility verdicts.
 | `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `replace_file_content` / `TargetFile` | `edit` / `path` |
 | `search.files` | `HOOK_QUERY` | `Grep` / `pattern` ² | — | — | `grep` / `pattern` |
 | `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | — | `search_web` / `query` | `websearch` / `query` |
-| `agent.spawn` | — | `Agent` | `collaborationspawn_agent` | — ³ | `subagent` |
+| `agent.spawn` | — | `Agent` | `collaborationspawn_agent` | `invoke_subagent` | `subagent` |
 | `agent.message` | — | — | `collaborationsend_message` | `send_message` | — |
 
 Every name is measured, never recalled: it is the name and the input
 field a real call reached a hook with, recorded by the Conformance Lab's
 census (`conformance/evidence/tools/<harness>.json`, Claude Code 2.1.290,
-codex-cli 0.160.1, Antigravity 1.2.17, OpenCode 2.0.23), and
+codex-cli 0.160.1, Antigravity 1.3.3, OpenCode 2.0.23), and
 `cargo test` fails on a table entry a later census contradicts. A
 `native:<tool>` matcher bypasses the table entirely: the handler receives
 `HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty. A group whose
@@ -215,8 +215,6 @@ unsupported there and not delivered.
 2. Claude Code's native build searches through `Bash` and offers `Grep` to
    the main model only on opt-in (`--allowedTools`/`--tools`) or to a
    subagent whose tools name it.
-3. Antigravity offers `invoke_subagent` only to an agent whose definition
-   lists it.
 
 ## Delivery per harness
 

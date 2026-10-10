@@ -700,19 +700,9 @@ impl AntigravityIntegration {
             .unwrap_or_default();
         let label = agent_label(&self.uze_home, resource);
         let content = markdown_agent(&label, resource, &ANTIGRAVITY_AGENT, &self.harness_keys());
-        let (_, evidence) = projection_route(
-            "Antigravity CLI natively discovers Markdown custom agents from its global agents directory and names each by its frontmatter `name`; UZE writes the definition there under the agent's label, receipt-owned by its content.",
+        let route = projection_route(
+            "Antigravity CLI natively discovers Markdown custom agents from its global agents directory and names each by its frontmatter `name`, and offers them to the agent a person starts on through `invoke_subagent`; UZE writes the definition there under the agent's label, receipt-owned by its content.",
             &not_carried,
-        );
-        // Delivered and listed, but out of reach of the agent a person
-        // starts on: 1.2.17 offers `invoke_subagent` only to an agent whose
-        // own definition lists it (Lab `agent-*-exposed`).
-        let route = (
-            CompatibilityRoute::Degraded,
-            format!(
-                "The default agent cannot dispatch it: Antigravity offers `invoke_subagent` only \
-                 to an agent whose definition lists it. {evidence}"
-            ),
         );
         agent_file_plan(&self.agents_dir, &label, "md", content, route)
     }
@@ -755,8 +745,8 @@ impl PreferencePort for AntigravityIntegration {
 const FACTS: &[HarnessFact] = &[
     HarnessFact {
         subject: "agents",
-        fact: "offers a delivered agent, by its frontmatter `name`, only to an agent whose \
-               definition lists `invoke_subagent`; the default agent is not given the tool",
+        fact: "offers a delivered agent, by its frontmatter `name`, to the default agent \
+               through `invoke_subagent`",
         measured_on: VERSION,
         proven_by: "contract/agent.py::_assert_dispatch",
     },
@@ -794,4 +784,4 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "1.3.0";
+const VERSION: &str = "1.3.3";

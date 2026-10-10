@@ -104,6 +104,7 @@ portable_fields() {
     write_to_file) HOOK_TOOL=file.write; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.TargetFile // empty'); ;;
     replace_file_content) HOOK_TOOL=file.edit; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.TargetFile // empty'); ;;
     search_web) HOOK_TOOL=search.web; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.query // empty'); ;;
+    invoke_subagent) HOOK_TOOL=agent.spawn; ;;
     send_message) HOOK_TOOL=agent.message; ;;
   esac
   bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY \

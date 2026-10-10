@@ -112,6 +112,7 @@ switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
   'write_to_file' { $env:HOOK_TOOL = 'file.write'; Set-Hook 'HOOK_PATH' (Text (Pick $toolInput @('TargetFile'))) }
   'replace_file_content' { $env:HOOK_TOOL = 'file.edit'; Set-Hook 'HOOK_PATH' (Text (Pick $toolInput @('TargetFile'))) }
   'search_web' { $env:HOOK_TOOL = 'search.web'; Set-Hook 'HOOK_QUERY' (Text (Pick $toolInput @('query'))) }
+  'invoke_subagent' { $env:HOOK_TOOL = 'agent.spawn' }
   'send_message' { $env:HOOK_TOOL = 'agent.message' }
 }
 }

@@ -54,7 +54,8 @@
       "reason": "Antigravity drops an agent that carries `model`, so UZE leaves the field out and the agent runs on the session's model",
       "measurement": "the dispatched agent's request names the session's model, not the block's",
       "versions": [
-        "1.2.17"
+        "1.2.17",
+        "1.3.3"
       ],
       "observed_at": "2026-10-05"
     },
@@ -103,78 +104,6 @@
       "observed_at": "2026-10-06"
     },
     {
-      "harness": "antigravity",
-      "check": "vocabulary-agent.spawn-scriptable",
-      "suite": "vocabulary",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "the default session's requests declare no `invoke_subagent`",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "hooks-row-agent.spawn",
-      "suite": "hooks > rows",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "the session did not offer `invoke_subagent`, so no dispatch reached the `agent.spawn` group",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-flat-dispatch-delivers-body",
-      "suite": "agent",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "dispatching the agent from the default session put its body in no request",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-nested-dispatch-delivers-body",
-      "suite": "agent",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "dispatching the agent from the default session put its body in no request",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-renamed-dispatch-delivers-body",
-      "suite": "agent",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "dispatching the agent from the default session put its body in no request",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-vendor-fields-dispatch-delivers-body",
-      "suite": "agent",
-      "reason": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool",
-      "measurement": "dispatching the agent from the default session put its body in no request",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
       "harness": "claude",
       "check": "hooks-deny-not-reported-as-error",
       "suite": "hooks",
@@ -182,90 +111,6 @@
       "measurement": "the turn that a delivered guard denied shows `hook error` beside the denial's reason",
       "versions": [
         "2.1.290 (Claude Code)"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-flat-exposed",
-      "suite": "agent",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session offered `flow:auditor` to the model",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-nested-exposed",
-      "suite": "agent",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session offered `flow:checks:security` to the model",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-renamed-exposed",
-      "suite": "agent",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session offered `flow:linter` to the model",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "agent-vendor-fields-exposed",
-      "suite": "agent",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session offered `flow:scout` to the model",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "lifecycle-update-agent-reaches-model",
-      "suite": "lifecycle",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session carried the updated agent",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "lifecycle-update-agent-replaced",
-      "suite": "lifecycle",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session carried either version of the agent",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
-      ],
-      "observed_at": "2026-10-06"
-    },
-    {
-      "harness": "antigravity",
-      "check": "context-project-agent-reaches-model",
-      "suite": "context",
-      "reason": "Antigravity offers delivered agents only to an agent whose definition lists `invoke_subagent`; the default agent a person starts on is offered none",
-      "measurement": "no request of the default session offered the agent the project authored in .agents/agents",
-      "versions": [
-        "1.2.17",
-        "1.3.0"
       ],
       "observed_at": "2026-10-06"
     },

@@ -44,7 +44,7 @@
       "context": "native",
       "skills": "native",
       "mcp": "native",
-      "agents": "degraded",
+      "agents": "native",
       "hooks": "native",
       "session": "native",
       "package": "native"
