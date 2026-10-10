@@ -538,8 +538,9 @@ impl WorktreePolicy {
     /// What the projected text tells an agent about naming its work.
     ///
     /// An agent names itself as soon as the conversation gives it a clear
-    /// topic — normally from the first user message. Exploration need not
-    /// manufacture a name when the request is genuinely still vague. The
+    /// topic — normally from the first user message — and as its first
+    /// command: an agent that reads or plans first weighs the instruction
+    /// against work already under way, and that is when it was skipped. The
     /// vocabulary is spelled out rather than referred to, because an agent
     /// cannot open `agents.yaml` it was never told about.
     fn naming_clause(&self) -> String {
@@ -548,8 +549,8 @@ impl WorktreePolicy {
         }
         format!(
             "- As soon as a user message gives the conversation a clear topic — normally the \
-             first message — name your work before replying: \
-             `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
+             first message — make naming your work your first command, before reading a file, \
+             planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
              subject is ideally one or two words, never more than three, naming the intention, \
              not a description of the task — \
              `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The \
@@ -593,8 +594,8 @@ impl WorktreePolicy {
              - If your working directory is not inside `{directory}/`, you are in the \
              operator's own checkout, on the branch they are on: commit there, as you go, and \
              never switch, reset, stash or clean it — the operator's uncommitted work is theirs. \
-             Nothing below about delivery applies to you; the branch already has the name it \
-             will keep.\n\
+             Nothing below about delivery applies to you; the branch keeps the name it has.\
+             {naming_in_place}\n\
              - Commit your work on your own branch, as you go. Never commit to, merge into, \
              rebase, or reset the target branch{target}: delivery is UZE's — \
              {completion}.\n\
@@ -613,6 +614,12 @@ impl WorktreePolicy {
             directory = WORKTREES_DIRECTORY,
             prefix = BRANCH_PREFIX,
             naming = self.naming_clause(),
+            naming_in_place = if self.branch.names_work() {
+                " Naming your work still applies here, first: it names your label, never their \
+                 branch."
+            } else {
+                ""
+            },
             target = self
                 .target
                 .as_deref()
@@ -1002,6 +1009,33 @@ mod naming_tests {
         assert!(text.contains("feat|fix"), "{text}");
     }
 
+    /// Agents in the operator's checkout read "the branch keeps its name" as
+    /// leave to skip naming; the isolated ones, told nothing of the kind,
+    /// named first every time. The in-place bullet says naming still applies.
+    #[test]
+    fn an_agent_in_the_operators_checkout_is_told_naming_still_applies() {
+        let in_place_bullet = |policy: WorktreePolicy| {
+            policy
+                .instructions()
+                .lines()
+                .find(|line| line.contains("operator's own checkout"))
+                .expect("the region has an in-place bullet")
+                .to_owned()
+        };
+
+        let bullet = in_place_bullet(WorktreePolicy::default());
+        assert!(
+            bullet.contains("Naming your work still applies"),
+            "{bullet}"
+        );
+
+        let opted_out = in_place_bullet(WorktreePolicy {
+            branch: BranchVocabulary::Preset(BranchPreset::Agent),
+            ..WorktreePolicy::default()
+        });
+        assert!(!opted_out.contains("Naming"), "{opted_out}");
+    }
+
     /// The instruction an agent reads has to be the one its project will
     /// accept, and an agent cannot open an `agents.yaml` nobody told it
     /// about.
@@ -1041,8 +1075,8 @@ mod naming_tests {
             "the clause must name the command: {first_bullet}"
         );
         assert!(
-            first_bullet.contains("before replying"),
-            "the clause must make naming an action, not a promise: {first_bullet}"
+            first_bullet.contains("your first command"),
+            "the clause must order naming before any other command: {first_bullet}"
         );
         assert!(
             !text.contains("first action"),
