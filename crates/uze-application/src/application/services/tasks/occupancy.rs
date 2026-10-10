@@ -64,6 +64,38 @@ impl Workspace<'_> {
         reconciliation
     }
 
+    /// Asks again about releases that found their checkout in use, and
+    /// nothing else: what changed since the pass that met them is only
+    /// whether whatever was working there has gone, so collecting, pruning
+    /// and ending agents in the root wait for a pass that has a reason to.
+    #[tracing::instrument(name = "workspace.retry_releases", skip_all)]
+    pub fn retry_releases(
+        &self,
+        look_in: &[PathBuf],
+        held: &[PathBuf],
+        echoed: &[String],
+    ) -> Reconciliation {
+        let mut reconciliation = Reconciliation::default();
+        let mut seen = BTreeSet::new();
+        for cwd in look_in {
+            let Some(primary) = self.primary_of(cwd) else {
+                continue;
+            };
+            if !seen.insert(primary) {
+                continue;
+            }
+            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            if waiting {
+                reconciliation.waiting.push(cwd.clone());
+            }
+            if !released.is_empty() {
+                reconciliation.changed.push(cwd.clone());
+                reconciliation.released.extend(released);
+            }
+        }
+        reconciliation
+    }
+
     /// Records an agent launched into `root` itself — the space's own
     /// directory, on whatever branch it is on. No repository is needed:
     /// an agent that is not isolated is keyed by the directory it works

@@ -1251,6 +1251,34 @@ mod slots {
         assert_eq!(world.record(&agent).state, "Running");
     }
 
+    /// Asking again about a release costs the release alone: the checkout
+    /// is freed, and nothing else a full pass does — collecting slots,
+    /// branches and shelves — runs.
+    #[test]
+    fn a_retried_release_frees_the_checkout_and_collects_nothing() {
+        let mut world = World::new("slot-retry-only");
+        let agent = world.open();
+        let branch = world.branch_of(&agent);
+        world.forget_pane(&agent);
+
+        let retried = world.app.workspace().retry_releases(
+            std::slice::from_ref(&agent.cwd),
+            &world.held(),
+            &world.echoed(),
+        );
+
+        assert!(retried.waiting.is_empty(), "nobody was in it");
+        assert_eq!(
+            world.record(&agent).checkout,
+            None,
+            "the checkout was freed"
+        );
+        assert!(
+            world.branch_exists(&branch),
+            "a branch with nothing of its own is left for a full pass to prune"
+        );
+    }
+
     /// An agent another client of the space launched is not in this
     /// client's panes, but it is at work: this client must not release it.
     #[test]

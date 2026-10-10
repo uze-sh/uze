@@ -821,6 +821,13 @@ pub(super) fn sync_slot_occupancy(
     if !sweeping && !agent_left && vanished.is_empty() && retrying.is_empty() {
         return;
     }
+    // Only a retry is due: nothing about the panes changed, so the pass
+    // asks again about the releases and nothing more.
+    let pass = if !sweeping && !agent_left && vanished.is_empty() {
+        OccupancyPass::RetryReleases
+    } else {
+        OccupancyPass::Full
+    };
     // A repository is named by any path inside it: the checkout a pane just
     // left, or every space's own root — for the sweep, and for an agent
     // in the root, which is keyed by the root it works in.
@@ -832,6 +839,7 @@ pub(super) fn sync_slot_occupancy(
     model.occupancy_pending = true;
     spawn_occupancy_reconcile(
         home,
+        pass,
         look_in,
         occupied.into_iter().collect(),
         echoed,
