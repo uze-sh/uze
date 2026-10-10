@@ -892,6 +892,27 @@ fn a_republish_replaces_only_the_commit_uze_pushed() {
     );
 }
 
+/// A subject cut for length never ends on a connective either: the cut that
+/// drops a long third word exposes the second, and `of` is no name.
+#[test]
+fn a_subject_cut_for_length_never_ends_on_a_connective() {
+    let repository = repository("landing-long-word-subject");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let isolation = launch(&repository, &mut store, "anything");
+    agent_commits_saying(
+        &repository,
+        work(&isolation),
+        "auth.rs",
+        "refactor: split of WorktreeReconciliationService",
+    );
+
+    assert_eq!(
+        readable_branch_name(primary, work(&isolation)),
+        "refactor/split"
+    );
+}
+
 /// A subject with no conventional type keeps UZE's own prefix rather
 /// than inventing one the project never declared.
 #[test]

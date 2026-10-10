@@ -70,10 +70,7 @@ pub(super) fn commit_derived_halves(
         }
         _ => (None, subject.as_str()),
     };
-    let subject = crate::worktree::cut_at_word_boundary(
-        &leading_words(&slug(rest)),
-        crate::worktree::SUBJECT_MAX_CHARS,
-    );
+    let subject = leading_words(&slug(rest));
     (!subject.is_empty()).then_some((kind, subject))
 }
 
@@ -87,8 +84,13 @@ const DANGLING: &[&str] = &[
 /// The first words of `slug`, as many as a name's subject may carry, never
 /// ending on a connective. A commit subject describes the change; a name
 /// only has to tell it apart from its siblings, which its first words do.
+///
+/// Both limits are applied before the connective is dropped, since either
+/// cut can be the one that leaves it last.
 fn leading_words(slug: &str) -> String {
-    let mut words: Vec<&str> = slug
+    let within_length =
+        crate::worktree::cut_at_word_boundary(slug, crate::worktree::SUBJECT_MAX_CHARS);
+    let mut words: Vec<&str> = within_length
         .split('-')
         .take(crate::worktree::SUBJECT_MAX_WORDS)
         .collect();
