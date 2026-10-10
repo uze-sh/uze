@@ -1986,6 +1986,26 @@ mod budget {
         )
     }
 
+    /// Closing an agent that left work: shelving it, resetting the
+    /// checkout and recording the task, plus the pass around them.
+    #[test]
+    fn closing_an_agent_with_work_costs_a_bounded_number_of_processes() {
+        let mut world = World::new("budget-release");
+        let agent = world.open();
+        world.write(&agent.cwd, "README.md", "edited\n");
+        world.write(&agent.cwd, "new.rs", "fn new() {}\n");
+
+        let before = uze_git::processes_started_on_this_thread();
+        world.close(&agent);
+        let cost = uze_git::processes_started_on_this_thread() - before;
+
+        assert!(world.shelf(&agent).is_some(), "the work was shelved");
+        assert!(
+            cost <= 36,
+            "closing an agent with work started {cost} Git processes"
+        );
+    }
+
     /// What a pass costs does not grow with what the project has done: the
     /// tasks and shelves it remembers are answered from one reading of the
     /// repository, never a process apiece.

@@ -415,7 +415,6 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         if let Some(operation) = paused_operation(&directory) {
             return Released::Pinned(Pin::Paused(operation));
         }
-        let earlier = shelf::shelf_of(primary, &id);
         let shelving = match shelf::shelve(&directory, &id, &label, &branch) {
             Ok(shelving) => shelving,
             Err(refusal) => {
@@ -434,11 +433,10 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         // between the shelf and now is somebody at work, and is not reset.
         // The shelf goes back to what it was, or a task still at work would
         // carry a snapshot it has since moved past as unfinished work.
-        if let shelf::Shelving::Kept(commit) = &shelving
-            && shelf::tree_of_work(&directory).ok()
-                != Some(tip_of(&directory, &format!("{commit}^{{tree}}")))
+        if let shelf::Shelving::Kept(kept) = &shelving
+            && kept.still_matches(&directory) != Ok(true)
         {
-            let _ = shelf::unshelve(primary, &id, commit, earlier.as_deref());
+            let _ = kept.take_back(primary, &id);
             return Released::InUse;
         }
         if git(

@@ -29,12 +29,12 @@ fn slot(label: &str) -> (Repository, PathBuf, String) {
 
 fn shelved(repository: &Repository, slot: &Path, branch: &str) -> String {
     match shelve(slot, TASK, "label", branch).unwrap() {
-        Shelving::Kept(commit) => {
+        Shelving::Kept(kept) => {
             assert_eq!(
                 shelf_of(repository.root(), TASK).as_deref(),
-                Some(commit.as_str())
+                Some(kept.commit.as_str())
             );
-            commit
+            kept.commit
         }
         Shelving::Nothing => panic!("expected work to be shelved"),
     }
@@ -280,7 +280,7 @@ fn a_shelf_lists_itself_from_its_own_commit() {
         vec![Shelf {
             task: TASK.to_owned(),
             commit: match commit {
-                Shelving::Kept(commit) => commit,
+                Shelving::Kept(kept) => kept.commit,
                 Shelving::Nothing => unreachable!(),
             },
             label: "fix/naming".to_owned(),
@@ -325,14 +325,30 @@ fn a_file_made_executable_is_not_in_a_target_that_has_it_plain() {
 #[test]
 fn a_taken_back_shelf_leaves_the_ref_where_it_stood() {
     let (repository, slot, branch) = slot("shelf-unshelve");
+    let kept = |slot: &Path| match shelve(slot, TASK, "label", &branch).unwrap() {
+        Shelving::Kept(kept) => kept,
+        Shelving::Nothing => panic!("expected work to be shelved"),
+    };
     fs::write(slot.join("first.rs"), "").unwrap();
-    let first = shelved(&repository, &slot, &branch);
+    let first = kept(&slot);
     fs::write(slot.join("second.rs"), "").unwrap();
-    let second = shelved(&repository, &slot, &branch);
+    let second = kept(&slot);
+    assert!(
+        second.still_matches(&slot).unwrap(),
+        "nothing written since"
+    );
+    fs::write(slot.join("third.rs"), "").unwrap();
+    assert!(
+        !second.still_matches(&slot).unwrap(),
+        "a write since is seen"
+    );
 
-    unshelve(repository.root(), TASK, &second, Some(&first)).unwrap();
-    assert_eq!(shelf_of(repository.root(), TASK), Some(first.clone()));
-    unshelve(repository.root(), TASK, &first, None).unwrap();
+    second.take_back(repository.root(), TASK).unwrap();
+    assert_eq!(
+        shelf_of(repository.root(), TASK),
+        Some(first.commit.clone())
+    );
+    first.take_back(repository.root(), TASK).unwrap();
     assert_eq!(shelf_of(repository.root(), TASK), None);
 }
 

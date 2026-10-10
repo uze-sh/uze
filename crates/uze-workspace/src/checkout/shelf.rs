@@ -27,8 +27,38 @@ pub fn shelf_ref(task: &str) -> String {
 pub enum Shelving {
     /// Nothing in the checkout is anybody's work.
     Nothing,
-    /// The work is in this commit, under the task's shelf ref.
-    Kept(String),
+    /// The work is on a shelf, under the task's shelf ref.
+    Kept(Kept),
+}
+
+/// A shelf just written, with what checking it and taking it back need,
+/// so neither asks Git again what shelving already learned.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Kept {
+    pub commit: String,
+    tree: String,
+    earlier: Option<String>,
+    derived: Vec<&'static str>,
+}
+
+impl Kept {
+    /// Whether `slot` still holds exactly what was kept. Anything written
+    /// since is somebody at work, and is not reset.
+    pub fn still_matches(&self, slot: &Path) -> Result<bool, String> {
+        work_tree_with(slot, &self.derived)
+            .map(|tree| tree == self.tree)
+            .map_err(|refusal| refusal.to_string())
+    }
+
+    /// Puts the task's shelf ref back where it stood before this shelf:
+    /// at the earlier shelf, or absent. Compare-and-swap, like every move
+    /// of the ref.
+    pub fn take_back(&self, root: &Path, task: &str) -> Result<(), String> {
+        match &self.earlier {
+            Some(earlier) => swap_ref(root, &shelf_ref(task), earlier, &self.commit),
+            None => drop_shelf(root, task, &self.commit),
+        }
+    }
 }
 
 /// Why a checkout's work could not be shelved: the checkout is pinned with
@@ -68,12 +98,13 @@ pub fn shelve(slot: &Path, task: &str, label: &str, branch: &str) -> Result<Shel
         return Err(Unshelvable::Uncapturable(what));
     }
     let failed = |reason: String| Unshelvable::Failed(reason);
-    let tree = work_tree(slot)?;
-    let head = tip_of(slot, "HEAD");
-    if head.is_empty() {
-        return Err(failed("the checkout has no commit".into()));
-    }
-    let head_tree = tip_of(slot, "HEAD^{tree}");
+    let derived = derived_paths(slot);
+    let tree = work_tree_with(slot, &derived)?;
+    let resolved = read(slot, &["rev-parse", "HEAD", "HEAD^{tree}"])
+        .map_err(|_| failed("the checkout has no commit".into()))?;
+    let (head, head_tree) = resolved
+        .split_once('\n')
+        .ok_or_else(|| failed("the checkout has no commit".into()))?;
     if tree == head_tree && !holds_unbranched_commits(slot) {
         return Ok(Shelving::Nothing);
     }
@@ -82,38 +113,36 @@ pub fn shelve(slot: &Path, task: &str, label: &str, branch: &str) -> Result<Shel
     let message = format!(
         "unfinished: {label}\n\n{SHELF_TRAILER_TASK}: {task}\n{SHELF_TRAILER_BRANCH}: {branch}\n{SHELF_TRAILER_LABEL}: {label}\n"
     );
-    let mut commit_tree = vec![
-        "commit-tree",
-        "--no-gpg-sign",
-        tree.as_str(),
-        "-p",
-        head.as_str(),
-    ];
+    let mut commit_tree = vec!["commit-tree", "--no-gpg-sign", tree.as_str(), "-p", head];
     if !earlier.is_empty() {
         commit_tree.extend(["-p", earlier.as_str()]);
     }
     commit_tree.extend(["-m", message.as_str()]);
     let commit = plumbing(slot, &commit_tree, &[]).map_err(failed)?;
     swap_ref(slot, &reference, &commit, &earlier).map_err(failed)?;
-    Ok(Shelving::Kept(commit))
+    Ok(Shelving::Kept(Kept {
+        commit,
+        tree,
+        earlier: (!earlier.is_empty()).then_some(earlier),
+        derived,
+    }))
 }
 
 /// The tree of everything in `slot` that is somebody's work: what its
 /// index and working tree hold over `HEAD`, untracked files the repository
-/// does not ignore included, content UZE derives left as `HEAD` has it.
-pub fn tree_of_work(slot: &Path) -> Result<String, String> {
-    work_tree(slot).map_err(|refusal| refusal.to_string())
-}
-
-fn work_tree(slot: &Path) -> Result<String, Unshelvable> {
+/// does not ignore included, `derived` — content UZE derives — left as
+/// `HEAD` has it.
+fn work_tree_with(slot: &Path, derived: &[&str]) -> Result<String, Unshelvable> {
     let failed = |reason: String| Unshelvable::Failed(reason);
     let git_dir =
         git_dir(slot).ok_or_else(|| failed("its Git directory could not be read".to_owned()))?;
     let index = TemporaryIndex::copied_from(&git_dir).map_err(failed)?;
     let env = [("GIT_INDEX_FILE", index.as_str())];
     plumbing(slot, &["add", "--all", "--", ":/"], &env).map_err(failed)?;
-    for derived in derived_paths(slot) {
-        plumbing(slot, &["reset", "--quiet", "HEAD", "--", derived], &env).map_err(failed)?;
+    if !derived.is_empty() {
+        let mut reset = vec!["reset", "--quiet", "HEAD", "--"];
+        reset.extend_from_slice(derived);
+        plumbing(slot, &reset, &env).map_err(failed)?;
     }
     if let Some(nested) = nested_repository(slot, &env).map_err(failed)? {
         return Err(Unshelvable::Uncapturable(format!("repository `{nested}`")));
@@ -209,21 +238,6 @@ pub fn restore(slot: &Path, shelf: &str) -> Result<Restoring, String> {
 /// written since is somebody's newer work.
 pub fn drop_shelf(root: &Path, task: &str, expected: &str) -> Result<(), String> {
     write(root, &["update-ref", "-d", &shelf_ref(task), expected]).map(|_| ())
-}
-
-/// Takes back the shelf `written` for `task`, leaving the ref where it
-/// stood before: at `earlier`, or absent. Compare-and-swap, like every move
-/// of the ref.
-pub fn unshelve(
-    root: &Path,
-    task: &str,
-    written: &str,
-    earlier: Option<&str>,
-) -> Result<(), String> {
-    match earlier {
-        Some(earlier) => swap_ref(root, &shelf_ref(task), earlier, written),
-        None => drop_shelf(root, task, written),
-    }
 }
 
 /// Every shelf in the repository, read in one process. Each record ends
