@@ -237,6 +237,23 @@ fn a_nested_repository_cannot_be_shelved() {
 }
 
 #[test]
+fn a_checkout_git_cannot_read_is_never_taken_for_one_with_nothing_in_it() {
+    let (repository, slot, branch) = slot("shelf-unreadable");
+    let git_dir = uze_git::repository::git_dir(&slot).unwrap();
+    fs::write(git_dir.join("index"), b"not an index").unwrap();
+
+    assert!(
+        uncapturable_work(&slot).is_err(),
+        "an unreadable status is an error"
+    );
+    assert!(matches!(
+        shelve(&slot, TASK, "label", &branch),
+        Err(Unshelvable::Failed(_))
+    ));
+    assert_eq!(shelf_of(repository.root(), TASK), None);
+}
+
+#[test]
 fn a_repository_nested_deep_in_a_new_directory_cannot_be_shelved() {
     let (repository, slot, branch) = slot("shelf-nested-deep");
     let nested = slot.join("vendor").join("lib");

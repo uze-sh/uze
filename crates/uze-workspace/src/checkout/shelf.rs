@@ -94,7 +94,7 @@ pub struct Shelf {
 /// what `HEAD` has and `HEAD` is on a branch: content UZE derives does not
 /// count, ignored files are never taken.
 pub fn shelve(slot: &Path, task: &str, label: &str, branch: &str) -> Result<Shelving, Unshelvable> {
-    if let Some(what) = uncapturable_work(slot) {
+    if let Some(what) = uncapturable_work(slot).map_err(Unshelvable::Failed)? {
         return Err(Unshelvable::Uncapturable(what));
     }
     let failed = |reason: String| Unshelvable::Failed(reason);
@@ -353,7 +353,10 @@ fn carried_by(primary: &Path, shelf: &str, target: &str) -> Option<bool> {
 
 /// Whether `slot` holds work a shelf cannot capture: a submodule with
 /// changes or commits of its own, or a repository nested in it.
-pub fn uncapturable_work(slot: &Path) -> Option<String> {
+///
+/// A status Git could not give is an error, never "nothing": this answer
+/// is what lets a checkout be reset.
+pub fn uncapturable_work(slot: &Path) -> Result<Option<String>, String> {
     let status = read_untrimmed(
         slot,
         &[
@@ -363,32 +366,34 @@ pub fn uncapturable_work(slot: &Path) -> Option<String> {
             "--untracked-files=normal",
             "--ignore-submodules=none",
         ],
-    )
-    .ok()?;
+    )?;
     let mut records = status.split('\0').filter(|record| !record.is_empty());
     while let Some(record) = records.next() {
         let fields: Vec<&str> = record.splitn(9, ' ').collect();
         match fields.first().copied() {
             Some("1") if fields.get(2).is_some_and(|sub| sub.starts_with('S')) => {
-                return Some(format!("submodule `{}`", fields.get(8).unwrap_or(&"")));
+                return Ok(Some(format!(
+                    "submodule `{}`",
+                    fields.get(8).unwrap_or(&"")
+                )));
             }
             Some("2") => {
                 // A rename carries its original path as the next record.
                 if fields.get(2).is_some_and(|sub| sub.starts_with('S')) {
-                    return Some("a submodule".to_owned());
+                    return Ok(Some("a submodule".to_owned()));
                 }
                 records.next();
             }
             Some("?") => {
                 let path = record.trim_start_matches("? ");
                 if path.ends_with('/') && slot.join(path).join(".git").exists() {
-                    return Some(format!("repository `{}`", path.trim_end_matches('/')));
+                    return Ok(Some(format!("repository `{}`", path.trim_end_matches('/'))));
                 }
             }
             _ => {}
         }
     }
-    None
+    Ok(None)
 }
 
 /// The derived files whose change is not work, by the same predicate a
