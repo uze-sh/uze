@@ -71,12 +71,20 @@ impl Workspace<'_> {
         let (primary, target) = self.project_of(cwd).ok()?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
-        let pinned: Vec<(PathBuf, String)> = checkout::slots(&primary, &store, presence)
-            .into_iter()
-            .filter_map(|slot| match slot.state {
-                checkout::SlotState::Pinned { reason } => Some((slot.path, reason.to_string())),
+        let slots = checkout::slots(&primary, &store, presence);
+        let pinned: Vec<(PathBuf, String)> = slots
+            .iter()
+            .filter_map(|slot| match &slot.state {
+                checkout::SlotState::Pinned { reason } => {
+                    Some((slot.path.clone(), reason.to_string()))
+                }
                 _ => None,
             })
+            .collect();
+        let free: Vec<&Path> = slots
+            .iter()
+            .filter(|slot| slot.state == checkout::SlotState::Free)
+            .map(|slot| slot.path.as_path())
             .collect();
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
         // Measured side by side: a walk is one system call per file, and a
@@ -96,7 +104,8 @@ impl Workspace<'_> {
             .iter()
             .zip(measured)
             .map(|(found, (bytes, last_changed))| {
-                let facts = Facts::read(&target, found, presence);
+                let free = free.iter().any(|path| same(path, &found.path));
+                let facts = Facts::read(&target, found, presence, free);
                 CheckoutView {
                     name: display_name(&primary, &found.path),
                     path: found.path.clone(),
@@ -297,14 +306,15 @@ struct Facts {
 }
 
 impl Facts {
-    fn read(target: &str, found: &AccountedCheckout, presence: &Presence) -> Self {
+    /// `free` is the pool's own answer for one of UZE's slots: a free slot
+    /// detached at commits its target lacks is detached where a branch
+    /// keeps them, which is what releasing it left behind.
+    fn read(target: &str, found: &AccountedCheckout, presence: &Presence, free: bool) -> Self {
         let in_target = checkout::is_integrated(&found.path, target, "HEAD");
         Self {
             dirty: checkout::holds_uncommitted_work(&found.path),
             in_target,
-            held_by_a_branch: found.branch.is_none()
-                && !in_target
-                && !checkout::holds_unbranched_commits(&found.path),
+            held_by_a_branch: found.branch.is_none() && !in_target && free,
             ahead: if in_target {
                 0
             } else {

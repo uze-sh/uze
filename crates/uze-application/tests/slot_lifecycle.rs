@@ -1118,6 +1118,31 @@ mod slots {
         );
     }
 
+    /// The slot an agent with commits gave back is listed as kept on a
+    /// branch, which is what lets the operator's list show it as ready.
+    #[test]
+    fn a_released_slot_is_listed_as_held_by_its_branch() {
+        let mut world = World::new("slot-listed-free");
+        let agent = world.open();
+        world.commit(&agent.cwd, "feature.rs", "fn feature() {}\n");
+        world.close(&agent);
+
+        let view = world
+            .app
+            .workspace()
+            .checkouts(&world.root, &world.held())
+            .expect("the project's checkouts are read");
+        let released = view
+            .checkouts
+            .iter()
+            .find(|checkout| checkout.path == agent.cwd)
+            .expect("the released slot is listed");
+
+        assert_eq!(released.branch, None, "a released slot is detached");
+        assert!(!released.in_target, "its commits are not in the target yet");
+        assert!(released.held_by_a_branch, "but its branch keeps them");
+    }
+
     /// A task that ended long ago and left nothing anywhere is forgotten,
     /// so the record every pass walks does not grow without end; one whose
     /// work is kept stays however old it is.
