@@ -752,7 +752,7 @@ fn a_named_task_publishes_under_its_own_name() {
     isolation.take_name("fix/chosen-by-the-agent".to_owned());
     assert_eq!(
         readable_branch_name(primary, work(&isolation)),
-        "fix/stop-the-redirect-loop",
+        "fix/stop-the-redirect",
         "the derivation still has an answer of its own"
     );
 
@@ -909,7 +909,7 @@ fn a_subject_without_a_type_keeps_the_prefix() {
 
     assert_eq!(
         readable_branch_name(primary, work(&isolation)),
-        "agent/make-the-thing-work"
+        "agent/make-the-thing"
     );
 }
 
@@ -976,24 +976,24 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
     else {
         panic!("no request exists yet, so opening one is the agent's");
     };
-    assert_eq!(branch, "fix/stop-the-redirect-loop");
+    assert_eq!(branch, "fix/stop-the-redirect");
     assert!(
-        instruction.contains("fix/stop-the-redirect-loop") && instruction.contains(TARGET),
+        instruction.contains("fix/stop-the-redirect") && instruction.contains(TARGET),
         "the agent is told which branch and which target: {instruction}"
     );
     assert_eq!(
         publication(primary, work(&isolation)).map(|published| published.branch),
-        Some("fix/stop-the-redirect-loop".to_owned()),
+        Some("fix/stop-the-redirect".to_owned()),
         "the branch is on the remote, and that is read from Git"
     );
     assert_eq!(work(&isolation).published_request, None);
     assert_eq!(
         work(&isolation).published_as.as_deref(),
-        Some("fix/stop-the-redirect-loop")
+        Some("fix/stop-the-redirect")
     );
     let remote_branches = repository.git_in(&other, &["ls-remote", "--heads", REMOTE]);
     assert!(
-        remote_branches.contains("refs/heads/fix/stop-the-redirect-loop"),
+        remote_branches.contains("refs/heads/fix/stop-the-redirect"),
         "{remote_branches}"
     );
     assert!(
@@ -1019,7 +1019,7 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
     assert_eq!(
         deliver(primary, &mut isolation, &policy).unwrap(),
         Delivered::Published {
-            branch: "fix/stop-the-redirect-loop".into(),
+            branch: "fix/stop-the-redirect".into(),
             request: 11,
         },
         "a published branch with a request open for it is a sync"
@@ -1127,7 +1127,7 @@ fn a_merge_request_is_discovered_the_same_way_a_pull_request_is() {
     assert_eq!(
         deliver(primary, &mut isolation, &policy).unwrap(),
         Delivered::Published {
-            branch: "fix/stop-the-redirect-loop".into(),
+            branch: "fix/stop-the-redirect".into(),
             request: 4,
         }
     );

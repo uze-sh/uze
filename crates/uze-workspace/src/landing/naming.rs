@@ -70,9 +70,32 @@ pub(super) fn commit_derived_halves(
         }
         _ => (None, subject.as_str()),
     };
-    let subject =
-        crate::worktree::cut_at_word_boundary(&slug(rest), crate::worktree::SUBJECT_MAX_CHARS);
+    let subject = crate::worktree::cut_at_word_boundary(
+        &leading_words(&slug(rest)),
+        crate::worktree::SUBJECT_MAX_CHARS,
+    );
     (!subject.is_empty()).then_some((kind, subject))
+}
+
+/// Words a cut subject must not end on: `add lcm function with tests` cut
+/// to three words reads as a name only once `with` goes too.
+const DANGLING: &[&str] = &[
+    "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to",
+    "with",
+];
+
+/// The first words of `slug`, as many as a name's subject may carry, never
+/// ending on a connective. A commit subject describes the change; a name
+/// only has to tell it apart from its siblings, which its first words do.
+fn leading_words(slug: &str) -> String {
+    let mut words: Vec<&str> = slug
+        .split('-')
+        .take(crate::worktree::SUBJECT_MAX_WORDS)
+        .collect();
+    while words.len() > 1 && words.last().is_some_and(|word| DANGLING.contains(word)) {
+        words.pop();
+    }
+    words.join("-")
 }
 
 /// The subject of the oldest commit the branch carries beyond its base.

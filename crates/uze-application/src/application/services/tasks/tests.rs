@@ -2911,7 +2911,7 @@ mod derived_naming_tests {
     }
 
     #[test]
-    fn a_commit_with_more_than_three_words_leaves_the_generated_name() {
+    fn a_commit_with_more_than_three_words_names_the_work_from_its_first_ones() {
         let (app, repository) = project("derive-too-many-words", "  branch: conventional\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
@@ -2921,14 +2921,11 @@ mod derived_naming_tests {
             .workspace()
             .evaluate_tasks(&root, std::slice::from_ref(&checkout));
 
-        assert!(
-            evaluation
-                .tasks
-                .last()
-                .unwrap()
-                .branch
-                .starts_with("agent/"),
-            "automatic naming follows the same three-word contract as an agent"
+        assert_eq!(
+            evaluation.tasks.last().unwrap().branch,
+            "feat/answer-ping",
+            "automatic naming follows the same three-word contract as an agent, \
+             and a cut never ends on a connective"
         );
     }
 

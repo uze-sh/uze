@@ -2673,7 +2673,10 @@ pass that already runs — no harness is asked anything, so it behaves the
 same on all four and on the next one, and it covers every completion
 behaviour rather than only the one that publishes. It applies at `Ready`
 and nowhere else, and a derived name the project's vocabulary would refuse
-from an agent is never written on its behalf.
+from an agent is never written on its behalf. The subject keeps the commit's
+first words, at most as many as an agent's name may carry and never ending on
+a connective, so a long subject still names the work rather than leaving it
+on the generated branch.
 
 > `crates/uze-application/src/application/services/tasks/tests.rs::the_first_commit_names_work_nobody_named`
 > `crates/uze-application/src/application/services/tasks/tests.rs::a_commit_outside_the_vocabulary_leaves_the_generated_name`
