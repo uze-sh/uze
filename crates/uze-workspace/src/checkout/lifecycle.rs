@@ -273,11 +273,19 @@ fn prune_integrated_branches_among(
         .map(|isolation| isolation.branch.as_str())
         .collect();
     // A branch a shelf stands on is the shelf's base: pruned, the shelf
-    // could only be restored by recreating it.
+    // could only be restored by recreating it. Named by the task the shelf
+    // is for as well as by the shelf itself, which recorded the name the
+    // branch had when it was cut and knows nothing of a rename since.
     let mut shelved: Vec<String> = refs
         .shelves
         .iter()
-        .map(|found| found.branch.clone())
+        .flat_map(|found| {
+            let renamed = store
+                .agent(&found.task)
+                .and_then(Agent::isolation)
+                .map(|isolation| isolation.branch.clone());
+            std::iter::once(found.branch.clone()).chain(renamed)
+        })
         .collect();
     // So is the branch a subagent's work is to be joined into: the agent's
     // own, kept while any child of it still holds work.

@@ -988,6 +988,33 @@ mod work_shelf {
 
     /// "The target already has it": the shelf is collected with no
     /// operator action.
+    /// The branch a shelf stands on is kept by the task's own branch, not
+    /// by the name the shelf recorded: a branch renamed after its work was
+    /// shelved is still the one the shelf will be restored onto.
+    #[test]
+    fn a_shelf_keeps_its_branch_after_the_branch_is_renamed() {
+        let mut world = World::new("shelf-renamed-branch");
+        let agent = world.open();
+        world.write(&agent.cwd, "README.md", "unfinished\n");
+        world.close(&agent);
+        let recorded = world.branch_of(&agent);
+        world.repo.git(&["branch", "-m", &recorded, "feat/renamed"]);
+        world.edit_store(|agents| {
+            for record in agents.iter_mut() {
+                if record["id"] == serde_json::json!(agent.id) {
+                    record["isolation"]["branch"] = serde_json::json!("feat/renamed");
+                }
+            }
+        });
+
+        world.sweep();
+
+        assert!(
+            world.branch_exists("feat/renamed"),
+            "the renamed branch under a shelf is not pruned"
+        );
+    }
+
     #[test]
     fn a_shelf_the_target_already_has_is_collected() {
         let mut world = World::new("shelf-in-target");
