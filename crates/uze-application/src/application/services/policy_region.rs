@@ -43,11 +43,10 @@ pub struct PolicyRegionView {
 
 impl Workspace<'_> {
     /// Brings the policy region in the primary checkout `cwd` belongs to in
-    /// step with what the project declares: written when a policy is
-    /// declared, superseded versions removed, and every version removed when
-    /// none is. `None` outside a Git repository. Writes nothing when the file
-    /// already says the right thing, and never rewrites a region edited by
-    /// hand.
+    /// step with its effective policy: declared settings when present and
+    /// conventional defaults otherwise. `None` outside a Git repository.
+    /// Writes nothing when the file already says the right thing, and never
+    /// rewrites a region edited by hand.
     #[tracing::instrument(name = "workspace.sync_policy_region", skip_all, fields(cwd = %cwd.display()), err)]
     pub fn sync_policy_region(&self, cwd: &Path) -> Result<Option<ManagedRegionStatus>> {
         let Some(primary) = worktree::primary_checkout(cwd) else {
@@ -75,7 +74,10 @@ impl Workspace<'_> {
                     let inspection = text_region::inspect(&agents_md, identity, content);
                     (inspection.state, inspection.reason)
                 }
-                None => (AttachmentState::Missing, "no policy is declared".to_owned()),
+                None => (
+                    AttachmentState::Missing,
+                    "no workspace policy is available".to_owned(),
+                ),
             };
             return Ok(Some(ManagedRegionStatus {
                 file: agents_md,
@@ -115,14 +117,13 @@ impl Workspace<'_> {
     }
 
     /// The region's standing, read without writing, for the client to say
-    /// when the file is behind the declaration or edited by hand.
+    /// when the file is behind its effective policy or edited by hand.
     #[tracing::instrument(name = "workspace.policy_region", skip_all, fields(cwd = %cwd.display()))]
     pub fn policy_region(&self, cwd: &Path) -> Option<PolicyRegionView> {
         let primary = worktree::primary_checkout(cwd)?;
         let declared = declaration::declared(&primary).ok()?;
-        let desired = declared
-            .as_ref()
-            .map(|policy| (policy.region_identity(), policy.instructions()));
+        let policy = declaration::policy(&primary).ok()?;
+        let desired = Some((policy.region_identity(), policy.instructions()));
         let agents_md = primary.join(AGENTS_MD_FILE_NAME);
         let state = desired
             .as_ref()
@@ -137,10 +138,11 @@ impl Workspace<'_> {
     }
 }
 
-/// The region the declaration renders, or `None` when nothing is declared.
+/// The region the effective policy renders. A project need not repeat the
+/// conventional defaults in `agents.yaml` for its agents to receive them.
 fn desired_region(primary: &Path) -> Result<managed_region::Desired> {
-    Ok(declaration::declared(primary)?
-        .map(|policy| (policy.region_identity(), policy.instructions())))
+    let policy = declaration::policy(primary)?;
+    Ok(Some((policy.region_identity(), policy.instructions())))
 }
 
 impl Workspace<'_> {

@@ -125,8 +125,8 @@ fn moving_from_the_package_manager_to_the_workspace_and_back() {
         "the package manager's lock is untouched by the workspace"
     );
 
-    // And stops: the choice is commented out again. The package manager
-    // leaves the section alone; the workspace takes it back.
+    // The explicit choice is removed again. The package manager leaves the
+    // section alone; the workspace restores its conventional default.
     let manifest = world.project.join("agents.yaml");
     let commented = std::fs::read_to_string(&manifest)
         .unwrap()
@@ -138,6 +138,6 @@ fn moving_from_the_package_manager_to_the_workspace_and_back() {
         "install never removes the workspace's section"
     );
     app.workspace().sync_policy_region(&world.project).unwrap();
-    assert!(!agents_md(&world.project).contains(POLICY_REGION_PREFIX));
+    assert!(agents_md(&world.project).contains(POLICY_REGION_PREFIX));
     assert!(world.shell.changed().is_empty());
 }

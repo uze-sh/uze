@@ -63,10 +63,10 @@ it become authoritative.
   Antigravity 1.2.x reads the name from the frontmatter, lists no agent
   without one, scans no subdirectory, and silently drops an agent with a
   Claude-style `model` or string `tools`, so nothing else is carried and
-  the loss is reported as Degraded. The delivery itself is Degraded too:
-  1.2.17 offers `invoke_subagent` only to an agent whose own definition
-  lists it, so the agent a person starts on cannot dispatch a delivered
-  one (Lab `agent-*-exposed`, a registered declaration).
+  the loss is reported as Degraded. The delivery itself is Native: 1.3.3
+  offers `invoke_subagent` to the agent a person starts on, which
+  dispatches a delivered agent by its label (Lab `agent-*-exposed`,
+  `agent-*-dispatch-delivers-body`).
 
 ## Delivery notes
 

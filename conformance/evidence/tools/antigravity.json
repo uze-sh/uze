@@ -1,7 +1,7 @@
 {
  "harness": "antigravity",
- "harness_version": "1.2.17",
- "recorded_at": "2026-10-06",
+ "harness_version": "1.3.3",
+ "recorded_at": "2026-10-10",
  "tools": {
   "ask_question": [
    "questions",
@@ -84,8 +84,6 @@
    "CommandLine",
    "Cwd",
    "IsDaemon",
-   "RequestedTerminalID",
-   "RunPersistent",
    "WaitMsBeforeAsync",
    "toolAction",
    "toolSummary"
@@ -132,6 +130,11 @@
   ]
  },
  "hook_tools": {
+  "invoke_subagent": [
+   "Subagents",
+   "toolAction",
+   "toolSummary"
+  ],
   "replace_file_content": [
    "AllowMultiple",
    "Description",

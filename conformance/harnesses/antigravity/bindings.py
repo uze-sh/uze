@@ -88,12 +88,11 @@ class AntigravityBindings(Bindings):
     def headless(
         self, cfg, prov_ip, prelude, prompt, cwd, plugins="", delegating=False
     ):
-        """`agy --print` as a person runs it, on the default agent. It was
-        run as a Lab-authored dispatcher agent until 1.2.12 offered
-        `invoke_subagent` only to an agent listing it; 1.2.17's default
-        session declares it (captured), and whether the default agent can
-        delegate to what UZE delivered is the agent contract's to measure,
-        not the Lab's to arrange."""
+        """`agy --print` as a person runs it, on the default agent: whether
+        the default agent can delegate to what UZE delivered is the agent
+        contract's to measure, not the Lab's to arrange. Since 1.3 it is
+        offered `invoke_subagent` once the session's experiment flags enable
+        it (`LIST_EXPERIMENTS` in the provider)."""
         setup = agy_setup(
             cfg,
             prov_ip,
@@ -145,18 +144,6 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
         is dropped silently, with an id from its own catalogue as much as
         without one. UZE leaves `harness.antigravity.model` out, so the agent
         still arrives, on the session's model."""
-        if prop in (
-            "lifecycle-update-agent-reaches-model",
-            "context-project-agent-reaches-model",
-        ) or (
-            prop.startswith("agent-")
-            and (prop.endswith("-dispatch-delivers-body") or prop.endswith("-exposed"))
-        ):
-            return (
-                "Antigravity offers `invoke_subagent` only to an agent whose "
-                "definition lists it, so the default agent a person starts on "
-                "cannot dispatch a delivered agent (measured on 1.2.17)"
-            )
         if prop == "agent-vendor-fields-block-model":
             return (
                 "Antigravity drops an agent that carries `model` (measured on "

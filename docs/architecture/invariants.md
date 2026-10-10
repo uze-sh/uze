@@ -2652,18 +2652,19 @@ and set aside for a reason rather than forgotten.
 | Git sparse checkout for marketplace sources | the `marketplace.json` contract is shaped to allow acquiring only a resolved plugin's subtree later; not implemented |
 | reverse/foreign harness-format import | the acquisition contract is canonical `plugin.json` only (M2); a foreign-format importer (`ClaudePluginImporter`) existed as dead, unreachable code and was removed (ADR-005) — foreign import staying structurally separate from harness delivery is still the intended shape if it returns, but nothing is retained in production speculatively |
 
-### The name is asked for as the agent's first action
+### The name is asked for as the first command about clear work
 
-The projected region's first bullet is the naming clause, and it asks for the
-name before the agent reads a file, plans or edits. The moment carries the
-rule: a name states an intention, which is what an agent holds at its first
+The projected region's first bullet is the naming clause. Once a user message
+makes the work's topic clear, it asks for the name as the agent's first
+command, before it reads a file, plans or edits. The moment carries the rule:
+a name states an intention, which is what an agent holds at its first topical
 turn and the one thing no amount of reading improves — while any later moment
 is one the agent reaches with work already under way, and weighs against it.
 There is no mechanism behind this, which is exactly why the wording and the
 position are pinned by a test rather than left to whoever edits the string
 next.
 
-> `crates/uze-workspace/src/worktree.rs::naming_is_the_first_thing_the_projected_text_asks_for`
+> `crates/uze-workspace/src/worktree.rs::naming_happens_as_soon_as_a_topic_is_clear`
 
 ### Work that reaches a commit unnamed is named from that commit
 
@@ -2672,7 +2673,10 @@ pass that already runs — no harness is asked anything, so it behaves the
 same on all four and on the next one, and it covers every completion
 behaviour rather than only the one that publishes. It applies at `Ready`
 and nowhere else, and a derived name the project's vocabulary would refuse
-from an agent is never written on its behalf.
+from an agent is never written on its behalf. The subject keeps the commit's
+first words, at most as many as an agent's name may carry and never ending on
+a connective, so a long subject still names the work rather than leaving it
+on the generated branch.
 
 > `crates/uze-application/src/application/services/tasks/tests.rs::the_first_commit_names_work_nobody_named`
 > `crates/uze-application/src/application/services/tasks/tests.rs::a_commit_outside_the_vocabulary_leaves_the_generated_name`

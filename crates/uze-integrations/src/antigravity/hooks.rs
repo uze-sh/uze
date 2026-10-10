@@ -85,9 +85,9 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
 
 /// Measured, never recalled: every native name and field here is the one a
 /// Lab census saw a call reach a hook with (`hook_tools` in
-/// `conformance/evidence/tools/antigravity.json`, 1.2.17), and
+/// `conformance/evidence/tools/antigravity.json`, 1.3.3), and
 /// `hooks::measured_tests` fails on any that a later census contradicts.
-/// 1.2.17 offers no `grep_search`, so `search.files` stays unbound.
+/// 1.3.3 offers no `grep_search`, so `search.files` stays unbound.
 const TOOLS: &[ToolBinding] = &[
     ToolBinding {
         alias: "shell",
@@ -127,7 +127,7 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "agent.spawn",
-        native_tool: UNBOUND,
+        native_tool: Some("invoke_subagent"),
         also_matches: &[],
         fields: &[],
     },

@@ -61,7 +61,10 @@ scenes:
       - dir: "{project}/.worktrees/*"
         count: 1
         about: one checkout, the agent's own
-      - git: { branches: "agent/*", count: 1 }
+      # Any branch but the target: the work's own branch is renamed from
+      # its first commit by an evaluation pass this scene does not wait for,
+      # so it may be read under `agent/<id>` or under the derived name.
+      - git: { branches: "*/*", count: 1 }
         about: on a branch of its own
       - file: "{project}/.worktrees/*/notes.md"
         count: 1
@@ -107,8 +110,8 @@ scenes:
         about: the agent asked for was placed, in a checkout of its own
       - process: { matching: claude, cwd: "/.worktrees/", alive: true }
         about: and its harness is running there
-      - git: { branches: "agent/*", count: 2 }
-        about: two branches, one per agent — the first one untouched
+      - git: { branches: "*/*", count: 2 }
+        about: two branches, one per agent
       - file: "{project}/.worktrees/*/notes.md"
         count: 1
         about: with the work committed before the recovery exactly where it was

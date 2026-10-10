@@ -31,7 +31,7 @@ fn git(cwd: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
-/// A repository with a declared branch vocabulary and one agent checkout,
+/// A repository with no workspace declaration and one agent checkout,
 /// built with Git rather than through UZE: this tier asserts against the
 /// machine, so the machine is what sets it up.
 fn project_with_a_checkout(env: &TestEnvironment) -> std::path::PathBuf {
@@ -39,13 +39,8 @@ fn project_with_a_checkout(env: &TestEnvironment) -> std::path::PathBuf {
     git(root, &["init", "--quiet", "-b", "main"]);
     git(root, &["config", "user.name", "Test"]);
     git(root, &["config", "user.email", "test@uze.invalid"]);
-    std::fs::write(
-        root.join("agents.yaml"),
-        "workspace:\n  branch: conventional\n",
-    )
-    .unwrap();
     git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "chore: initial"]);
+    git(root, &["commit", "--allow-empty", "-qm", "chore: initial"]);
     root.clone()
 }
 
@@ -148,6 +143,13 @@ fn an_agent_names_its_work_through_the_real_binary() {
         slot.is_dir(),
         "the slot directory keeps its own name; only the branch was renamed"
     );
+    let named = task::load(&UzeHome::at(&env.uze_home), &root)
+        .unwrap()
+        .agent(&identity)
+        .expect("the recorded agent remains")
+        .label
+        .clone();
+    assert_eq!(named, "branch naming");
 }
 
 /// Hidden means hidden from the person, never disabled. Both halves are

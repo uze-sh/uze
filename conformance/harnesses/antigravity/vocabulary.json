@@ -106,8 +106,7 @@
         ],
         "toolSummary": "Lab dispatch",
         "toolAction": "Dispatching agent"
-      },
-      "optional": "Antigravity offers `invoke_subagent` only to an agent whose definition lists it; the default agent a person starts on declares no such tool (measured on 1.2.17, the Lab's own dispatcher agent having hidden it until then)"
+      }
     },
     "agent.message": {
       "tools": [

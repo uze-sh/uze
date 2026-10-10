@@ -49,15 +49,9 @@ fn canonical_agent_routes_natively_except_where_the_default_agent_cannot_reach_i
         opencode.exposure_plan(&resource).route,
         CompatibilityRoute::Native
     );
-    // Antigravity offers `invoke_subagent` only to an agent whose own
-    // definition lists it, so the agent a person starts on cannot dispatch
-    // the delivered one (Lab `agent-*-exposed`, 1.2.17).
-    let plan = antigravity.exposure_plan(&resource);
-    assert_eq!(plan.route, CompatibilityRoute::Degraded);
-    assert!(
-        plan.evidence.contains("invoke_subagent"),
-        "{}",
-        plan.evidence
+    assert_eq!(
+        antigravity.exposure_plan(&resource).route,
+        CompatibilityRoute::Native
     );
     assert_eq!(
         codex.exposure_plan(&resource).route,

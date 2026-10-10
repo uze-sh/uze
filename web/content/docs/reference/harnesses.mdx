@@ -23,7 +23,7 @@ harness reads.
 | <a className="harness-table-cell" href="https://code.claude.com" target="_blank" rel="noreferrer noopener"><img src="/harnesses/claude-code.svg" alt="" className="harness-table-icon" />Claude Code</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 | <a className="harness-table-cell" href="https://chatgpt.com/codex" target="_blank" rel="noreferrer noopener"><img src="/harnesses/codex.svg" alt="" className="harness-table-icon" />Codex</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 | <a className="harness-table-cell" href="https://opencode.ai" target="_blank" rel="noreferrer noopener"><img src="/harnesses/opencode.svg" alt="" className="harness-table-icon" />OpenCode</a> | UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="uze" /> |
-| <a className="harness-table-cell" href="https://antigravity.google" target="_blank" rel="noreferrer noopener"><img src="/harnesses/antigravity.png" alt="" className="harness-table-icon" />Antigravity</a> | its own plugin + UZE | <Support level="native" /> | <Support level="partial" /> | <Support level="native" /> | <Support level="native" /> |
+| <a className="harness-table-cell" href="https://antigravity.google" target="_blank" rel="noreferrer noopener"><img src="/harnesses/antigravity.png" alt="" className="harness-table-icon" />Antigravity</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 
 ### By harness
 
@@ -192,7 +192,7 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 | Capability | | How |
 | --- | --- | --- |
 | Skills | <Support level="native" /> | native |
-| Agents | <Support level="partial" /> | The default agent cannot dispatch it: Antigravity offers `invoke_subagent` only to an agent whose definition lists it |
+| Agents | <Support level="native" /> | native |
 | MCP | <Support level="native" /> | native |
 | Skill: person only | <Support level="native" /> | native |
 | Skill: model only | <Support level="native" /> | native |
@@ -206,8 +206,8 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 
 - Runs on: `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart` (new session)
 - Can decide: `observe`, `allow`, `deny`, `ask`, `transform`
-- Reaches: `shell`, `file.read`, `file.write`, `file.edit`, `search.web`, `agent.message`
-- Not available here: `SessionStart` (resumed session), `search.files`, `agent.spawn`
+- Reaches: `shell`, `file.read`, `file.write`, `file.edit`, `search.web`, `agent.spawn`, `agent.message`
+- Not available here: `SessionStart` (resumed session), `search.files`
 
 **Invoking a plugin's skill:** `/flow:commit`
 
@@ -217,12 +217,12 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 
 | About | Fact | Measured on |
 | --- | --- | --- |
-| agents | offers a delivered agent, by its frontmatter `name`, only to an agent whose definition lists `invoke_subagent`; the default agent is not given the tool | 1.3.0 |
-| agents | drops an agent that carries `model`, whatever the value | 1.3.0 |
-| placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 1.3.0 |
-| hooks | runs each group UZE merges into its shared `hooks.json`, relaying the tool's own name and input | 1.3.0 |
-| hooks | runs a flat `SessionStart` entry its docs do not list, once per new conversation at its first model call, never on `--continue` | 1.3.0 |
-| hooks | runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, a field its docs do not list | 1.3.0 |
+| agents | offers a delivered agent, by its frontmatter `name`, to the default agent through `invoke_subagent` | 1.3.3 |
+| agents | drops an agent that carries `model`, whatever the value | 1.3.3 |
+| placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 1.3.3 |
+| hooks | runs each group UZE merges into its shared `hooks.json`, relaying the tool's own name and input | 1.3.3 |
+| hooks | runs a flat `SessionStart` entry its docs do not list, once per new conversation at its first model call, never on `--continue` | 1.3.3 |
+| hooks | runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, a field its docs do not list | 1.3.3 |
 
 </div>
 
@@ -283,7 +283,7 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 | `file.edit` | <Support level="native" /> | <Support level="none" /> | <Support level="uze" /> | <Support level="native" /> |
 | `search.files` | <Support level="native" /> | <Support level="none" /> | <Support level="uze" /> | <Support level="none" /> |
 | `search.web` | <Support level="native" /> | <Support level="none" /> | <Support level="uze" /> | <Support level="native" /> |
-| `agent.spawn` | <Support level="native" /> | <Support level="native" /> | <Support level="uze" /> | <Support level="none" /> |
+| `agent.spawn` | <Support level="native" /> | <Support level="native" /> | <Support level="uze" /> | <Support level="native" /> |
 | `agent.message` | <Support level="none" /> | <Support level="native" /> | <Support level="none" /> | <Support level="native" /> |
 
 </Accordion>

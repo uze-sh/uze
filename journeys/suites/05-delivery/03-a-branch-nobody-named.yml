@@ -57,7 +57,7 @@ scenes:
         settle: 1.0
         say: the workspace offers the ending this project declared
     then:
-      - tasks: { newest_branch: "feat/answer-ping-with-pong" }
+      - tasks: { newest_branch: "feat/answer-ping" }
         about: |
           nobody named it, so UZE named it from the commit the agent wrote —
           the one place the intent was already written down
@@ -77,7 +77,7 @@ scenes:
     then:
       - cmd:
           run: "git -C {project} ls-remote --heads origin"
-          stdout_contains: "refs/heads/feat/answer-ping-with-pong"
+          stdout_contains: "refs/heads/feat/answer-ping"
         about: |
           the remote received a name derived from the commit the agent
           wrote — the one place the intent was already written down
