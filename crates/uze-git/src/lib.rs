@@ -237,6 +237,7 @@ pub fn write_with_stdin(root: &Path, args: &[&str], input: &str) -> Result<Outpu
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    count_one_started();
     let mut child = command.spawn().map_err(describe_spawn_failure)?;
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let input = input.to_owned();
@@ -367,6 +368,24 @@ fn reaches_a_remote(args: &[&str]) -> bool {
     false
 }
 
+thread_local! {
+    static STARTED_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many Git processes this thread has started. A pass that asks Git
+/// one question per recorded agent grows with the project's history and
+/// costs a process apiece — tens of milliseconds each where spawning is
+/// slow — so a budget on this count is what keeps such a pass from
+/// returning once it is gone. Per thread, so tests running side by side
+/// count only their own.
+pub fn processes_started_on_this_thread() -> usize {
+    STARTED_HERE.with(std::cell::Cell::get)
+}
+
+fn count_one_started() {
+    STARTED_HERE.with(|count| count.set(count.get() + 1));
+}
+
 fn run(command: Command, args: &[&str]) -> Result<Output, SpawnError> {
     if reaches_a_remote(args) {
         run_within(command, NETWORK_TIMEOUT)
@@ -385,6 +404,7 @@ fn run_to_completion(mut command: Command) -> Result<Output, SpawnError> {
     // `UZE_LOG=uze_git=debug` brings every invocation back.
     let span = tracing::debug_span!("git", args = %arguments, exit = tracing::field::Empty);
     let _entered = span.enter();
+    count_one_started();
     let output = command.output().map_err(|error| {
         let failure = describe_spawn_failure(error);
         tracing::warn!(error = %failure.0, "git could not be run");
@@ -414,6 +434,7 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
         tracing::debug_span!("git", args = %arguments_of(&command), exit = tracing::field::Empty);
     let _entered = span.enter();
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    count_one_started();
     let (mut child, tree) =
         uze_platform::process::spawn_tree(&mut command, uze_platform::process::Seat::NoTerminal)
             .map_err(describe_spawn_failure)?;
@@ -577,6 +598,21 @@ mod tests {
     /// Hand-rolled rather than `uze_testkit::git::Repository`: that fixture
     /// is built on this crate, so using it here would test the transport
     /// through itself.
+    #[test]
+    fn every_process_started_is_counted_on_the_thread_that_started_it() {
+        let root = repository("git-counted");
+        let before = processes_started_on_this_thread();
+        read(&root, &["rev-parse", "HEAD"]).unwrap();
+        write(&root, &["status", "--porcelain"]).unwrap();
+        write_with_stdin(&root, &["hash-object", "--stdin"], "x").unwrap();
+        assert_eq!(processes_started_on_this_thread() - before, 3);
+
+        let elsewhere = std::thread::spawn(processes_started_on_this_thread)
+            .join()
+            .unwrap();
+        assert_eq!(elsewhere, 0, "another thread counts only its own");
+    }
+
     fn repository(label: &str) -> PathBuf {
         let root = uze_testkit::temp::scratch(label);
         for args in [
