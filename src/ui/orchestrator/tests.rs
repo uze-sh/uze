@@ -2918,8 +2918,12 @@ mod workspace_tests {
     fn discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-discard-async"));
         let mut model = agent_with_task(WorkStateView::Ready, 1);
-        model.remembered.preserved_work =
-            vec![preserved("/repo", "t2", "yesterday", WorkStateView::Parked)];
+        model.remembered.preserved_work = vec![preserved(
+            "/repo",
+            "t2",
+            "yesterday",
+            WorkStateView::Shelved,
+        )];
         model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home);
 
@@ -3905,7 +3909,7 @@ mod workspace_tests {
             },
             WorkStateView::GateFailed,
             WorkStateView::Integrated,
-            WorkStateView::Parked,
+            WorkStateView::Shelved,
         ]
     }
 
@@ -4138,7 +4142,7 @@ mod workspace_tests {
             );
 
             task.checkout = None;
-            task.state = WorkStateView::Parked;
+            task.state = WorkStateView::Shelved;
             model
                 .remembered
                 .tasks
@@ -4268,12 +4272,12 @@ mod workspace_tests {
             .insert(pane, PathBuf::from("/repo/.worktrees/ai"));
         stamp_first_tab(&mut model, "t1");
         model.remembered.lost_checkouts.insert(pane);
-        let mut parked = task_in("/repo/.worktrees/ai", "fix-auth", WorkStateView::Parked, 2);
-        parked.checkout = None;
+        let mut unfinished = task_in("/repo/.worktrees/ai", "fix-auth", WorkStateView::Shelved, 2);
+        unfinished.checkout = None;
         model
             .remembered
             .tasks
-            .insert(PathBuf::from("/repo"), vec![parked.clone()]);
+            .insert(PathBuf::from("/repo"), vec![unfinished.clone()]);
 
         let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
         assert!(
@@ -4301,7 +4305,7 @@ mod workspace_tests {
 
         // Resumed: the task has a slot again, and this row — still the
         // dead one — no longer offers a second agent for it.
-        let mut resumed = parked;
+        let mut resumed = unfinished;
         resumed.checkout = Some(PathBuf::from("/repo/.worktrees/b2"));
         resumed.state = WorkStateView::Running;
         model
@@ -4393,7 +4397,7 @@ mod workspace_tests {
             "conflict",
             "checks failed",
             "delivered",
-            "parked",
+            "unfinished",
         ] {
             assert!(text.contains(name), "{name} is missing from: {text}");
         }
@@ -5922,7 +5926,7 @@ mod workspace_tests {
         set_up_every_harness(&home);
         let mut model = agent_with_task(WorkStateView::Ready, 1);
         model.remembered.preserved_work =
-            vec![preserved("/repo", "t9", "kept", WorkStateView::Parked)];
+            vec![preserved("/repo", "t9", "kept", WorkStateView::Shelved)];
         model.work = Some(WorkOverlay::open(None));
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
@@ -10824,8 +10828,8 @@ mod workspace_tests {
     }
 
     /// A task with no checkout left, waiting to be put back in one.
-    fn parked_task(id: &str, branch: &str) -> AgentView {
-        let mut task = task_in("/repo/.worktrees/ai", id, WorkStateView::Parked, 1);
+    fn unfinished_task(id: &str, branch: &str) -> AgentView {
+        let mut task = task_in("/repo/.worktrees/ai", id, WorkStateView::Shelved, 1);
         task.id = id.to_owned();
         task.branch = branch.to_owned();
         task.checkout = None;
@@ -10845,7 +10849,7 @@ mod workspace_tests {
         let model = agent_over_a_lost_checkout(
             Path::new("/repo/.worktrees/ai"),
             Path::new("/repo"),
-            parked_task("t1", "agent/t1"),
+            unfinished_task("t1", "agent/t1"),
         );
         let mut driven = driven(model, &home);
 
@@ -12084,4 +12088,41 @@ fn a_bidi_override_never_reaches_the_terminal() {
         "{row:?}"
     );
     assert!(row.starts_with("abcd"), "{row:?}");
+}
+
+#[cfg(test)]
+mod occupancy_retry_tests {
+    use crate::ui::orchestrator::OccupancyRetry;
+    use std::{
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn a_checkout_still_in_use_is_asked_about_again_later_each_time() {
+        let now = Instant::now();
+        let repository = PathBuf::from("/repository");
+        let first = OccupancyRetry::after(None, vec![repository.clone()], now);
+        assert_eq!(first.wait, Duration::from_secs(2));
+        assert_eq!(first.due, now + Duration::from_secs(2));
+
+        let mut previous = first;
+        for _ in 0..10 {
+            previous = OccupancyRetry::after(Some(&previous), vec![repository.clone()], now);
+        }
+        assert_eq!(
+            previous.wait,
+            Duration::from_secs(60),
+            "a shell left open is asked about once a minute, never less often"
+        );
+        assert_eq!(previous.look_in, vec![repository]);
+    }
+
+    #[test]
+    fn a_retry_still_owed_keeps_its_repository_beside_a_new_one() {
+        let now = Instant::now();
+        let owed = OccupancyRetry::after(None, vec![PathBuf::from("/a")], now);
+        let next = OccupancyRetry::after(Some(&owed), vec![PathBuf::from("/b")], now);
+        assert_eq!(next.look_in, vec![PathBuf::from("/b"), PathBuf::from("/a")]);
+    }
 }

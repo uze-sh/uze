@@ -38,12 +38,15 @@ fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agen
 }
 
 /// Ends `agent` the way the occupancy sweep does, and records it.
-fn end(repository: &Repository, store: &mut AgentStore, agent: &Agent) -> SlotState {
+fn end(repository: &Repository, store: &mut AgentStore, agent: &Agent) -> Released {
     let mut ended = store.get(&agent.id).unwrap().clone();
-    let state = release(repository.root(), &mut ended, TARGET);
+    let released = release(repository.root(), &mut ended, TARGET, &nobody());
     store.upsert(ended);
-    state
+    released
 }
+
+const FREED: Released = Released::Freed { shelved: false };
+const SHELVED: Released = Released::Freed { shelved: true };
 
 fn record_file(slot: &Path) -> PathBuf {
     let pointer = fs::read_to_string(slot.join(".git")).unwrap();
@@ -86,8 +89,13 @@ fn the_record_outlives_lost_state() {
 
     let mut lost = AgentStore::default();
     let report = reconcile(primary, &mut lost, TARGET);
-    assert_eq!(report.adopted.len(), 1, "the slot is still known as UZE's");
-    assert_eq!(slots(primary, &lost, &nobody())[0].state, SlotState::Free);
+    assert!(
+        report.adopted.is_empty(),
+        "a released slot holds nobody's work, so no task stands for it"
+    );
+    let known = slots(primary, &lost, &nobody());
+    assert_eq!(known.len(), 1, "the slot is still known as UZE's");
+    assert_eq!(known[0].state, SlotState::Free);
 }
 
 #[test]
@@ -154,6 +162,7 @@ fn a_slot_whose_git_file_was_repointed_is_no_longer_anyones_slot() {
             path: slot.path.clone(),
             parent: Some(agent.id.clone()),
             split_at: Some("--exec=true".to_owned()),
+            pinned: None,
         })
         .unwrap(),
     )
@@ -246,7 +255,6 @@ fn a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over() {
         primary,
         &store,
         Pool {
-            spare: 0,
             idle: Duration::ZERO,
         },
         &nobody(),
@@ -339,9 +347,9 @@ fn a_child_whose_agent_an_older_build_forgot_is_given_it_back() {
         repository.root(),
         &slot.path,
         &CheckoutRecord {
-            path: slot.path.clone(),
             parent: Some(agent.id.clone()),
             split_at: Some(split_at),
+            ..CheckoutRecord::made_at(&slot.path)
         },
     )
     .unwrap();
@@ -463,7 +471,7 @@ mod derived_content {
         let grown = format!("{LOCK}  b:\n    marketplace: m\n    integrity: sha256:bbbb\n");
         fs::write(slot.path.join("agents.lock"), grown).unwrap();
 
-        assert_eq!(end(&repository, &mut store, &agent), SlotState::Free);
+        assert_eq!(end(&repository, &mut store, &agent), FREED);
         let (_, next) = launch(&repository, &mut store, "next");
         assert_eq!(next.path, slot.path);
         assert_eq!(
@@ -474,7 +482,7 @@ mod derived_content {
     }
 
     #[test]
-    fn a_moved_pin_parks_the_slot() {
+    fn a_moved_pin_is_shelved() {
         let (repository, mut store, agent, slot) =
             launched_with("derived-pin", &[("agents.lock", LOCK)]);
         fs::write(
@@ -483,7 +491,14 @@ mod derived_content {
         )
         .unwrap();
 
-        assert_eq!(end(&repository, &mut store, &agent), SlotState::Parked);
+        assert_eq!(end(&repository, &mut store, &agent), SHELVED);
+        let kept = shelf::shelf_of(repository.root(), agent.id.as_str()).unwrap();
+        assert!(
+            repository
+                .git(&["show", &format!("{kept}:agents.lock")])
+                .contains("sha256:cccc"),
+            "the moved pin is the work kept"
+        );
     }
 
     const INSTRUCTIONS: &str = "# Project\n\nWritten by a person.\n\n<!-- uze:begin project:policy/1 -->\nold\n<!-- uze:end project:policy/1 -->\n";
@@ -498,11 +513,11 @@ mod derived_content {
         )
         .unwrap();
 
-        assert_eq!(end(&repository, &mut store, &agent), SlotState::Free);
+        assert_eq!(end(&repository, &mut store, &agent), FREED);
     }
 
     /// A free slot still holding a reprojected region is handed on even
-    /// when the target changed that same file since: the edit never parked
+    /// when the target changed that same file since: the edit never held
     /// it, so it must not stand between the next agent and its base either.
     #[test]
     fn a_free_slot_holding_a_region_edit_is_reused_onto_a_target_that_changed_the_file() {
@@ -513,7 +528,7 @@ mod derived_content {
             INSTRUCTIONS.replace("policy/1 -->\nold", "policy/1 -->\nnew"),
         )
         .unwrap();
-        assert_eq!(end(&repository, &mut store, &agent), SlotState::Free);
+        assert_eq!(end(&repository, &mut store, &agent), FREED);
         let moved = INSTRUCTIONS.replace("Written by a person.", "Edited on the target.");
         repository.commit_file("AGENTS.md", &moved);
 
@@ -528,7 +543,7 @@ mod derived_content {
     }
 
     #[test]
-    fn a_hand_edit_beside_a_region_parks_the_slot() {
+    fn a_hand_edit_beside_a_region_is_shelved() {
         let (repository, mut store, agent, slot) =
             launched_with("derived-hand-edit", &[("AGENTS.md", INSTRUCTIONS)]);
         fs::write(
@@ -537,11 +552,11 @@ mod derived_content {
         )
         .unwrap();
 
-        assert_eq!(end(&repository, &mut store, &agent), SlotState::Parked);
+        assert_eq!(end(&repository, &mut store, &agent), SHELVED);
     }
 }
 
-mod spares {
+mod idle_age {
     use super::*;
 
     fn ended_slots(repository: &Repository, store: &mut AgentStore, count: usize) -> Vec<Acquired> {
@@ -558,8 +573,8 @@ mod spares {
     }
 
     #[test]
-    fn closing_agents_leaves_spares_for_the_next_ones() {
-        let repository = repository("spares-reused");
+    fn closing_agents_leaves_their_checkouts_for_the_next_ones() {
+        let repository = repository("idle-reused");
         let primary = repository.root();
         let mut store = AgentStore::default();
         let working: Vec<(Agent, Acquired)> = (0..3)
@@ -570,16 +585,21 @@ mod spares {
         assert!(trim_free_slots(primary, &store, Pool::default(), &nobody()).is_empty());
         let (_, fourth) = launch(&repository, &mut store, "fourth");
         let (_, fifth) = launch(&repository, &mut store, "fifth");
-        assert!(!fourth.created && !fifth.created, "placed in the spares");
+        assert!(
+            !fourth.created && !fifth.created,
+            "placed in the freed checkouts"
+        );
         assert_eq!(
             linked_worktrees(primary).len(),
             working.len() + closed.len()
         );
     }
 
+    /// No count of free checkouts is kept: as many stay as were in use at
+    /// once, until they go idle.
     #[test]
-    fn spares_beyond_the_declared_number_are_removed() {
-        let repository = repository("spares-trimmed");
+    fn every_free_checkout_younger_than_the_idle_age_stays() {
+        let repository = repository("idle-all-kept");
         let primary = repository.root();
         let mut store = AgentStore::default();
         let closed = ended_slots(&repository, &mut store, 5);
@@ -587,29 +607,13 @@ mod spares {
             age(&slot.path, Duration::from_secs(60 * (5 - index as u64)));
         }
 
-        let removed = trim_free_slots(primary, &store, Pool::default(), &nobody());
-
-        assert_eq!(removed.len(), 3);
-        let kept: std::collections::BTreeSet<PathBuf> = linked_worktrees(primary)
-            .into_iter()
-            .map(|(path, _)| path)
-            .collect();
-        assert_eq!(
-            kept,
-            [closed[3].path.clone(), closed[4].path.clone()].into(),
-            "the two most recently used stay"
-        );
-        assert!(
-            closed
-                .iter()
-                .all(|slot| branch_exists(primary, &slot.branch)),
-            "every branch is kept"
-        );
+        assert!(trim_free_slots(primary, &store, Pool::default(), &nobody()).is_empty());
+        assert_eq!(linked_worktrees(primary).len(), 5);
     }
 
     #[test]
     fn an_idle_project_gives_its_disk_back() {
-        let repository = repository("spares-idle");
+        let repository = repository("idle-gone");
         let primary = repository.root();
         let mut store = AgentStore::default();
         let closed = ended_slots(&repository, &mut store, 1);
@@ -619,37 +623,53 @@ mod spares {
             trim_free_slots(primary, &store, Pool::default(), &nobody()),
             vec![closed[0].id.clone()]
         );
+        assert!(
+            branch_exists(primary, &closed[0].branch),
+            "its branch is kept"
+        );
     }
 
+    /// Trimming takes directories, never work: a live agent's checkout is
+    /// not free, and an ended one's work is on its shelf before its
+    /// directory can go.
     #[test]
     fn work_is_never_trimmed() {
-        let repository = repository("spares-work");
+        let repository = repository("idle-work");
         let primary = repository.root();
         let mut store = AgentStore::default();
         let (_, working) = launch(&repository, &mut store, "working");
-        let (parked, holding) = launch(&repository, &mut store, "parked");
+        let (ended, holding) = launch(&repository, &mut store, "ended");
         fs::write(holding.path.join("draft.rs"), "fn main() {}\n").unwrap();
-        end(&repository, &mut store, &parked);
+        assert_eq!(end(&repository, &mut store, &ended), SHELVED);
 
-        let nothing_spare = Pool {
-            spare: 0,
-            idle: Duration::ZERO,
-        };
-        assert!(trim_free_slots(primary, &store, nothing_spare, &nobody()).is_empty());
-        assert!(working.path.is_dir() && holding.path.is_dir());
+        trim_free_slots(
+            primary,
+            &store,
+            Pool {
+                idle: Duration::ZERO,
+            },
+            &nobody(),
+        );
+
+        assert!(working.path.is_dir(), "a live agent's checkout stays");
+        let kept = shelf::shelf_of(primary, ended.id.as_str()).unwrap();
+        assert_eq!(
+            repository
+                .git(&["show", &format!("{kept}:draft.rs")])
+                .trim(),
+            "fn main() {}"
+        );
     }
 
     #[test]
-    fn a_declared_policy_sets_both_numbers() {
+    fn a_declared_policy_sets_the_idle_age() {
         let policy = crate::worktree::WorktreePolicy {
-            spare: Some(4),
             idle_days: Some(1),
             ..Default::default()
         };
         assert_eq!(
             Pool::declared_by(Some(&policy)),
             Pool {
-                spare: 4,
                 idle: Duration::from_secs(24 * 60 * 60),
             }
         );
@@ -669,12 +689,11 @@ mod in_use {
         end(&repository, &mut store, &agent);
         let somebody = Presence::Known(vec![slot.path.join("src")]);
 
-        assert!(matches!(
+        assert_eq!(
             slots(primary, &store, &somebody)[0].state,
-            SlotState::Occupied { .. }
-        ));
+            SlotState::Pinned { reason: Pin::InUse }
+        );
         let nothing_spare = Pool {
-            spare: 0,
             idle: Duration::ZERO,
         };
         assert!(trim_free_slots(primary, &store, nothing_spare, &somebody).is_empty());

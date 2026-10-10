@@ -31,6 +31,12 @@ pub struct CheckoutRecord {
     /// For a subagent's checkout, the commit it was split at.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_at: Option<String>,
+    /// Why the checkout's work could not be shelved when its agent ended,
+    /// so it is kept, and shown with the reason, until somebody deals with
+    /// it. Additive: an older build that drops it reads the checkout from
+    /// its other facts, which still hold it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<String>,
 }
 
 impl CheckoutRecord {
@@ -39,6 +45,7 @@ impl CheckoutRecord {
             path: path.to_path_buf(),
             parent: None,
             split_at: None,
+            pinned: None,
         }
     }
 }

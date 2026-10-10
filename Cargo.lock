@@ -3199,6 +3199,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uze-core",
+ "uze-git",
  "uze-integrations",
  "uze-keys",
  "uze-platform",

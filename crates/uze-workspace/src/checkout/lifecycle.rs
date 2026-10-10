@@ -23,9 +23,22 @@ use uze_core::path::Canonical as _;
 pub fn carry_changes(primary: &Path, slot: &Path) -> Result<(), String> {
     // Read rather than written, and taken *untrimmed*: a patch's final
     // newline is part of it, and `git apply` refuses one that lost it.
-    let patch = crate::git::read(primary, &["diff", "HEAD"])
-        .map_err(|error| error.to_string())?
-        .successful()?;
+    // Plumbing, with binary content in full: porcelain `diff` follows the
+    // operator's `diff.noprefix`, external drivers and text conversions,
+    // any of which makes a patch `apply` cannot read back.
+    let patch = crate::git::read(
+        primary,
+        &[
+            "diff-index",
+            "-p",
+            "--binary",
+            "--full-index",
+            "--no-renames",
+            "HEAD",
+        ],
+    )
+    .map_err(|error| error.to_string())?
+    .successful()?;
     if !patch.trim().is_empty() {
         crate::git::write_with_stdin(slot, &["apply", "--"], &patch)
             .map_err(|error| error.to_string())?
@@ -87,28 +100,143 @@ pub(super) fn keep_derived_instructions_behind(primary: &Path, slot: &Path) -> R
 pub struct Collected {
     pub branches: Vec<String>,
     pub slots: Vec<CheckoutId>,
+    pub shelves: Vec<String>,
 }
 
-/// The two removals that cannot lose work, as one critical section: a
-/// branch whose every commit is in the target, and the directory of a free
-/// slot the `pool` does not keep, its branch kept.
+/// The removals that cannot lose work, as one critical section: the
+/// directory of a free slot unused past the pool's idle age, its branch
+/// kept; a branch whose every commit is in the target and that no shelf
+/// stands on; and a shelf whose every change the target already carries.
 ///
-/// Both are safe on their own; taking the write lock once around them is
-/// what keeps a branch from being pruned in the moment a concurrent
-/// acquisition is creating it.
+/// Slots first, so a trimmed slot's integrated branch is no longer checked
+/// out by the time branches are pruned, and goes in the same pass. Taking
+/// the write lock once around all three is what keeps a branch from being
+/// pruned in the moment a concurrent acquisition is creating it.
 #[tracing::instrument(name = "checkout.collect", level = "debug", skip_all)]
 pub fn collect(
     primary: &Path,
-    store: &AgentStore,
+    store: &mut AgentStore,
     target: &str,
     pool: Pool,
     presence: &Presence,
 ) -> Collected {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || Collected {
-        branches: prune_integrated_branches(primary, store, target),
-        slots: trim_free_slots(primary, store, pool, presence),
+    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        let slots = trim_free_slots(primary, store, pool, presence);
+        // Read once for both: a shelf collected here leaves its branch
+        // protected for one more pass, which costs nothing but that.
+        let refs = Refs::read(primary);
+        let shelves = collect_shelves_among(&refs, primary, store, target);
+        let branches = prune_integrated_branches_among(&refs, primary, store, target);
+        // A task whose branch just went for being in the target is settled
+        // here, while the branch's fate is still known: read later, a
+        // branch that is gone says nothing about where its commits went.
+        for agent in store.agents.iter_mut().filter(|agent| {
+            agent.state == WorkState::Shelved
+                && agent
+                    .isolation()
+                    .is_some_and(|isolation| branches.contains(&isolation.branch))
+        }) {
+            let into = agent
+                .isolation()
+                .map_or_else(|| target.to_owned(), |isolation| isolation.target.clone());
+            settle_without_checkout(primary, &into, agent);
+        }
+        let forgotten = forget_finished(&refs, &branches, store, pool.idle, SystemTime::now());
+        if !forgotten.is_empty() {
+            tracing::info!(
+                count = forgotten.len(),
+                "tasks with nothing left were forgotten"
+            );
+        }
+        Collected {
+            branches,
+            slots,
+            shelves,
+        }
     })
     .unwrap_or_default()
+}
+
+/// Removes from the store every task that ended more than `idle` ago and
+/// left nothing anywhere: no checkout, no branch, no shelf, and no
+/// subagent naming it. Every pass walks every record, so a store that only
+/// grew made each pass slower with every agent the project ever ran, and a
+/// record of nothing is not history anyone can act on. Returns the tasks
+/// forgotten.
+pub fn forget_finished(
+    refs: &Refs,
+    pruned: &[String],
+    store: &mut AgentStore,
+    idle: Duration,
+    now: SystemTime,
+) -> Vec<AgentId> {
+    let now = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let parents: std::collections::BTreeSet<AgentId> = store
+        .agents
+        .iter()
+        .filter_map(|agent| agent.parent.clone())
+        .collect();
+    let finished = |agent: &Agent| {
+        let ended_long_ago = agent
+            .ended_at_unix
+            .is_some_and(|ended| now.saturating_sub(ended) >= idle.as_secs());
+        let holds_nothing = match agent.isolation() {
+            None => true,
+            Some(isolation) => {
+                matches!(agent.state, WorkState::Closed | WorkState::Integrated)
+                    && isolation.checkout.is_none()
+                    && (!refs.tips.contains(&isolation.branch)
+                        || pruned.contains(&isolation.branch))
+                    && refs.shelf_of(agent.id.as_str()).is_none()
+            }
+        };
+        ended_long_ago && holds_nothing && !parents.contains(&agent.id)
+    };
+    let forgotten: Vec<AgentId> = store
+        .agents
+        .iter()
+        .filter(|agent| finished(agent))
+        .map(|agent| agent.id.clone())
+        .collect();
+    store.agents.retain(|agent| !forgotten.contains(&agent.id));
+    forgotten
+}
+
+/// Removes every shelf whose work the target already has, unless a live
+/// task is about to restore it. Returns the tasks whose shelf went.
+pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
+    collect_shelves_among(&Refs::read(primary), primary, store, target)
+}
+
+fn collect_shelves_among(
+    refs: &Refs,
+    primary: &Path,
+    store: &AgentStore,
+    target: &str,
+) -> Vec<String> {
+    if refs.shelves.is_empty() || !refs.resolves(primary, target) {
+        return Vec::new();
+    }
+    refs.shelves
+        .iter()
+        .filter(|found| {
+            !store
+                .agent(&found.task)
+                .is_some_and(|agent| is_live(&agent.state))
+        })
+        .filter(|found| {
+            let into = store
+                .agent(&found.task)
+                .and_then(Agent::isolation)
+                .map_or(target, |isolation| isolation.target.as_str());
+            refs.carries(primary, &found.commit, into)
+        })
+        .filter(|found| shelf::drop_shelf(primary, &found.task, &found.commit).is_ok())
+        .map(|found| found.task.clone())
+        .collect()
 }
 
 /// Deletes every branch UZE can account for — one under the `agent/`
@@ -122,7 +250,16 @@ pub fn collect(
 /// branch this clone never fetched. Nothing is collectable against a
 /// yardstick that does not exist.
 pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    if tip_of(primary, target).is_empty() {
+    prune_integrated_branches_among(&Refs::read(primary), primary, store, target)
+}
+
+fn prune_integrated_branches_among(
+    refs: &Refs,
+    primary: &Path,
+    store: &AgentStore,
+    target: &str,
+) -> Vec<String> {
+    if !refs.resolves(primary, target) {
         return Vec::new();
     }
     let checked_out: Vec<String> = linked_worktrees(primary)
@@ -135,7 +272,34 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         .filter_map(|agent| agent.isolation())
         .map(|isolation| isolation.branch.as_str())
         .collect();
-    let tips = BranchTips::read(primary);
+    // A branch a shelf stands on is the shelf's base: pruned, the shelf
+    // could only be restored by recreating it. Named by the task the shelf
+    // is for as well as by the shelf itself, which recorded the name the
+    // branch had when it was cut and knows nothing of a rename since.
+    let mut shelved: Vec<String> = refs
+        .shelves
+        .iter()
+        .flat_map(|found| {
+            let renamed = store
+                .agent(&found.task)
+                .and_then(Agent::isolation)
+                .map(|isolation| isolation.branch.clone());
+            std::iter::once(found.branch.clone()).chain(renamed)
+        })
+        .collect();
+    // So is the branch a subagent's work is to be joined into: the agent's
+    // own, kept while any child of it still holds work.
+    shelved.extend(
+        store
+            .isolated()
+            .filter(|child| child.parent.is_some())
+            .filter_map(|child| {
+                let isolation = child.isolation()?;
+                holds_work_among(refs, primary, child, &isolation.target)
+                    .then(|| isolation.target.clone())
+            }),
+    );
+    let tips = &refs.tips;
     let mut removed = Vec::new();
     // The prefix is no longer the whole answer: a named task's branch left
     // it behind (`worktree::BranchVocabulary`), and a branch nobody can
@@ -153,6 +317,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         if !tips.contains(&branch)
             || checked_out.contains(&branch)
             || live.contains(&branch.as_str())
+            || shelved.contains(&branch)
         {
             continue;
         }
@@ -163,7 +328,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
             .filter_map(Agent::isolation)
             .find(|isolation| isolation.branch == branch)
             .map_or(target, |isolation| isolation.target.as_str());
-        if is_integrated_among(&tips, primary, into, &branch)
+        if is_integrated_among(tips, primary, into, &branch)
             && git(primary, &["branch", "-D", "--", &branch]).is_ok()
         {
             removed.push(branch);
@@ -172,9 +337,9 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
     removed
 }
 
-/// Removes the directory of every free slot the `pool` does not keep —
-/// beyond its spares, the most recently used first, or unused past its idle
-/// age — keeping each one's branch. Returns the slots removed.
+/// Removes the directory of every free slot unused past the pool's idle
+/// age, keeping each one's branch, and keeps the index of every other free
+/// slot fresh. Returns the slots removed.
 pub fn trim_free_slots(
     primary: &Path,
     store: &AgentStore,
@@ -182,23 +347,26 @@ pub fn trim_free_slots(
     presence: &Presence,
 ) -> Vec<CheckoutId> {
     let now = SystemTime::now();
-    let mut free: Vec<(SystemTime, Slot)> = slots(primary, store, presence)
+    let mut removed = Vec::new();
+    for slot in slots(primary, store, presence)
         .into_iter()
         .filter(|slot| slot.state == SlotState::Free)
-        .map(|slot| (modified_at(&slot.path), slot))
-        .collect();
-    free.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
-    let mut removed = Vec::new();
-    for (kept, (modified, slot)) in free.into_iter().enumerate() {
-        let idle = now.duration_since(modified).unwrap_or_default();
-        if kept < pool.spare && idle < pool.idle {
-            // A spare is what the next placement switches, and one whose
-            // files were written in the same second as its index reads as
-            // possibly changed until the index is written again: every
-            // status hashes every file, and the switch does too. Written
-            // here, where nobody waits for it, instead of by the placement
-            // that would otherwise pay for it.
-            let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
+    {
+        let idle = now
+            .duration_since(modified_at(&slot.path))
+            .unwrap_or_default();
+        if idle < pool.idle {
+            // A kept slot is what the next placement switches, and one
+            // whose files were written in the same second as its index
+            // reads as possibly changed until the index is written again:
+            // every status hashes every file, and the switch does too.
+            // Written here, where nobody waits for it, instead of by the
+            // placement that would otherwise pay for it; and once, since an
+            // index written well after the slot was last stamped has no
+            // file of that second left to doubt.
+            if index_may_be_racy(&slot.path) {
+                let _ = git(&slot.path, &["update-index", "-q", "--refresh"]);
+            }
             continue;
         }
         if set_aside(primary, &slot.path) {
@@ -206,6 +374,13 @@ pub fn trim_free_slots(
         }
     }
     removed
+}
+
+fn index_may_be_racy(slot: &Path) -> bool {
+    let Ok(git_dir) = uze_git::repository::git_dir(slot) else {
+        return true;
+    };
+    modified_at(&git_dir.join("index")) <= modified_at(slot) + Duration::from_secs(1)
 }
 
 /// Where a collected slot waits for its bytes to be deleted: inside the
@@ -255,47 +430,263 @@ pub fn empty_trash(primary: &Path) {
     }
 }
 
-/// Ends `task` because nothing is in front of its checkout any more: the
-/// slot goes back to the pool when it holds nothing, and is parked for the
-/// operator when it holds work.
+/// What releasing an agent's checkout did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Released {
+    /// The checkout went back to the pool; `shelved` when its work had to
+    /// be kept on a shelf first. The task holds no checkout any more.
+    Freed { shelved: bool },
+    /// Something keeps the checkout as it is; the task is ended and still
+    /// holds it, so the next pass tries again.
+    Pinned(Pin),
+    /// Somebody is working in the checkout: nothing was done, and the task
+    /// was not ended.
+    InUse,
+}
+
+/// Ends `task` because nothing is in front of its checkout any more, and
+/// gives the checkout back to the pool with its work kept: uncommitted
+/// changes on a shelf, commits on the branch.
 ///
-/// This is what an agent's departure means for its slot, and the only
-/// transition besides delivery that frees one. Without it a task stays live
-/// for as long as its record does — its slot occupied, its directory never
-/// reused, and every new agent paying for a working tree of its own.
-pub fn release(primary: &Path, agent: &mut Agent, target: &str) -> SlotState {
+/// The only path that resets a slot, and so the only one that asks the
+/// machine rather than a client: under the repository's write lock, right
+/// before anything changes, a process working inside — an agent another
+/// client launched, one still running its `setup`, a shell somebody left —
+/// leaves the checkout and the task exactly as they were.
+pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Presence) -> Released {
+    let id = agent.id.as_str().to_owned();
+    let label = agent.label.clone();
     let Some(isolation) = agent.isolation() else {
-        return SlotState::Free;
+        return Released::Freed { shelved: false };
     };
-    let directory = isolation
-        .checkout
+    let branch = isolation.branch.clone();
+    let checkout = isolation.checkout.clone();
+    let directory = checkout
         .as_ref()
         .map(|checkout| checkout.directory(primary))
         .filter(|path| path.is_dir());
-    let holds_work = directory
-        .is_some_and(|path| holds_uncommitted_work(&path) || holds_unbranched_commits(&path))
-        || (branch_exists(primary, &isolation.branch)
-            && !is_integrated(primary, target, &isolation.branch));
-    if is_live(&agent.state) {
-        agent.state = if holds_work {
-            WorkState::Parked
-        } else {
-            WorkState::Closed
-        };
+    let Some(directory) = directory else {
+        let isolation = agent.isolation_mut().expect("checked isolated above");
+        isolation.last_checkout = isolation.checkout.take();
+        settle_without_checkout(primary, target, agent);
+        return Released::Freed { shelved: false };
+    };
+    let outcome = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        shelve_and_reset(primary, &directory, presence, &id, &label, &branch)
+    })
+    .unwrap_or(Released::InUse);
+    match &outcome {
+        Released::InUse => {}
+        Released::Pinned(_) => {
+            if is_live(&agent.state) {
+                agent.state = WorkState::Shelved;
+            }
+        }
+        Released::Freed { .. } => {
+            let isolation = agent.isolation_mut().expect("checked isolated above");
+            isolation.last_checkout = isolation.checkout.take();
+            settle_without_checkout(primary, target, agent);
+        }
     }
-    // Work the operator declared done keeps its branch and frees its slot,
-    // exactly as `slot_state` reads it: the commits are not lost, they are
-    // simply nobody's turn any more.
-    if holds_work && agent.state != WorkState::Integrated {
-        SlotState::Parked
-    } else {
-        SlotState::Free
+    outcome
+}
+
+/// The release's critical section, under the repository's write lock:
+/// nobody inside, no operation paused, the work shelved and the shelf
+/// still what the checkout holds, then the checkout reset and stamped.
+fn shelve_and_reset(
+    primary: &Path,
+    directory: &Path,
+    presence: &Presence,
+    task: &str,
+    label: &str,
+    branch: &str,
+) -> Released {
+    if presence.inside(directory) || Presence::observe().inside(directory) {
+        return Released::InUse;
+    }
+    if let Some(operation) = paused_operation(directory) {
+        return Released::Pinned(Pin::Paused(operation));
+    }
+    let shelving = match shelf::shelve(directory, task, label, branch) {
+        Ok(shelving) => shelving,
+        Err(refusal) => return pin_with(primary, directory, refusal.to_string()),
+    };
+    let shelved = matches!(shelving, shelf::Shelving::Kept(_));
+    // The tree is read again against what was kept: anything written
+    // between the shelf and now is somebody at work, and is not reset.
+    // The shelf goes back to what it was, or a task still at work would
+    // carry a snapshot it has since moved past as unfinished work.
+    // A check that could not be made is not somebody at work: answered
+    // `InUse`, it was asked again on every retry, forever. The work stays
+    // where it is and the operator is told why.
+    if let shelf::Shelving::Kept(kept) = &shelving {
+        match kept.still_matches(directory) {
+            Ok(true) => {}
+            Ok(false) => {
+                take_back(primary, task, kept);
+                return Released::InUse;
+            }
+            Err(reason) => {
+                take_back(primary, task, kept);
+                return pin_with(
+                    primary,
+                    directory,
+                    format!("its work could not be checked after it was kept: {reason}"),
+                );
+            }
+        }
+    }
+    if git(
+        directory,
+        &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
+    )
+    .is_err()
+        || git(directory, &["clean", "--quiet", "-fd"]).is_err()
+    {
+        if let shelf::Shelving::Kept(kept) = &shelving {
+            take_back(primary, task, kept);
+        }
+        return pin_with(
+            primary,
+            directory,
+            "its checkout could not be reset after its work was kept".to_owned(),
+        );
+    }
+    let _ = record::write(primary, directory, &CheckoutRecord::made_at(directory));
+    stamp(directory);
+    Released::Freed { shelved }
+}
+
+/// Takes a shelf back after the checkout turned out not to be resettable:
+/// the work is still in the checkout, and a shelf of it beside would read
+/// as unfinished work twice.
+fn take_back(primary: &Path, task: &str, kept: &shelf::Kept) {
+    if let Err(reason) = kept.take_back(primary, task) {
+        tracing::warn!(task, %reason, "a shelf could not be taken back");
     }
 }
 
+/// Keeps `directory` as it is for `reason`, written on its record so the
+/// pool and the operator's list both say why.
+fn pin_with(primary: &Path, directory: &Path, reason: String) -> Released {
+    let mut pinned = CheckoutRecord::made_at(directory);
+    if let Recorded::Ours(recorded) = record::read(primary, directory) {
+        pinned = recorded;
+    }
+    pinned.pinned = Some(reason.clone());
+    let _ = record::write(primary, directory, &pinned);
+    Released::Pinned(Pin::Unshelved(reason))
+}
+
+/// Whether `agent` still holds work nobody delivered: commits on its branch
+/// the target lacks, or a shelf with changes the target lacks. The one
+/// answer release, settlement, pruning and delivery all ask.
+pub fn holds_work(primary: &Path, agent: &Agent, target: &str) -> bool {
+    holds_work_among(&Refs::read(primary), primary, agent, target)
+}
+
+/// [`holds_work`] for a pass that asks it of many tasks: answered from
+/// `refs`, read once, instead of by a Git process per task per question —
+/// which grew every pass with every task the project ever recorded.
+pub fn holds_work_among(refs: &Refs, primary: &Path, agent: &Agent, target: &str) -> bool {
+    let Some(isolation) = agent.isolation() else {
+        return false;
+    };
+    (refs.tips.contains(&isolation.branch)
+        && !is_integrated_among(&refs.tips, primary, target, &isolation.branch))
+        || refs
+            .shelf_of(agent.id.as_str())
+            .is_some_and(|commit| !refs.carries(primary, commit, target))
+}
+
+/// The repository's branches and shelves as one pass reads them: two
+/// processes, however many tasks the pass then asks about.
+pub struct Refs {
+    pub tips: BranchTips,
+    pub shelves: Vec<shelf::Shelf>,
+}
+
+impl Refs {
+    pub fn read(primary: &Path) -> Self {
+        Self {
+            tips: BranchTips::read(primary),
+            shelves: shelf::list(primary),
+        }
+    }
+
+    /// The commit `task`'s shelf points at, if it has one.
+    pub fn shelf_of(&self, task: &str) -> Option<&str> {
+        self.shelves
+            .iter()
+            .find(|shelf| shelf.task == task)
+            .map(|shelf| shelf.commit.as_str())
+    }
+
+    /// Whether `target` names a commit: a local branch these tips hold, or
+    /// anything else Git resolves.
+    pub fn resolves(&self, primary: &Path, target: &str) -> bool {
+        self.tips.local(target).is_some() || !tip_of(primary, target).is_empty()
+    }
+
+    /// Whether `target` already carries everything `shelf` holds, with the
+    /// target resolved from these tips where they name it.
+    pub fn carries(&self, primary: &Path, shelf: &str, target: &str) -> bool {
+        match self.tips.local(target) {
+            Some(commit) => shelf::is_in_commit(primary, shelf, commit),
+            None => shelf::is_in_target(primary, shelf, target),
+        }
+    }
+}
+
+/// Records how a task that holds no checkout ended, from what its branch
+/// and its shelf hold: shelved while either holds work; integrated when it
+/// had work that is in the target now; closed when it never had any.
+pub fn settle_without_checkout(primary: &Path, target: &str, agent: &mut Agent) {
+    let had_work = agent.state == WorkState::Shelved
+        || agent.state == WorkState::Integrated
+        || agent.isolation().is_some_and(|isolation| {
+            let tip = tip_of(primary, &isolation.branch);
+            !tip.is_empty() && tip != isolation.base_commit
+        });
+    agent.state = if holds_work(primary, agent, target) {
+        WorkState::Shelved
+    } else if had_work {
+        WorkState::Integrated
+    } else {
+        WorkState::Closed
+    };
+}
+
+/// Gives back a slot a placement took but could not use, without touching
+/// any ref: unlike [`discard`], the task's shelf and branch are its own and
+/// stay.
+pub fn untake(primary: &Path, slot: &Path) {
+    let _ = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        let reset = git(
+            slot,
+            &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
+        )
+        .is_ok()
+            && git(slot, &["clean", "--quiet", "-fd"]).is_ok();
+        // Left holding what a failed resume put back, it is not free: it
+        // is kept, and says why, rather than handed to the next agent.
+        if reset {
+            let _ = record::write(primary, slot, &CheckoutRecord::made_at(slot));
+        } else {
+            pin_with(
+                primary,
+                slot,
+                "it could not be reset after a resume that failed".to_owned(),
+            );
+        }
+    });
+}
+
 /// The one removal that loses work, and therefore the one only an operator
-/// takes on a named task: the checkout directory, forced, and the branch.
-pub fn discard(primary: &Path, isolation: &Isolation) -> Result<(), String> {
+/// takes on a named task: the checkout directory, forced, the branch and
+/// the shelf.
+pub fn discard(primary: &Path, task: &str, isolation: &Isolation) -> Result<(), String> {
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         if let Some(checkout) = &isolation.checkout {
             let path = checkout.directory(primary);
@@ -316,6 +707,9 @@ pub fn discard(primary: &Path, isolation: &Isolation) -> Result<(), String> {
         if branch_exists(primary, &isolation.branch) {
             git(primary, &["branch", "-D", "--", &isolation.branch])
                 .map_err(|error| error.to_string())?;
+        }
+        if let Some(commit) = shelf::shelf_of(primary, task) {
+            shelf::drop_shelf(primary, task, &commit)?;
         }
         Ok(())
     })
@@ -456,6 +850,6 @@ pub(super) fn same_directory(left: &Path, right: &Path) -> bool {
 pub fn is_live(state: &WorkState) -> bool {
     !matches!(
         state,
-        WorkState::Integrated | WorkState::Parked | WorkState::Closed
+        WorkState::Integrated | WorkState::Shelved | WorkState::Closed
     )
 }

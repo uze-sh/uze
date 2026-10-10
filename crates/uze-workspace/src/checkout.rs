@@ -16,11 +16,13 @@
 //! registers, the tasks recorded for the project, and whether any process
 //! is working inside it ([`Presence`]).
 //!
-//! Nothing that can hold work is removed here on any automatic path. A
-//! dirty tree, or a branch with commits the target lacks, is parked; the
-//! two removals that are safe — a branch fully contained in the target, and
-//! the *directory* of a free slot beyond the spares the pool keeps, its
-//! branch kept — are the only ones offered.
+//! Nothing that can hold work is removed here on any automatic path, and
+//! no checkout keeps work for an agent that has gone: its uncommitted
+//! changes go on a shelf ([`shelf`]) and its commits stay on its branch, so
+//! the checkout itself is only capacity. The removals that are safe — a
+//! branch fully contained in the target, a shelf the target already has,
+//! and the *directory* of a free slot nobody used within the pool's idle
+//! age, its branch kept — are the only ones offered.
 
 mod accounting;
 mod anchor;
@@ -39,6 +41,7 @@ pub use pool::*;
 pub use reconcile::*;
 
 pub mod record;
+pub mod shelf;
 pub mod subagent;
 
 use std::{
@@ -74,3 +77,6 @@ mod tests;
 
 #[cfg(test)]
 mod naming_collection_tests;
+
+#[cfg(test)]
+mod shelf_tests;

@@ -415,23 +415,50 @@ impl Attach<'_> {
         }
     }
 
-    /// Turns a finished reconciliation into what the operator sees: a
-    /// notice for work that was parked rather than dropped, and a re-read
-    /// of every repository whose tasks actually moved.
+    /// Turns a finished reconciliation into what the operator sees: one
+    /// notice for every agent that ended with work kept for it rather than
+    /// dropped — however many a pass released, the first one after an
+    /// upgrade among them — and a re-read of every repository whose tasks
+    /// actually moved.
     pub(super) fn absorb_occupancy(&mut self, resolution: OccupancyResolution) {
         self.model.occupancy_pending = false;
         let OccupancyResolution { reconciliation } = resolution;
-        if let Some(parked) = reconciliation.released.iter().find(|task| task.parked) {
-            self.model.raise_toast(
-                ToastKind::Told,
-                "parked",
-                format!("{} — reopen with alt+p", parked.label),
-                None,
-            );
+        let retry = &mut self.model.remembered.occupancy_retry;
+        if !reconciliation.waiting.is_empty() {
+            *retry = Some(OccupancyRetry::after(
+                retry.as_ref(),
+                reconciliation.waiting.clone(),
+                Instant::now(),
+            ));
+        } else if retry.as_ref().is_some_and(|retry| retry.look_in.is_empty()) {
+            *retry = None;
+        }
+        let unfinished: Vec<&str> = reconciliation
+            .released
+            .iter()
+            .filter(|task| task.unfinished)
+            .map(|task| task.label.as_str())
+            .collect();
+        if let Some(detail) = unfinished_detail(&unfinished) {
+            self.model
+                .raise_toast(ToastKind::Told, "work kept", detail, None);
         }
         for cwd in reconciliation.changed {
             self.model
                 .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
         }
+    }
+}
+
+/// What a notice says about the agents that ended with unfinished work:
+/// the one by name, several by count, and where to pick them up either way.
+fn unfinished_detail(labels: &[&str]) -> Option<String> {
+    match labels {
+        [] => None,
+        [only] => Some(format!("{only} is unfinished — reopen with alt+p")),
+        many => Some(format!(
+            "{} agents are unfinished — reopen with alt+p",
+            many.len()
+        )),
     }
 }

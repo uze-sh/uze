@@ -650,7 +650,7 @@ pub(super) fn spawn_checkout_change(
                         parent: parent.clone(),
                         answer: workspace.map_err(Clone::clone).and_then(|workspace| {
                             workspace
-                                .join_parked_work(&project, parent_id, topic)
+                                .join_unfinished_work(&project, parent_id, topic)
                                 .map_err(|refusal| refusal.to_string())
                         }),
                     },
@@ -929,6 +929,14 @@ pub(super) fn spawn_agent_placement(
 }
 
 /// What one pass of slot reconciliation freed.
+/// What an occupancy pass is for: a change in the panes, which reconciles
+/// everything, or only a release owed from an earlier pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OccupancyPass {
+    Full,
+    RetryReleases,
+}
+
 pub(super) struct OccupancyResolution {
     pub(super) reconciliation: uze_application::Reconciliation,
 }
@@ -947,6 +955,7 @@ pub(super) struct OccupancyResolution {
 /// whatever its record says.
 pub(super) fn spawn_occupancy_reconcile(
     home: &UzeHome,
+    pass: OccupancyPass,
     look_in: Vec<PathBuf>,
     held: Vec<PathBuf>,
     echoed: Vec<String>,
@@ -965,6 +974,9 @@ pub(super) fn spawn_occupancy_reconcile(
                         // swept by exactly the same event that notices a slot is
                         // gone, and the sweep is a `readdir` next to the repository
                         // work already happening here.
+                        if pass == OccupancyPass::RetryReleases {
+                            return app.workspace().retry_releases(&look_in, &held, &echoed);
+                        }
                         app.health().prune_runtime_projections();
                         app.workspace()
                             .reconcile_occupancy(&look_in, &held, &echoed)

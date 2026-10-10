@@ -37,7 +37,10 @@ impl Workspace<'_> {
             if !seen.insert(primary) {
                 continue;
             }
-            let released = self.release_abandoned_tasks(cwd, held, echoed);
+            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            if waiting {
+                reconciliation.waiting.push(cwd.clone());
+            }
             if !released.is_empty() {
                 reconciliation.changed.push(cwd.clone());
                 reconciliation.released.extend(released);
@@ -56,6 +59,38 @@ impl Workspace<'_> {
             }
             if !self.end_abandoned_agents(root, echoed).is_empty() {
                 reconciliation.changed.push(root.clone());
+            }
+        }
+        reconciliation
+    }
+
+    /// Asks again about releases that found their checkout in use, and
+    /// nothing else: what changed since the pass that met them is only
+    /// whether whatever was working there has gone, so collecting, pruning
+    /// and ending agents in the root wait for a pass that has a reason to.
+    #[tracing::instrument(name = "workspace.retry_releases", skip_all)]
+    pub fn retry_releases(
+        &self,
+        look_in: &[PathBuf],
+        held: &[PathBuf],
+        echoed: &[String],
+    ) -> Reconciliation {
+        let mut reconciliation = Reconciliation::default();
+        let mut seen = BTreeSet::new();
+        for cwd in look_in {
+            let Some(primary) = self.primary_of(cwd) else {
+                continue;
+            };
+            if !seen.insert(primary) {
+                continue;
+            }
+            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            if waiting {
+                reconciliation.waiting.push(cwd.clone());
+            }
+            if !released.is_empty() {
+                reconciliation.changed.push(cwd.clone());
+                reconciliation.released.extend(released);
             }
         }
         reconciliation
@@ -100,18 +135,26 @@ impl Workspace<'_> {
         .unwrap_or_default()
     }
 
-    /// Ends every task no pane is in front of any more, and says what
-    /// became of each slot.
+    /// Ends every task no pane is in front of any more, and gives its
+    /// checkout back to the pool with its work kept.
     ///
     /// `occupied` names the checkout directories a live pane still sits in
     /// and `echoed` the agents live tabs were launched for. A task in
-    /// neither has no agent: its slot goes back to the pool when it holds
-    /// nothing, and is parked for the operator when it holds work. Delivery
-    /// is not the only way a task ends — most end by the operator closing
-    /// the tab — and a slot nobody ever released is a slot no new agent can
-    /// reuse. Two questions because they have two answers: the directory
-    /// is what keeps a slot from being handed on, and the launch is what
-    /// still names the task once the directory is gone from under it.
+    /// neither has no agent here: its uncommitted work goes on a shelf, its
+    /// commits stay on its branch, and its checkout is free. Delivery is not
+    /// the only way a task ends — most end by the operator closing the tab
+    /// — and a slot nobody ever released is a slot no new agent can reuse.
+    /// Two questions because they have two answers: the directory is what
+    /// keeps a slot from being handed on, and the launch is what still names
+    /// the task once the directory is gone from under it. Neither is the
+    /// last word: the release reads the process table before it resets
+    /// anything, since another client's agent is in neither list.
+    ///
+    /// An ended task still naming a checkout is released too: one whose
+    /// work could not be kept last time, or one an earlier build left holding it.
+    /// One release per hold of the task lock, so a pass with many to do —
+    /// the first after an upgrade — never keeps a placement waiting behind
+    /// all of them.
     #[tracing::instrument(name = "workspace.release_abandoned_tasks", skip_all, fields(cwd = %cwd.display()))]
     pub fn release_abandoned_tasks(
         &self,
@@ -119,60 +162,84 @@ impl Workspace<'_> {
         occupied: &[PathBuf],
         echoed: &[String],
     ) -> Vec<ReleasedTask> {
+        self.release_abandoned(cwd, occupied, echoed).0
+    }
+
+    /// [`Self::release_abandoned_tasks`], and whether any of them was
+    /// found in use and left as it was.
+    fn release_abandoned(
+        &self,
+        cwd: &Path,
+        occupied: &[PathBuf],
+        echoed: &[String],
+    ) -> (Vec<ReleasedTask>, bool) {
         let Some((primary, policy)) = self.repository_context(cwd) else {
-            return Vec::new();
+            return (Vec::new(), false);
         };
         let target = target_of(&primary, &policy);
+        let presence = checkout::Presence::observe_with(occupied);
         let mut released = Vec::new();
-        let recorded = task::locked(&self.0.home, &primary, |store| {
-            for agent in store.agents.iter_mut() {
+        let mut in_use = false;
+        let mut looked_at: Vec<AgentId> = Vec::new();
+        let mut reconciled = false;
+        loop {
+            let step = task::locked(&self.0.home, &primary, |store| {
+                if !std::mem::replace(&mut reconciled, true) {
+                    checkout::reconcile(&primary, store, &target);
+                }
+                let Some(index) = store.agents.iter().position(|agent| {
+                    !looked_at.contains(&agent.id)
+                        && is_abandoned(&primary, store, agent, occupied, echoed)
+                }) else {
+                    return Ok(None);
+                };
+                let agent = &mut store.agents[index];
                 let id = agent.id.clone();
                 let label = agent.label.clone();
-                // A delivery in flight owns the agent until it answers. A
-                // subagent's checkout carries no pane of its own, and ends
-                // with its agent below rather than here.
-                if !is_agents_turn(&agent.state) || agent.parent.is_some() {
-                    continue;
+                let was_live = checkout::is_live(&agent.state);
+                let outcome = checkout::release(&primary, agent, &target, &presence);
+                let mut unfinished = agent.state == WorkState::Shelved;
+                let parent = agent.parent.clone();
+                // A subagent released after its agent: its work reaches the
+                // target only through that agent, which is unfinished too.
+                if unfinished
+                    && let Some(parent) = parent.and_then(|parent| task_mut(store, parent.as_str()))
+                {
+                    parent.state = WorkState::Shelved;
                 }
-                let Some(task) = agent.isolation() else {
-                    continue;
-                };
-                let in_its_slot = landing::slot_path(&primary, task)
-                    .is_some_and(|slot| occupied.iter().any(|pane| pane.starts_with(&slot)));
-                let launched_for = echoed.iter().any(|echo| echo == id.as_str());
-                if in_its_slot || launched_for {
-                    continue;
+                if outcome != checkout::Released::InUse
+                    && release_children(&primary, store, id.as_str(), &presence)
+                {
+                    unfinished = true;
                 }
-                let slot = checkout::release(&primary, agent, &target);
-                tracing::info!(agent = %id.as_str(), ?slot, "an agent no pane holds was released");
+                tracing::info!(agent = %id.as_str(), ?outcome, "an agent no pane holds was released");
+                Ok(Some((id, label, outcome, was_live, unfinished)))
+            });
+            // A release that was not recorded did not happen, as far as the
+            // next pass can tell: stop rather than report it.
+            let Ok(Some((id, label, outcome, was_live, unfinished))) = step else {
+                break;
+            };
+            looked_at.push(id.clone());
+            in_use |= outcome == checkout::Released::InUse;
+            let ended_now = was_live && outcome != checkout::Released::InUse;
+            let freed_now = matches!(outcome, checkout::Released::Freed { shelved: true });
+            if ended_now || freed_now {
                 released.push(ReleasedTask {
                     id: id.as_str().to_owned(),
                     label,
-                    parked: slot == checkout::SlotState::Parked,
+                    unfinished,
                 });
             }
-            for parent in released.iter_mut() {
-                if release_children(&primary, store, &parent.id) {
-                    parent.parked = true;
-                }
-            }
-            Ok(())
-        });
-        // A release is a record and nothing else — `checkout::release`
-        // touches no directory — so one that was not written did not
-        // happen, and reporting it would have the collection below act on
-        // a slot the next pass still reads as taken.
-        if recorded.is_err() {
-            return Vec::new();
         }
-        released
+        (released, in_use)
     }
 
-    /// Takes out the safe removals: an `agent/` branch whose every commit
-    /// is already in the target, and the directory of every free slot the
-    /// project's pool does not keep — its branch kept. Nothing holding work
-    /// is ever touched here, and nothing somebody is working in; that is
-    /// the operator's alone.
+    /// Takes out the safe removals: the directory of every free slot gone
+    /// idle, its branch kept; a branch whose every commit is already in the
+    /// target and no shelf stands on; and a shelf the target already has.
+    /// Nothing holding work is ever touched here, and nothing somebody is
+    /// working in; that is the operator's alone.
     #[tracing::instrument(name = "workspace.collect_slot_garbage", skip_all, fields(cwd = %cwd.display()))]
     pub(super) fn collect_slot_garbage(&self, cwd: &Path, occupied: &[PathBuf]) -> Vec<String> {
         let Some((primary, policy)) = self.repository_context(cwd) else {
@@ -199,9 +266,18 @@ impl Workspace<'_> {
             .branches
             .into_iter()
             .chain(collected.slots.into_iter().map(|slot| slot.to_string()))
+            .chain(
+                collected
+                    .shelves
+                    .into_iter()
+                    .map(|task| format!("shelf {task}")),
+            )
             .collect();
         if !collected.is_empty() {
-            tracing::info!(?collected, "merged branches and spare slots were removed");
+            tracing::info!(
+                ?collected,
+                "merged branches, idle slots and delivered shelves were removed"
+            );
         }
         collected
     }
@@ -237,7 +313,7 @@ impl Workspace<'_> {
                 .isolation()
                 .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?
                 .clone();
-            checkout::discard(&primary, &task).map_err(UzeError::Discard)?;
+            checkout::discard(&primary, agent_id.as_str(), &task).map_err(UzeError::Discard)?;
             store
                 .agents
                 .retain(|recorded| recorded.id.as_str() != task_id);

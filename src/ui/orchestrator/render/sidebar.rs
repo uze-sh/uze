@@ -1521,7 +1521,7 @@ pub(in crate::ui::orchestrator) fn task_mark(state: &WorkStateView) -> Option<(S
         }
         WorkStateView::GateFailed => (Symbol::MarkCross, theme::color(Token::StateDanger)),
         WorkStateView::Integrated => (Symbol::ArrowUp, theme::color(Token::StateLanded)),
-        WorkStateView::Parked => (Symbol::Menu, theme::color(Token::TextMuted)),
+        WorkStateView::Shelved => (Symbol::Menu, theme::color(Token::TextMuted)),
     };
     Some((theme::glyph(symbol), hue))
 }

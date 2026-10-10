@@ -487,9 +487,10 @@ fn three_agents_deliver_into_a_linear_target_around_the_operators_edits() {
 }
 
 /// The whole point of a slot: an agent closed without delivering anything
-/// gives its checkout back, and one that left work behind does not.
+/// gives its checkout back, and so does one that left work behind, once
+/// that work is kept on its shelf.
 #[test]
-fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
+fn a_closed_agent_gives_its_slot_back_and_its_work_is_kept_on_a_shelf() {
     let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
 
@@ -501,7 +502,7 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
         .workspace()
         .release_abandoned_tasks(&project, &occupied, &[]);
     assert_eq!(released.len(), 1, "{released:?}");
-    assert!(!released[0].parked, "the checkout held nothing");
+    assert!(!released[0].unfinished, "the checkout held nothing");
     assert_eq!(
         engine.state_of(&empty),
         WorkStateView::Closed,
@@ -531,12 +532,22 @@ fn a_closed_agent_gives_its_slot_back_and_one_holding_work_keeps_it() {
         .workspace()
         .release_abandoned_tasks(&project, &occupied, &[]);
     assert_eq!(released.len(), 1, "{released:?}");
-    assert!(released[0].parked, "it holds uncommitted work");
-    assert_eq!(engine.state_of(&unsaved), WorkStateView::Parked);
-    assert!(kept.join("draft.rs").is_file(), "every file is preserved");
+    assert!(released[0].unfinished, "it held uncommitted work");
+    assert_eq!(engine.state_of(&unsaved), WorkStateView::Shelved);
+    assert_eq!(
+        engine
+            .git(
+                &project,
+                &["show", &format!("refs/uze/shelf/{unsaved}:draft.rs")]
+            )
+            .trim(),
+        "draft",
+        "the uncommitted file is kept on the task's shelf"
+    );
 
-    let (_, fresh) = engine.launch(Steps::new());
-    assert_ne!(fresh, kept, "a parked slot is never handed to a new agent");
+    let (_, next) = engine.launch(Steps::new());
+    assert_eq!(next, kept, "the checkout goes to the next agent");
+    assert!(!next.join("draft.rs").exists(), "carrying none of it");
 }
 
 /// An agent gives its subagent a checkout through the real binary, from
@@ -781,7 +792,7 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
 }
 
 #[test]
-fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
+fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_kept() {
     let mut engine = Engine::start("  delivery: handoff\n");
     let project = engine.project().to_path_buf();
     let (id, slot) = engine.launch(commit("kept.rs", "kept\n"));
@@ -820,12 +831,12 @@ fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
         .iter()
         .find(|task| task.branch == "agent/agent-2")
         .expect("the legacy checkout was adopted");
-    assert_eq!(legacy.state, WorkStateView::Parked);
+    assert_eq!(legacy.state, WorkStateView::Shelved);
     assert_eq!(legacy.label, "agent-2");
     assert_eq!(
         fs::read_to_string(project.join(".worktrees/agent-2/half-done.rs")).unwrap(),
         "unfinished\n",
-        "parked, with every file preserved"
+        "kept until its work is shelved, with every file preserved"
     );
     let next = engine
         .app()
@@ -834,7 +845,7 @@ fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_parked() {
         .expect("a slot is acquired");
     assert!(
         next.cwd != project.join(".worktrees/agent-2"),
-        "a parked slot is never handed to a new agent"
+        "a checkout whose work is not kept yet is never handed to a new agent"
     );
 }
 

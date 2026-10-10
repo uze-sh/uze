@@ -163,7 +163,7 @@ impl Workspace<'_> {
             .agents
             .iter()
             .filter(|child| child.parent.as_ref().map(AgentId::as_str) == Some(task_id))
-            .filter(|child| checkout::is_live(&child.state) || child.state == WorkState::Parked)
+            .filter(|child| checkout::is_live(&child.state) || child.state == WorkState::Shelved)
             .filter_map(|child| {
                 let isolation = child.isolation()?;
                 let dirty = isolation
@@ -171,9 +171,8 @@ impl Workspace<'_> {
                     .as_ref()
                     .map(|checkout| checkout.directory(primary))
                     .is_some_and(|directory| directory.is_dir() && checkout::is_dirty(&directory));
-                let unjoined = checkout::branch_exists(primary, &isolation.branch)
-                    && !checkout::is_integrated(primary, &isolation.target, &isolation.branch);
-                (dirty || unjoined).then_some(child.label.as_str())
+                (dirty || checkout::holds_work(primary, child, &isolation.target))
+                    .then_some(child.label.as_str())
             })
             .collect();
         (!waiting.is_empty()).then(|| {

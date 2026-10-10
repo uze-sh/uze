@@ -4249,3 +4249,47 @@ fn a_server_that_exits_before_binding_is_not_waited_on() {
     );
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+/// Closing a tab returns once its program was reaped, so the session the
+/// server broadcasts next — what tells a client the tab closed — never
+/// arrives while the program is still in the process table.
+#[test]
+fn a_closed_panes_program_is_reaped_before_the_close_returns() {
+    let scratch = uze_testkit::temp::socket_scratch("close-reaps");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (damage, _damage_events) = std::sync::mpsc::channel();
+    let pane = Arc::new(
+        PaneRuntime::spawn(
+            PaneId(41),
+            project.clone(),
+            80,
+            24,
+            damage,
+            Launch::Program {
+                argv: shell_argv("sleep 30", "Start-Sleep 30"),
+                env: Vec::new(),
+            },
+            Arc::new(Mutex::new(Palette::default())),
+        )
+        .unwrap(),
+    );
+    let program = pane.child.lock().unwrap().process_id().unwrap();
+    server.panes.lock().unwrap().insert(PaneId(41), pane);
+
+    server.stop_runtimes(&[PaneId(41)]);
+
+    assert_eq!(
+        uze_platform::process::alive(program),
+        Some(false),
+        "the pane's program was still in the process table when the close returned"
+    );
+}

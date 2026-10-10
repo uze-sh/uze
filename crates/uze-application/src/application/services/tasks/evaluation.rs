@@ -24,11 +24,12 @@ impl Workspace<'_> {
                 in_the_root: OnceCell::new(),
                 occupied,
                 owners: store.slot_owners(),
+                refs: checkout::Refs::read(&primary),
                 holding_children: store
                     .agents
                     .iter()
                     .filter(|agent| {
-                        checkout::is_live(&agent.state) || agent.state == WorkState::Parked
+                        checkout::is_live(&agent.state) || agent.state == WorkState::Shelved
                     })
                     .filter_map(|agent| agent.parent.clone())
                     .collect(),
@@ -163,8 +164,11 @@ pub(super) struct EvaluationPass<'a> {
     /// The checkout directories a live pane still sits in.
     pub(super) occupied: &'a [PathBuf],
     pub(super) owners: BTreeSet<AgentId>,
-    /// Agents a subagent still holds a checkout for. One parked for its
-    /// children is parked for their work, however level its own branch is.
+    /// The repository's branches and shelves, read once for every task the
+    /// pass settles rather than by a process per task.
+    pub(super) refs: checkout::Refs,
+    /// Agents a subagent still holds a checkout for. One unfinished for its
+    /// children is unfinished for their work, however level its own branch is.
     pub(super) holding_children: BTreeSet<AgentId>,
     pub(super) vocabulary: &'a BranchVocabulary,
     pub(super) completion: CompletionBehavior,
@@ -232,28 +236,28 @@ impl EvaluationPass<'_> {
         // `Closed` is the same story with nothing delivered — the checkout
         // it ended in can be written in again. Only the *current* owner is
         // reconsidered: a freed slot handed to a new agent belongs to that
-        // agent's task, not to the one that used to sit there. `Parked` is
+        // agent's task, not to the one that used to sit there. `Shelved` is
         // nobody's turn by definition and stays put — unless a pane sits in
-        // its checkout (`occupied`): parked means "no agent left", and an
+        // its checkout (`occupied`): unfinished means "no agent left", and an
         // agent that is there makes it a lie, whichever way it got there —
         // a release that raced the tab opening, a resume.
         let ended_owner = matches!(*state, WorkState::Integrated | WorkState::Closed)
             && self.owners.contains(&id);
-        let parked_with_agent = *state == WorkState::Parked
+        let parked_with_agent = *state == WorkState::Shelved
             && slot
                 .as_ref()
                 .is_some_and(|slot| self.occupied.iter().any(|pane| pane.starts_with(slot)));
-        let parked_alone = *state == WorkState::Parked && !parked_with_agent;
+        let parked_alone = *state == WorkState::Shelved && !parked_with_agent;
         if !(is_agents_turn(state) || ended_owner || parked_with_agent || parked_alone) {
             return None;
         }
-        // Parked is nobody's turn, but its work can still reach the target
+        // Shelved is nobody's turn, but its work can still reach the target
         // without it — a request opened before its agent left, merged on
-        // the forge. Left parked, it was listed as preserved work for good
+        // the forge. Left unfinished, it was listed as preserved work for good
         // and its slot never went back to the pool.
         if parked_alone {
             if !self.holding_children.contains(&id) {
-                landing::settle_delivered(primary, state, task);
+                landing::settle_delivered(primary, &self.refs, id.as_str(), state, task);
             }
             return None;
         }
@@ -263,7 +267,7 @@ impl EvaluationPass<'_> {
         let paused = slot
             .as_ref()
             .is_some_and(|slot| landing::paused_rebase(slot).is_some());
-        if paused && landing::settle_delivered(primary, state, task) {
+        if paused && landing::settle_delivered(primary, &self.refs, id.as_str(), state, task) {
             return None;
         }
         self.read_readiness(state, task, ended_owner);

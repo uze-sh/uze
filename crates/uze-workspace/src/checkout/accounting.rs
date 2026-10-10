@@ -127,6 +127,9 @@ pub(super) fn slot_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Whether a slot is somebody's, free, or pinned by something that has to
+/// clear before it can be handed on — read from the task store, Git and the
+/// process table as they stand.
 pub(super) fn slot_state(
     primary: &Path,
     tips: &BranchTips,
@@ -137,7 +140,6 @@ pub(super) fn slot_state(
     presence: &Presence,
 ) -> SlotState {
     let owner = store.slot_owner(id);
-    let isolation = owner.and_then(Agent::isolation);
     let somebody_inside = presence.inside(path);
     if let Some(owner) = owner
         && (is_live(&owner.state) || somebody_inside)
@@ -146,37 +148,62 @@ pub(super) fn slot_state(
             task: owner.id.clone(),
         };
     }
-    // Somebody at work in a directory no agent claims is still somebody
-    // at work there; only the operator moves it on.
     if somebody_inside {
-        return SlotState::Parked;
+        return SlotState::Pinned { reason: Pin::InUse };
     }
-    // An agent that ended with a child still holding work keeps its own
-    // checkout: the child's work reaches the target only through it.
-    let keeps_a_child = owner.is_some_and(|owner| {
-        store.agents.iter().any(|child| {
-            child.parent.as_ref() == Some(&owner.id) && child.state == WorkState::Parked
-        })
-    });
-    if keeps_a_child {
-        return SlotState::Parked;
+    if let Some(operation) = paused_operation(path) {
+        return SlotState::Pinned {
+            reason: Pin::Paused(operation),
+        };
     }
-    // Commits before the working tree, though either parks the slot: the
-    // integration answer is remembered and a status is not, and a pool is
-    // mostly slots parked for their commits, so asking this first is what
-    // keeps placing an agent from reading every working tree it owns.
+    if let Recorded::Ours(CheckoutRecord {
+        pinned: Some(reason),
+        ..
+    }) = record::read(primary, path)
+    {
+        return SlotState::Pinned {
+            reason: Pin::Unshelved(reason),
+        };
+    }
+    // A slot its agent left without being released yet — by a build
+    // before shelving, or one whose release has not run — still has the
+    // agent's work in it, and is free only once the release has kept it.
+    // A released slot is detached, so a branch still checked out with
+    // commits its target lacks is work nobody has kept yet.
     let declared_done = owner.is_some_and(|owner| owner.state == WorkState::Integrated);
-    let target = isolation.map(|isolation| isolation.target.as_str());
-    let holds_commits = match (branch, target) {
+    let target = owner
+        .and_then(Agent::isolation)
+        .map(|isolation| isolation.target.as_str());
+    let unkept_commits = match (branch, target) {
         (Some(branch), Some(target)) => !is_integrated_among(tips, primary, target, branch),
         (Some(branch), None) => !is_integrated(primary, "HEAD", branch),
         (None, _) => holds_unbranched_commits(path),
     };
-    if (holds_commits && !declared_done) || holds_uncommitted_work(path) {
-        SlotState::Parked
+    if (unkept_commits && !declared_done) || holds_uncommitted_work(path) {
+        SlotState::Pinned {
+            reason: Pin::AwaitingRelease,
+        }
     } else {
         SlotState::Free
     }
+}
+
+/// The operation Git has paused in `root`, if any: a checkout in the middle
+/// of one holds a state no shelf can carry.
+pub fn paused_operation(root: &Path) -> Option<&'static str> {
+    let git_dir = uze_git::repository::git_dir(root).ok()?;
+    [
+        ("rebase-merge", "a rebase"),
+        ("rebase-apply", "a rebase"),
+        ("MERGE_HEAD", "a merge"),
+        ("CHERRY_PICK_HEAD", "a cherry-pick"),
+        ("REVERT_HEAD", "a revert"),
+        ("BISECT_LOG", "a bisect"),
+        ("sequencer", "a sequence of picks"),
+    ]
+    .into_iter()
+    .find(|(state, _)| git_dir.join(state).exists())
+    .map(|(_, operation)| operation)
 }
 
 /// Whether a detached `HEAD` in `path` carries commits no branch reaches.

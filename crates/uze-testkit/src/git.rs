@@ -6,9 +6,15 @@
 //! names, plus whatever hooks and aliases happen to be installed. Every one of
 //! those is a failure whose cause is outside the repository under test.
 //!
-//! [`Repository`] points `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at an
-//! empty file for its lifetime, so the only configuration that applies is the
-//! one the fixture writes itself.
+//! [`Repository`] points `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` at a
+//! file of its own for its lifetime, so the only configuration that applies
+//! is the one the fixture writes itself. That file says one thing: no
+//! automatic maintenance. Since Git 2.47 every commit starts a detached
+//! `git maintenance run --auto`, which daemonizes *before* deciding whether
+//! there is anything to do, and for that moment a process works inside the
+//! checkout the commit was made in. A test that asks the process table about
+//! that checkout right after committing would be racing Git's housekeeping:
+//! on Linux it loses rarely, on macOS nearly always.
 //!
 //! That pointing is process-global on purpose: the code under test spawns its
 //! own `git`, and a child process only inherits what *this* process exports.
@@ -43,7 +49,11 @@ impl Repository {
         // Outside the repository, or the fixture's own configuration would
         // show up in every `git status` the test asserts on.
         let configuration = base.join("gitconfig");
-        std::fs::write(&configuration, b"").expect("could not write the isolated git config");
+        std::fs::write(
+            &configuration,
+            b"[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
+        )
+        .expect("could not write the isolated git config");
 
         let mut environment = crate::env::scope();
         environment.set("GIT_CONFIG_GLOBAL", &configuration);
@@ -256,11 +266,10 @@ mod tests {
     #[test]
     fn no_ambient_configuration_reaches_the_repository() {
         let repository = Repository::new("testkit-git-isolated");
-        assert!(
-            repository
-                .try_git_in(repository.root(), &["config", "--global", "--list"])
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            repository.git(&["config", "--global", "--list"]),
+            "maintenance.auto=false\ngc.auto=0",
+            "the global configuration is the fixture's own, and nothing else"
         );
         assert_eq!(repository.git(&["config", "user.email"]), AUTHOR_EMAIL);
         assert_eq!(

@@ -44,7 +44,11 @@ impl Standing {
         let Some(checkout) = checkout else {
             return Self::Settled;
         };
-        let holds_work = checkout.dirty || !checkout.in_target;
+        // A checkout UZE keeps as it is waits on something only the operator
+        // can see to, however clean it reads.
+        let holds_work = checkout.dirty
+            || !(checkout.in_target || checkout.held_by_a_branch)
+            || checkout.kept_because.is_some();
         match &checkout.owner {
             CheckoutOwner::Agent { live: true, .. } => Self::InProgress,
             CheckoutOwner::Subagent { joinable: true, .. } => Self::NeedsYou,
@@ -260,6 +264,13 @@ fn secondary_of(row: &WorkRow) -> Option<String> {
     if row.branch_only {
         parts.push("branch only".to_owned());
     }
+    if let Some(reason) = row
+        .checkout
+        .as_ref()
+        .and_then(|checkout| checkout.kept_because.as_deref())
+    {
+        parts.push(format!("kept: {reason}"));
+    }
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
@@ -278,14 +289,14 @@ fn happening_of(row: &WorkRow) -> &'static str {
         Some(WorkStateView::Running) => "was running",
         Some(WorkStateView::Ready) => "ready",
         Some(WorkStateView::Published) => "published",
-        Some(_) => "parked",
+        Some(_) => "unfinished",
         None if dirty => "uncommitted",
         None if matches!(
             row.checkout.as_ref().map(|checkout| &checkout.owner),
             Some(CheckoutOwner::Subagent { joinable: true, .. })
         ) =>
         {
-            "parked"
+            "unfinished"
         }
         None => "",
     }

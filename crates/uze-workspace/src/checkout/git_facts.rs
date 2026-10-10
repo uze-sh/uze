@@ -30,6 +30,18 @@ pub fn current_branch(root: &Path) -> Option<String> {
     (!branch.is_empty()).then(|| branch.to_owned())
 }
 
+/// The branch `root` is working on: the one checked out, or, while a
+/// rebase is paused with `HEAD` detached, the one that rebase is rewriting.
+pub fn branch_at_work(root: &Path) -> Option<String> {
+    current_branch(root).or_else(|| {
+        let git_dir = uze_git::repository::git_dir(root).ok()?;
+        ["rebase-merge", "rebase-apply"].iter().find_map(|state| {
+            let head = fs::read_to_string(git_dir.join(state).join("head-name")).ok()?;
+            head.trim().strip_prefix("refs/heads/").map(str::to_owned)
+        })
+    })
+}
+
 /// The commit `reference` resolves to in `root`.
 pub fn tip_of(root: &Path, reference: &str) -> String {
     crate::git::read(
@@ -58,11 +70,11 @@ pub fn is_dirty(root: &Path) -> bool {
 }
 
 /// Whether `root` holds uncommitted changes that are somebody's work — the
-/// question a checkout is parked or freed by. Content UZE derives and can
+/// question a checkout is shelved or freed by. Content UZE derives and can
 /// produce again is not: a lock that only gained or lost entries, which is
 /// all `install` does to it, and an instruction file that changed only
 /// inside the regions UZE manages. Left alone, those are what a slot
-/// collects just by having UZE run in it, and each parked the slot for
+/// collects just by having UZE run in it, and each held the slot for
 /// good. A question Git could not answer is taken as yes.
 pub fn holds_uncommitted_work(root: &Path) -> bool {
     let Some(status) = crate::git::read(root, &["status", "--porcelain=v1", "-z"])

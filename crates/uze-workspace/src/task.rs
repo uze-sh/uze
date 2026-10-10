@@ -43,7 +43,7 @@ use crate::{
     persistence::write_atomic, worktree::BRANCH_PREFIX,
 };
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Long enough to read, short enough for a sidebar.
 const LABEL_MAX_CHARS: usize = 40;
@@ -59,6 +59,12 @@ pub struct AgentId(String);
 impl AgentId {
     pub fn generate() -> Self {
         Self(generated_identifier(b"agent"))
+    }
+
+    /// An identifier recorded somewhere else first — a shelf names the task
+    /// it was made for, and a task adopted from it keeps that name.
+    pub fn adopted(id: &str) -> Self {
+        Self(id.to_owned())
     }
 
     pub fn as_str(&self) -> &str {
@@ -128,10 +134,11 @@ pub enum WorkState {
     GateFailed,
     /// The work is in the target.
     Integrated,
-    /// The agent is gone and the checkout still holds work.
-    Parked,
+    /// The agent is gone and its work is kept: commits on its branch the
+    /// target lacks, or a shelf (`checkout::shelf`).
+    Shelved,
     /// The agent is gone and its branch held nothing to deliver. Ended,
-    /// like `Integrated` and `Parked`, but the only one of the three that
+    /// like `Integrated` and `Shelved`, but the only one of the three that
     /// never had work: saying "delivered" of it would claim a delivery
     /// nobody made.
     Closed,
@@ -202,6 +209,11 @@ pub struct Isolation {
     pub target: String,
     pub branch: String,
     pub checkout: Option<CheckoutId>,
+    /// The checkout this task held before it was released, so resuming it
+    /// prefers the directory its harness left its conversation in.
+    /// Additive: an older build that drops it costs a resume somewhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_checkout: Option<CheckoutId>,
     /// The readable name UZE published the branch under, when that is not
     /// the branch's own name. The one half of publication that Git cannot
     /// be asked for: an unnamed agent's branch leaves under a name derived
@@ -382,6 +394,7 @@ impl Isolation {
             target,
             branch: generated_branch(id),
             checkout: None,
+            last_checkout: None,
             published_as: None,
             published_tip: None,
             published_request: None,
@@ -488,20 +501,18 @@ impl AgentStore {
         self.agents.iter().filter(|agent| agent.is_isolated())
     }
 
-    /// The agent standing in `checkout` now: the newest to have been given
-    /// it. A slot outlives the agents that ran in it and each went on
-    /// naming it; anything older is history, and answering for it would
-    /// hand the current agent's work to one long gone.
+    /// The agent standing in `checkout` now. A released agent lets go of
+    /// its checkout, so normally only one names it; a store an earlier build
+    /// wrote can still have several, and then the one recorded last was the
+    /// last placed there. Never decided by creation time: a clock that
+    /// steps back would hand the slot of an agent at work to one long gone.
     pub fn slot_owner(&self, checkout: &CheckoutId) -> Option<&Agent> {
-        self.agents
-            .iter()
-            .filter(|agent| {
-                agent
-                    .isolation
-                    .as_ref()
-                    .is_some_and(|isolation| isolation.checkout.as_ref() == Some(checkout))
-            })
-            .max_by_key(|agent| agent.created_at_unix)
+        self.agents.iter().rfind(|agent| {
+            agent
+                .isolation
+                .as_ref()
+                .is_some_and(|isolation| isolation.checkout.as_ref() == Some(checkout))
+        })
     }
 
     /// Every agent that is the [`slot_owner`](Self::slot_owner) of its own
@@ -570,30 +581,57 @@ impl uze_document::Shaped for AgentStore {
     ///
     /// The rung lifts it. An agent that had none was in the root and had
     /// nothing observed of it yet, which is exactly `Running`.
+    ///
+    /// Shape 5 renames `parked` to `shelved`.
     fn ladder() -> uze_document::Ladder {
-        &[uze_document::Step {
-            from: 3,
-            to: 4,
-            climb: |mut document| {
-                if let Some(agents) = document
-                    .get_mut("agents")
-                    .and_then(serde_json::Value::as_array_mut)
-                {
-                    for agent in agents {
-                        let Some(agent) = agent.as_object_mut() else {
-                            continue;
-                        };
-                        let lifted = agent
-                            .get_mut("isolation")
-                            .and_then(serde_json::Value::as_object_mut)
-                            .and_then(|isolation| isolation.remove("state"))
-                            .unwrap_or_else(|| serde_json::json!({ "state": "running" }));
-                        agent.insert("state".to_owned(), lifted);
+        &[
+            uze_document::Step {
+                from: 3,
+                to: 4,
+                climb: |mut document| {
+                    if let Some(agents) = document
+                        .get_mut("agents")
+                        .and_then(serde_json::Value::as_array_mut)
+                    {
+                        for agent in agents {
+                            let Some(agent) = agent.as_object_mut() else {
+                                continue;
+                            };
+                            let lifted = agent
+                                .get_mut("isolation")
+                                .and_then(serde_json::Value::as_object_mut)
+                                .and_then(|isolation| isolation.remove("state"))
+                                .unwrap_or_else(|| serde_json::json!({ "state": "running" }));
+                            agent.insert("state".to_owned(), lifted);
+                        }
                     }
-                }
-                Ok(document)
+                    Ok(document)
+                },
             },
-        }]
+            // Shape 4 called an ended agent holding work `parked`, after the
+            // checkout it kept. The work is kept on its branch and its shelf
+            // now, never in a checkout, and the state says so.
+            uze_document::Step {
+                from: 4,
+                to: 5,
+                climb: |mut document| {
+                    if let Some(agents) = document
+                        .get_mut("agents")
+                        .and_then(serde_json::Value::as_array_mut)
+                    {
+                        for state in agents
+                            .iter_mut()
+                            .filter_map(|agent| agent.get_mut("state"))
+                            .filter_map(|state| state.get_mut("state"))
+                            .filter(|tag| *tag == "parked")
+                        {
+                            *state = serde_json::json!("shelved");
+                        }
+                    }
+                    Ok(document)
+                },
+            },
+        ]
     }
 }
 
@@ -715,8 +753,14 @@ pub fn locked_reporting<T>(
         }
         Err(error) => return Err(error.into()),
     };
+    let read = store.clone();
     let outcome = mutate(&mut store)?;
-    save(home, project_root, &store)?;
+    // Most passes change nothing, and each write is a synced replacement
+    // of the whole document: written only when there is something to say,
+    // or when what was there had to be set aside and is gone.
+    if store != read || recovery.set_aside.is_some() || !path.exists() {
+        save(home, project_root, &store)?;
+    }
     Ok((outcome, recovery))
 }
 
@@ -1084,6 +1128,43 @@ mod tests {
             in_the_root.state,
             WorkState::Running,
             "and the agent that had nowhere to keep one starts from nothing observed"
+        );
+    }
+
+    /// Shape 4 called an ended agent holding work `parked`, and it still
+    /// named the checkout it kept. The rung renames the state; the checkout
+    /// stays named until the next release shelves its work and frees it.
+    #[test]
+    fn a_parked_agent_from_shape_4_is_carried_across_as_shelved() {
+        let home = home("task-shape-4");
+        let root = uze_testkit::temp::scratch("task-shape-4-project");
+        let path = store_path(&home, &root);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            br#"{"schema_version":4,"agents":[
+              {"id":"left","harness":"claude","label":"a","created_at_unix":1,
+               "ended_at_unix":null,"state":{"state":"parked"},
+               "isolation":{"base":{"kind":"ref","value":"main"},"base_commit":"",
+                 "target":"main","branch":"agent/left","checkout":"slot",
+                 "published_as":null,"published_request":null,
+                 "request_branch":null,"request_asked_at_unix":null}},
+              {"id":"running","harness":"codex","label":"b","created_at_unix":2,
+               "ended_at_unix":null,"state":{"state":"running"},"isolation":null}]}"#,
+        )
+        .unwrap();
+
+        let store = load(&home, &root).expect("a shape this build knows is carried across");
+        let left = store.get(&AgentId("left".to_owned())).unwrap();
+        assert_eq!(left.state, WorkState::Shelved);
+        assert_eq!(
+            left.isolation().unwrap().checkout,
+            Some(CheckoutId::adopted("slot")),
+            "the checkout is still named, for the release to free"
+        );
+        assert_eq!(
+            store.get(&AgentId("running".to_owned())).unwrap().state,
+            WorkState::Running
         );
     }
 

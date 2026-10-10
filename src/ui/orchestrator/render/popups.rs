@@ -393,9 +393,9 @@ pub(in crate::ui::orchestrator) fn render_status_catalog(
             "the work is in the target",
         ),
         (
-            WorkStateView::Parked,
-            "parked",
-            "no agent left; the work is still there",
+            WorkStateView::Shelved,
+            "unfinished",
+            "no agent left; its work is kept for it",
         ),
     ]
     .into_iter()
@@ -662,7 +662,7 @@ pub(super) fn delivery_notification(
     tick: usize,
 ) -> Option<(String, Color, bool)> {
     // Which states put a notification in this zone: the ones handing work
-    // over passes through. `Uncommitted` and `Parked` carry marks of
+    // over passes through. `Uncommitted` and `Shelved` carry marks of
     // their own in the sidebar, but they are facts about a checkout
     // rather than steps of a delivery, and this zone is the second.
     // Conditioned, not disabled: a state that cannot be delivered is

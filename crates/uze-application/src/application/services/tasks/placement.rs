@@ -177,7 +177,11 @@ impl Workspace<'_> {
                         "the agents recorded here could not be read: {error}"
                     )));
                 };
-                let _ = checkout::discard(&primary, isolation);
+                let agent_id = taken
+                    .as_ref()
+                    .map(|agent| agent.id.as_str().to_owned())
+                    .unwrap_or_default();
+                let _ = checkout::discard(&primary, &agent_id, isolation);
                 return Err(refused(format!(
                     "the agent's task could not be recorded: {error}"
                 )));
@@ -289,7 +293,7 @@ impl Workspace<'_> {
             // when it is not.
             Err(error) => {
                 if let Some(isolation) = &taken {
-                    let _ = checkout::discard(&primary, isolation);
+                    let _ = checkout::discard(&primary, agent_id, isolation);
                 }
                 return Err(refused(format!(
                     "the agent's isolation could not be recorded: {error}"
@@ -340,7 +344,9 @@ impl Workspace<'_> {
             .repository_context(cwd)
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
         let target = target_of(&primary, &policy);
+        let presence = checkout::Presence::observe_with(occupied);
         let mut acquired_slot = None;
+        let mut restored: Vec<(String, String)> = Vec::new();
         let mut placement = task::locked(&self.0.home, &primary, |store| {
             checkout::reconcile(&primary, store, &target);
             let snapshot = store.clone();
@@ -353,9 +359,19 @@ impl Workspace<'_> {
             let task = isolation
                 .as_mut()
                 .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
+            // Answered with the checkout it has only while that checkout
+            // is still on its branch — or rebasing it, paused — since a
+            // slot released under a record that was not rewritten is
+            // somebody else's, detached and clean.
             if let (Some(existing), Some(checkout)) =
                 (landing::slot_path(&primary, task), task.checkout.clone())
+                && checkout::branch_at_work(&existing).as_deref() == Some(task.branch.as_str())
             {
+                // Pinned when it ended, so it kept the checkout and was
+                // recorded unfinished; somebody is at work in it again.
+                if *state == WorkState::Shelved {
+                    *state = WorkState::Running;
+                }
                 return Ok(AgentPlacement {
                     project: primary.clone(),
                     cwd: existing,
@@ -371,23 +387,37 @@ impl Workspace<'_> {
                     launch_key: String::new(),
                 });
             }
-            let acquired = checkout::resume(
-                &primary,
-                &snapshot,
-                task,
-                policy.slots,
-                &checkout::Presence::observe_with(occupied),
-            )
-            .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+            let acquired =
+                checkout::resume(&primary, &snapshot, &id, task, policy.slots, &presence)
+                    .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+            if let Some(shelf) = checkout::shelf::shelf_of(&primary, id.as_str()) {
+                put_back(&primary, &acquired.path, &shelf)?;
+                restored.push((id.as_str().to_owned(), shelf));
+            }
+            let mut taken = vec![acquired.path.clone()];
             task.checkout = Some(acquired.id.clone());
+            task.last_checkout = None;
             *state = WorkState::Running;
             let placement = Placement::Isolated {
-                task: id,
+                task: id.clone(),
                 checkout: acquired.id.clone(),
                 branch: acquired.branch.clone(),
                 reused: !acquired.created,
             };
             acquired_slot = Some(acquired.clone());
+            // All or nothing: the record is not written when this fails,
+            // and a slot left holding restored work under a record that
+            // never names it would be adopted and shelved again as a task
+            // of its own, while the shelf it came from still stands.
+            match resume_children(&primary, store, &id, policy.slots, &presence, &mut taken) {
+                Ok(children) => restored.extend(children),
+                Err(error) => {
+                    for slot in &taken {
+                        checkout::untake(&primary, slot);
+                    }
+                    return Err(error);
+                }
+            }
             Ok(AgentPlacement {
                 project: primary.clone(),
                 cwd: acquired.path,
@@ -398,6 +428,12 @@ impl Workspace<'_> {
                 launch_key: String::new(),
             })
         })?;
+        // Only once the record says the work is back: a shelf removed before
+        // that, and a record that failed to write, would leave the work in a
+        // checkout nothing names.
+        for (task, shelf) in restored {
+            let _ = checkout::shelf::drop_shelf(&primary, &task, &shelf);
+        }
         // Preparing the checkout runs the project's `setup`; it waits for
         // nobody and nobody waits behind it.
         if let Some(acquired) = acquired_slot {
@@ -440,4 +476,85 @@ fn awaiting(
     consent.awaiting().map(|awaiting| {
         CommandsAwaitingApproval::of(primary, awaiting, Some(checkout.to_path_buf()))
     })
+}
+
+/// Puts `shelf` back in the checkout just taken for it, or gives the
+/// checkout back and refuses, naming what conflicts: a resume that cannot
+/// bring the work back is not a resume.
+fn put_back(primary: &Path, slot: &Path, shelf: &str) -> Result<()> {
+    match checkout::shelf::restore(slot, shelf) {
+        Ok(checkout::shelf::Restoring::Restored) => Ok(()),
+        Ok(checkout::shelf::Restoring::Conflict(files)) => {
+            checkout::untake(primary, slot);
+            let files: Vec<String> = files
+                .iter()
+                .map(|file| file.display().to_string())
+                .collect();
+            Err(UzeError::ResumeFailed(format!(
+                "its unfinished work no longer applies where its branch stands: {}",
+                files.join(", ")
+            )))
+        }
+        Err(reason) => {
+            checkout::untake(primary, slot);
+            Err(UzeError::ResumeFailed(reason))
+        }
+    }
+}
+
+/// Places every shelved child of `parent` back in a checkout of its own,
+/// as that agent's child under the topic it had, with its shelf restored,
+/// so the agent can join it. Answers the shelves restored.
+fn resume_children(
+    primary: &Path,
+    store: &mut AgentStore,
+    parent: &AgentId,
+    cap: Option<usize>,
+    presence: &checkout::Presence,
+    taken: &mut Vec<PathBuf>,
+) -> Result<Vec<(String, String)>> {
+    let mut restored = Vec::new();
+    let children: Vec<AgentId> = store
+        .agents
+        .iter()
+        .filter(|agent| agent.parent.as_ref() == Some(parent))
+        .filter(|agent| {
+            agent
+                .isolation()
+                .is_some_and(|isolation| isolation.checkout.is_none())
+        })
+        .map(|agent| agent.id.clone())
+        .collect();
+    for child_id in children {
+        let current = store.clone();
+        let child = task_mut(store, child_id.as_str()).expect("listed from this store");
+        let has_shelf = checkout::shelf::shelf_of(primary, child_id.as_str());
+        let isolation = child.isolation_mut().expect("filtered to isolated");
+        let holds_commits = checkout::branch_exists(primary, &isolation.branch)
+            && !checkout::is_integrated(primary, &isolation.target, &isolation.branch);
+        if has_shelf.is_none() && !holds_commits {
+            continue;
+        }
+        let acquired = checkout::resume(primary, &current, &child_id, isolation, cap, presence)
+            .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+        taken.push(acquired.path.clone());
+        checkout::record::write(
+            primary,
+            &acquired.path,
+            &checkout::record::CheckoutRecord {
+                parent: Some(parent.clone()),
+                split_at: Some(isolation.base_commit.clone()),
+                ..checkout::record::CheckoutRecord::made_at(&acquired.path)
+            },
+        )
+        .map_err(UzeError::ResumeFailed)?;
+        if let Some(shelf) = has_shelf {
+            put_back(primary, &acquired.path, &shelf)?;
+            restored.push((child_id.as_str().to_owned(), shelf));
+        }
+        isolation.checkout = Some(acquired.id);
+        isolation.last_checkout = None;
+        child.state = WorkState::Running;
+    }
+    Ok(restored)
 }

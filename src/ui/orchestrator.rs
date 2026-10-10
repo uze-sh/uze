@@ -1511,6 +1511,10 @@ struct Remembered {
     lost_checkouts: BTreeSet<PaneId>,
     /// Whether the sweep for tasks nobody's session restored has run.
     slots_swept: bool,
+    /// Repositories whose last pass found an agent no pane holds still
+    /// with something working in its checkout, and when to ask again.
+    /// Nothing else would: the pane set has already stopped changing.
+    occupancy_retry: Option<OccupancyRetry>,
     /// Which tab each agent was last left on: the agent's own tab, or one
     /// of the shells opened beside it in its strip.
     ///

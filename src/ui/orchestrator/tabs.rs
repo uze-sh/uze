@@ -710,7 +710,12 @@ pub(super) fn sync_slot_occupancy(
     sender: &mpsc::Sender<OccupancyResolution>,
     tasks: &mpsc::Sender<WorkResolution>,
 ) {
-    if !model.occupancy_stale || model.occupancy_pending {
+    let retry_due = model
+        .remembered
+        .occupancy_retry
+        .as_ref()
+        .is_some_and(|retry| retry.due <= Instant::now());
+    if !(model.occupancy_stale || retry_due) || model.occupancy_pending {
         return;
     }
     // A placement in flight is a live task with no pane in front of it
@@ -803,24 +808,81 @@ pub(super) fn sync_slot_occupancy(
         .next()
         .is_some();
     model.remembered.echoed_agents = still_echoed;
-    if !sweeping && !agent_left && vanished.is_empty() {
+    let retrying = if retry_due {
+        model
+            .remembered
+            .occupancy_retry
+            .as_mut()
+            .map(|retry| std::mem::take(&mut retry.look_in))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if !sweeping && !agent_left && vanished.is_empty() && retrying.is_empty() {
         return;
     }
+    // Only a retry is due: nothing about the panes changed, so the pass
+    // asks again about the releases and nothing more.
+    let pass = if !sweeping && !agent_left && vanished.is_empty() {
+        OccupancyPass::RetryReleases
+    } else {
+        OccupancyPass::Full
+    };
     // A repository is named by any path inside it: the checkout a pane just
     // left, or every space's own root — for the sweep, and for an agent
     // in the root, which is keyed by the root it works in.
     let mut look_in: Vec<PathBuf> = vanished;
+    look_in.extend(retrying);
     if sweeping || agent_left {
         look_in.extend(space_roots);
     }
     model.occupancy_pending = true;
     spawn_occupancy_reconcile(
         home,
+        pass,
         look_in,
         occupied.into_iter().collect(),
         echoed,
         sender.clone(),
     );
+}
+
+/// When to ask again about a release that found its checkout in use, and
+/// where. The wait doubles on every answer that is still "in use", up to
+/// [`OccupancyRetry::LONGEST`]: an agent's own process leaving is gone by
+/// the first retry, and a shell somebody left open is asked about once a
+/// minute rather than read for on every tick of the loop.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct OccupancyRetry {
+    pub(super) due: Instant,
+    pub(super) wait: Duration,
+    pub(super) look_in: Vec<PathBuf>,
+}
+
+impl OccupancyRetry {
+    const FIRST: Duration = Duration::from_secs(2);
+    const LONGEST: Duration = Duration::from_secs(60);
+
+    /// The retry after `previous`, for `waiting`: sooner when nothing was
+    /// waiting before, later when it still is.
+    pub(super) fn after(previous: Option<&Self>, waiting: Vec<PathBuf>, now: Instant) -> Self {
+        let wait = previous.map_or(Self::FIRST, |previous| {
+            (previous.wait * 2).min(Self::LONGEST)
+        });
+        let mut look_in = waiting;
+        if let Some(previous) = previous {
+            for path in &previous.look_in {
+                if !look_in.contains(path) {
+                    look_in.push(path.clone());
+                }
+            }
+        }
+        Self {
+            due: now + wait,
+            wait,
+            look_in,
+        }
+    }
 }
 
 /// The directory a pane was given, with the kernel's ` (deleted)` note

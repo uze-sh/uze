@@ -119,7 +119,6 @@ fn nobody() -> Presence {
 /// A pool that keeps no free slot, so every free one is collectable.
 fn keep_nothing() -> Pool {
     Pool {
-        spare: 0,
         idle: Duration::ZERO,
     }
 }
@@ -137,12 +136,13 @@ fn an_agent_that_left_an_empty_checkout_frees_its_slot_for_the_next() {
 
     let (first, slot) = launch(&repository, &mut store, "first");
     let target = TARGET.to_owned();
-    let state = release(
+    let released = release(
         repository.root(),
         store.get_mut(&first.id).unwrap(),
         &target,
+        &nobody(),
     );
-    assert_eq!(state, SlotState::Free);
+    assert_eq!(released, Released::Freed { shelved: false });
     assert_eq!(
         store.get(&first.id).unwrap().state,
         WorkState::Closed,
@@ -160,38 +160,61 @@ fn an_agent_that_left_an_empty_checkout_frees_its_slot_for_the_next() {
 }
 
 #[test]
-fn an_agent_that_left_work_behind_parks_its_slot_instead_of_freeing_it() {
+fn an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept() {
     let repository = repository("slots-release-work");
+    let primary = repository.root();
     let mut store = AgentStore::default();
 
     let (committed, slot) = launch(&repository, &mut store, "committed");
     fs::write(slot.path.join("feature.rs"), b"fn f() {}").unwrap();
     repository.git_in(&slot.path, &["add", "."]);
     repository.git_in(&slot.path, &["commit", "-qm", "undelivered"]);
+    let branch = committed.isolation().unwrap().branch.clone();
     assert_eq!(
         release(
-            repository.root(),
+            primary,
             store.get_mut(&committed.id).unwrap(),
             TARGET,
+            &nobody()
         ),
-        SlotState::Parked
+        Released::Freed { shelved: false },
+        "its commits are kept by its branch"
     );
+    assert_eq!(store.get(&committed.id).unwrap().state, WorkState::Shelved);
+    assert_eq!(commits_ahead(primary, TARGET, &branch), 1);
 
     let (dirty, other) = launch(&repository, &mut store, "dirty");
+    assert_eq!(
+        other.path, slot.path,
+        "the first agent's checkout is reused"
+    );
     fs::write(other.path.join("draft.rs"), b"unsaved").unwrap();
     assert_eq!(
-        release(repository.root(), store.get_mut(&dirty.id).unwrap(), TARGET,),
-        SlotState::Parked
+        release(
+            primary,
+            store.get_mut(&dirty.id).unwrap(),
+            TARGET,
+            &nobody()
+        ),
+        Released::Freed { shelved: true },
+        "its uncommitted work is kept on a shelf"
+    );
+    let kept = shelf::shelf_of(primary, dirty.id.as_str()).expect("a shelf");
+    assert_eq!(
+        repository
+            .git(&["show", &format!("{kept}:draft.rs")])
+            .trim(),
+        "unsaved"
     );
 
     let (_, third) = launch(&repository, &mut store, "third");
     assert!(
-        third.created,
-        "a parked slot is never offered to a new agent"
+        !third.created,
+        "a checkout whose work was kept is offered again"
     );
     assert!(
-        other.path.join("draft.rs").is_file(),
-        "every file of a parked checkout is preserved"
+        !third.path.join("draft.rs").exists(),
+        "and carries none of it"
     );
 }
 
@@ -226,8 +249,9 @@ fn a_squash_merged_branch_frees_its_slot_and_is_pruned() {
             repository.root(),
             store.get_mut(&delivered.id).unwrap(),
             TARGET,
+            &nobody(),
         ),
-        SlotState::Free,
+        Released::Freed { shelved: false },
         "its work is in the target, under the forge's own commit"
     );
     let (_, reused) = launch(&repository, &mut store, "next");
@@ -260,8 +284,9 @@ fn a_rebase_merged_branch_frees_its_slot() {
             repository.root(),
             store.get_mut(&delivered.id).unwrap(),
             TARGET,
+            &nobody(),
         ),
-        SlotState::Free,
+        Released::Freed { shelved: false },
         "the same patch is in the target under another commit"
     );
 }
@@ -329,7 +354,7 @@ fn a_previous_tasks_edits_never_reach_the_next() {
 }
 
 #[test]
-fn a_checkout_holding_work_is_parked_with_every_file_preserved() {
+fn a_checkout_holding_work_is_kept_whole_until_its_work_is_shelved() {
     let repository = repository("slots-park");
     let primary = repository.root();
     let mut store = AgentStore::default();
@@ -343,7 +368,7 @@ fn a_checkout_holding_work_is_parked_with_every_file_preserved() {
     let report = reconcile(primary, &mut forgotten, TARGET);
     assert_eq!(report.adopted.len(), 1);
     let adopted = forgotten.get(&report.adopted[0]).unwrap();
-    assert_eq!(adopted.state, WorkState::Parked);
+    assert_eq!(adopted.state, WorkState::Shelved);
     assert_eq!(adopted.isolation().unwrap().checkout, Some(slot.id.clone()));
     assert_eq!(
         fs::read(slot.path.join("half-done.rs")).unwrap(),
@@ -351,7 +376,10 @@ fn a_checkout_holding_work_is_parked_with_every_file_preserved() {
     );
 
     let (_, fresh) = launch(&repository, &mut forgotten, "next");
-    assert!(fresh.created, "a parked slot is never offered");
+    assert!(
+        fresh.created,
+        "a slot whose work is not kept yet is never offered"
+    );
     assert_ne!(fresh.path, slot.path);
     assert_eq!(
         fs::read(slot.path.join("half-done.rs")).unwrap(),
@@ -436,7 +464,7 @@ fn a_slot_written_in_after_it_was_read_free_is_not_collected() {
 }
 
 #[test]
-fn commits_made_on_a_detached_head_park_the_slot_instead_of_freeing_it() {
+fn commits_made_on_a_detached_head_hold_the_slot_until_they_are_kept() {
     let repository = repository("slots-detached-commits");
     let primary = repository.root();
     let mut store = AgentStore::default();
@@ -445,15 +473,34 @@ fn commits_made_on_a_detached_head_park_the_slot_instead_of_freeing_it() {
     fs::write(slot.path.join("work.rs"), b"").unwrap();
     repository.git_in(&slot.path, &["add", "."]);
     repository.git_in(&slot.path, &["commit", "-qm", "only here"]);
+    let only_here = tip_of(&slot.path, "HEAD");
     let mut forgotten = AgentStore::default();
     reconcile(primary, &mut forgotten, TARGET);
 
     assert_eq!(
         slots(primary, &forgotten, &nobody())[0].state,
-        SlotState::Parked
+        SlotState::Pinned {
+            reason: Pin::AwaitingRelease
+        }
     );
     assert!(trim_free_slots(primary, &forgotten, keep_nothing(), &nobody()).is_empty());
     assert!(slot.path.join("work.rs").exists());
+
+    let adopted = forgotten.agents[0].id.clone();
+    let released = release(
+        primary,
+        forgotten.get_mut(&adopted).unwrap(),
+        TARGET,
+        &nobody(),
+    );
+    assert_eq!(released, Released::Freed { shelved: true });
+    let kept = shelf::shelf_of(primary, adopted.as_str()).unwrap();
+    assert!(
+        repository
+            .try_git_in(primary, &["merge-base", "--is-ancestor", &only_here, &kept])
+            .is_ok(),
+        "the commit no branch reached is reachable from the shelf"
+    );
 }
 
 #[test]
@@ -473,7 +520,7 @@ fn a_detached_head_on_a_branched_commit_leaves_the_slot_free() {
 }
 
 #[test]
-fn a_parked_slot_is_never_removed_for_being_idle() {
+fn a_slot_holding_work_not_yet_kept_is_never_removed_for_being_idle() {
     let repository = repository("slots-idle-parked");
     let primary = repository.root();
     let mut store = AgentStore::default();
@@ -536,19 +583,21 @@ fn a_target_this_clone_does_not_have_collects_nothing_and_frees_no_slot() {
     fs::write(slot.path.join("a.rs"), b"").unwrap();
     repository.git_in(&slot.path, &["add", "."]);
     repository.git_in(&slot.path, &["commit", "-qm", "a"]);
-    set_state(&mut store, &parked.id, WorkState::Parked);
+    set_state(&mut store, &parked.id, WorkState::Shelved);
     for task in store.agents.iter_mut() {
         task.isolation_mut().unwrap().target = MISSING.to_owned();
     }
     assert!(tip_of(primary, MISSING).is_empty(), "the target is absent");
 
-    let collected = collect(primary, &store, MISSING, keep_nothing(), &nobody());
+    let collected = collect(primary, &mut store, MISSING, keep_nothing(), &nobody());
     assert_eq!(collected, Collected::default(), "nothing may be removed");
     assert!(branch_exists(primary, &parked.isolation().unwrap().branch));
     assert!(slot.path.join("a.rs").is_file());
     assert_eq!(
         slots(primary, &store, &nobody())[0].state,
-        SlotState::Parked,
+        SlotState::Pinned {
+            reason: Pin::AwaitingRelease
+        },
         "a slot measured against a target that does not resolve holds work"
     );
 }
@@ -613,7 +662,7 @@ fn prune_runs_after_adoption_and_an_orphaned_task_keeps_its_branch() {
     let report = reconcile(primary, &mut store, TARGET);
     assert_eq!(report.orphaned, vec![task.id.clone()]);
     let task = store.get(&task.id).unwrap();
-    assert_eq!(task.state, WorkState::Parked);
+    assert_eq!(task.state, WorkState::Shelved);
     assert_eq!(task.isolation().unwrap().checkout, None);
     assert!(branch_exists(primary, &task.isolation().unwrap().branch));
     assert!(
@@ -739,10 +788,18 @@ fn a_task_whose_checkout_was_removed_resumes_on_its_own_branch() {
     let report = reconcile(primary, &mut store, TARGET);
     assert_eq!(report.orphaned, vec![task.id.clone()]);
     task = store.get(&task.id).unwrap().clone();
-    assert_eq!(task.state, WorkState::Parked, "a commit the target lacks");
+    assert_eq!(task.state, WorkState::Shelved, "a commit the target lacks");
     assert_eq!(task.isolation().unwrap().checkout, None);
 
-    let resumed = resume(primary, &store, task.isolation().unwrap(), None, &nobody()).unwrap();
+    let resumed = resume(
+        primary,
+        &store,
+        &task.id,
+        task.isolation().unwrap(),
+        None,
+        &nobody(),
+    )
+    .unwrap();
     assert_eq!(resumed.branch, task.isolation().unwrap().branch);
     assert_eq!(
         current_branch(&resumed.path).as_deref(),
@@ -942,7 +999,7 @@ fn a_worktree_uze_did_not_create_is_never_its_to_touch() {
     let (_, placed) = launch(&repository, &mut store, "next");
     assert!(placed.created, "never offered to an agent");
 
-    let collected = collect(primary, &store, TARGET, keep_nothing(), &nobody());
+    let collected = collect(primary, &mut store, TARGET, keep_nothing(), &nobody());
     assert!(foreign.is_dir(), "never swept as idle");
     assert!(
         !collected
@@ -992,7 +1049,7 @@ fn a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one() {
         "its branch is where its owner left it"
     );
 
-    collect(primary, &store, TARGET, keep_nothing(), &nobody());
+    collect(primary, &mut store, TARGET, keep_nothing(), &nobody());
     assert!(hand_made.is_dir(), "never swept as idle");
 }
 

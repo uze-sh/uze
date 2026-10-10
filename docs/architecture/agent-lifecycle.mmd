@@ -16,9 +16,11 @@ flowchart TD
   name --> running[Running]
   running --> evaluate{What Git says, each pass}
   evaluate -->|a dirty tree| uncommitted[Uncommitted]
-  evaluate -->|agent gone, work left| parked[Parked]
+  evaluate -->|agent gone, work left| shelved[Unfinished<br/>commits on its branch,<br/>the rest on refs/uze/shelf/id]
   evaluate -->|agent gone, nothing to deliver| closed[Closed]
-  closed --> free[Its slot is free:<br/>kept as a spare, or given back]
+  shelved --> free
+  shelved -->|resumed| reuse
+  closed --> free[Its slot is free:<br/>kept until it goes idle]
   uncommitted -->|it commits| ready
   evaluate -->|commits ahead, clean tree| ready[Ready]
   ready -->|the pane went quiet| refresh[refresh<br/>rebase onto the local target]

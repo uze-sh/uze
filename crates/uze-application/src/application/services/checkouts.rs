@@ -71,6 +71,21 @@ impl Workspace<'_> {
         let (primary, target) = self.project_of(cwd).ok()?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
+        let slots = checkout::slots(&primary, &store, presence);
+        let pinned: Vec<(PathBuf, String)> = slots
+            .iter()
+            .filter_map(|slot| match &slot.state {
+                checkout::SlotState::Pinned { reason } => {
+                    Some((slot.path.clone(), reason.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        let free: Vec<&Path> = slots
+            .iter()
+            .filter(|slot| slot.state == checkout::SlotState::Free)
+            .map(|slot| slot.path.as_path())
+            .collect();
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
         // Measured side by side: a walk is one system call per file, and a
         // project's checkouts hold hundreds of thousands of them between
@@ -89,7 +104,8 @@ impl Workspace<'_> {
             .iter()
             .zip(measured)
             .map(|(found, (bytes, last_changed))| {
-                let facts = Facts::read(&target, found, presence);
+                let free = free.iter().any(|path| same(path, &found.path));
+                let facts = Facts::read(&target, found, presence, free);
                 CheckoutView {
                     name: display_name(&primary, &found.path),
                     path: found.path.clone(),
@@ -98,6 +114,7 @@ impl Workspace<'_> {
                     branch: found.branch.clone(),
                     dirty: facts.dirty,
                     in_target: facts.in_target,
+                    held_by_a_branch: facts.held_by_a_branch,
                     ahead: facts.ahead,
                     in_use: facts.in_use,
                     last_changed,
@@ -106,6 +123,10 @@ impl Workspace<'_> {
                     removal_refusal: self
                         .removal_refusal(&primary, found, &store, presence)
                         .map(|refusal| refusal.to_string()),
+                    kept_because: pinned
+                        .iter()
+                        .find(|(path, _)| same(path, &found.path))
+                        .map(|(_, reason)| reason.clone()),
                 }
             })
             .collect();
@@ -233,14 +254,14 @@ impl Workspace<'_> {
                 let agent = store.get(parent);
                 let child = slot_holder(store, path).filter(|child| {
                     child.parent.as_ref() == Some(parent)
-                        && (checkout::is_live(&child.state) || child.state == WorkState::Parked)
+                        && (checkout::is_live(&child.state) || child.state == WorkState::Shelved)
                 });
                 CheckoutOwner::Subagent {
                     parent: agent.map_or_else(|| parent.to_string(), |agent| agent.label.clone()),
                     parent_id: parent.to_string(),
                     topic: child.map(|child| child.label.clone()),
                     joinable: child.is_some()
-                        && agent.is_some_and(|agent| agent.state == WorkState::Parked),
+                        && agent.is_some_and(|agent| agent.state == WorkState::Shelved),
                 }
             }
             Owner::Harness { harness } => CheckoutOwner::Harness {
@@ -279,16 +300,21 @@ impl Workspace<'_> {
 struct Facts {
     dirty: bool,
     in_target: bool,
+    held_by_a_branch: bool,
     ahead: usize,
     in_use: bool,
 }
 
 impl Facts {
-    fn read(target: &str, found: &AccountedCheckout, presence: &Presence) -> Self {
+    /// `free` is the pool's own answer for one of UZE's slots: a free slot
+    /// detached at commits its target lacks is detached where a branch
+    /// keeps them, which is what releasing it left behind.
+    fn read(target: &str, found: &AccountedCheckout, presence: &Presence, free: bool) -> Self {
         let in_target = checkout::is_integrated(&found.path, target, "HEAD");
         Self {
             dirty: checkout::holds_uncommitted_work(&found.path),
             in_target,
+            held_by_a_branch: found.branch.is_none() && !in_target && free,
             ahead: if in_target {
                 0
             } else {
@@ -382,11 +408,15 @@ pub struct CheckoutView {
     pub task: Option<String>,
     /// `None` for a detached `HEAD`.
     pub branch: Option<String>,
-    /// Uncommitted work, as a slot is parked or freed by: content UZE
+    /// Uncommitted work, as a slot is shelved or freed by: content UZE
     /// derives and can write again is not work.
     pub dirty: bool,
     /// Everything its `HEAD` carries is already in the target.
     pub in_target: bool,
+    /// Detached at a commit some branch reaches: what its `HEAD` carries
+    /// is kept on that branch, not here — a slot released after its agent
+    /// committed, ready for the next.
+    pub held_by_a_branch: bool,
     /// Commits its `HEAD` has that the target lacks; zero once it is in
     /// the target, even when a squash left them counted.
     pub ahead: usize,
@@ -400,6 +430,10 @@ pub struct CheckoutView {
     /// Why removing it would be refused as it stands now; `None` when it
     /// may be removed. Removal inspects again before it acts.
     pub removal_refusal: Option<String>,
+    /// Why UZE keeps one of its own checkouts as it is rather than handing
+    /// it to the next agent, when nobody is assigned to it: a paused
+    /// operation, somebody working inside, or work a shelf could not take.
+    pub kept_because: Option<String>,
 }
 
 /// Who a checkout belongs to.
@@ -416,7 +450,7 @@ pub enum CheckoutOwner {
         parent_id: String,
         /// The subagent's topic, while it still holds this checkout.
         topic: Option<String>,
-        /// Its agent is parked, so the operator may join it there.
+        /// Its agent ended unfinished, so the operator may join it there.
         joinable: bool,
     },
     /// A harness's own isolation, left to that harness.
