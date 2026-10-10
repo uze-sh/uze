@@ -122,8 +122,11 @@ pub fn collect(
 ) -> Collected {
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         let slots = trim_free_slots(primary, store, pool, presence);
-        let shelves = collect_shelves(primary, store, target);
-        let branches = prune_integrated_branches(primary, store, target);
+        // Read once for both: a shelf collected here leaves its branch
+        // protected for one more pass, which costs nothing but that.
+        let refs = Refs::read(primary);
+        let shelves = collect_shelves_among(&refs, primary, store, target);
+        let branches = prune_integrated_branches_among(&refs, primary, store, target);
         // A task whose branch just went for being in the target is settled
         // here, while the branch's fate is still known: read later, a
         // branch that is gone says nothing about where its commits went.
@@ -150,8 +153,16 @@ pub fn collect(
 /// Removes every shelf whose work the target already has, unless a live
 /// task is about to restore it. Returns the tasks whose shelf went.
 pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    let refs = Refs::read(primary);
-    if refs.shelves.is_empty() || tip_of(primary, target).is_empty() {
+    collect_shelves_among(&Refs::read(primary), primary, store, target)
+}
+
+fn collect_shelves_among(
+    refs: &Refs,
+    primary: &Path,
+    store: &AgentStore,
+    target: &str,
+) -> Vec<String> {
+    if refs.shelves.is_empty() || !refs.resolves(primary, target) {
         return Vec::new();
     }
     refs.shelves
@@ -184,7 +195,16 @@ pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<
 /// branch this clone never fetched. Nothing is collectable against a
 /// yardstick that does not exist.
 pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    if tip_of(primary, target).is_empty() {
+    prune_integrated_branches_among(&Refs::read(primary), primary, store, target)
+}
+
+fn prune_integrated_branches_among(
+    refs: &Refs,
+    primary: &Path,
+    store: &AgentStore,
+    target: &str,
+) -> Vec<String> {
+    if !refs.resolves(primary, target) {
         return Vec::new();
     }
     let checked_out: Vec<String> = linked_worktrees(primary)
@@ -197,7 +217,6 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
         .filter_map(|agent| agent.isolation())
         .map(|isolation| isolation.branch.as_str())
         .collect();
-    let refs = Refs::read(primary);
     // A branch a shelf stands on is the shelf's base: pruned, the shelf
     // could only be restored by recreating it.
     let mut shelved: Vec<String> = refs
@@ -213,7 +232,7 @@ pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &st
             .filter(|child| child.parent.is_some())
             .filter_map(|child| {
                 let isolation = child.isolation()?;
-                holds_work_among(&refs, primary, child, &isolation.target)
+                holds_work_among(refs, primary, child, &isolation.target)
                     .then(|| isolation.target.clone())
             }),
     );
@@ -496,6 +515,12 @@ impl Refs {
             .iter()
             .find(|shelf| shelf.task == task)
             .map(|shelf| shelf.commit.as_str())
+    }
+
+    /// Whether `target` names a commit: a local branch these tips hold, or
+    /// anything else Git resolves.
+    pub fn resolves(&self, primary: &Path, target: &str) -> bool {
+        self.tips.local(target).is_some() || !tip_of(primary, target).is_empty()
     }
 
     /// Whether `target` already carries everything `shelf` holds, with the

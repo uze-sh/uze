@@ -2007,6 +2007,17 @@ mod budget {
             long_occupancy, short_occupancy,
             "an idle occupancy pass grew with the history"
         );
+        // And what it costs at all, in a world of two free checkouts: each
+        // is asked whether it holds work, and the repository's checkouts,
+        // branches and shelves are listed — no more.
+        assert!(
+            long_occupancy <= 17,
+            "an idle occupancy pass started {long_occupancy} Git processes"
+        );
+        assert!(
+            long_evaluation <= 10,
+            "an evaluation started {long_evaluation} Git processes"
+        );
         assert_eq!(
             long_evaluation, short_evaluation,
             "an evaluation grew with the history"
