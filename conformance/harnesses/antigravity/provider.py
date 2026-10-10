@@ -23,6 +23,8 @@ binary, backend UA `antigravity/cli/1.1.24`, 2026-09-02):
     is the context this CLI reports;
   * `POST https://daily-cloudcode-pa.googleapis.com/v1internal:listExperiments`
     answers the same flag as `{"name":"json-hooks-enabled","boolValue":true}`.
+    Since 1.3 the same list also gates every customization kind (skills,
+    rules, agents, MCP, hooks): see `LIST_EXPERIMENTS`.
 
 Both are served here exactly as recorded — the strategy is replayed, not
 flattened to a bare `default`, so the harness's own evaluation is what
@@ -256,6 +258,17 @@ def unwrap_consumer_request(body_text):
     return body_text
 
 
+def consumer_model(body_text):
+    """The model the signed-in envelope asks for: CloudCode names it beside
+    `request`, never inside it, so a dispatched agent's own model is read
+    here or not at all."""
+    try:
+        wrapper = json.loads(body_text) if body_text else {}
+    except ValueError:
+        return None
+    return wrapper.get("model") if isinstance(wrapper, dict) else None
+
+
 def wrap_consumer_stream(payload):
     """Each `data: <GenerateContentResponse>` frame, re-framed as the
     signed-in envelope `data: {"response": …, "traceId": …, "metadata": {}}`.
@@ -275,10 +288,11 @@ def wrap_consumer_stream(payload):
     return out
 
 
-def record_request(handler, body_text):
+def record_request(handler, body_text, model=None):
     """Appends this request's structural summary to the run's evidence and
     returns it. Never the verbatim body — that boundary is the whole point
-    of the summary (see the module docstring)."""
+    of the summary (see the module docstring). `model` is the one the
+    signed-in envelope names, which the unwrapped body no longer carries."""
     with RECORD_LOCK:
         n = COUNTER["n"]
         COUNTER["n"] += 1
@@ -288,6 +302,8 @@ def record_request(handler, body_text):
             "seq": n,
             "summary": structural_summary(body_text),
         }
+        if model:
+            rec["summary"]["model"] = model
         if not STRUCT and os.path.exists(STRUCT_PATH):
             try:
                 STRUCT.extend(json.load(open(STRUCT_PATH)))
@@ -322,14 +338,34 @@ def text_frame(text):
     )
 
 
+def is_user_turn(body_text):
+    """Whether the conversation carries the person's request: every turn
+    agy sends on a person's behalf wraps it in `<USER_REQUEST>`, and the
+    whole conversation is resent with each request."""
+    try:
+        contents = json.loads(body_text).get("contents") or []
+    except (ValueError, AttributeError):
+        return False
+    return "<USER_REQUEST>" in json.dumps(contents)
+
+
 def model_payload(body_text):
     """The SSE the mode dictates for this request — the one decision path,
     shared by the API-key listener and the signed-in one.
 
     The harness also makes side requests (a lighter model, no tools
     declared) around the user's turn; `capture.scriptable` answers those
-    with text, so the call lands on the turn that offered the tool."""
-    due = scripted_step(body_text) if MODE == "toolcall" else None
+    with text, so the call lands on the turn that offered the tool.
+
+    A dispatched agent's own conversation is not the user's turn either:
+    it opens on a `<SYSTEM_MESSAGE>` instead of a `<USER_REQUEST>`, declares
+    a narrower set of tools, and would otherwise be handed the very call
+    that dispatched it (observed on 1.3.3). It is answered with text."""
+    due = (
+        scripted_step(body_text)
+        if MODE == "toolcall" and is_user_turn(body_text)
+        else None
+    )
     step = capture.next_scriptable(body_text, TOOL_SEQUENCE, due)
     if step is not None:
         call = TOOL_SEQUENCE[step]
@@ -355,10 +391,10 @@ def model_payload(body_text):
     return text_frame(FINAL_TEXT)
 
 
-def serve_model(handler, body_text, consumer=False):
+def serve_model(handler, body_text, consumer=False, model=None):
     """Records the request and streams the answer; `consumer` re-frames
     every event into the signed-in envelope."""
-    record_request(handler, body_text)
+    record_request(handler, body_text, model)
     payload = model_payload(body_text)
     if consumer:
         payload = wrap_consumer_stream(payload)
@@ -421,16 +457,110 @@ UNLEASH_FEATURES = {
     ],
 }
 
-# The second delivery path for the same gate. `enable-hook-status` and
-# `enable-generative-hooks` were observed false on the same account and are
-# served that way rather than omitted, so the harness sees the shape it saw
-# online.
+# The second delivery path for the same gate, and since 1.3 the one every
+# customization kind is resolved against: an absent
+# `enable-customization-kind-*` reads false, and the session then loads no
+# skill, rule, agent, MCP server or hook at all — the user's own as much as
+# UZE's — with the system prompt's `skills` and `user_rules` sections empty.
+# Recorded on a real signed-in 1.3.3 session (2026-10-10). Only the flags
+# naming a customization kind are served, at the values observed there; the
+# official marketplace URL is left out because the Lab has no Internet.
 LIST_EXPERIMENTS = {
     "experimentIds": [],
     "flags": [
-        {"name": "json-hooks-enabled", "boolValue": True},
-        {"name": "enable-hook-status", "boolValue": False},
+        {
+            "name": "Chat__code_customization_enable_learn_more_message",
+            "boolValue": True,
+        },
+        {"name": "Chat__enable_agent_mode_slash_commands", "boolValue": True},
+        {"name": "Chat__enable_agentic_chat_ij", "boolValue": True},
+        {"name": "Chat__enable_chat_agentic_mcp_chat", "boolValue": False},
+        {"name": "Chat__enable_chat_crescendo_agents", "boolValue": True},
+        {"name": "Chat__enable_code_customization_webview", "boolValue": True},
+        {"name": "Chat__enable_mcp_server", "boolValue": False},
+        {"name": "Chat__enable_mcp_server_ij", "boolValue": True},
+        {"name": "DatacloudMcp__enable_stdio_mcp_proxy", "boolValue": True},
+        {"name": "GcaAipluginSwingToCompose__enable_compose", "boolValue": False},
+        {
+            "name": "GcliAgentHistoryTruncation__agent_history_retained_messages",
+            "flagId": 45773190,
+            "intValue": "15",
+        },
+        {
+            "name": "GcliAgentHistoryTruncation__agent_history_truncation_threshold",
+            "flagId": 45773189,
+            "intValue": "30",
+        },
+        {
+            "name": "GcliAgentHistoryTruncation__enable_agent_history_truncation",
+            "flagId": 45773188,
+            "boolValue": False,
+        },
+        {"name": "SDLCAgents__enable_anthropic_model_connection", "boolValue": False},
+        {"name": "SDLCAgents__enable_azure_model_connection", "boolValue": False},
+        {"name": "SDLCAgents__enable_gemini_model_connection", "boolValue": False},
+        {"name": "SDLCAgents__enable_rest_model_connection", "boolValue": False},
+        {"name": "agent-retry-config", "stringValue": ""},
+        {"name": "agent-script-reroute", "stringValue": ""},
+        {"name": "agy-plugin-shelves", "stringValue": ""},
+        {"name": "browser-subagent-model", "stringValue": "MODEL_PLACEHOLDER_M18"},
+        {"name": "cascade-agent-api-config", "stringValue": ""},
+        {"name": "convenient-multi-agent-coordination", "boolValue": False},
+        {"name": "customization-token-budget", "intValue": "20000"},
+        {"name": "deepagent-arm", "stringValue": ""},
+        {"name": "default_subagent_interaction_timeout_seconds", "intValue": "60"},
+        {"name": "disable-tool-hook-notices", "boolValue": False},
+        {"name": "enable-agent-omnitrace", "boolValue": False},
+        {"name": "enable-agent-plugins-spec", "boolValue": False},
+        {"name": "enable-agent-team", "boolValue": False},
+        {"name": "enable-battle-mode-custom-agents", "boolValue": True},
+        {"name": "enable-browser-subagent-v2", "boolValue": True},
+        {"name": "enable-concierge-agent", "boolValue": False},
+        {"name": "enable-customization-kind-agent", "boolValue": True},
+        {"name": "enable-customization-kind-flow", "boolValue": False},
+        {"name": "enable-customization-kind-hooks", "boolValue": True},
+        {"name": "enable-customization-kind-mcp", "boolValue": True},
+        {"name": "enable-customization-kind-plugin", "boolValue": True},
+        {"name": "enable-customization-kind-rule", "boolValue": True},
+        {"name": "enable-customization-kind-skill", "boolValue": True},
+        {"name": "enable-customization-kind-workflow", "boolValue": True},
+        {"name": "enable-customization-load-error-notice", "boolValue": False},
+        {"name": "enable-customization-skills", "boolValue": True},
+        {"name": "enable-deepagent", "boolValue": False},
+        {"name": "enable-fork-with-subagents", "boolValue": False},
         {"name": "enable-generative-hooks", "boolValue": False},
+        {"name": "enable-hook-status", "boolValue": True},
+        {"name": "enable-image-generator-subagent", "boolValue": True},
+        {"name": "enable-list-plugin-accounts-tool", "boolValue": False},
+        {"name": "enable-markdown-agents", "boolValue": True},
+        {"name": "enable-mcp-apps", "boolValue": False},
+        {"name": "enable-mcp-non-blocking-turn-load", "boolValue": True},
+        {"name": "enable-mcp-plugin-auth", "boolValue": False},
+        {"name": "enable-plugin-auth", "boolValue": False},
+        {"name": "enable-plugin-bundles", "boolValue": False},
+        {"name": "enable-plugin-context-providers", "boolValue": False},
+        {"name": "enable-plugin-sidebar-section", "boolValue": False},
+        {"name": "enable-plugin-themes", "boolValue": False},
+        {"name": "enable-plugins", "boolValue": False},
+        {"name": "enable-remote-agent-fastpush-pin", "boolValue": True},
+        {"name": "enable-skill-accumulator", "boolValue": False},
+        {"name": "enable-skill-icons", "boolValue": False},
+        {"name": "enable-skill-search-tool", "boolValue": False},
+        {"name": "enable-subagent-hub", "boolValue": False},
+        {"name": "enable-subagent-user-messaging", "boolValue": False},
+        {"name": "enable-teamwork-subagent", "boolValue": False},
+        {"name": "inject_3_memories_1_skill", "boolValue": False},
+        {
+            "name": "invoke-subagent-config",
+            "stringValue": '{"enabled": true, "always_inherit_model": false}',
+        },
+        {"name": "jetski-plugin-promotions", "stringValue": ""},
+        {"name": "jetski-unified-customizations-panel-enabled", "boolValue": False},
+        {"name": "json-hooks-enabled", "boolValue": True},
+        {"name": "mcp-lazy-load-tools", "boolValue": True},
+        {"name": "plugin-kill-switch", "stringValue": ""},
+        {"name": "rules-token-budget", "intValue": "20000"},
+        {"name": "send-subagent-initial-prompt-as-message", "boolValue": True},
     ],
 }
 
@@ -570,7 +700,12 @@ class SignedIn(BaseHTTPRequestHandler):
         # it to the catch-all — a harness retrying its own turn forever.
         route = self.path.split("?", 1)[0]
         if route.endswith(":streamGenerateContent"):
-            serve_model(self, unwrap_consumer_request(body), consumer=True)
+            serve_model(
+                self,
+                unwrap_consumer_request(body),
+                consumer=True,
+                model=consumer_model(body),
+            )
         elif route.startswith("/api/client/register"):
             self._answer(202, {})
         elif route.startswith("/api/client/features"):
