@@ -254,6 +254,19 @@ fn a_checkout_git_cannot_read_is_never_taken_for_one_with_nothing_in_it() {
 }
 
 #[test]
+fn a_check_that_cannot_be_made_is_an_error_not_a_change() {
+    let (_repository, slot, branch) = slot("shelf-check-unreadable");
+    fs::write(slot.join("new.rs"), "").unwrap();
+    let Shelving::Kept(kept) = shelve(&slot, TASK, "label", &branch).unwrap() else {
+        panic!("expected work to be shelved");
+    };
+    let git_dir = uze_git::repository::git_dir(&slot).unwrap();
+    fs::write(git_dir.join("index"), b"not an index").unwrap();
+
+    assert!(kept.still_matches(&slot).is_err());
+}
+
+#[test]
 fn a_repository_nested_deep_in_a_new_directory_cannot_be_shelved() {
     let (repository, slot, branch) = slot("shelf-nested-deep");
     let nested = slot.join("vendor").join("lib");

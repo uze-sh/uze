@@ -509,11 +509,25 @@ fn shelve_and_reset(
     // between the shelf and now is somebody at work, and is not reset.
     // The shelf goes back to what it was, or a task still at work would
     // carry a snapshot it has since moved past as unfinished work.
-    if let shelf::Shelving::Kept(kept) = &shelving
-        && kept.still_matches(directory) != Ok(true)
-    {
-        let _ = kept.take_back(primary, task);
-        return Released::InUse;
+    // A check that could not be made is not somebody at work: answered
+    // `InUse`, it was asked again on every retry, forever. The work stays
+    // where it is and the operator is told why.
+    if let shelf::Shelving::Kept(kept) = &shelving {
+        match kept.still_matches(directory) {
+            Ok(true) => {}
+            Ok(false) => {
+                take_back(primary, task, kept);
+                return Released::InUse;
+            }
+            Err(reason) => {
+                take_back(primary, task, kept);
+                return pin_with(
+                    primary,
+                    directory,
+                    format!("its work could not be checked after it was kept: {reason}"),
+                );
+            }
+        }
     }
     if git(
         directory,
@@ -522,13 +536,27 @@ fn shelve_and_reset(
     .is_err()
         || git(directory, &["clean", "--quiet", "-fd"]).is_err()
     {
-        return Released::Pinned(Pin::Unshelved(
+        if let shelf::Shelving::Kept(kept) = &shelving {
+            take_back(primary, task, kept);
+        }
+        return pin_with(
+            primary,
+            directory,
             "its checkout could not be reset after its work was kept".to_owned(),
-        ));
+        );
     }
     let _ = record::write(primary, directory, &CheckoutRecord::made_at(directory));
     stamp(directory);
     Released::Freed { shelved }
+}
+
+/// Takes a shelf back after the checkout turned out not to be resettable:
+/// the work is still in the checkout, and a shelf of it beside would read
+/// as unfinished work twice.
+fn take_back(primary: &Path, task: &str, kept: &shelf::Kept) {
+    if let Err(reason) = kept.take_back(primary, task) {
+        tracing::warn!(task, %reason, "a shelf could not be taken back");
+    }
 }
 
 /// Keeps `directory` as it is for `reason`, written on its record so the
@@ -627,12 +655,23 @@ pub fn settle_without_checkout(primary: &Path, target: &str, agent: &mut Agent) 
 /// stay.
 pub fn untake(primary: &Path, slot: &Path) {
     let _ = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        let _ = git(
+        let reset = git(
             slot,
             &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
-        );
-        let _ = git(slot, &["clean", "--quiet", "-fd"]);
-        let _ = record::write(primary, slot, &CheckoutRecord::made_at(slot));
+        )
+        .is_ok()
+            && git(slot, &["clean", "--quiet", "-fd"]).is_ok();
+        // Left holding what a failed resume put back, it is not free: it
+        // is kept, and says why, rather than handed to the next agent.
+        if reset {
+            let _ = record::write(primary, slot, &CheckoutRecord::made_at(slot));
+        } else {
+            pin_with(
+                primary,
+                slot,
+                "it could not be reset after a resume that failed".to_owned(),
+            );
+        }
     });
 }
 
