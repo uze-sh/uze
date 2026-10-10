@@ -63,7 +63,10 @@ scenes:
         say: it commits something worth keeping
     then:
       - tasks: { count: 1 }
-      - git: { branches: "agent/*", count: 1 }
+      # Any branch but the target: the work's own branch is renamed from
+      # its first commit by an evaluation pass this scene does not wait for,
+      # so it may be read under `agent/<id>` or under the derived name.
+      - git: { branches: "*/*", count: 1 }
         about: one task, on one branch of its own
       - dir: "{project}/.worktrees/*"
         count: 1
@@ -92,7 +95,7 @@ scenes:
         about: the checkout really is gone
       - tasks: { count: 1 }
         about: the task is not forgotten with it
-      - git: { branches: "agent/*", count: 1 }
+      - git: { branches: "*/*", count: 1 }
         about: and its branch is still in the repository
       - cmd:
           run: "git -C {project} log --oneline --all"
@@ -138,7 +141,7 @@ scenes:
         about: a checkout exists again
       - tasks: { count: 1 }
         about: and it is the same task, not a second one standing in for it
-      - git: { branches: "agent/*", count: 1 }
+      - git: { branches: "*/*", count: 1 }
         about: on the same single branch
       - cmd:
           run: "git -C {project} log --oneline --all"

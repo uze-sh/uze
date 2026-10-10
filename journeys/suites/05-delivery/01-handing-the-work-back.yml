@@ -100,5 +100,7 @@ scenes:
         about: |
           delivering is not leaving — the agent that just delivered usually
           keeps working in the same checkout, so the slot stays its own
-      - git: { branches: "agent/*", count: 1 }
-        about: and its branch is still there to keep committing on
+      - git: { branches: "feat/answer-ping", count: 1 }
+        about: |
+          and its branch is still there to keep committing on, under the name
+          UZE derived from the commit nobody else named
