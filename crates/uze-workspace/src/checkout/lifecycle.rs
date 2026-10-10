@@ -464,50 +464,7 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         return Released::Freed { shelved: false };
     };
     let outcome = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        if presence.inside(&directory) || Presence::observe().inside(&directory) {
-            return Released::InUse;
-        }
-        if let Some(operation) = paused_operation(&directory) {
-            return Released::Pinned(Pin::Paused(operation));
-        }
-        let shelving = match shelf::shelve(&directory, &id, &label, &branch) {
-            Ok(shelving) => shelving,
-            Err(refusal) => {
-                let reason = refusal.to_string();
-                let mut pinned = CheckoutRecord::made_at(&directory);
-                if let Recorded::Ours(recorded) = record::read(primary, &directory) {
-                    pinned = recorded;
-                }
-                pinned.pinned = Some(reason.clone());
-                let _ = record::write(primary, &directory, &pinned);
-                return Released::Pinned(Pin::Unshelved(reason));
-            }
-        };
-        let shelved = matches!(shelving, shelf::Shelving::Kept(_));
-        // The tree is read again against what was kept: anything written
-        // between the shelf and now is somebody at work, and is not reset.
-        // The shelf goes back to what it was, or a task still at work would
-        // carry a snapshot it has since moved past as unfinished work.
-        if let shelf::Shelving::Kept(kept) = &shelving
-            && kept.still_matches(&directory) != Ok(true)
-        {
-            let _ = kept.take_back(primary, &id);
-            return Released::InUse;
-        }
-        if git(
-            &directory,
-            &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
-        )
-        .is_err()
-            || git(&directory, &["clean", "--quiet", "-fd"]).is_err()
-        {
-            return Released::Pinned(Pin::Unshelved(
-                "its checkout could not be reset after its work was kept".to_owned(),
-            ));
-        }
-        let _ = record::write(primary, &directory, &CheckoutRecord::made_at(&directory));
-        stamp(&directory);
-        Released::Freed { shelved }
+        shelve_and_reset(primary, &directory, presence, &id, &label, &branch)
     })
     .unwrap_or(Released::InUse);
     match &outcome {
@@ -524,6 +481,66 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         }
     }
     outcome
+}
+
+/// The release's critical section, under the repository's write lock:
+/// nobody inside, no operation paused, the work shelved and the shelf
+/// still what the checkout holds, then the checkout reset and stamped.
+fn shelve_and_reset(
+    primary: &Path,
+    directory: &Path,
+    presence: &Presence,
+    task: &str,
+    label: &str,
+    branch: &str,
+) -> Released {
+    if presence.inside(directory) || Presence::observe().inside(directory) {
+        return Released::InUse;
+    }
+    if let Some(operation) = paused_operation(directory) {
+        return Released::Pinned(Pin::Paused(operation));
+    }
+    let shelving = match shelf::shelve(directory, task, label, branch) {
+        Ok(shelving) => shelving,
+        Err(refusal) => return pin_with(primary, directory, refusal.to_string()),
+    };
+    let shelved = matches!(shelving, shelf::Shelving::Kept(_));
+    // The tree is read again against what was kept: anything written
+    // between the shelf and now is somebody at work, and is not reset.
+    // The shelf goes back to what it was, or a task still at work would
+    // carry a snapshot it has since moved past as unfinished work.
+    if let shelf::Shelving::Kept(kept) = &shelving
+        && kept.still_matches(directory) != Ok(true)
+    {
+        let _ = kept.take_back(primary, task);
+        return Released::InUse;
+    }
+    if git(
+        directory,
+        &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
+    )
+    .is_err()
+        || git(directory, &["clean", "--quiet", "-fd"]).is_err()
+    {
+        return Released::Pinned(Pin::Unshelved(
+            "its checkout could not be reset after its work was kept".to_owned(),
+        ));
+    }
+    let _ = record::write(primary, directory, &CheckoutRecord::made_at(directory));
+    stamp(directory);
+    Released::Freed { shelved }
+}
+
+/// Keeps `directory` as it is for `reason`, written on its record so the
+/// pool and the operator's list both say why.
+fn pin_with(primary: &Path, directory: &Path, reason: String) -> Released {
+    let mut pinned = CheckoutRecord::made_at(directory);
+    if let Recorded::Ours(recorded) = record::read(primary, directory) {
+        pinned = recorded;
+    }
+    pinned.pinned = Some(reason.clone());
+    let _ = record::write(primary, directory, &pinned);
+    Released::Pinned(Pin::Unshelved(reason))
 }
 
 /// Whether `agent` still holds work nobody delivered: commits on its branch
