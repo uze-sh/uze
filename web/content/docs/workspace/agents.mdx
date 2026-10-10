@@ -29,7 +29,9 @@ Checkouts are reused, so a second agent does not pay for a fresh
 checkout: whatever it left uncommitted is kept for it, its commits stay on
 its branch, and the checkout goes to the next agent. So a project keeps as
 many checkouts as it had agents working at once, and one nobody used for
-three days gives its disk back. The age is yours to change:
+three days gives its disk back. The same age forgets an agent that ended
+leaving nothing behind: no checkout, no branch and no unfinished work. The
+age is yours to change:
 
 ```yaml
 workspace:

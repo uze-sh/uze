@@ -141,6 +141,13 @@ pub fn collect(
                 .map_or_else(|| target.to_owned(), |isolation| isolation.target.clone());
             settle_without_checkout(primary, &into, agent);
         }
+        let forgotten = forget_finished(&refs, &branches, store, pool.idle, SystemTime::now());
+        if !forgotten.is_empty() {
+            tracing::info!(
+                count = forgotten.len(),
+                "tasks with nothing left were forgotten"
+            );
+        }
         Collected {
             branches,
             slots,
@@ -148,6 +155,54 @@ pub fn collect(
         }
     })
     .unwrap_or_default()
+}
+
+/// Removes from the store every task that ended more than `idle` ago and
+/// left nothing anywhere: no checkout, no branch, no shelf, and no
+/// subagent naming it. Every pass walks every record, so a store that only
+/// grew made each pass slower with every agent the project ever ran, and a
+/// record of nothing is not history anyone can act on. Returns the tasks
+/// forgotten.
+pub fn forget_finished(
+    refs: &Refs,
+    pruned: &[String],
+    store: &mut AgentStore,
+    idle: Duration,
+    now: SystemTime,
+) -> Vec<AgentId> {
+    let now = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let parents: std::collections::BTreeSet<AgentId> = store
+        .agents
+        .iter()
+        .filter_map(|agent| agent.parent.clone())
+        .collect();
+    let finished = |agent: &Agent| {
+        let ended_long_ago = agent
+            .ended_at_unix
+            .is_some_and(|ended| now.saturating_sub(ended) >= idle.as_secs());
+        let holds_nothing = match agent.isolation() {
+            None => true,
+            Some(isolation) => {
+                matches!(agent.state, WorkState::Closed | WorkState::Integrated)
+                    && isolation.checkout.is_none()
+                    && (!refs.tips.contains(&isolation.branch)
+                        || pruned.contains(&isolation.branch))
+                    && refs.shelf_of(agent.id.as_str()).is_none()
+            }
+        };
+        ended_long_ago && holds_nothing && !parents.contains(&agent.id)
+    };
+    let forgotten: Vec<AgentId> = store
+        .agents
+        .iter()
+        .filter(|agent| finished(agent))
+        .map(|agent| agent.id.clone())
+        .collect();
+    store.agents.retain(|agent| !forgotten.contains(&agent.id));
+    forgotten
 }
 
 /// Removes every shelf whose work the target already has, unless a live

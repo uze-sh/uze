@@ -132,6 +132,14 @@ to keep.
 - **WHEN** an agent worked in a checkout for days and its tab closes
 - **THEN** the checkout is kept for the idle age from that moment
 
+#### Scenario: A task that left nothing is forgotten
+- **WHEN** a task ended more than the idle age ago, closed or integrated, holding no checkout, with no branch, no shelf and no subagent naming it
+- **THEN** its record is removed from the project's task store on the next collection
+
+#### Scenario: A task that left work is never forgotten
+- **WHEN** a task ended more than the idle age ago and its branch or its shelf still holds work
+- **THEN** its record is kept
+
 #### Scenario: A manifest still declaring a spare count
 - **WHEN** a project's `agents.yaml` declares `spare` under `workspace:`
 - **THEN** no agent is placed, and the operator is told the policy declares an unknown key named `spare`, as for any other unknown key

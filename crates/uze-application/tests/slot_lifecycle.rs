@@ -1118,6 +1118,38 @@ mod slots {
         );
     }
 
+    /// A task that ended long ago and left nothing anywhere is forgotten,
+    /// so the record every pass walks does not grow without end; one whose
+    /// work is kept stays however old it is.
+    #[test]
+    fn a_task_that_left_nothing_is_forgotten_and_one_that_left_work_is_not() {
+        let mut world = World::new("slot-forget");
+        let empty = world.open();
+        world.close(&empty);
+        let worked = world.open();
+        world.write(&worked.cwd, "README.md", "kept\n");
+        world.close(&worked);
+        world.edit_store(|agents| {
+            for agent in agents.iter_mut() {
+                agent["ended_at_unix"] = serde_json::json!(1);
+            }
+        });
+
+        world.sweep();
+
+        let ids: Vec<String> = world
+            .records()
+            .into_iter()
+            .map(|record| record.id)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![worked.id.clone()],
+            "only the task holding work is kept"
+        );
+        assert!(world.shelf(&worked).is_some());
+    }
+
     /// A checkout pinned by a paused rebase stays the task's, and resuming
     /// the task goes back into it to finish the rebase: `HEAD` is detached
     /// there, but the rebase is rewriting the task's branch.
