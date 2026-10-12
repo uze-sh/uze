@@ -4,6 +4,39 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.14](https://github.com/uze-sh/uze/compare/v1.0.0-beta.13...v1.0.0-beta.14) - 2026-10-12
+
+### Features
+
+- **workspace:** Shelve agent work in refs/uze/shelf instead of parking checkouts ([#223](https://github.com/uze-sh/uze/pull/223)) [**breaking**] ([81a427b](https://github.com/uze-sh/uze/commit/81a427b4d5e5996c1ad24f58057953155c3358a9))
+- **workspace:** Name agent work by default ([#219](https://github.com/uze-sh/uze/pull/219)) ([1484727](https://github.com/uze-sh/uze/commit/1484727c86614717e821217210e02880cf0ce828))
+
+### Fixes
+
+- **security:** Require operator consent for code a project manifest declares ([#220](https://github.com/uze-sh/uze/pull/220)) [**breaking**] ([3578398](https://github.com/uze-sh/uze/commit/35783988f5d0a9249fcc10a3ba96f946c6819c40))
+- **terminal:** Classify a pane's program as the pane from its first connection ([#222](https://github.com/uze-sh/uze/pull/222)) ([acfca9c](https://github.com/uze-sh/uze/commit/acfca9c3d42db1a44ff8187aa8e132b79a5cc578))
+
+### Performance
+
+- **workspace:** Cache evaluation repository reads ([#213](https://github.com/uze-sh/uze/pull/213)) ([8f28a86](https://github.com/uze-sh/uze/commit/8f28a868d76cf703c9309ae7d499dfe61db68727))
+- **conformance:** End Lab waits on ready-screen markers instead of fixed sleeps ([#221](https://github.com/uze-sh/uze/pull/221)) ([a00d2b5](https://github.com/uze-sh/uze/commit/a00d2b56655bc6ddecbf43688752dd70b8ef7938))
+
+### Refactor
+
+- **web:** Simplify opengraph image ([#215](https://github.com/uze-sh/uze/pull/215)) ([7e31f89](https://github.com/uze-sh/uze/commit/7e31f89f3295dd2f86d97be61d4d171bbdabd1af))
+
+### Documentation
+
+- **release:** Condense generated install guidance ([#214](https://github.com/uze-sh/uze/pull/214)) ([01377a4](https://github.com/uze-sh/uze/commit/01377a461727aae8457be98f9c4e56701d9b92bb))
+- **openspec:** Add the frozen add-extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
+- **openspec:** Propose tracking the repositories an agent touches ([#224](https://github.com/uze-sh/uze/pull/224)) ([cca01b6](https://github.com/uze-sh/uze/commit/cca01b64255226e44b778d9207fffa4991adaf04))
+
+### Dependencies
+
+- **deps:** Bump dtolnay/rust-toolchain ([#216](https://github.com/uze-sh/uze/pull/216)) ([4b5ce37](https://github.com/uze-sh/uze/commit/4b5ce377588d0d3c4f5f4992f384bbecda166ddf))
+- **deps:** Bump taiki-e/install-action from 2.87.21 to 2.87.25 ([#217](https://github.com/uze-sh/uze/pull/217)) ([533cf60](https://github.com/uze-sh/uze/commit/533cf600c7c7d2dbe7100cd7be443760af97e67a))
+- **deps:** Bump the cargo-dependencies group with 3 updates ([#218](https://github.com/uze-sh/uze/pull/218)) ([b634721](https://github.com/uze-sh/uze/commit/b634721f2a919e531e0ce605c11a204bdd265bb2))
+
 ## [1.0.0-beta.13](https://github.com/uze-sh/uze/compare/v1.0.0-beta.12...v1.0.0-beta.13) - 2026-10-07
 
 ### Features
