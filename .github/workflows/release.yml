@@ -355,7 +355,12 @@ jobs:
       #
       # On Windows, `+crt-static` comes from `.cargo/config.toml`: the binary
       # needs no Visual C++ redistributable on the machine it lands on.
+      #
+      # `shell: bash` on every runner: the step reads `BUILD_TARGET` with
+      # shell syntax, and under the Windows default (pwsh) `${BUILD_TARGET}`
+      # is an unset PowerShell variable, so cargo was handed `--target ""`.
       - name: Build
+        shell: bash
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: cargo build --locked --release --bin uze --target "${BUILD_TARGET}"
