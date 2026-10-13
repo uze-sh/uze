@@ -56,6 +56,15 @@ pub fn silence_stdout() {
     imp::silence_stdout()
 }
 
+/// Throws away whatever standard input has received and nobody has read:
+/// for a full-screen program handing the terminal back. Mouse reports and
+/// keystrokes that arrived while it was busy are otherwise read by the
+/// shell that comes next, as a command line. Nothing where standard input
+/// is not a terminal.
+pub fn discard_pending_input() {
+    imp::discard_pending_input()
+}
+
 #[cfg(unix)]
 mod imp {
     use std::os::fd::AsRawFd;
@@ -199,6 +208,18 @@ mod imp {
         }
     }
 
+    pub(super) fn discard_pending_input() {
+        discard_pending_input_of(libc::STDIN_FILENO);
+    }
+
+    /// `TCIFLUSH` on a terminal; `ENOTTY` on anything else, which is the
+    /// answer wanted there and is let pass.
+    fn discard_pending_input_of(fd: std::os::fd::RawFd) {
+        // Safety: a flush takes a descriptor and a flag and touches no
+        // memory of ours.
+        unsafe { libc::tcflush(fd, libc::TCIFLUSH) };
+    }
+
     #[cfg(test)]
     mod tests {
         use std::{
@@ -335,6 +356,31 @@ mod imp {
             );
             assert_eq!(local_modes(&program), before);
         }
+
+        /// What a program that stopped reading leaves behind in its
+        /// terminal's input is thrown away, not handed to the next reader.
+        /// The terminal is already editing lines again by then, so the
+        /// report arrives as a line: ended, as the person's Enter ends it.
+        #[test]
+        fn input_nobody_read_is_discarded_rather_than_left_for_the_next_reader() {
+            let (mut terminal, program) = pseudoterminal();
+            terminal.write_all(b"\x1b[<35;22;11M\n").unwrap();
+            assert!(
+                matches!(
+                    readable_within(program.as_raw_fd(), Duration::from_secs(2)),
+                    Readiness::Ready
+                ),
+                "the report reached the program's end"
+            );
+            discard_pending_input_of(program.as_raw_fd());
+            assert!(
+                matches!(
+                    readable_within(program.as_raw_fd(), Duration::from_millis(100)),
+                    Readiness::TimedOut
+                ),
+                "and nothing of it is left to read"
+            );
+        }
     }
 }
 
@@ -344,8 +390,8 @@ mod imp {
 
     use super::Instant;
     use windows_sys::Win32::System::Console::{
-        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_OUTPUT_HANDLE,
-        SetConsoleMode, SetStdHandle,
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, FlushConsoleInputBuffer, GetConsoleMode, GetStdHandle,
+        STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleMode, SetStdHandle,
     };
 
     /// Unknown on Windows: the desktop's own setting always answers there
@@ -418,6 +464,12 @@ mod imp {
             && ["(os error 232)", "(os error 109)"]
                 .iter()
                 .any(|code| message.ends_with(code))
+    }
+
+    pub(super) fn discard_pending_input() {
+        // Safety: the standard input handle is the console's own or an
+        // invalid one, and a flush of either touches no memory of ours.
+        unsafe { FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE)) };
     }
 
     /// The standard library asks for the stdout handle on every write, and

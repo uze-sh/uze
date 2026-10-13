@@ -166,9 +166,15 @@ fn stopping_a_runtime_that_is_not_running_is_not_a_failure() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// The kernel names whoever listens on a socket, and the process table
-/// says what that process runs: this very executable, a `uze` of
-/// another build, or something nobody can vouch for as `uze` at all.
+/// The kernel names the listener's pid; the process table says only
+/// whether that pid runs `uze`, and nothing else is read off the image. A
+/// `uze` at any path is a `uze`: the image says nothing about the protocol
+/// it speaks and, replaced in place, nothing about which build it is
+/// either, so what it speaks is asked. And this very executable, which is
+/// not named `uze`, is nobody the table vouches for: being the same image
+/// as the asker used to make a listener "this build", which is exactly
+/// what a server of another release looks like once the binary under it
+/// is replaced in place.
 // Unix only: A process that is not `uze`, run as a POSIX shell (`ReadyProcess`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
@@ -179,8 +185,8 @@ fn the_listener_is_told_apart_by_what_it_runs() {
     let listener = super::transport::bind(&socket).unwrap();
     assert_eq!(
         listener_at(&socket),
-        Listener::ThisBuild(std::process::id()),
-        "a listener running this very executable is this build"
+        Listener::Unrecognized,
+        "a listener running this very executable is told by its name, not by being this image"
     );
     drop(listener);
 
@@ -192,7 +198,11 @@ fn the_listener_is_told_apart_by_what_it_runs() {
     std::fs::create_dir_all(&uze_home).unwrap();
     let another_build = ClaimHolder::spawn_as(&another_build_of_this_binary(&scratch), &uze_home);
     let pid = another_build.pid();
-    assert_eq!(identify(pid), Listener::AnotherBuild(pid));
+    assert_eq!(
+        identify(pid),
+        Listener::Uze(pid),
+        "and so is one started from another image"
+    );
     another_build.release();
 
     let _ = std::fs::remove_dir_all(&scratch);
@@ -2757,6 +2767,11 @@ const CLAIM_HELD: &str = "workspace claim held";
 /// endpoint bound and handshakes answered — rather than a claim and
 /// nothing else.
 const SERVING_HOLDER: &str = "UZE_TERMINAL_TEST_SERVES";
+/// Set on the holder that is to be a server of another release: endpoint
+/// bound, and every client told "incompatible terminal runtime protocol"
+/// and hung up on — what a server reading a version it does not speak
+/// does, whatever else it can read.
+const REFUSING_HOLDER: &str = "UZE_TERMINAL_TEST_REFUSES";
 
 /// The other server in the two claim tests: a process of its own that
 /// takes the workspace claim under the `UZE_HOME` it is given, says so,
@@ -2798,6 +2813,27 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
             });
             None
         }
+        None if std::env::var_os(REFUSING_HOLDER).is_some() => {
+            let held = WorkspaceLock::acquire().expect("the holder's claim is granted");
+            let socket = socket_path().expect("the holder's endpoint");
+            let listener = bind_endpoint(&socket).expect("the holder binds its endpoint");
+            std::thread::spawn(move || {
+                for mut stream in
+                    std::iter::repeat_with(|| super::transport::accept(&listener)).flatten()
+                {
+                    let _ = read_message::<_, crate::ClientRequest>(&mut std::io::BufReader::new(
+                        stream.try_clone().unwrap(),
+                    ));
+                    let _ = write_message(
+                        &mut stream,
+                        &crate::ClientEvent::Error {
+                            message: "incompatible terminal runtime protocol".into(),
+                        },
+                    );
+                }
+            });
+            Some(held)
+        }
         None => Some(WorkspaceLock::acquire().expect("the holder's claim is granted")),
     };
     println!("{CLAIM_HELD}");
@@ -2833,11 +2869,23 @@ impl ClaimHolder {
         Self::spawn_with(executable, uze_home, Some(project))
     }
 
+    /// A holder that is a server of another release: it binds this
+    /// `UZE_HOME`'s endpoint and refuses every client's handshake.
+    fn spawn_refusing(executable: &Path, uze_home: &Path) -> Self {
+        let mut command = std::process::Command::new(executable);
+        command.env(REFUSING_HOLDER, "1");
+        Self::spawn_command(command, uze_home)
+    }
+
     fn spawn_with(executable: &Path, uze_home: &Path, serving: Option<&Path>) -> Self {
         let mut command = std::process::Command::new(executable);
         if let Some(project) = serving {
             command.env(SERVING_HOLDER, project);
         }
+        Self::spawn_command(command, uze_home)
+    }
+
+    fn spawn_command(mut command: std::process::Command, uze_home: &Path) -> Self {
         let mut process = command
             .args([
                 "--ignored",
@@ -3420,14 +3468,15 @@ fn only_a_held_lock_reads_as_another_server() {
 fn an_attach_replaces_only_a_server_it_can_name() {
     let pid = 4242;
     for (claimed, listener, expected) in [
-        (true, Listener::ThisBuild(pid), Arrival::Connect),
+        // Alive and serving this workspace: asked, never connected to on
+        // the strength of the image it was started from and never ended
+        // on it. The listener that reads as this very executable is the
+        // one that used to be connected to unasked, and on macOS a server
+        // of the previous release reads exactly so.
+        (true, Listener::Uze(pid), Arrival::Ask(pid)),
         (true, Listener::Unrecognized, Arrival::Connect),
         (true, Listener::Nobody, Arrival::Connect),
-        // Alive and serving this workspace: asked, never ended on the
-        // strength of the image it was started from.
-        (true, Listener::AnotherBuild(pid), Arrival::Ask(pid)),
-        (false, Listener::ThisBuild(pid), Arrival::Replace(pid)),
-        (false, Listener::AnotherBuild(pid), Arrival::Replace(pid)),
+        (false, Listener::Uze(pid), Arrival::Replace(pid)),
         (false, Listener::Unrecognized, Arrival::Start),
         (false, Listener::Nobody, Arrival::Start),
     ] {
@@ -3639,12 +3688,16 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let socket = socket_path().unwrap();
     assert_eq!(
         listener_at(&socket),
-        Listener::AnotherBuild(serving.pid()),
-        "the server at the endpoint was started from another image"
+        Listener::Uze(serving.pid()),
+        "the server at the endpoint is a uze, started from another image"
     );
 
-    let mut stream = super::attach(&seat_at(&project)).expect("the client attaches");
+    let super::Attached {
+        mut stream,
+        replaced,
+    } = super::attach(&seat_at(&project)).expect("the client attaches");
 
+    assert_eq!(replaced, None, "and nothing was retired on the way in");
     assert_eq!(
         super::claim_holder().map(|claimant| claimant.pid),
         Some(serving.pid()),
@@ -3673,6 +3726,105 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let _ = send_request(&mut stream, &crate::ClientRequest::Detach);
     serving.release();
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The case the image used to get wrong: a server of the previous release
+/// still serving the workspace after the binary was replaced under it.
+/// On macOS a binary replaced in place keeps its path, so that server read
+/// as this very build and was connected to unasked — to answer the new
+/// `Attach` with "incompatible" and hang up, which the client met as a
+/// broken pipe on its next write. Asked instead, it is retired and the way
+/// is clear for a server of this build, whatever image either runs.
+#[test]
+fn a_server_of_another_release_is_replaced_whatever_image_it_runs() {
+    let scratch = uze_testkit::temp::socket_scratch("replace-release");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let mut refusing =
+        ClaimHolder::spawn_refusing(&another_build_of_this_binary(&scratch), &uze_home);
+    let socket = socket_path().unwrap();
+    assert_eq!(listener_at(&socket), Listener::Uze(refusing.pid()));
+    assert!(workspace_is_claimed());
+
+    let way = super::make_way(&socket).expect("the way in is made");
+
+    assert!(
+        matches!(
+            way,
+            super::Way::Clear(Some(super::Replaced::AnotherProtocol))
+        ),
+        "the refusing server was retired for not answering this build's handshake"
+    );
+    assert!(
+        !workspace_is_claimed(),
+        "and it let go of the workspace, so a server of this build can take it"
+    );
+    assert!(
+        !refusing.process.wait().unwrap().success(),
+        "it was ended rather than left behind"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// What a client reads before it sends anything after `Attach`: the
+/// server's answer to it. Taken on, the answer ends in a snapshot, and
+/// everything said on the way is kept for the client's reader. Turned
+/// away, the server said why before hanging up, and that is the error —
+/// a hang-up with nothing said is reported as one.
+#[test]
+fn the_answer_to_an_attach_is_the_snapshot_or_the_reason_there_is_none() {
+    let (mut server, client) = super::stream_pair().unwrap();
+    let _ = write_message(
+        &mut server,
+        &crate::ClientEvent::Error {
+            message: "could not open a space at /gone: no such directory".into(),
+        },
+    );
+    let _ = write_message(
+        &mut server,
+        &crate::ClientEvent::Snapshot {
+            session: Session::new(seat_at(Path::new("/tmp/a")), 80, 24),
+        },
+    );
+    let mut reader = std::io::BufReader::new(client);
+    let said = super::answer_to_attach(&mut reader).expect("taken on");
+    assert_eq!(
+        said.len(),
+        2,
+        "what was said on the way in is kept, in order"
+    );
+    assert!(matches!(said[0], crate::ClientEvent::Error { .. }));
+    assert!(matches!(said[1], crate::ClientEvent::Snapshot { .. }));
+
+    let (mut server, client) = super::stream_pair().unwrap();
+    let _ = write_message(
+        &mut server,
+        &crate::ClientEvent::Error {
+            message: "incompatible terminal runtime protocol".into(),
+        },
+    );
+    drop(server);
+    let mut reader = std::io::BufReader::new(client);
+    let refused = super::answer_to_attach(&mut reader).expect_err("turned away");
+    assert_eq!(
+        refused.to_string(),
+        "terminal runtime protocol error: incompatible terminal runtime protocol",
+        "the reason the server gave is the error, not the hang-up after it"
+    );
+
+    let (server, client) = super::stream_pair().unwrap();
+    drop(server);
+    let mut reader = std::io::BufReader::new(client);
+    let silent = super::answer_to_attach(&mut reader).expect_err("hung up on");
+    assert!(
+        silent
+            .to_string()
+            .contains("hung up before describing the workspace"),
+        "{silent}"
+    );
 }
 
 /// `SO_RCVTIMEO` restarts on every successful read, so a deadline

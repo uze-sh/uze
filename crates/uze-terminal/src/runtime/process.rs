@@ -38,8 +38,7 @@ pub(super) fn relaunch_command_for_process(process: &str) -> Option<Vec<String>>
 /// ordinary state of this repository's own development — resolves to
 /// `<path> (deleted)`. Spawning that answers `No such file or directory`,
 /// from a command that never named a file: the operator is told a path is
-/// missing and given no way to tell which. [`runs_this_executable`]
-/// already knows this state exists; this is the other half of knowing it.
+/// missing and given no way to tell which.
 ///
 /// The replacement is `uze` as `PATH` resolves it — the same binary the
 /// operator just installed over this one, which is the one they want
@@ -188,18 +187,6 @@ pub(super) fn runs_uze(pid: u32) -> bool {
         .is_some_and(|name| host::is_uze_image(&name))
 }
 
-/// Whether `pid` runs the same executable image as this process. The image
-/// stops resolving to this path once the binary is replaced underneath a
-/// live server (a `cargo install --force` mid-session), which is exactly
-/// the state a server being replaced is in.
-pub(super) fn runs_this_executable(pid: u32) -> bool {
-    let Some(mine) = env::current_exe().ok() else {
-        return false;
-    };
-    uze_platform::probe::executable_of(pid)
-        .is_some_and(|image| uze_platform::path::same_path(&image, &mine))
-}
-
 /// The pid listening on `socket`. The kernel stamps the listener's
 /// credentials onto the connection, so this is the listener's own and not
 /// something a connection could claim. `None` when nobody
@@ -220,8 +207,9 @@ pub(super) const RETIRE_WITHIN: Duration = Duration::from_secs(1);
 /// `started` is when the process meant started, where the caller knows it
 /// from a record; otherwise it is read now, so that a pid recycled while
 /// this waits is not the one signalled next. A pid that is not running
-/// that same `uze` by the time it would be signalled is left alone.
-pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) {
+/// that same `uze` by the time it would be signalled is left alone, and
+/// the answer says whether a server was ended or had already gone.
+pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) -> bool {
     let started = started.or_else(|| uze_platform::probe::started_at(pid));
     let still_the_one =
         || runs_uze(pid) && (started.is_none() || uze_platform::probe::started_at(pid) == started);
@@ -229,7 +217,7 @@ pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) {
     let channel = stop_channel(socket);
     for ask_first in [true, false] {
         if !still_the_one() {
-            return;
+            return false;
         }
         if ask_first {
             uze_platform::process::request_stop(pid, &channel);
@@ -241,9 +229,10 @@ pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) {
             thread::sleep(Duration::from_millis(25));
         }
         if released() {
-            return;
+            return true;
         }
     }
+    true
 }
 
 /// The name a server listens for a stop request under: its endpoint's own

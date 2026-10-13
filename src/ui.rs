@@ -280,6 +280,10 @@ fn restore_terminal(keyboard: keys::KeyboardSupport) {
         DisableBracketedPaste,
         crossterm::cursor::Show
     );
+    // After the mouse is let go, so nothing arrives behind the flush:
+    // reports that queued while this client was busy would otherwise be
+    // the shell's next command line.
+    uze_platform::stdio::discard_pending_input();
 }
 
 /// Makes a panic reportable: restore the terminal first, then let the

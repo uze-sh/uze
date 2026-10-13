@@ -1933,24 +1933,36 @@ socket carrying every pane's contents is put in it.
 > `crates/uze-platform/src/process/unix.rs::tests::a_pid_that_does_not_name_one_process_is_never_signalled`
 > `crates/uze-terminal/src/runtime/tests/socket_files.rs::a_runtime_directory_that_is_not_ours_to_own_is_stepped_over`
 
-### A live server is ended only when it cannot serve the client that found it
+### A live server is ended only when it cannot serve the client that found it, and is asked whatever image it runs
 
 The image a server was started from says which binary it came from and
-nothing about what it speaks, so it never decides on its own that a server
-must go: a `make install` over a running one — the ordinary state of this
-repository's own development — leaves every later `uze` looking at "another
-build" that is usually carrying the very same protocol. A server of another
-build is asked instead, with this build's own handshake and inside a bound:
-one that answers with a snapshot is attached to, and the panes it is
+nothing about what it speaks, so it decides nothing in either direction. It
+never decides on its own that a server must go: a `make install` over a
+running one — the ordinary state of this repository's own development —
+leaves every later `uze` looking at "another build" that is usually carrying
+the very same protocol. And it never decides that a server may stay: on
+macOS a binary replaced in place keeps its path, so a server of the
+previous release read as this very build, was connected to unasked, and
+answered the new `Attach` with "incompatible" and a hang-up that the client
+met as a broken pipe on its next write. Every live `uze` at the endpoint of
+a claimed workspace is asked, with this build's own handshake and inside a
+bound: one that answers with a snapshot is attached to, and the panes it is
 running go on running. Only silence, a refusal, a hang-up or bytes this
 build cannot read — what a server built to another framing answers — costs
 it the workspace, and the panes it held are restored from the persisted
-workspace by the server that replaces it.
+workspace by the server that replaces it. The client reads the server's
+answer to its own `Attach` before it sends anything else, so a server that
+turns it away is reported by the reason it gave; and when a server was
+retired on the way in, the client says so, since every agent that server
+ran was relaunched rather than kept.
 
 > `crates/uze-terminal/src/runtime/tests.rs::a_second_client_attaches_to_a_live_server_of_another_build`
+> `crates/uze-terminal/src/runtime/tests.rs::a_server_of_another_release_is_replaced_whatever_image_it_runs`
+> `crates/uze-terminal/src/runtime/tests.rs::the_listener_is_told_apart_by_what_it_runs`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_that_answers_this_builds_handshake_serves_it`
 > `crates/uze-terminal/src/runtime/tests.rs::a_server_that_cannot_answer_is_never_taken_for_one_that_can`
 > `crates/uze-terminal/src/runtime/tests.rs::an_attach_replaces_only_a_server_it_can_name`
+> `crates/uze-terminal/src/runtime/tests.rs::the_answer_to_an_attach_is_the_snapshot_or_the_reason_there_is_none`
 
 ### One workspace, one server
 

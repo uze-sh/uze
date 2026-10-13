@@ -2,28 +2,77 @@
 
 use super::*;
 
+/// What [`attach`] hands back: the connection, and the server it retired
+/// on the way in, when it retired one.
+pub struct Attached {
+    pub stream: Stream,
+    /// For the person: a retired server relaunched every agent it ran, and
+    /// a session that quietly comes back with its agents restarted is one
+    /// nobody can account for.
+    pub replaced: Option<Replaced>,
+}
+
+/// Why a server was retired on the way in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Replaced {
+    /// It read this build's handshake and could not serve it, or could not
+    /// read it at all: a server of another release.
+    AnotherProtocol,
+    /// Alive and holding the workspace, but listening nowhere this build
+    /// looks: an endpoint named by rules an older build used.
+    Unreachable,
+    /// Serving a workspace deleted under it.
+    Orphaned,
+}
+
 /// Connects to the user's one server, starting it when none answers —
 /// with its first space at `seat`, which only matters for a server that has
 /// nothing persisted yet. The caller then sends `Attach` naming the seat it
 /// wants a space for.
-pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
+pub fn attach(seat: &SpaceSeat) -> Result<Attached, RuntimeError> {
     let _span = tracing::info_span!("terminal.attach", root = %seat.root.display()).entered();
     let socket = socket_path()?;
-    // Settled before connecting, and by who is behind the socket rather than
-    // by what it would say: a server of another build is alive, so a connect
-    // succeeds, and one built to another framing may never answer an
-    // `Attach` well enough to refuse it.
-    match arrival(workspace_is_claimed(), listener_at(&socket)) {
-        // The claim says a server is alive. `connect_waiting` gives it the
-        // two seconds its endpoint watch needs to put a wiped socket back;
+    let replaced = match make_way(&socket)? {
+        Way::Serving(stream) => {
+            return Ok(Attached {
+                stream,
+                replaced: None,
+            });
+        }
+        Way::Clear(replaced) => replaced,
+    };
+    let mut started = start_server(seat)?;
+    let stream = connect_starting(&socket, &mut started)?;
+    Ok(Attached { stream, replaced })
+}
+
+/// What [`make_way`] found at the endpoint.
+pub(super) enum Way {
+    /// A server that serves this build, connected to.
+    Serving(Stream),
+    /// Nothing a server cannot be started over, and the server retired to
+    /// make it so, if one was.
+    Clear(Option<Replaced>),
+}
+
+/// Connects to the server serving this workspace, or clears the endpoint
+/// for one to be started. Settled by who is behind the socket and by what
+/// it answers, never by what it would say later: a server of another
+/// build is alive, so a connect succeeds, and one built to another framing
+/// may never answer an `Attach` well enough to refuse it.
+pub(super) fn make_way(socket: &Path) -> Result<Way, RuntimeError> {
+    match arrival(workspace_is_claimed(), listener_at(socket)) {
+        // The claim says a server is alive and nobody the process table
+        // vouches for is listening. `connect_waiting` gives it the two
+        // seconds its endpoint watch needs to put a wiped socket back;
         // past that the server is alive somewhere this build cannot reach
         // — an endpoint named by rules an older one used — and the
         // workspace is shut until it ends. Ending it is not a loss: the
         // shape of every space and pane is persisted, so the server that
         // replaces it restores them and its agents resume their own
         // conversations.
-        Arrival::Connect => match connect_waiting(&socket) {
-            Ok(stream) => return Ok(stream),
+        Arrival::Connect => match connect_waiting(socket) {
+            Ok(stream) => Ok(Way::Serving(stream)),
             Err(cause) => match claim_holder() {
                 Some(claimant) => {
                     tracing::warn!(
@@ -32,41 +81,93 @@ pub fn attach(seat: &SpaceSeat) -> Result<Stream, RuntimeError> {
                         "a server holds this workspace and answers nowhere this build looks; \
                          retiring it"
                     );
-                    retire(claimant.pid, Some(claimant.started), &socket);
+                    let retired = retire(claimant.pid, Some(claimant.started), socket);
+                    Ok(Way::Clear(retired.then_some(Replaced::Unreachable)))
                 }
-                None => return Err(unreachable(&socket, Some(cause))),
+                None => Err(unreachable(socket, Some(cause))),
             },
         },
-        // Another image is not another protocol. A `make install` over a
+        // A live `uze` is asked, never read. A `make install` over a
         // running server is the ordinary state of this repository's own
         // development, and it leaves every later `uze` looking at a server
         // whose binary is no longer the one on disk — while that server is
-        // running somebody's agents, whose processes end with it. So it is
-        // asked rather than assumed: a server that answers this build's
-        // handshake can serve this build, whatever it was built from, and
-        // only one that cannot is retired.
+        // running somebody's agents, whose processes end with it. And the
+        // image says nothing the other way either: on macOS a binary
+        // replaced in place keeps its path, so a server of the previous
+        // release reads as this very build. A server that answers this
+        // build's handshake can serve this build, whatever it was built
+        // from, and only one that cannot is retired.
         Arrival::Ask(pid) => {
             // A server that answered a moment ago and cannot be reached
             // now is one that has just gone: taken as an unanswered
             // question rather than as an error, since the answer to that
             // is the same server started fresh.
-            if serves_this_build(&socket)
-                && let Ok(stream) = connect_waiting(&socket)
+            if serves_this_build(socket)
+                && let Ok(stream) = connect_waiting(socket)
             {
-                return Ok(stream);
+                return Ok(Way::Serving(stream));
             }
             tracing::warn!(
                 pid,
                 socket = %socket.display(),
                 "the server here does not answer this build's handshake; retiring it"
             );
-            retire(pid, None, &socket);
+            let retired = retire(pid, None, socket);
+            Ok(Way::Clear(retired.then_some(Replaced::AnotherProtocol)))
         }
-        Arrival::Replace(pid) => retire(pid, None, &socket),
-        Arrival::Start => {}
+        Arrival::Replace(pid) => {
+            let retired = retire(pid, None, socket);
+            Ok(Way::Clear(retired.then_some(Replaced::Orphaned)))
+        }
+        Arrival::Start => Ok(Way::Clear(None)),
     }
-    let mut started = start_server(seat)?;
-    connect_starting(&socket, &mut started)
+}
+
+/// The server's answer to the `Attach` a client has just sent, read before
+/// the client sends anything else: every event up to and including the
+/// snapshot that says it was taken on, for the client's own reader to
+/// absorb. A server that turns the client away says why and hangs up, and
+/// read first that reason is the error — never the broken pipe the next
+/// request would have met, which was all a server of the previous release
+/// used to be reported as.
+pub fn answer_to_attach<R: Read>(reader: &mut R) -> Result<Vec<ClientEvent>, RuntimeError> {
+    let mut said = Vec::new();
+    loop {
+        match read_event(reader) {
+            Ok(Some(event @ ClientEvent::Snapshot { .. })) => {
+                said.push(event);
+                return Ok(said);
+            }
+            Ok(Some(event)) => said.push(event),
+            Ok(None) => return Err(turned_away(&said)),
+            Err(RuntimeError::Io(error)) if hung_up(&error) => return Err(turned_away(&said)),
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// What a server that hung up before its snapshot said about it, or that
+/// it said nothing.
+fn turned_away(said: &[ClientEvent]) -> RuntimeError {
+    let reason = said.iter().rev().find_map(|event| match event {
+        ClientEvent::Error { message } | ClientEvent::Refused { message } => Some(message.clone()),
+        _ => None,
+    });
+    RuntimeError::Protocol(
+        reason.unwrap_or_else(|| "the server hung up before describing the workspace".into()),
+    )
+}
+
+/// A peer that closed its end, as each platform reports it: the end of
+/// the stream, or the reset a close with bytes still unread sends.
+fn hung_up(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::BrokenPipe
+    )
 }
 
 /// How long the server at the endpoint has to answer whether it can serve
@@ -178,17 +279,18 @@ pub(super) enum Arrival {
 /// answer to give, and only after the server has failed to give it.
 pub(super) fn arrival(claimed: bool, listener: Listener) -> Arrival {
     match (claimed, listener) {
-        // Alive, serving this workspace, and built from another image.
-        // Which of those matters is settled by asking it, never by the
-        // image: retiring a live server costs every agent it runs its
-        // process, and the image is no evidence that it had to be paid.
-        (true, Listener::AnotherBuild(pid)) => Arrival::Ask(pid),
-        (true, _) => Arrival::Connect,
+        // Alive and serving this workspace. Whether it can serve this build
+        // is settled by asking it, never by the image it was started from:
+        // retiring a live server costs every agent it runs its process,
+        // and the image is no evidence that it had to be paid — nor, kept
+        // under a replaced binary, that it need not be.
+        (true, Listener::Uze(pid)) => Arrival::Ask(pid),
+        (true, Listener::Nobody | Listener::Unrecognized) => Arrival::Connect,
         // A server claims the workspace before it binds, so a `uze`
         // listening with the claim free is serving a workspace deleted
         // under it — `$UZE_HOME` removed while it ran. Attaching to it would
         // show spaces from a world that no longer exists.
-        (false, Listener::ThisBuild(pid) | Listener::AnotherBuild(pid)) => Arrival::Replace(pid),
+        (false, Listener::Uze(pid)) => Arrival::Replace(pid),
         (false, Listener::Nobody | Listener::Unrecognized) => Arrival::Start,
     }
 }
@@ -197,13 +299,14 @@ pub(super) fn arrival(claimed: bool, listener: Listener) -> Arrival {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Listener {
     Nobody,
-    /// This very executable, and so compiled with this `PROTOCOL_VERSION`.
-    ThisBuild(u32),
-    /// A `uze` running another image — a `make install` over a running
-    /// server, which also leaves the image it was started from reading as
-    /// deleted. Which protocol it speaks is a separate question, and the
-    /// only one that decides anything: see [`serves_this_build`].
-    AnotherBuild(u32),
+    /// A `uze`, whatever image it was started from. Which protocol it
+    /// speaks is a separate question, and the only one that decides
+    /// anything: see [`serves_this_build`]. The image used to answer it
+    /// — "this very executable, and so this `PROTOCOL_VERSION`" — and on
+    /// macOS a binary replaced in place keeps its path, so a server of
+    /// the previous release passed for this build and was connected to
+    /// without the question, to be hung up on.
+    Uze(u32),
     /// A process the process table cannot vouch for as `uze`: another
     /// program, or a platform that cannot say.
     Unrecognized,
@@ -214,10 +317,8 @@ pub(super) fn listener_at(socket: &Path) -> Listener {
 }
 
 pub(super) fn identify(pid: u32) -> Listener {
-    if runs_this_executable(pid) {
-        Listener::ThisBuild(pid)
-    } else if runs_uze(pid) {
-        Listener::AnotherBuild(pid)
+    if runs_uze(pid) {
+        Listener::Uze(pid)
     } else {
         Listener::Unrecognized
     }

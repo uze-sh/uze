@@ -44,9 +44,9 @@ use uze_extensions::{
 };
 use uze_keys::{Action, Chord, Key};
 use uze_terminal::{
-    CellAttributes, ClientEvent, ClientRequest, Cursor, PROTOCOL_VERSION, PaneDamage, PaneId,
-    PaneSnapshot, RenderCell, Session, Space, SpaceId, Tab, TabId, TerminalColor, attach,
-    read_event, send_request,
+    Attached, CellAttributes, ClientEvent, ClientRequest, Cursor, PROTOCOL_VERSION, PaneDamage,
+    PaneId, PaneSnapshot, RenderCell, Replaced, Session, Space, SpaceId, Tab, TabId, TerminalColor,
+    answer_to_attach, attach, read_event, send_request,
 };
 
 mod gestures;
@@ -450,8 +450,11 @@ pub(crate) fn attach_workspace(
     let seat = uze_terminal::SpaceSeat {
         root: uze_application::space_root(&launch.root),
     };
-    let mut stream = attach(&seat).map_err(runtime_error)?;
-    let read_stream = stream.try_clone().map_err(io_error)?;
+    let Attached {
+        mut stream,
+        replaced,
+    } = attach(&seat).map_err(runtime_error)?;
+    let mut reader = BufReader::new(stream.try_clone().map_err(io_error)?);
     send_request(
         &mut stream,
         &ClientRequest::Attach {
@@ -466,6 +469,10 @@ pub(crate) fn attach_workspace(
         },
     )
     .map_err(runtime_error)?;
+    // Read before anything else is sent: a server that turns this client
+    // away says why and hangs up, and the reason is what the person reads,
+    // never the broken pipe the palette below would have met.
+    let taken_on = answer_to_attach(&mut reader).map_err(runtime_error)?;
     // The server owns what a pane's program is told when it asks the
     // terminal what colours it is drawn in, but not what those colours are —
     // this client does. Sent on every attach, because the server outlives
@@ -474,10 +481,12 @@ pub(crate) fn attach_workspace(
     send_request(&mut stream, &ClientRequest::SetPalette(active_palette()))
         .map_err(runtime_error)?;
     let (events, receiver) = mpsc::channel();
+    for event in taken_on {
+        let _ = events.send(event);
+    }
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _span = tracing::debug_span!(parent: &parent, "tui.terminal_events").entered();
-        let mut reader = BufReader::new(read_stream);
         while let Ok(Some(event)) = read_event(&mut reader) {
             if events.send(event).is_err() {
                 break;
@@ -537,6 +546,14 @@ pub(crate) fn attach_workspace(
         remembered: std::mem::take(&mut memory.remembered),
         ..WorkspaceModel::default()
     };
+    if let Some(replaced) = replaced {
+        model.raise_toast(
+            ToastKind::Told,
+            "terminal runtime replaced",
+            replaced_detail(replaced),
+            None,
+        );
+    }
     // A registered harness set doesn't change mid-session, so this is built
     // once per attach.
     let identities = agent_identities(home);
@@ -2284,6 +2301,17 @@ fn io_error(source: io::Error) -> UzeError {
 }
 fn runtime_error(error: uze_terminal::RuntimeError) -> UzeError {
     UzeError::TerminalRuntime(error.to_string())
+}
+
+/// What retiring a server on the way in cost, said once and within a
+/// toast's one line: the tabs came back from the persisted workspace, and
+/// every agent in them was relaunched rather than kept.
+fn replaced_detail(replaced: Replaced) -> &'static str {
+    match replaced {
+        Replaced::AnotherProtocol => "another release's server ended; agents restarted",
+        Replaced::Unreachable => "an unreachable server ended; agents restarted",
+        Replaced::Orphaned => "a server of a deleted workspace ended",
+    }
 }
 
 #[cfg(test)]
