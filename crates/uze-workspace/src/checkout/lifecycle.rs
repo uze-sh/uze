@@ -546,20 +546,7 @@ fn shelve_and_reset(
     }
     // By the target's name, which Git resolves in the same process; a
     // target this clone cannot resolve leaves the slot where it stands.
-    let detached = [target, "HEAD"].iter().any(|stand_at| {
-        git(
-            directory,
-            &[
-                "switch",
-                "--quiet",
-                "--detach",
-                "--discard-changes",
-                "--",
-                stand_at,
-            ],
-        )
-        .is_ok()
-    });
+    let detached = detach(directory, target).is_ok() || detach(directory, "HEAD").is_ok();
     if !detached || git(directory, &["clean", "--quiet", "-fd"]).is_err() {
         if let shelf::Shelving::Kept(kept) = &shelving {
             take_back(primary, task, kept);
@@ -573,6 +560,22 @@ fn shelve_and_reset(
     let _ = record::write(primary, directory, &CheckoutRecord::made_at(directory));
     stamp(directory);
     Released::Freed { shelved }
+}
+
+/// Detaches `directory` at `commit`, discarding what the tree holds.
+fn detach(directory: &Path, commit: &str) -> Result<(), AcquireError> {
+    git(
+        directory,
+        &[
+            "switch",
+            "--quiet",
+            "--detach",
+            "--discard-changes",
+            "--",
+            commit,
+        ],
+    )
+    .map(|_| ())
 }
 
 /// Takes a shelf back after the checkout turned out not to be resettable:
