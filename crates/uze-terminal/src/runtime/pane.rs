@@ -1,6 +1,7 @@
 //! A pane: the pseudoterminal, the terminal emulator over it, and the snapshots and damage drawn from it.
 
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(super) struct PaneRuntime {
     pub(super) id: PaneId,
@@ -31,7 +32,7 @@ pub(super) struct PaneRuntime {
     pub(super) selection: Arc<Mutex<PaneSelection>>,
     /// Whether the program asked to be told when the colours change (DEC
     /// mode 2031), kept current by the thread reading its output.
-    pub(super) scheme_notifications: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) scheme_notifications: Arc<AtomicBool>,
 }
 
 /// Closing a pseudoterminal's master can wait: ConPTY's
@@ -149,18 +150,18 @@ fn read_output(
     mut reader: Box<dyn std::io::Read + Send>,
     terminal: Arc<Mutex<Term<ReplySink>>>,
     selection: Arc<Mutex<PaneSelection>>,
-    scheme_notifications: Arc<std::sync::atomic::AtomicBool>,
+    scheme_notifications: Arc<AtomicBool>,
     damage: mpsc::Sender<PaneId>,
 ) {
     thread::spawn(move || {
         let mut parser: Processor = Processor::new();
-        let mut subscription = SchemeSubscription::new();
+        let mut subscription = SchemeSubscription::new(scheme_notifications);
         let mut buffer = [0; 8192];
         loop {
             match std::io::Read::read(&mut reader, &mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => {
-                    subscription.observe(&buffer[..read], &scheme_notifications);
+                    subscription.observe(&buffer[..read]);
                     let mut terminal = terminal.lock().expect("terminal poisoned");
                     parser.advance(&mut *terminal, &buffer[..read]);
                     selection
@@ -236,7 +237,7 @@ impl PaneRuntime {
             ReplySink::new(reply_sender, palette),
         )));
         let selection = Arc::new(Mutex::new(PaneSelection::default()));
-        let scheme_notifications = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let scheme_notifications = Arc::new(AtomicBool::new(false));
         read_output(
             id,
             reader,
@@ -264,10 +265,7 @@ impl PaneRuntime {
     /// Tells the program the terminal's colours changed, if it asked to be
     /// told; one that did asks its colours again and redraws.
     pub(super) fn notify_scheme(&self, scheme: Scheme) {
-        if self
-            .scheme_notifications
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.scheme_notifications.load(Ordering::Relaxed) {
             self.write(scheme.notification());
         }
     }

@@ -5,8 +5,8 @@ use alacritty_terminal::vte::ansi::{Handler, PrivateMode};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The DEC private mode a program sets to be told when the terminal's
-/// colours change (`CSI ? 2031 h`). Claude Code and OpenCode set it, then
-/// ask their colours again (OSC 10/11) on each notification.
+/// colours change (`CSI ? 2031 h`). A program following the terminal's
+/// scheme sets it, then asks its colours again (OSC 10/11) on each report.
 const COLOR_SCHEME_NOTIFICATIONS: u16 = 2031;
 
 impl Scheme {
@@ -20,14 +20,15 @@ impl Scheme {
     }
 }
 
-/// Watches a pane's output for the mode being set and reset, beside the
-/// emulator rather than through it: alacritty drops a private mode it does
-/// not know without a word, and its handler is seventy methods to forward
-/// for the two this needs. Parsing the output twice costs less than the
-/// emulator's own pass over it.
+/// Watches a pane's output for the mode being set and reset, and keeps the
+/// pane's shared flag current. Beside the emulator rather than through it:
+/// alacritty drops a private mode it does not know without a word, and its
+/// handler is seventy methods to forward for the two this needs, so the
+/// output is parsed a second time by a handler that knows only these two.
 pub(super) struct SchemeSubscription {
     parser: Processor,
     wanted: Wanted,
+    subscribed: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -48,18 +49,20 @@ impl Handler for Wanted {
 }
 
 impl SchemeSubscription {
-    pub(super) fn new() -> Self {
+    /// Keeps `subscribed` saying whether the program currently asks to be
+    /// told; the pane reads it when a palette changes.
+    pub(super) fn new(subscribed: Arc<AtomicBool>) -> Self {
         Self {
             parser: Processor::new(),
             wanted: Wanted::default(),
+            subscribed,
         }
     }
 
-    /// Reads one chunk of the pane's output and records into `subscribed`
-    /// whether the program currently asks to be told.
-    pub(super) fn observe(&mut self, output: &[u8], subscribed: &AtomicBool) {
+    /// Reads one chunk of the pane's output.
+    pub(super) fn observe(&mut self, output: &[u8]) {
         self.parser.advance(&mut self.wanted, output);
-        subscribed.store(self.wanted.0, Ordering::Relaxed);
+        self.subscribed.store(self.wanted.0, Ordering::Relaxed);
     }
 }
 
@@ -69,18 +72,18 @@ mod tests {
 
     #[test]
     fn a_program_is_subscribed_between_setting_and_resetting_the_mode() {
-        let subscribed = AtomicBool::new(false);
-        let mut subscription = SchemeSubscription::new();
-        subscription.observe(b"hello \x1b[?2004h", &subscribed);
+        let subscribed = Arc::new(AtomicBool::new(false));
+        let mut subscription = SchemeSubscription::new(Arc::clone(&subscribed));
+        subscription.observe(b"hello \x1b[?2004h");
         assert!(
             !subscribed.load(Ordering::Relaxed),
             "another mode is not this one"
         );
         // Split across two reads, as a PTY may hand it over.
-        subscription.observe(b"\x1b[?20", &subscribed);
-        subscription.observe(b"31h", &subscribed);
+        subscription.observe(b"\x1b[?20");
+        subscription.observe(b"31h");
         assert!(subscribed.load(Ordering::Relaxed));
-        subscription.observe(b"\x1b[?1000;2031l", &subscribed);
+        subscription.observe(b"\x1b[?1000;2031l");
         assert!(
             !subscribed.load(Ordering::Relaxed),
             "reset among other modes"
