@@ -453,7 +453,7 @@ pub(crate) fn attach_workspace(
     let Attached {
         mut stream,
         replaced,
-    } = attach(&seat).map_err(runtime_error)?;
+    } = attach(&seat, &active_palette()).map_err(runtime_error)?;
     let mut reader = BufReader::new(stream.try_clone().map_err(io_error)?);
     send_request(
         &mut stream,

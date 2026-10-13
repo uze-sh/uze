@@ -388,9 +388,17 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         return Err(terminal_error(refused));
     }
     if let Command::Terminal {
-        action: TerminalAction::Serve { root },
+        action: TerminalAction::Serve { root, palette },
     } = command
     {
+        let palette = match palette {
+            Some(spelling) => uze_terminal::Palette::from_spelling(&spelling).ok_or_else(|| {
+                terminal_error(uze_terminal::RuntimeError::Protocol(format!(
+                    "`--palette {spelling}` is not a palette this build wrote"
+                )))
+            })?,
+            None => uze_terminal::Palette::default(),
+        };
         // Every pane starts with the workspace's shims first on `PATH`: an
         // agent launched from the menu is started through its shim by path,
         // and this is what keeps one typed into a pane, or started by
@@ -402,7 +410,8 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         if let Ok(executable) = std::env::current_exe() {
             uze_terminal::host_panes_with(executable);
         }
-        return uze_terminal::serve(uze_terminal::SpaceSeat { root }).map_err(terminal_error);
+        return uze_terminal::serve(uze_terminal::SpaceSeat { root }, palette)
+            .map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command
     // that started it has no business seeding plugins on the way.

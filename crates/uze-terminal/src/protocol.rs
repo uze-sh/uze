@@ -53,6 +53,48 @@ impl Default for Palette {
     }
 }
 
+impl Palette {
+    /// The palette as one command-line argument: eighteen `rrggbb` colours,
+    /// foreground and background first, then the sixteen by index — the
+    /// shape the client starting a server hands it, so the programs the
+    /// server relaunches before any client attaches already hear the
+    /// colours that client draws with.
+    pub fn spelling(&self) -> String {
+        std::iter::once(self.foreground)
+            .chain(std::iter::once(self.background))
+            .chain(self.ansi)
+            .map(|(r, g, b)| format!("{r:02x}{g:02x}{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// The palette [`Palette::spelling`] wrote, or `None` for anything
+    /// else: a spelling is never repaired, since one that is off is one
+    /// no client of this build wrote.
+    pub fn from_spelling(spelling: &str) -> Option<Self> {
+        let colours = spelling
+            .split(',')
+            .map(parse_rrggbb)
+            .collect::<Option<Vec<_>>>()?;
+        let [foreground, background, ansi @ ..] = colours.as_slice() else {
+            return None;
+        };
+        Some(Self {
+            foreground: *foreground,
+            background: *background,
+            ansi: ansi.try_into().ok()?,
+        })
+    }
+}
+
+fn parse_rrggbb(colour: &str) -> Option<(u8, u8, u8)> {
+    if colour.len() != 6 {
+        return None;
+    }
+    let channel = |at: usize| u8::from_str_radix(&colour[at..at + 2], 16).ok();
+    Some((channel(0)?, channel(2)?, channel(4)?))
+}
+
 /// Where an attaching client lands, and whether saying so may bring a
 /// space into being.
 ///
@@ -86,7 +128,10 @@ pub enum ClientRequest {
     /// not the appearance, so the client tells it; sent on attach and again
     /// whenever the client changes theme, since the server outlives any one
     /// client and must not keep answering with a palette nobody is drawing
-    /// any more.
+    /// any more. A server this client starts is handed the palette on its
+    /// command line as well ([`Palette::spelling`]): it relaunches every
+    /// persisted program before the endpoint is even bound, and one that
+    /// asks in its first instants must not be told a palette nobody draws.
     SetPalette(Palette),
     Attach {
         version: u16,
@@ -421,6 +466,32 @@ pub struct CellAttributes {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_palette_survives_its_command_line_spelling() {
+        let palette = super::Palette {
+            foreground: (0x1c, 0x1c, 0x1e),
+            background: (0xff, 0xff, 0xff),
+            ..super::Palette::default()
+        };
+        let spelling = palette.spelling();
+        assert!(spelling.starts_with("1c1c1e,ffffff,"), "{spelling}");
+        assert_eq!(super::Palette::from_spelling(&spelling), Some(palette));
+    }
+
+    #[test]
+    fn a_spelling_no_client_wrote_is_refused_rather_than_repaired() {
+        for spelling in ["", "1c1c1e,ffffff", "1c1c1e;ffffff", "#1c1c1e,ffffff", "zz"] {
+            assert_eq!(
+                super::Palette::from_spelling(spelling),
+                None,
+                "{spelling:?} was taken for a palette"
+            );
+        }
+        let seventeen = super::Palette::default().spelling();
+        let seventeen = &seventeen[..seventeen.rfind(',').unwrap()];
+        assert_eq!(super::Palette::from_spelling(seventeen), None);
+    }
+
     use super::*;
 
     #[test]

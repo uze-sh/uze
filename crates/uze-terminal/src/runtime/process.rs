@@ -65,9 +65,15 @@ pub(super) fn which_uze() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-pub(super) fn start_server(seat: &SpaceSeat) -> Result<std::process::Child, RuntimeError> {
-    let detached =
-        uze_platform::process::spawn_detached(&mut server_command(&server_executable()?, seat))?;
+pub(super) fn start_server(
+    seat: &SpaceSeat,
+    palette: &Palette,
+) -> Result<std::process::Child, RuntimeError> {
+    let detached = uze_platform::process::spawn_detached(&mut server_command(
+        &server_executable()?,
+        seat,
+        palette,
+    ))?;
     if !detached.outlives_host {
         tracing::warn!(
             "this terminal does not let processes leave it; the uze server will end when it closes"
@@ -76,11 +82,20 @@ pub(super) fn start_server(seat: &SpaceSeat) -> Result<std::process::Child, Runt
     Ok(detached.child)
 }
 
-pub(super) fn server_command(executable: &Path, seat: &SpaceSeat) -> std::process::Command {
+pub(super) fn server_command(
+    executable: &Path,
+    seat: &SpaceSeat,
+    palette: &Palette,
+) -> std::process::Command {
     let mut command = std::process::Command::new(executable);
     command
         .args(["terminal", "serve", "--root"])
         .arg(&seat.root)
+        // Told at the start and not only on attach: the server relaunches
+        // every persisted program before it binds, and a program asking
+        // for its colours then would otherwise hear the built-in default.
+        .arg("--palette")
+        .arg(palette.spelling())
         // The first `uze` usually runs inside an agent's checkout, and a
         // server left working there for its whole life would hold that
         // checkout in use long after the agent ended.

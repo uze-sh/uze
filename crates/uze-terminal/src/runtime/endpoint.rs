@@ -27,9 +27,10 @@ pub enum Replaced {
 
 /// Connects to the user's one server, starting it when none answers —
 /// with its first space at `seat`, which only matters for a server that has
-/// nothing persisted yet. The caller then sends `Attach` naming the seat it
-/// wants a space for.
-pub fn attach(seat: &SpaceSeat) -> Result<Attached, RuntimeError> {
+/// nothing persisted yet, and answering its programs' colour queries with
+/// `palette` until a client says otherwise. The caller then sends `Attach`
+/// naming the seat it wants a space for.
+pub fn attach(seat: &SpaceSeat, palette: &Palette) -> Result<Attached, RuntimeError> {
     let _span = tracing::info_span!("terminal.attach", root = %seat.root.display()).entered();
     let socket = socket_path()?;
     let replaced = match make_way(&socket)? {
@@ -41,7 +42,7 @@ pub fn attach(seat: &SpaceSeat) -> Result<Attached, RuntimeError> {
         }
         Way::Clear(replaced) => replaced,
     };
-    let mut started = start_server(seat)?;
+    let mut started = start_server(seat, palette)?;
     let stream = connect_starting(&socket, &mut started)?;
     Ok(Attached { stream, replaced })
 }
@@ -480,8 +481,9 @@ pub(super) fn path_with_first(
 }
 
 /// Serves the user's one workspace. `seat` is the first space when nothing
-/// is persisted yet, and is otherwise ignored.
-pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
+/// is persisted yet, and is otherwise ignored; `palette` is what a pane's
+/// program is told its colours are until a client attaches and says.
+pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
     let _span = tracing::info_span!("terminal.serve", root = %seat.root.display()).entered();
     let socket = socket_path()?;
     // The workspace is claimed before the endpoint is: `Server::new` takes
@@ -491,7 +493,7 @@ pub fn serve(seat: SpaceSeat) -> Result<(), RuntimeError> {
     // leftover or a server of a workspace deleted under it, and is
     // reclaimed; and a socket that later stops being the one bound here is
     // something [`spawn_endpoint_watch`] reclaims rather than a peer's.
-    let (server, damage) = Server::new(seat, socket.clone())?;
+    let (server, damage) = Server::new(seat, palette, socket.clone())?;
     let state = Arc::new(server);
     let listener = bind_endpoint(&socket)?;
     spawn_damage_broadcaster(Arc::clone(&state), damage);

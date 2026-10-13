@@ -89,6 +89,7 @@ pub(super) struct Server {
 impl Server {
     pub(super) fn new(
         seat: SpaceSeat,
+        palette: Palette,
         socket: PathBuf,
     ) -> Result<(Self, mpsc::Receiver<PaneId>), RuntimeError> {
         // Taken before anything is read: restoring a workspace a live
@@ -122,7 +123,7 @@ impl Server {
             workspace: workspace_lock,
             persisting: Mutex::new(None),
             damage,
-            palette: Arc::new(Mutex::new(Palette::default())),
+            palette: Arc::new(Mutex::new(palette)),
             set_aside: Mutex::new(set_aside),
             key,
             unattached: std::sync::atomic::AtomicUsize::new(0),

@@ -377,6 +377,10 @@ pub(crate) enum TerminalAction {
     Serve {
         #[arg(long)]
         root: PathBuf,
+        /// The colours a pane's program is told until a client attaches,
+        /// as the client starting this server draws them
+        #[arg(long)]
+        palette: Option<String>,
     },
     /// A pane's program, run inside its group; started only by the server
     HostPane {

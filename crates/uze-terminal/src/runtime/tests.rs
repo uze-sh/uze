@@ -894,7 +894,12 @@ fn only_asking_to_open_a_space_may_create_one() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let server = Arc::new(server);
 
     let attach = |seating: crate::Seating| {
@@ -976,7 +981,12 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let server = Arc::new(server);
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
@@ -1130,7 +1140,12 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let server = Arc::new(server);
 
     let (client, driver) = super::transport::pair().unwrap();
@@ -1276,7 +1291,12 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
-    let (server, damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let pane = server
         .session
         .lock()
@@ -1303,10 +1323,55 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
     );
 }
 
+/// The server relaunches every persisted program before any client can
+/// attach, and a program asking for its colours in its first instants
+/// (Codex's OSC 11 probe) used to be told the built-in dark default while
+/// the client about to attach drew in light. So the client starting a
+/// server hands it the palette on the command line, and the server answers
+/// with it from its first pane.
+#[test]
+fn a_server_answers_with_the_palette_it_was_started_with() {
+    let light = Palette {
+        foreground: (0x1c, 0x1c, 0x1e),
+        background: (0xff, 0xff, 0xff),
+        ..Palette::default()
+    };
+    let command =
+        super::server_command(Path::new("/usr/bin/uze"), &seat_at(Path::new("/p")), &light);
+    let arguments: Vec<_> = command.get_args().collect();
+    let spelled = arguments
+        .windows(2)
+        .find(|pair| pair[0] == "--palette")
+        .map(|pair| pair[1].to_string_lossy().into_owned());
+    assert_eq!(
+        spelled.as_deref().and_then(Palette::from_spelling),
+        Some(light),
+        "the palette the client draws with was not handed to the server: {arguments:?}"
+    );
+
+    let scratch = uze_testkit::temp::socket_scratch("palette-at-start");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+    let (server, _damage) = Server::new(seat_at(&project), light, socket_path().unwrap()).unwrap();
+    assert_eq!(*server.palette.lock().unwrap(), light);
+    server.shut_down();
+}
+
 #[test]
 fn the_server_works_in_no_checkout() {
     let project = Path::new("/project");
-    let command = super::server_command(Path::new("/usr/bin/uze"), &seat_at(project));
+    let command = super::server_command(
+        Path::new("/usr/bin/uze"),
+        &seat_at(project),
+        &Palette::default(),
+    );
     assert_ne!(command.get_current_dir(), Some(project));
     assert_eq!(
         command.get_current_dir(),
@@ -1334,7 +1399,12 @@ fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let server = Arc::new(server);
     let pane = server
         .session
@@ -1428,7 +1498,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     let server = Arc::new(server);
     // A second space, so closing the launch space leaves a survivor
     // rather than opening a replacement.
@@ -1529,7 +1599,8 @@ fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (first, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
+    let (first, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket.clone()).unwrap();
     let agent_pane = first
         .session
         .lock()
@@ -1555,7 +1626,7 @@ fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
     // lock is there to refuse.
     drop(first);
 
-    let (second, _damage2) = Server::new(seat_at(&project), socket).unwrap();
+    let (second, _damage2) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     {
         let session = second.session.lock().expect("session poisoned");
         assert_eq!(session.workspace.spaces.len(), 2, "both spaces restored");
@@ -1595,7 +1666,7 @@ fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     let pane = server
         .session
         .lock()
@@ -1666,7 +1737,8 @@ fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
     env.set("UZE_HOME", &uze_home);
 
     let socket = socket_path().unwrap();
-    let (first, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
+    let (first, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket.clone()).unwrap();
     let pane_id = first
         .session
         .lock()
@@ -1683,7 +1755,7 @@ fn a_plain_shell_tab_running_a_recognized_process_relaunches_as_that_process() {
     first.stop_panes();
     drop(first);
 
-    let (second, _damage2) = Server::new(seat_at(&project), socket).unwrap();
+    let (second, _damage2) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     {
         let session = second.session.lock().expect("session poisoned");
         let tab = session.selected_tab();
@@ -1763,7 +1835,8 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
     assert!(beside.is_empty(), "nothing was set aside: {beside:?}");
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket).expect("server");
     {
         let session = server.session.lock().expect("session poisoned");
         assert_eq!(
@@ -1794,7 +1867,8 @@ fn the_snapshot_names_a_tabs_agent_by_position() {
     env.set("UZE_HOME", &uze_home);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket).expect("server");
     {
         let mut session = server.session.lock().expect("session poisoned");
         let space = session.workspace.selected_space;
@@ -1829,7 +1903,8 @@ fn persisting_an_unchanged_workspace_writes_nothing() {
     env.set("UZE_HOME", &uze_home);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket).expect("server");
     server.persist();
     let path = persisted_state_path();
     assert!(path.exists());
@@ -1892,7 +1967,7 @@ fn a_persisted_command_that_no_longer_resolves_falls_back_to_a_plain_shell() {
     std::fs::write(&path, serde_json::to_vec(&stale).unwrap()).unwrap();
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket)
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket)
         .expect("a stale persisted command must not fail server startup");
     let session = server.session.lock().expect("session poisoned");
     let tab = session.selected_tab();
@@ -2037,7 +2112,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     let server = Arc::new(server);
     let pane = server
         .session
@@ -2126,7 +2201,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     let server = Arc::new(server);
     let pane = server
         .session
@@ -2453,7 +2528,7 @@ fn a_launch_environment_survives_a_restart() {
     std::fs::write(&path, serde_json::to_vec(&persisted).unwrap()).unwrap();
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     assert_eq!(read_when_written(&report), "agent-restarted");
     let session = server.session.lock().expect("session poisoned");
     let tab = session.selected_tab();
@@ -2481,7 +2556,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&project), Palette::default(), socket).unwrap();
     let pane = server
         .session
         .lock()
@@ -2661,15 +2736,15 @@ fn a_second_server_refuses_to_restore_a_workspace_another_one_holds() {
     );
 
     let first = ClaimHolder::spawn(&uze_home);
-    let second = Server::new(seat_at(&project), socket.clone());
+    let second = Server::new(seat_at(&project), Palette::default(), socket.clone());
     assert!(
         matches!(second, Err(RuntimeError::Protocol(_))),
         "a workspace a live server holds must not be restored a second time"
     );
 
     first.release();
-    let (third, _damage3) =
-        Server::new(seat_at(&project), socket).expect("the claim is released with its holder");
+    let (third, _damage3) = Server::new(seat_at(&project), Palette::default(), socket)
+        .expect("the claim is released with its holder");
     third.stop_panes();
 
     let _ = std::fs::remove_dir_all(&scratch);
@@ -2799,8 +2874,12 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
     let _held = match std::env::var_os(SERVING_HOLDER) {
         Some(root) => {
             let socket = socket_path().expect("the holder's endpoint");
-            let (server, _damage) =
-                Server::new(seat_at(Path::new(&root)), socket.clone()).expect("the holder serves");
+            let (server, _damage) = Server::new(
+                seat_at(Path::new(&root)),
+                Palette::default(),
+                socket.clone(),
+            )
+            .expect("the holder serves");
             let server = Arc::new(server);
             let listener = bind_endpoint(&socket).expect("the holder binds its endpoint");
             std::thread::spawn(move || {
@@ -3072,7 +3151,8 @@ fn a_first_run_reports_nothing() {
     env.set("UZE_HOME", &uze_home);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket).expect("server");
     assert!(
         server
             .set_aside
@@ -3104,7 +3184,8 @@ fn a_client_is_told_what_the_runtime_could_not_carry() {
     std::fs::write(&path, b"not a workspace at all").unwrap();
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&project), socket).expect("server");
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket).expect("server");
     let server = std::sync::Arc::new(server);
 
     // A socket pair stands in for the endpoint: what is being proven
@@ -3241,7 +3322,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
         .set("XDG_RUNTIME_DIR", &runtime_dir);
 
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(&roots[0]), socket).unwrap();
+    let (server, _damage) = Server::new(seat_at(&roots[0]), Palette::default(), socket).unwrap();
     let server = Arc::new(server);
     for root in &roots[1..] {
         server
@@ -3405,7 +3486,7 @@ fn stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to() {
     let (served, serving) = std::sync::mpsc::channel();
     let serve_root = project.clone();
     std::thread::spawn(move || {
-        let _ = served.send(super::serve(seat_at(&serve_root)));
+        let _ = served.send(super::serve(seat_at(&serve_root), Palette::default()));
     });
 
     let mut ready = false;
@@ -3533,7 +3614,8 @@ fn a_peer_the_server_refuses_is_hung_up_on() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
     let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
-    let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket.clone()).unwrap();
     let server = Arc::new(server);
     let listener = super::transport::bind(&socket).unwrap();
     let serving = thread::spawn(move || {
@@ -3588,7 +3670,8 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
     let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
-    let (server, _damage) = Server::new(seat_at(&project), socket.clone()).unwrap();
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket.clone()).unwrap();
     let server = Arc::new(server);
     let listener = super::transport::bind(&socket).unwrap();
     let serving = std::thread::spawn(move || {
@@ -3695,7 +3778,7 @@ fn a_second_client_attaches_to_a_live_server_of_another_build() {
     let super::Attached {
         mut stream,
         replaced,
-    } = super::attach(&seat_at(&project)).expect("the client attaches");
+    } = super::attach(&seat_at(&project), &Palette::default()).expect("the client attaches");
 
     assert_eq!(replaced, None, "and nothing was retired on the way in");
     assert_eq!(
@@ -4071,7 +4154,8 @@ fn attach_with(key: String) -> crate::ClientRequest {
 /// names.
 fn listening_server(project: &Path) -> (Arc<Server>, PathBuf) {
     let socket = socket_path().unwrap();
-    let (server, _damage) = Server::new(seat_at(project), socket.clone()).unwrap();
+    let (server, _damage) =
+        Server::new(seat_at(project), Palette::default(), socket.clone()).unwrap();
     let server = Arc::new(server);
     let listener = bind_endpoint(&socket).unwrap();
     let accepting = Arc::clone(&server);
@@ -4305,7 +4389,12 @@ fn the_largest_scroll_a_peer_can_send_is_survived() {
     }
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let pane = server
         .session
         .lock()
@@ -4417,7 +4506,12 @@ fn a_closed_panes_program_is_reaped_before_the_close_returns() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home)
         .set("XDG_RUNTIME_DIR", &runtime_dir);
-    let (server, _damage) = Server::new(seat_at(&project), socket_path().unwrap()).unwrap();
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = Arc::new(
         PaneRuntime::spawn(
