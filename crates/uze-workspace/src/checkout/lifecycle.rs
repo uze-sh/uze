@@ -554,6 +554,7 @@ fn shelve_and_reset(
                 "--quiet",
                 "--detach",
                 "--discard-changes",
+                "--",
                 stand_at,
             ],
         )
