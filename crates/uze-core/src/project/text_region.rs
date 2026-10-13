@@ -101,11 +101,10 @@ fn joined_text(lines: &[Line]) -> String {
         .join("\n")
 }
 
-/// Reads `path` into physical lines, each keeping its own terminator, plus
-/// the style to give lines UZE inserts: whichever the file uses most, LF on
-/// a tie. `Ok(None)` means the file does not exist yet — a legitimate,
-/// common state, not an error.
-fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
+/// Reads `path` into physical lines, each keeping its own terminator.
+/// `Ok(None)` means the file does not exist yet — a legitimate, common
+/// state, not an error.
+fn read_lines(path: &Path) -> Result<Option<Vec<Line>>> {
     if fs::symlink_metadata(path).is_ok() {
         contained_destination(holding_directory(path), path)?;
     }
@@ -121,9 +120,7 @@ fn read_lines(path: &Path) -> Result<Option<(Vec<Line>, Newline)>> {
     };
     let content =
         String::from_utf8(bytes).map_err(|_| UzeError::InvalidTextEncoding(path.to_path_buf()))?;
-    let lines = lines_of(&content);
-    let style = majority_newline(&lines);
-    Ok(Some((lines, style)))
+    Ok(Some(lines_of(&content)))
 }
 
 fn lines_of(content: &str) -> Vec<Line> {
@@ -246,6 +243,66 @@ fn blocked(reason: impl Into<String>) -> AttachmentInspection {
     }
 }
 
+/// One read of a file, asked about as many regions as the caller needs —
+/// the same answers [`inspect`], [`stale_regions`] and [`region_shape`]
+/// give, without reading the file again for each.
+pub struct RegionsRead(std::result::Result<Option<Vec<Line>>, AttachmentInspection>);
+
+impl RegionsRead {
+    pub fn of(target_file: &Path) -> Self {
+        Self(read_lines(target_file).map_err(unreadable))
+    }
+
+    /// [`inspect`] of this read.
+    pub fn inspect(&self, region_identity: &str, expected_content: &str) -> AttachmentInspection {
+        match &self.0 {
+            Ok(lines) => inspect_lines(lines.as_deref(), region_identity, expected_content),
+            Err(_) if !identity_is_valid(region_identity) => invalid_identity(region_identity),
+            Err(inspection) => inspection.clone(),
+        }
+    }
+
+    /// [`stale_regions`] of this read.
+    pub fn stale<'a>(
+        &self,
+        owns: impl Fn(&str) -> bool,
+        desired_identities: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<String> {
+        match &self.0 {
+            Ok(Some(lines)) => stale_in(lines, owns, desired_identities),
+            _ => Vec::new(),
+        }
+    }
+
+    /// [`region_shape`] of this read.
+    pub fn shape(&self, region_identity: &str) -> RegionShape {
+        if !identity_is_valid(region_identity) {
+            return RegionShape::Malformed;
+        }
+        let Ok(Some(lines)) = &self.0 else {
+            return RegionShape::Absent;
+        };
+        let (begin_marker, end_marker) = markers(region_identity);
+        match scan(lines, &begin_marker, &end_marker) {
+            Scan::Missing => RegionShape::Absent,
+            Scan::WellFormed { .. } => RegionShape::WellFormed,
+            Scan::Malformed => RegionShape::Malformed,
+        }
+    }
+}
+
+/// What a region in a file that could not be read is: a conflict when the
+/// file escapes its project, blocked otherwise.
+fn unreadable(error: UzeError) -> AttachmentInspection {
+    match error {
+        error @ UzeError::ProjectFileEscapes { .. } => AttachmentInspection {
+            state: AttachmentState::Conflict,
+            reason: error.to_string(),
+        },
+        error => blocked(error.to_string()),
+    }
+}
+
 /// Ownership state of one region, scoped to exactly that region — never the
 /// rest of the file.
 pub fn inspect(
@@ -270,16 +327,12 @@ fn read_region(
     }
     let (begin_marker, end_marker) = markers(region_identity);
     match read_lines(target_file) {
-        Ok(Some((lines, _style))) => {
+        Ok(Some(lines)) => {
             let scan = scan(&lines, &begin_marker, &end_marker);
             Ok((lines, scan))
         }
         Ok(None) => Err(target_absent()),
-        Err(error @ UzeError::ProjectFileEscapes { .. }) => Err(AttachmentInspection {
-            state: AttachmentState::Conflict,
-            reason: error.to_string(),
-        }),
-        Err(error) => Err(blocked(error.to_string())),
+        Err(error) => Err(unreadable(error)),
     }
 }
 
@@ -330,7 +383,7 @@ pub fn attach(target_file: &Path, region_identity: &str, expected_content: &str)
     if !identity_is_valid(region_identity) {
         return Err(UzeError::InvalidRegionIdentity(region_identity.to_owned()));
     }
-    let (mut lines, _style) = read_lines(target_file)?.unwrap_or((Vec::new(), Newline::Lf));
+    let mut lines = read_lines(target_file)?.unwrap_or_default();
     if attach_lines(&mut lines, target_file, region_identity, expected_content)? {
         write_lines(target_file, &lines)?;
     }
@@ -477,15 +530,7 @@ pub fn region_shape(target_file: &Path, region_identity: &str) -> RegionShape {
     if !identity_is_valid(region_identity) {
         return RegionShape::Malformed;
     }
-    let (begin_marker, end_marker) = markers(region_identity);
-    let Ok(Some((lines, _style))) = read_lines(target_file) else {
-        return RegionShape::Absent;
-    };
-    match scan(&lines, &begin_marker, &end_marker) {
-        Scan::Missing => RegionShape::Absent,
-        Scan::WellFormed { .. } => RegionShape::WellFormed,
-        Scan::Malformed => RegionShape::Malformed,
-    }
+    RegionsRead::of(target_file).shape(region_identity)
 }
 
 /// Removes a region identified by structure alone — exactly one well-formed
@@ -507,7 +552,7 @@ pub fn remove_unconditionally(
     if !identity_is_valid(region_identity) {
         return Ok(blocked(MALFORMED_MARKERS));
     }
-    let Some((mut lines, _style)) = read_lines(target_file)? else {
+    let Some(mut lines) = read_lines(target_file)? else {
         return Ok(markers_absent());
     };
     match remove_lines(&mut lines, region_identity) {
@@ -581,10 +626,7 @@ pub fn stale_regions<'a>(
     owns: impl Fn(&str) -> bool,
     desired_identities: impl IntoIterator<Item = &'a str>,
 ) -> Vec<String> {
-    let Ok(Some((lines, _style))) = read_lines(target_file) else {
-        return Vec::new();
-    };
-    stale_in(&lines, owns, desired_identities)
+    RegionsRead::of(target_file).stale(owns, desired_identities)
 }
 
 fn stale_in<'a>(
@@ -616,7 +658,7 @@ pub fn converge(
     desired: &[(String, String)],
 ) -> RegionConvergence {
     let (read, existed) = match read_lines(target_file) {
-        Ok(Some((lines, _style))) => (lines, true),
+        Ok(Some(lines)) => (lines, true),
         Ok(None) => (Vec::new(), false),
         Err(error) => return unreadable_convergence(desired, &error),
     };
@@ -750,7 +792,7 @@ fn inspect_lines(
 /// filtered malformed regions out would hide exactly the regions they must
 /// report as blocked. A missing or unreadable file yields an empty list.
 pub fn region_identities_present(target_file: &Path) -> Vec<String> {
-    let Ok(Some((lines, _style))) = read_lines(target_file) else {
+    let Ok(Some(lines)) = read_lines(target_file) else {
         return Vec::new();
     };
     identities_in(&lines)
@@ -797,12 +839,14 @@ fn authored_lines(lines: &[Line]) -> impl Iterator<Item = &str> {
 /// containing only managed regions and blank lines, reports `false`. A
 /// malformed region's lines count as content *outside* any region, since
 /// ownership of them cannot be proven — the same fail-closed default every
-/// other function in this module applies.
+/// other function in this module applies, and so does a file that exists
+/// but cannot be read as text: nothing proves it is UZE's.
 pub fn has_content_outside_managed_regions(target_file: &Path) -> bool {
-    let Ok(Some((lines, _style))) = read_lines(target_file) else {
-        return false;
-    };
-    authored_lines(&lines).next().is_some()
+    match read_lines(target_file) {
+        Ok(Some(lines)) => authored_lines(&lines).next().is_some(),
+        Ok(None) => false,
+        Err(_) => true,
+    }
 }
 
 #[cfg(test)]
@@ -813,7 +857,7 @@ mod tests {
     /// all, regardless of identity. Exercised only by the tests below; a
     /// production caller would live this check next to its own manager.
     fn any_region_present(target_file: &Path) -> bool {
-        let Ok(Some((lines, _style))) = read_lines(target_file) else {
+        let Ok(Some(lines)) = read_lines(target_file) else {
             return false;
         };
         lines
@@ -1245,6 +1289,16 @@ mod tests {
             "<!-- uze:begin dup -->\na\n<!-- uze:end dup -->\n<!-- uze:begin dup -->\nb\n<!-- uze:end dup -->\n",
         )
         .unwrap();
+        assert!(has_content_outside_managed_regions(&file));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_as_text_counts_as_someone_elses_content() {
+        let root = uze_testkit::temp::scratch("outside-unreadable");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("NOTES.md");
+        fs::write(&file, [0xff, 0xfe, b'\n']).unwrap();
         assert!(has_content_outside_managed_regions(&file));
         fs::remove_dir_all(root).unwrap();
     }

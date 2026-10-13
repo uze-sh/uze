@@ -2,7 +2,7 @@
 //! `claude mcp <verb>` CLI surface, plus `~/.claude.json`'s `mcpServers`
 //! read path used for read-only inspection.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use uze_core::{
     Result,
@@ -52,6 +52,11 @@ impl ClaudeIntegration {
 }
 
 /// Registers the server at user scope (`--scope user`), where every future
+/// `~/.claude.json`, where `claude mcp add --scope user` records a server.
+pub(super) fn user_config_path(command_home: &Path) -> PathBuf {
+    command_home.join(".claude.json")
+}
+
 /// session in any project reads it. A name Claude already knows, in any
 /// scope, is claimed only when it is exactly the planned user-scope entry.
 pub(super) fn attach_mcp_entry(
@@ -62,7 +67,7 @@ pub(super) fn attach_mcp_entry(
     args: &[String],
 ) -> Result<()> {
     if cli_exists(executable, command_home, entry_name) {
-        let config = command_home.join(".claude.json");
+        let config = user_config_path(command_home);
         return claim_existing(
             inspect_claude_mcp(&config, &McpEntry::planned(entry_name, command, args)),
             &config,

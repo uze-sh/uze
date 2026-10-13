@@ -396,3 +396,57 @@ fn an_unfinished_agents_subagent_comes_back_with_it_and_is_joined() {
     );
     assert!(resumed.cwd.join("parser.rs").is_file());
 }
+
+/// A subagent still in use when its agent ended is released on a later
+/// pass, and judged then against its agent's branch, which carries the
+/// commit it was cut from — never against the project's target, which
+/// would read that commit as work of its own left unfinished.
+#[test]
+fn a_subagent_released_after_its_agent_is_judged_against_its_agents_branch() {
+    let world = World::new("work-late-child");
+    let agent = world.agent();
+    world.commit(&agent.1, "plan.md", "the plan\n");
+    let child = world.split(&agent, "parser").unwrap();
+    let workspace = world.app.workspace();
+
+    workspace.release_abandoned_tasks(world.root(), std::slice::from_ref(&child.path), &[]);
+    workspace.release_abandoned_tasks(world.root(), &[], &[]);
+
+    let primary = worktree::primary_checkout(world.root()).unwrap();
+    let store = task::load(&world.app.home, &primary).unwrap();
+    let child = store
+        .agents
+        .iter()
+        .find(|recorded| recorded.parent.is_some())
+        .unwrap();
+    assert_eq!(child.state, WorkState::Closed);
+}
+
+/// Splits of one topic asked at once make one subagent: each is told the
+/// same checkout, and the agent has one child on that topic.
+#[test]
+fn concurrent_splits_of_one_topic_make_one_subagent() {
+    let world = World::new("work-split-race");
+    let agent = world.agent();
+
+    let paths: std::collections::BTreeSet<PathBuf> = std::thread::scope(|scope| {
+        let splits: Vec<_> = (0..4)
+            .map(|_| scope.spawn(|| world.split(&agent, "parser").unwrap().path))
+            .collect();
+        splits
+            .into_iter()
+            .map(|split| split.join().unwrap())
+            .collect()
+    });
+
+    assert_eq!(paths.len(), 1, "{paths:?}");
+    assert_eq!(
+        world
+            .app
+            .workspace()
+            .list_work(claim(&agent))
+            .unwrap()
+            .len(),
+        1
+    );
+}

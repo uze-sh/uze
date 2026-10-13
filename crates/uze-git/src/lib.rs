@@ -442,26 +442,27 @@ fn run_within(mut command: Command, limit: Duration) -> Result<Output, SpawnErro
     let stderr = drain(child.stderr.take());
     let deadline = Instant::now() + limit;
     let mut pause = Duration::from_millis(5);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(pause);
-                pause = (pause * 2).min(Duration::from_millis(100));
-            }
-            outcome => {
-                tree.end();
-                let _ = child.wait();
-                return Err(match outcome {
-                    Err(error) => describe_spawn_failure(error),
-                    Ok(_) => SpawnError(format!(
-                        "git did not finish within {}s and was stopped",
-                        limit.as_secs()
-                    )),
-                });
-            }
-        }
+    // Git is left unreaped until its pipes close too: a descendant still
+    // holding one would hang the read past the limit, and ending the tree
+    // is only safe while Git's pid is still its own.
+    let finished = || {
+        uze_platform::process::has_exited(child.id())
+            && stdout.is_finished()
+            && stderr.is_finished()
     };
+    while !finished() {
+        if Instant::now() >= deadline {
+            tree.end();
+            let _ = child.wait();
+            return Err(SpawnError(format!(
+                "git did not finish within {}s and was stopped",
+                limit.as_secs()
+            )));
+        }
+        std::thread::sleep(pause);
+        pause = (pause * 2).min(Duration::from_millis(100));
+    }
+    let status = child.wait().map_err(describe_spawn_failure)?;
     span.record("exit", status.code().unwrap_or(-1));
     Ok(Output {
         code: status.code(),
@@ -657,6 +658,25 @@ mod tests {
         assert!(
             outcome.is_err_and(|error| error.0.contains("did not finish")),
             "a stalled remote is reported, not waited on"
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    /// A command that ends while something it started still holds its
+    /// output is not waited on past the limit either. Drives POSIX
+    /// programs (`sh`, `sleep`) as stand-ins.
+    #[cfg(unix)]
+    #[test]
+    fn a_descendant_holding_the_output_is_not_waited_on_past_the_limit() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & exit 0"]);
+        let started = Instant::now();
+
+        let outcome = run_within(command, Duration::from_millis(200));
+
+        assert!(
+            outcome.is_err_and(|error| error.0.contains("did not finish")),
+            "an output held open is reported, not read forever"
         );
         assert!(started.elapsed() < Duration::from_secs(10));
     }
@@ -1166,7 +1186,7 @@ mod tests {
     /// Holds the lock until killed; the process side of the test below.
     /// Ignored so it never runs on its own.
     #[test]
-    #[ignore]
+    #[ignore = "the process side of a lock test, run only when it spawns it"]
     fn hold_the_lock_until_killed() {
         let Some(root) = std::env::var_os("UZE_GIT_LOCK_HOLD") else {
             return;

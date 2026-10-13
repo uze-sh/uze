@@ -49,7 +49,7 @@ pub fn ensure(home: &UzeHome, project_root: &Path) -> Result<PathBuf> {
     let fresh = !directory.is_dir();
     create_private(&directory)?;
     if fresh {
-        carry_across_the_move(home, &id, &directory);
+        carry_across_the_move(home, &id);
     }
     let marker = home.project_marker_path(&id);
     let recorded = match uze_document::read::<ProjectMarker>(&marker) {
@@ -76,7 +76,7 @@ pub fn roots(home: &UzeHome) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = entries
         .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
-            let marker = entry.path().join("project.json");
+            let marker = home.project_marker_path(entry.file_name().to_str()?);
             uze_document::read::<ProjectMarker>(&marker)
                 .ok()?
                 .record()
@@ -120,21 +120,12 @@ pub fn forget(home: &UzeHome, project_root: &Path) -> Result<()> {
 /// where they were for the operator to find. Runs once — only when the
 /// project directory is being created — and is removable once no machine
 /// can still be on the previous layout.
-fn carry_across_the_move(home: &UzeHome, id: &str, directory: &Path) {
-    let state = home.state_dir();
-    let carried: [(PathBuf, PathBuf); 3] = [
-        (
-            state.join("tasks").join(format!("{id}.json")),
-            directory.join("agents.json"),
-        ),
-        (
-            state.join("conversations").join(id),
-            directory.join("conversations"),
-        ),
-        (
-            state.join("prompt-history").join(format!("{id}.json")),
-            directory.join("prompt-history.json"),
-        ),
+fn carry_across_the_move(home: &UzeHome, id: &str) {
+    let scattered = home.scattered_project_records(id);
+    let carried = [
+        (scattered.agents, home.tasks_path(id)),
+        (scattered.conversations, home.conversations_dir(id)),
+        (scattered.prompt_history, home.prompt_history_path(id)),
     ];
     for (was, now) in carried {
         if was.exists() && !now.exists() {
@@ -144,12 +135,12 @@ fn carry_across_the_move(home: &UzeHome, id: &str, directory: &Path) {
     // The lock beside the old store is not carried: it guards a path that
     // no longer exists, and the new store mints its own. Left behind it is
     // a file nothing will ever open again.
-    let _ = fs::remove_file(state.join("tasks").join(format!("{id}.lock")));
+    let _ = fs::remove_file(scattered.agents_lock);
     // And the directories the three used to live in, when nothing else is
     // in them. `remove_dir` refuses a directory with anything left, so a
     // project still on the old layout keeps its own.
-    for emptied in ["tasks", "conversations", "prompt-history"] {
-        let _ = fs::remove_dir(state.join(emptied));
+    for emptied in scattered.directories {
+        let _ = fs::remove_dir(emptied);
     }
 }
 

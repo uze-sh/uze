@@ -3,6 +3,7 @@
 use crate::*;
 use uze_application::path::Canonical as _;
 
+/// `uze market …` — the marketplaces a machine knows about.
 pub(crate) fn run_market(app: &UzeApplication, action: MarketAction) -> Result<()> {
     match action {
         MarketAction::Add { source } => {

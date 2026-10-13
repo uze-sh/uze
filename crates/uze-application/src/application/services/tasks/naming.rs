@@ -36,7 +36,7 @@ impl Workspace<'_> {
             return self.label_in_place(&owner, proposed);
         }
         let (primary, policy) = self
-            .repository_context(claim.cwd)
+            .repository_context(claim.cwd)?
             .ok_or_else(|| UzeError::TaskNaming("not inside a Git working tree".to_owned()))?;
         let vocabulary = policy.branch.clone();
         let branch = vocabulary

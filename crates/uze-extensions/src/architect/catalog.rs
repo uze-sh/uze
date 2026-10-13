@@ -92,7 +92,7 @@ pub struct Artifact {
 impl Artifact {
     pub fn read(origin: impl Into<String>, source: impl Into<String>) -> Self {
         let (origin, source) = (origin.into(), source.into());
-        let (front_matter, diagram) = split_front_matter(&source);
+        let (front_matter, diagram) = crate::shared::front_matter::split(&source);
         let name = titled(front_matter)
             .or_else(|| titled(diagram))
             .unwrap_or_else(|| name_from_path(&origin));
@@ -115,25 +115,7 @@ impl Artifact {
     /// The diagram without its front matter, which Mermaid reads as
     /// settings and this surface reads only for the name.
     pub fn diagram(&self) -> &str {
-        split_front_matter(&self.source).1
-    }
-}
-
-/// Mermaid's own front matter: a YAML block between two `---` lines at
-/// the very top of the file.
-fn split_front_matter(source: &str) -> (&str, &str) {
-    let Some(rest) = source.trim_start().strip_prefix("---") else {
-        return ("", source);
-    };
-    match rest.find("\n---") {
-        Some(end) => {
-            let after = &rest[end + 4..];
-            (
-                &rest[..end],
-                after.split_once('\n').map_or("", |(_, body)| body),
-            )
-        }
-        None => ("", source),
+        crate::shared::front_matter::split(&self.source).1
     }
 }
 

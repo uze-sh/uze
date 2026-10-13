@@ -26,7 +26,7 @@
 use std::path::Path;
 
 use super::forge::{self, Transport};
-use super::git::{Reach, reject_option_shaped, run, run_as, through};
+use super::git::{Reach, reject_option_shaped, run, run_as, run_bytes, through};
 use crate::error::{Result, UzeError};
 
 /// Large blobs are what a clone spends its time on and what a marketplace
@@ -292,7 +292,12 @@ pub fn read_file(directory: &Path, commit: &str, path: &str) -> Result<Vec<u8>> 
     reject_option_shaped(commit, "commit")?;
     reject_option_shaped(path, "path")?;
     let target = format!("{commit}:{path}");
-    run_as(reach_of(directory), &["show", &target], Some(directory)).map(String::into_bytes)
+    run_bytes(
+        reach_of(directory),
+        &["show", &target],
+        Some(directory),
+        crate::store::MAX_PACKAGE_FILE_BYTES as usize,
+    )
 }
 
 /// Brings every blob the checkout of `subdirectory` at `commit` will need
@@ -395,27 +400,6 @@ pub fn lineage(directory: &Path, commit: &str, other: &str) -> Option<Lineage> {
     })
 }
 
-/// One lock per mirror, held across a materialization.
-///
-/// A checkout into a bare mirror writes the mirror's own `index`, and the
-/// next one removes it: two at once in one process — a browser looking at
-/// one plugin while an install writes out another — collide on
-/// `index.lock` or delete the index under each other.
-fn checkout_lock(directory: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
-    static CHECKOUTS: std::sync::Mutex<
-        Vec<(std::path::PathBuf, std::sync::Arc<std::sync::Mutex<()>>)>,
-    > = std::sync::Mutex::new(Vec::new());
-    let mut checkouts = CHECKOUTS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some((_, lock)) = checkouts.iter().find(|(known, _)| known == directory) {
-        return lock.clone();
-    }
-    let lock = std::sync::Arc::new(std::sync::Mutex::new(()));
-    checkouts.push((directory.to_path_buf(), lock.clone()));
-    lock
-}
-
 /// Writes `subdirectory` at `commit` into `destination`, which must not
 /// exist.
 ///
@@ -432,10 +416,6 @@ pub fn materialize_subdirectory(
     if let Some(subdirectory) = subdirectory {
         reject_option_shaped(subdirectory, "subdirectory")?;
     }
-    let mirror = checkout_lock(directory);
-    let _checking_out = mirror
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     std::fs::create_dir_all(destination).map_err(UzeError::write(destination))?;
     prefetch(directory, commit, subdirectory);
     let spec = subdirectory.unwrap_or(".");
@@ -457,21 +437,30 @@ pub fn materialize_subdirectory(
     // answer.
     let reach = reach_of(directory);
     let written = super::git::assert_tree_within_size_budget(reach, directory, commit, Some(spec))
-        .and_then(|()| run_as(reach, &arguments, Some(directory)))
-        .and_then(|_| super::git::assert_within_size_budget(destination));
+        .and_then(|()| checkout_with_own_index(reach, &arguments, directory))
+        .and_then(|()| super::git::assert_within_size_budget(destination));
     if let Err(error) = written {
         let _ = std::fs::remove_dir_all(destination);
         return Err(error);
     }
-    // The index the checkout wrote belongs to the mirror, not to the
-    // answer: left behind, the next materialization would read a state
-    // from the last one.
-    let _ = std::fs::remove_file(directory.join("index"));
     // Containment is not re-checked here: the Store validates every byte it
     // ingests (`store.rs`, "no symlink the Store persists may resolve
     // outside the package root"), and a second copy of that rule is a
     // second place for it to be wrong.
     Ok(())
+}
+
+/// A checkout writes an index, and the mirror's own is shared by every
+/// process reading it — a catalogue browse in the workspace while an install
+/// runs in a terminal — so each checkout keeps one of its own, in a private
+/// directory that goes with it. Nothing the next checkout reads is left
+/// behind.
+fn checkout_with_own_index(reach: Reach, arguments: &[&str], directory: &Path) -> Result<()> {
+    let scratch = super::scratch_directory()?;
+    let checked_out =
+        super::git::run_with_index(reach, arguments, Some(directory), &scratch.join("index"));
+    let _ = std::fs::remove_dir_all(&scratch);
+    checked_out
 }
 
 #[cfg(test)]
@@ -601,6 +590,56 @@ mod tests {
             None,
             "a commit this mirror does not have is no answer, not a divergence"
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Another process mid-checkout holds the mirror's own `index.lock`;
+    /// a checkout here must neither wait on it nor take it away.
+    #[test]
+    fn a_checkout_never_touches_the_mirrors_shared_index() {
+        let (root, _first, second) = origin("mirror-own-index");
+        let mirror = root.join("mirror");
+        ensure(
+            &root.join("origin").to_string_lossy(),
+            &root.join("origin").to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+        fs::write(mirror.join("index.lock"), b"").unwrap();
+
+        let out = root.join("out");
+        materialize_subdirectory(&mirror, &second, Some("plugins/flow"), &out).unwrap();
+
+        assert!(out.join("plugins/flow/plugin.json").is_file());
+        assert!(mirror.join("index.lock").exists());
+        assert!(!mirror.join("index").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_file_is_read_byte_for_byte_and_refused_past_the_package_cap() {
+        let (root, _first, _second) = origin("mirror-raw-bytes");
+        let origin = root.join("origin");
+        let raw = [b'{', 0xff, 0xfe, b'}'];
+        fs::write(origin.join("raw.bin"), raw).unwrap();
+        fs::write(
+            origin.join("large.json"),
+            vec![b' '; crate::store::MAX_PACKAGE_FILE_BYTES as usize + 1],
+        )
+        .unwrap();
+        run(&["add", "-A"], Some(&origin)).unwrap();
+        run(&["commit", "-m", "third"], Some(&origin)).unwrap();
+        let mirror = root.join("mirror");
+        ensure(
+            &origin.to_string_lossy(),
+            &origin.to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+        let head = resolve(&mirror, None).unwrap();
+
+        assert_eq!(read_file(&mirror, &head, "raw.bin").unwrap(), raw);
+        assert!(read_file(&mirror, &head, "large.json").is_err());
         fs::remove_dir_all(&root).unwrap();
     }
 

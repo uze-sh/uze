@@ -59,11 +59,22 @@ impl uze_document::Shaped for PersistedWorkspace {
     }
 }
 
-/// Best-effort: a workspace with nothing persisted yet (first run, or the
-/// file is missing/unreadable/corrupt) is not an error — [`Server::new`]
-/// falls back to its ordinary fresh-bootstrap path exactly as if this
-/// returned `None` from the start.
+/// What reading the persisted workspace produced, and whether this build
+/// may write it afterwards.
+pub(super) struct LoadedWorkspace {
+    pub(super) restored: Option<PersistedWorkspace>,
+    pub(super) set_aside: Option<uze_document::SetAside>,
+    /// False when what is at the path is not this build's to replace: a
+    /// newer build's record, bytes that could not be read, or an
+    /// unreadable record that could not be moved out of the way. The
+    /// server's first structural change would otherwise write over it.
+    pub(super) writable: bool,
+}
+
 /// The workspace at `path`, and what reading it cost.
+///
+/// Best-effort: a workspace with nothing persisted yet is not an error —
+/// [`Server::new`] falls back to its ordinary fresh-bootstrap path.
 ///
 /// A shape this build knows is carried across and the spaces survive —
 /// that is the first answer, and it is silent. Only a workspace that
@@ -75,12 +86,15 @@ impl uze_document::Shaped for PersistedWorkspace {
 /// A workspace from a *newer* build is never touched. Two builds on one
 /// machine is ordinary here, and taking a newer one's record would have
 /// them destroying each other's in turn.
-pub(super) fn load_persisted_workspace_at(
-    path: &Path,
-) -> (Option<PersistedWorkspace>, Option<uze_document::SetAside>) {
+pub(super) fn load_persisted_workspace_at(path: &Path) -> LoadedWorkspace {
+    let loaded = |restored, set_aside, writable| LoadedWorkspace {
+        restored,
+        set_aside,
+        writable,
+    };
     match uze_document::read::<PersistedWorkspace>(path) {
-        Ok(uze_document::Carried::Absent) => (None, None),
-        Ok(uze_document::Carried::Current(workspace)) => (Some(workspace), None),
+        Ok(uze_document::Carried::Absent) => loaded(None, None, true),
+        Ok(uze_document::Carried::Current(workspace)) => loaded(Some(workspace), None, true),
         Ok(uze_document::Carried::Climbed { record, from }) => {
             tracing::debug!(
                 workspace = %path.display(),
@@ -88,7 +102,7 @@ pub(super) fn load_persisted_workspace_at(
                 to = WORKSPACE_SCHEMA_VERSION,
                 "the persisted workspace was carried across"
             );
-            (Some(record), None)
+            loaded(Some(record), None, true)
         }
         Err(reason) if uze_document::may_be_set_aside(&reason) => {
             match uze_document::set_aside(
@@ -96,16 +110,20 @@ pub(super) fn load_persisted_workspace_at(
                 <PersistedWorkspace as uze_document::Shaped>::KIND,
                 &reason,
             ) {
-                Ok(moved) => (None, Some(moved)),
+                Ok(moved) => loaded(None, Some(moved), true),
                 Err(error) => {
-                    tracing::warn!(%error, "the persisted workspace could not be set aside");
-                    (None, None)
+                    tracing::warn!(%error, "the persisted workspace could not be set aside; it will not be written");
+                    loaded(None, None, false)
                 }
             }
         }
-        Err(reason) => {
+        Err(reason) if reason.written_by_a_newer_build() => {
             tracing::warn!(%reason, "the persisted workspace was written by a newer build; left as it is");
-            (None, None)
+            loaded(None, None, false)
+        }
+        Err(reason) => {
+            tracing::warn!(%reason, "the persisted workspace could not be read; it will not be written");
+            loaded(None, None, false)
         }
     }
 }

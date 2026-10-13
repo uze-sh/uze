@@ -240,7 +240,7 @@ pub struct CodeView {
     unmeasurable: bool,
     map_showing: MapShowing,
     focus: Focus,
-    scroll: u16,
+    scroll: usize,
     changes: Changes,
     files: Files,
     open: Option<OpenFile>,
@@ -290,7 +290,7 @@ pub struct CodePlace {
     /// surface where nothing had gone wrong.
     selected_is_a_file: bool,
     expanded: BTreeSet<PathBuf>,
-    scroll: u16,
+    scroll: usize,
 }
 
 impl CodePlace {
@@ -585,6 +585,7 @@ impl CodeView {
             // — is left as it stands.
             changes.diff = std::mem::take(&mut self.changes.diff);
             changes.diff_binary = self.changes.diff_binary;
+            changes.diff_error = self.changes.diff_error.take();
             changes.diff_digest = self.changes.diff_digest;
             changes.diff_unchanged = false;
             changes.diff_pending = self.changes.diff_pending;
@@ -908,6 +909,7 @@ impl CodeView {
         self.scroll = 0;
         self.changes.diff = Vec::new();
         self.changes.diff_binary = false;
+        self.changes.diff_error = None;
         self.changes.diff_pending = true;
         self.read_selection_as_what_it_is();
     }
@@ -1132,7 +1134,7 @@ impl CodeView {
             ContentMode::Diff => self
                 .changes
                 .diff
-                .get(self.scroll as usize)
+                .get(self.scroll)
                 .map(|cell| cell.line_no as usize),
             // A map has tiles, not lines: nothing to carry across.
             ContentMode::Map => None,
@@ -1141,12 +1143,11 @@ impl CodeView {
 
     /// The diff row that mentions `line` on the new side. A removal's
     /// number is the old file's, so it never answers for the new one.
-    fn diff_row_of(&self, line: usize) -> Option<u16> {
+    fn diff_row_of(&self, line: usize) -> Option<usize> {
         self.changes
             .diff
             .iter()
             .position(|cell| cell.kind != DiffLineKind::Removed && cell.line_no as usize == line)
-            .map(|row| u16::try_from(row).unwrap_or(u16::MAX))
     }
 
     /// Opens the directories containing the selection, so the tree can
@@ -1370,8 +1371,8 @@ impl CodeView {
         let Some(open) = self.open.as_ref().filter(|open| open.editing) else {
             return;
         };
-        let line = u16::try_from(open.caret.line).unwrap_or(u16::MAX);
-        let visible = visible.max(1);
+        let line = open.caret.line;
+        let visible = usize::from(visible.max(1));
         if line < self.scroll {
             self.scroll = line;
         } else if line >= self.scroll.saturating_add(visible) {
@@ -1599,8 +1600,12 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
             }
         }
         Command::Activate if view.focus == Focus::Navigator => activate_selection(view),
-        Command::ScrollPageUp => view.scroll = view.scroll.saturating_sub(space.height.max(1)),
-        Command::ScrollPageDown => view.scroll = view.scroll.saturating_add(space.height.max(1)),
+        Command::ScrollPageUp => {
+            view.scroll = view.scroll.saturating_sub(usize::from(space.height.max(1)))
+        }
+        Command::ScrollPageDown => {
+            view.scroll = view.scroll.saturating_add(usize::from(space.height.max(1)))
+        }
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
         Command::OpenMenu => match view.navigator() {
@@ -1910,7 +1915,7 @@ fn map_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutc
 /// position means. Absolute, unlike the wheel: a handle taken hold of
 /// says *where*, not *how far*.
 pub fn scroll_to(view: &mut CodeView, first: usize) {
-    view.scroll = first.min(u16::MAX as usize) as u16;
+    view.scroll = first;
 }
 
 /// Mouse-wheel over the content of an open [`CodeView`].

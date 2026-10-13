@@ -460,13 +460,13 @@ fn a_named_merge_leaves_every_foreign_hook_intact() {
     );
     let expected = serde_json::to_string(&entry).unwrap();
 
-    merge_named_entry(&config, name, &entry).unwrap();
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
     assert_eq!(
         inspect_named_entry(&config, name, &expected).state,
         AttachmentState::Matched
     );
     // Merging the same entry again changes nothing (idempotence).
-    merge_named_entry(&config, name, &entry).unwrap();
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
 
     let after: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
     assert_eq!(
@@ -502,7 +502,7 @@ fn a_drifted_or_unreadable_named_entry_is_never_removed() {
         Path::new("/pkg"),
     );
     let expected = serde_json::to_string(&entry).unwrap();
-    merge_named_entry(&config, name, &entry).unwrap();
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
 
     let mut edited: serde_json::Value =
         serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
@@ -541,9 +541,76 @@ fn a_named_config_that_uze_created_is_removed_with_its_last_entry() {
         Path::new("/pkg"),
     );
     let expected = serde_json::to_string(&entry).unwrap();
-    merge_named_entry(&config, name, &entry).unwrap();
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
     remove_named_entry(&config, name, &expected).unwrap();
     assert!(!config.exists(), "UZE removes the file it alone created");
+}
+
+/// A key UZE namespaces can still hold a hand edit, or an entry whose
+/// receipt is gone; overwriting it would discard what nobody asked to lose.
+/// Only this entry or a version a receipt recorded is replaced.
+#[test]
+fn a_named_entry_is_replaced_only_when_a_receipt_recorded_it() {
+    let root = uze_testkit::temp::scratch("hooks-named-conflict");
+    fs::create_dir_all(&root).unwrap();
+    let config = root.join("hooks.json");
+    let name = "pkg@market:protect-env";
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
+    let edited = serde_json::json!({ "PreToolUse": [{ "command": "hand-edited" }] });
+    fs::write(&config, serde_json::json!({ name: edited }).to_string()).unwrap();
+
+    assert!(matches!(
+        merge_named_entry(&config, name, &entry, &[]),
+        Err(UzeError::ManagedEntryConflict(_))
+    ));
+    let kept: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    assert_eq!(kept[name], edited, "the conflicting entry is untouched");
+
+    merge_named_entry(&config, name, &entry, &[edited.to_string()]).unwrap();
+    let replaced: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    assert_eq!(
+        replaced[name], entry,
+        "a recorded earlier version is replaced"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(unix)]
+#[test]
+fn an_emptied_config_behind_a_link_is_written_not_removed() {
+    let root = uze_testkit::temp::scratch("hooks-named-linked");
+    fs::create_dir_all(&root).unwrap();
+    let managed = root.join("dotfiles-hooks.json");
+    let config = root.join("hooks.json");
+    let name = "pkg@market:protect-env";
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        Path::new("/state/hooks/exec"),
+        Path::new("/pkg"),
+    );
+    let expected = serde_json::to_string(&entry).unwrap();
+    fs::write(&managed, "{}").unwrap();
+    std::os::unix::fs::symlink(&managed, &config).unwrap();
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
+    remove_named_entry(&config, name, &expected).unwrap();
+
+    assert!(
+        fs::symlink_metadata(&config)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the dotfile manager's link survives the last entry leaving"
+    );
+    let left: serde_json::Value = serde_json::from_slice(&fs::read(&managed).unwrap()).unwrap();
+    assert_eq!(left, serde_json::json!({}));
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -907,7 +974,7 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     let expected = serde_json::to_string(&entry).unwrap();
     let names = ["pkg@market:protect-env", "other@market:protect-env"];
     for name in names {
-        merge_named_entry(&config, name, &entry).unwrap();
+        merge_named_entry(&config, name, &entry, &[]).unwrap();
         uze_core::state::record_receipt(&home, hook_receipt(&config, name, &expected, &wrapper))
             .unwrap();
     }
@@ -954,7 +1021,7 @@ fn an_unreadable_ledger_keeps_the_shared_wrapper() {
         Path::new("/pkg"),
     );
     let expected = serde_json::to_string(&entry).unwrap();
-    merge_named_entry(&config, "pkg@market:protect-env", &entry).unwrap();
+    merge_named_entry(&config, "pkg@market:protect-env", &entry, &[]).unwrap();
     uze_core::state::record_receipt(
         &home,
         hook_receipt(&config, "pkg@market:protect-env", &expected, &wrapper),
@@ -1013,6 +1080,26 @@ fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
         wrapper.exists(),
         "a wrapper a live entry still names is never removed"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A config file is JSON, so a wrapper path with a backslash in it (every
+/// Windows path) sits in the file escaped; the fallback looks for it as
+/// JSON spells it.
+#[test]
+fn a_wrapper_path_is_found_as_json_spells_it() {
+    let root = uze_testkit::temp::scratch("hooks-attached-escaped");
+    fs::create_dir_all(&root).unwrap();
+    let config = root.join("settings.json");
+    let wrapper = Path::new(r"C:\state\hooks\exec");
+    let edited = serde_json::json!({
+        "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": wrapper.display().to_string()}]}]}
+    });
+    fs::write(&config, serde_json::to_string(&edited).unwrap()).unwrap();
+    let mut receipt = hook_receipt(&config, "pkg@market:protect-env", "{}", wrapper);
+    receipt.integration = "claude".to_owned();
+
+    assert!(entry_is_attached(&receipt, crate::claude::HOOKS));
     let _ = fs::remove_dir_all(root);
 }
 

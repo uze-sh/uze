@@ -817,50 +817,6 @@ fn the_timeline_section_names_meaning_rather_than_colour() {
 
 // --- the files half, and the switch between them -------------------------
 
-/// The same grant the workspace client makes, for the tests that drive real
-/// `git` in a scratch repository. A fake is the right tool for testing *the
-/// view*; these test what the view reads.
-pub(super) struct RepositoryHost;
-
-impl Host for RepositoryHost {
-    fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
-        uze_git::read(root, args)
-            .map_err(|error| error.to_string())?
-            .or_exit(answers)
-    }
-
-    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
-        uze_git::repository::root(path)
-    }
-
-    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
-        std::fs::read_to_string(path).map_err(|error| match error.kind() {
-            std::io::ErrorKind::InvalidData => crate::Unreadable::NotText,
-            _ => crate::Unreadable::Failed(error.to_string()),
-        })
-    }
-
-    fn syntax_theme(&self) -> String {
-        FALLBACK_SYNTAX_THEME.to_owned()
-    }
-
-    fn list_dir(&self, _path: &Path) -> Result<Vec<DirEntry>, String> {
-        unreachable!("what the repository tests read, they read through `git`")
-    }
-
-    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
-        unreachable!("reading a repository writes nothing")
-    }
-
-    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
-        unreachable!("reading a repository deletes nothing")
-    }
-
-    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
-        unreachable!("reading a repository restores nothing")
-    }
-}
-
 /// A repository that answers the same thing every time, and counts how
 /// often it was asked to diff.
 struct StillRepository {
@@ -1567,7 +1523,7 @@ fn page_keys_move_the_caret_a_screen_at_a_time() {
     let line = view.open.as_ref().expect("open").caret.line;
     assert_eq!(line, usize::from(screen) * 2);
     assert!(
-        (view.scroll..view.scroll + screen).contains(&u16::try_from(line).unwrap()),
+        (view.scroll..view.scroll + usize::from(screen)).contains(&line),
         "the caret stays on screen"
     );
 
@@ -1950,6 +1906,28 @@ fn a_binary_change_is_an_empty_state_rather_than_an_empty_diff() {
     assert!(text.contains("ui.rs"), "it names the file: {text}");
 }
 
+/// One file's diff failing is about that file: the list beside it is
+/// still right, and is what the viewer moves away from it with.
+#[test]
+fn a_diff_that_fails_keeps_the_list_navigable() {
+    let mut view = fixture();
+    let path = view.selected.clone().expect("the fixture selects a change");
+    view.absorb_diff(DiffAnswer(changes::DiffRead {
+        path,
+        digest: 0,
+        binary: false,
+        outcome: Err("fatal: bad revision".to_owned()),
+    }));
+
+    let rendered = super::view(&view, space());
+    assert!(rendered.navigator.is_some(), "the changes are still listed");
+    let Content::Message { text, role, .. } = rendered.content else {
+        panic!("the failure is said where the diff would be");
+    };
+    assert_eq!(role, Role::Danger);
+    assert!(text.contains("bad revision"), "{text}");
+}
+
 /// A click says "this many cells into that line"; the caret has to end
 /// up on the character those cells actually reach. A double-width glyph
 /// is where the two counts come apart.
@@ -1983,6 +1961,25 @@ fn a_click_lands_on_the_character_its_cells_reach() {
             "{why}"
         );
     }
+}
+
+/// A file that opens is a file that scrolls to its end, however long:
+/// the scroll stopped at line 65,536 once, and everything past it was
+/// out of reach.
+#[test]
+fn a_long_file_scrolls_past_what_sixteen_bits_count() {
+    let machine = FakeMachine::default().with_file("/w/long.txt", &"x\n".repeat(70_000));
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    scroll_to(&mut view, 69_000);
+    let Content::Lines { scroll, lines, .. } = super::view(&view, space()).content else {
+        panic!("an open file is lines");
+    };
+    assert_eq!(scroll, 69_000);
+    assert_eq!(lines[0].number, "69001");
 }
 
 /// The save's own re-read arrives a beat later. Anything typed in that
@@ -2085,10 +2082,10 @@ fn moving_away_from_unsaved_work_keeps_it() {
     );
 }
 
-/// A caret or a diff row past what a `u16` counts is clamped to the last
-/// row a scroll can name, rather than wrapped to one near the top.
+/// A caret or a diff row past what a `u16` counts is reached exactly,
+/// rather than clamped to the last row sixteen bits can name.
 #[test]
-fn a_position_past_the_scroll_range_is_clamped_rather_than_wrapped() {
+fn a_position_past_sixteen_bits_is_reached_exactly() {
     let mut view = fixture();
     let far = usize::from(u16::MAX) + 10;
     view.changes.diff = (0..=far)
@@ -2098,15 +2095,15 @@ fn a_position_past_the_scroll_range_is_clamped_rather_than_wrapped() {
             spans: Vec::new(),
         })
         .collect();
-    assert_eq!(view.diff_row_of(far), Some(u16::MAX));
+    assert_eq!(view.diff_row_of(far), Some(far));
 
     let mut open = OpenFile::opening(PathBuf::from("/repo/long.rs"));
     open.editing = true;
     open.caret.line = far;
     view.open = Some(open);
-    view.scroll = u16::MAX - 1;
+    view.scroll = 0;
     view.follow_caret(20);
-    assert_eq!(view.scroll, u16::MAX - 19);
+    assert_eq!(view.scroll, far - 19);
 }
 
 /// Moving to another file in the tree points every mode at it: the diff
@@ -2759,14 +2756,17 @@ fn a_selected_tile_keeps_the_colour_that_says_how_hot_it_is() {
 
     let space = (80, 20);
     let roles = |view: &CodeView| -> Vec<Role> {
-        view.map_view()
-            .expect("measured")
-            .paint(space, crate::shared::canvas::Glyphs::Unicode)
-            .lines()
-            .into_iter()
-            .flat_map(|line| line.spans)
-            .map(|span| span.role)
-            .collect()
+        let map = view.map_view().expect("measured");
+        map.paint(
+            &map.tiles(space),
+            space,
+            crate::shared::canvas::Glyphs::Unicode,
+        )
+        .lines()
+        .into_iter()
+        .flat_map(|line| line.spans)
+        .map(|span| span.role)
+        .collect()
     };
     let before = roles(&view);
 
@@ -2791,10 +2791,12 @@ fn a_selected_tile_keeps_the_colour_that_says_how_hot_it_is() {
         },
     );
 
-    let painted = view
-        .map_view()
-        .expect("measured")
-        .paint(space, crate::shared::canvas::Glyphs::Unicode);
+    let map = view.map_view().expect("measured");
+    let painted = map.paint(
+        &map.tiles(space),
+        space,
+        crate::shared::canvas::Glyphs::Unicode,
+    );
     let spans: Vec<_> = painted
         .lines()
         .into_iter()

@@ -19,7 +19,7 @@ use uze_core::{
 
 use super::ClaudeIntegration;
 use crate::shared::skill::{
-    attach_skill_tree, entry_name, frontmatter_value, invalid_policy_plan, render_skill_wrapper,
+    attach_skill_tree, entry_name, frontmatter_text, invalid_policy_plan, render_skill_wrapper,
     setup_pending_plan, skill_tree_plan,
 };
 
@@ -165,7 +165,7 @@ pub(super) fn claude_wrapper_skill_document(
     fallback_name: &str,
 ) -> String {
     let name =
-        frontmatter_value(canonical_bytes, "name").unwrap_or_else(|| fallback_name.to_owned());
+        frontmatter_text(canonical_bytes, "name").unwrap_or_else(|| fallback_name.to_owned());
     let mut markers = Vec::new();
     if !policy.model {
         markers.push("disable-model-invocation: true");

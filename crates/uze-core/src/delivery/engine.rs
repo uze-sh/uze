@@ -148,7 +148,7 @@ fn mcp_resources(id: &PackageId, package_root: &Path) -> Result<Vec<Resource>> {
     }
     let payload = read_file(&manifest_path)?;
     let manifest: serde_json::Value =
-        serde_json::from_slice(&payload).map_err(|source| UzeError::Json {
+        crate::authored::json(&payload).map_err(|source| UzeError::Json {
             path: manifest_path.clone(),
             source,
         })?;
@@ -344,6 +344,25 @@ mod discovery_tests {
             resources[1].logical_capability_name().as_deref(),
             Some("protect-env")
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Saved by an editor that writes a byte-order mark, as `plugin.json`
+    /// and `hooks.json` already may be.
+    #[test]
+    fn an_mcp_manifest_with_a_byte_order_mark_is_read() {
+        let root = uze_testkit::temp::scratch("mcp-bom");
+        let pkg = root.join("pkg");
+        fs::create_dir_all(&pkg).unwrap();
+        fs::write(
+            pkg.join("mcp.json"),
+            b"\xEF\xBB\xBF{\"mcpServers\":{\"files\":{\"command\":\"server\"}}}",
+        )
+        .unwrap();
+        let id = PackageId::from_plugin_name("demo", Path::new("plugin.json")).unwrap();
+        let resources = package_resources_at(&id, &pkg).unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].capability.kind, CapabilityKind::Mcp);
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -6,7 +6,7 @@
 //! MCP profile (Antigravity separately MCP from settings.json; legacy
 //! inline declarations are gone).
 
-use std::{path::Path, path::PathBuf};
+use std::path::Path;
 
 use uze_core::{
     Result, UzeError,
@@ -58,6 +58,7 @@ impl AntigravityIntegration {
 pub(super) fn attach_mcp_entry(
     executable: &str,
     command_home: &Path,
+    config_path: &Path,
     entry_name: &str,
     command: &Path,
     args: &[String],
@@ -68,13 +69,11 @@ pub(super) fn attach_mcp_entry(
     // silently overwritten — UZE never relies on that (same discipline as
     // ADR-007 for the other peers). Exactly the planned entry is this
     // attach already done.
-    let config_path = mcp_config_path(command_home);
-    if let Ok(config) = json_config::read_object(&config_path)
-        && let Some(existing) = json_config::get_path(&config, &["mcpServers", entry_name])
-    {
+    let config = json_config::read_object(config_path).map_err(UzeError::HarnessConfig)?;
+    if let Some(existing) = json_config::get_path(&config, &["mcpServers", entry_name]) {
         return claim_existing(
             inspect_antigravity_mcp_value(existing, &McpEntry::planned(entry_name, command, args)),
-            &config_path,
+            config_path,
         );
     }
     let mut mcp_args: Vec<std::ffi::OsString> = vec![
@@ -96,10 +95,6 @@ pub(super) fn attach_mcp_entry(
         )));
     }
     Ok(())
-}
-
-fn mcp_config_path(command_home: &Path) -> PathBuf {
-    command_home.join(".gemini/config/mcp_config.json")
 }
 
 pub(super) fn inspect_antigravity_mcp(path: &Path, entry: &McpEntry) -> AttachmentInspection {
@@ -167,7 +162,11 @@ mod mcp_tests {
 
     use uze_core::{UzeError, integration::AttachmentState};
 
-    use super::{McpEntry, attach_mcp_entry, inspect_antigravity_mcp_value, mcp_config_path};
+    use super::{McpEntry, attach_mcp_entry, inspect_antigravity_mcp_value};
+
+    fn mcp_config_path(home: &Path) -> std::path::PathBuf {
+        home.join(".gemini/config/mcp_config.json")
+    }
 
     /// A second install finds its own entry from the first; a differing
     /// one under the same name is somebody else's, and `agy mcp add` would
@@ -187,6 +186,7 @@ mod mcp_tests {
         attach_mcp_entry(
             "/nonexistent/agy",
             &home,
+            &config,
             "uze-x",
             Path::new("/bin/server"),
             &args,
@@ -202,11 +202,34 @@ mod mcp_tests {
             attach_mcp_entry(
                 "/nonexistent/agy",
                 &home,
+                &config,
                 "uze-x",
                 Path::new("/bin/server"),
                 &args
             ),
             Err(UzeError::ManagedEntryConflict(_))
+        ));
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// An unreadable config hides whether the name is taken, so the
+    /// add-or-update verb is never reached on a guess.
+    #[test]
+    fn an_unreadable_config_refuses_the_attach() {
+        let home = uze_testkit::temp::scratch("agy-mcp-unreadable");
+        let config = mcp_config_path(&home);
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, "{ not json").unwrap();
+        assert!(matches!(
+            attach_mcp_entry(
+                "/nonexistent/agy",
+                &home,
+                &config,
+                "uze-x",
+                Path::new("/bin/server"),
+                &[]
+            ),
+            Err(UzeError::HarnessConfig(_))
         ));
         let _ = fs::remove_dir_all(home);
     }

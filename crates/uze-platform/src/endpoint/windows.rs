@@ -20,7 +20,6 @@
 //!   accepts finds an instance to connect to instead of an error.
 
 use std::{
-    ffi::OsStr,
     io::{self, Read, Write},
     path::{Path, PathBuf},
     ptr,
@@ -38,10 +37,7 @@ use windows_sys::Win32::{
         GENERIC_WRITE, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree, WAIT_OBJECT_0,
         WAIT_TIMEOUT,
     },
-    Security::{
-        Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW, PSECURITY_DESCRIPTOR,
-        SECURITY_ATTRIBUTES,
-    },
+    Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES},
     Storage::FileSystem::{
         CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, OPEN_EXISTING,
         PIPE_ACCESS_DUPLEX, ReadFile, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT, WriteFile,
@@ -57,7 +53,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{process::current_user, win::wide};
+use crate::{
+    process::current_user,
+    win::{ADMINISTRATORS, OwnerOnly, sid_text, wide},
+};
 
 const BUFFER: u32 = 64 * 1024;
 
@@ -431,7 +430,7 @@ fn wait_for_client(handle: HANDLE) -> io::Result<()> {
 }
 
 fn create_instance(name: &Path, first: bool) -> io::Result<HANDLE> {
-    let descriptor = OwnerOnly::new()?;
+    let descriptor = OwnerOnly::new("")?;
     let attributes = SECURITY_ATTRIBUTES {
         nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: descriptor.0,
@@ -473,50 +472,12 @@ fn create_instance(name: &Path, first: bool) -> io::Result<HANDLE> {
     Ok(handle)
 }
 
-/// A security descriptor granting the current token's user, and no one
-/// else, full access. The user SID and not the owner SID: an elevated
-/// token's owner is the Administrators group.
-struct OwnerOnly(PSECURITY_DESCRIPTOR);
-
-impl OwnerOnly {
-    fn new() -> io::Result<Self> {
-        let sid = current_user()?;
-        let sddl = wide(OsStr::new(&format!("D:P(A;;GA;;;{sid})")));
-        let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
-        // SAFETY: `sddl` is NUL-terminated; the descriptor is freed with
-        // LocalFree in Drop, as the API requires.
-        let ok = unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                1,
-                &mut descriptor,
-                ptr::null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self(descriptor))
-    }
-}
-
-impl Drop for OwnerOnly {
-    fn drop(&mut self) {
-        // SAFETY: allocated by the conversion above with LocalAlloc.
-        unsafe { LocalFree(self.0) };
-    }
-}
-
 /// The pipe named `address.name`. The pipe namespace is machine-wide, so
 /// the user is part of the name: two users asking for one name are still
 /// two endpoints. A pipe lives in no directory, so the rest of the address
 /// has nothing to say here.
 pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
-    let user = current_user()?
-        .bytes()
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-        });
+    let user = fnv1a(current_user()?.as_bytes());
     Ok(PathBuf::from(format!(
         r"\\.\pipe\{}-{user:016x}",
         address.name
@@ -557,13 +518,10 @@ pub fn connect(endpoint: &Path) -> io::Result<Stream> {
     }
 }
 
-/// The well-known SID of the built-in Administrators group.
-const ADMINISTRATORS: &str = "S-1-5-32-544";
-
 /// The SID that owns the pipe `handle` names, as a string.
 fn pipe_owner(handle: HANDLE) -> io::Result<String> {
     use windows_sys::Win32::Security::{
-        Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_KERNEL_OBJECT},
+        Authorization::{GetSecurityInfo, SE_KERNEL_OBJECT},
         OWNER_SECURITY_INFORMATION, PSID,
     };
     let mut owner: PSID = ptr::null_mut();
@@ -585,23 +543,10 @@ fn pipe_owner(handle: HANDLE) -> io::Result<String> {
     if status != 0 {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
-    let mut text: *mut u16 = ptr::null_mut();
-    // SAFETY: `owner` is valid while `descriptor` is; `text` is freed below.
-    let converted = unsafe { ConvertSidToStringSidW(owner, &mut text) };
-    let sid = (converted != 0).then(|| {
-        // SAFETY: a NUL-terminated wide string from the conversion above.
-        unsafe {
-            let len = (0..).take_while(|&i| *text.add(i) != 0).count();
-            String::from_utf16_lossy(std::slice::from_raw_parts(text, len))
-        }
-    });
-    // SAFETY: both were allocated with LocalAlloc by the calls above.
-    unsafe {
-        if !text.is_null() {
-            LocalFree(text.cast());
-        }
-        LocalFree(descriptor);
-    }
+    // SAFETY: `owner` is valid while `descriptor` is.
+    let sid = unsafe { sid_text(owner) };
+    // SAFETY: allocated with LocalAlloc by the call above.
+    unsafe { LocalFree(descriptor) };
     sid.ok_or_else(io::Error::last_os_error)
 }
 
@@ -658,12 +603,14 @@ pub fn pair() -> io::Result<(Stream, Stream)> {
 /// namespace is machine-wide, so the directory is what keeps two tests
 /// apart.
 pub fn scratch_endpoint(directory: &Path, name: &str) -> PathBuf {
-    let directory = directory
-        .as_os_str()
-        .as_encoded_bytes()
-        .iter()
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-        });
+    let directory = fnv1a(directory.as_os_str().as_encoded_bytes());
     PathBuf::from(format!(r"\\.\pipe\uze-test-{directory:016x}-{name}"))
+}
+
+/// FNV-1a: a hash that is the same in every build and on every machine, so
+/// a name made from it is found again by whoever computes it next.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
 }

@@ -117,14 +117,6 @@ pub(super) fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
     Some((old_start, new_start))
 }
 
-/// Applies syntax highlighting (by `path`'s extension) to `lines`.
-///
-/// The old and the new file are highlighted as two line streams, each with
-/// its own highlighter: syntect's carries state (an open block comment, for
-/// instance) across calls, and "before" and "after" are two versions of the
-/// file, not one continuous stream. A removal feeds only the old one, an
-/// addition only the new, and context both — so each stream sees exactly
-/// the file it stands for.
 /// How many lines of a diff are coloured. Colouring is per line and
 /// sequential — the highlighter's state is why a comment opened above
 /// stays one below — so a generated file or a lockfile rewritten whole
@@ -133,6 +125,14 @@ pub(super) fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
 /// is, in the theme's own ink.
 const COLOURED_DIFF_LINES: usize = 2000;
 
+/// Applies syntax highlighting (by `path`'s extension) to `lines`.
+///
+/// The old and the new file are highlighted as two line streams, each with
+/// its own highlighter: syntect's carries state (an open block comment, for
+/// instance) across calls, and "before" and "after" are two versions of the
+/// file, not one continuous stream. A removal feeds only the old one, an
+/// addition only the new, and context both — so each stream sees exactly
+/// the file it stands for.
 pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> Vec<DiffCell> {
     // The new file's first line, when the diff reaches it: all a script
     // with no extension says about its language is its shebang, and a

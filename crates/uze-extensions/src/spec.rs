@@ -1008,7 +1008,7 @@ fn content(state: &SpecView, space: Size) -> Content {
     };
     Content::Lines {
         heading,
-        scroll: u16::try_from(first).unwrap_or(u16::MAX),
+        scroll: first,
         first,
         lines: shown.iter().skip(first).take(window).cloned().collect(),
         total: shown.len(),

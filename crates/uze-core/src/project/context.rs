@@ -121,36 +121,33 @@ impl AgentsMdObservation {
 /// Observes what `agents_md` currently holds against the desired
 /// `contributions`, without changing anything — regardless of whether the
 /// file exists, whether a contribution is drifted, or whether an orphaned
-/// region's markers are malformed. Every branch here calls only
-/// `text_region::inspect`/`region_shape`/`region_identities_present`, all
-/// themselves zero-write.
+/// region's markers are malformed. The file is read once, through
+/// `text_region::RegionsRead`, which writes nothing.
 pub fn inspect_agents_md(
     agents_md: &Path,
     contributions: &[InstructionContribution],
 ) -> AgentsMdObservation {
     let mut observation = AgentsMdObservation::default();
     let mut expected_identities = std::collections::BTreeSet::new();
+    let read = text_region::RegionsRead::of(agents_md);
 
     for contribution in contributions {
         let identity = region_identity_for(&contribution.package_id);
         expected_identities.insert(identity.clone());
-        let inspection = text_region::inspect(agents_md, &identity, &contribution.content);
+        let inspection = read.inspect(&identity, &contribution.content);
         observation
             .packages
             .push((contribution.package_id.clone(), inspection));
     }
 
-    let stale = text_region::stale_regions(
-        agents_md,
+    let stale = read.stale(
         is_our_orphan_shape,
         expected_identities.iter().map(String::as_str),
     );
     for present in stale {
-        match text_region::region_shape(agents_md, &present) {
+        match read.shape(&present) {
             text_region::RegionShape::WellFormed => observation.orphaned_regions.push(present),
             text_region::RegionShape::Malformed => observation.malformed_regions.push(present),
-            // Listed a moment ago, gone now — a benign race with something
-            // else touching the file between the two reads.
             text_region::RegionShape::Absent => {}
         }
     }

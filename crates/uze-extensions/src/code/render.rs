@@ -110,6 +110,7 @@ fn map_content(code: &CodeView, space: Size) -> Content {
         };
     };
     let cells = (i32::from(space.width), i32::from(space.height));
+    let tiles = map.tiles(cells);
     let lines: Vec<ContentLine> = match code.map_showing() {
         MapShowing::Ranking => map
             .ranking()
@@ -121,13 +122,13 @@ fn map_content(code: &CodeView, space: Size) -> Content {
                 MapShowing::Ascii => Glyphs::Ascii,
                 _ => Glyphs::Unicode,
             };
-            map.paint(cells, glyphs).lines()
+            map.paint(&tiles, cells, glyphs).lines()
         }
     };
     // A board hands over its screen and nothing else: it is cut to the
     // frame rather than scrolled, so there is no scroll to apply.
     Content::Lines {
-        heading: map.caption(cells),
+        heading: map.caption(&tiles),
         scroll: 0,
         first: 0,
         total: lines.len(),
@@ -478,6 +479,13 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
             role: Role::Muted,
         };
     }
+    if let Some(message) = &code.changes.diff_error {
+        return Content::Message {
+            text: message.clone(),
+            hint: None,
+            role: Role::Danger,
+        };
+    }
     let path = &code.changes.files[index].path;
     if code.changes.diff_binary {
         return not_text(
@@ -497,7 +505,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
                 .unwrap_or_else(|_| code.display_root.clone())
         ),
         scroll: code.scroll,
-        first: code.scroll as usize,
+        first: code.scroll,
         // Twice the space rather than exactly it: a wrapped line occupies
         // more than one row, and only the host — which does the wrapping
         // — knows how many. Erring long costs a few unrendered lines;
@@ -505,7 +513,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
         // diff.
         lines: diff
             .iter()
-            .skip(code.scroll as usize)
+            .skip(code.scroll)
             .take(usize::from(space.height).saturating_mul(2))
             .map(content_line)
             .collect(),
@@ -526,7 +534,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
         Err(message) => return *message,
     };
     let (total, lines) = open.preview(
-        code.scroll as usize,
+        code.scroll,
         usize::from(space.height).saturating_mul(2),
         Some(crate::view::prose_width(space)),
     );
@@ -542,7 +550,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
                 .display()
         ),
         scroll: code.scroll,
-        first: code.scroll as usize,
+        first: code.scroll,
         lines,
     }
 }
@@ -631,12 +639,12 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
         // numbers, the caret's line and the hits a click lands in are all
         // indices into the file, and `first` is what keeps them meaning
         // that on both sides.
-        first: code.scroll as usize,
+        first: code.scroll,
         lines: open
             .lines
             .iter()
             .enumerate()
-            .skip(code.scroll as usize)
+            .skip(code.scroll)
             .take(usize::from(space.height).saturating_mul(2))
             .map(|(index, text)| ContentLine {
                 gutter: " ".to_owned(),

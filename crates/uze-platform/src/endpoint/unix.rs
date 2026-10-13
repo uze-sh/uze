@@ -39,24 +39,11 @@ pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
     let private = format!("{}-runtime-{owner}", address.namespace);
     let remembered = address.directory.join(format!("{}.endpoint", address.name));
     let mut refused = None;
-    let mut usable = |candidate: &Path| {
-        if !fits(candidate) {
-            return false;
+    if fits(address.directory) {
+        match usable(address.directory, owner) {
+            Ok(()) => return Ok(named(address.directory)),
+            Err(error) => refused = Some(error),
         }
-        // A sandboxed terminal can expose a runtime directory while
-        // denying writes below it, and a directory that already exists
-        // may be somebody else's — either way the next candidate is
-        // tried rather than the whole attach failing.
-        match fs::create_dir_all(candidate).and_then(|()| private_directory(candidate, owner)) {
-            Ok(()) => true,
-            Err(error) => {
-                refused = Some(error);
-                false
-            }
-        }
-    };
-    if usable(address.directory) {
-        return Ok(named(address.directory));
     }
     if let Some(chosen) = fs::read_to_string(&remembered)
         .ok()
@@ -66,16 +53,9 @@ pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
     {
         return Ok(named(&chosen));
     }
-    let shared = [
-        env::var_os("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(env::temp_dir)
-            .join(&private),
-        env::temp_dir().join(&private),
-        PathBuf::from("/tmp").join(&private),
-    ];
-    if let Some(candidate) = shared.iter().find(|candidate| usable(candidate)) {
-        return Ok(named(candidate));
+    match shared_private_directory(&private, &fits) {
+        Ok(candidate) => return Ok(named(&candidate)),
+        Err(error) => refused = error.or(refused),
     }
     let fresh =
         unpredictable_directory(&private, &fits).map_err(|error| refused.unwrap_or(error))?;
@@ -89,6 +69,45 @@ pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
     .open(&remembered)?;
     io::Write::write_all(&mut record, fresh.as_os_str().as_encoded_bytes())?;
     Ok(named(&fresh))
+}
+
+/// A private directory named `name` in the first of the shared runtime
+/// directories it fits in and can be had: the session's runtime directory,
+/// the system temp dir and `/tmp`. Each is tried in turn rather than the
+/// first being trusted: a sandboxed terminal can expose a runtime directory
+/// while denying writes below it, WSL routinely names a `/run/user/<uid>`
+/// that does not exist, and a directory already there may be somebody
+/// else's. The error is the last refusal, `None` where nothing fit.
+pub(crate) fn shared_private_directory(
+    name: &str,
+    fits: &dyn Fn(&Path) -> bool,
+) -> Result<PathBuf, Option<io::Error>> {
+    // SAFETY: `getuid` takes no arguments and cannot fail.
+    let owner = unsafe { libc::getuid() };
+    let mut refused = None;
+    let candidates = [
+        env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(env::temp_dir),
+        env::temp_dir(),
+        PathBuf::from("/tmp"),
+    ];
+    for candidate in candidates.iter().map(|root| root.join(name)) {
+        if !fits(&candidate) {
+            continue;
+        }
+        match usable(&candidate, owner) {
+            Ok(()) => return Ok(candidate),
+            Err(error) => refused = Some(error),
+        }
+    }
+    Err(refused)
+}
+
+/// `candidate`, made if it is not there, and proven `owner`'s alone.
+fn usable(candidate: &Path, owner: libc::uid_t) -> io::Result<()> {
+    crate::fs::create_private_dir_all(candidate)?;
+    private_directory(candidate, owner)
 }
 
 /// A directory only this call created, under a name nobody can predict: in
@@ -179,9 +198,8 @@ pub fn restore(endpoint: &Path) -> io::Result<()> {
     let Some(directory) = endpoint.parent() else {
         return Ok(());
     };
-    fs::create_dir_all(directory)?;
     // SAFETY: as in `endpoint`.
-    private_directory(directory, unsafe { libc::getuid() })
+    usable(directory, unsafe { libc::getuid() })
 }
 
 /// Proves `candidate` is a directory `owner` owns and nobody else can reach

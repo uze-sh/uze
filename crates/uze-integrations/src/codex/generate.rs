@@ -148,7 +148,7 @@ fn materialize_user_only_skill_dir(
         source: source_error,
     })?;
     let bytes = resolve_bytes(&resource.capability.payload, &resource.package_root);
-    let name = crate::shared::skill::frontmatter_value(&bytes, "name")
+    let name = crate::shared::skill::frontmatter_text(&bytes, "name")
         .unwrap_or_else(|| skill_name.to_owned());
     crate::shared::skill::write_file(
         &target_dir.join("SKILL.md"),

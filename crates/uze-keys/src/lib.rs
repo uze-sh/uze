@@ -52,5 +52,5 @@ pub use active::{active, set_active};
 pub use chord::{Caveat, CaveatKind, Chord, ChordProblem, Key, Mods, Tier};
 pub use file::{CURRENT_VERSION, KeymapFile};
 pub use keymap::{Binding, Conflict, Keymap, Resolution};
-pub use load::{Loaded, Problem, Severity, default_keymap, difference_from_default};
+pub use load::{Loaded, Problem, Severity, default_keymap, difference_from_default, saved_over};
 pub use scope::{ALL_SCOPES, Scope};

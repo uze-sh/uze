@@ -32,9 +32,11 @@ pub struct Choice {
 /// caller asks this first and answers from its own defaults when the
 /// answer is no. Both ends matter: a terminal that cannot show the
 /// question is as unanswerable as one that cannot carry the keystroke.
+/// The question is drawn on stderr, so stdout redirected to a file still
+/// leaves a terminal to ask on.
 pub fn interactive() -> bool {
     use std::io::IsTerminal;
-    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
 /// What a person did with a multiple-choice question.

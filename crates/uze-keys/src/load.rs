@@ -153,6 +153,24 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
     }
 }
 
+/// What saving `keymap` over the operator's `written` file should leave on
+/// disk: the difference from the default, plus every entry `written` names
+/// that this build does not know. Those belong to a newer build, and a
+/// rebind made on this one is no reason to forget them.
+pub fn saved_over(written: &KeymapFile, keymap: &Keymap) -> KeymapFile {
+    let mut file = difference_from_default(keymap);
+    file.version = written.version;
+    for (scope_name, actions) in &written.bindings {
+        let known_scope = Scope::parse(scope_name).is_some();
+        for (action_name, chords) in actions {
+            if !known_scope || Action::parse(action_name).is_none() {
+                file.set(scope_name, action_name, chords.clone());
+            }
+        }
+    }
+    file
+}
+
 /// What an operator's file would have to say to produce `keymap` —
 /// only the surfaces and actions that differ from the built-in default.
 ///
@@ -493,6 +511,34 @@ mod tests {
         assert_eq!(
             default_keymap().resolve(tab, &scopes),
             Resolution::Act(Action::InsertIndent)
+        );
+    }
+
+    #[test]
+    fn saving_keeps_the_entries_a_newer_build_wrote() {
+        let mut written = KeymapFile::default();
+        written.set(
+            "workspace",
+            "an-action-from-the-future",
+            vec!["f9".to_owned()],
+        );
+        written.set("a-future-surface", "close-tab", vec!["f8".to_owned()]);
+        written.set("workspace", "new-shell-tab", vec!["f4".to_owned()]);
+
+        let saved = saved_over(&written, default_keymap());
+
+        assert_eq!(
+            saved.bindings["workspace"].get("an-action-from-the-future"),
+            Some(&vec!["f9".to_owned()])
+        );
+        assert_eq!(
+            saved.bindings["a-future-surface"].get("close-tab"),
+            Some(&vec!["f8".to_owned()])
+        );
+        assert_eq!(
+            saved.bindings["workspace"].get("new-shell-tab"),
+            None,
+            "a known entry is what the keymap in force says, not what the file said"
         );
     }
 

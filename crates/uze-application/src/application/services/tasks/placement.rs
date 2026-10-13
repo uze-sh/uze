@@ -27,7 +27,15 @@ impl Workspace<'_> {
         // The project decides, unless the caller asked for one kind by
         // name: `Isolate` is an action on an agent, and a launch is not
         // where that question is asked any more.
-        let context = self.repository_context(pane_cwd);
+        // A manifest that does not parse says nothing about where the agent
+        // belongs, so only a caller that named the kind still launches: one
+        // landed in the operator's own tree when the project isolates is the
+        // one placement a notice cannot undo.
+        let (context, unread_policy) = match self.repository_context(pane_cwd) {
+            Ok(context) => (context, None),
+            Err(error) if kind.is_some() => (None, Some(error.to_string())),
+            Err(error) => return Err(UzeError::AgentPlacement(error.to_string())),
+        };
         let declared = context
             .as_ref()
             .map(|(_, policy)| policy.default)
@@ -52,11 +60,12 @@ impl Workspace<'_> {
                 let in_the_primary = context
                     .as_ref()
                     .is_some_and(|(primary, _)| canonical(primary) == root);
-                let warnings = if in_the_primary {
+                let mut warnings = if in_the_primary {
                     self.policy_region_warnings(&root)
                 } else {
                     Vec::new()
                 };
+                warnings.extend(unread_policy);
                 Ok(AgentPlacement {
                     project: root.clone(),
                     cwd: root,
@@ -86,14 +95,11 @@ impl Workspace<'_> {
     /// instead of by the next placement.
     #[tracing::instrument(name = "workspace.sync_target", skip_all, fields(cwd = %cwd.display()))]
     pub fn sync_target(&self, cwd: &Path) -> Option<TargetSyncReport> {
-        let (primary, policy) = self.repository_context(cwd)?;
+        let (primary, policy) = self.repository_context(cwd).ok().flatten()?;
         if !policy.default.is_isolated() {
             return None;
         }
-        let target = policy
-            .target
-            .clone()
-            .or_else(|| checkout::current_branch(&primary))?;
+        let target = declared_target(&primary, &policy)?;
         let sync = landing::sync_target(&primary, &target);
         if matches!(sync, landing::TargetSync::FastForwarded { .. })
             && let Ok(store) = task::load(&self.0.home, &primary)
@@ -118,10 +124,7 @@ impl Workspace<'_> {
         let policy = self
             .policy(&primary)
             .map_err(|error| refused(error.to_string()))?;
-        let target = policy
-            .target
-            .clone()
-            .or_else(|| checkout::current_branch(&primary))
+        let target = declared_target(&primary, &policy)
             .ok_or_else(|| refused("the primary checkout is not on a branch".to_owned()))?;
         // The furthest tip of the target the last sync left
         // ([`Self::sync_target`]) — the remote's when it is ahead, which it
@@ -238,7 +241,7 @@ impl Workspace<'_> {
     ) -> Result<AgentPlacement> {
         let refused = |reason: String| UzeError::AgentPlacement(reason);
         let (primary, policy) = self
-            .repository_context(cwd)
+            .repository_context(cwd)?
             .ok_or_else(|| refused("not inside a Git working tree".to_owned()))?;
         let target = target_of(&primary, &policy);
         let base = checkout::current_branch(&primary).unwrap_or_else(|| target.clone());
@@ -343,7 +346,7 @@ impl Workspace<'_> {
         occupied: &[PathBuf],
     ) -> Result<AgentPlacement> {
         let (primary, policy) = self
-            .repository_context(cwd)
+            .repository_context(cwd)?
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
         let target = target_of(&primary, &policy);
         let presence = checkout::Presence::observe_with(occupied);

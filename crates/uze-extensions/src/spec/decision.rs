@@ -115,7 +115,7 @@ struct RecordName<'a> {
 /// a record's.
 pub fn recognise(file_name: &str, text: &str) -> Option<Record> {
     let name = record_name(file_name)?;
-    let (front, body) = front_matter(text);
+    let (front, body) = crate::shared::front_matter::split(text);
     let header = header(body);
     let title = front_field(front, "title")
         .or_else(|| first_heading(body))
@@ -216,21 +216,6 @@ fn record_name(file_name: &str) -> Option<RecordName<'_>> {
         number: &stem[..digits],
         slug,
     })
-}
-
-fn front_matter(text: &str) -> (&str, &str) {
-    let Some(rest) = text.trim_start().strip_prefix("---\n") else {
-        return ("", text);
-    };
-    match rest.find("\n---") {
-        Some(end) => (
-            &rest[..end],
-            rest[end + 4..]
-                .split_once('\n')
-                .map_or("", |(_, body)| body),
-        ),
-        None => ("", text),
-    }
 }
 
 /// A top-level scalar of the front matter.
@@ -762,6 +747,17 @@ mod tests {
                 target: "ADR-0009".to_owned(),
             }]
         );
+    }
+
+    /// A record saved with Windows line endings is the same record.
+    #[test]
+    fn a_crlf_record_still_carries_its_status_in_front_matter() {
+        let record = recognise(
+            "0007-pick-a-parser.md",
+            "---\r\nstatus: accepted\r\n---\r\n\r\n# Pick a parser\r\n\r\n## Context\r\n\r\nx\r\n",
+        )
+        .unwrap();
+        assert_eq!(status(&record), Some(("accepted", false)));
     }
 
     #[test]

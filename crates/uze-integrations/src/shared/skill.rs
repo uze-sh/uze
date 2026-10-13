@@ -94,10 +94,11 @@ pub(crate) fn skill_wrapper_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
     crate::shared::path::attachment_root(uze_home, vendor).join("skills")
 }
 
-/// A generated SKILL.md: `name`, the canonical description re-quoted (never
-/// raw-interpolated), the vendor's own `markers` as frontmatter lines, the
-/// fields `keys` are given under the canonical `harness:` block, then the
-/// canonical body verbatim.
+/// A generated SKILL.md: `name` and the canonical description, each
+/// quoted where YAML would read it otherwise (never raw-interpolated), the
+/// vendor's own `markers` as frontmatter lines, the fields `keys` are
+/// given under the canonical `harness:` block, then the canonical body
+/// verbatim.
 pub fn render_skill_wrapper(
     name: &str,
     canonical_bytes: &[u8],
@@ -105,7 +106,7 @@ pub fn render_skill_wrapper(
     keys: &[&str],
 ) -> String {
     let (description, body) = parse_skill_body(canonical_bytes);
-    let mut document = format!("---\nname: {name}\n");
+    let mut document = format!("---\nname: {}\n", yaml_scalar(name));
     if let Some(description) = description {
         let escaped = escape_yaml_double_quoted(&description);
         document.push_str(&format!("description: \"{escaped}\"\n"));
@@ -198,6 +199,23 @@ fn unquoted(value: &str) -> String {
     text
 }
 
+/// `value` as a YAML scalar: plain when every character of it is one a
+/// plain scalar keeps as written, quoted otherwise. A name falls back to a
+/// directory's, which may hold `: ` or `#`; a label like `flow:review`
+/// stays as written.
+fn yaml_scalar(value: &str) -> String {
+    let plain = value.starts_with(|first: char| first.is_ascii_alphanumeric())
+        && value.chars().all(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/' | '@' | '+')
+        })
+        && !value.ends_with(':');
+    if plain {
+        value.to_owned()
+    } else {
+        format!("\"{}\"", escape_yaml_double_quoted(value))
+    }
+}
+
 /// Escapes `value` as the contents of a YAML double-quoted scalar, so it can
 /// be safely written as `"{escaped}"` in generated frontmatter regardless of
 /// content — colons, embedded newlines, quotes, or text shaped like another
@@ -252,6 +270,12 @@ pub fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
     let text = is_utf8(bytes)?;
     let (head, _) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text))?;
     head_value(head, key).map(str::to_owned)
+}
+
+/// [`frontmatter_value`] as the text it holds, its quotes undone: what a
+/// generated wrapper writes back as a scalar of its own.
+pub fn frontmatter_text(bytes: &[u8], key: &str) -> Option<String> {
+    frontmatter_value(bytes, key).map(|value| unquoted(&value))
 }
 
 /// Whether `skill_dir` carries Codex's explicit-only policy sidecar:
@@ -464,6 +488,20 @@ mod tests {
         let rendered =
             render_skill_wrapper("n", b"---\ndescription: \"quoted\"\n---\nbody\n", &[], &[]);
         assert!(rendered.contains("description: \"quoted\"\n"), "{rendered}");
+    }
+
+    #[test]
+    fn a_name_yaml_would_misread_is_quoted() {
+        let plain = render_skill_wrapper("flow:deploy", b"body\n", &[], &[]);
+        assert!(plain.starts_with("---\nname: flow:deploy\n"), "{plain}");
+        for name in ["review: code", "fix #2", "\"quoted\"", "-dash", "trailing:"] {
+            let rendered = render_skill_wrapper(name, b"body\n", &[], &[]);
+            assert_eq!(
+                frontmatter_text(rendered.as_bytes(), "name").as_deref(),
+                Some(name),
+                "{rendered}"
+            );
+        }
     }
 
     #[test]

@@ -310,12 +310,6 @@ pub enum Verdict {
     Undrawable(String),
 }
 
-impl Verdict {
-    pub fn is_drawn(&self) -> bool {
-        matches!(self, Self::Drawn)
-    }
-}
-
 /// What checking one artifact found.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Checked {
@@ -1238,13 +1232,17 @@ fn content(state: &ArchitectView, space: Size) -> Content {
     }
     match state.showing {
         Showing::Source => {
-            let lines = source_lines(state.source());
+            let source = state.source();
+            let first = usize::try_from(state.corner(space).1).unwrap_or(0);
             Content::Lines {
-                first: 0,
+                first,
                 heading: state.caption(),
-                scroll: state.corner(space).1.max(0) as u16,
-                total: lines.len(),
-                lines,
+                scroll: first,
+                total: source.lines().count(),
+                // Twice the height for the reason the code surface's
+                // windows are: only the host knows how many rows a
+                // wrapped line takes.
+                lines: source_lines(source, first, usize::from(space.height).saturating_mul(2)),
                 caret: None,
                 medium: Medium::Text,
             }
@@ -1267,10 +1265,12 @@ fn content(state: &ArchitectView, space: Size) -> Content {
     }
 }
 
-fn source_lines(source: &str) -> Vec<ContentLine> {
+fn source_lines(source: &str, first: usize, count: usize) -> Vec<ContentLine> {
     source
         .lines()
         .enumerate()
+        .skip(first)
+        .take(count)
         .map(|(index, line)| ContentLine {
             gutter: " ".to_owned(),
             number: (index + 1).to_string(),

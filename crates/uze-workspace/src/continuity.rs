@@ -86,8 +86,13 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         })
     {
         let launched_at = entry.launched_at_unix;
-        if record.observed(id, launched_at, observed) {
-            let _ = conversation::save(home, &owner.project_root, &record);
+        // Applied to what is stored now rather than to what was read
+        // before the observation: the launch it answers is named by its
+        // timestamp, so a launch recorded since simply refuses it.
+        if record.observed(id, launched_at, observed.clone()) {
+            let _ = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
+                stored.observed(id, launched_at, observed)
+            });
         }
     }
 
@@ -95,55 +100,53 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         if integration.session_exists(&recorded, claim.cwd) {
             return LaunchPlan::args(integration.resume_session_args(&recorded));
         }
-        record.forget_harness(id);
-        let mut plan = start(home, claim.cwd, integration, &mut record, &owner);
+        let mut plan = start(home, claim.cwd, integration, &owner);
         plan.note = Some(format!(
             "the recorded conversation ({recorded}) is no longer there; starting a new one"
         ));
         return plan;
     }
 
-    start(home, claim.cwd, integration, &mut record, &owner)
+    start(home, claim.cwd, integration, &owner)
 }
 
+/// Records a new launch, replacing whatever conversation the harness had
+/// for this agent before.
 fn start(
     home: &UzeHome,
     cwd: &Path,
     integration: &dyn IntegrationPort,
-    record: &mut conversation::ConversationRecord,
     owner: &conversation::Owner,
 ) -> LaunchPlan {
     let id = integration.id();
-    let plan = match integration.session_continuity() {
+    let (plan, origin, session, preceded_by) = match integration.session_continuity() {
         // Named here, so nothing has to be read back and a crash between
         // this line and the harness's first write costs nothing.
         SessionContinuity::Assigned => {
             let session = SessionId::generate();
-            record.launched(
-                id,
+            (
+                LaunchPlan::args(integration.start_session_args(&session)),
                 ConversationOrigin::Assigned,
-                Some(session.clone()),
+                Some(session),
                 None,
-            );
-            LaunchPlan::args(integration.start_session_args(&session))
+            )
         }
         // The harness names its own; all this launch can do is say when it
         // started and what was already there, so the read-back can tell one
         // from the other.
-        SessionContinuity::Observed => {
-            record.launched(
-                id,
-                ConversationOrigin::Observed,
-                None,
-                integration.session_recorded_for(cwd),
-            );
-            LaunchPlan::nothing()
-        }
+        SessionContinuity::Observed => (
+            LaunchPlan::nothing(),
+            ConversationOrigin::Observed,
+            None,
+            integration.session_recorded_for(cwd),
+        ),
         SessionContinuity::Unsupported => return LaunchPlan::nothing(),
     };
     // A record that cannot be written is a conversation that will not be
     // carried over next time — never a launch that does not happen.
-    let _ = conversation::save(home, &owner.project_root, record);
+    let _ = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
+        stored.launched(id, origin, session, preceded_by);
+    });
     plan
 }
 
@@ -161,7 +164,7 @@ pub fn refresh(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPo
     let Some(owner) = conversation::owner_of(home, claim) else {
         return false;
     };
-    let mut record = conversation::load(home, &owner.project_root, &owner.agent);
+    let record = conversation::load(home, &owner.project_root, &owner.agent);
     let id = integration.id();
     let Some(entry) = record.get(id) else {
         return false;
@@ -181,10 +184,10 @@ pub fn refresh(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPo
     if known.as_ref() == Some(&observed) {
         return false;
     }
-    if !record.observed(id, launched_at, observed) {
-        return false;
-    }
-    conversation::save(home, &owner.project_root, &record).is_ok()
+    conversation::update(home, &owner.project_root, &owner.agent, |stored| {
+        stored.observed(id, launched_at, observed)
+    })
+    .unwrap_or(false)
 }
 
 #[cfg(test)]

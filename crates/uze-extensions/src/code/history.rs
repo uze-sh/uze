@@ -379,7 +379,7 @@ mod tests {
 mod repository_tests {
     use super::*;
 
-    use crate::code::tests::RepositoryHost as TestHost;
+    use crate::shared::DiskHost as TestHost;
 
     /// The popup's account is the commit's own: who, when, what it said,
     /// and how much it touched.

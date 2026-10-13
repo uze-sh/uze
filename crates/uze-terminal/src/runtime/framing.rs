@@ -103,8 +103,13 @@ pub(super) fn write_message<W: Write, T: Serialize>(
     writer: &mut W,
     value: &T,
 ) -> Result<(), RuntimeError> {
-    // The length and the body as one write: two cost a second write, and a
-    // pipe's a second overlapped operation, on every frame.
+    write_frame(writer, &encode_frame(value)?)
+}
+
+/// `value` as one frame: the length and the body together, so a frame
+/// goes out in one write — two cost a second write, and a pipe's a second
+/// overlapped operation, on every frame.
+pub(super) fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, RuntimeError> {
     let mut frame = vec![0u8; 4];
     bincode::serialize_into(&mut frame, value)
         .map_err(|error| RuntimeError::Protocol(error.to_string()))?;
@@ -114,10 +119,38 @@ pub(super) fn write_message<W: Write, T: Serialize>(
         .filter(|len| *len <= MAX_FRAME)
         .ok_or_else(|| oversized_frame(body as u64, MAX_FRAME))?;
     frame[..4].copy_from_slice(&len.to_le_bytes());
-    writer.write_all(&frame)?;
+    Ok(frame)
+}
+
+pub(super) fn write_frame<W: Write>(writer: &mut W, frame: &[u8]) -> Result<(), RuntimeError> {
+    writer.write_all(frame)?;
     writer.flush()?;
     Ok(())
 }
+
+/// An event encoded for the wire once, however many clients it goes to: a
+/// pane's damage is the same bytes for every one of them. One that could
+/// not be encoded carries why, for the writer to end the connection over.
+#[derive(Clone)]
+pub(super) struct Frame(Result<Arc<[u8]>, Arc<str>>);
+
+impl Frame {
+    pub(super) fn of(event: &ClientEvent) -> Self {
+        Self(
+            encode_frame(event)
+                .map(Arc::from)
+                .map_err(|error| Arc::from(error.to_string())),
+        )
+    }
+
+    pub(super) fn write_to<W: Write>(&self, writer: &mut W) -> Result<(), RuntimeError> {
+        match &self.0 {
+            Ok(bytes) => write_frame(writer, bytes),
+            Err(reason) => Err(RuntimeError::Protocol(reason.to_string())),
+        }
+    }
+}
+
 pub(super) fn read_message<R: Read, T: DeserializeOwned>(
     reader: &mut R,
 ) -> Result<Option<T>, RuntimeError> {

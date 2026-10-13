@@ -615,7 +615,11 @@ impl Releases for Published {
         let version =
             release_version(version).ok_or_else(|| format!("{version:?} is not a release"))?;
         let archive = asset().ok_or("no release is built for this platform")?;
-        let scratch = scratch.join("release").join(version);
+        // One directory per process: two clients installing the same
+        // release at once would otherwise unpack into each other's files.
+        let scratch = scratch
+            .join("release")
+            .join(format!("{version}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&scratch);
         fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
         let result = (|| {
@@ -764,7 +768,10 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
         .stderr(Stdio::null())
         .output()
         .map_err(|error| format!("the downloaded binary does not run: {error}"))?;
-    if !String::from_utf8_lossy(&reported.stdout).contains(version) {
+    let reports_version = String::from_utf8_lossy(&reported.stdout)
+        .split_whitespace()
+        .any(|word| word == version);
+    if !reports_version {
         return Err(format!("the downloaded binary is not {version}"));
     }
     // Beside the target, so the rename below never crosses a filesystem —
@@ -959,7 +966,8 @@ fn is_same_file(a: &Path, b: &Path) -> bool {
 ///
 /// `install.sh` writes it, which is why it stays a document of its own
 /// rather than folding into the ledger below: a different writer and a
-/// different lifetime. UZE only ever reads it.
+/// different lifetime. UZE rewrites only its version, after placing a
+/// release over the binary it names.
 fn receipt_path(home: &UzeHome) -> PathBuf {
     home.install_receipt_path()
 }

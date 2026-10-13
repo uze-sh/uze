@@ -2,13 +2,20 @@
 //! pane, how it starts it so nothing escapes the unit, which of its
 //! processes a person is talking to, and ending it.
 
-use std::{ffi::OsString, io};
+use std::{
+    ffi::OsString,
+    io,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use super::imp;
 
 /// A pane's processes as one unit: the program a pane runs and everything
 /// it starts, ended together when the pane closes.
-pub struct Group(imp::Group);
+pub struct Group {
+    unit: imp::Group,
+    ended: AtomicBool,
+}
 
 /// A program to start so that it belongs to its [`Group`] from its first
 /// instant.
@@ -32,7 +39,7 @@ pub fn grouped(argv: Vec<OsString>, host: Option<&[OsString]>) -> io::Result<Gro
     let (argv, group) = imp::grouped(argv, host)?;
     Ok(Grouped {
         argv,
-        group: group.map(Group),
+        group: group.map(Group::of),
     })
 }
 
@@ -68,7 +75,7 @@ pub fn foreground(
     group: Option<&Group>,
     passes_on: impl Fn(&Member, &Member) -> bool,
 ) -> Option<u32> {
-    imp::foreground(leader, group.map(|group| &group.0), passes_on)
+    imp::foreground(leader, group.map(|group| &group.unit), passes_on)
 }
 
 /// Whether `pid` is one of the processes of the pane whose program is
@@ -81,7 +88,7 @@ pub fn foreground(
 /// lives. On Windows the pane's Job Object holds every process started in
 /// it, and nothing leaves a job that was not made to let it.
 pub fn belongs(pid: u32, leader: u32, group: Option<&Group>) -> bool {
-    imp::belongs(pid, leader, group.map(|group| &group.0))
+    imp::belongs(pid, leader, group.map(|group| &group.unit))
 }
 
 impl Group {
@@ -89,17 +96,29 @@ impl Group {
     /// `None` where it cannot be: on Unix a program that does not lead a
     /// group of its own, which a group signal would then overreach.
     pub fn adopt(pid: u32) -> Option<Self> {
-        imp::Group::adopt(pid).map(Self)
+        imp::Group::adopt(pid).map(Self::of)
     }
 
-    /// Ends every process in the unit.
+    fn of(unit: imp::Group) -> Self {
+        Self {
+            unit,
+            ended: AtomicBool::new(false),
+        }
+    }
+
+    /// Ends every process in the unit, once: call it before the leader is
+    /// reaped. On Unix the unit is named by the leader's pid, which a
+    /// reaped leader with nothing left in its group gives back for reuse,
+    /// and a second signal could then reach a stranger's group.
     pub fn end(&self) {
-        self.0.end()
+        if !self.ended.swap(true, Ordering::SeqCst) {
+            self.unit.end()
+        }
     }
 
     /// The processes in the unit, oldest first, where the platform lists
     /// them; empty where it does not.
     pub fn members(&self) -> Vec<u32> {
-        self.0.members()
+        self.unit.members()
     }
 }

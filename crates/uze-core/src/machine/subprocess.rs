@@ -84,7 +84,7 @@ fn wait_until(
                 // yet reaped: until it is, neither its pid nor its group id
                 // can be handed to another process, so both can only reach
                 // what this child started.
-                wait_without_reaping(pid);
+                uze_platform::process::wait_without_reaping(pid);
                 tree.end();
                 let status = child.wait()?;
                 return Ok((status, ending));
@@ -100,10 +100,6 @@ fn wait_until(
 }
 
 pub use uze_platform::interrupt::InterruptWatch;
-
-fn wait_without_reaping(pid: u32) {
-    uze_platform::process::wait_without_reaping(pid);
-}
 
 /// Reads a child handle to EOF, keeping the **last** `cap` bytes and
 /// reporting how many were dropped off the front.
@@ -237,8 +233,14 @@ pub fn run_program_bounded(
     timeout: Duration,
 ) -> Option<Captured> {
     let mut invocation = Command::new(program);
+    invocation.args(arguments);
+    run_command_bounded(invocation, timeout)
+}
+
+/// [`run_program_bounded`] for a command the caller prepared — its
+/// environment, its working directory — whose streams this owns.
+pub fn run_command_bounded(mut invocation: Command, timeout: Duration) -> Option<Captured> {
     invocation
-        .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

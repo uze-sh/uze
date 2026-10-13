@@ -16,7 +16,7 @@ use uze_workspace::{
     worktree::{self, WORKTREES_DIRECTORY},
 };
 
-use super::Workspace;
+use super::{Workspace, tasks};
 
 impl Workspace<'_> {
     /// Every worktree of the repository `cwd` belongs to, grouped by who
@@ -144,7 +144,7 @@ impl Workspace<'_> {
         path: &Path,
         presence: &Presence,
     ) -> std::result::Result<RemovedCheckout, CheckoutRefusal> {
-        let (primary, _) = self.project_of(cwd)?;
+        let primary = primary_of(cwd)?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
         if let Some(found) = accounted.iter().find(|found| same(&found.path, path))
@@ -198,20 +198,15 @@ impl Workspace<'_> {
         clean_up
     }
 
-    /// The repository `cwd` belongs to, and what it delivers onto.
+    /// The repository `cwd` belongs to, and what it delivers onto. A
+    /// manifest that does not parse refuses rather than judging work
+    /// against a branch the project may not deliver into.
     fn project_of(&self, cwd: &Path) -> std::result::Result<(PathBuf, String), CheckoutRefusal> {
-        let primary = worktree::primary_checkout(cwd).ok_or_else(|| {
-            CheckoutRefusal(Refusal::Failed(format!(
-                "{} is not in a Git repository",
-                cwd.display()
-            )))
-        })?;
-        let target = self
+        let primary = primary_of(cwd)?;
+        let policy = self
             .policy(&primary)
-            .ok()
-            .and_then(|policy| policy.target)
-            .or_else(|| checkout::current_branch(&primary))
-            .unwrap_or_else(|| "HEAD".to_owned());
+            .map_err(|error| CheckoutRefusal(Refusal::Failed(error.to_string())))?;
+        let target = tasks::target_of(&primary, &policy);
         Ok((primary, target))
     }
 
@@ -344,6 +339,15 @@ fn display_name(primary: &Path, path: &Path) -> String {
         |_| path.display().to_string(),
         |relative| relative.display().to_string(),
     )
+}
+
+fn primary_of(cwd: &Path) -> std::result::Result<PathBuf, CheckoutRefusal> {
+    worktree::primary_checkout(cwd).ok_or_else(|| {
+        CheckoutRefusal(Refusal::Failed(format!(
+            "{} is not in a Git repository",
+            cwd.display()
+        )))
+    })
 }
 
 fn same(left: &Path, right: &Path) -> bool {

@@ -144,40 +144,20 @@ pub fn launch(
 /// deadline. A Windows App Execution Alias passes a `PATH` lookup and then
 /// exits 9009 or opens the Store; only an answer counts.
 pub fn python_answers(words: &[&str]) -> bool {
-    use std::process::Stdio;
-
-    use crate::subprocess::{Seat, read_bounded, spawn_tree, wait_with_timeout};
-
     let Some((program, arguments)) = words.split_first() else {
         return false;
     };
     let mut command = std::process::Command::new(program);
-    command
-        .args(arguments)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let Ok((mut child, tree)) = spawn_tree(&mut command, Seat::OwnGroup) else {
+    command.args(arguments).arg("--version");
+    let Some(answer) =
+        crate::subprocess::run_command_bounded(command, std::time::Duration::from_secs(5))
+    else {
         return false;
     };
-    // `--version` writes one short line, far below what a pipe holds, so
-    // reading after the exit cannot block the child.
-    match wait_with_timeout(&mut child, &tree, std::time::Duration::from_secs(5)) {
-        Ok((status, false)) if status.success() => {
-            let mut answer = Vec::new();
-            if let Some(stdout) = child.stdout.take() {
-                answer.extend(read_bounded(stdout, 256).0);
-            }
-            if let Some(stderr) = child.stderr.take() {
-                answer.extend(read_bounded(stderr, 256).0);
-            }
-            String::from_utf8_lossy(&answer)
-                .trim_start()
-                .starts_with("Python 3")
-        }
-        _ => false,
-    }
+    answer.code == Some(0)
+        && format!("{}{}", answer.stdout, answer.stderr)
+            .trim_start()
+            .starts_with("Python 3")
 }
 
 #[cfg(test)]

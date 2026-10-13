@@ -14,7 +14,7 @@ use std::{
     fs,
     ops::ControlFlow,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{ChildStdout, Command, Stdio},
     sync::mpsc,
     thread,
     time::Instant,
@@ -62,6 +62,8 @@ const CREDENTIAL_KEYS: &str = r"^credential\.";
 /// Wall-clock budget for any single Git invocation. A remote that never
 /// answers must fail rather than hang a `uze add` forever.
 const COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+const OPERATOR_CONFIG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Per-stream cap for a Git invocation's captured output. Every caller in
 /// this module only ever reads small plumbing output (a ref name, a commit
@@ -142,10 +144,6 @@ pub(super) fn reject_option_shaped(value: &str, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// Clones `url` into `destination` and checks out `reference`, returning the
-/// resolved commit.
-///
-/// `destination` must not exist; the caller owns it and its cleanup.
 /// What a checkout of a commit produced: the commit, and the symbolic links
 /// its tree holds that the checkout could not make (see [`unmade_links`]).
 pub struct Checkout {
@@ -153,6 +151,10 @@ pub struct Checkout {
     pub links: crate::digest::Links,
 }
 
+/// Clones `url` into `destination` and checks out `reference`, returning the
+/// resolved commit.
+///
+/// `destination` must not exist; the caller owns it and its cleanup.
 pub fn materialize(url: &str, reference: Option<&str>, destination: &Path) -> Result<Checkout> {
     reject_inline_credentials(url)?;
     reject_option_shaped(url, "repository url")?;
@@ -607,23 +609,77 @@ pub(super) fn run_as(
     arguments: &[&str],
     working_directory: Option<&Path>,
 ) -> Result<String> {
+    run_bytes(reach, arguments, working_directory, GIT_OUTPUT_CAP)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// [`run_as`] for output that must reach its caller byte for byte — a file
+/// read out of a repository — refused whole past `cap`.
+pub(super) fn run_bytes(
+    reach: Reach,
+    arguments: &[&str],
+    working_directory: Option<&Path>,
+    cap: usize,
+) -> Result<Vec<u8>> {
+    captured(
+        git_command(reach, arguments, working_directory),
+        arguments,
+        cap,
+    )
+}
+
+/// [`run_as`] with Git's index kept in `index` rather than in the
+/// repository, for a checkout out of a mirror more than one process reads.
+pub(super) fn run_with_index(
+    reach: Reach,
+    arguments: &[&str],
+    working_directory: Option<&Path>,
+    index: &Path,
+) -> Result<()> {
+    let mut command = git_command(reach, arguments, working_directory);
+    command.env("GIT_INDEX_FILE", index);
+    captured(command, arguments, GIT_OUTPUT_CAP).map(drop)
+}
+
+fn captured(command: Command, arguments: &[&str], cap: usize) -> Result<Vec<u8>> {
+    let (bytes, dropped) = spawn_git(
+        command,
+        arguments,
+        move |stdout| read_bounded(stdout, cap),
+        |_| false,
+    )?;
+    // `read_bounded` keeps the tail, and the tail of a listing read as the
+    // whole of it is an answer that is wrong without looking wrong.
+    if dropped > 0 {
+        return Err(UzeError::AcquisitionFailed(format!(
+            "`git {}` wrote more than {cap} bytes",
+            arguments.first().copied().unwrap_or("command")
+        )));
+    }
+    Ok(bytes)
+}
+
+/// Runs `command` under the deadline, handing its stdout to `read` on a
+/// thread of its own. What `read` answers is the result once `git` exited
+/// successfully — or at once, whatever `git` exits with, when `settled`
+/// says it already is one.
+fn spawn_git<T: Send + 'static>(
+    mut command: Command,
+    arguments: &[&str],
+    read: impl FnOnce(&mut ChildStdout) -> T + Send + 'static,
+    settled: impl FnOnce(&T) -> bool,
+) -> Result<T> {
     let span = tracing::info_span!(
         "acquisition.git",
         args = %arguments.join(" "),
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
-    let mut command = git_command(reach, arguments, working_directory);
     let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
         .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
-    let Some(mut stdout) = child.stdout.take() else {
+    let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(UzeError::AcquisitionFailed(
-            "captured git stdout was not piped".to_owned(),
-        ));
-    };
-    let Some(mut stderr) = child.stderr.take() else {
-        return Err(UzeError::AcquisitionFailed(
-            "captured git stderr was not piped".to_owned(),
+            "captured git output was not piped".to_owned(),
         ));
     };
     let deadline = Instant::now() + COMMAND_TIMEOUT;
@@ -643,7 +699,7 @@ pub(super) fn run_as(
     let (stdout_tx, stdout_rx) = mpsc::channel();
     let (stderr_tx, stderr_rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = stdout_tx.send(read_bounded(&mut stdout, GIT_OUTPUT_CAP));
+        let _ = stdout_tx.send(read(&mut stdout));
     });
     thread::spawn(move || {
         let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
@@ -663,36 +719,24 @@ pub(super) fn run_as(
     // open: bound the wait for the readers by what remains of the deadline
     // instead of joining unconditionally.
     let remaining = || deadline.saturating_duration_since(Instant::now());
-    let (stdout_bytes, stdout_dropped) = match stdout_rx.recv_timeout(remaining()) {
-        Ok(result) => result,
-        Err(_) => {
-            tree.end_survivors();
-            return Err(timed_out_error());
-        }
+    let Ok(answer) = stdout_rx.recv_timeout(remaining()) else {
+        tree.end_survivors();
+        return Err(timed_out_error());
     };
-    let (stderr_bytes, _) = match stderr_rx.recv_timeout(remaining()) {
-        Ok(result) => result,
-        Err(_) => {
-            tree.end_survivors();
-            return Err(timed_out_error());
-        }
+    if settled(&answer) {
+        return Ok(answer);
+    }
+    let Ok((stderr_bytes, _)) = stderr_rx.recv_timeout(remaining()) else {
+        tree.end_survivors();
+        return Err(timed_out_error());
     };
     if !status.success() {
         return Err(failure(arguments, &stderr_bytes));
     }
-
-    // `read_bounded` keeps the tail, and the tail of a listing read as the
-    // whole of it is an answer that is wrong without looking wrong.
-    if stdout_dropped > 0 {
-        return Err(UzeError::AcquisitionFailed(format!(
-            "`git {}` wrote more than {GIT_OUTPUT_CAP} bytes",
-            arguments.first().copied().unwrap_or("command")
-        )));
-    }
-    Ok(String::from_utf8_lossy(&stdout_bytes).into_owned())
+    Ok(answer)
 }
 
-/// The one `git` invocation [`run_as`] and [`run_records`] both spawn: the
+/// The one `git` invocation every runner here spawns: the
 /// stripped environment, the pushed configuration and piped output.
 fn git_command(reach: Reach, arguments: &[&str], working_directory: Option<&Path>) -> Command {
     let mut command = Command::new("git");
@@ -787,30 +831,7 @@ fn run_records<T: Send + 'static>(
     mut state: T,
     mut fold: impl FnMut(&mut T, &[u8]) -> ControlFlow<()> + Send + 'static,
 ) -> Result<T> {
-    let span = tracing::info_span!(
-        "acquisition.git",
-        args = %arguments.join(" "),
-        exit = tracing::field::Empty
-    );
-    let _entered = span.enter();
-    let mut command = git_command(reach, arguments, working_directory);
-    let (mut child, tree) = spawn_tree(&mut command, Seat::OwnGroup)
-        .map_err(|error| UzeError::AcquisitionFailed(format!("could not run `git`: {error}")))?;
-    let (Some(mut stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        return Err(UzeError::AcquisitionFailed(
-            "captured git output was not piped".to_owned(),
-        ));
-    };
-    let deadline = Instant::now() + COMMAND_TIMEOUT;
-    let timed_out_error = || {
-        UzeError::AcquisitionFailed(format!(
-            "`git {}` timed out",
-            arguments.first().copied().unwrap_or("command")
-        ))
-    };
-    let (stdout_tx, stdout_rx) = mpsc::channel();
-    let (stderr_tx, stderr_rx) = mpsc::channel();
-    thread::spawn(move || {
+    let read = move |stdout: &mut ChildStdout| {
         use std::io::Read;
         let mut buffer = [0u8; 64 * 1024];
         let mut pending: Vec<u8> = Vec::new();
@@ -833,36 +854,15 @@ fn run_records<T: Send + 'static>(
             pending.drain(..consumed);
         };
         let stopped = stopped || (!pending.is_empty() && fold(&mut state, &pending).is_break());
-        let _ = stdout_tx.send((state, stopped));
-    });
-    thread::spawn(move || {
-        let _ = stderr_tx.send(read_bounded(&mut stderr, GIT_OUTPUT_CAP));
-    });
-    let (status, timed_out) =
-        wait_with_timeout(&mut child, &tree, COMMAND_TIMEOUT).map_err(|error| {
-            UzeError::AcquisitionFailed(format!("could not wait for `git`: {error}"))
-        })?;
-    span.record("exit", status.code().unwrap_or(-1));
-    if timed_out {
-        tracing::warn!("git timed out");
-        return Err(timed_out_error());
-    }
-    let remaining = || deadline.saturating_duration_since(Instant::now());
-    let Ok((state, stopped)) = stdout_rx.recv_timeout(remaining()) else {
-        tree.end_survivors();
-        return Err(timed_out_error());
+        (state, stopped)
     };
-    if stopped {
-        return Ok(state);
-    }
-    let Ok((stderr_bytes, _)) = stderr_rx.recv_timeout(remaining()) else {
-        tree.end_survivors();
-        return Err(timed_out_error());
-    };
-    if !status.success() {
-        return Err(failure(arguments, &stderr_bytes));
-    }
-    Ok(state)
+    spawn_git(
+        git_command(reach, arguments, working_directory),
+        arguments,
+        read,
+        |(_, stopped)| *stopped,
+    )
+    .map(|(state, _)| state)
 }
 
 /// [`SSH_COMMAND`], sharing one connection per host for a minute when this
@@ -1003,18 +1003,20 @@ fn read_operator_config(pattern: &str) -> Vec<(String, String)> {
     let no_repository = Path::new("/dev/null");
     let mut command = Command::new("git");
     without_git_environment(&mut command, WHICH_FILES);
-    let Ok(output) = command
+    command
         .args(["config", "--includes", "-z", "--get-regexp", pattern])
         .env("GIT_DIR", no_repository)
-        .current_dir("/")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
+        .current_dir("/");
+    // An include can name a FIFO or a network mount; the operator's
+    // settings are an addition to an attempt, never a reason to hang it.
+    let Some(output) = crate::subprocess::run_command_bounded(command, OPERATOR_CONFIG_TIMEOUT)
+        .filter(|captured| !captured.timed_out)
     else {
         return Vec::new();
     };
     let home = crate::user_home();
-    String::from_utf8_lossy(&output.stdout)
+    output
+        .stdout
         .split('\0')
         .filter(|entry| !entry.is_empty())
         .map(|entry| {
@@ -1074,7 +1076,7 @@ pub(super) fn through<T>(
     let mut https_unreachable: Option<&'static str> = None;
     let (mut unresolved, mut refused) = (0, 0);
     for transport in transports {
-        let over_https = transport.url.contains("://") && !transport.url.starts_with("ssh://");
+        let over_https = transport.over_https();
         if over_https && let Some(why) = https_unreachable {
             failures.push(format!("  {}: skipped, {why}", transport.label()));
             unresolved += usize::from(why == UNRESOLVED);
@@ -1255,16 +1257,27 @@ fn cannot_resolve_host(complaint: &str) -> bool {
 }
 
 /// Replaces anything shaped like inline credentials in a message.
+///
+/// Only the authority holds credentials, and the host follows its *last*
+/// `@`: a password may itself carry one, and a path or reference after the
+/// host (`repo@v1`) is not userinfo.
 pub fn redact(message: &str) -> String {
     let mut result = String::with_capacity(message.len());
     for token in message.split_inclusive(char::is_whitespace) {
-        match (token.find("://"), token.find('@')) {
-            (Some(scheme), Some(at)) if at > scheme => {
-                result.push_str(&token[..scheme + 3]);
+        let Some(scheme) = token.find("://") else {
+            result.push_str(token);
+            continue;
+        };
+        let start = scheme + 3;
+        let authority = &token[start..];
+        let authority = &authority[..authority.find(['/', '?', '#']).unwrap_or(authority.len())];
+        match authority.rfind('@') {
+            Some(at) => {
+                result.push_str(&token[..start]);
                 result.push_str("<redacted>@");
-                result.push_str(&token[at + 1..]);
+                result.push_str(&token[start + at + 1..]);
             }
-            _ => result.push_str(token),
+            None => result.push_str(token),
         }
     }
     result
@@ -1547,6 +1560,16 @@ mod tests {
         ] {
             assert!(reject_inline_credentials(url).is_ok(), "rejected {url}");
         }
+    }
+
+    #[test]
+    fn redaction_takes_the_last_at_of_the_authority_and_nothing_past_it() {
+        let redacted = redact("cannot reach https://user:p@ss@example.com/repo.git");
+        assert!(!redacted.contains("ss@"), "{redacted}");
+        assert!(redacted.contains("https://<redacted>@example.com/repo.git"));
+
+        let reference = "cannot reach https://github.com/org/repo@v1 now";
+        assert_eq!(redact(reference), reference);
     }
 
     #[test]

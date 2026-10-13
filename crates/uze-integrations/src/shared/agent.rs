@@ -128,9 +128,11 @@ const MAX_PROJECT_AGENT_BYTES: u64 = 1024 * 1024;
 
 /// A project agent definition's bytes, when it is a regular file of a
 /// readable size. A FIFO or a device named `*.md` would otherwise hold the
-/// launch that reads it for as long as it pleases.
+/// launch that reads it for as long as it pleases, and a link would hand a
+/// harness, as its instructions, whatever file outside the project a
+/// cloned repository pointed it at.
 fn read_definition(path: &Path) -> Option<Vec<u8>> {
-    let metadata = std::fs::metadata(path).ok()?;
+    let metadata = std::fs::symlink_metadata(path).ok()?;
     if !metadata.is_file() || metadata.len() > MAX_PROJECT_AGENT_BYTES {
         return None;
     }
@@ -220,5 +222,23 @@ mod tests {
             .collect();
         assert_eq!(labels, ["reviewer"]);
         std::fs::remove_dir_all(&directory).ok();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_definition_is_not_read() {
+        let root = uze_testkit::temp::scratch("project-agents-linked");
+        let directory = root.join("agents");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            root.join("outside.md"),
+            "---\nname: outside\ndescription: Elsewhere.\n---\nSecret.\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(root.join("outside.md"), directory.join("linked.md")).unwrap();
+
+        assert!(project_agents(&directory).is_empty());
+        std::fs::remove_dir_all(&root).ok();
     }
 }

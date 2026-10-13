@@ -349,24 +349,48 @@ pub(crate) fn dispatch(
 }
 
 fn persist_keymap(home: &UzeHome, model: &mut TuiModel) {
-    let file = uze_keys::difference_from_default(&uze_keys::active());
     let path = home.keymap_path();
-    let written = if file.is_empty() {
+    model.status = match keymap_to_save(&path) {
+        Ok(file) => match write_keymap(&path, &file) {
+            Ok(()) => Status::Success("Keyboard saved".to_owned()),
+            Err(error) => Status::Error(format!("{}: {error}", path.display())),
+        },
+        Err(reason) => Status::Error(reason),
+    };
+}
+
+/// What saving the keymap in force should write over `path`, or why
+/// nothing may be: a file this build could not apply is still the
+/// operator's text, and the keymap in force is then the built-in one, so
+/// saving it would replace their file with a single rebind.
+fn keymap_to_save(path: &std::path::Path) -> std::result::Result<uze_keys::KeymapFile, String> {
+    let active = uze_keys::active();
+    let written = match uze_keys::load::read(path) {
+        Ok(Some(written)) => written,
+        Ok(None) => return Ok(uze_keys::difference_from_default(&active)),
+        Err(error) => return Err(format!("{}: {error}; fix it before saving", path.display())),
+    };
+    if uze_keys::load::resolve(&written).is_err() {
+        return Err(format!(
+            "{} has entries this build cannot apply; fix it before saving",
+            path.display()
+        ));
+    }
+    Ok(uze_keys::saved_over(&written, &active))
+}
+
+fn write_keymap(path: &std::path::Path, file: &uze_keys::KeymapFile) -> std::io::Result<()> {
+    if file.is_empty() {
         // An operator who put everything back leaves no file
         // behind: the default is not a thing to be written down.
-        match std::fs::remove_file(&path) {
+        return match std::fs::remove_file(path) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
             _ => Ok(()),
-        }
-    } else {
-        serde_json::to_string_pretty(&file)
-            .map_err(std::io::Error::other)
-            .and_then(|contents| std::fs::write(&path, contents + "\n"))
-    };
-    model.status = match written {
-        Ok(()) => Status::Success("Keyboard saved".to_owned()),
-        Err(error) => Status::Error(format!("{}: {error}", path.display())),
-    };
+        };
+    }
+    let contents = serde_json::to_string_pretty(file).map_err(std::io::Error::other)?;
+    uze_application::write_atomic_preserving(path, (contents + "\n").as_bytes())
+        .map_err(std::io::Error::other)
 }
 
 fn inspect_plugin(id: String, home: &UzeHome, sender: &Sender<WorkerResult>, model: &mut TuiModel) {
@@ -637,7 +661,11 @@ fn preview_profile(
 fn update_preferences(id: String, preferences: Preferences, home: &UzeHome) {
     let home = home.clone();
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    // In the lane, not on a thread of its own: the write takes the mutation
+    // lock, which refuses rather than waits, so a toggle made during an
+    // install would otherwise be dropped, and two quick toggles could land
+    // out of order.
+    in_mutation_lane(move || {
         let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
         let written = answered_or(
             || {
@@ -1311,7 +1339,12 @@ fn open_in_browser(url: &str) -> Option<String> {
     // `$BROWSER`. Written when Linux was the only reader, and found by
     // asking a second platform.
     let native = uze_platform::desktop::URL_OPENERS;
-    for opener in preferred.into_iter().chain(native.iter().copied()) {
+    let openers: Vec<&str> = preferred
+        .into_iter()
+        .chain(native.iter().copied())
+        .collect();
+    for (index, opener) in openers.iter().enumerate() {
+        let last = index + 1 == openers.len();
         let mut words = opener.split_whitespace();
         let Some(program) = words.next() else {
             continue;
@@ -1330,14 +1363,39 @@ fn open_in_browser(url: &str) -> Option<String> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
-        if let Ok(mut child) = spawned {
-            // A launcher hands the URL over and exits at once; nobody is
-            // waiting on it, so reap it off-thread rather than leaving a
-            // zombie behind for as long as the TUI runs.
-            thread::spawn(move || {
-                let _ = child.wait();
-            });
-            return Some(program.to_owned());
+        let Ok(mut child) = spawned else {
+            continue;
+        };
+        // A launcher hands the URL over and exits at once, so its status is
+        // the one way to tell `xdg-open` declining under WSL from it
+        // succeeding. The last opener is taken at its word whatever it
+        // exits with: `explorer.exe` exits 1 after opening the page.
+        match launcher_declined(&mut child) {
+            Some(true) if !last => continue,
+            Some(_) => {}
+            // Still running: a browser started in the foreground. Reap it
+            // off-thread rather than leave a zombie for as long as the TUI
+            // runs.
+            None => {
+                thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+        }
+        return Some(program.to_owned());
+    }
+    None
+}
+
+/// Whether a launcher exited without success, or `None` while it is still
+/// running after the moment a launcher takes to hand an address over.
+fn launcher_declined(child: &mut std::process::Child) -> Option<bool> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(!status.success()),
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(_) => return Some(true),
         }
     }
     None
@@ -1364,15 +1422,7 @@ fn select_glyph_set(home: &UzeHome, id: &str) -> std::result::Result<(), String>
         .themes()
         .select_glyphs(id)
         .map_err(|error| error.to_string())?;
-    let theme = application
-        .themes()
-        .active()
-        .map_err(|error| error.to_string())?
-        .unwrap_or_else(|| uze_theme::builtin_names()[0].to_owned());
-    let loaded =
-        crate::theme::resolve(&application, home, &theme).map_err(|error| error.to_string())?;
-    uze_theme::set_active(loaded.theme);
-    Ok(())
+    crate::theme::redraw_active(&application, home).map_err(|error| error.to_string())
 }
 
 /// What a theme card shows of a palette: the accent it leads with, then
@@ -1463,14 +1513,9 @@ fn switch_extension(home: &UzeHome, id: &str, enabled: bool) -> std::result::Res
 
 fn select_theme(home: &UzeHome, id: &str) -> std::result::Result<(), String> {
     let application = tui_application(home.clone()).map_err(|error| error.to_string())?;
-    let loaded =
-        crate::theme::resolve(&application, home, id).map_err(|error| error.to_string())?;
-    application
-        .themes()
-        .select(id)
-        .map_err(|error| error.to_string())?;
-    uze_theme::set_active(loaded.theme);
-    Ok(())
+    crate::theme::select(&application, home, id)
+        .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -1482,6 +1527,22 @@ mod tests {
     };
 
     use super::*;
+
+    /// A keymap file this build could not apply leaves the built-in one in
+    /// force, and saving that would replace the operator's whole file with
+    /// a single rebind.
+    #[test]
+    fn a_keymap_file_that_did_not_load_is_never_saved_over() {
+        let scratch = uze_testkit::temp::TempDir::new("keymap-save");
+        let path = scratch.join("keys.json");
+        let theirs = r#"{"bindings":{"workspace":{"close-tab":["not a chord"]}}}"#;
+        std::fs::write(&path, theirs).unwrap();
+
+        assert!(keymap_to_save(&path).is_err());
+
+        std::fs::write(&path, "{ not json").unwrap();
+        assert!(keymap_to_save(&path).is_err());
+    }
 
     /// A mutation that panics still answers: the screen showed a working
     /// status when it was dispatched, and only an answer takes it down.

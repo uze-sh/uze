@@ -14,12 +14,12 @@ fn the_named_directory_leads_the_pane_path_once() {
 }
 
 use super::{
-    ANSWERS_WITHIN, Arrival, Launch, Listener, MAX_FRAME, MAX_PANE_DIMENSION, Outbox, PaneRuntime,
-    PersistedWorkspace, ReplySink, RuntimeError, Selection, Server, WORKSPACE_SCHEMA_VERSION,
-    WorkspaceLock, arrival, bind_endpoint, forward_events, held_by_a_server, identity_of,
-    load_persisted_workspace_at, persisted_state_path, read_event, read_message,
-    relaunch_command_for_process, send_request, serves_this_build, snapshot, socket_path, view_for,
-    workspace_is_claimed, write_atomically, write_message,
+    ANSWERS_WITHIN, Arrival, Launch, Listener, LoadedWorkspace, MAX_FRAME, MAX_PANE_DIMENSION,
+    Outbox, PaneRuntime, PersistedWorkspace, ReplySink, RuntimeError, Selection, Server,
+    WORKSPACE_SCHEMA_VERSION, WorkspaceLock, arrival, bind_endpoint, forward_events,
+    held_by_a_server, identity_of, load_persisted_workspace_at, persisted_state_path, read_event,
+    read_message, relaunch_command_for_process, send_request, serves_this_build, snapshot,
+    socket_path, view_for, workspace_is_claimed, write_atomically, write_message,
 };
 // Only the Unix tests below tell a listener apart by what it runs.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -1125,6 +1125,61 @@ fn a_stopped_pane_takes_its_process_group_with_it() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+// Unix only: a process group and a FIFO, as in the test above.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// A finished agent's group is ended with it: a worker deaf to the hangup
+/// would otherwise hold the old terminal open, and its reader alive.
+#[test]
+fn a_finished_agent_takes_what_it_left_in_its_group_with_it() {
+    let scratch = uze_testkit::temp::scratch("pane-finished-group");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let fifo = scratch.join("worker");
+    let path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: `path` is a NUL-terminated string that outlives the call.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+
+    let (damage, _damage_events) = std::sync::mpsc::channel();
+    let pane = PaneRuntime::spawn(
+        PaneId(9),
+        std::env::temp_dir(),
+        80,
+        24,
+        damage,
+        Launch::Program {
+            argv: vec![
+                "sh".into(),
+                "-c".into(),
+                format!("trap '' HUP; sleep 300 > '{}' & exit 0", fifo.display()),
+            ],
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+    )
+    .unwrap();
+    // Opening for reading waits for the worker to open its end.
+    let reader = std::fs::File::open(&fifo).unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !pane.finished_agent() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the agent never finished"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    let (ended, hung_up) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let _ = std::io::Read::read_to_end(&mut reader, &mut Vec::new());
+        let _ = ended.send(());
+    });
+    let outlived = hung_up.recv_timeout(Duration::from_secs(10)).is_err();
+    pane.stop().join().expect("the reaper finished");
+    assert!(!outlived, "the worker outlived its finished agent");
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// A client that stops reading is not buffered for without limit: once
 /// its queue is full it is marked stale and sent nothing more, and once
 /// it has caught up it is sent the whole workspace again.
@@ -1908,7 +1963,7 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
     )
     .unwrap();
 
-    let (restored, _) = load_persisted_workspace_at(&path);
+    let restored = load_persisted_workspace_at(&path).restored;
     let restored = restored.expect("the previous release's spaces survive");
     assert_eq!(
         restored.spaces.len(),
@@ -2249,7 +2304,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
     .unwrap();
 
     // Attaching repaints every pane first (see
-    // [`Server::broadcast_snapshot`]), so the event this test is about
+    // [`Server::paint_for`]), so the event this test is about
     // is the one that reports a size the pane did not start at.
     let resized = loop {
         match read_event(&mut reader).expect("the server must still be speaking") {
@@ -2274,6 +2329,181 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
     let _ = serving.join();
     server.stop_panes();
 
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Zero is "leave it alone" on the wire, and `Term::resize` underflows on
+/// a grid of nothing: a panic holding the pane's terminal lock poisons it,
+/// and the pane never draws again.
+#[test]
+fn a_resize_to_zero_leaves_the_pane_as_it_was() {
+    let scratch = uze_testkit::temp::socket_scratch("resizezero");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+    let runtime = server.runtime(pane).expect("the bootstrap pane runs");
+    let before = runtime.snapshot();
+
+    server.resize_pane(pane, 0, 0);
+    server.resize_pane(pane, 0, 40);
+    server.resize_pane(pane, 120, 0);
+
+    let after = runtime.snapshot();
+    assert_eq!(
+        (after.columns, after.rows),
+        (before.columns, before.rows),
+        "a zero leaves the pane at the size it was"
+    );
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server started over a newer build's workspace runs from the seat it
+/// was given, and its structural changes must not replace that record.
+#[test]
+fn a_server_never_writes_over_a_newer_builds_workspace() {
+    let scratch = uze_testkit::temp::socket_scratch("persnewer");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+    let path = persisted_state_path();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let bytes = br#"{"schema_version":99,"spaces":[]}"#;
+    std::fs::write(&path, bytes).unwrap();
+
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    server.broadcast_session();
+    server.stop_panes();
+
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        bytes,
+        "the newer build's record is exactly as it left it"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A client attaching is painted the workspace; the clients already there
+/// hold every pane and are sent nothing for it — a probe attaches on every
+/// `uze` start, and each one repainted every pane on every screen.
+#[test]
+fn an_attach_paints_only_the_client_that_attached() {
+    let scratch = uze_testkit::temp::socket_scratch("attachpaint");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+    let attach = || crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns: 0,
+        rows: 0,
+        seating: crate::Seating::WhereItLeftOff,
+        key: super::server_key(),
+    };
+    let connect = || {
+        let (client, driver) = super::transport::pair().unwrap();
+        let serving = {
+            let server = Arc::clone(&server);
+            std::thread::spawn(move || server.handle_client(client))
+        };
+        let writer = driver.try_clone().unwrap();
+        driver
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        (writer, std::io::BufReader::new(driver), serving)
+    };
+    let painted = |reader: &mut std::io::BufReader<_>| loop {
+        match read_event(reader).expect("the server must still be speaking") {
+            Some(crate::ClientEvent::Damage(damage)) if damage.pane == pane => break,
+            Some(_) => {}
+            None => panic!("the server hung up"),
+        }
+    };
+
+    let (mut first_writer, mut first, first_serving) = connect();
+    send_request(&mut first_writer, &attach()).unwrap();
+    painted(&mut first);
+    let (mut second_writer, mut second, second_serving) = connect();
+    send_request(&mut second_writer, &attach()).unwrap();
+    painted(&mut second);
+
+    send_request(
+        &mut first_writer,
+        &crate::ClientRequest::CopySelection { pane },
+    )
+    .unwrap();
+    let mut repainted = false;
+    loop {
+        match read_event(&mut first).expect("the server must still be speaking") {
+            Some(crate::ClientEvent::SelectionText { .. }) => break,
+            Some(crate::ClientEvent::Snapshot { .. }) => repainted = true,
+            Some(_) => {}
+            None => panic!("the server hung up"),
+        }
+    }
+    assert!(
+        !repainted,
+        "the client already attached was sent the workspace again"
+    );
+
+    for mut writer in [first_writer, second_writer] {
+        let _ = send_request(&mut writer, &crate::ClientRequest::Detach);
+    }
+    drop((first, second));
+    let _ = first_serving.join();
+    let _ = second_serving.join();
+    server.stop_panes();
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
@@ -3210,7 +3440,11 @@ fn a_workspace_that_gave_every_space_a_kind_opens_on_this_build() {
     )
     .unwrap();
 
-    let (workspace, set_aside) = load_persisted_workspace_at(&path);
+    let LoadedWorkspace {
+        restored: workspace,
+        set_aside,
+        ..
+    } = load_persisted_workspace_at(&path);
     assert!(
         set_aside.is_none(),
         "a shape this build knows is carried across, not set aside"
@@ -3337,11 +3571,16 @@ fn a_workspace_from_a_newer_build_is_left_exactly_as_it_is() {
     let bytes = br#"{"schema_version":99,"spaces":[]}"#;
     std::fs::write(&path, bytes).unwrap();
 
-    let (workspace, set_aside) = load_persisted_workspace_at(&path);
+    let LoadedWorkspace {
+        restored: workspace,
+        set_aside,
+        writable,
+    } = load_persisted_workspace_at(&path);
     assert!(
         workspace.is_none(),
         "this build starts from the seat it was given"
     );
+    assert!(!writable, "and never writes over the newer one's record");
     assert!(
         set_aside.is_none(),
         "and takes nothing away from the newer one"
@@ -3364,8 +3603,16 @@ fn a_workspace_that_cannot_be_read_is_kept_and_reported() {
     let path = scratch.join("workspace.json");
     std::fs::write(&path, b"not a workspace").unwrap();
 
-    let (workspace, set_aside) = load_persisted_workspace_at(&path);
+    let LoadedWorkspace {
+        restored: workspace,
+        set_aside,
+        writable,
+    } = load_persisted_workspace_at(&path);
     assert!(workspace.is_none());
+    assert!(
+        writable,
+        "what was there is out of the way, so it may be written"
+    );
     let set_aside = set_aside.expect("the runtime can say what it could not carry");
     assert!(!path.exists(), "the workspace is out of the way");
     assert!(set_aside.path.exists(), "and its bytes are kept");

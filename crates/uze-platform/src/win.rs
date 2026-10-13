@@ -1,5 +1,6 @@
 //! What every Windows implementation in this crate shares: wide strings,
-//! owned kernel handles and registry values.
+//! owned kernel handles, registry values and the security descriptors and
+//! SIDs that say whose something is.
 
 use std::{
     ffi::{OsStr, OsString},
@@ -7,7 +8,13 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::{CloseHandle, HANDLE, LocalFree},
+    Security::{
+        Authorization::{
+            ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+        },
+        PSECURITY_DESCRIPTOR, PSID,
+    },
     System::Registry::{HKEY, RRF_RT_REG_DWORD, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegGetValueW},
 };
 
@@ -29,6 +36,66 @@ impl Drop for Owned {
             // SAFETY: owned, closed once.
             unsafe { CloseHandle(self.0) };
         }
+    }
+}
+
+/// The well-known SID of the built-in Administrators group, which owns
+/// what an elevated token creates.
+pub(crate) const ADMINISTRATORS: &str = "S-1-5-32-544";
+
+/// A security descriptor granting the current token's user, and no one
+/// else, full access; `inherited` is the SDDL inheritance its children
+/// take (`OICI` for a directory, empty for none). The user SID and not the
+/// owner SID: an elevated token's owner is the Administrators group.
+pub(crate) struct OwnerOnly(pub PSECURITY_DESCRIPTOR);
+
+impl OwnerOnly {
+    pub(crate) fn new(inherited: &str) -> std::io::Result<Self> {
+        let sid = crate::process::current_user()?;
+        let sddl = wide(OsStr::new(&format!("D:P(A;{inherited};GA;;;{sid})")));
+        let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+        // SAFETY: `sddl` is NUL-terminated; the descriptor is freed with
+        // LocalFree in Drop, as the API requires.
+        let ok = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                1,
+                &mut descriptor,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(Self(descriptor))
+    }
+}
+
+impl Drop for OwnerOnly {
+    fn drop(&mut self) {
+        // SAFETY: allocated by the conversion above with LocalAlloc.
+        unsafe { LocalFree(self.0) };
+    }
+}
+
+/// `sid` in its `S-1-…` text form; `None` when it cannot be converted.
+///
+/// # Safety
+///
+/// `sid` must point to a valid SID for the length of the call.
+pub(crate) unsafe fn sid_text(sid: PSID) -> Option<String> {
+    let mut text: *mut u16 = std::ptr::null_mut();
+    // SAFETY: the caller vouches for `sid`; `text` is freed below.
+    if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        return None;
+    }
+    // SAFETY: a NUL-terminated wide string from the conversion above, then
+    // freed with LocalFree as the API requires.
+    unsafe {
+        let len = (0..).take_while(|&i| *text.add(i) != 0).count();
+        let sid = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
+        LocalFree(text.cast());
+        Some(sid)
     }
 }
 

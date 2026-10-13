@@ -432,8 +432,8 @@ impl IntegrationPort for CodexIntegration {
     /// of it (32 KiB unless `config.toml` says otherwise), and the rest
     /// never reaches the model (measured, `context-long-report-agrees`).
     fn context_unread(&self, project_root: &Path, instructions: &Path) -> Option<String> {
-        let config = self.config_toml_path();
-        if trust::project_untrusted(&config, project_root) {
+        let config = trust::read_config(&self.config_toml_path());
+        if trust::project_untrusted(config.as_ref(), project_root) {
             return Some(
                 "Codex will not read this project's AGENTS.md: the project is marked untrusted. \
                  Trust it in Codex (open Codex here and accept the folder trust)"
@@ -441,7 +441,7 @@ impl IntegrationPort for CodexIntegration {
             );
         }
         let size = std::fs::metadata(instructions).ok()?.len();
-        let limit = trust::project_doc_max_bytes(&config);
+        let limit = trust::project_doc_max_bytes(config.as_ref());
         (size > limit).then(|| {
             format!(
                 "Codex reads the first {limit} bytes of AGENTS.md ({size} here) and drops the \
@@ -535,13 +535,9 @@ impl IntegrationPort for CodexIntegration {
                 )?;
             }
             _ => {
-                let detached = receipt.artifact.detach_standard()?;
-                if detached.state == AttachmentState::Missing
-                    && let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact
-                {
-                    self.cleanup_unused_wrapper(target)?;
-                }
-                return Ok(detached);
+                return crate::shared::path::detach_skill_link(receipt, |target| {
+                    self.cleanup_unused_wrapper(target)
+                });
             }
         }
         Ok(AttachmentInspection {

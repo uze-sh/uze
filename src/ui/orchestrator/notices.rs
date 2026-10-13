@@ -80,6 +80,19 @@ impl WorkspaceModel {
         detail: impl Into<String>,
         offer: Option<(String, WorkspaceHit)>,
     ) {
+        let (text, detail) = (text.into(), detail.into());
+        // A pass that keeps finding the same fault says it once: the toast
+        // already up gets its clock back rather than a twin that would
+        // push everything else off the stack.
+        if offer.is_none()
+            && let Some(standing) = self.remembered.toasts.iter_mut().find(|toast| {
+                toast.kind == kind && !toast.stays && toast.text == text && toast.detail == detail
+            })
+        {
+            standing.raised = Instant::now();
+            self.dirty = true;
+            return;
+        }
         // Oldest first out: the reader is looking at the top of the stack,
         // and a queue that dropped the newest would hide exactly what just
         // happened.
@@ -88,8 +101,8 @@ impl WorkspaceModel {
         }
         self.remembered.toasts.push_back(RaisedToast {
             kind,
-            text: text.into(),
-            detail: detail.into(),
+            text,
+            detail,
             raised: Instant::now(),
             stays: offer.is_some(),
             offer,

@@ -118,6 +118,29 @@ pub(crate) fn write_object(path: &Path, config: &serde_json::Value) -> Result<()
     write_atomic_preserving(path, &bytes)
 }
 
+/// Writes `config`, or removes the file when a detach left it an empty
+/// object: a hook config holding nothing is one UZE's attach created. Only
+/// a regular file is removed; a link a dotfile manager keeps is somebody
+/// else's file, and is written through instead.
+pub(crate) fn write_object_or_remove_emptied(
+    path: &Path,
+    config: &serde_json::Value,
+) -> Result<()> {
+    let emptied = config.as_object().is_some_and(serde_json::Map::is_empty);
+    let regular = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file());
+    if !(emptied && regular) {
+        return write_object(path, config);
+    }
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(UzeError::Write {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 /// Convenience for a `PreferencePort::apply` implementation: read, apply one
 /// mutation, write — surfacing a merge failure as `UzeError::HarnessConfig`
 /// the same way `hooks.rs` does for its own merge failures.

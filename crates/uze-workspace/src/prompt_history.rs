@@ -12,14 +12,16 @@
 //!
 //! # Storage
 //!
-//! One newline-delimited JSON file per workspace under
-//! `UzeHome::state_dir()/prompt-history/<workspace id>.json`, oldest line
-//! first. Per-workspace rather than one shared file so a busy workspace
-//! cannot evict another's entries, and append-only so recording a prompt
-//! costs one small `O_APPEND` write on the caller's thread instead of a
-//! read-modify-write of every entry — concurrent appends from two attached
-//! clients interleave safely instead of overwriting each other. The file is
-//! compacted back to `MAX_ENTRIES` once it grows past `COMPACT_ABOVE_BYTES`.
+//! One newline-delimited JSON file per project, at
+//! `UzeHome::prompt_history_path`, oldest line first. Per-project rather
+//! than one shared file so a busy project cannot evict another's entries,
+//! and append-only so recording a prompt costs one small `O_APPEND` write
+//! on the caller's thread instead of a read-modify-write of every entry.
+//! The file is compacted back to `MAX_ENTRIES` once it grows past
+//! `COMPACT_ABOVE_BYTES`; appends and compactions take
+//! `UzeHome::prompt_history_lock_path`, since a compaction rewrites the
+//! file from what it read and would drop a line another client appended
+//! in between.
 //!
 //! Prompt text is user content: the file and its directory are owner-only,
 //! and `clear` exists so a workspace's history can be deleted outright.
@@ -28,7 +30,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -48,6 +50,9 @@ const COMPACT_ABOVE_BYTES: u64 = 64 * 1024;
 /// Prompts younger than this head a listing without a group label.
 const RECENT_WINDOW_SECS: u64 = 30 * 60;
 const SECS_PER_DAY: u64 = 86_400;
+/// How long recording a prompt waits for another client's append or
+/// compaction, which is one small write or one rewrite of a 64 KiB file.
+const LOCK_PATIENCE: Duration = Duration::from_secs(2);
 
 /// Where a prompt was submitted. Carried separately from the workspace root
 /// because the root selects the file rather than living inside it.
@@ -196,6 +201,10 @@ pub fn record(
     let file = path(home, workspace_root);
     let mut line = serde_json::to_vec(&entry).expect("prompt entry serialization is infallible");
     line.push(b'\n');
+    let _held = crate::file_lock::Held::acquire(
+        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        LOCK_PATIENCE,
+    )?;
     append_line(&file, &line)?;
     if fs::metadata(&file).is_ok_and(|metadata| metadata.len() > COMPACT_ABOVE_BYTES) {
         compact(&file)?;
@@ -394,6 +403,36 @@ mod tests {
         let clock = PromptClock::now();
         assert!(clock.day_start_secs <= clock.now_secs);
         assert!(clock.now_secs - clock.day_start_secs < SECS_PER_DAY);
+    }
+
+    /// Appends racing a compaction: every line appended while another
+    /// client compacted is still there, so the file ends as long as the
+    /// same appends made one after another leave it.
+    #[test]
+    fn a_compaction_never_drops_a_line_appended_while_it_ran() {
+        let (writers, prompts) = (4, 100);
+        let prompt = "p".repeat(MAX_PREVIEW_CHARS);
+        let workspace = uze_testkit::temp::scratch("prompt-history-race-workspace");
+
+        let sequential = TempHome::new("prompt-history-sequential");
+        for _ in 0..writers * prompts {
+            record(&sequential.home, &workspace, &origin(1, "agent"), &prompt).unwrap();
+        }
+        let concurrent = TempHome::new("prompt-history-concurrent");
+        std::thread::scope(|scope| {
+            for _ in 0..writers {
+                scope.spawn(|| {
+                    for _ in 0..prompts {
+                        record(&concurrent.home, &workspace, &origin(1, "agent"), &prompt).unwrap();
+                    }
+                });
+            }
+        });
+
+        assert_eq!(
+            load(&path(&concurrent.home, &workspace)).len(),
+            load(&path(&sequential.home, &workspace)).len()
+        );
     }
 
     #[test]

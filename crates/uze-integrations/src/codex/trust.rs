@@ -63,9 +63,7 @@ pub(crate) fn review(config_toml: &Path, entry: &HookEntry) -> Option<Review> {
         .as_array()?;
     let group_index = groups.iter().position(|group| group == &expected)?;
     let handlers = expected.get("hooks")?.as_array()?;
-    let recorded = std::fs::read_to_string(config_toml)
-        .ok()
-        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok());
+    let recorded = read_config(config_toml);
     let mut review = Review::Trusted;
     for (handler_index, handler) in handlers.iter().enumerate() {
         let key = format!(
@@ -94,9 +92,12 @@ pub(crate) fn review(config_toml: &Path, entry: &HookEntry) -> Option<Review> {
 
 /// Whether the person marked `project_root` untrusted in Codex — the one
 /// trust level that makes Codex skip the project's `AGENTS.md`.
-pub(crate) fn project_untrusted(config_toml: &Path, project_root: &Path) -> bool {
-    read_config(config_toml)
-        .and_then(|document| trust_level(&document, project_root))
+pub(crate) fn project_untrusted(
+    config: Option<&toml_edit::DocumentMut>,
+    project_root: &Path,
+) -> bool {
+    config
+        .and_then(|document| trust_level(document, project_root))
         .as_deref()
         == Some("untrusted")
 }
@@ -122,14 +123,15 @@ pub(crate) fn project_trusted(
         == Some("trusted")
 }
 
-fn read_config(config_toml: &Path) -> Option<toml_edit::DocumentMut> {
+/// Codex's `config.toml`, when it exists and parses.
+pub(crate) fn read_config(config_toml: &Path) -> Option<toml_edit::DocumentMut> {
     std::fs::read_to_string(config_toml).ok()?.parse().ok()
 }
 
 /// The level `config.toml` records for `root`, spelled as given or
 /// canonical.
 fn trust_level(document: &toml_edit::DocumentMut, root: &Path) -> Option<String> {
-    let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let canonical = uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
     [root, canonical.as_path()].iter().find_map(|root| {
         document
             .get("projects")?
@@ -142,10 +144,8 @@ fn trust_level(document: &toml_edit::DocumentMut, root: &Path) -> Option<String>
 
 /// How much of a project's `AGENTS.md` Codex reads: `project_doc_max_bytes`
 /// from `config.toml`, or Codex's default.
-pub(crate) fn project_doc_max_bytes(config_toml: &Path) -> u64 {
-    std::fs::read_to_string(config_toml)
-        .ok()
-        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
+pub(crate) fn project_doc_max_bytes(config: Option<&toml_edit::DocumentMut>) -> u64 {
+    config
         .and_then(|document| document.get("project_doc_max_bytes")?.as_integer())
         .and_then(|limit| u64::try_from(limit).ok())
         .unwrap_or(DEFAULT_PROJECT_DOC_MAX_BYTES)
@@ -359,13 +359,13 @@ mod tests {
                 ),
             )
             .unwrap();
-            project_untrusted(&config, &project)
+            project_untrusted(read_config(&config).as_ref(), &project)
         };
         assert!(level("untrusted"));
         assert!(!level("trusted"));
         std::fs::write(&config, "").unwrap();
         assert!(
-            !project_untrusted(&config, &project),
+            !project_untrusted(read_config(&config).as_ref(), &project),
             "an unset level still reads it"
         );
     }
@@ -375,9 +375,12 @@ mod tests {
         let root = uze_testkit::temp::scratch("project-doc-limit");
         std::fs::create_dir_all(&root).unwrap();
         let config = root.join("config.toml");
-        assert_eq!(project_doc_max_bytes(&config), 32 * 1024);
+        assert_eq!(
+            project_doc_max_bytes(read_config(&config).as_ref()),
+            32 * 1024
+        );
         std::fs::write(&config, "project_doc_max_bytes = 65536\n").unwrap();
-        assert_eq!(project_doc_max_bytes(&config), 65536);
+        assert_eq!(project_doc_max_bytes(read_config(&config).as_ref()), 65536);
     }
 
     const CENSUS_HASH: &str =

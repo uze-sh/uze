@@ -34,6 +34,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 use uze_core::path::Canonical as _;
 
@@ -146,20 +147,46 @@ impl ConversationRecord {
         entry.observed_at_unix = Some(now_unix());
         true
     }
-
-    /// Drops a conversation the harness no longer holds, so the next launch
-    /// starts one instead of resuming into nothing.
-    pub fn forget_harness(&mut self, integration: &str) {
-        self.harnesses.remove(integration);
-    }
 }
 
 /// The document for one agent of `project_root`.
 pub fn store_path(home: &UzeHome, project_root: &Path, agent: &AgentId) -> PathBuf {
+    home.conversation_path(&project_id(project_root), agent.as_str())
+}
+
+fn project_id(project_root: &Path) -> String {
     let canonical = project_root
         .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    home.conversation_path(&project_id_for(&canonical), agent.as_str())
+    project_id_for(&canonical)
+}
+
+/// How long a rewrite waits for another one. Short, because the launch
+/// path waits on it and what it guards is one small read and write.
+const REWRITE_PATIENCE: Duration = Duration::from_secs(5);
+
+/// Reads `agent`'s record, lets `change` edit it, and writes it back when it
+/// changed, as one operation. The launched process ([`crate::continuity::plan`])
+/// and the workspace client ([`crate::continuity::refresh`]) both rewrite the
+/// same record, and each would otherwise write back the version it read
+/// over the one the other just wrote.
+pub fn update<T>(
+    home: &UzeHome,
+    project_root: &Path,
+    agent: &AgentId,
+    change: impl FnOnce(&mut ConversationRecord) -> T,
+) -> Result<T> {
+    let _held = crate::file_lock::Held::acquire(
+        &home.conversations_lock_path(&project_id(project_root)),
+        REWRITE_PATIENCE,
+    )?;
+    let mut record = load(home, project_root, agent);
+    let read = record.clone();
+    let outcome = change(&mut record);
+    if record != read {
+        save(home, project_root, &record)?;
+    }
+    Ok(outcome)
 }
 
 /// What was recorded for `agent`, or an empty record. Never fails: see the
@@ -358,6 +385,36 @@ mod tests {
             read.get("claude-code").and_then(|e| e.conversation.clone()),
             Some(SessionId::new("c-1"))
         );
+    }
+
+    /// The property the lock exists for: the launched process and the
+    /// client rewriting one agent's record at once each keep what the
+    /// other wrote.
+    #[test]
+    fn concurrent_rewrites_of_one_record_lose_nothing() {
+        let home = home("conversation-concurrent");
+        let root = project("conversation-concurrent-project");
+        let task = AgentId::generate();
+        let writers = 8;
+
+        std::thread::scope(|scope| {
+            for writer in 0..writers {
+                let (home, root, task) = (&home, &root, &task);
+                scope.spawn(move || {
+                    update(home, root, task, |record| {
+                        record.launched(
+                            &format!("harness-{writer}"),
+                            ConversationOrigin::Assigned,
+                            Some(SessionId::new(format!("c-{writer}"))),
+                            None,
+                        );
+                    })
+                    .unwrap();
+                });
+            }
+        });
+
+        assert_eq!(load(&home, &root, &task).harnesses.len(), writers);
     }
 
     #[test]

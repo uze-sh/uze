@@ -208,12 +208,16 @@ impl TerminalSession {
             EnableMouseCapture,
             EnableBracketedPaste
         ) {
-            let _ = disable_raw_mode();
+            restore_terminal(keyboard);
             return Err(io_error(error));
         }
-        let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend).map_err(io_error)?;
-        Ok(Self { terminal, keyboard })
+        match Terminal::new(CrosstermBackend::new(stdout)) {
+            Ok(terminal) => Ok(Self { terminal, keyboard }),
+            Err(error) => {
+                restore_terminal(keyboard);
+                Err(io_error(error))
+            }
+        }
     }
 
     pub(crate) fn keyboard(&self) -> keys::KeyboardSupport {

@@ -873,7 +873,7 @@ fn a_diagram_that_draws_with_relations_missing_is_not_drawn() {
     };
     assert!(edges > 0);
     assert!(
-        !artifacts[0].verdict.is_drawn(),
+        !matches!(artifacts[0].verdict, Verdict::Drawn),
         "which is what fails a check"
     );
 }

@@ -407,13 +407,9 @@ impl IntegrationPort for OpenCodeIntegration {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
                 return self.detach_hook_bridge(receipt, path);
             }
-            let detached = receipt.artifact.detach_standard()?;
-            if detached.state == AttachmentState::Missing
-                && let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact
-            {
-                self.cleanup_unused_wrapper(target)?;
-            }
-            return Ok(detached);
+            return crate::shared::path::detach_skill_link(receipt, |target| {
+                self.cleanup_unused_wrapper(target)
+            });
         };
         mcp::detach_mcp_config(&self.config_path, &entry)
     }
@@ -615,7 +611,7 @@ impl OpenCodeIntegration {
                 path: resource.capability.path.clone(),
                 source,
             })?;
-        let active = self.active_hook_ids(package_id, None);
+        let active = self.active_hook_ids(package_id, None)?;
         // Manifest order, the attached group included, is the order
         // inspection regenerates in; appending it would make the file
         // depend on which group happened to attach last.
@@ -636,11 +632,11 @@ impl OpenCodeIntegration {
     /// The hook group ids this integration still has receipts for on one
     /// package, extracted from each receipt's resource identity
     /// (`package:<id>:hooks.json:<group-id>`). `exclude` skips one receipt
-    /// during its own detach, when the ledger still holds it.
-    fn active_hook_ids(&self, package_id: &str, exclude: Option<&str>) -> Vec<String> {
-        let Ok(ledger) = state::receipts(&self.uze_home, Some(package_id)) else {
-            return Vec::new();
-        };
+    /// during its own detach, when the ledger still holds it. An unreadable
+    /// ledger is an error, not "no groups": the bridge rewritten on that
+    /// answer would drop every group still attached.
+    fn active_hook_ids(&self, package_id: &str, exclude: Option<&str>) -> Result<Vec<String>> {
+        let ledger = state::receipts(&self.uze_home, Some(package_id))?;
         let mut ids = Vec::new();
         for receipt in ledger {
             if receipt.integration != self.id() {
@@ -661,7 +657,7 @@ impl OpenCodeIntegration {
         }
         ids.sort();
         ids.dedup();
-        ids
+        Ok(ids)
     }
 
     /// The bridge file itself is the entire managed artifact: it must exist
@@ -684,7 +680,15 @@ impl OpenCodeIntegration {
         // The expected bridge covers exactly the groups this integration
         // still owns receipts for — a bridge regenerated after one group's
         // detach is not drift just because the manifest still declares it.
-        let active = self.active_hook_ids(&receipt.package_id, None);
+        let active = match self.active_hook_ids(&receipt.package_id, None) {
+            Ok(active) => active,
+            Err(error) => {
+                return AttachmentInspection {
+                    state: AttachmentState::Blocked,
+                    reason: format!("the receipt ledger cannot be read: {error}"),
+                };
+            }
+        };
         let Ok(groups) = hook_projection::groups_with_ids(&package_root, &|id| {
             active.iter().any(|active| active == id)
         }) else {
@@ -751,7 +755,7 @@ impl OpenCodeIntegration {
         }
         let package_id = receipt.package_id.as_str();
         let identity = receipt.resource_identity.clone();
-        let remaining = self.active_hook_ids(package_id, identity.as_deref());
+        let remaining = self.active_hook_ids(package_id, identity.as_deref())?;
         let package = PackageId::from_qualified(package_id, Path::new("plugin.json"))?;
         let package_root = self.uze_home.plugin_dir(&package);
         let groups = hook_projection::groups_with_ids(&package_root, &|id| {
@@ -905,6 +909,34 @@ mod lifecycle_tests {
             integration.detach_receipt(&receipt).unwrap().state,
             AttachmentState::Missing
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A ledger that cannot be read says nothing about which groups are
+    /// still attached, so neither the bridge nor its inspection may act as
+    /// if none were.
+    #[test]
+    fn an_unreadable_ledger_blocks_the_hook_bridge() {
+        let root = uze_testkit::temp::scratch("opencode-bridge-ledger");
+        let integration = integration(&root);
+        let ledger = integration.uze_home.attachments_path();
+        fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+        fs::write(&ledger, b"{ not json").unwrap();
+        let bridge = root.join("config/plugins/bridge.ts");
+        let receipt = AttachmentReceipt {
+            package_id: "pkg@market".to_owned(),
+            resource_identity: Some("package:pkg@market:hooks.json:guard".to_owned()),
+            integration: "opencode".to_owned(),
+            artifact: ManagedArtifact::ManagedHookFile {
+                path: bridge.clone(),
+            },
+        };
+
+        assert_eq!(
+            integration.inspect_receipt(&receipt).state,
+            AttachmentState::Blocked
+        );
+        assert!(integration.active_hook_ids("pkg@market", None).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -2347,6 +2347,59 @@ mod task_service_tests {
         );
     }
 
+    /// A manifest that does not parse is said, not read as a project with
+    /// no agents or no repository: an evaluation keeps its rows by naming
+    /// the manifest, and an operator's action is refused over it.
+    #[test]
+    fn a_manifest_that_does_not_parse_is_said_rather_than_read_as_nothing() {
+        let repository = repository("svc-malformed-manifest");
+        let root = repository.root().to_path_buf();
+        let app = application("svc-malformed-manifest-home");
+        let (id, _) = launched(&app, &root);
+        declare(&repository, "  slots: 0\n");
+
+        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
+        let unreadable = evaluation.unreadable.expect("the manifest is named");
+        assert!(unreadable.contains("slots"), "{unreadable}");
+
+        let refused = app.workspace().finish_task(&root, &id).unwrap_err();
+        assert!(
+            !matches!(refused, UzeError::UnknownTask(_)),
+            "the task is there; the manifest is what stopped it: {refused}"
+        );
+    }
+
+    /// A task a delivery already owns is not claimed a second time: two
+    /// would each run the gate and merge or push, and the later would
+    /// write its outcome over the earlier's.
+    #[test]
+    fn a_task_a_delivery_already_owns_is_not_delivered_again() {
+        let repository = repository("svc-second-delivery");
+        declare(&repository, "  delivery: merge\n");
+        let root = repository.root().to_path_buf();
+        let app = application("svc-second-delivery-home");
+        let (id, slot) = launched(&app, &root);
+        agent_commits(&repository, &slot, "work.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
+        task::locked(&app.home, &root, |store| {
+            task_mut(store, &id).expect("the agent is recorded").state = WorkState::Integrating;
+            Ok(())
+        })
+        .unwrap();
+
+        let report = app
+            .workspace()
+            .deliver_task(&root, &id)
+            .expect("a refusal is still an answer about this task");
+
+        let DeliveryOutcome::Refused(reason) = &report.outcome else {
+            panic!("a task already being delivered was delivered again: {report:?}");
+        };
+        assert!(reason.contains("already running"), "{reason}");
+        assert!(!root.join("work.rs").is_file(), "nothing was merged");
+        assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrating);
+    }
+
     /// A slot nothing records is worse than no slot: nothing parks it,
     /// nothing collects it, and the agent is told it is isolated. The
     /// placement gives it back and says why instead.

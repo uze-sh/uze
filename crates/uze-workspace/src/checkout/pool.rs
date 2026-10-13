@@ -362,16 +362,16 @@ pub(super) fn create(
     // behind them.
     let _ = git(primary, &["worktree", "prune"]);
     let id = CheckoutId::generate();
-    let relative = format!("{WORKTREES_DIRECTORY}/{id}");
-    isolation_directory_is_the_projects_own(primary, &relative)?;
+    let path = id.directory(primary);
+    isolation_directory_is_the_projects_own(primary, &path)?;
+    let spelled = path.to_string_lossy();
     let mut add = vec!["worktree", "add", "--quiet"];
     match start {
-        Start::Branching { base_tip } => add.extend(["-b", branch, "--", &relative, base_tip]),
-        Start::Existing => add.extend(["--", &relative, branch]),
+        Start::Branching { base_tip } => add.extend(["-b", branch, "--", &spelled, base_tip]),
+        Start::Existing => add.extend(["--", &spelled, branch]),
     }
     git(primary, &add)?;
     exclude_isolation_directory(primary)?;
-    let path = primary.join(relative);
     // Unrecorded, the directory would be nobody's to reuse or remove for
     // good; one that cannot carry its record is not kept at all.
     if let Err(reason) = record::write(primary, &path, &CheckoutRecord::made_at(&path)) {
@@ -407,7 +407,7 @@ pub(super) fn create(
 /// primary.
 fn isolation_directory_is_the_projects_own(
     primary: &Path,
-    relative: &str,
+    slot: &Path,
 ) -> Result<(), AcquireError> {
     let directory = primary.join(WORKTREES_DIRECTORY);
     let refuse = |why: &str| {
@@ -439,7 +439,7 @@ fn isolation_directory_is_the_projects_own(
     if !tracked.is_empty() {
         return refuse("is tracked by the repository");
     }
-    let inside = uze_platform::path::resolves_within(&primary.join(relative), primary)
+    let inside = uze_platform::path::resolves_within(slot, primary)
         .map_err(|error| AcquireError::Git(error.to_string()))?;
     if !inside {
         return refuse("leads outside the project");

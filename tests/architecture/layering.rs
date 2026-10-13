@@ -1394,6 +1394,9 @@ fn every_path_uze_owns_is_named_in_the_map() {
                     rest = &rest[at + joined.len()..];
                 }
             }
+            if directories_bound_and_joined(&source) {
+                offenders.push(relative.clone());
+            }
         }
     }
     offenders.sort();
@@ -1408,6 +1411,52 @@ fn every_path_uze_owns_is_named_in_the_map() {
          Fix: add the path to `{THE_MAP}` with the reason it exists, and call \
          that."
     );
+}
+
+/// Whether `source` binds one of the map's directories to a name and then
+/// composes a literal under that name — the same composition as
+/// `home.state_dir().join("tasks")`, one statement apart, which is how the
+/// first version of the rule missed one.
+fn directories_bound_and_joined(source: &str) -> bool {
+    const DIRECTORIES: &[&str] = &[
+        "state_dir()",
+        "cache_dir()",
+        "runtime_dir()",
+        "project_dir(",
+    ];
+    let mut rest = source;
+    while let Some(at) = rest.find("let ") {
+        rest = &rest[at + "let ".len()..];
+        let Some((name, binding)) = rest.split_once(" = ") else {
+            break;
+        };
+        let name = name.trim_start_matches("mut ");
+        if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            continue;
+        }
+        let value = binding.split(';').next().unwrap_or_default();
+        let called = value.rsplit_once('.').map_or("", |(_, call)| call);
+        if DIRECTORIES
+            .iter()
+            .any(|directory| called.starts_with(directory))
+            && joins_a_literal_under(source, name)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `name` — the whole identifier, not the end of a longer one —
+/// has a literal joined onto it anywhere in `source`.
+fn joins_a_literal_under(source: &str, name: &str) -> bool {
+    let joined = format!("{name}.join(\"");
+    source.match_indices(&joined).any(|(at, _)| {
+        source[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|before| !(before.is_alphanumeric() || before == '_' || before == '.'))
+    })
 }
 
 /// The workspace crates `manifest` depends on outside its tests: every

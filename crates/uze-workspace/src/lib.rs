@@ -20,6 +20,7 @@ pub mod continuity;
 pub mod conversation;
 pub mod declaration;
 pub mod extensions;
+mod file_lock;
 mod git;
 pub mod landing;
 pub mod notifications;

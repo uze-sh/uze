@@ -44,11 +44,15 @@ pub(super) struct Changes {
     /// re-reads, and until it answers this says the diff on screen is not
     /// the one being asked for.
     pub(super) diff_pending: bool,
-    /// Set instead of populating `files`/`diff` when the checkout isn't a
-    /// git repository, `git` isn't on `PATH`, or a `git diff` fails —
-    /// shown in place of the changed-file list rather than refusing to
-    /// open at all.
+    /// Set instead of populating `files` when the checkout isn't a git
+    /// repository or `git` isn't on `PATH` — shown in place of the
+    /// changed-file list rather than refusing to open at all.
     pub(super) error: Option<String>,
+    /// Set instead of `diff` when the selected file's `git diff` fails.
+    ///
+    /// Apart from `error` because it is about one file: the list is still
+    /// right, and hiding it over one file would leave nothing to move to.
+    pub(super) diff_error: Option<String>,
     pub(super) refreshed_at: Option<Instant>,
     /// Each file's place in `files`, by path — what marks a changed file
     /// in the other list, asked once per row per frame.
@@ -148,14 +152,22 @@ impl Changes {
     /// Puts a diff read in place, whichever read it came from.
     pub(super) fn install_diff(&mut self, read: DiffRead) {
         match read.outcome {
-            Err(message) => self.error = Some(message),
+            Err(message) => {
+                self.diff = Vec::new();
+                self.diff_binary = false;
+                self.diff_digest = 0;
+                self.diff_unchanged = false;
+                self.diff_error = Some(message);
+            }
             Ok(None) => {
                 self.diff_digest = read.digest;
                 self.diff_unchanged = true;
+                self.diff_error = None;
             }
             Ok(Some(cells)) => {
                 self.diff_digest = read.digest;
                 self.diff_unchanged = false;
+                self.diff_error = None;
                 self.diff = cells;
                 self.diff_binary = read.binary;
             }
@@ -214,8 +226,11 @@ pub(super) fn read_diff(
     } else {
         // Literal, or a name with `*`, `?` or `[` in it is a pattern that
         // matches its neighbours too, and their diffs arrive under its name.
+        // A repository with no commit yet has no HEAD, and what it has is
+        // the index — the same fallback the badge takes.
         let pathspec = format!(":(literal){relative}");
         host.git(root, &["diff", "HEAD", "--", &pathspec], &[])
+            .or_else(|_| host.git(root, &["diff", "--cached", "--", &pathspec], &[]))
     };
     let output = match raw {
         Ok(output) => output,
@@ -523,7 +538,7 @@ mod tests {
 mod repository_tests {
     use super::*;
 
-    use crate::code::tests::RepositoryHost as TestHost;
+    use crate::shared::DiskHost as TestHost;
 
     /// Drives real `git` in a scratch repository — proves the actual
     /// `git status --porcelain=v1 --untracked-files=all`/`git diff HEAD`/
@@ -664,6 +679,33 @@ mod repository_tests {
                 deletions: 0,
             })
         );
+    }
+    /// With no commit yet there is no HEAD to diff against, and a staged
+    /// file still has a diff: the index's.
+    #[test]
+    fn a_staged_file_in_a_repository_with_no_commit_yet_has_a_diff() {
+        let repository = uze_testkit::git::Repository::new("git-diff-unborn");
+        let root = repository.root().to_path_buf();
+        std::fs::write(root.join("first.rs"), "fn first() {}\n").unwrap();
+        repository.git(&["add", "first.rs"]);
+
+        let read = read_diff(
+            &TestHost,
+            &root,
+            &root.join("first.rs"),
+            FileStatus::Added,
+            0,
+        );
+        let Ok(Some(cells)) = read.outcome else {
+            panic!("the diff is read: {:?}", read.outcome.err());
+        };
+        let text: String = cells
+            .iter()
+            .flat_map(|cell| cell.spans.iter().map(|(_, piece)| piece.as_str()))
+            .collect();
+        assert!(text.contains("first"), "{text}");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
     /// The scoping rule this view is built on. `git worktree list` answers
     /// repository-wide from anywhere inside the repository, so a view opened

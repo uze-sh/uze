@@ -30,9 +30,11 @@ pub fn request_stop(pid: u32, channel: &str) {
     imp::request_stop(pid, channel)
 }
 
-/// Runs `on_stop` when another process calls [`request_stop`] on this one
-/// through `channel`. On Unix a stop request is `SIGTERM`, whose default
-/// already ends the process, so nothing is installed.
+/// Runs `on_stop`, on a thread of its own, when another process calls
+/// [`request_stop`] on this one through `channel`. On Unix a stop request
+/// is `SIGTERM`, so this replaces its default of ending the process at
+/// once: ending it is then `on_stop`'s to do. One listener per process; a
+/// second replaces the first.
 pub fn listen_for_stop(channel: &str, on_stop: impl FnOnce() + Send + 'static) {
     imp::listen_for_stop(channel, on_stop)
 }
@@ -103,6 +105,14 @@ fn unpassable(error: io::Error, command: &Command) -> io::Error {
 /// its tree can still be ended in between.
 pub fn wait_without_reaping(pid: u32) {
     imp::wait_without_reaping(pid)
+}
+
+/// Whether the child `pid` has exited, without reaping it: until it is
+/// reaped its pid, and the group it leads, can be nobody else's, so what
+/// it left behind can still be ended safely. A child already reaped has
+/// exited too.
+pub fn has_exited(pid: u32) -> bool {
+    imp::has_exited(pid)
 }
 
 /// Spawns `command` so it outlives the terminal that started it: closing
@@ -282,6 +292,79 @@ mod tests {
         let detached = spawn_detached(&mut command).unwrap();
         println!("detached {}", detached.child.id());
         std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+
+    /// Asking whether a child has exited leaves it unreaped: its pid, and
+    /// the group it leads, stay its own until whoever owns it waits.
+    #[cfg(unix)]
+    #[test]
+    fn asking_whether_a_child_exited_leaves_it_to_be_reaped() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 7"])
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !has_exited(child.id()) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the child never exited"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(has_exited(child.id()), "and still reads as exited");
+        let status = child.wait().expect("the child is still there to reap");
+        assert_eq!(status.code(), Some(7));
+        assert!(has_exited(child.id()), "a reaped child has exited too");
+    }
+
+    /// A stop request runs what the process said to do on one, rather than
+    /// ending it outright: a terminal server ended by `SIGTERM`'s default
+    /// left every pane's program running for the next server to start
+    /// again beside them.
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_request_runs_what_the_process_listens_with() {
+        use std::io::BufRead;
+        let mut listener = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "process::tests::listen_for_a_stop_and_wait"])
+            .args(["--ignored", "--nocapture", "--test-threads", "1"])
+            .env(LISTEN, "1")
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut said = std::io::BufReader::new(listener.stdout.take().unwrap()).lines();
+        said.by_ref()
+            .map_while(Result::ok)
+            .find(|line| line.contains("listening"))
+            .expect("the listener said it was listening");
+        request_stop(listener.id(), "uze-platform-test");
+        let stopped = said
+            .map_while(Result::ok)
+            .any(|line| line.contains("stopped"));
+        let status = listener.wait().unwrap();
+        assert!(stopped, "the listener ran its stop");
+        assert!(status.success(), "and ended on its own terms: {status:?}");
+    }
+
+    #[cfg(unix)]
+    const LISTEN: &str = "UZE_PLATFORM_LISTEN";
+
+    /// The listening side of the test above, run by it in a process of its
+    /// own: a `SIGTERM` this test binary would otherwise die of.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "the listener side of the stop-request test, run by it in a process of its own"]
+    fn listen_for_a_stop_and_wait() {
+        if std::env::var_os(LISTEN).is_none() {
+            return;
+        }
+        listen_for_stop("uze-platform-test", || {
+            println!("stopped");
+            std::process::exit(0);
+        });
+        println!("listening");
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        std::process::exit(1);
     }
 
     /// A line of this platform's shell runs, and says how it ended, with no

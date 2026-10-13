@@ -37,10 +37,7 @@ pub fn short_hex(bytes: &[u8]) -> String {
 /// The digest a secret is recorded as, as `sha256:<hex>`: what a record
 /// keeps so that whoever reads the record does not hold the secret too.
 pub fn secret_sha256(secret: &str) -> String {
-    use sha2::Digest;
-    let digest = sha2::Sha256::digest(secret.as_bytes());
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-    format!("sha256:{hex}")
+    sha256(secret.as_bytes())
 }
 
 /// The authenticating digest of a directory tree, as `sha256:<hex>`. Paths
@@ -140,7 +137,6 @@ pub fn entries_sha256(
     entries: &[std::path::PathBuf],
 ) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
 
     let mut sorted = entries.to_vec();
     sorted.sort();
@@ -163,11 +159,7 @@ pub fn entries_sha256(
         hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());
         hasher.update(&body);
     }
-    let mut spelled = String::from("sha256:");
-    for byte in hasher.finalize() {
-        let _ = write!(spelled, "{byte:02x}");
-    }
-    Ok(spelled)
+    Ok(spelled_sha256(hasher))
 }
 
 /// One thing in the tree the digest speaks for, named relative to `root`.

@@ -32,10 +32,12 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
+
+use super::inspection_cache::now_unix_nanos;
 
 use uze_core::{
     PackageSource, Result, UzeError, UzeHome,
@@ -594,13 +596,6 @@ fn directory_name(name: &str) -> String {
     } else {
         sanitized
     }
-}
-
-fn now_unix_nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_nanos()
 }
 
 /// What `name`'s mirror last resolved its declared ref to, and when.

@@ -407,12 +407,6 @@ pub(crate) fn republish<D: MarketplaceDialect>(
         materialize_explicit_package::<D>(uze_home, package)?;
     }
     write_catalogue::<D>(uze_home, packages, Origin::Explicit)?;
-    // An earlier build wrote the explicit catalogue into the Store, the one
-    // tier that holds nothing but packages.
-    let stale = uze_home.store_dir().join(D::CATALOGUE_PATH);
-    if stale.is_file() {
-        fs::remove_file(&stale).map_err(UzeError::write(&stale))?;
-    }
     for package in members::<D>(packages, Origin::Generated) {
         materialize_generated_package::<D>(uze_home, package)?;
     }

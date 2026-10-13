@@ -33,7 +33,7 @@ pub(super) const OUTBOX_CAPACITY: usize = 256;
 /// Nothing is lost by dropping repaints — each one carries absolute cells,
 /// and the resync supersedes all of them.
 pub(super) struct Outbox {
-    pub(super) sender: mpsc::SyncSender<ClientEvent>,
+    pub(super) sender: mpsc::SyncSender<Frame>,
     pub(super) backlog: Arc<Backlog>,
 }
 
@@ -59,7 +59,7 @@ impl Backlog {
 }
 
 impl Outbox {
-    pub(super) fn new() -> (Self, mpsc::Receiver<ClientEvent>) {
+    pub(super) fn new() -> (Self, mpsc::Receiver<Frame>) {
         let (sender, receiver) = mpsc::sync_channel(OUTBOX_CAPACITY);
         let outbox = Self {
             sender,
@@ -79,12 +79,21 @@ impl Outbox {
     /// Queues a broadcast without ever waiting, and answers whether the
     /// client is still there. A stale client is sent nothing until it is
     /// resynchronized.
-    pub(super) fn offer(&self, event: ClientEvent) -> bool {
+    pub(super) fn offer(&self, event: &ClientEvent) -> bool {
+        if self.is_stale() {
+            return true;
+        }
+        self.offer_frame(Frame::of(event))
+    }
+
+    /// [`Outbox::offer`] for an event already encoded, which a broadcast
+    /// encodes once for every client.
+    pub(super) fn offer_frame(&self, frame: Frame) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
         if self.backlog.stale.load(Relaxed) {
             return true;
         }
-        match self.sender.try_send(event) {
+        match self.sender.try_send(frame) {
             Ok(()) => {
                 self.backlog.pending.fetch_add(1, Relaxed);
                 true
@@ -101,7 +110,7 @@ impl Outbox {
     /// the thread serving this client is held, and an answer is not
     /// something a resync could stand in for.
     pub(super) fn reply(&self, event: ClientEvent) {
-        if self.sender.send(event).is_ok() {
+        if self.sender.send(Frame::of(&event)).is_ok() {
             self.backlog
                 .pending
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -125,13 +134,13 @@ impl Outbox {
     /// Sends the whole workspace to a stale client, and answers whether the
     /// client is still there. A resync that overflows again leaves the
     /// client stale; the next one starts from a fresh `Snapshot`.
-    pub(super) fn resync(&self, session: Session, repaints: &[PaneDamage]) -> bool {
+    pub(super) fn resync(&self, session: Session, repaints: &[Frame]) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
         self.backlog.stale.store(false, Relaxed);
-        let events = std::iter::once(ClientEvent::Snapshot { session })
-            .chain(repaints.iter().cloned().map(ClientEvent::Damage));
-        for event in events {
-            if !self.offer(event) {
+        let frames = std::iter::once(Frame::of(&ClientEvent::Snapshot { session }))
+            .chain(repaints.iter().cloned());
+        for frame in frames {
+            if !self.offer_frame(frame) {
                 return false;
             }
             if self.backlog.stale.load(Relaxed) {

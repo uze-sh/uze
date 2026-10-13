@@ -400,15 +400,14 @@ pub fn acquire(source: &PackageSource) -> Result<MaterializedPackage> {
             let checkout = scratch.join("checkout");
             let git::Checkout { commit, links } =
                 git::materialize(url, reference.as_deref(), &checkout)?;
-            let root = match subdirectory {
-                Some(subdirectory) => git::resolve_subdirectory(&checkout, subdirectory)?,
-                None => checkout.clone(),
+            let (root, prefix) = match subdirectory {
+                Some(subdirectory) => {
+                    let root = git::resolve_subdirectory(&checkout, subdirectory)?;
+                    let prefix = package_prefix(&checkout, &root)?;
+                    (root, prefix)
+                }
+                None => (checkout.clone(), PathBuf::new()),
             };
-            // Named from the package's own root, which a subdirectory narrows.
-            let prefix = root
-                .strip_prefix(&checkout)
-                .unwrap_or(Path::new(""))
-                .to_path_buf();
             materialized.links = links
                 .into_iter()
                 .filter_map(|(path, target)| {
@@ -463,6 +462,20 @@ pub fn scratch_directory() -> Result<PathBuf> {
     ));
     uze_platform::fs::create_private_dir(&path).map_err(UzeError::write(&path))?;
     Ok(path)
+}
+
+/// Where a subdirectory's package sits inside its checkout, which names its
+/// links from the package's own root. The resolved root is canonical, so the
+/// checkout is compared canonical too: the temporary directory it lives in is
+/// often reached through a link (`/var` on macOS, an 8.3 name on Windows).
+fn package_prefix(checkout: &Path, root: &Path) -> Result<PathBuf> {
+    let checkout = checkout.canonical().map_err(UzeError::read(checkout))?;
+    root.strip_prefix(&checkout)
+        .map(Path::to_path_buf)
+        .map_err(|_| UzeError::PackageEscapesRoot {
+            link: root.to_path_buf(),
+            target: checkout.clone(),
+        })
 }
 
 fn checked_directory(root: &Path) -> Result<PathBuf> {
@@ -559,6 +572,22 @@ mod tests {
 
     fn temporary(label: &str) -> PathBuf {
         uze_testkit::temp::scratch(label)
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_subdirectory_prefix_survives_a_checkout_reached_through_a_link() {
+        let real = temporary("prefix-real");
+        fs::create_dir_all(real.join("plugins/demo")).unwrap();
+        let linked = temporary("prefix-link").join("checkout");
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+        let root = git::resolve_subdirectory(&linked, Path::new("plugins/demo")).unwrap();
+
+        assert_eq!(
+            package_prefix(&linked, &root).unwrap(),
+            Path::new("plugins/demo")
+        );
     }
 
     #[test]

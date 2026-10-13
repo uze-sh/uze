@@ -370,7 +370,7 @@ fn render_board(
                 .iter()
                 .enumerate()
                 .map(|(offset, line)| (offset + first, line))
-                .skip(usize::from(*scroll).saturating_sub(*first))
+                .skip(scroll.saturating_sub(*first))
                 .take(usize::from(board.height))
                 .enumerate()
             {
@@ -401,14 +401,9 @@ fn render_board(
                 usize::from(board.height),
                 *total,
             );
-            rendered.content_at_end = usize::from(*scroll) + usize::from(board.height) >= *total;
-            rendered.content_bar = render_scrollbar(
-                frame,
-                bar,
-                usize::from(*scroll),
-                hits,
-                ViewHit::DragContentScrollbar,
-            );
+            rendered.content_at_end = scroll.saturating_add(usize::from(board.height)) >= *total;
+            rendered.content_bar =
+                render_scrollbar(frame, bar, *scroll, hits, ViewHit::DragContentScrollbar);
         }
     }
     // A notice is about what was just done and the caption is there all

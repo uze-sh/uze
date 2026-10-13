@@ -91,11 +91,11 @@ mod shapes {
 /// discarded and observed again on the next command, in silence. Refusing
 /// it, or setting it aside and saying so, would report an upgrade as a
 /// problem when the answer costs one probe.
-fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
-    Ok(std::fs::read(path)
+fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> T {
+    std::fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default())
+        .unwrap_or_default()
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
@@ -278,7 +278,7 @@ struct IntegrationRegistry {
 
 /// All recorded integration state, keyed by harness id.
 pub fn load(home: &UzeHome) -> Result<BTreeMap<String, IntegrationRecord>> {
-    let registry: IntegrationRegistry = read_cache(&home.harnesses_cache_path())?;
+    let registry: IntegrationRegistry = read_cache(&home.harnesses_cache_path());
     Ok(registry.integrations)
 }
 
@@ -299,7 +299,7 @@ pub fn is_installed(home: &UzeHome, harness: &str) -> bool {
 pub fn record(home: &UzeHome, harness: &str, entry: IntegrationRecord) -> Result<()> {
     home.ensure_layout()?;
     let path = home.harnesses_cache_path();
-    let mut registry: IntegrationRegistry = read_cache(&path)?;
+    let mut registry: IntegrationRegistry = read_cache(&path);
     // Every command records each detected harness on its way in; an
     // unchanged record must cost a read, not a synced rewrite of the file.
     if registry.integrations.get(harness) == Some(&entry) {

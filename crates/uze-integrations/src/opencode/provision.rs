@@ -21,7 +21,7 @@ use uze_core::{
 use super::distribution;
 use crate::shared::process::{VersionToken, detect_version};
 use crate::shared::provision::{
-    found_outside_path, installer_process, official_installer, unsupported_platform,
+    found_outside_path, installer_process, official_installer, run_installer, unsupported_platform,
 };
 
 /// Resolves the OpenCode V2 executable. V2 is the standard channel
@@ -156,22 +156,7 @@ pub(super) fn provision_opencode(
             return Ok(verified_after(action, method, &detect, shims_dir));
         }
     };
-    let outcome = match runner.run(&command) {
-        Ok(o) => o,
-        Err(_) => {
-            return Ok(ProvisioningResult::failed(
-                action,
-                method,
-                "official installer could not be started",
-            ));
-        }
-    };
-    if !outcome.success {
-        let reason = if outcome.timed_out {
-            "official installer timed out"
-        } else {
-            "official installer exited unsuccessfully"
-        };
+    if let Err(reason) = run_installer(runner, &command) {
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
     Ok(verified_after(action, method, &detect, shims_dir))

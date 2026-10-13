@@ -1281,10 +1281,6 @@ mod explicit_marketplace_tests {
         let root = uze_testkit::temp::scratch("explicit-mirror");
         let home = UzeHome::at(root.join("uze"));
         let package = explicit_package(&root);
-        let stale = home.store_dir().join(ClaudeMarketplace::CATALOGUE_PATH);
-        fs::create_dir_all(stale.parent().unwrap()).unwrap();
-        fs::write(&stale, "{}").unwrap();
-
         marketplace::republish::<ClaudeMarketplace>(&home, std::slice::from_ref(&package)).unwrap();
 
         let mirror = marketplace::explicit_package_dir::<ClaudeMarketplace>(&home, &package);
@@ -1300,7 +1296,6 @@ mod explicit_marketplace_tests {
         let document: serde_json::Value =
             serde_json::from_slice(&fs::read(catalogue).unwrap()).unwrap();
         assert_eq!(document["plugins"][0]["source"], "./plugins/local/kit");
-        assert!(!stale.exists(), "no catalogue is left in the Store");
     }
 
     #[test]

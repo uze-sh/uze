@@ -47,25 +47,57 @@ pub fn carry_changes(primary: &Path, slot: &Path) -> Result<(), String> {
                 format!("the changes could not be carried into the checkout: {error}")
             })?;
     }
-    for relative in crate::git::read(
+    let untracked = crate::git::read(
         primary,
         &["ls-files", "--others", "--exclude-standard", "-z"],
     )
     .map_err(|error| error.to_string())?
-    .successful()?
-    .split('\0')
-    .filter(|entry| !entry.is_empty())
-    {
-        let from = primary.join(relative);
-        let to = slot.join(relative);
-        if let Some(parent) = to.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| format!("the checkout could not take `{relative}`: {error}"))?;
-        }
-        std::fs::copy(&from, &to)
-            .map_err(|error| format!("`{relative}` could not be copied: {error}"))?;
+    .successful()?;
+    // One file that cannot travel leaves the rest to travel anyway, and the
+    // managed region is still kept behind: an error here is a warning on a
+    // checkout that already exists, never a reason to stop half-way.
+    let mut left_behind: Vec<String> = untracked
+        .split('\0')
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|relative| carry_untracked(primary, slot, relative).err())
+        .collect();
+    if let Err(reason) = keep_derived_instructions_behind(primary, slot) {
+        left_behind.push(reason);
     }
-    keep_derived_instructions_behind(primary, slot)
+    if left_behind.is_empty() {
+        Ok(())
+    } else {
+        Err(left_behind.join("; "))
+    }
+}
+
+/// Copies one untracked entry `ls-files` listed. Git lists a repository
+/// nested in the tree as its directory, with a trailing `/`: its history is
+/// not a change of this one, so it stays where it is. A link is made again
+/// as the same link rather than followed, since what it points at is not
+/// part of the change and may be a directory.
+fn carry_untracked(primary: &Path, slot: &Path, relative: &str) -> Result<(), String> {
+    if let Some(repository) = relative.strip_suffix('/') {
+        return Err(format!(
+            "repository `{repository}` is not carried into the checkout"
+        ));
+    }
+    let from = primary.join(relative);
+    let to = slot.join(relative);
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("the checkout could not take `{relative}`: {error}"))?;
+    }
+    let is_link = std::fs::symlink_metadata(&from)
+        .map_err(|error| format!("`{relative}` could not be read: {error}"))?
+        .file_type()
+        .is_symlink();
+    let copied = if is_link {
+        std::fs::read_link(&from).and_then(|target| uze_platform::fs::symlink(&target, &to))
+    } else {
+        std::fs::copy(&from, &to).map(|_| ())
+    };
+    copied.map_err(|error| format!("`{relative}` could not be copied: {error}"))
 }
 
 /// Undoes, in a slot just given the primary's changes, a change to
@@ -83,8 +115,11 @@ pub(super) fn keep_derived_instructions_behind(primary: &Path, slot: &Path) -> R
     }
     let in_slot = slot.join(AGENTS_MD_FILE_NAME);
     match committed_text(slot, AGENTS_MD_FILE_NAME) {
-        Committed::Text(text) => std::fs::write(&in_slot, text)
-            .map_err(|error| format!("`{AGENTS_MD_FILE_NAME}` could not be restored: {error}")),
+        // Within the slot: a file committed as a link may name anywhere.
+        Committed::Text(text) => {
+            crate::persistence::write_atomic_within(slot, &in_slot, text.as_bytes())
+                .map_err(|error| format!("`{AGENTS_MD_FILE_NAME}` could not be restored: {error}"))
+        }
         Committed::Absent => match std::fs::remove_file(&in_slot) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(format!(
                 "`{AGENTS_MD_FILE_NAME}` could not be left out: {error}"
@@ -195,22 +230,30 @@ pub fn forget_finished(
         };
         ended_long_ago && holds_nothing && !parents.contains(&agent.id)
     };
-    let forgotten: Vec<AgentId> = store
-        .agents
-        .iter()
-        .filter(|agent| finished(agent))
-        .map(|agent| agent.id.clone())
-        .collect();
-    store.agents.retain(|agent| !forgotten.contains(&agent.id));
+    let mut forgotten = Vec::new();
+    store.agents.retain(|agent| {
+        let forget = finished(agent);
+        if forget {
+            forgotten.push(agent.id.clone());
+        }
+        !forget
+    });
     forgotten
+}
+
+/// [`prune_integrated_branches_among`] on refs read now, outside a
+/// collection.
+#[cfg(test)]
+pub(super) fn prune_integrated_branches(
+    primary: &Path,
+    store: &AgentStore,
+    target: &str,
+) -> Vec<String> {
+    prune_integrated_branches_among(&Refs::read(primary), primary, store, target)
 }
 
 /// Removes every shelf whose work the target already has, unless a live
 /// task is about to restore it. Returns the tasks whose shelf went.
-pub fn collect_shelves(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    collect_shelves_among(&Refs::read(primary), primary, store, target)
-}
-
 fn collect_shelves_among(
     refs: &Refs,
     primary: &Path,
@@ -248,10 +291,6 @@ fn collect_shelves_among(
 /// `agents.yaml`, which is authored and committed and may well name a
 /// branch this clone never fetched. Nothing is collectable against a
 /// yardstick that does not exist.
-pub fn prune_integrated_branches(primary: &Path, store: &AgentStore, target: &str) -> Vec<String> {
-    prune_integrated_branches_among(&Refs::read(primary), primary, store, target)
-}
-
 fn prune_integrated_branches_among(
     refs: &Refs,
     primary: &Path,
@@ -385,7 +424,11 @@ fn index_may_be_racy(slot: &Path) -> bool {
 /// Where a collected slot waits for its bytes to be deleted: inside the
 /// isolation directory, so the move is a rename on the same filesystem,
 /// and one level down, so it is never read as a slot.
-pub(super) const TRASH_DIRECTORY: &str = ".trash";
+const TRASH_DIRECTORY: &str = ".trash";
+
+pub(super) fn trash_directory(primary: &Path) -> PathBuf {
+    primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY)
+}
 
 /// Takes a free slot out of the pool in the time a rename takes, leaving
 /// its bytes for [`empty_trash`].
@@ -403,7 +446,7 @@ pub(super) fn set_aside(primary: &Path, slot: &Path) -> bool {
     if holds_uncommitted_work(slot) {
         return false;
     }
-    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    let trash = trash_directory(primary);
     let destination = trash.join(slot_name(slot));
     let moved = fs::create_dir_all(&trash).is_ok()
         && !destination.exists()
@@ -420,7 +463,7 @@ pub(super) fn set_aside(primary: &Path, slot: &Path) -> bool {
 /// is finished by the next one.
 #[tracing::instrument(name = "checkout.empty_trash", level = "debug", skip_all)]
 pub fn empty_trash(primary: &Path) {
-    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    let trash = trash_directory(primary);
     let Ok(entries) = fs::read_dir(&trash) else {
         return;
     };

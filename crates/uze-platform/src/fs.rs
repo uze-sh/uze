@@ -260,23 +260,14 @@ mod imp {
     }
 
     /// Where `sun_path` (about 100 bytes) still holds the socket's own
-    /// name. Never followed: a link planted here would point the socket
-    /// elsewhere.
+    /// name, and nowhere a `"` would end the SSH option it is quoted in.
     pub(super) fn user_socket_directory(label: &str, room: usize) -> Option<std::path::PathBuf> {
-        use std::os::unix::fs::PermissionsExt;
         // SAFETY: getuid cannot fail and touches no memory.
         let uid = unsafe { libc::getuid() };
-        let directory = match std::env::var_os("XDG_RUNTIME_DIR") {
-            Some(runtime) => std::path::PathBuf::from(runtime).join(label),
-            None => std::env::temp_dir().join(format!("{label}-{uid}")),
+        let fits = |directory: &Path| {
+            directory.as_os_str().len() + room < 100 && !directory.to_string_lossy().contains('"')
         };
-        let _ = DirBuilder::new().mode(0o700).create(&directory);
-        let metadata = std::fs::symlink_metadata(&directory).ok()?;
-        let private = metadata.is_dir()
-            && metadata.uid() == uid
-            && metadata.permissions().mode() & 0o077 == 0;
-        let fits = directory.as_os_str().len() + room < 100;
-        (private && fits && !directory.to_string_lossy().contains('"')).then_some(directory)
+        crate::endpoint::shared_private_directory(&format!("{label}-{uid}"), &fits).ok()
     }
 }
 
@@ -310,52 +301,23 @@ mod imp {
     /// its children take (`OICI` for a directory). The user and not the
     /// owner: an elevated token's owner is the Administrators group.
     fn owner_only(path: &Path, inherited: &str) -> io::Result<()> {
-        use windows_sys::Win32::{
-            Foundation::LocalFree,
-            Security::{
-                Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW,
-                DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SetFileSecurityW,
-            },
-        };
-        let sid = crate::process::current_user()?;
-        let sddl = crate::win::wide(std::ffi::OsStr::new(&format!(
-            "D:P(A;{inherited};GA;;;{sid})"
-        )));
-        let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
-        // SAFETY: `sddl` is NUL-terminated; the descriptor is freed below
-        // with LocalFree, as the API requires.
-        if unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                1,
-                &mut descriptor,
-                std::ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
+        use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, SetFileSecurityW};
+        let descriptor = crate::win::OwnerOnly::new(inherited)?;
         let target = crate::win::wide(path.as_os_str());
         // SAFETY: both pointers are valid for the call.
         let applied =
-            unsafe { SetFileSecurityW(target.as_ptr(), DACL_SECURITY_INFORMATION, descriptor) };
-        // SAFETY: allocated by the conversion above with LocalAlloc.
-        unsafe { LocalFree(descriptor) };
+            unsafe { SetFileSecurityW(target.as_ptr(), DACL_SECURITY_INFORMATION, descriptor.0) };
         if applied == 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
     }
 
-    /// The well-known SID of the built-in Administrators group, which owns
-    /// what an elevated token creates.
-    const ADMINISTRATORS: &str = "S-1-5-32-544";
-
     pub(super) fn owned_by_user_or_administrator(path: &Path) -> io::Result<bool> {
         use windows_sys::Win32::{
             Foundation::LocalFree,
             Security::{
-                Authorization::{ConvertSidToStringSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT},
+                Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
                 OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
             },
         };
@@ -379,26 +341,12 @@ mod imp {
         if status != 0 {
             return Err(io::Error::from_raw_os_error(status as i32));
         }
-        let mut text: *mut u16 = std::ptr::null_mut();
-        // SAFETY: `owner` is valid while `descriptor` is; `text` is freed
-        // with LocalFree below.
-        let converted = unsafe { ConvertSidToStringSidW(owner, &mut text) };
-        let sid = (converted != 0).then(|| {
-            // SAFETY: a NUL-terminated wide string from the conversion.
-            unsafe {
-                let len = (0..).take_while(|&i| *text.add(i) != 0).count();
-                String::from_utf16_lossy(std::slice::from_raw_parts(text, len))
-            }
-        });
-        // SAFETY: both were allocated by the calls above with LocalAlloc.
-        unsafe {
-            if !text.is_null() {
-                LocalFree(text.cast());
-            }
-            LocalFree(descriptor);
-        }
+        // SAFETY: `owner` is valid while `descriptor` is.
+        let sid = unsafe { crate::win::sid_text(owner) };
+        // SAFETY: allocated by the call above with LocalAlloc.
+        unsafe { LocalFree(descriptor) };
         let sid = sid.ok_or_else(io::Error::last_os_error)?;
-        Ok(sid == ADMINISTRATORS || sid == crate::process::current_user()?)
+        Ok(sid == crate::win::ADMINISTRATORS || sid == crate::process::current_user()?)
     }
 
     pub(super) fn open_without_blocking(path: &Path) -> io::Result<File> {
@@ -681,6 +629,29 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
         assert!(create_private_dir(&directory).is_err(), "never adopted");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A runtime directory the environment names but nobody can have — WSL
+    /// routinely names a `/run/user/<uid>` that does not exist — is stepped
+    /// over to the next, rather than switching socket sharing off.
+    #[cfg(unix)]
+    #[test]
+    fn a_runtime_directory_that_cannot_be_had_is_stepped_over() {
+        let mut env = uze_testkit::env::scope();
+        env.set("XDG_RUNTIME_DIR", "/proc/uze-no-such-runtime");
+        let label = format!("uze-sockets-{}", std::process::id());
+
+        let directory =
+            user_socket_directory(&label, 10).expect("the next runtime directory is used");
+
+        assert!(!directory.starts_with("/proc"));
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(
+                &std::fs::metadata(&directory).unwrap().permissions()
+            ) & 0o777,
+            0o700
+        );
+        let _ = std::fs::remove_dir(&directory);
     }
 
     /// A link to a directory is read through, reads back as a link to it,

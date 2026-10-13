@@ -243,6 +243,8 @@ pub const PROJECTION_MARKER: &str = "project.json";
 /// the wrappers a bridge is made of — whose lifetime is the attachment's
 /// rather than any project's, and which the receipt ledger already answers
 /// for. Sweeping it here would delete a live delivery on the next `doctor`.
+/// `packages` holds each installed package as a harness is handed it, whose
+/// lifetime is the installation's, for the same reason.
 const RUNTIME_TENANTS: &[&str] = &["projects", "attachments", "packages"];
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -289,7 +291,7 @@ pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Removes every runtime projection whose project root is gone, plus
-/// anything under `runtime/` beside its one tenant, and
+/// anything under `runtime/` beside its [`RUNTIME_TENANTS`], and
 /// returns what it swept. Never fails: a tree it cannot read or delete is
 /// left for the next pass rather than turned into an error a caller would
 /// have to decide what to do about.

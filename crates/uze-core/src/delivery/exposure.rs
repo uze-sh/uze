@@ -432,8 +432,8 @@ fn adopt_identical_tree(path: &Path, build: impl FnOnce(&Path) -> Result<()>) ->
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("tree");
-    let probe = path.with_file_name(format!(".{name}.uze-probe-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&probe);
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let probe = crate::persistence::swap_path(parent, name, "probe");
     fs::create_dir_all(&probe).map_err(UzeError::write(&probe))?;
     let rendered = build(&probe)
         .and_then(|()| crate::digest::tree_sha256(&probe).map_err(UzeError::read(&probe)));
@@ -584,6 +584,14 @@ fn attach_symlink(path: &Path, target: &Path) -> Result<()> {
 }
 
 fn inspect_symlink(path: &Path, target: &Path) -> AttachmentInspection {
+    // Asked of the entry itself first: what `read_link` answers for a path
+    // that is not a link differs per platform.
+    if fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.file_type().is_symlink()) {
+        return AttachmentInspection {
+            state: AttachmentState::Conflict,
+            reason: "managed path is occupied by a non-symlink".to_owned(),
+        };
+    }
     let (state, reason) = match fs::read_link(path) {
         Ok(actual) if actual == target => (
             AttachmentState::Matched,
@@ -596,10 +604,6 @@ fn inspect_symlink(path: &Path, target: &Path) -> AttachmentInspection {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
             AttachmentState::Missing,
             "managed symlink is missing".to_owned(),
-        ),
-        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => (
-            AttachmentState::Conflict,
-            "managed path is occupied by a non-symlink".to_owned(),
         ),
         Err(error) => (AttachmentState::Blocked, error.to_string()),
     };
@@ -852,6 +856,32 @@ mod tests {
         assert!(matches!(error, UzeError::ManagedEntryConflict(_)));
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Two threads of one process probing the same tree at once: each must
+    /// compare what it built, not a directory the other is writing into.
+    #[test]
+    fn concurrent_probes_of_one_tree_never_share_a_directory() {
+        let root = uze_testkit::temp::scratch("probe-concurrent");
+        let path = root.join("skills").join("review");
+        attach_generated_tree(&path, None, write_skill("one")).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let probing = ["one", "two"].map(|body| {
+            let (path, barrier) = (path.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                adopt_identical_tree(&path, move |dir: &Path| {
+                    barrier.wait();
+                    fs::write(dir.join("SKILL.md"), body).unwrap();
+                    barrier.wait();
+                    Ok(())
+                })
+                .is_ok()
+            })
+        });
+        let [same, different] = probing.map(|probe| probe.join().unwrap());
+
+        assert!(same, "the probe that built the same tree adopts it");
+        assert!(!different);
     }
 }
 

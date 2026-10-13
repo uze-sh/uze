@@ -11879,6 +11879,21 @@ fn an_outcome_with_an_offer_has_no_clock_and_the_rest_do() {
     );
 }
 
+/// A pass that finds the same fault every time it runs says it once: the
+/// toast already up is kept fresh, never stacked beside itself.
+#[test]
+fn the_same_fault_found_again_keeps_one_toast_up() {
+    let mut model = WorkspaceModel::default();
+    model.raise_toast(ToastKind::Failed, "agents unreadable", "bad yaml", None);
+    model.remembered.toasts[0].raised = Instant::now() - Duration::from_secs(3);
+
+    model.raise_toast(ToastKind::Failed, "agents unreadable", "bad yaml", None);
+    model.raise_toast(ToastKind::Failed, "agents unreadable", "other", None);
+
+    assert_eq!(model.toast_stack().len(), 2);
+    assert!(model.remembered.toasts[0].raised.elapsed() < Duration::from_secs(3));
+}
+
 /// A write that failed after the code surface closed has nowhere else to
 /// be said, so it is said as an outcome; one that landed stays quiet.
 #[test]

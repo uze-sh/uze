@@ -288,7 +288,9 @@ pub fn exclude_isolation_directory(primary: &Path) -> Result<(), AcquireError> {
     }
     next.extend_from_slice(entry.as_bytes());
     next.push(b'\n');
-    fs::write(&exclude, next).map_err(|error| {
+    // Replaced, never truncated in place: a write cut short would leave the
+    // operator's own exclusions half gone.
+    crate::persistence::write_atomic_preserving(&exclude, &next).map_err(|error| {
         AcquireError::Git(format!("could not update {}: {error}", exclude.display()))
     })
 }

@@ -9,8 +9,17 @@ impl Workspace<'_> {
     /// returns to the owning agent as a notice for its pane.
     #[tracing::instrument(name = "workspace.evaluate_tasks", skip_all, fields(cwd = %cwd.display()))]
     pub fn evaluate_tasks(&self, cwd: &Path, occupied: &[PathBuf]) -> Evaluation {
-        let Some((primary, policy)) = self.repository_context(cwd) else {
-            return Evaluation::default();
+        let (primary, policy) = match self.repository_context(cwd) {
+            Ok(Some(context)) => context,
+            Ok(None) => return Evaluation::default(),
+            // Said rather than drawn as a project with no agents: a
+            // manifest mid-edit would otherwise take every agent's row away.
+            Err(error) => {
+                return Evaluation {
+                    unreadable: Some(error.to_string()),
+                    ..Evaluation::default()
+                };
+            }
         };
         let target = target_of(&primary, &policy);
         let mut notices = Vec::new();

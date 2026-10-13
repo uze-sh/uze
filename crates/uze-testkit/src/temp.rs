@@ -120,8 +120,12 @@ impl TempDir {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let keep = std::env::var_os("UZE_TEST_KEEP").is_some();
+        if !keep {
+            static SWEPT: std::sync::Once = std::sync::Once::new();
+            SWEPT.call_once(sweep_abandoned);
+        }
         let path = std::env::temp_dir().join(format!(
-            "uze-tests-{label}-{}-{}",
+            "{SCRATCH_PREFIX}{label}-{}-{}",
             std::process::id(),
             nonce()
         ));
@@ -160,6 +164,54 @@ impl TempDir {
         self.keep = true;
         self
     }
+}
+
+/// What every [`TempDir`] is named with, ahead of its label, pid and nonce.
+const SCRATCH_PREFIX: &str = "uze-tests-";
+
+/// How long a directory of a process that is gone is left alone, so a
+/// helper process that exited is not swept from under the test that
+/// spawned it and still reads what it left.
+const ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Removes what [`scratch`] left behind in earlier runs. `scratch` hands
+/// cleanup to its caller and most callers never do it, so without this the
+/// system temp directory grows by every test ever run. Only a directory
+/// whose process is known to be gone, and has been for an hour, is taken:
+/// a live run's directories, or a pid this platform cannot answer for, are
+/// never touched.
+fn sweep_abandoned() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name.to_str().and_then(scratch_owner) else {
+            continue;
+        };
+        if pid == std::process::id() || uze_platform::process::alive(pid) != Some(false) {
+            continue;
+        }
+        let idle = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok());
+        if idle.is_some_and(|idle| idle > ABANDONED_AFTER) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// The pid in a `uze-tests-<label>-<pid>-<nonce>` name.
+fn scratch_owner(name: &str) -> Option<u32> {
+    let rest = name.strip_prefix(SCRATCH_PREFIX)?;
+    let mut parts = rest.rsplitn(3, '-');
+    let _nonce = parts.next()?;
+    let pid = parts.next()?.parse().ok()?;
+    parts.next()?;
+    Some(pid)
 }
 
 impl AsRef<Path> for TempDir {
@@ -452,4 +504,17 @@ impl TestEnvironment {
 /// hands back.
 fn canonical(path: &Path) -> std::io::Result<PathBuf> {
     uze_platform::path::canonical(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_scratch_name_is_owned_by_the_pid_before_its_nonce() {
+        assert_eq!(scratch_owner("uze-tests-a-b-2-1234-18f0a1"), Some(1234));
+        assert_eq!(scratch_owner("uze-tests-x-1234"), None);
+        assert_eq!(scratch_owner("uze-tests-x-pid-18f0a1"), None);
+        assert_eq!(scratch_owner("unrelated-1-2"), None);
+    }
 }

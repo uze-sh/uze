@@ -259,7 +259,7 @@ mod imp {
 
     impl Monitor {
         fn start() -> Option<Self> {
-            use std::{io::BufRead as _, os::unix::process::CommandExt as _};
+            use std::io::BufRead as _;
             let mut command = crate::tools::system("gdbus");
             command
                 .args([
@@ -277,12 +277,17 @@ mod imp {
             // `pre_exec` hook may call between fork and exec. The monitor
             // ends with the thread that started it, which is the watching
             // thread, which lives as long as the process: it never outlives
-            // UZE waiting on a bus nobody reads.
-            unsafe {
-                command.pre_exec(|| {
-                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-                    Ok(())
-                });
+            // UZE waiting on a bus nobody reads. Linux's own call: elsewhere
+            // the monitor ends when its pipe does.
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                use std::os::unix::process::CommandExt as _;
+                unsafe {
+                    command.pre_exec(|| {
+                        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                        Ok(())
+                    });
+                }
             }
             let mut child = command.spawn().ok()?;
             let stdout = child.stdout.take()?;

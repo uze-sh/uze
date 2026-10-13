@@ -30,10 +30,20 @@
 //! [`places`] joined it when the spec surface came to read decisions from
 //! the same declared directories the architect draws diagrams from: one
 //! declaration, read by every surface that finds something in it.
+//!
+//! [`front_matter`] joined it when the architect's diagrams and the spec
+//! surface's decision records turned out to split the same block two
+//! ways, and to disagree about which lines open it.
 
 pub mod canvas;
 pub mod checkout;
+#[cfg(test)]
+mod disk_host;
+pub mod front_matter;
 pub mod highlight;
 pub mod markdown;
 pub mod nearest;
 pub mod places;
+
+#[cfg(test)]
+pub(crate) use disk_host::DiskHost;

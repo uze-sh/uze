@@ -13,7 +13,7 @@
 //! takes a pattern back, so it hides nothing; `{ "when": "$(basename).ts" }`
 //! hides a file only while the named sibling sits beside it.
 
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use crate::DirEntry;
 
@@ -32,9 +32,27 @@ pub struct Exclusions {
 struct Rule {
     /// Every spelling the pattern's braces expand to, each split into the
     /// names it matches one at a time.
-    alternatives: Vec<Vec<String>>,
+    alternatives: Vec<Vec<Segment>>,
     /// The sibling that must be present, with `$(basename)` still in it.
     when: Option<String>,
+}
+
+/// One `/`-separated piece of a pattern, split into characters once when
+/// the settings are read rather than on every name it is matched against.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Segment {
+    /// `**`: any number of names, none included.
+    AnyDepth,
+    Name(Vec<char>),
+}
+
+impl Segment {
+    fn parse(segment: &str) -> Self {
+        match segment {
+            "**" => Self::AnyDepth,
+            _ => Self::Name(segment.chars().collect()),
+        }
+    }
 }
 
 impl Exclusions {
@@ -69,7 +87,7 @@ impl Exclusions {
                 Some(Rule {
                     alternatives: expand_braces(normalised(pattern))
                         .iter()
-                        .map(|spelling| spelling.split('/').map(str::to_owned).collect())
+                        .map(|spelling| spelling.split('/').map(Segment::parse).collect())
                         .collect(),
                     when,
                 })
@@ -93,15 +111,19 @@ impl Exclusions {
         let Ok(relative) = directory.strip_prefix(root) else {
             return;
         };
-        let mut names: Vec<String> = relative
+        let mut names: Vec<Vec<char>> = relative
             .components()
-            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .map(|component| component.as_os_str().to_string_lossy().chars().collect())
             .collect();
+        let siblings: HashSet<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
         let hidden: Vec<bool> = entries
             .iter()
             .map(|entry| {
-                names.push(entry.name.clone());
-                let hides = self.rules.iter().any(|rule| rule.hides(&names, entries));
+                names.push(entry.name.chars().collect());
+                let hides = self
+                    .rules
+                    .iter()
+                    .any(|rule| rule.hides(&names, &entry.name, &siblings));
                 names.pop();
                 hides
             })
@@ -112,17 +134,17 @@ impl Exclusions {
 }
 
 impl Rule {
-    fn hides(&self, path: &[String], siblings: &[DirEntry]) -> bool {
+    /// Whether this rule hides `name`, the last of `path`, in a listing
+    /// whose names are `siblings`.
+    fn hides(&self, path: &[Vec<char>], name: &str, siblings: &HashSet<&str>) -> bool {
         let matched = self
             .alternatives
             .iter()
             .any(|pattern| matches_path(pattern, path));
         matched
             && self.when.as_deref().is_none_or(|when| {
-                let name = path.last().map(String::as_str).unwrap_or_default();
                 let basename = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
-                let sibling = when.replace("$(basename)", basename);
-                siblings.iter().any(|entry| entry.name == sibling)
+                siblings.contains(when.replace("$(basename)", basename).as_str())
             })
     }
 }
@@ -214,16 +236,14 @@ fn expand_braces(pattern: &str) -> Vec<String> {
         .collect()
 }
 
-fn matches_path(pattern: &[String], path: &[String]) -> bool {
+fn matches_path(pattern: &[Segment], path: &[Vec<char>]) -> bool {
     match pattern.split_first() {
         None => path.is_empty(),
-        Some((segment, rest)) if segment == "**" => {
+        Some((Segment::AnyDepth, rest)) => {
             (0..=path.len()).any(|skipped| matches_path(rest, &path[skipped..]))
         }
-        Some((segment, rest)) => path.split_first().is_some_and(|(name, deeper)| {
-            let segment: Vec<char> = segment.chars().collect();
-            let name: Vec<char> = name.chars().collect();
-            matches_name(&segment, &name) && matches_path(rest, deeper)
+        Some((Segment::Name(segment), rest)) => path.split_first().is_some_and(|(name, deeper)| {
+            matches_name(segment, name) && matches_path(rest, deeper)
         }),
     }
 }

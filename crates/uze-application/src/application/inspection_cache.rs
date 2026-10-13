@@ -195,10 +195,11 @@ fn fingerprint_matches(entry: &CachedInspection, current: Option<&str>) -> bool 
     entry.fingerprint.is_none() || entry.fingerprint.as_deref() == current
 }
 
-fn now_unix_nanos() -> u128 {
+/// The instant a remembered answer is stamped with and measured against.
+pub(super) fn now_unix_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
+        .unwrap_or_default()
         .as_nanos()
 }
 

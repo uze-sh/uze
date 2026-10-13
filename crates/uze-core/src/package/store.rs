@@ -56,7 +56,7 @@ pub fn read_plugin_manifest(root: &Path) -> Result<PluginManifest> {
 /// an agent loads into its context, and a megabyte is far past what either
 /// can use. The bound is what keeps a package from answering a read with an
 /// endless one.
-const MAX_PACKAGE_FILE_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_PACKAGE_FILE_BYTES: u64 = 1024 * 1024;
 
 /// Reads a file a package supplies, refusing anything but a regular file of
 /// at most [`MAX_PACKAGE_FILE_BYTES`].

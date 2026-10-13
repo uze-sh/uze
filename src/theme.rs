@@ -49,6 +49,34 @@ pub const ADAPTIVE_LIGHT: &str = "light";
 /// resolves to.
 const MAX_ANCESTRY: usize = 8;
 
+/// The theme in force: the one selected, or the default when none is.
+pub fn active_id(app: &UzeApplication) -> Result<String> {
+    Ok(app
+        .themes()
+        .active()?
+        .unwrap_or_else(|| uze_theme::builtin_names()[0].to_owned()))
+}
+
+/// Selects `id` and draws with it from now on, once it is proven to
+/// resolve: a theme that will not is refused where the operator is
+/// looking, rather than recorded and complained about on every later run.
+/// Answers with what resolving it had to say.
+pub fn select(app: &UzeApplication, home: &UzeHome, id: &str) -> Result<Vec<uze_theme::Warning>> {
+    let loaded = resolve(app, home, id)?;
+    app.themes().select(id)?;
+    uze_theme::set_active(loaded.theme);
+    Ok(loaded.warnings)
+}
+
+/// Draws with the active theme again, re-resolved: what a change beneath
+/// it — the glyph set, which is a layer under whichever theme is active,
+/// including none — needs before this invocation shows it.
+pub fn redraw_active(app: &UzeApplication, home: &UzeHome) -> Result<()> {
+    let loaded = resolve(app, home, &active_id(app)?)?;
+    uze_theme::set_active(loaded.theme);
+    Ok(())
+}
+
 /// Resolves a theme by id into the stack it is made of.
 ///
 /// The id may name a theme the operator wrote or one UZE carries; theirs

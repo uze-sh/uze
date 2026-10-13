@@ -6,7 +6,12 @@
 //! `kill(-1, SIGKILL)` — every process the user owns. That once took the
 //! whole WSL session down whenever a timed-out child's pid started with `1`.
 
-use std::{io, os::unix::process::CommandExt, process::Command};
+use std::{
+    io,
+    os::unix::process::CommandExt,
+    process::Command,
+    sync::atomic::{AtomicI32, Ordering},
+};
 
 /// `pid` as something `kill(2)` may be given — only where it names one
 /// process. `0` is the caller's own group, a negative pid a group, `-1`
@@ -39,7 +44,71 @@ pub(super) fn request_stop(pid: u32, _channel: &str) {
     }
 }
 
-pub(super) fn listen_for_stop(_channel: &str, _on_stop: impl FnOnce() + Send + 'static) {}
+/// The write end of the pipe the `SIGTERM` handler wakes the listener
+/// through; `-1` while nobody listens.
+static STOP_PIPE: AtomicI32 = AtomicI32::new(-1);
+
+extern "C" fn note_stop(_signal: libc::c_int) {
+    let fd = STOP_PIPE.load(Ordering::SeqCst);
+    if fd >= 0 {
+        // SAFETY: `write(2)` is async-signal-safe, and the end is
+        // non-blocking: a pipe already holding a wake-up drops this one.
+        unsafe { libc::write(fd, [0u8].as_ptr().cast(), 1) };
+    }
+}
+
+/// The default `SIGTERM` ends the process before anything it started is
+/// ended with it, so the handler only wakes a thread, which runs `on_stop`
+/// where anything may be done.
+pub(super) fn listen_for_stop(_channel: &str, on_stop: impl FnOnce() + Send + 'static) {
+    let mut ends = [0; 2];
+    // SAFETY: `pipe` fills the two descriptors it is handed.
+    if unsafe { libc::pipe(ends.as_mut_ptr()) } != 0 {
+        return;
+    }
+    let [read_end, write_end] = ends;
+    // SAFETY: plain `fcntl` calls on descriptors this function owns. Close
+    // on exec, so a program started later holds neither end.
+    unsafe {
+        libc::fcntl(read_end, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(write_end, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(write_end, libc::F_SETFL, libc::O_NONBLOCK);
+    }
+    // A listener installed again retires the one before it: its pipe's
+    // write end closes, and its thread reads the end of the pipe rather
+    // than a request.
+    let previous = STOP_PIPE.swap(write_end, Ordering::SeqCst);
+    if previous >= 0 {
+        // SAFETY: the previous write end, which nothing else holds.
+        unsafe { libc::close(previous) };
+    }
+    // SAFETY: the struct is plain data, zeroed is valid for it, and the
+    // handler only writes to a pipe. `SA_RESTART`, so a call another thread
+    // is blocked in resumes rather than failing with `EINTR`.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = note_stop as extern "C" fn(libc::c_int) as usize;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+    }
+    std::thread::spawn(move || {
+        let mut byte = 0u8;
+        let woken = loop {
+            // SAFETY: one byte into a local this thread owns.
+            match unsafe { libc::read(read_end, (&raw mut byte).cast(), 1) } {
+                1 => break true,
+                -1 if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted => {}
+                _ => break false,
+            }
+        };
+        // SAFETY: the read end, owned by this thread alone.
+        unsafe { libc::close(read_end) };
+        if woken {
+            on_stop();
+        }
+    });
+}
 
 pub(super) struct Tree(u32);
 
@@ -90,32 +159,14 @@ fn signal_group(pid: u32, leader_unreaped: bool) {
     }
     // Belt and braces for a descendant that left the group (`setsid`)
     // between the two signals — a WSL2 quirk. The signals above are what
-    // end the group; a platform without `/proc` loses the backstop only.
-    for member in group_members(pid) {
+    // end the group; a platform that lists no members loses the backstop
+    // only.
+    for member in crate::probe::group_members(pid) {
         if let Some(member) = single(member) {
             // SAFETY: as above.
             unsafe { libc::kill(member, libc::SIGKILL) };
         }
     }
-}
-
-/// Every pid `/proc` reports in group `pgid`; empty without `/proc`.
-fn group_members(pgid: u32) -> Vec<u32> {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let pid = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
-            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
-            // comm is parenthesized and may hold spaces or parens itself.
-            let (_, after_comm) = stat.rsplit_once(')')?;
-            // After comm: state(0) ppid(1) pgrp(2) ...
-            let group = after_comm.split_whitespace().nth(2)?.parse::<u32>().ok()?;
-            (group == pgid).then_some(pid)
-        })
-        .collect()
 }
 
 pub(super) fn wait_without_reaping(pid: u32) {
@@ -129,6 +180,33 @@ pub(super) fn wait_without_reaping(pid: u32) {
             unsafe { libc::waitid(libc::P_PID, id, &mut info, libc::WEXITED | libc::WNOWAIT) };
         if outcome == 0 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
             return;
+        }
+    }
+}
+
+pub(super) fn has_exited(pid: u32) -> bool {
+    let id = libc::id_t::from(pid);
+    // SAFETY: plain data the kernel fills in; zeroed is valid for it.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    loop {
+        // SAFETY: `info` outlives the call; WNOWAIT leaves the child for
+        // `Child::wait` to reap, WNOHANG answers at once.
+        let outcome = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                id,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+            )
+        };
+        if outcome == 0 {
+            // SAFETY: `waitid` succeeded, so `info` is the kernel's.
+            return unsafe { info.si_pid() } != 0;
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            // ECHILD: reaped already, or never this process's child.
+            return error.raw_os_error() == Some(libc::ECHILD);
         }
     }
 }
@@ -195,7 +273,7 @@ impl Group {
     }
 
     pub(super) fn members(&self) -> Vec<u32> {
-        group_members(self.0 as u32)
+        crate::probe::group_members(self.0 as u32)
     }
 }
 

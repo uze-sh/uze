@@ -21,51 +21,62 @@ pub use application::services::{
 /// making the caller find it elsewhere is what put `uze_core::` in the
 /// TUI's imports.
 pub use uze_core::{
-    Result,
-    UzeError,
-    UzeHome, // The authoring surface's check report: vocabulary a read model is
+    Result, UzeError, UzeHome,
     anchor::anchor_root_or_self,
-    // An adaptive theme selection, and the observation it is decided by.
-    appearance::{ADAPTIVE, Background},
-    // How text somebody else wrote reaches a terminal: inert.
-    authored::{inert, inert_line, is_terminal_control},
-    // made of, so the CLI answers the same thing a `check` verb asks.
-    authoring::{ScaffoldCapabilities, ValidationReport},
     capability::CapabilityKind,
-    context::PlannedAction, // Which manifest a package-level delivery handed the harness, as the
-    // install report names it.
-    exposure::PackageEnvelope,
+    context::PlannedAction,
     features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
     integration::{AttachmentState, HarnessDetection, PublicationStatus},
     naming::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
-    }, // The one writer for anything UZE owns. The binary writes its own
-    // Paths as the platform compares them: what a root shown or compared
-    // in the TUI must agree with, since the domain hands it roots this way.
-    path,
-    // update ledger, and doing that with a second atomic-rename of its own
-    // is how two conventions for one thing start.
-    persistence::write_atomic,
+    },
     preference::{
         Autonomy, AxisPlan, KeyPlan, ModelPreference, PlannedValue, PreferenceApplyOutcome,
         PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
-    }, // What one `setup` did to a harness, as `SetupResult` reports it.
-    provisioning::{
-        ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
-        ProvisioningResult, SystemProcessRunner, run_provisioning,
-    }, // What a blocked removal or update carries, so a surface can say which
-    // receipt stood in the way.
-    reconciliation::ReconciliationReport,
-    router::CompatibilityRoute,
-    router::HarnessCapabilities,
+    },
+    router::{CompatibilityRoute, HarnessCapabilities},
     store::{parse_plugin_marketplace_spec, typed_name},
     trust::{
         AlwaysTrust, CodeIdentity, ExecutableCapability, ExecutionKind, NoTrustAuthority,
         SourceOrigin, TrustAuthority, TrustOutcome, TrustRequest,
     },
 };
+
+/// An adaptive theme selection, and the observation it is decided by.
+pub use uze_core::appearance::{ADAPTIVE, Background};
+
+/// How text somebody else wrote reaches a terminal: inert.
+pub use uze_core::authored::{inert, inert_line, is_terminal_control};
+
+/// The authoring surface's check report: vocabulary a read model is made
+/// of, so the CLI answers the same thing a `check` verb asks.
+pub use uze_core::authoring::{ScaffoldCapabilities, ValidationReport};
+
+/// Which manifest a package-level delivery handed the harness, as the
+/// install report names it.
+pub use uze_core::exposure::PackageEnvelope;
+
+/// Paths as the platform compares them: what a root shown or compared in
+/// the TUI must agree with, since the domain hands it roots this way.
+pub use uze_core::path;
+
+/// The one writer for anything UZE owns. The binary writes its own update
+/// ledger, and doing that with a second atomic-rename of its own is how
+/// two conventions for one thing start.
+pub use uze_core::persistence::{write_atomic, write_atomic_preserving};
+
+/// What one `setup` did to a harness, as `SetupResult` reports it.
+pub use uze_core::provisioning::{
+    ProcessOutput, ProcessResult, ProcessRunner, ProcessSpec, ProvisionAction, ProvisionStatus,
+    ProvisioningResult, SystemProcessRunner, run_provisioning,
+};
+
+/// What a blocked removal or update carries, so a surface can say which
+/// receipt stood in the way.
+pub use uze_core::reconciliation::ReconciliationReport;
+
 pub use uze_workspace::{
     checkout::SETUP_AWAITS_APPROVAL,
     client_layout::{

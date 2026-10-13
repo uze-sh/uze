@@ -19,6 +19,18 @@ pub struct UzeHome {
     root: PathBuf,
 }
 
+/// The previous layout of one project's records: see
+/// [`UzeHome::scattered_project_records`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScatteredProjectRecords {
+    pub agents: PathBuf,
+    pub agents_lock: PathBuf,
+    pub conversations: PathBuf,
+    pub prompt_history: PathBuf,
+    /// The directories the three were kept in, shared by every project.
+    pub directories: [PathBuf; 3],
+}
+
 impl UzeHome {
     pub fn from_env() -> Result<Self> {
         Self::from_values(
@@ -117,9 +129,30 @@ impl UzeHome {
     /// A file per agent rather than one document for the project, so a
     /// launch is one write and forgetting a project is still one removal.
     pub fn conversation_path(&self, project_id: &str, task_id: &str) -> PathBuf {
-        self.project_dir(project_id)
-            .join("conversations")
+        self.conversations_dir(project_id)
             .join(format!("{task_id}.json"))
+    }
+
+    /// Every agent's recorded conversations in one project.
+    pub fn conversations_dir(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("conversations")
+    }
+
+    /// Where one project's records lived before [`Self::project_dir`]
+    /// gathered them. Named here only so the rung carrying them across
+    /// composes no path of its own; it goes when that rung does.
+    pub fn scattered_project_records(&self, project_id: &str) -> ScatteredProjectRecords {
+        let state = self.state_dir();
+        let tasks = state.join("tasks");
+        let conversations = state.join("conversations");
+        let prompt_history = state.join("prompt-history");
+        ScatteredProjectRecords {
+            agents: tasks.join(format!("{project_id}.json")),
+            agents_lock: tasks.join(format!("{project_id}.lock")),
+            conversations: conversations.join(project_id),
+            prompt_history: prompt_history.join(format!("{project_id}.json")),
+            directories: [tasks, conversations, prompt_history],
+        }
     }
 
     /// What UZE last observed about each harness's machine-level setup:
@@ -247,6 +280,26 @@ impl UzeHome {
         self.state_dir()
             .join("locks")
             .join(format!("agents-md-{project_id}.lock"))
+    }
+
+    /// The guard every read-modify-write of a project's conversation
+    /// records takes: the launched process and the workspace client both
+    /// rewrite an agent's record. A lock, not a record; one per project
+    /// rather than per agent, so agents that come and go leave nothing
+    /// behind here.
+    pub fn conversations_lock_path(&self, project_id: &str) -> PathBuf {
+        self.state_dir()
+            .join("locks")
+            .join(format!("conversations-{project_id}.lock"))
+    }
+
+    /// The guard a project's prompt history is appended and compacted
+    /// under, so a compaction never drops a line another client appended
+    /// while it read. A lock, not a record.
+    pub fn prompt_history_lock_path(&self, project_id: &str) -> PathBuf {
+        self.state_dir()
+            .join("locks")
+            .join(format!("prompt-history-{project_id}.lock"))
     }
 
     /// What UZE remembers about its own binary between runs: when it last
@@ -393,9 +446,10 @@ impl UzeHome {
         self.cache_dir().join("marketplaces")
     }
 
-    /// The runtime tree. Its one tenant, `projects/`, outlives every
-    /// invocation and dies with the project root; anything else beneath it
-    /// is swept.
+    /// The runtime tree. Its tenants — `projects/`, which dies with each
+    /// project root, and `attachments/` and `packages/`, which die with
+    /// what was delivered — outlive every invocation; anything else beneath
+    /// it is swept.
     pub fn runtime_dir(&self) -> PathBuf {
         self.root.join("runtime")
     }

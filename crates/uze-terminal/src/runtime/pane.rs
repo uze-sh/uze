@@ -12,7 +12,7 @@ pub(super) struct PaneRuntime {
     pub(super) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     /// The pane's program and everything it starts, ended together. Read
     /// while the leader is alive: once a finished leader is reaped, what it
-    /// left running is still in it. See [`PaneRuntime::end_leftovers`].
+    /// left running is still in it. See [`PaneRuntime::finished_agent`].
     pub(super) group: Option<Arc<uze_platform::process::pane::Group>>,
     /// The pid of the pane's program, read once at spawn: `child` is held
     /// for the whole of a stop, and a foreground read must not wait on it.
@@ -350,26 +350,26 @@ impl PaneRuntime {
         })
     }
 
-    /// Ends what a finished agent left running in its group: workers that
-    /// ignore the hangup keep the old terminal open, and its reader alive.
-    /// Called only right after [`PaneRuntime::finished_agent`] reaped the
-    /// leader.
-    pub(super) fn end_leftovers(&self) {
+    /// Whether this pane ran an agent that has since exited. What it left
+    /// running in its group is ended first, while the leader is still
+    /// unreaped and its group's id cannot have been handed to anybody
+    /// else: workers that ignore the hangup keep the old terminal open,
+    /// and its reader alive.
+    pub(super) fn finished_agent(&self) -> bool {
+        if !matches!(self.launch, Launch::Program { .. }) {
+            return false;
+        }
+        let mut child = self.child.lock().expect("child poisoned");
+        if !child
+            .process_id()
+            .is_none_or(uze_platform::process::has_exited)
+        {
+            return false;
+        }
         if let Some(group) = &self.group {
             group.end();
         }
-    }
-
-    pub(super) fn finished_agent(&self) -> bool {
-        matches!(self.launch, Launch::Program { .. })
-            && self
-                .child
-                .lock()
-                .expect("child poisoned")
-                .try_wait()
-                .ok()
-                .flatten()
-                .is_some()
+        child.try_wait().ok().flatten().is_some()
     }
 
     /// Best-effort reading of whatever runs in the foreground of this pane:
@@ -420,15 +420,13 @@ impl PaneRuntime {
         )
     }
 
-    /// Hands `send` a full snapshot and remembers it as the baseline for
-    /// the next [`PaneRuntime::damage_since_last`] diff — used for the rare
-    /// whole-session broadcasts (attach, tab create/select), which a newly
-    /// attached client has no prior state to diff against.
-    pub(super) fn offer_repaint(&self, send: impl FnOnce(PaneDamage)) {
-        let mut last_sent = self.last_sent.lock().expect("last_sent poisoned");
-        let current = self.snapshot();
-        *last_sent = Some(current.clone());
-        send(whole_pane(current));
+    /// Hands `send` the whole pane without moving the damage baseline the
+    /// other clients share: for a client that holds nothing of it yet.
+    /// Under the baseline lock, so no diff taken before this snapshot can
+    /// be delivered after it and paint older cells over it.
+    pub(super) fn offer_whole(&self, send: impl FnOnce(PaneDamage)) {
+        let _baseline = self.last_sent.lock().expect("last_sent poisoned");
+        send(whole_pane(self.snapshot()));
     }
 
     /// Hands `send` the damage since the last baseline. The baseline lock
@@ -518,15 +516,27 @@ impl PaneRuntime {
 /// the shim's own pid, and only the program it ran in its place
 /// (`uze_platform::process::launched_by`) answers to it.
 pub(super) fn shim_launched_name(pgid: u32) -> Option<String> {
-    shim_launched(pgid)
-        .then(|| uze_platform::probe::environment_value_of(pgid, crate::launch::SHIM_NAME_VARIABLE))
-        .flatten()
+    let [stamp, name] = uze_platform::probe::environment_values_of(
+        pgid,
+        [
+            crate::launch::SHIM_PID_VARIABLE,
+            crate::launch::SHIM_NAME_VARIABLE,
+        ],
+    );
+    stamped_by_launcher(pgid, stamp).then_some(name).flatten()
 }
 
 /// Whether UZE's launcher started `pid`, from the stamp it carries: one
 /// read of its environment, for a caller that needs no more than that.
 pub(super) fn shim_launched(pid: u32) -> bool {
-    uze_platform::probe::environment_value_of(pid, crate::launch::SHIM_PID_VARIABLE)
+    stamped_by_launcher(
+        pid,
+        uze_platform::probe::environment_value_of(pid, crate::launch::SHIM_PID_VARIABLE),
+    )
+}
+
+fn stamped_by_launcher(pid: u32, stamp: Option<String>) -> bool {
+    stamp
         .and_then(|stamped| stamped.trim().parse::<u32>().ok())
         .is_some_and(|stamped| uze_platform::process::launched_by(pid, stamped))
 }
@@ -565,12 +575,12 @@ pub(super) fn cell_coordinates(
 /// the outbox itself: see the note on `Backlog`.
 pub(super) fn forward_events(
     mut socket: Stream,
-    events: &mpsc::Receiver<ClientEvent>,
+    frames: &mpsc::Receiver<Frame>,
     backlog: &Backlog,
 ) {
-    while let Ok(event) = events.recv() {
+    while let Ok(frame) = frames.recv() {
         backlog.delivered();
-        if let Err(error) = write_message(&mut socket, &event) {
+        if let Err(error) = frame.write_to(&mut socket) {
             tracing::warn!(%error, "dropping a terminal client an event could not reach");
             let _ = socket.shutdown(std::net::Shutdown::Both);
             return;
@@ -579,7 +589,7 @@ pub(super) fn forward_events(
 }
 
 /// A pane's whole grid said as damage — every cell "changed" — which is
-/// how [`Server::broadcast_snapshot`] repaints one pane in one frame. The
+/// how [`Server::paint_for`] repaints one pane in one frame. The
 /// same thing a resize already sends, and the shape the frame limit is
 /// measured against (`a_full_repaint_of_the_largest_pane_fits_in_one_frame`
 /// weighs a damage cell, the widest of the two).

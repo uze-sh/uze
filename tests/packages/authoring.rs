@@ -8,7 +8,7 @@
 //! what the machine registry and the Store carry once the verbs have run.
 
 use std::{fs, process::Command};
-use uze_testkit::process::IsolatedHome;
+use uze_testkit::{git::isolated_git_in, process::IsolatedHome};
 
 fn uze_bin() -> &'static str {
     env!("CARGO_BIN_EXE_uze")
@@ -61,18 +61,7 @@ fn a_scaffolded_marketplace_is_registered_and_linked_in_one_step() {
     assert!(at.join("plugins").is_dir());
     // The identity contract: a Git repository with an initial commit.
     assert!(at.join(".git").exists());
-    let commit = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .arg("-C")
-        .arg(&at)
-        .args(["rev-parse", "--verify", "HEAD"])
-        .output()
-        .unwrap();
-    assert!(
-        commit.status.success(),
-        "the scaffold committed: {}",
-        String::from_utf8_lossy(&commit.stderr)
-    );
+    isolated_git_in(&at, &["rev-parse", "--verify", "HEAD"]);
 
     // And the machine registry answers for it, linked to the checkout.
     let list = uze(&root)
@@ -191,43 +180,7 @@ fn a_local_marketplace_is_the_project_itself_and_installs_immediately() {
     let root = uze_testkit::temp::scratch("authoring-cli-local");
     // The project is a real repository with a commit — a marketplace is a
     // Git repository with a commit, and here the project's repo is it.
-    let project = root.join("project");
-    fs::write(
-        root.join(".gitconfig"),
-        "[user]\n\tname = Test\n\temail = t@example.invalid\n",
-    )
-    .unwrap();
-    let initialized = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
-        .arg("-C")
-        .arg(&root)
-        .args([
-            "init",
-            "-q",
-            "-b",
-            "main",
-            project.to_string_lossy().as_ref(),
-        ])
-        .output()
-        .unwrap();
-    assert!(initialized.status.success());
-    fs::write(project.join("README.md"), "# demo\n").unwrap();
-    let committed = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
-        .arg("-C")
-        .arg(&project)
-        .args(["add", "-A"])
-        .output()
-        .unwrap();
-    assert!(committed.status.success());
-    let commit = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
-        .arg("-C")
-        .arg(&project)
-        .args(["commit", "-q", "-m", "first"])
-        .output()
-        .unwrap();
-    assert!(commit.status.success());
+    let project = git_project(&root, true);
     let created = uze(&root)
         .current_dir(&project)
         .args(["agent", "market", "create", "tools", "--local"])
@@ -242,15 +195,8 @@ fn a_local_marketplace_is_the_project_itself_and_installs_immediately() {
     // marketplace — and no second commit was fabricated by the scaffold.
     assert!(project.join("marketplace.json").is_file());
     assert!(project.join("plugins").is_dir());
-    let commits = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .arg("-C")
-        .arg(&project)
-        .args(["rev-list", "--count", "HEAD"])
-        .output()
-        .unwrap();
     assert_eq!(
-        String::from_utf8_lossy(&commits.stdout).trim(),
+        isolated_git_in(&project, &["rev-list", "--count", "HEAD"]),
         "1",
         "the scaffold committed nothing; the project's flow owns it"
     );
@@ -357,25 +303,10 @@ fn a_plugin_that_would_fail_at_install_fails_check_first() {
 }
 
 /// A Git repository at `project`, with a commit when `committed`, under
-/// this world's own Git identity.
+/// the fixture identity and none of the operator's configuration.
 fn git_project(root: &std::path::Path, committed: bool) -> std::path::PathBuf {
     let project = root.join("project");
-    let gitconfig = root.join(".gitconfig");
-    fs::write(
-        &gitconfig,
-        "[user]\n\tname = Test\n\temail = t@example.invalid\n",
-    )
-    .unwrap();
-    let git = |arguments: &[&str]| {
-        let output = Command::new("git")
-            .env("GIT_CONFIG_GLOBAL", &gitconfig)
-            .arg("-C")
-            .arg(&project)
-            .args(arguments)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {arguments:?}");
-    };
+    let git = |arguments: &[&str]| isolated_git_in(&project, arguments);
     fs::create_dir_all(&project).unwrap();
     git(&["init", "-q", "-b", "main"]);
     if committed {

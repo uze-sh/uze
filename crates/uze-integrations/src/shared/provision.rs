@@ -171,22 +171,7 @@ pub(crate) fn provision_cli(
         .fold(command, |command, (name, value)| {
             command.with_env(*name, *value)
         });
-    let outcome = match runner.run(&command) {
-        Ok(outcome) => outcome,
-        Err(_) => {
-            return Ok(ProvisioningResult::failed(
-                action,
-                method,
-                "official installer could not be started",
-            ));
-        }
-    };
-    if !outcome.success {
-        let reason = if outcome.timed_out {
-            "official installer timed out"
-        } else {
-            "official installer exited unsuccessfully"
-        };
+    if let Err(reason) = run_installer(runner, &command) {
         return Ok(ProvisioningResult::failed(action, method, reason));
     }
     // Looked for again: an installer can put the program where nothing
@@ -207,6 +192,22 @@ pub(crate) fn provision_cli(
             found_outside_path(&[route.program], shims_dir, Path::new(executable)),
         ),
     )
+}
+
+/// Runs an official installer to completion, or says why it did not
+/// finish.
+pub(crate) fn run_installer(
+    runner: &dyn ProcessRunner,
+    command: &ProcessSpec,
+) -> std::result::Result<(), &'static str> {
+    let outcome = runner
+        .run(command)
+        .map_err(|_| "official installer could not be started")?;
+    match (outcome.success, outcome.timed_out) {
+        (true, _) => Ok(()),
+        (false, true) => Err("official installer timed out"),
+        (false, false) => Err("official installer exited unsuccessfully"),
+    }
 }
 
 // Drives the POSIX installer route (`curl … | sh`) with stand-ins.

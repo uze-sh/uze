@@ -13,11 +13,12 @@
 //!
 //! # Storage
 //!
-//! One JSON document per project under `UzeHome::state_dir()/tasks/<project
-//! id>.json`, outside every checkout by construction, so removing a
-//! worktree can never remove history. Written atomically, and carrying a
-//! schema version from the first commit: a document from a schema this
-//! build does not know is refused, never guessed at.
+//! One JSON document per project at `UzeHome::tasks_path`, outside every
+//! checkout by construction, so removing a worktree can never remove
+//! history. Written atomically, and carrying its shape: one a newer build
+//! wrote is refused, never guessed at; an older one this build has a rung
+//! for is carried across, and one it cannot read at all is set aside and
+//! the project recorded again ([`locked_reporting`]).
 //!
 //! Atomic is not the same as serialized: every change goes through
 //! [`locked`], which holds the document for the whole read-modify-write so
@@ -1327,7 +1328,7 @@ mod tests {
     /// Saves in a tight loop until killed; the process side of the test
     /// below. Ignored so it never runs on its own.
     #[test]
-    #[ignore]
+    #[ignore = "the process side of a save test, run only when it spawns it"]
     fn save_until_killed() {
         let (Some(home), Some(root)) = (
             std::env::var_os("UZE_TASK_STORE_HOME"),

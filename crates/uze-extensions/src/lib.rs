@@ -20,7 +20,7 @@
 //! surface — its state, its keys, its registry entry — in the file beside
 //! it. What more than one extension needs lives under `shared`, created
 //! the day a second extension actually reached for it and not before —
-//! today that is the canvas a drawing in cells is made on. [`view`] is
+//! `shared.rs` says what is there and why. [`view`] is
 //! neither: it is the contract between an extension and whatever draws
 //! it, which is why it sits at the root alongside [`Host`], the contract
 //! in the other direction.

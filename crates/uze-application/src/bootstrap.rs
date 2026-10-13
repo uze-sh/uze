@@ -60,10 +60,10 @@ pub fn materialize(plugin_name: &str) -> Result<MaterializedPackage> {
 
 /// Whether the embedded marketplace currently carries different content for
 /// `plugin_name` than what's installed at `stored_root`. Pure read: the
-/// fresh comparison copy lives in a scratch directory cleaned up before
-/// this returns. Generic over plugin content — compares the resolved
-/// directory tree file-for-file, not a fixed list of known filenames — so
-/// it needs no per-plugin knowledge either.
+/// embedded side is read straight from the binary, and nothing is written.
+/// Generic over plugin content — compares the resolved directory tree
+/// file-for-file, not a fixed list of known filenames — so it needs no
+/// per-plugin knowledge either.
 pub fn has_update(plugin_name: &str, stored_root: &Path) -> Result<bool> {
     let current = embedded_plugin_files(plugin_name)?;
     let stored = collect_files(stored_root)?;

@@ -14,6 +14,8 @@ mod windows;
 
 #[cfg(unix)]
 use unix as imp;
+#[cfg(unix)]
+pub(crate) use unix::shared_private_directory;
 #[cfg(windows)]
 use windows as imp;
 

@@ -32,14 +32,15 @@ impl Workspace<'_> {
     ) -> Option<AgentView> {
         let target = target_of(primary, policy);
         let store = task::load(&self.0.home, primary).ok()?;
-        AgentView::from_agent(
+        Some(AgentView::from_agent(
             primary,
             &checkout::BranchTips::read(primary),
+            &RootStanding::default(),
             store.agent(id)?,
             policy.completion,
             &target,
             landing::forge(primary),
-        )
+        ))
     }
 
     /// The repository `cwd` belongs to, with its policy and recorded tasks.
@@ -50,14 +51,18 @@ impl Workspace<'_> {
     /// The same without the tasks: what a *mutation* resolves before it
     /// takes the document, so the one read it acts on is the one
     /// [`task::locked`] takes under the lock rather than an earlier one
-    /// somebody else has since replaced.
+    /// somebody else has since replaced. `Ok(None)` outside a Git working
+    /// tree; a manifest that does not parse is its own error, never read
+    /// as "no repository here".
     pub(in crate::application::services) fn repository_context(
         &self,
         cwd: &Path,
-    ) -> Option<(PathBuf, WorktreePolicy)> {
-        let primary = worktree::primary_checkout(cwd)?;
-        let policy = self.policy(&primary).ok()?;
-        Some((primary, policy))
+    ) -> Result<Option<(PathBuf, WorktreePolicy)>> {
+        let Some(primary) = worktree::primary_checkout(cwd) else {
+            return Ok(None);
+        };
+        let policy = self.policy(&primary)?;
+        Ok(Some((primary, policy)))
     }
 
     /// The same, telling "there is no repository here" apart from "there
@@ -67,9 +72,7 @@ impl Workspace<'_> {
         let Some(primary) = worktree::primary_checkout(cwd) else {
             return Ok(None);
         };
-        let Ok(policy) = self.policy(&primary) else {
-            return Ok(None);
-        };
+        let policy = self.policy(&primary).map_err(|error| error.to_string())?;
         let store = task::load(&self.0.home, &primary).map_err(|error| error.to_string())?;
         Ok(Some(Repository {
             primary,
@@ -157,8 +160,6 @@ impl Workspace<'_> {
             .unwrap_or_default()
     }
 
-    /// The project's say in delivery, for a header to name what `deliver`
-    /// will do.
     /// What declaring a completion behavior would do, so a caller can say
     /// it before doing it rather than after. Writing the policy touches a
     /// *tracked* file — the one the whole team reads — and the projected
@@ -166,8 +167,8 @@ impl Workspace<'_> {
     /// click that silently did both would be a click nobody could predict.
     #[tracing::instrument(name = "workspace.completion_change_consequence", skip_all, fields(cwd = %cwd.display()))]
     pub fn completion_change_consequence(&self, cwd: &Path) -> Option<PolicyWriteConsequence> {
-        let repository = self.repository(cwd)?;
-        let manifest = manifest::manifest_path_for(&repository.primary);
+        let primary = worktree::primary_checkout(cwd)?;
+        let manifest = manifest::manifest_path_for(&primary);
         Some(PolicyWriteConsequence {
             creates_manifest: !manifest.exists(),
             manifest,
@@ -187,23 +188,19 @@ impl Workspace<'_> {
         // `MissingPath` is what resolving a project root already answers
         // with when there is nothing to resolve; a policy is a repository's,
         // and outside one there is no primary checkout to declare it in.
-        let primary = self
-            .repository(cwd)
-            .map(|repository| repository.primary)
+        let primary = worktree::primary_checkout(cwd)
             .ok_or_else(|| UzeError::MissingPath(cwd.to_path_buf()))?;
         uze_workspace::declaration::set_completion(&primary, behavior)
     }
 
+    /// The project's say in delivery, for a header to name what `deliver`
+    /// will do.
     #[tracing::instrument(name = "workspace.delivery_policy", skip_all, fields(cwd = %cwd.display()))]
     pub fn delivery_policy(&self, cwd: &Path) -> Option<DeliveryPolicyView> {
         let repository = self.repository(cwd)?;
         Some(DeliveryPolicyView {
             completion: repository.policy.completion.abi_name(),
-            target: repository
-                .policy
-                .target
-                .clone()
-                .or_else(|| checkout::current_branch(&repository.primary)),
+            target: declared_target(&repository.primary, &repository.policy),
             gate: repository
                 .policy
                 .gate

@@ -538,7 +538,7 @@ fn a_collected_slot_leaves_the_registry_at_once_and_its_bytes_after() {
             .all(|(path, _)| path != &slot.path),
         "Git no longer counts it as a checkout"
     );
-    let trash = primary.join(WORKTREES_DIRECTORY).join(TRASH_DIRECTORY);
+    let trash = trash_directory(primary);
     assert!(trash.read_dir().unwrap().next().is_some(), "its bytes wait");
     assert!(
         slots(primary, &store, &nobody()).is_empty(),
@@ -1517,4 +1517,69 @@ fn a_target_that_names_no_branch_has_no_reach() {
         target_reach(primary, TARGET, None),
         Some(tip_of(primary, &format!("refs/remotes/{REMOTE}/{TARGET}")))
     );
+}
+
+#[test]
+fn a_repository_nested_among_the_changes_stays_behind_and_the_rest_still_travels() {
+    let repository = repository("carry-nested");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, acquired) = launch(&repository, &mut store, "nested");
+    let nested = primary.join("a-nested");
+    fs::create_dir_all(&nested).unwrap();
+    repository.git_in(&nested, &["init", "--quiet"]);
+    fs::write(nested.join("inner.txt"), "inner").unwrap();
+    fs::write(primary.join("b-after.txt"), "after").unwrap();
+
+    let reported = carry_changes(primary, &acquired.path).unwrap_err();
+
+    assert!(reported.contains("a-nested"), "{reported}");
+    assert_eq!(
+        fs::read_to_string(acquired.path.join("b-after.txt")).unwrap(),
+        "after"
+    );
+    assert!(!acquired.path.join("a-nested").exists());
+}
+
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(unix)]
+#[test]
+fn an_untracked_link_travels_as_the_same_link() {
+    let repository = repository("carry-link");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, acquired) = launch(&repository, &mut store, "link");
+    let elsewhere = uze_testkit::temp::scratch("carry-link-elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, primary.join("shared")).unwrap();
+
+    carry_changes(primary, &acquired.path).unwrap();
+
+    assert_eq!(
+        fs::read_link(acquired.path.join("shared")).unwrap(),
+        elsewhere
+    );
+}
+
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(unix)]
+#[test]
+fn instructions_committed_as_a_link_out_of_the_checkout_are_never_written_through() {
+    let repository = repository("carry-instructions-link");
+    let primary = repository.root();
+    let outside = uze_testkit::temp::scratch("carry-instructions-outside").join("AGENTS.md");
+    let link_text = outside.to_str().unwrap().to_owned();
+    std::os::unix::fs::symlink(&outside, primary.join("AGENTS.md")).unwrap();
+    repository.git(&["add", "AGENTS.md"]);
+    repository.git(&["commit", "-q", "-m", "link"]);
+    // What `git show` answers for a link is its target, so a file reading as
+    // that text plus a managed region reads as changed only in the region.
+    let through_the_link =
+        format!("{link_text}\n<!-- uze:begin id -->\nmanaged\n<!-- uze:end id -->\n");
+    fs::write(&outside, &through_the_link).unwrap();
+    let mut store = AgentStore::default();
+    let (_, acquired) = launch(&repository, &mut store, "instructions-link");
+
+    let _ = carry_changes(primary, &acquired.path);
+
+    assert_eq!(fs::read_to_string(&outside).unwrap(), through_the_link);
 }

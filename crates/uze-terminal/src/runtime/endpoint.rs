@@ -369,14 +369,24 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
     let _span = tracing::info_span!("terminal.open_space", root = %seat.root.display()).entered();
     let mut stream = transport::connect(&socket_path()?)
         .map_err(|_| RuntimeError::Protocol("no running uze to open a space in".into()))?;
+    stream.set_read_timeout(Some(OPENS_A_SPACE_WITHIN))?;
+    stream.set_write_timeout(Some(OPENS_A_SPACE_WITHIN))?;
+    let silent = |error: RuntimeError| match error {
+        RuntimeError::Io(error) if timed_out(&error) => RuntimeError::Protocol(format!(
+            "the running uze did not open the space within {}s",
+            OPENS_A_SPACE_WITHIN.as_secs()
+        )),
+        error => error,
+    };
     send_request(
         &mut stream,
         &ClientRequest::OpenSpace {
             version: PROTOCOL_VERSION,
             seat,
         },
-    )?;
-    match read_event(&mut stream)? {
+    )
+    .map_err(silent)?;
+    match read_event(&mut stream).map_err(silent)? {
         Some(ClientEvent::SpaceOpened { label }) => Ok(label),
         Some(ClientEvent::Error { message } | ClientEvent::Refused { message }) => {
             Err(RuntimeError::Protocol(message))
@@ -399,7 +409,7 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
 pub fn stop() -> Result<bool, RuntimeError> {
     let _span = tracing::info_span!("terminal.stop").entered();
     let socket = socket_path()?;
-    let mut stream = match transport::connect(&socket) {
+    let stream = match transport::connect(&socket) {
         Ok(stream) => stream,
         Err(error)
             if matches!(
@@ -411,34 +421,73 @@ pub fn stop() -> Result<bool, RuntimeError> {
             // running: a server on an endpoint this build no longer names
             // still holds the workspace, and a `stop` that reported
             // success while it did is what left restarting the machine as
-            // the only way out. What the claim names is what is stopped,
-            // and only while it is held: a free claim still carries the
-            // pid of the last server to hold it, and that pid may belong
-            // to anything by now. A claim that names nobody — a server
-            // older than the record — is said, never reported as success.
-            if !workspace_is_claimed() {
-                return Ok(false);
-            }
-            return match claim_holder() {
-                Some(claimant) => {
-                    retire(claimant.pid, Some(claimant.started), &socket);
-                    Ok(true)
-                }
-                None => Err(unreachable(&socket, None)),
-            };
+            // the only way out.
+            return stop_the_claimant(&socket);
         }
         Err(error) => return Err(error.into()),
     };
-    write_message(&mut stream, &ClientRequest::Stop { key: server_key() })?;
-    match read_message::<_, ClientEvent>(&mut BufReader::new(stream))? {
-        Some(ClientEvent::Stopped) => Ok(true),
-        Some(ClientEvent::Error { message } | ClientEvent::Refused { message }) => {
+    match ask_to_stop(stream) {
+        Ok(Some(ClientEvent::Stopped)) => Ok(true),
+        Ok(Some(ClientEvent::Error { message } | ClientEvent::Refused { message })) => {
             Err(RuntimeError::Protocol(message))
         }
-        _ => Err(RuntimeError::Protocol(
+        // A server that took the connection and never answered is wedged,
+        // and waiting on it is a `stop` that never returns.
+        Err(RuntimeError::Io(error)) if timed_out(&error) => {
+            tracing::warn!(socket = %socket.display(), "the server did not answer a stop; retiring it");
+            stop_the_claimant(&socket)
+        }
+        Err(error) => Err(error),
+        Ok(_) => Err(RuntimeError::Protocol(
             "server did not acknowledge stop".into(),
         )),
     }
+}
+
+/// How long a server has to acknowledge a stop. It answers before it does
+/// anything else, so this only runs out on a server that cannot answer.
+pub(super) const STOPS_WITHIN: Duration = Duration::from_secs(10);
+
+/// How long a server has to open a space: it starts the space's shell
+/// before it answers, and a PowerShell started cold takes seconds.
+pub(super) const OPENS_A_SPACE_WITHIN: Duration = Duration::from_secs(30);
+
+fn ask_to_stop(mut stream: Stream) -> Result<Option<ClientEvent>, RuntimeError> {
+    stream.set_read_timeout(Some(STOPS_WITHIN))?;
+    stream.set_write_timeout(Some(STOPS_WITHIN))?;
+    write_message(&mut stream, &ClientRequest::Stop { key: server_key() })?;
+    read_message::<_, ClientEvent>(&mut BufReader::new(stream))
+}
+
+/// Stops whoever the claim names, answering whether anything was running.
+/// What the claim names is what is stopped, and only while it is held: a
+/// free claim still carries the pid of the last server to hold it, and that
+/// pid may belong to anything by now. A claim that names nobody — a server
+/// older than the record — is said, never reported as success; and so is
+/// a server that would not let go.
+fn stop_the_claimant(socket: &Path) -> Result<bool, RuntimeError> {
+    if !workspace_is_claimed() {
+        return Ok(false);
+    }
+    let Some(claimant) = claim_holder() else {
+        return Err(unreachable(socket, None));
+    };
+    if retire(claimant.pid, Some(claimant.started), socket) || !workspace_is_claimed() {
+        return Ok(true);
+    }
+    Err(RuntimeError::Protocol(format!(
+        "the uze serving this workspace (pid {}) did not stop; find it with {}",
+        claimant.pid,
+        host::find_server()
+    )))
+}
+
+/// A read or write that ran out of time, as each platform says so.
+fn timed_out(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+    )
 }
 
 /// A directory every pane's `PATH` starts with, named once by the binary

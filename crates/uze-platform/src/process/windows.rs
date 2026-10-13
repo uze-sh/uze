@@ -6,13 +6,10 @@ use std::{ffi::OsStr, io, os::windows::process::CommandExt, process::Command, pt
 
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_INVALID_PARAMETER, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
-        STILL_ACTIVE,
+        ERROR_INVALID_PARAMETER, GetLastError, HANDLE, INVALID_HANDLE_VALUE, STILL_ACTIVE,
+        WAIT_OBJECT_0,
     },
-    Security::{
-        Authorization::ConvertSidToStringSidW, GetTokenInformation, TOKEN_QUERY, TOKEN_USER,
-        TokenUser,
-    },
+    Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser},
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
@@ -101,6 +98,14 @@ pub(super) fn wait_without_reaping(pid: u32) {
     if let Some(process) = open(pid, PROCESS_SYNCHRONIZE) {
         // SAFETY: valid handle with synchronize access.
         unsafe { WaitForSingleObject(process.0, INFINITE) };
+    }
+}
+
+pub(super) fn has_exited(pid: u32) -> bool {
+    match open(pid, PROCESS_SYNCHRONIZE) {
+        // SAFETY: valid handle with synchronize access.
+        Some(process) => (unsafe { WaitForSingleObject(process.0, 0) }) == WAIT_OBJECT_0,
+        None => true,
     }
 }
 
@@ -273,20 +278,8 @@ fn user_of_process(process: HANDLE) -> io::Result<String> {
     // SAFETY: the buffer now holds a TOKEN_USER; read unaligned, since a
     // Vec<u8> promises no alignment.
     let user: TOKEN_USER = unsafe { ptr::read_unaligned(buffer.as_ptr().cast()) };
-    let mut text: *mut u16 = ptr::null_mut();
-    // SAFETY: the SID points into `buffer`, alive for the call; `text` is
-    // freed with LocalFree below.
-    if unsafe { ConvertSidToStringSidW(user.User.Sid, &mut text) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: a NUL-terminated wide string from the conversion above.
-    let sid = unsafe {
-        let len = (0..).take_while(|&i| *text.add(i) != 0).count();
-        String::from_utf16_lossy(std::slice::from_raw_parts(text, len))
-    };
-    // SAFETY: allocated by ConvertSidToStringSidW with LocalAlloc.
-    unsafe { LocalFree(text.cast()) };
-    Ok(sid)
+    // SAFETY: the SID points into `buffer`, alive for the call.
+    unsafe { crate::win::sid_text(user.User.Sid) }.ok_or_else(io::Error::last_os_error)
 }
 
 /// A new Job Object. With `kill_on_close`, closing the last handle to it
@@ -303,30 +296,11 @@ fn job(kill_on_close: bool) -> io::Result<Owned> {
 /// A new Job Object others reach by `name`, open to this user alone and
 /// ending every member once its last handle closes.
 fn named_job(name: &str) -> io::Result<Owned> {
-    use windows_sys::Win32::{
-        Foundation::{ERROR_ALREADY_EXISTS, LocalFree},
-        Security::{
-            Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
-        },
-    };
-    let sddl = wide(OsStr::new(&format!("D:P(A;;GA;;;{})", current_user()?)));
-    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
-    // SAFETY: `sddl` is NUL-terminated; the descriptor is freed below.
-    if unsafe {
-        ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            sddl.as_ptr(),
-            1,
-            &mut descriptor,
-            ptr::null_mut(),
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
+    use windows_sys::Win32::{Foundation::ERROR_ALREADY_EXISTS, Security::SECURITY_ATTRIBUTES};
+    let descriptor = crate::win::OwnerOnly::new("")?;
     let attributes = SECURITY_ATTRIBUTES {
         nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-        lpSecurityDescriptor: descriptor,
+        lpSecurityDescriptor: descriptor.0,
         bInheritHandle: 0,
     };
     let wide_name = wide(OsStr::new(name));
@@ -334,8 +308,7 @@ fn named_job(name: &str) -> io::Result<Owned> {
     let job = unsafe { CreateJobObjectW(&attributes, wide_name.as_ptr()) };
     // SAFETY: read before anything else can set it.
     let existed = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
-    // SAFETY: allocated by the conversion above.
-    unsafe { LocalFree(descriptor) };
+    drop(descriptor);
     if job.is_null() {
         return Err(io::Error::last_os_error());
     }
@@ -460,29 +433,42 @@ impl Group {
     }
 
     pub(super) fn members(&self) -> Vec<u32> {
-        const CAPACITY: usize = 256;
-        let size = std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>()
-            + CAPACITY * std::mem::size_of::<usize>();
-        let mut buffer = vec![0usize; size.div_ceil(std::mem::size_of::<usize>())];
-        // SAFETY: `buffer` is at least `size` bytes, usize-aligned.
-        let ok = unsafe {
-            QueryInformationJobObject(
-                self.0.0,
-                JobObjectBasicProcessIdList,
-                buffer.as_mut_ptr().cast(),
-                size as u32,
-                ptr::null_mut(),
-            )
-        };
-        if ok == 0 {
-            return Vec::new();
+        use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+        let mut capacity = 256usize;
+        // A job can grow between the question and the answer, so a list
+        // that did not fit is asked for again at the size it reported, a
+        // few times and no more.
+        for _ in 0..4 {
+            let size = std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>()
+                + capacity * std::mem::size_of::<usize>();
+            let mut buffer = vec![0usize; size.div_ceil(std::mem::size_of::<usize>())];
+            // SAFETY: `buffer` is at least `size` bytes, usize-aligned.
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    self.0.0,
+                    JobObjectBasicProcessIdList,
+                    buffer.as_mut_ptr().cast(),
+                    size as u32,
+                    ptr::null_mut(),
+                )
+            };
+            // SAFETY: the buffer starts with a JOBOBJECT_BASIC_PROCESS_ID_LIST,
+            // whose header is filled in even when the list did not fit.
+            let list = unsafe { &*(buffer.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+            if ok == 0 {
+                // SAFETY: reads this thread's last error.
+                if unsafe { GetLastError() } != ERROR_MORE_DATA {
+                    return Vec::new();
+                }
+                capacity = (list.NumberOfAssignedProcesses as usize).max(capacity) + 64;
+                continue;
+            }
+            let count = (list.NumberOfProcessIdsInList as usize).min(capacity);
+            // SAFETY: `count` ids follow the header within `buffer`.
+            let ids = unsafe { std::slice::from_raw_parts(list.ProcessIdList.as_ptr(), count) };
+            return ids.iter().map(|&id| id as u32).collect();
         }
-        // SAFETY: the buffer now starts with a JOBOBJECT_BASIC_PROCESS_ID_LIST.
-        let list = unsafe { &*(buffer.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
-        let count = (list.NumberOfProcessIdsInList as usize).min(CAPACITY);
-        // SAFETY: `count` ids follow the header within `buffer`.
-        let ids = unsafe { std::slice::from_raw_parts(list.ProcessIdList.as_ptr(), count) };
-        ids.iter().map(|&id| id as u32).collect()
+        Vec::new()
     }
 }
 

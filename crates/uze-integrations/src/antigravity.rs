@@ -95,7 +95,7 @@ use crate::shared::agent::{
 use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::mcp::McpEntry;
 use crate::shared::plan::{blocked, unsupported};
-use crate::shared::process::real_executable;
+use crate::shared::process::{is_cli_safe_token, real_executable};
 use crate::shared::provision::{
     OfficialRoute, native_installer_destination, official_installer, provision_cli,
 };
@@ -138,6 +138,9 @@ pub struct AntigravityIntegration {
     /// UZE-managed reference is discovered natively.
     skills_dir: PathBuf,
     agents_dir: PathBuf,
+    /// The shared configuration area (`~/.gemini/config`): the plugins, the
+    /// MCP servers and the hooks Antigravity reads.
+    config_dir: PathBuf,
     /// Global plugins directory (`~/.gemini/config/plugins`), where
     /// `agy plugin install` stages plugin byte copies.
     plugins_dir: PathBuf,
@@ -159,12 +162,15 @@ impl AntigravityIntegration {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| agents_home.clone());
         let gemini_root = command_home.join(".gemini");
+        let cli_root = gemini_root.join("antigravity-cli");
+        let config_dir = gemini_root.join("config");
         Self {
-            cli_root: gemini_root.join("antigravity-cli"),
-            skills_dir: gemini_root.join("antigravity-cli").join("skills"),
-            agents_dir: gemini_root.join("antigravity-cli").join("agents"),
-            plugins_dir: gemini_root.join("config").join("plugins"),
-            mcp_config_path: gemini_root.join("config").join("mcp_config.json"),
+            skills_dir: cli_root.join("skills"),
+            agents_dir: cli_root.join("agents"),
+            cli_root,
+            plugins_dir: config_dir.join("plugins"),
+            mcp_config_path: config_dir.join("mcp_config.json"),
+            config_dir,
             command_home,
             uze_home,
         }
@@ -190,10 +196,7 @@ impl AntigravityIntegration {
     /// Conformance Lab, `hooks > delivery`). A file the vendor never reads
     /// is not a delivery.
     fn hooks_config_path(&self) -> PathBuf {
-        self.command_home
-            .join(".gemini")
-            .join("config")
-            .join(HOOKS_FILE_NAME)
+        self.config_dir.join(HOOKS_FILE_NAME)
     }
 
     /// `~/.gemini/antigravity-cli/settings.json` — same directory as
@@ -201,10 +204,7 @@ impl AntigravityIntegration {
     /// beyond two independently reproduced fetches; see `preferences`'s
     /// module doc for the confidence caveat).
     fn preferences_config_path(&self) -> PathBuf {
-        self.command_home
-            .join(".gemini")
-            .join("antigravity-cli")
-            .join("settings.json")
+        self.cli_root.join("settings.json")
     }
 
     /// Falls back to the installer's documented destination
@@ -551,6 +551,7 @@ impl IntegrationPort for AntigravityIntegration {
                 attach_mcp_entry(
                     &self.provisioning_executable(),
                     &self.command_home,
+                    &self.mcp_config_path,
                     entry_name,
                     command,
                     args,
@@ -612,7 +613,6 @@ impl IntegrationPort for AntigravityIntegration {
         if inspection.state != AttachmentState::Matched {
             return Ok(inspection);
         }
-        let executable = self.provisioning_executable();
         match &receipt.artifact {
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if kind == PLUGIN_KIND || kind == GENERATED_PLUGIN_KIND =>
@@ -621,7 +621,7 @@ impl IntegrationPort for AntigravityIntegration {
                 // its registration; the stored package UZE owns stays
                 // exactly where it is.
                 run_agy(
-                    &executable,
+                    &self.provisioning_executable(),
                     &self.command_home,
                     &["plugin", "uninstall", selector],
                     "agy plugin uninstall",
@@ -631,8 +631,13 @@ impl IntegrationPort for AntigravityIntegration {
                 }
             }
             ManagedArtifact::VendorConfigEntry { entry_name, .. } => {
+                if !is_cli_safe_token(entry_name) {
+                    return Err(UzeError::ExposureUnavailable(format!(
+                        "MCP server name `{entry_name}` would be parsed as a flag by `agy mcp remove`, not a name; refusing to detach."
+                    )));
+                }
                 run_agy(
-                    &executable,
+                    &self.provisioning_executable(),
                     &self.command_home,
                     &["mcp", "remove", entry_name],
                     "agy mcp remove",
@@ -646,13 +651,9 @@ impl IntegrationPort for AntigravityIntegration {
                 );
             }
             _ => {
-                let detached = receipt.artifact.detach_standard()?;
-                if detached.state == AttachmentState::Missing
-                    && let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact
-                {
-                    self.cleanup_unused_wrapper(target)?;
-                }
-                return Ok(detached);
+                return crate::shared::path::detach_skill_link(receipt, |target| {
+                    self.cleanup_unused_wrapper(target)
+                });
             }
         }
         Ok(AttachmentInspection {
@@ -785,3 +786,47 @@ const FACTS: &[HarnessFact] = &[
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "1.3.3";
+
+#[cfg(test)]
+mod detach_tests {
+    use super::*;
+
+    /// `agy mcp remove` would read a name starting with `-` as a flag, so
+    /// such a receipt is refused before any process is spawned; the vendor
+    /// binary does not exist here.
+    #[test]
+    fn a_flag_shaped_mcp_name_is_refused_before_agy_runs() {
+        let root = uze_testkit::temp::scratch("agy-detach-flag");
+        let integration =
+            AntigravityIntegration::new(root.join(".agents"), UzeHome::at(root.join("uze")));
+        fs::create_dir_all(integration.mcp_config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &integration.mcp_config_path,
+            r#"{"mcpServers":{"--all":{"command":"/bin/server","args":[]}}}"#,
+        )
+        .unwrap();
+        let receipt = AttachmentReceipt {
+            package_id: "pkg@market".to_owned(),
+            resource_identity: Some("mcp:server".to_owned()),
+            integration: "antigravity".to_owned(),
+            artifact: ManagedArtifact::VendorConfigEntry {
+                entry_name: "--all".to_owned(),
+                transport: "stdio".to_owned(),
+                command: PathBuf::from("/bin/server"),
+                args: Vec::new(),
+                cwd: None,
+                environment: Vec::new(),
+                enabled: None,
+            },
+        };
+        assert_eq!(
+            integration.inspect_receipt(&receipt).state,
+            AttachmentState::Matched
+        );
+        assert!(matches!(
+            integration.detach_receipt(&receipt),
+            Err(UzeError::ExposureUnavailable(_))
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+}

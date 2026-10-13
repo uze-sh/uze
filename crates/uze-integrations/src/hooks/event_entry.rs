@@ -225,22 +225,7 @@ pub(crate) fn remove_event_entry(
                 .remove("hooks");
         }
     }
-    // A file that now holds nothing but an empty object was created by UZE
-    // and is safe to remove entirely; anything else stays.
-    if config.as_object().is_some_and(|root| root.is_empty()) {
-        match fs::remove_file(config_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(UzeError::Write {
-                    path: config_path.to_path_buf(),
-                    source,
-                });
-            }
-        }
-    } else {
-        json_config::write_object(config_path, &config)?;
-    }
+    json_config::write_object_or_remove_emptied(config_path, &config)?;
     Ok(AttachmentInspection {
         state: AttachmentState::Missing,
         reason: "managed hook entry detached".to_owned(),

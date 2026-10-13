@@ -333,10 +333,10 @@ impl HookTarget {
                 path: entry.config_file.to_path_buf(),
                 source,
             })?;
+        let previous = previous_hook_entry_content(uze_home, integration_id, entry.entry_name)?;
         if self.names_entries() {
-            merge_named_entry(entry.config_file, entry.entry_name, &expected)?;
+            merge_named_entry(entry.config_file, entry.entry_name, &expected, &previous)?;
         } else {
-            let previous = previous_hook_entry_content(uze_home, integration_id, entry.entry_name)?;
             merge_event_entry(entry.config_file, entry.event, &expected, &previous)?;
         }
         Ok(())
@@ -424,9 +424,6 @@ pub(crate) fn groups_with_ids(
     Ok(groups)
 }
 
-/// Parses a hook resource's payload into its portable group and computes the
-/// per-resource plan: semantic compatibility from the vendor profile —
-/// `bridged` when UZE's own generated runner carries the hook — and the
 /// The aliases of a group that names nothing but portable aliases this
 /// harness binds to no tool, spelled for a report; `None` when any matcher
 /// can fire here (a bound alias, a `native:` name) or the group matches
@@ -469,10 +466,15 @@ fn unannounced_sources(target: HookTarget, hook: &PortableHook) -> Option<String
     Some(sources.join(", "))
 }
 
+/// Both shells a wrapper runs a line in, `sh` and PowerShell, read this as
+/// a failure.
+const NOTHING_RUNS_HERE: &str = "exit 1";
+
 /// The line a generated wrapper runs for `handler` on this platform: the
 /// author's own line with `${PLUGIN_ROOT}` resolved, or an exec-form
-/// script's launcher and words quoted for this shell. Empty for a handler
-/// nothing runs here, which the plan never delivers.
+/// script's launcher and words quoted for this shell. A handler nothing
+/// runs here, which the plan never delivers, gets a line that fails: an
+/// empty one exits 0, which every effect reads as allow.
 pub(crate) fn handler_line(
     handler: &CommandHook,
     store_root: &Path,
@@ -491,12 +493,15 @@ pub(crate) fn handler_line(
         ),
         Invocation::Argv { argv, .. } => match argv.split_first() {
             Some((program, arguments)) => uze_platform::shell::command_line(program, arguments),
-            None => String::new(),
+            None => NOTHING_RUNS_HERE.to_owned(),
         },
-        Invocation::Unrunnable(_) => String::new(),
+        Invocation::Unrunnable(_) => NOTHING_RUNS_HERE.to_owned(),
     }
 }
 
+/// Parses a hook resource's payload into its portable group and computes the
+/// per-resource plan: semantic compatibility from the vendor profile —
+/// `bridged` when UZE's own generated runner carries the hook — and the
 /// artifact `deliver` renders for it. A `degraded` or `unsupported` route
 /// never attaches, and neither does a group `deliver` has no artifact for
 /// on this platform: the mechanism carries the diagnostic instead.

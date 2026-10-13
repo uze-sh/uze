@@ -119,7 +119,7 @@ pub fn summary_section(summary: &Summary, collapsed: bool, scroll: usize) -> Sec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::tests::DiskHost;
+    use crate::shared::DiskHost;
 
     #[test]
     fn only_the_changes_this_checkout_touched_are_summarised() {

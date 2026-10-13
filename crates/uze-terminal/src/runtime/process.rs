@@ -223,7 +223,8 @@ pub(super) const RETIRE_WITHIN: Duration = Duration::from_secs(1);
 /// from a record; otherwise it is read now, so that a pid recycled while
 /// this waits is not the one signalled next. A pid that is not running
 /// that same `uze` by the time it would be signalled is left alone, and
-/// the answer says whether a server was ended or had already gone.
+/// the answer says whether this ended a server that has let go — false
+/// when it had already gone, or still holds on.
 pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) -> bool {
     let started = started.or_else(|| uze_platform::probe::started_at(pid));
     let still_the_one =
@@ -247,7 +248,7 @@ pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) -> bool {
             return true;
         }
     }
-    true
+    released()
 }
 
 /// The name a server listens for a stop request under: its endpoint's own

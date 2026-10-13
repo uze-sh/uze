@@ -182,6 +182,14 @@ pub(crate) fn harness_hint(harness: &HarnessHealth) -> String {
     }
 }
 
+/// How a setup that did not fail ended: with nothing to say beyond its
+/// report, or with warnings a person should read before the screen moves on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetupEnding {
+    Clean,
+    WithWarnings,
+}
+
 /// `uze setup` is the single machine-level harness surface. With no
 /// arguments in a terminal it asks which harnesses to provision (see
 /// `choose_harnesses`) and provisions every registered one anywhere a
@@ -194,14 +202,6 @@ pub(crate) fn harness_hint(harness: &HarnessHealth) -> String {
 /// installer's output is buffered to `$UZE_HOME/cache/logs/setup-<harness>.log`
 /// instead of interleaving on the terminal, so the terminal shows only
 /// ordered step headers and the per-harness final status.
-/// How a setup that did not fail ended: with nothing to say beyond its
-/// report, or with warnings a person should read before the screen moves on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SetupEnding {
-    Clean,
-    WithWarnings,
-}
-
 pub(crate) fn run_setup(
     app: &UzeApplication,
     home: &UzeHome,
@@ -370,8 +370,13 @@ pub(crate) fn run_setup(
     })
 }
 
+/// When a setup log was opened, as seconds since the Unix epoch: a value
+/// a reader can compare and convert, unlike `SystemTime`'s debug form.
 pub(crate) fn chrono_stamp() -> String {
-    format!("{:?}", std::time::SystemTime::now())
+    let since_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("@{}", since_epoch.as_secs())
 }
 
 pub(crate) fn print_log_block(path: &std::path::Path, content: &str) {

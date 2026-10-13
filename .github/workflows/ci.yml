@@ -318,6 +318,12 @@ jobs:
           if ($found) { $found | Format-Table Name, Source; throw 'a POSIX tool is reachable' }
           $tar = (Get-Command tar).Source
           if ($tar -notlike "$env:SystemRoot\*") { throw "tar is not the system's: $tar" }
+      # The OpenCode hook bridge is TypeScript, and only Bun can load it:
+      # without it those checks skip themselves, which in CI they refuse to.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: runner.os != 'Windows'
+        with:
+          bun-version-file: web/package.json
       - name: Build the binary
         run: cargo build --locked --bin uze
       # Linking is not running. The smallest proof that the produced

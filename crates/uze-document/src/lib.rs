@@ -184,7 +184,7 @@ impl<T> Carried<T> {
 /// Reads the record at `path`, climbing it to the current shape.
 ///
 /// Answers [`Carried::Absent`] when nothing is there — a first run is not a
-/// failure. Reports [`UzeError::UnsupportedStateSchema`] for a shape this
+/// failure. Reports [`DocumentError::UnsupportedShape`] for a shape this
 /// build cannot reach: ahead of it, or behind it with a rung missing. The
 /// caller decides what that costs, because only the caller knows whether
 /// the world can still answer for what the record held.
@@ -234,7 +234,11 @@ fn climb<T: Shaped>(
 ) -> Result<serde_json::Value> {
     let mut shape = found;
     while shape < T::SHAPE {
-        let Some(step) = T::ladder().iter().find(|step| step.from == shape) else {
+        // A rung that does not climb would walk this loop forever.
+        let Some(step) = T::ladder()
+            .iter()
+            .find(|step| step.from == shape && step.to > shape)
+        else {
             // A shape older than the ladder reaches. Behind this build, so
             // the direction rule allows setting it aside; what that costs is
             // the caller's to decide and to say.
@@ -316,7 +320,7 @@ pub fn set_aside(path: &Path, kind: &str, reason: &DocumentError) -> Result<SetA
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(kind);
-    let moved = path.with_file_name(format!("{name}.unreadable-{}", now_unix()));
+    let moved = unused_name(path, &format!("{name}.unreadable-{}", now_unix()));
     fs::rename(path, &moved).map_err(|source| DocumentError::Write {
         path: moved.clone(),
         source,
@@ -332,6 +336,21 @@ pub fn set_aside(path: &Path, kind: &str, reason: &DocumentError) -> Result<SetA
         path: moved,
         reason: reason.to_string(),
     })
+}
+
+/// `base` beside `path`, numbered when a record set aside earlier holds
+/// it: a rename replaces what it lands on, and two records set aside in
+/// one second would otherwise keep only the second. Free of races because
+/// [`set_aside`] runs under the record's lock.
+fn unused_name(path: &Path, base: &str) -> PathBuf {
+    let candidate = |suffix: u32| match suffix {
+        0 => path.with_file_name(base),
+        n => path.with_file_name(format!("{base}-{n}")),
+    };
+    (0..)
+        .map(candidate)
+        .find(|moved| fs::symlink_metadata(moved).is_err())
+        .expect("an unused name")
 }
 
 fn now_unix() -> u64 {
@@ -544,5 +563,53 @@ mod tests {
             !moved.path.to_string_lossy().ends_with(".json"),
             "under a name nothing reads as a record"
         );
+    }
+
+    /// Two records set aside within one second both keep their bytes.
+    #[test]
+    fn a_second_record_set_aside_never_replaces_the_first() {
+        let directory = scratch("twice");
+        let path = write(&directory, "first");
+        let error = read::<Sample>(&path).unwrap_err();
+        let first = set_aside(&path, Sample::KIND, &error).unwrap();
+        write(&directory, "second");
+        let second = set_aside(&path, Sample::KIND, &error).unwrap();
+
+        assert_ne!(first.path, second.path);
+        assert_eq!(fs::read_to_string(&first.path).unwrap(), "first");
+        assert_eq!(fs::read_to_string(&second.path).unwrap(), "second");
+    }
+
+    struct Stuck;
+
+    impl<'de> Deserialize<'de> for Stuck {
+        fn deserialize<D: serde::Deserializer<'de>>(_: D) -> std::result::Result<Self, D::Error> {
+            Ok(Stuck)
+        }
+    }
+
+    impl Shaped for Stuck {
+        const SHAPE: u32 = 2;
+        const KIND: &'static str = "stuck";
+
+        fn ladder() -> Ladder {
+            &[Step {
+                from: 1,
+                to: 1,
+                climb: Ok,
+            }]
+        }
+    }
+
+    /// A rung that leaves the record where it was is no rung at all: the
+    /// read reports it rather than climbing forever.
+    #[test]
+    fn a_rung_that_does_not_climb_is_reported_not_looped_on() {
+        let directory = scratch("stuck");
+        let path = write(&directory, r#"{"schema_version":1}"#);
+        assert!(matches!(
+            read::<Stuck>(&path),
+            Err(DocumentError::UnsupportedShape { found: 1, .. })
+        ));
     }
 }

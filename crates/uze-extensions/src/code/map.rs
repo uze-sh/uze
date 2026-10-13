@@ -422,9 +422,11 @@ impl Map {
     /// ones above and below at a junction. Drawn a box at a time they
     /// would stand one beside the other, and a dozen of them read as a
     /// stack of boxes rather than as a map.
-    pub fn paint(&self, space: (i32, i32), glyphs: Glyphs) -> Canvas {
+    ///
+    /// `tiles` are [`Self::tiles`] in `space`, taken rather than laid out
+    /// here: the frame that paints them also captions them.
+    pub fn paint(&self, tiles: &[Tile], space: (i32, i32), glyphs: Glyphs) -> Canvas {
         let mut canvas = Canvas::new(space.0, space.1, glyphs);
-        let tiles = self.tiles(space);
         let picked = |tile: &Tile| self.picked.as_deref() == Some(tile.path.as_str());
         let mut grid = Grid::new(space);
         // The selected tile keeps its own colour. Every tile on this map
@@ -434,7 +436,7 @@ impl Map {
         // own hue, laid under it — so both questions stay answered at
         // once. The outline still claims the cells it shares, which is
         // what keeps it unbroken against its neighbours.
-        for tile in &tiles {
+        for tile in tiles {
             let role = tile.heat.role();
             if picked(tile) {
                 canvas.ground(bordered(tile.frame, space), role);
@@ -442,7 +444,7 @@ impl Map {
             grid.outline(bordered(tile.frame, space), role, picked(tile));
         }
         grid.draw(&mut canvas);
-        for tile in &tiles {
+        for tile in tiles {
             label(&mut canvas, tile, bordered(tile.frame, space), picked(tile));
         }
         canvas
@@ -524,9 +526,9 @@ impl Map {
         }
     }
 
-    /// What the footer says: about the selection, or about the map.
-    pub fn caption(&self, space: (i32, i32)) -> String {
-        let tiles = self.tiles(space);
+    /// What the footer says, about the selection among `tiles` — the
+    /// level on show, as [`Self::tiles`] laid it out — or about the map.
+    pub fn caption(&self, tiles: &[Tile]) -> String {
         let picked = tiles
             .iter()
             .find(|tile| self.picked.as_deref() == Some(tile.path.as_str()));
@@ -1211,7 +1213,8 @@ mod tests {
             changed: n == 0,
             ..file(&format!("a-rather-long-file-name-{n}.rs"), 300, n)
         }));
-        let text = map(files).paint(SPACE, Glyphs::Ascii).to_text();
+        let map = map(files);
+        let text = map.paint(&map.tiles(SPACE), SPACE, Glyphs::Ascii).to_text();
         assert!(text.is_ascii(), "{text}");
         assert!(text.contains('*'), "what changed is marked:\n{text}");
         assert!(text.contains("lines"), "a tile says what it holds:\n{text}");
@@ -1304,7 +1307,7 @@ mod tests {
         std::fs::create_dir_all(root.join("fresh/deeper")).unwrap();
         std::fs::write(root.join("fresh/deeper/new.rs"), "fn new() {}\n").unwrap();
 
-        let measure = measure(&crate::code::tests::RepositoryHost, &root).expect("a repository");
+        let measure = measure(&crate::shared::DiskHost, &root).expect("a repository");
         let changed: Vec<(&str, bool)> = measure
             .files
             .iter()

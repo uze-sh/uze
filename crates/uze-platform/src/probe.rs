@@ -36,6 +36,13 @@ pub(crate) fn socket_peer_uid(stream: &std::os::unix::net::UnixStream) -> Option
     platform::peer_uid(stream)
 }
 
+/// Every pid the platform lists in process group `pgid`; empty where it
+/// lists none.
+#[cfg(unix)]
+pub(crate) fn group_members(pgid: u32) -> Vec<u32> {
+    platform::group_members(pgid)
+}
+
 /// The executable image `pid` is currently running. Stops matching a path
 /// once the binary behind it is replaced underneath a live process (a
 /// `cargo install --force` mid-session), which is exactly what makes it
@@ -62,7 +69,14 @@ pub fn command_name_of(pid: u32) -> Option<String> {
 /// platform puts on it. `None` covers all of "no such variable", "not
 /// permitted" and "did not fit".
 pub fn environment_value_of(pid: u32, key: &str) -> Option<String> {
-    platform::environment_value_of(pid, key)
+    let [value] = environment_values_of(pid, [key]);
+    value
+}
+
+/// [`environment_value_of`] for several keys, from one read of the block:
+/// on Windows that read is a walk through another process's memory.
+pub fn environment_values_of<const N: usize>(pid: u32, keys: [&str; N]) -> [Option<String>; N] {
+    platform::environment_values_of(pid, keys)
 }
 
 /// The process that started `pid`. Only as good as the platform's record:
@@ -212,9 +226,14 @@ mod platform {
             .filter(|comm| !comm.is_empty())
     }
 
-    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
-        let block = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
-        super::value_in_environment_block(&block, key)
+    pub(super) fn environment_values_of<const N: usize>(
+        pid: u32,
+        keys: [&str; N],
+    ) -> [Option<String>; N] {
+        match std::fs::read(format!("/proc/{pid}/environ")) {
+            Ok(block) => keys.map(|key| super::value_in_environment_block(&block, key)),
+            Err(_) => [const { None }; N],
+        }
     }
 
     pub(super) fn working_directories() -> Option<Vec<super::WorkingDirectory>> {
@@ -262,6 +281,19 @@ mod platform {
         stat_of(process)?.parent()
     }
 
+    pub(super) fn group_members(pgid: u32) -> Vec<u32> {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                let pid = entry.file_name().to_str()?.parse::<u32>().ok()?;
+                (stat_of(&entry.path())?.group()? == pgid).then_some(pid)
+            })
+            .collect()
+    }
+
     /// `/proc/<pid>/stat` after the command name, which is parenthesised
     /// and may itself hold spaces and parentheses: the fields from the
     /// state on.
@@ -281,6 +313,11 @@ mod platform {
         /// `ppid`, the first field after the command name.
         fn parent(&self) -> Option<u32> {
             self.field(1)?.parse().ok()
+        }
+
+        /// `pgrp`, the second field after the command name.
+        fn group(&self) -> Option<u32> {
+            self.field(2)?.parse().ok()
         }
 
         /// Whether `tty_nr`, the fourth field after the command name,
@@ -394,6 +431,10 @@ mod platform {
         }
     }
 
+    pub(super) fn group_members(_pgid: u32) -> Vec<u32> {
+        Vec::new()
+    }
+
     pub(super) fn parent_of(pid: u32) -> Option<u32> {
         let pid = libc::pid_t::try_from(pid).ok()?;
         // SAFETY: plain C data for which all-zero is valid.
@@ -488,10 +529,16 @@ mod platform {
     /// every status poll; a process whose block genuinely exceeds the bound
     /// answers `None`, which the caller already treats as "fall back to the
     /// command name".
-    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
-        let pid = libc::pid_t::try_from(pid).ok()?;
-        let (_, environment) = process_arguments(pid)?;
-        super::value_in_environment_block(&environment, key)
+    pub(super) fn environment_values_of<const N: usize>(
+        pid: u32,
+        keys: [&str; N],
+    ) -> [Option<String>; N] {
+        match libc::pid_t::try_from(pid).ok().and_then(process_arguments) {
+            Some((_, environment)) => {
+                keys.map(|key| super::value_in_environment_block(&environment, key))
+            }
+            None => [const { None }; N],
+        }
     }
 
     /// A process's `exec`-time arguments and environment, which Darwin keeps
@@ -664,6 +711,10 @@ mod platform {
         None
     }
 
+    pub(super) fn group_members(_pgid: u32) -> Vec<u32> {
+        Vec::new()
+    }
+
     pub(super) fn started_at(_pid: u32) -> Option<u64> {
         None
     }
@@ -672,8 +723,11 @@ mod platform {
         None
     }
 
-    pub(super) fn environment_value_of(_pid: u32, _key: &str) -> Option<String> {
-        None
+    pub(super) fn environment_values_of<const N: usize>(
+        _pid: u32,
+        _keys: [&str; N],
+    ) -> [Option<String>; N] {
+        [const { None }; N]
     }
 
     pub(super) fn working_directories() -> Option<Vec<super::WorkingDirectory>> {
@@ -818,7 +872,26 @@ mod platform {
         pairs.iter().map(|&pair| u16::from_le_bytes(pair)).collect()
     }
 
-    pub(super) fn environment_value_of(pid: u32, key: &str) -> Option<String> {
+    pub(super) fn environment_values_of<const N: usize>(
+        pid: u32,
+        keys: [&str; N],
+    ) -> [Option<String>; N] {
+        let Some(entries) = environment_entries(pid) else {
+            return [const { None }; N];
+        };
+        keys.map(|key| {
+            let prefix = format!("{key}=");
+            entries
+                .iter()
+                .find_map(|entry| {
+                    let (name, value) = entry.split_at_checked(prefix.len())?;
+                    name.eq_ignore_ascii_case(&prefix).then(|| value.to_owned())
+                })
+                .filter(|value| !value.is_empty())
+        })
+    }
+
+    fn environment_entries(pid: u32) -> Option<Vec<String>> {
         let process = Process::open(pid)?;
         let parameters = process.parameters()?;
         // Environment (0x80) and EnvironmentSize (0x3F0), x64 layout.
@@ -826,15 +899,12 @@ mod platform {
         let size = process.pointer(parameters + 0x3F0)?.min(1 << 20);
         let bytes = process.read(block, size)?;
         let units = utf16_units(&bytes);
-        let prefix = format!("{key}=");
-        units
-            .split(|&unit| unit == 0)
-            .map(String::from_utf16_lossy)
-            .find_map(|entry| {
-                let (name, value) = entry.split_at_checked(prefix.len())?;
-                name.eq_ignore_ascii_case(&prefix).then(|| value.to_owned())
-            })
-            .filter(|value| !value.is_empty())
+        Some(
+            units
+                .split(|&unit| unit == 0)
+                .map(String::from_utf16_lossy)
+                .collect(),
+        )
     }
 
     struct Process(HANDLE);

@@ -419,7 +419,20 @@ impl StatusRead {
     }
 
     fn settle(&self, answer: Result<String, String>) {
-        *self.answer() = Some((Instant::now(), answer));
+        self.settle_at(Instant::now(), answer);
+    }
+
+    /// Answers whoever is already waiting, and nobody after them: a read
+    /// that unwound is no answer to share, so the next asker runs its own.
+    fn settle_unshared(&self, answer: Result<String, String>) {
+        let expired = Instant::now()
+            .checked_sub(STATUS_SHARED_FOR)
+            .unwrap_or_else(Instant::now);
+        self.settle_at(expired, answer);
+    }
+
+    fn settle_at(&self, at: Instant, answer: Result<String, String>) {
+        *self.answer() = Some((at, answer));
         self.landed.notify_all();
     }
 }
@@ -461,11 +474,12 @@ fn shared_status(
         struct Settle<'a>(&'a StatusRead, Option<Result<String, String>>);
         impl Drop for Settle<'_> {
             fn drop(&mut self) {
-                let answer = self
-                    .1
-                    .take()
-                    .unwrap_or_else(|| Err("the status read did not finish".to_owned()));
-                self.0.settle(answer);
+                match self.1.take() {
+                    Some(answer) => self.0.settle(answer),
+                    None => self
+                        .0
+                        .settle_unshared(Err("the status read did not finish".to_owned())),
+                }
             }
         }
         let mut settle = Settle(&read, None);
@@ -608,10 +622,7 @@ mod tests {
         });
         assert!(unwound.is_err());
         let answer = super::shared_status(&root, &["status"], || Ok("fresh".to_owned()));
-        assert!(
-            answer == Ok("fresh".to_owned()) || answer.is_err(),
-            "answered, never waiting: {answer:?}"
-        );
+        assert_eq!(answer, Ok("fresh".to_owned()));
     }
 
     /// A slot whose `.git` was pointed at a repository of its occupant's

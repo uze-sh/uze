@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use uze_testkit::temp::TempDir;
 
@@ -9,59 +9,10 @@ use super::{
     handle_command, handle_mouse, read_with, text, view,
 };
 use crate::{
-    ArtifactRoot, ArtifactSource, DirEntry, Host,
-    shared::highlight::FALLBACK_SYNTAX_THEME,
+    ArtifactRoot, ArtifactSource,
+    shared::DiskHost,
     view::{Command, Content, NavigatorRow, Size, ViewHit},
 };
-
-/// The whole grant, read-only, against the real disk and the real Git.
-/// The surface's reads are what these tests are about, so nothing is faked.
-pub(super) struct DiskHost;
-
-impl Host for DiskHost {
-    fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
-        uze_git::read(root, args)
-            .map_err(|error| error.to_string())?
-            .or_exit(answers)
-    }
-
-    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
-        uze_git::repository::root(path)
-    }
-
-    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
-        std::fs::read_to_string(path).map_err(|error| crate::Unreadable::Failed(error.to_string()))
-    }
-
-    fn list_dir(&self, path: &Path) -> Result<Vec<DirEntry>, String> {
-        let mut entries: Vec<DirEntry> = std::fs::read_dir(path)
-            .map_err(|error| error.to_string())?
-            .filter_map(Result::ok)
-            .map(|entry| DirEntry {
-                directory: entry.path().is_dir(),
-                name: entry.file_name().to_string_lossy().into_owned(),
-            })
-            .collect();
-        entries.sort();
-        Ok(entries)
-    }
-
-    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
-        unreachable!("the spec surface writes nothing")
-    }
-
-    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
-        unreachable!("the spec surface deletes nothing")
-    }
-
-    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
-        unreachable!("the spec surface restores nothing")
-    }
-
-    fn syntax_theme(&self) -> String {
-        FALLBACK_SYNTAX_THEME.to_owned()
-    }
-}
 
 fn write(root: &Path, relative: &str, contents: &str) {
     let path = root.join(relative);

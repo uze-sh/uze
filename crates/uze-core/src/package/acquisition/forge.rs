@@ -133,15 +133,18 @@ pub struct Transport {
 impl Transport {
     /// How a person reads this attempt in a failure.
     pub fn label(&self) -> &'static str {
-        match (
-            self.access,
-            self.url.contains("://") && !self.url.starts_with("ssh://"),
-        ) {
+        match (self.access, self.over_https()) {
             (Access::Local, _) => "local",
             (Access::Anonymous, _) => "https (anonymous)",
             (Access::Credentialed, true) => "https (credentials)",
             (Access::Credentialed, false) => "ssh",
         }
+    }
+
+    /// Whether this attempt speaks HTTP(S), where the operator's credential
+    /// helpers and network settings apply.
+    pub fn over_https(&self) -> bool {
+        self.url.starts_with("https://") || self.url.starts_with("http://")
     }
 
     /// Whether Git may speak plain HTTP for this attempt.

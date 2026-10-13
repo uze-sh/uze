@@ -31,13 +31,13 @@ impl Workspace<'_> {
         let mut reconciliation = Reconciliation::default();
         let mut seen = BTreeSet::new();
         for cwd in look_in {
-            let Some(primary) = self.primary_of(cwd) else {
+            let Ok(Some((primary, policy))) = self.repository_context(cwd) else {
                 continue;
             };
-            if !seen.insert(primary) {
+            if !seen.insert(primary.clone()) {
                 continue;
             }
-            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            let (released, waiting) = self.release_abandoned(&primary, &policy, held, echoed);
             if waiting {
                 reconciliation.waiting.push(cwd.clone());
             }
@@ -47,7 +47,7 @@ impl Workspace<'_> {
             }
             // Only ever the removals that cannot lose work, and only from
             // the path that just changed what "in use" means.
-            self.collect_slot_garbage(cwd, held);
+            self.collect_slot_garbage_in(&primary, &policy, held);
         }
         // Agents in the root are keyed by that root, whether or not it is a
         // repository, so this pass is per root and needs no Git. A slot's
@@ -78,13 +78,13 @@ impl Workspace<'_> {
         let mut reconciliation = Reconciliation::default();
         let mut seen = BTreeSet::new();
         for cwd in look_in {
-            let Some(primary) = self.primary_of(cwd) else {
+            let Ok(Some((primary, policy))) = self.repository_context(cwd) else {
                 continue;
             };
-            if !seen.insert(primary) {
+            if !seen.insert(primary.clone()) {
                 continue;
             }
-            let (released, waiting) = self.release_abandoned(cwd, held, echoed);
+            let (released, waiting) = self.release_abandoned(&primary, &policy, held, echoed);
             if waiting {
                 reconciliation.waiting.push(cwd.clone());
             }
@@ -162,34 +162,36 @@ impl Workspace<'_> {
         occupied: &[PathBuf],
         echoed: &[String],
     ) -> Vec<ReleasedTask> {
-        self.release_abandoned(cwd, occupied, echoed).0
+        let Ok(Some((primary, policy))) = self.repository_context(cwd) else {
+            return Vec::new();
+        };
+        self.release_abandoned(&primary, &policy, occupied, echoed)
+            .0
     }
 
-    /// [`Self::release_abandoned_tasks`], and whether any of them was
-    /// found in use and left as it was.
+    /// [`Self::release_abandoned_tasks`] in the repository at `primary`,
+    /// and whether any of them was found in use and left as it was.
     fn release_abandoned(
         &self,
-        cwd: &Path,
+        primary: &Path,
+        policy: &WorktreePolicy,
         occupied: &[PathBuf],
         echoed: &[String],
     ) -> (Vec<ReleasedTask>, bool) {
-        let Some((primary, policy)) = self.repository_context(cwd) else {
-            return (Vec::new(), false);
-        };
-        let target = target_of(&primary, &policy);
+        let target = target_of(primary, policy);
         let presence = checkout::Presence::observe_with(occupied);
         let mut released = Vec::new();
         let mut in_use = false;
         let mut looked_at: Vec<AgentId> = Vec::new();
         let mut reconciled = false;
         loop {
-            let step = task::locked(&self.0.home, &primary, |store| {
+            let step = task::locked(&self.0.home, primary, |store| {
                 if !std::mem::replace(&mut reconciled, true) {
-                    checkout::reconcile(&primary, store, &target);
+                    checkout::reconcile(primary, store, &target);
                 }
                 let Some(index) = store.agents.iter().position(|agent| {
                     !looked_at.contains(&agent.id)
-                        && is_abandoned(&primary, store, agent, occupied, echoed)
+                        && is_abandoned(primary, store, agent, occupied, echoed)
                 }) else {
                     return Ok(None);
                 };
@@ -197,7 +199,10 @@ impl Workspace<'_> {
                 let id = agent.id.clone();
                 let label = agent.label.clone();
                 let was_live = checkout::is_live(&agent.state);
-                let outcome = checkout::release(&primary, agent, &target, &presence);
+                // A subagent's work is judged against its agent's branch,
+                // as the collection judges it, never against the project's.
+                let into = delivers_into(agent, &target);
+                let outcome = checkout::release(primary, agent, &into, &presence);
                 let mut unfinished = agent.state == WorkState::Shelved;
                 let parent = agent.parent.clone();
                 // A subagent released after its agent: its work reaches the
@@ -208,7 +213,7 @@ impl Workspace<'_> {
                     parent.state = WorkState::Shelved;
                 }
                 if outcome != checkout::Released::InUse
-                    && release_children(&primary, store, id.as_str(), &presence)
+                    && release_children(primary, store, id.as_str(), &presence)
                 {
                     unfinished = true;
                 }
@@ -235,25 +240,36 @@ impl Workspace<'_> {
         (released, in_use)
     }
 
+    /// [`Self::collect_slot_garbage_in`] for the repository `cwd` is in.
+    #[cfg(test)]
+    pub(super) fn collect_slot_garbage(&self, cwd: &Path, occupied: &[PathBuf]) -> Vec<String> {
+        let Ok(Some((primary, policy))) = self.repository_context(cwd) else {
+            return Vec::new();
+        };
+        self.collect_slot_garbage_in(&primary, &policy, occupied)
+    }
+
     /// Takes out the safe removals: the directory of every free slot gone
     /// idle, its branch kept; a branch whose every commit is already in the
     /// target and no shelf stands on; and a shelf the target already has.
     /// Nothing holding work is ever touched here, and nothing somebody is
     /// working in; that is the operator's alone.
-    #[tracing::instrument(name = "workspace.collect_slot_garbage", skip_all, fields(cwd = %cwd.display()))]
-    pub(super) fn collect_slot_garbage(&self, cwd: &Path, occupied: &[PathBuf]) -> Vec<String> {
-        let Some((primary, policy)) = self.repository_context(cwd) else {
-            return Vec::new();
-        };
-        let target = target_of(&primary, &policy);
-        let pool = checkout::Pool::declared_by(Some(&policy));
+    #[tracing::instrument(name = "workspace.collect_slot_garbage", skip_all, fields(primary = %primary.display()))]
+    fn collect_slot_garbage_in(
+        &self,
+        primary: &Path,
+        policy: &WorktreePolicy,
+        occupied: &[PathBuf],
+    ) -> Vec<String> {
+        let target = target_of(primary, policy);
+        let pool = checkout::Pool::declared_by(Some(policy));
         // Under the document's lock, which a placement holds from choosing
         // a slot to recording it: read outside it, a slot just taken for a
         // new agent was still free in the copy, and was collected from
         // under it.
-        let collected = task::locked(&self.0.home, &primary, |store| {
+        let collected = task::locked(&self.0.home, primary, |store| {
             Ok(checkout::collect(
-                &primary,
+                primary,
                 store,
                 &target,
                 pool,
@@ -261,7 +277,7 @@ impl Workspace<'_> {
             ))
         })
         .unwrap_or_default();
-        checkout::empty_trash(&primary);
+        checkout::empty_trash(primary);
         let collected: Vec<String> = collected
             .branches
             .into_iter()
@@ -287,7 +303,7 @@ impl Workspace<'_> {
     #[tracing::instrument(name = "workspace.finish_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id), err)]
     pub fn finish_task(&self, cwd: &Path, task_id: &str) -> Result<()> {
         let (primary, _) = self
-            .repository_context(cwd)
+            .repository_context(cwd)?
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
         task::locked(&self.0.home, &primary, |store| {
             let agent = task_mut(store, task_id)
@@ -303,7 +319,7 @@ impl Workspace<'_> {
     #[tracing::instrument(name = "workspace.discard_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id), err)]
     pub fn discard_task(&self, cwd: &Path, task_id: &str) -> Result<()> {
         let (primary, _) = self
-            .repository_context(cwd)
+            .repository_context(cwd)?
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
         task::locked(&self.0.home, &primary, |store| {
             let agent = task_mut(store, task_id)

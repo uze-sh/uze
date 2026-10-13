@@ -82,11 +82,11 @@ fn main() {
     // cannot know what replaced them — so the tip is added here, where the
     // argv is still readable, rather than a deprecated alias kept alive.
     // One spelling per operation (see the command-grammar spec): no alias.
-    if let Some(replacement) = removed_spelling(&args[1..]) {
+    // `get`, not an index, here and below: a process `exec`d with an empty
+    // argv has no element 1, and asking for one panics before clap runs.
+    if let Some(replacement) = removed_spelling(args.get(1..).unwrap_or_default()) {
         usage_error(Cli::command().error(ErrorKind::InvalidSubcommand, replacement));
     }
-    // `get`, not an index: a process `exec`d with an empty argv has no
-    // element 1, and asking for one is a panic before clap ever runs.
     if let Some(topic) = help_topic(args.get(1..).unwrap_or_default()) {
         die_quietly_on_a_closed_pipe();
         print_help(topic);

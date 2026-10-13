@@ -97,7 +97,7 @@ pub fn lies_in(path: &str, unit: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::tests::DiskHost as RepositoryHost;
+    use crate::shared::DiskHost as RepositoryHost;
 
     #[test]
     fn a_rename_keeps_the_new_path_and_drops_the_old() {

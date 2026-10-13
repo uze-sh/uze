@@ -14,7 +14,7 @@ use super::*;
 /// somebody has to keep.
 pub(super) struct Lines<'a> {
     pub(super) heading: &'a str,
-    pub(super) scroll: u16,
+    pub(super) scroll: usize,
     /// Where `lines` starts in the whole content — see
     /// [`Content::Lines::first`]. Every index this draws with is an index
     /// into the content, never into the window.
@@ -105,7 +105,7 @@ pub(super) fn render_lines(
         .iter()
         .enumerate()
         .map(|(offset, line)| (offset + first, line))
-        .skip((scroll as usize).saturating_sub(first))
+        .skip(scroll.saturating_sub(first))
     {
         let height = line_height(line, content.width, gutter);
         if y.saturating_add(height) > content.bottom() {
@@ -150,13 +150,7 @@ pub(super) fn render_lines(
     // The window handed over may stop short of the content: what it left
     // out is below the last row drawn, so the end is not on screen.
     let at_end = at_end && first + lines.len() >= total;
-    let bar = render_scrollbar(
-        frame,
-        bar,
-        scroll as usize,
-        hits,
-        ViewHit::DragContentScrollbar,
-    );
+    let bar = render_scrollbar(frame, bar, scroll, hits, ViewHit::DragContentScrollbar);
     (bar, at_end, drawn)
 }
 

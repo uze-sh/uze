@@ -27,7 +27,11 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use uze_core::{Result, UzeError, home::UzeHome};
+use uze_core::{
+    Result, UzeError,
+    home::UzeHome,
+    integration::{AttachmentInspection, AttachmentReceipt, AttachmentState, ManagedArtifact},
+};
 
 /// Normalizes one manifest-declared, package-relative path string.
 ///
@@ -88,6 +92,22 @@ pub fn prune_empty_package_dir(artifact: &Path, root: &Path) {
 /// helper came from.
 pub(crate) fn attachment_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
     uze_home.generated_attachments_dir(vendor)
+}
+
+/// Detaches a receipt the standard way and, when what went was a link,
+/// hands its target to `cleanup_unused_wrapper`: the generated wrapper a
+/// skill link pointed at goes with the last link to it.
+pub(crate) fn detach_skill_link(
+    receipt: &AttachmentReceipt,
+    cleanup_unused_wrapper: impl FnOnce(&Path) -> Result<()>,
+) -> Result<AttachmentInspection> {
+    let detached = receipt.artifact.detach_standard()?;
+    if detached.state == AttachmentState::Missing
+        && let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact
+    {
+        cleanup_unused_wrapper(target)?;
+    }
+    Ok(detached)
 }
 
 /// Removes a generated wrapper directory once nothing in `skills_dir`

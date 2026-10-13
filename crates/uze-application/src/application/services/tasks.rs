@@ -270,10 +270,7 @@ fn release_children(
         {
             continue;
         }
-        let into = child
-            .isolation()
-            .map(|isolation| isolation.target.clone())
-            .unwrap_or_default();
+        let into = delivers_into(child, "");
         checkout::release(primary, child, &into, presence);
         if child.state == WorkState::Shelved {
             unfinished_child = true;
@@ -319,13 +316,31 @@ fn is_abandoned(
 }
 
 /// The branch this project delivers into: what it declared, else whatever
-/// the primary checkout is on.
-pub(super) fn target_of(primary: &Path, policy: &WorktreePolicy) -> String {
+/// the primary checkout is on. `None` for a primary on no branch that
+/// declared none; what that means is each caller's to say.
+pub(super) fn declared_target(primary: &Path, policy: &WorktreePolicy) -> Option<String> {
     policy
         .target
         .clone()
         .or_else(|| checkout::current_branch(primary))
-        .unwrap_or_else(|| "HEAD".to_owned())
+}
+
+/// [`declared_target`], or `HEAD` where it names no branch.
+pub(in crate::application::services) fn target_of(
+    primary: &Path,
+    policy: &WorktreePolicy,
+) -> String {
+    declared_target(primary, policy).unwrap_or_else(|| "HEAD".to_owned())
+}
+
+/// The branch `agent`'s work is judged against and delivered into: the one
+/// recorded when it was isolated — its agent's branch, for a subagent —
+/// else the project's.
+fn delivers_into(agent: &Agent, project_target: &str) -> String {
+    agent.isolation().map_or_else(
+        || project_target.to_owned(),
+        |isolation| isolation.target.clone(),
+    )
 }
 
 fn task_mut<'a>(store: &'a mut AgentStore, id: &str) -> Option<&'a mut Agent> {
@@ -351,10 +366,11 @@ fn task_views(
     // Every recorded agent is drawn, closed ones included, on every pass:
     // one read of the refs answers what each would have asked Git apart.
     let tips = checkout::BranchTips::read(primary);
+    let root = RootStanding::default();
     store
         .agents
         .iter()
-        .filter_map(|agent| AgentView::from_agent(primary, &tips, agent, completion, target, forge))
+        .map(|agent| AgentView::from_agent(primary, &tips, &root, agent, completion, target, forge))
         .collect()
 }
 

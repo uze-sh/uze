@@ -7,7 +7,7 @@ impl Workspace<'_> {
     /// at a time under the repository write lock.
     #[tracing::instrument(name = "workspace.deliver_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id))]
     pub fn deliver_task(&self, cwd: &Path, task_id: &str) -> Option<DeliveryReport> {
-        let (primary, policy) = self.repository_context(cwd)?;
+        let (primary, policy) = self.repository_context(cwd).ok().flatten()?;
         self.deliver_claimed(&primary, &policy, task_id)
     }
 
@@ -81,22 +81,36 @@ impl Workspace<'_> {
             return Some(report);
         }
         let claimed = task::locked(&self.0.home, primary, |store| {
-            Ok(task_mut(store, task_id).and_then(|agent| {
-                // Claimed as it stands, then marked: the delivery reads
-                // the state the operator's record was in, and
-                // `Integrating` is what the *document* says while it runs
-                // — the claim, not an input to it.
-                let claimed = agent.clone();
-                agent.isolation()?;
-                agent.state = WorkState::Integrating;
-                Some(claimed)
-            }))
+            let Some(agent) = task_mut(store, task_id).filter(|agent| agent.is_isolated()) else {
+                return Ok(DeliveryClaim::Missing);
+            };
+            // Another delivery owns it: two would each run the gate and
+            // push, and the second would write its outcome over the first.
+            if agent.state == WorkState::Integrating {
+                return Ok(DeliveryClaim::Owned);
+            }
+            // Claimed as it stands, then marked: the delivery reads the
+            // state the operator's record was in, and `Integrating` is
+            // what the *document* says while it runs — the claim, not an
+            // input to it.
+            let claimed = agent.clone();
+            agent.state = WorkState::Integrating;
+            Ok(DeliveryClaim::Taken(Box::new(claimed)))
         });
         // The whole record, not only the branch: what the delivery
         // reports is a view of the agent, and the agent is what the
         // document will be asked to take back.
         let mut agent = match claimed {
-            Ok(claimed) => claimed?,
+            Ok(DeliveryClaim::Taken(claimed)) => *claimed,
+            Ok(DeliveryClaim::Missing) => return None,
+            Ok(DeliveryClaim::Owned) => {
+                return self.refused_delivery(
+                    primary,
+                    policy,
+                    task_id,
+                    "a delivery of this task is already running".to_owned(),
+                );
+            }
             // Nothing was delivered and nothing was written — said as a
             // report rather than as `None`, which the client renders as
             // "nothing ready": the operator who waited on a busy document
@@ -116,11 +130,12 @@ impl Workspace<'_> {
             task: AgentView::from_agent(
                 primary,
                 &checkout::BranchTips::read(primary),
+                &RootStanding::default(),
                 &agent,
                 policy.completion,
                 &target_of(primary, policy),
                 landing::forge(primary),
-            )?,
+            ),
             outcome,
             warnings: Vec::new(),
         };
@@ -146,14 +161,6 @@ impl Workspace<'_> {
         Some(report)
     }
 
-    /// The report for a delivery that never started: the task as the
-    /// document last had it, and the reason in place of an outcome.
-    ///
-    /// The view is read without the lock, which is exactly what the lock
-    /// is not for — there is nothing to write here, and the document is
-    /// replaced atomically, so a reader sees one version or the other.
-    /// `None` only where there is genuinely nothing to report about: no
-    /// document, or no such task in it.
     /// Why an agent cannot be delivered yet because of its children: each
     /// one holding uncommitted changes, or commits its agent's branch
     /// lacks, is work the delivery would leave behind.
@@ -183,6 +190,14 @@ impl Workspace<'_> {
         })
     }
 
+    /// The report for a delivery that never started: the task as the
+    /// document last had it, and the reason in place of an outcome.
+    ///
+    /// The view is read without the lock, which is exactly what the lock
+    /// is not for — there is nothing to write here, and the document is
+    /// replaced atomically, so a reader sees one version or the other.
+    /// `None` only where there is genuinely nothing to report about: no
+    /// document, or no such task in it.
     pub(super) fn refused_delivery(
         &self,
         primary: &Path,
@@ -196,11 +211,12 @@ impl Workspace<'_> {
             task: AgentView::from_agent(
                 primary,
                 &checkout::BranchTips::read(primary),
+                &RootStanding::default(),
                 agent,
                 policy.completion,
                 &target_of(primary, policy),
                 landing::forge(primary),
-            )?,
+            ),
             outcome: DeliveryOutcome::Refused(reason),
             warnings: Vec::new(),
         })
@@ -236,6 +252,15 @@ fn keep_gate_output(home: &UzeHome, id: &AgentId, output: &str) -> Option<PathBu
                 .is_ok()
         };
     written.then_some(log)
+}
+
+/// What claiming a task for a delivery found.
+enum DeliveryClaim {
+    Taken(Box<Agent>),
+    /// No such task, or one with no branch to deliver.
+    Missing,
+    /// A delivery already holds it.
+    Owned,
 }
 
 /// Whether a delivery's outcome reached the record it was claimed from.

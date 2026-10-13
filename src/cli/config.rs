@@ -1,4 +1,5 @@
-//! `uze config` and `uze context`: themes, glyphs, extensions, notifications.
+//! `uze config` and `uze agent context`: themes, glyphs, extensions,
+//! notifications, and the project's context file.
 
 use crate::*;
 
@@ -31,11 +32,11 @@ pub(crate) fn run_context(app: &UzeApplication, action: ContextAction) -> Result
     Ok(())
 }
 
-/// `uze market …` — the marketplaces a machine knows about.
 /// `uze config …` — this machine's authored configuration: the palette,
 /// the glyph set the installed font can draw, and which finished turns
-/// ring, and which extensions the workspace offers. All machine-scoped; the file they write is the operator's own
-/// `config.toml`, never a project's.
+/// ring, and which extensions the workspace offers. All machine-scoped;
+/// the file they write is the operator's own `config.toml`, never a
+/// project's.
 pub(crate) fn run_config(
     app: &UzeApplication,
     home: &UzeHome,
@@ -55,25 +56,15 @@ pub(crate) fn run_config(
             }
             ConfigThemeAction::Set { id, light, dark } => {
                 choose_adaptive_halves(app, home, &id, light, dark)?;
-                // Load it before recording the choice: a theme that will not
-                // resolve should be refused here, where the operator is
-                // looking, rather than accepted and complained about on
-                // every later run.
-                let resolved = uze::theme::resolve(app, home, &id)?;
-                for warning in &resolved.warnings {
+                for warning in uze::theme::select(app, home, &id)? {
                     progress::warn(&warning.to_string());
                 }
-                app.themes().select(&id)?;
-                uze_theme::set_active(resolved.theme);
                 progress::success(&format!("theme {}", progress::title(&id)));
             }
             ConfigThemeAction::Show { id, format } => {
                 let id = match id {
                     Some(id) => id,
-                    None => app
-                        .themes()
-                        .active()?
-                        .unwrap_or_else(|| uze_theme::builtin_names()[0].to_owned()),
+                    None => uze::theme::active_id(app)?,
                 };
                 let (resolved, layers) = uze::theme::resolve_with_layers(app, home, &id)?;
                 emit(
@@ -96,16 +87,9 @@ pub(crate) fn run_config(
                     )));
                 }
                 app.themes().select_glyphs(&set)?;
-                // Re-resolve so this very invocation, and every later one,
-                // draws with it: the set is a layer under whichever theme
-                // is active, including none.
-                let id = app
-                    .themes()
-                    .active()?
-                    .unwrap_or_else(|| uze_theme::builtin_names()[0].to_owned());
-                if let Ok(resolved) = uze::theme::resolve(app, home, &id) {
-                    uze_theme::set_active(resolved.theme);
-                }
+                // The set is recorded either way; a theme that no longer
+                // resolves is `theme show`'s to explain, not this verb's.
+                let _ = uze::theme::redraw_active(app, home);
                 progress::success(&format!("glyphs {}", progress::title(&set)));
             }
         },

@@ -90,8 +90,13 @@ impl Workspace<'_> {
         }
         let head = checkout::tip_of(&parent.directory, "HEAD");
         let target = target_of(&caller.primary, &policy);
-        let acquired = task::locked(&self.0.home, &caller.primary, |store| {
+        let split = task::locked(&self.0.home, &caller.primary, |store| {
             checkout::reconcile(&caller.primary, store, &target);
+            // Asked again under the lock: a split of the same topic that
+            // ran since the read above has already made this child.
+            if let Some(existing) = live_child(store, &caller.agent, topic) {
+                return Ok(Split::Existing(child_directory(existing, &caller.primary)?));
+            }
             let mut child = Agent::isolated(
                 &parent.harness,
                 None,
@@ -125,8 +130,17 @@ impl Workspace<'_> {
             )
             .map_err(|reason| refused(&reason))?;
             store.upsert(child);
-            Ok(acquired)
+            Ok(Split::Made(acquired))
         })?;
+        let acquired = match split {
+            Split::Made(acquired) => acquired,
+            Split::Existing(path) => {
+                return Ok(SplitWork {
+                    path,
+                    warnings: Vec::new(),
+                });
+            }
+        };
         let consent = self.consent(&caller.primary, &policy);
         let warnings = checkout::materialize(&caller.primary, &acquired.path, &consent);
         Ok(SplitWork {
@@ -337,10 +351,16 @@ impl Workspace<'_> {
     }
 
     fn policy_of(&self, caller: &Caller) -> Result<WorktreePolicy> {
-        self.repository_context(&caller.primary)
+        self.repository_context(&caller.primary)?
             .map(|(_, policy)| policy)
             .ok_or_else(|| refused("not inside a Git working tree"))
     }
+}
+
+/// What a split found under the lock.
+enum Split {
+    Existing(PathBuf),
+    Made(checkout::Acquired),
 }
 
 struct Caller {

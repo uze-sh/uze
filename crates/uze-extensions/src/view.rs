@@ -445,7 +445,7 @@ pub enum Content {
     Lines {
         heading: String,
         /// First line to show. The host clamps it to what exists.
-        scroll: u16,
+        scroll: usize,
         /// Where `lines` starts, as an index into the whole content.
         ///
         /// The window would otherwise have to begin at the first line for

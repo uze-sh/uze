@@ -152,6 +152,11 @@ mod imp {
     /// `select` rather than `poll`, because macOS's `poll` refuses a
     /// terminal device.
     fn readable_within(fd: std::os::fd::RawFd, wait: Duration) -> Readiness {
+        // An `fd_set` is a fixed bitmap: a descriptor past its end is a
+        // write outside it. Unanswered is what such a terminal gets.
+        if !(0..libc::FD_SETSIZE as std::os::fd::RawFd).contains(&fd) {
+            return Readiness::TimedOut;
+        }
         // Safety: `fd_set` and `timeval` are plain data, and `select` only
         // reads and writes the two passed by reference.
         unsafe {

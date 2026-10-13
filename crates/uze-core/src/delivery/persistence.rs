@@ -165,7 +165,7 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
             return Err(UzeError::ManagedEntryConflict(destination.to_path_buf()));
         }
         Ok(_) => {
-            if exchange(staging, destination).is_ok() {
+            if uze_platform::fs::exchange(staging, destination).is_ok() {
                 // `staging` now holds the previous tree.
                 let _ = fs::remove_dir_all(staging);
             } else {
@@ -179,18 +179,13 @@ fn swap_in(staging: &Path, destination: &Path, parent: &Path, name: &str) -> Res
             }
         }
     }
-    sync_directory(parent);
+    uze_platform::fs::sync_directory(parent);
     Ok(())
-}
-
-/// Swaps two directories in one step where the kernel offers it.
-fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
-    uze_platform::fs::exchange(a, b)
 }
 
 /// A hidden sibling of `name` owned by this process: hidden, because it sits
 /// inside a harness's discovery root for as long as the build takes.
-fn swap_path(parent: &Path, name: &str, role: &str) -> PathBuf {
+pub(crate) fn swap_path(parent: &Path, name: &str, role: &str) -> PathBuf {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     parent.join(format!(
         ".{name}.uze-{role}-{}-{}",
@@ -279,7 +274,7 @@ fn replace_atomically(
             .map_err(UzeError::write(&temporary))?;
         file.sync_all().map_err(UzeError::write(&temporary))?;
         uze_platform::fs::rename(&temporary, path).map_err(UzeError::write(path))?;
-        sync_directory(parent);
+        uze_platform::fs::sync_directory(parent);
         Ok(())
     })();
     if result.is_err() {
@@ -298,13 +293,18 @@ fn replace_atomically(
 /// is not a near-miss: the loser of `create_new` deletes the file the winner
 /// is about to rename, and the winner fails with a bare `No such file or
 /// directory`.
-fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
+///
+/// Public for whatever else publishes into place by rename — a link a
+/// harness launch projects — so there is one such name, not two to keep
+/// unique.
+pub fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+    // A clock set before the epoch only costs the nonce: the pid and the
+    // sequence already make the name unique.
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_nanos();
+        .map_or(0, |elapsed| elapsed.as_nanos());
     parent.join(format!(
         ".{}.{}.{}.{}.tmp",
         path.file_name()
@@ -314,10 +314,6 @@ fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
         nonce,
         SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ))
-}
-
-fn sync_directory(path: &Path) {
-    uze_platform::fs::sync_directory(path);
 }
 
 /// Process-wide mutation guard for one UZE home.

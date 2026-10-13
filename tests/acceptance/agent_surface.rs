@@ -1,35 +1,15 @@
 //! A user's agent names its work through the real binary, and the surface
 //! it uses is not the surface a person is offered.
 
-use std::path::Path;
-
 use uze_core::UzeHome;
 
-use uze_testkit::temp::TestEnvironment;
+use uze_testkit::{git::isolated_git_in as git, temp::TestEnvironment};
 use uze_workspace::{
     checkout::CheckoutId,
     task::{self, Agent, AgentStore, Base},
 };
 
 use crate::util::uze_bin;
-
-fn git(cwd: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@uze.invalid")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@uze.invalid")
-        .output()
-        .expect("git must run");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_owned()
-}
 
 /// A repository with no workspace declaration and one agent checkout,
 /// built with Git rather than through UZE: this tier asserts against the

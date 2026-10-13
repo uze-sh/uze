@@ -187,10 +187,10 @@ pub(crate) const HANDLER_REASON_LIMIT: usize = 4096;
 pub(crate) fn materialize_wrapper(path: &Path, source: &str) -> Result<()> {
     // Rewriting an identical wrapper would replace a file a harness may be
     // executing right now, for no gain: the content is a pure function of
-    // the harness. The executable bit is not part of that content, and
-    // `write_atomic` publishes under the umask before the chmod lands — a
-    // crash in between leaves the right bytes with the wrong mode, which
-    // only a second chmod repairs.
+    // the harness. The executable bit is not part of that content: a fresh
+    // file is published under the umask before the chmod lands, and a crash
+    // in between leaves the right bytes with the wrong mode, which only a
+    // second chmod repairs.
     if fs::read_to_string(path).is_ok_and(|current| current == source) {
         return if is_executable(path) {
             Ok(())
@@ -201,7 +201,11 @@ pub(crate) fn materialize_wrapper(path: &Path, source: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
     }
-    uze_core::persistence::write_atomic(path, source.as_bytes())?;
+    // A wrapper being replaced is one another package's entry may fire at
+    // any moment, so the new file is published already carrying the old
+    // one's executable mode; only a first write, which no entry names yet,
+    // waits on the chmod.
+    uze_core::persistence::write_atomic_preserving(path, source.as_bytes())?;
     make_executable(path)
 }
 
@@ -276,8 +280,12 @@ pub(super) fn entry_is_attached(
     if target.entry_state(&entry).state != AttachmentState::Missing {
         return true;
     }
-    fs::read_to_string(entry.config_file)
-        .is_ok_and(|config| config.contains(&entry.wrapper.display().to_string()))
+    // The path as JSON spells it: on Windows its backslashes are escaped
+    // in the file, so the bare path would never be found there.
+    let spelled =
+        serde_json::to_string(&entry.wrapper.display().to_string()).expect("a string serializes");
+    let spelled = spelled.trim_matches('"');
+    fs::read_to_string(entry.config_file).is_ok_and(|config| config.contains(spelled))
 }
 
 /// The native command an entry runs: the wrapper, the package root, the

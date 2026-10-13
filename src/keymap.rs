@@ -46,8 +46,8 @@ mod tests {
     /// turns — otherwise one test's swap is another's flake.
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn home() -> (tempdir::Scratch, UzeHome) {
-        let scratch = tempdir::Scratch::new();
+    fn home() -> (uze_testkit::temp::TempDir, UzeHome) {
+        let scratch = uze_testkit::temp::TempDir::new("keymap");
         let home = UzeHome::at(scratch.path().to_path_buf());
         (scratch, home)
     }
@@ -102,38 +102,5 @@ mod tests {
             Chord::parse("ctrl+w").ok(),
             "the keyboard in force is untouched, so the file can be fixed"
         );
-    }
-
-    /// A scratch directory that cleans up after itself. The workspace's
-    /// test kit is a dev-dependency of other crates, not of the binary.
-    mod tempdir {
-        use std::path::{Path, PathBuf};
-
-        pub struct Scratch(PathBuf);
-
-        impl Scratch {
-            pub fn new() -> Scratch {
-                let path = std::env::temp_dir().join(format!(
-                    "uze-keymap-{}-{}",
-                    std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|since| since.as_nanos())
-                        .unwrap_or_default()
-                ));
-                std::fs::create_dir_all(&path).expect("scratch");
-                Scratch(path)
-            }
-
-            pub fn path(&self) -> &Path {
-                &self.0
-            }
-        }
-
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
     }
 }

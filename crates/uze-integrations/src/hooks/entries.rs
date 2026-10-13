@@ -122,17 +122,32 @@ pub(crate) fn agy_named_entry(
 /// in the document. The file is re-emitted, not patched, so what a merge
 /// does not preserve is formatting: indentation becomes two spaces and
 /// whitespace between tokens is normalised.
+///
+/// The key already holding anything but this entry or one of the `previous`
+/// versions this integration's receipts recorded is an edit or somebody
+/// else's, and is refused rather than overwritten.
 pub(crate) fn merge_named_entry(
     config_path: &Path,
     entry_name: &str,
     entry: &serde_json::Value,
+    previous: &[String],
 ) -> Result<PathBuf> {
     let mut config = json_config::read_object(config_path)
         .map_err(|reason| UzeError::HarnessConfig(format!("cannot merge hook entry: {reason}")))?;
-    config
+    let root = config
         .as_object_mut()
-        .expect("read_object returns an object")
-        .insert(entry_name.to_owned(), entry.clone());
+        .expect("read_object returns an object");
+    if let Some(existing) = root.get(entry_name) {
+        let owned = existing == entry
+            || previous.iter().any(|expected| {
+                serde_json::from_str::<serde_json::Value>(expected)
+                    .is_ok_and(|old| &old == existing)
+            });
+        if !owned {
+            return Err(UzeError::ManagedEntryConflict(config_path.to_path_buf()));
+        }
+    }
+    root.insert(entry_name.to_owned(), entry.clone());
     json_config::write_object(config_path, &config)?;
     Ok(config_path.to_path_buf())
 }
@@ -185,22 +200,7 @@ pub(crate) fn remove_named_entry(
         .as_object_mut()
         .expect("read_object returns an object")
         .remove(entry_name);
-    // A file that now holds nothing was created by UZE and is safe to
-    // remove entirely; anything else stays exactly as the user left it.
-    if config.as_object().is_some_and(|root| root.is_empty()) {
-        match fs::remove_file(config_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(UzeError::Write {
-                    path: config_path.to_path_buf(),
-                    source,
-                });
-            }
-        }
-    } else {
-        json_config::write_object(config_path, &config)?;
-    }
+    json_config::write_object_or_remove_emptied(config_path, &config)?;
     Ok(AttachmentInspection {
         state: AttachmentState::Missing,
         reason: "managed hook entry detached".to_owned(),

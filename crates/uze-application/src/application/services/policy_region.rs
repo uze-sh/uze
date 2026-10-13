@@ -122,7 +122,8 @@ impl Workspace<'_> {
     pub fn policy_region(&self, cwd: &Path) -> Option<PolicyRegionView> {
         let primary = worktree::primary_checkout(cwd)?;
         let declared = declaration::declared(&primary).ok()?;
-        let policy = declaration::policy(&primary).ok()?;
+        let completion = declared.as_ref().map(|policy| policy.completion);
+        let policy = declared.unwrap_or_default();
         let desired = Some((policy.region_identity(), policy.instructions()));
         let agents_md = primary.join(AGENTS_MD_FILE_NAME);
         let state = desired
@@ -131,7 +132,7 @@ impl Workspace<'_> {
         Some(PolicyRegionView {
             in_step: managed_region::in_step(&agents_md, WorktreePolicy::owns_region, &desired)
                 && state.is_none_or(|state| state == AttachmentState::Matched),
-            completion: declared.map(|policy| policy.completion),
+            completion,
             state,
             primary,
         })

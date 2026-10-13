@@ -520,7 +520,7 @@ impl IntegrationPort for ClaudeIntegration {
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
             artifact @ ManagedArtifact::VendorConfigEntry { .. } => mcp::inspect_claude_mcp(
-                &self.command_home.join(".claude.json"),
+                &mcp::user_config_path(&self.command_home),
                 &McpEntry::recorded(artifact).expect("a vendor config entry"),
             ),
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
@@ -579,15 +579,9 @@ impl IntegrationPort for ClaudeIntegration {
                     reason: "Claude native plugin detached".to_owned(),
                 })
             }
-            _ => {
-                let detached = receipt.artifact.detach_standard()?;
-                if detached.state == AttachmentState::Missing
-                    && let ManagedArtifact::SymlinkReference { target, .. } = &receipt.artifact
-                {
-                    self.cleanup_unused_wrapper(target)?;
-                }
-                Ok(detached)
-            }
+            _ => crate::shared::path::detach_skill_link(receipt, |target| {
+                self.cleanup_unused_wrapper(target)
+            }),
         }
     }
 }

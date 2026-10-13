@@ -57,6 +57,9 @@ pub(super) struct Server {
     /// the session without changing anything persisted, and an fsync of
     /// the same bytes on every switch was latency a person felt.
     pub(super) persisting: Mutex<Option<Vec<u8>>>,
+    /// Whether the record found at start may be replaced — see
+    /// [`LoadedWorkspace::writable`].
+    pub(super) persists: bool,
     /// Cloned into every [`PaneRuntime`] so its PTY reader thread can report
     /// new output; [`spawn_damage_broadcaster`] owns the matching receiver.
     pub(super) damage: mpsc::Sender<PaneId>,
@@ -102,7 +105,11 @@ impl Server {
         // `persisted_state_path` for why a crash, a `kill -9`, or a reboot
         // still leaves this behind even though nothing else about a pane's
         // running state survives any of those.
-        let (restored, set_aside) = load_persisted_workspace_at(&persisted_state_path());
+        let LoadedWorkspace {
+            restored,
+            set_aside,
+            writable,
+        } = load_persisted_workspace_at(&persisted_state_path());
         let (session, launches) = restored
             .and_then(|persisted| Session::restore(persisted.spaces))
             .unwrap_or_else(|| {
@@ -122,6 +129,7 @@ impl Server {
             socket,
             workspace: workspace_lock,
             persisting: Mutex::new(None),
+            persists: writable,
             damage,
             palette: Arc::new(Mutex::new(palette)),
             set_aside: Mutex::new(set_aside),
@@ -154,6 +162,9 @@ impl Server {
     /// moved to a new cwd), so whatever's on disk is never more than one
     /// change stale, however this process eventually stops.
     pub(super) fn persist(&self) {
+        if !self.persists {
+            return;
+        }
         let mut written = self.persisting.lock().expect("persist state poisoned");
         let path = persisted_state_path();
         let panes = self.panes.lock().expect("panes poisoned");
@@ -333,6 +344,11 @@ impl Server {
                         }
                     }
                 }
+                // Before this client is one of them: it is told about the
+                // space by the snapshot that paints it.
+                if sized_at_creation {
+                    self.broadcast_session();
+                }
                 self.clients.lock().expect("clients poisoned").push(Client {
                     id: client,
                     events: Arc::clone(&events),
@@ -343,7 +359,7 @@ impl Server {
                 {
                     self.resize_pane(self.selected_pane_of(client), columns, rows);
                 }
-                self.broadcast_snapshot();
+                self.paint_for(&events, client);
                 // Said once, to the first client that arrives. The runtime
                 // starts before anyone is watching, so this waits rather
                 // than going to a log nobody turned on — which is how an
@@ -959,10 +975,7 @@ impl Server {
             .expect("panes poisoned")
             .iter()
             .filter(|(_, runtime)| runtime.finished_agent())
-            .map(|(&pane, runtime)| {
-                runtime.end_leftovers();
-                pane
-            })
+            .map(|(&pane, _)| pane)
             .collect();
         let mut restored = false;
         for pane in finished {
@@ -1012,6 +1025,12 @@ impl Server {
     }
 
     pub(super) fn resize_pane(&self, pane: PaneId, columns: u16, rows: u16) {
+        // A zero is "leave it alone" on the wire, and a grid of nothing is
+        // an underflow inside `Term::resize`: a panic holding the pane's
+        // terminal lock, which poisons it and stops the pane drawing.
+        if columns == 0 || rows == 0 {
+            return;
+        }
         if let Some(runtime) = self.runtime(pane) {
             runtime.resize(columns, rows);
         }
@@ -1032,10 +1051,11 @@ impl Server {
             return;
         };
         runtime.offer_damage(|damage| {
+            let frame = Frame::of(&ClientEvent::Damage(damage.clone()));
             self.clients
                 .lock()
                 .expect("clients poisoned")
-                .retain(|client| client.events.offer(ClientEvent::Damage(damage.clone())));
+                .retain(|client| client.events.offer_frame(frame.clone()));
         });
     }
 
@@ -1054,28 +1074,28 @@ impl Server {
             .lock()
             .expect("clients poisoned")
             .retain(|client| {
-                client.events.offer(ClientEvent::SessionUpdated {
+                client.events.offer(&ClientEvent::SessionUpdated {
                     session: view_for(&session, &client.selection),
                 })
             });
     }
 
-    /// Repaints every pane on every attached client, as one frame per pane.
+    /// Paints the whole workspace for one client that has just attached, as
+    /// one frame per pane.
     ///
-    /// One frame carrying them all is what [`MAX_FRAME`] does *not* bound:
-    /// the cap is tied to a repaint of the largest single pane a client may
-    /// ask for, so three panes at [`MAX_PANE_DIMENSION`] — a size
-    /// `within_pane_bounds` permits, and one that is persisted across
-    /// restarts — made the frame unsendable and every attached client sit
-    /// frozen on live-looking chrome. Per pane, that cap is the real bound
-    /// again.
+    /// For that client only: every other one already holds every pane, and
+    /// a probe attaches on every `uze` start. Per pane, because one frame
+    /// carrying them all is what [`MAX_FRAME`] does *not* bound — the cap
+    /// is tied to a repaint of the largest single pane a client may ask
+    /// for, so three panes at [`MAX_PANE_DIMENSION`] made the frame
+    /// unsendable.
     ///
     /// The `Snapshot` goes out first: it is what tells a client to forget
     /// the panes it has, and the repaints that follow are what give it the
     /// new ones. They are ordinary `Damage` frames naming every cell, which
     /// is what a client already applies to a pane it has never heard of
     /// (and what a resize already sends).
-    pub(super) fn broadcast_snapshot(&self) {
+    pub(super) fn paint_for(&self, events: &Outbox, client: u64) {
         let session = self.session.lock().expect("session poisoned").clone();
         // The runtimes, not their grids: a repaint is built and handed on
         // one pane at a time, so the largest thing alive at once stays one
@@ -1087,28 +1107,22 @@ impl Server {
             .values()
             .cloned()
             .collect();
-        self.clients
-            .lock()
-            .expect("clients poisoned")
-            .retain(|client| {
-                client.events.offer(ClientEvent::Snapshot {
-                    session: view_for(&session, &client.selection),
-                })
-            });
+        if !events.offer(&ClientEvent::Snapshot {
+            session: view_for(&session, &self.selection_of(client)),
+        }) {
+            return;
+        }
         for pane in panes {
-            pane.offer_repaint(|repaint| {
-                self.clients
-                    .lock()
-                    .expect("clients poisoned")
-                    .retain(|client| client.events.offer(ClientEvent::Damage(repaint.clone())));
+            pane.offer_whole(|repaint| {
+                events.offer(&ClientEvent::Damage(repaint));
             });
         }
     }
 
     /// Sends the whole workspace to every client that fell behind and has
-    /// since drained what it was sent. Built from `snapshot`, not
-    /// `offer_repaint`: the damage baseline is shared by every
-    /// client, and resetting it for one would cost the others a change.
+    /// since drained what it was sent. The damage baseline is shared by
+    /// every client, and resetting it for one would cost the others a
+    /// change.
     pub(super) fn has_stale_client(&self) -> bool {
         self.clients
             .lock()
@@ -1128,12 +1142,12 @@ impl Server {
             return;
         }
         let session = self.session.lock().expect("session poisoned").clone();
-        let repaints: Vec<PaneDamage> = self
+        let repaints: Vec<Frame> = self
             .panes
             .lock()
             .expect("panes poisoned")
             .values()
-            .map(|pane| whole_pane(pane.snapshot()))
+            .map(|pane| Frame::of(&ClientEvent::Damage(whole_pane(pane.snapshot()))))
             .collect();
         self.clients
             .lock()

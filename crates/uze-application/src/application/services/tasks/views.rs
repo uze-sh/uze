@@ -153,19 +153,41 @@ impl PreservedWork {
     }
 }
 
+/// What every agent working in the project's root reads alike — the
+/// branch the root is on and how far it is ahead of the target — asked of
+/// Git at most once however many of them a listing draws.
+#[derive(Default)]
+pub(super) struct RootStanding(OnceCell<(String, usize)>);
+
+impl RootStanding {
+    fn read(&self, primary: &Path, target: &str) -> &(String, usize) {
+        self.0.get_or_init(|| {
+            let branch = checkout::current_branch(primary).unwrap_or_default();
+            let ahead = if branch.is_empty() {
+                0
+            } else {
+                checkout::commits_ahead(primary, target, &branch)
+            };
+            (branch, ahead)
+        })
+    }
+}
+
 impl AgentView {
-    /// `None` for an agent working in the project's root: every field
-    /// here is about a branch of its own, and it has none.
+    /// An isolated agent's row is about the branch cut for it; one working
+    /// in the project's root reads `root`, which it shares with every other
+    /// agent there.
     pub(super) fn from_agent(
         primary: &Path,
         tips: &checkout::BranchTips,
+        root: &RootStanding,
         agent: &Agent,
         completion: CompletionBehavior,
         target: &str,
         forge: Forge,
-    ) -> Option<Self> {
+    ) -> Self {
         let Some(task) = agent.isolation() else {
-            return Some(Self::in_the_root(primary, agent, completion, target, forge));
+            return Self::in_the_root(primary, root, agent, completion, target, forge);
         };
         // What the remote holds, not what UZE remembers having sent: a
         // push the agent made is a push, and a view built from UZE's own
@@ -182,7 +204,7 @@ impl AgentView {
         let unsynced = published.as_ref().map(|published| {
             checkout::commits_ahead_among(tips, primary, &published.tip, &task.branch)
         });
-        Some(Self {
+        Self {
             id: agent.id.as_str().to_owned(),
             label: agent.label.clone(),
             branch: task.branch.clone(),
@@ -201,7 +223,7 @@ impl AgentView {
             forge,
             unsynced,
             created_at_unix: agent.created_at_unix,
-        })
+        }
     }
 
     /// An agent working in the project's own root, beside the operator.
@@ -213,22 +235,19 @@ impl AgentView {
     /// operator's, UZE did not cut it, and `isolated` says so, because
     /// rebasing and pushing it is theirs to ask for and never UZE's to
     /// offer.
-    pub(super) fn in_the_root(
+    fn in_the_root(
         primary: &Path,
+        root: &RootStanding,
         agent: &Agent,
         completion: CompletionBehavior,
         target: &str,
         forge: Forge,
     ) -> Self {
-        let branch = checkout::current_branch(primary).unwrap_or_default();
+        let (branch, ahead) = root.read(primary, target).clone();
         Self {
             id: agent.id.as_str().to_owned(),
             label: agent.label.clone(),
-            ahead: if branch.is_empty() {
-                0
-            } else {
-                checkout::commits_ahead(primary, target, &branch)
-            },
+            ahead,
             branch,
             target: target.to_owned(),
             checkout: Some(primary.to_path_buf()),

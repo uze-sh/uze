@@ -85,7 +85,7 @@ impl RootPicker {
         // nothing is a relative path, and a relative path is resolved
         // against home — which would answer "home" for a project sitting
         // directly under the root.
-        let trimmed = prefill.trim_end_matches('/');
+        let trimmed = prefill.trim_end_matches(std::path::is_separator);
         let origin = expand_home(if trimmed.is_empty() { prefill } else { trimmed });
         let mut picker = Self {
             base: origin.clone(),
@@ -133,7 +133,7 @@ impl RootPicker {
     /// the path is spelled with the platform's own separator whichever one
     /// was typed: a space is recorded at the root this answers.
     fn resolve(&self, typed: &str) -> PathBuf {
-        let landed = if typed.starts_with('~') || typed.starts_with('/') {
+        let landed = if typed.starts_with('~') || typed.starts_with(std::path::is_separator) {
             expand_home(typed)
         } else {
             self.origin.join(typed)
@@ -225,10 +225,13 @@ impl RootPicker {
             return;
         };
         let name = candidate.name.clone();
-        let segment = self.input.rfind('/').map_or(0, |cut| cut + 1);
+        let segment = self
+            .input
+            .rfind(std::path::is_separator)
+            .map_or(0, |cut| cut + 1);
         self.input.truncate(segment);
         self.input.push_str(&name);
-        self.input.push('/');
+        self.input.push(std::path::MAIN_SEPARATOR);
         self.refresh();
     }
 

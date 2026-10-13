@@ -176,47 +176,42 @@ pub fn dangling_references(
     roots: &[PathBuf],
     claimed: &std::collections::BTreeSet<PathBuf>,
 ) -> Vec<DanglingReference> {
-    let home_root = home.root();
     let mut found = Vec::new();
     for root in roots {
         let Ok(entries) = fs::read_dir(root) else {
             continue;
         };
-        for entry in entries.filter_map(std::result::Result::ok) {
-            let path = entry.path();
-            if claimed.contains(&path) {
-                continue;
-            }
-            let Ok(target) = fs::read_link(&path) else {
-                continue;
-            };
-            if !target.starts_with(home_root) {
-                continue;
-            }
-            match fs::metadata(&path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    found.push(DanglingReference { path, target });
-                }
-                _ => {}
-            }
-        }
+        found.extend(
+            entries
+                .filter_map(std::result::Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| !claimed.contains(path))
+                .filter_map(|path| dangling(home, path)),
+        );
     }
     found.sort_by(|left, right| left.path.cmp(&right.path));
     found
 }
 
+/// `path` as a [`DanglingReference`], when it meets all three conditions
+/// [`dangling_references`] names.
+fn dangling(home: &UzeHome, path: PathBuf) -> Option<DanglingReference> {
+    let target = fs::read_link(&path).ok()?;
+    if !target.starts_with(home.root()) {
+        return None;
+    }
+    match fs::metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Some(DanglingReference { path, target })
+        }
+        _ => None,
+    }
+}
+
 /// Removes one dangling reference, re-checking every condition first: the
 /// answer it was found by may be stale by the time a person acts on it.
 pub fn remove_dangling(home: &UzeHome, reference: &DanglingReference) -> crate::Result<bool> {
-    let claimed = std::collections::BTreeSet::new();
-    let root = match reference.path.parent() {
-        Some(parent) => vec![parent.to_path_buf()],
-        None => return Ok(false),
-    };
-    if !dangling_references(home, &root, &claimed)
-        .iter()
-        .any(|found| found == reference)
-    {
+    if dangling(home, reference.path.clone()).as_ref() != Some(reference) {
         return Ok(false);
     }
     uze_platform::fs::remove_link(&reference.path).map_err(|source| crate::UzeError::Write {
