@@ -147,10 +147,7 @@ fn no_expression_is_pasted_into_a_script() {
 /// `.git/config`, where every later step of the job can read it.
 #[test]
 fn only_a_job_that_pushes_keeps_its_credentials() {
-    const PUSHING: [(&str, &str); 2] = [
-        (".github/workflows/release.yml", "propose"),
-        (".github/workflows/release.yml", "tag"),
-    ];
+    const PUSHING: [(&str, &str); 1] = [(".github/workflows/release.yml", "propose")];
     let mut checkouts = 0;
     let mut kept = Vec::new();
     for (file, text) in workflows() {

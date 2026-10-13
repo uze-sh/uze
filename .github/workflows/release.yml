@@ -10,16 +10,19 @@ name: Release
 #
 # Merging is what publishes. Every push to `main` asks whether the version in
 # the tree has a release yet; when it does not, this workflow waits for `CI`'s
-# `Gate` to pass on that exact commit, then tags the commit
-# if needed, builds the eight archives on native runners, generates the
-# SBOM, signs the provenance, signs SHASUMS256.txt with the release key (in
-# the protected `release` environment), and creates the GitHub Release with
-# the archives, SHASUMS256.txt, its signature and the two installers that
-# uze.sh/i serves — under notes written
-# by git-cliff from `cliff.release.toml`: what changed, who changed it, what
-# breaks, and how to install and verify this exact version. Asking about the
-# release rather than the tag is what lets a publish that failed halfway be
-# finished by the commit that fixes it.
+# `Gate` to pass on that exact commit, builds the eight archives on native
+# runners, generates the SBOM, signs the provenance, signs SHASUMS256.txt
+# with the release key (in the protected `release` environment), and only
+# then tags the commit and creates the GitHub Release with the archives,
+# SHASUMS256.txt, its signature and the two installers that uze.sh/i serves
+# — under notes written by git-cliff from `cliff.release.toml`: what
+# changed, who changed it, what breaks, and how to install and verify this
+# exact version. The tag is the last thing written, after everything that
+# can fail: a publish that fails leaves no tag behind, so the commit that
+# fixes it is published as this version by its own push. The tag used to be
+# written first, and a failed build then left one naming a commit the fix
+# could not be, which blocked the fix: a `v*` tag never moves
+# (.github/rulesets/release-tags.json), so it must not be written early.
 #
 # It used to push the release commit straight to `main`, which a branch
 # ruleset refuses — correctly. See docs/versioning.md for the full flow.
@@ -161,14 +164,14 @@ jobs:
             --title "chore(release): ${tag}" \
             --body-file "${RUNNER_TEMP}/pr-body.md"
 
-  tag:
-    name: Tag the release commit
+  detect:
+    name: Detect the release
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     # Mostly spent waiting for `Gate`, which caps itself at an hour.
     timeout-minutes: 70
     permissions:
-      contents: write
+      contents: read
       # Reading whether `Gate` passed for this commit.
       checks: read
     outputs:
@@ -182,6 +185,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          # Nothing here writes: the tag is `publish`'s, once it has
+          # something to publish.
+          persist-credentials: false
       - name: The commit this run is about
         id: commit
         run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
@@ -255,36 +261,11 @@ jobs:
                 ;;
             esac
           done
-      # Only when it is missing: a tag that already points at this commit is
-      # the earlier attempt's, and moving it would change what a `v*` means.
-      # A tag of that name on any *other* commit is refused outright: what
-      # Gate passed for is this commit, and publishing a release from
-      # whatever the tag names would publish something Gate never saw.
-      - name: Create the tag
-        if: steps.detect.outputs.release == 'true'
-        env:
-          TAG: ${{ steps.detect.outputs.tag }}
-        run: |
-          set -euo pipefail
-          tag="${TAG}"
-          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            tagged="$(git rev-parse "refs/tags/${tag}^{commit}")"
-            if [ "${tagged}" != "${GITHUB_SHA}" ]; then
-              echo "::error::${tag} already names ${tagged}, not ${GITHUB_SHA} — refusing to release"
-              exit 1
-            fi
-            echo "${tag} already names ${GITHUB_SHA} — reusing it"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "$tag"
-          git push origin "$tag"
 
   package:
     name: Package ${{ matrix.platform }}
-    needs: tag
-    if: needs.tag.outputs.release == 'true'
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -342,7 +323,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Build exactly the commit Gate passed for, by its hash.
-          ref: ${{ needs.tag.outputs.sha }}
+          ref: ${{ needs.detect.outputs.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
@@ -402,7 +383,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [tag, package]
+    needs: [detect, package]
     runs-on: ubuntu-24.04
     # The one job that holds the release signing key. The environment's
     # protection (required reviewer, `main` only) is what stands between a
@@ -423,11 +404,12 @@ jobs:
         with:
           # The released commit, so the SBOM describes the tree the binaries
           # were built from rather than whatever `main` has moved on to.
-          ref: ${{ needs.tag.outputs.sha }}
+          ref: ${{ needs.detect.outputs.sha }}
           # git-cliff reads the release notes out of the history between the
           # previous tag and this one; a shallow clone has neither.
           fetch-depth: 0
-          # `gh` publishes with its own token; nothing here pushes.
+          # `gh` publishes with its own token, and the one `git push` here
+          # (the tag) is handed the token for that command alone.
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -450,7 +432,7 @@ jobs:
         run: cargo cyclonedx --format json --spec-version 1.5 --no-build-deps --target all
       - name: Collect assets and checksums
         env:
-          TAG: ${{ needs.tag.outputs.tag }}
+          TAG: ${{ needs.detect.outputs.tag }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -523,23 +505,46 @@ jobs:
       - name: Write the release notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.detect.outputs.tag }}
         run: |
           set -euo pipefail
+          # `--latest` renders the section the newest tag names, and the tag
+          # is not written until the release is (below), so it is made here,
+          # locally, on the built commit. `-f` because a clone with the full
+          # history carries one of this name from an attempt that failed
+          # after tagging, and it names the wrong commit.
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f -a "${TAG}" -m "${TAG}"
           git-cliff --config cliff.release.toml --latest -o "${RUNNER_TEMP}/notes.md"
           cat "${RUNNER_TEMP}/notes.md"
+      # The tag is written here, after every step that can fail, and a
+      # `v*` tag is never moved or deleted (the `release-tags` ruleset says
+      # so to GitHub; this step says so to itself). What the remote holds
+      # under this name decides what happens:
+      #
+      #   nothing           -> written at the built commit, then released;
+      #   the built commit  -> an earlier run got this far and failed at the
+      #                        release itself; reused;
+      #   another commit    -> refused, released or not. Gate passed for this
+      #                        commit and this run built it; a tag naming
+      #                        anything else is a release of something else.
+      #                        Unreleased, it is what a run that failed in the
+      #                        seconds between the push and the release left:
+      #                        re-run *that* run, which reuses its own tag.
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-          SHA: ${{ needs.tag.outputs.sha }}
+          TAG: ${{ needs.detect.outputs.tag }}
+          SHA: ${{ needs.detect.outputs.sha }}
         run: |
           set -euo pipefail
           tag="${TAG}"
-          # The tag may not have moved since `tag` checked it: a release
-          # names its tag, and the tag must still name what was built.
-          tagged="$(git ls-remote origin "refs/tags/${tag}^{}" | cut -f1)"
-          if [ "${tagged}" != "${SHA}" ]; then
-            echo "::error::${tag} names '${tagged}', not the built ${SHA} — refusing to publish"
+          # Two lines for an annotated tag (the tag object, then the commit it
+          # peels to), one for a lightweight one; the last is the commit.
+          tagged="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" | tail -n 1 | cut -f1)"
+          if [ -n "${tagged}" ] && [ "${tagged}" != "${SHA}" ]; then
+            echo "::error::${tag} names ${tagged}, not the built ${SHA} — refusing to publish"
             exit 1
           fi
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -553,6 +558,14 @@ jobs:
             # have written them before the assets it describes existed.
             gh release edit "$tag" --notes-file "${RUNNER_TEMP}/notes.md"
           else
+            if [ -z "${tagged}" ]; then
+              echo "writing ${tag} at ${SHA}"
+              git -c credential.helper='!f() { echo "password=${GH_TOKEN}"; }; f' \
+                push "https://x-access-token@github.com/${GITHUB_REPOSITORY}.git" \
+                "refs/tags/${tag}:refs/tags/${tag}"
+            else
+              echo "${tag} already names ${SHA} — reusing it"
+            fi
             # Titled by the tag itself. A release called "uze 0.0.0-alpha.1"
             # repeats the repository's own name back at the reader and reads
             # as a different identifier from the `v0.0.0-alpha.1` that

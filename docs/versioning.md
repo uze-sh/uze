@@ -64,15 +64,9 @@ to `main`, reads the version in the tree and asks whether it has a published
 *release* yet. When it does — an ordinary change, or a version already out —
 it stops there. When it does not:
 
-   - the annotated `v<v>` tag is created on the merge commit, which is the
-     commit carrying version bump + changelog + lockfile, or reused when an
-     earlier attempt got that far before failing. A `v<v>` tag that names
-     any other commit stops the release: `Gate` passed for this commit, so
-     this commit is what gets built, and every later job checks it out by
-     its hash, never by the tag's name;
    - the six artifacts (Linux `x86_64`/`aarch64` × `gnu`/`musl`, and macOS
-     `x86_64`/`aarch64`) are built
-     from that tag on native runners and published as
+     `x86_64`/`aarch64`) are built from that commit, checked out by its
+     hash, on native runners and published as
      `uze-<arch>-linux-<libc>.tar.gz` — the Rust target triple without its
      vendor field, because `unknown` is a triple saying there is no vendor
      and a person choosing a download should not have to know that. The
@@ -82,26 +76,37 @@ it stops there. When it does not:
      the same matrix and published as `uze-<arch>-windows.zip`, the name
      `install.ps1` asks for, with a Scoop manifest, `uze.json`, written from
      their own bytes;
-   - a CycloneDX SBOM is generated from the tag's own lockfile, provenance
+   - a CycloneDX SBOM is generated from the commit's own lockfile, provenance
      is signed for every asset (`gh attestation verify <file> --repo
-     uze-sh/uze`), and the GitHub Release — named `v<v>`, the same
-     identifier the tag, the changelog and `install.sh` all use — is
-     created with the tarballs, the SBOM, `install.sh` and `install.ps1`,
-     `SHASUMS256.txt`, its signature `SHASUMS256.txt.sig` (see
-     [Signing](#signing)) and the notes described below. A re-run uploads
+     uze-sh/uze`), and `SHASUMS256.txt` is signed with the release key (see
+     [Signing](#signing));
+   - only then the annotated `v<v>` tag is written on that commit, and the
+     GitHub Release — named `v<v>`, the same identifier the tag, the
+     changelog and `install.sh` all use — is created with the tarballs, the
+     SBOM, `install.sh` and `install.ps1`, `SHASUMS256.txt`, its signature
+     `SHASUMS256.txt.sig` and the notes described below. A re-run uploads
      only the assets a release is missing and rewrites the notes; it never
      replaces an asset already published (no `--clobber`), and with
      immutable releases on GitHub refuses that anyway.
 
 The eight build jobs run with read-only permissions, no persisted Git
 credentials and no build cache, since a cache is written by every pull
-request's CI run; only the jobs that push the tag and publish the release
-can write, and only `publish` holds the signing key.
+request's CI run; only `publish` can write, and only `publish` holds the
+signing key.
 
-Asking about the release rather than the tag is what makes the repair
-possible: the first attempt at `v0.0.0-alpha.1` tagged the commit and then
-failed to build two of its four targets, and a tag-only check would have
-left that version unpublishable for good.
+The tag is the last thing written because it is the one thing a failed
+attempt must not leave behind: a `v<v>` tag is never moved or deleted
+(`.github/rulesets/release-tags.json`), so one written before the build
+and left by a failed build names a commit the fix cannot be, and the push
+carrying the fix is refused. That is what happened to `v1.0.0-beta.14`,
+tagged before two of its targets failed to build. Asking about the release
+rather than the tag is the other half of the repair: the first attempt at
+`v0.0.0-alpha.1` tagged the commit and then failed to build two of its
+four targets, and a tag-only check would have left that version
+unpublishable for good. Together: a publish that fails leaves no tag, the
+next push to `main` publishes the version from its own commit, and the only
+tag a failed run can leave is one written seconds before the release call
+failed, which re-running that run reuses.
 
 ## What the release page says
 
