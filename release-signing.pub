@@ -5,7 +5,7 @@
 # checks the signature against it, under the namespace `uze-release`,
 # before anything a release names is unpacked.
 #
-# PLACEHOLDER: no release key has been generated yet. Until the line below
-# is one `ssh-ed25519 ...` public key, the release workflow refuses to
-# publish and the updater and the installers refuse to install.
-# See docs/versioning.md, "Signing", for how the key is made.
+# One key, one line. See docs/versioning.md, "Signing", for how it is made
+# and rotated: a binary trusts the key it was built with, so a rotation is
+# released before the old key is retired.
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIijDyB6e7zQim8bepTd4U6oPx+ixIZ7qumWzzOUhCqI uze-release

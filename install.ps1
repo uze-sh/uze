@@ -46,7 +46,7 @@ param(
     # line of `release-signing.pub`, which a test holds equal to this one.
     # Empty until the first release key exists, and an empty key installs
     # nothing.
-    $ReleaseKey = ''
+    $ReleaseKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIijDyB6e7zQim8bepTd4U6oPx+ixIZ7qumWzzOUhCqI uze-release'
     $SignatureNamespace = 'uze-release'
     $BuildFloor = 19045
 

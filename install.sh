@@ -25,7 +25,7 @@ DEFAULT_BASE_URL="https://github.com/uze-sh/uze/releases"
 # checksum file is only as trustworthy as whoever could publish it, so the
 # signature is what says the release is uze's. Empty until the first
 # release key exists, and an empty key installs nothing.
-UZE_RELEASE_KEY=''
+UZE_RELEASE_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIijDyB6e7zQim8bepTd4U6oPx+ixIZ7qumWzzOUhCqI uze-release'
 SIGNATURE_NAMESPACE="uze-release"
 
 # --- presentation -------------------------------------------------------------
