@@ -3777,6 +3777,12 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
 #[test]
 fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
     let (peer, socket) = super::transport::pair().unwrap();
+    // Before the event: the connection may already be shut by the time
+    // `reply` returns, and macOS refuses `setsockopt` on a socket whose
+    // peer has gone (`EINVAL`).
+    let mut read = peer;
+    read.set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
     let (outbox, receiver) = super::Outbox::new();
     let events = Arc::new(outbox);
     let writing = {
@@ -3788,9 +3794,6 @@ fn a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen() {
         message: "x".repeat(MAX_FRAME as usize + 1),
     });
 
-    let mut read = peer;
-    read.set_read_timeout(Some(Duration::from_secs(30)))
-        .unwrap();
     let mut byte = [0u8; 1];
     assert_eq!(
         std::io::Read::read(&mut read, &mut byte).unwrap(),

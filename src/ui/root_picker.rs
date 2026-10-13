@@ -231,7 +231,8 @@ impl RootPicker {
             .map_or(0, |cut| cut + 1);
         self.input.truncate(segment);
         self.input.push_str(&name);
-        self.input.push(std::path::MAIN_SEPARATOR);
+        // `/` whatever was typed: every platform reads it as a separator.
+        self.input.push('/');
         self.refresh();
     }
 
