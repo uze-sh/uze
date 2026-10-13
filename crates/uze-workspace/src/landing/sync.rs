@@ -11,28 +11,32 @@ pub enum TargetSync {
     Current,
     /// The local target was moved forward onto the remote's tip.
     FastForwarded { commits: usize },
-    /// The remote is ahead and the local target stayed where it was.
+    /// The local target carries commits the remote lacks, and the remote
+    /// has moved too: neither can be fast-forwarded onto the other.
+    Diverged { behind: usize },
+    /// The local target stayed where it was for another reason — the
+    /// operator stands on it, Git refused the move, or the remote could
+    /// not be read — with `behind` the commits the remote has that it
+    /// lacks, when that was asked.
     Stalled { behind: usize, reason: String },
 }
 
 impl TargetSync {
-    /// What the operator has to be told, if anything: agents placed on a
-    /// target that could not be brought up to date start behind the work
-    /// everyone else is already on, and hear about it as a conflict much
-    /// later.
+    /// What the operator has to be told, if anything. A new agent is cut
+    /// from the furthest tip this machine has ([`checkout::target_reach`]),
+    /// so a local target the sync could not move costs a new agent nothing
+    /// while the remote's tip is ahead of it; the one case that starts an
+    /// agent behind the work everyone else is on is a local target carrying
+    /// commits of its own, which is where the agent is cut from instead.
     pub fn concern(&self, target: &str) -> Option<String> {
         match self {
-            Self::Stalled { behind, reason } if *behind > 0 => {
+            Self::Diverged { behind } => {
                 let plural = if *behind == 1 { "" } else { "s" };
                 Some(format!(
-                    "`{target}` is {behind} commit{plural} behind `{REMOTE}` and could not be \
-                     moved: {reason}. New agents start from the local tip."
+                    "`{target}` carries commits `{REMOTE}` does not and is {behind} \
+                     commit{plural} behind it. New agents start from the local tip."
                 ))
             }
-            Self::Stalled { reason, .. } => Some(format!(
-                "`{REMOTE}` could not be read: {reason}. New agents start from the local tip, \
-                 which may be behind."
-            )),
             _ => None,
         }
     }
@@ -42,13 +46,14 @@ impl TargetSync {
 /// never by anything else. Run on the workspace's clock rather than by each
 /// placement, which branches from whatever this last left.
 ///
-/// An agent is placed on the target's tip, and every judgement made about
-/// its work afterwards — what it is ahead of, whether its slot holds
-/// anything, what it rebases onto — is made against that same local branch.
-/// Left unfetched, the branch drifts a whole day's merges behind the target
-/// everyone else is on: the agent starts from history nobody has, and the
-/// divergence surfaces as conflicts in a request already opened, which is
-/// the most expensive place to learn it.
+/// An agent is placed on the furthest tip of the target this machine has,
+/// and every judgement made about its work afterwards — what it is ahead
+/// of, whether its slot holds anything, what it rebases onto — is made
+/// against that same tip ([`checkout::target_reach`]), the remote's
+/// tracking ref included. Left unfetched, both drift a whole day's merges
+/// behind the target everyone else is on: the agent starts from history
+/// nobody has, and the divergence surfaces as conflicts in a request
+/// already opened, which is the most expensive place to learn it.
 ///
 /// Fast-forward only, so this can never lose or reorder an operator's own
 /// commits: a target that has commits the remote lacks is left exactly
@@ -103,10 +108,7 @@ pub(super) fn sync_target_locked(primary: &Path, target: &str, fetched: &str) ->
     }
     let local_tip = checkout::tip_of(primary, target);
     if !is_ancestor(primary, &local_tip, &tracking) {
-        return TargetSync::Stalled {
-            behind,
-            reason: format!("it carries commits `{REMOTE}` does not"),
-        };
+        return TargetSync::Diverged { behind };
     }
     // Moving the target where the operator stands on it would change files
     // under their editor on a clock, with no gesture of theirs behind it.

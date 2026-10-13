@@ -105,11 +105,11 @@ pub(super) fn deliver_locked(
 /// the same rules as delivery. Only for a clean, ready checkout: never
 /// under an agent mid-edit. Returns whether anything moved.
 ///
-/// Always the local target, whatever the completion behaviour: this runs
-/// whenever a pane goes quiet, and a fetch on that cadence would be paid
-/// for on every tick of every task. `pr` reaches the remote's tip twice
-/// anyway — where the target is brought in line before an agent is placed
-/// on it, and at delivery, which is the one that decides.
+/// Never a fetch, whatever the completion behaviour: this runs whenever a
+/// pane goes quiet, and a fetch on that cadence would be paid for on every
+/// tick of every task. It follows the furthest tip the target sync already
+/// fetched, and `pr` reaches the remote's own tip at delivery, which is the
+/// one that decides.
 /// Takes the state beside the branch rather than the whole agent: this
 /// runs inside a pass that is already holding one, and two disjoint
 /// fields borrowed apart is what lets it.
@@ -151,7 +151,12 @@ pub(super) fn fetch_target(primary: &Path, target: &str) -> Result<String, Strin
 }
 
 /// The target's tip where the target lives: the remote's after a fetch when
-/// delivery publishes a pull request, the local branch otherwise.
+/// delivery publishes a pull request, and otherwise the furthest tip this
+/// machine already has ([`checkout::target_reach`]) — the local branch, or
+/// the remote's as the last sync fetched it when that is ahead. An agent
+/// cut from the remote's tip and rebased onto the local one would record
+/// a base behind its own history, and count the remote's commits as its
+/// own.
 pub(super) fn target_tip(
     primary: &Path,
     isolation: &Isolation,
@@ -171,14 +176,8 @@ pub(super) fn target_tip(
         }
         return Ok(tip);
     }
-    let tip = checkout::tip_of(primary, &isolation.target);
-    if tip.is_empty() {
-        return Err(DeliveryFailure::Git(format!(
-            "`{}` has no commit",
-            isolation.target
-        )));
-    }
-    Ok(tip)
+    checkout::target_reach(primary, &isolation.target, Some(&isolation.branch))
+        .ok_or_else(|| DeliveryFailure::Git(format!("`{}` has no commit", isolation.target)))
 }
 
 /// Rebases the task's branch onto `tip` in its checkout, and says whether

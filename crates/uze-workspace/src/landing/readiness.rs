@@ -122,8 +122,8 @@ pub fn slot_path(primary: &Path, isolation: &Isolation) -> Option<PathBuf> {
 
 /// Reads where an isolated agent's work stands, from its own checkout.
 ///
-/// The base is the newest of the recorded one and the target's local tip
-/// when the branch already descends from it — the case after an agent
+/// The base is the newest of the recorded one and the target's reach
+/// ([`checkout::target_reach`]) when the branch already descends from it — the case after an agent
 /// finished a paused rebase itself — so `ahead` counts the task's own
 /// commits and never the target's.
 pub fn readiness(primary: &Path, isolation: &Isolation) -> Readiness {

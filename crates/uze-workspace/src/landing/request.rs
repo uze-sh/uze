@@ -147,12 +147,13 @@ pub fn adopt_request(isolation: &mut Isolation, observed: &RequestObservation) {
 }
 
 pub(super) fn effective_base(primary: &Path, isolation: &Isolation) -> String {
-    let local_tip = checkout::tip_of(primary, &isolation.target);
-    if !local_tip.is_empty()
-        && local_tip != isolation.base_commit
-        && is_ancestor(primary, &local_tip, &isolation.branch)
-    {
-        return local_tip;
+    match checkout::target_reach(primary, &isolation.target, Some(&isolation.branch)) {
+        Some(reach)
+            if reach != isolation.base_commit
+                && is_ancestor(primary, &reach, &isolation.branch) =>
+        {
+            reach
+        }
+        _ => isolation.base_commit.clone(),
     }
-    isolation.base_commit.clone()
 }

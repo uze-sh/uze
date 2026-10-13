@@ -29,12 +29,17 @@ fn observe_and_adopt(primary: &Path, isolation: &mut Isolation) {
 /// stands lives beside the branch now, and a test that held only one
 /// of the two could not say what it was asserting about.
 fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> Agent {
+    launch_from(repository, store, label, &tip_of(repository.root(), TARGET))
+}
+
+/// [`launch`], cut from `base` rather than from the local target.
+fn launch_from(repository: &Repository, store: &mut AgentStore, label: &str, base: &str) -> Agent {
     let primary = repository.root();
     let mut agent = crate::task::Agent::isolated(
         "claude",
         Some(label),
         Base::Ref(TARGET.into()),
-        tip_of(primary, TARGET),
+        base.to_owned(),
         TARGET.into(),
     );
     let isolation = agent
@@ -667,6 +672,11 @@ fn a_target_the_operator_stands_on_is_left_for_their_pull() {
     );
     assert_eq!(tip_of(primary, TARGET), before);
     assert!(!primary.join("merged-by-someone-else.rs").exists());
+    assert_eq!(
+        sync.concern(TARGET),
+        None,
+        "a new agent is cut from the remote's tip anyway"
+    );
 }
 
 /// Fast-forward only: an operator's unpushed commit is never rewound,
@@ -679,15 +689,86 @@ fn a_target_carrying_its_own_commits_is_left_alone_and_reported() {
     let mine = repository.commit_file("mine.rs", "");
 
     let sync = sync_target(primary, TARGET);
-    assert!(
-        matches!(sync, TargetSync::Stalled { behind: 1, .. }),
-        "the remote is ahead and the local target cannot be moved: {sync:?}"
+    assert_eq!(
+        sync,
+        TargetSync::Diverged { behind: 1 },
+        "the remote is ahead and the local target cannot be moved"
     );
     assert_eq!(tip_of(primary, TARGET), mine, "nothing was rewritten");
     assert!(
         sync.concern(TARGET)
             .is_some_and(|concern| concern.contains(TARGET)),
         "and an agent placed on it is told"
+    );
+}
+
+/// What the sync fetched is the target an agent is judged against,
+/// with the operator still standing on a local target behind it: an
+/// agent cut from the remote's tip owns none of the remote's commits, and
+/// following the target never rewinds its base to the local tip.
+#[test]
+fn an_agent_cut_from_the_remotes_tip_counts_only_its_own_commits() {
+    let (repository, other) = published("landing-remote-born");
+    let primary = repository.root();
+    let local = tip_of(primary, TARGET);
+    let remote = push_from(&repository, &other, "merged-by-someone-else.rs");
+    sync_target(primary, TARGET);
+    assert_eq!(tip_of(primary, TARGET), local, "the operator stands on it");
+    let mut store = AgentStore::default();
+    let mut agent = launch_from(&repository, &mut store, "remote-born", &remote);
+    assert_eq!(readiness(primary, work(&agent)), Readiness::Running);
+
+    agent_commits(&repository, work(&agent), "mine.rs", "");
+
+    assert_eq!(
+        readiness(primary, work(&agent)),
+        Readiness::Ready {
+            ahead: 1,
+            base: remote.clone()
+        }
+    );
+    assert_eq!(
+        refresh(primary, &mut agent.state, agent.isolation.as_mut().unwrap()),
+        Ok(false)
+    );
+    assert_eq!(work(&agent).base_commit, remote);
+}
+
+/// An agent cut from a local target the remote has since moved past —
+/// one moved into a checkout of its own from the operator's — counts its
+/// own commits from where it was cut, and follows the target onto the
+/// remote's tip, which is where it will be delivered.
+#[test]
+fn an_agent_cut_behind_the_remote_counts_only_its_own_commits() {
+    let (repository, other) = published("landing-local-born");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut agent = launch(&repository, &mut store, "local-born");
+    let remote = push_from(&repository, &other, "merged-by-someone-else.rs");
+    sync_target(primary, TARGET);
+    agent_commits(&repository, work(&agent), "mine.rs", "");
+    let cut_from = work(&agent).base_commit.clone();
+
+    assert_eq!(
+        readiness(primary, work(&agent)),
+        Readiness::Ready {
+            ahead: 1,
+            base: cut_from
+        }
+    );
+    assert_eq!(
+        refresh(primary, &mut agent.state, agent.isolation.as_mut().unwrap()),
+        Ok(true)
+    );
+    assert_eq!(work(&agent).base_commit, remote);
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    assert!(slot.join("merged-by-someone-else.rs").is_file());
+    assert_eq!(
+        readiness(primary, work(&agent)),
+        Readiness::Ready {
+            ahead: 1,
+            base: remote
+        }
     );
 }
 
