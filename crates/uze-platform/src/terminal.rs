@@ -65,13 +65,10 @@ mod platform {
                 assert_eq!(libc::grantpt(master), 0);
                 assert_eq!(libc::unlockpt(master), 0);
             }
-            // SAFETY: `ptsname` answers with a static buffer, copied before
-            // anything else could ask it.
-            let slave = unsafe { CStr::from_ptr(libc::ptsname(master)) }.to_owned();
             Self {
+                slave: slave_of(master),
                 // SAFETY: `master` is open and owned by nothing else.
                 _master: unsafe { OwnedFd::from_raw_fd(master) },
-                slave,
             }
         }
 
@@ -88,6 +85,54 @@ mod platform {
         pub(super) fn sit_here(&self) {
             sit_at(&self.slave).expect("this process sits at its terminal");
         }
+    }
+
+    /// The path of the slave end of `master`, asked in a way several
+    /// threads may ask at once: tests open terminals in parallel, and
+    /// `ptsname` answers them all from one static buffer.
+    #[cfg(target_os = "linux")]
+    fn slave_of(master: std::os::fd::RawFd) -> CString {
+        let mut name = [0 as libc::c_char; 128];
+        // SAFETY: `name` is `len` bytes, and `ptsname_r` writes at most that.
+        let asked = unsafe { libc::ptsname_r(master, name.as_mut_ptr(), name.len()) };
+        assert_eq!(
+            asked,
+            0,
+            "no name for the terminal: {}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: `ptsname_r` NUL-terminates what it writes.
+        unsafe { CStr::from_ptr(name.as_ptr()) }.to_owned()
+    }
+
+    /// Darwin has no `ptsname_r`; the kernel answers the same question
+    /// through an ioctl, into a buffer of the caller's own.
+    #[cfg(target_os = "macos")]
+    fn slave_of(master: std::os::fd::RawFd) -> CString {
+        let mut name = [0 as libc::c_char; 128];
+        // SAFETY: `TIOCPTYGNAME` writes at most 128 bytes, the size of `name`.
+        let asked = unsafe { libc::ioctl(master, libc::TIOCPTYGNAME as _, name.as_mut_ptr()) };
+        assert_eq!(
+            asked,
+            0,
+            "no name for the terminal: {}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: the kernel NUL-terminates what it writes.
+        unsafe { CStr::from_ptr(name.as_ptr()) }.to_owned()
+    }
+
+    /// The remaining Unixes: `ptsname`, under a lock of this crate's own,
+    /// which is the most that can be done for a static buffer.
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn slave_of(master: std::os::fd::RawFd) -> CString {
+        static NAMING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _naming = NAMING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY: `ptsname` answers with a static buffer, copied under the
+        // lock before anything else in this crate could ask it.
+        unsafe { CStr::from_ptr(libc::ptsname(master)) }.to_owned()
     }
 
     /// A new session, with the terminal at `slave` as its controlling one.
