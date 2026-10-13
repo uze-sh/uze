@@ -91,7 +91,7 @@ fn parse_rrggbb(colour: &str) -> Option<(u8, u8, u8)> {
     if colour.len() != 6 {
         return None;
     }
-    let channel = |at: usize| u8::from_str_radix(&colour[at..at + 2], 16).ok();
+    let channel = |at: usize| u8::from_str_radix(colour.get(at..at + 2)?, 16).ok();
     Some((channel(0)?, channel(2)?, channel(4)?))
 }
 
@@ -482,7 +482,15 @@ mod tests {
 
     #[test]
     fn a_spelling_no_client_wrote_is_refused_rather_than_repaired() {
-        for spelling in ["", "1c1c1e,ffffff", "1c1c1e;ffffff", "#1c1c1e,ffffff", "zz"] {
+        // `aéaaa` is six bytes with a character boundary inside a channel.
+        for spelling in [
+            "",
+            "1c1c1e,ffffff",
+            "1c1c1e;ffffff",
+            "#1c1c1e,ffffff",
+            "zz",
+            "a\u{e9}aaa",
+        ] {
             assert_eq!(
                 super::Palette::from_spelling(spelling),
                 None,
