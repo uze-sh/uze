@@ -37,6 +37,7 @@ mod outbox;
 mod pane;
 mod persist;
 mod process;
+mod scheme;
 mod server;
 use uze_platform::endpoint as transport;
 
@@ -49,6 +50,7 @@ use outbox::*;
 use pane::*;
 use persist::*;
 use process::*;
+use scheme::*;
 use server::*;
 pub use transport::{Stream, connect, pair as stream_pair};
 

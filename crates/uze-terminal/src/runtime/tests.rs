@@ -1364,6 +1364,97 @@ fn a_server_answers_with_the_palette_it_was_started_with() {
     server.shut_down();
 }
 
+/// A program that asked its colours once draws from the answer for as long
+/// as it runs, so a theme put in force after it started reached it only
+/// through a restart. One that set DEC mode 2031 is told the colours
+/// changed and asks again; one that did not is left alone, since the
+/// report would land in its input as keystrokes.
+// Unix only: Drives `/bin/sh` panes that `exec` into `cat`-like writers.
+#[cfg(unix)]
+#[test]
+fn a_changed_palette_is_announced_to_the_panes_that_asked() {
+    let scratch = uze_testkit::temp::socket_scratch("scheme-notified");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+
+    let heard = scratch.join("heard");
+    let ignored = scratch.join("ignored");
+    // Raw, so `cat` passes the report through as it arrives instead of
+    // waiting for a line that never ends.
+    let listening = |asks: bool, into: &Path| Launch::Program {
+        argv: vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            format!(
+                "stty raw -echo; {}exec cat > {}",
+                if asks { "printf '\\033[?2031h'; " } else { "" },
+                into.display()
+            ),
+        ],
+        env: Vec::new(),
+    };
+    let mut session = server.session.lock().expect("session poisoned");
+    let asking = session.create_space(None, seat_at(&project), 80, 24).pane;
+    let silent = session
+        .create_space(None, seat_at(&scratch.join("elsewhere")), 80, 24)
+        .pane;
+    drop(session);
+    server.spawn_pane(asking, listening(true, &heard)).unwrap();
+    server
+        .spawn_pane(silent, listening(false, &ignored))
+        .unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !server.runtime(asking).is_some_and(|runtime| {
+        runtime
+            .scheme_notifications
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the program's request was never observed"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let light = Palette {
+        background: (0xff, 0xff, 0xff),
+        ..Palette::default()
+    };
+    assert!(server.set_palette(light), "a different palette is a change");
+    assert!(!server.set_palette(light), "the same palette again is not");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::fs::read(&heard).unwrap_or_default() != b"\x1b[?997;2n" {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the program that asked was not told: {:?}",
+            std::fs::read(&heard).unwrap_or_default()
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read(&ignored).unwrap_or_default(),
+        b"",
+        "a program that did not ask was written to"
+    );
+    server.shut_down();
+}
+
 #[test]
 fn the_server_works_in_no_checkout() {
     let project = Path::new("/project");

@@ -132,6 +132,8 @@ pub enum ClientRequest {
     /// command line as well ([`Palette::spelling`]): it relaunches every
     /// persisted program before the endpoint is even bound, and one that
     /// asks in its first instants must not be told a palette nobody draws.
+    /// A program that asked to be told of changes (DEC mode 2031) is told
+    /// when a palette differs from the last, and asks again.
     SetPalette(Palette),
     Attach {
         version: u16,

@@ -29,6 +29,9 @@ pub(super) struct PaneRuntime {
     /// follow the content under a selection the moment it is drawn. Always
     /// locked after `terminal`, never before it.
     pub(super) selection: Arc<Mutex<PaneSelection>>,
+    /// Whether the program asked to be told when the colours change (DEC
+    /// mode 2031), kept current by the thread reading its output.
+    pub(super) scheme_notifications: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Closing a pseudoterminal's master can wait: ConPTY's
@@ -146,15 +149,18 @@ fn read_output(
     mut reader: Box<dyn std::io::Read + Send>,
     terminal: Arc<Mutex<Term<ReplySink>>>,
     selection: Arc<Mutex<PaneSelection>>,
+    scheme_notifications: Arc<std::sync::atomic::AtomicBool>,
     damage: mpsc::Sender<PaneId>,
 ) {
     thread::spawn(move || {
         let mut parser: Processor = Processor::new();
+        let mut subscription = SchemeSubscription::new();
         let mut buffer = [0; 8192];
         loop {
             match std::io::Read::read(&mut reader, &mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => {
+                    subscription.observe(&buffer[..read], &scheme_notifications);
                     let mut terminal = terminal.lock().expect("terminal poisoned");
                     parser.advance(&mut *terminal, &buffer[..read]);
                     selection
@@ -230,11 +236,13 @@ impl PaneRuntime {
             ReplySink::new(reply_sender, palette),
         )));
         let selection = Arc::new(Mutex::new(PaneSelection::default()));
+        let scheme_notifications = Arc::new(std::sync::atomic::AtomicBool::new(false));
         read_output(
             id,
             reader,
             Arc::clone(&terminal),
             Arc::clone(&selection),
+            Arc::clone(&scheme_notifications),
             damage,
         );
         answer_queries(reply_receiver, Arc::clone(&writer));
@@ -249,7 +257,19 @@ impl PaneRuntime {
             launch,
             last_sent: Mutex::new(None),
             selection,
+            scheme_notifications,
         })
+    }
+
+    /// Tells the program the terminal's colours changed, if it asked to be
+    /// told; one that did asks its colours again and redraws.
+    pub(super) fn notify_scheme(&self, scheme: Scheme) {
+        if self
+            .scheme_notifications
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.write(scheme.notification());
+        }
     }
 
     pub(super) fn write(&self, bytes: &[u8]) {

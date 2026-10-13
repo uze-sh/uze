@@ -388,7 +388,9 @@ impl Server {
                     events.reply(ClientEvent::Detached);
                     break;
                 }
-                ClientRequest::SetPalette(palette) => self.set_palette(palette),
+                ClientRequest::SetPalette(palette) => {
+                    self.set_palette(palette);
+                }
                 ClientRequest::Input { pane, bytes } => self.write_input(pane, &bytes),
                 ClientRequest::Scroll { pane, lines } => self.scroll_pane(pane, lines),
                 ClientRequest::Select { pane, gesture } => {
@@ -812,10 +814,26 @@ impl Server {
     /// `Arc`, so panes that were already running answer with it too — a
     /// theme switch that only reached panes opened afterwards would leave
     /// the older ones telling their programs a colour nobody draws.
-    pub(super) fn set_palette(&self, palette: Palette) {
-        if let Ok(mut held) = self.palette.lock() {
-            *held = palette;
+    ///
+    /// A program that asked once and drew from the answer does not ask
+    /// again on its own, so a palette that differs from the last is
+    /// announced (DEC mode 2031) to every pane whose program asked to be
+    /// told, and that program asks again. Says whether it differed.
+    pub(super) fn set_palette(&self, palette: Palette) -> bool {
+        let changed = match self.palette.lock() {
+            Ok(mut held) if *held != palette => {
+                *held = palette;
+                true
+            }
+            _ => false,
+        };
+        if changed {
+            let scheme = Scheme::of(&palette);
+            for pane in self.panes.lock().expect("panes poisoned").values() {
+                pane.notify_scheme(scheme);
+            }
         }
+        changed
     }
 
     pub(super) fn spawn_pane(&self, pane_id: PaneId, launch: Launch) -> Result<(), RuntimeError> {
