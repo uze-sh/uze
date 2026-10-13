@@ -72,8 +72,10 @@ impl Workspace<'_> {
     }
 
     /// Brings the local target of the project at `cwd` in line with its
-    /// remote, by fast-forward only, so the next agent is cut from what the
-    /// team is on rather than from what this machine last saw.
+    /// remote, by fast-forward only, and fetches the remote's tip a new
+    /// agent is cut from when the local target cannot move, so the next
+    /// agent starts from what the team is on rather than from what this
+    /// machine last saw.
     ///
     /// Asked on a clock rather than by each placement: the fetch is a
     /// network round trip, and in front of every new agent it was most of
@@ -121,13 +123,13 @@ impl Workspace<'_> {
             .clone()
             .or_else(|| checkout::current_branch(&primary))
             .ok_or_else(|| refused("the primary checkout is not on a branch".to_owned()))?;
-        // The local target as the last sync left it ([`Self::sync_target`]):
-        // asking the remote here put a network round trip in front of every
-        // agent the operator creates.
-        let base_tip = checkout::tip_of(&primary, &target);
-        if base_tip.is_empty() {
-            return Err(refused("no commit to branch from".to_owned()));
-        }
+        // The furthest tip of the target the last sync left
+        // ([`Self::sync_target`]) — the remote's when it is ahead, which it
+        // stays while the operator stands on the local target the sync never
+        // moves. Asking the remote here put a network round trip in front of
+        // every agent the operator creates.
+        let base_tip = checkout::target_reach(&primary, &target, None)
+            .ok_or_else(|| refused("no commit to branch from".to_owned()))?;
         // Whatever the lock's answer, this is what was taken from Git
         // before it: the slot has to be given back when the record of it
         // cannot be written.

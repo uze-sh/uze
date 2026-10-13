@@ -25,7 +25,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use uze_application::{Placement, PlacementKind, UzeApplication};
+use uze_application::{Carry, Placement, PlacementKind, UzeApplication};
 use uze_core::UzeHome;
 use uze_testkit::git::Repository;
 use uze_workspace::conversation::Claim;
@@ -45,6 +45,7 @@ struct World {
     home: PathBuf,
     app: UzeApplication,
     panes: Vec<Agent>,
+    last_sync_concern: Option<String>,
 }
 
 impl World {
@@ -68,6 +69,7 @@ impl World {
             home,
             app,
             panes: Vec::new(),
+            last_sync_concern: None,
         }
     }
 
@@ -103,6 +105,45 @@ impl World {
         };
         self.panes.push(agent.clone());
         Ok(agent)
+    }
+
+    /// An agent beside the operator, in the primary checkout.
+    fn open_in_place(&mut self) -> Agent {
+        let placement = self
+            .app
+            .workspace()
+            .place_new_agent(
+                &self.root,
+                Some(PlacementKind::InPlace),
+                "claude-code",
+                &self.held(),
+            )
+            .unwrap();
+        let agent = Agent {
+            id: placement.placement.agent().as_str().to_owned(),
+            cwd: placement.cwd,
+            key: placement.launch_key,
+        };
+        self.panes.push(agent.clone());
+        agent
+    }
+
+    /// "To worktree": the agent beside the operator gets a checkout of its
+    /// own, relaunched there.
+    fn move_to_worktree(&mut self, agent: &Agent) -> Agent {
+        let placement = self
+            .app
+            .workspace()
+            .isolate(&self.root, &agent.id, Carry::Nothing, &self.held())
+            .unwrap();
+        self.panes.retain(|pane| pane.id != agent.id);
+        let moved = Agent {
+            id: agent.id.clone(),
+            cwd: placement.cwd,
+            key: placement.launch_key,
+        };
+        self.panes.push(moved.clone());
+        moved
     }
 
     fn open(&mut self) -> Agent {
@@ -195,6 +236,38 @@ impl World {
     /// A commit on `branch` made from a scratch checkout outside the
     /// isolation directory, detached so it works whichever checkout has the
     /// branch: what a teammate's push and a fetch leave behind.
+    /// Somebody else merged one commit into the remote's target, and the
+    /// workspace's clock synced it — with the operator standing on the
+    /// local target, which the sync leaves for their pull. Answers the
+    /// remote's tip.
+    fn remote_moves_ahead(&mut self) -> String {
+        if self
+            .repo
+            .try_git_in(&self.root, &["remote", "get-url", "origin"])
+            .is_err()
+        {
+            self.repo.with_origin("main");
+        }
+        let other = self.root.parent().unwrap().join("other");
+        if !other.exists() {
+            self.repo.clone_origin();
+        }
+        self.repo.git_in(&other, &["pull", "--quiet"]);
+        self.write(&other, "merged-elsewhere.rs", "");
+        self.repo
+            .git_in(&other, &["add", "--", "merged-elsewhere.rs"]);
+        self.repo
+            .git_in(&other, &["commit", "-qm", "merged elsewhere"]);
+        self.repo.git_in(&other, &["push", "--quiet"]);
+        let report = self.app.workspace().sync_target(&self.root).unwrap();
+        self.last_sync_concern = report.concern;
+        self.repo.git(&["rev-parse", "refs/remotes/origin/main"])
+    }
+
+    fn head_of(&self, checkout: &Path) -> String {
+        self.repo.git_in(checkout, &["rev-parse", "HEAD"])
+    }
+
     fn commit_on_branch_elsewhere(&self, branch: &str, file: &str, contents: &str) {
         let scratch = self
             .home
@@ -361,6 +434,9 @@ impl World {
                     .and_then(|isolation| isolation.checkout.clone())
                     .map(|checkout| checkout.as_str().to_owned()),
                 branch: agent.isolation().map(|isolation| isolation.branch.clone()),
+                base_commit: agent
+                    .isolation()
+                    .map(|isolation| isolation.base_commit.clone()),
                 label: agent.label.clone(),
             })
             .collect()
@@ -392,6 +468,7 @@ struct Record {
     state: String,
     checkout: Option<String>,
     branch: Option<String>,
+    base_commit: Option<String>,
     label: String,
 }
 
@@ -2062,6 +2139,121 @@ mod children {
             resumed.cwd.join("parser.rs").is_file(),
             "the child's work is on the agent's branch"
         );
+    }
+}
+
+/// Where a new agent is cut from when the remote's target is ahead of the
+/// local one, and what its work is judged against afterwards. Scenario
+/// names follow
+/// `openspec/changes/place-new-agents-on-the-synced-target/specs/`.
+mod synced_target {
+    use super::*;
+
+    /// The operator stands on `main`, which the sync never moves: a new
+    /// agent is cut from where the team is, not from where this machine
+    /// last pulled.
+    #[test]
+    fn a_new_agent_starts_from_the_remote_while_the_operator_stands_on_the_target() {
+        let mut world = World::new("synced-new");
+        let local = world.tip("main");
+        let remote = world.remote_moves_ahead();
+        assert_eq!(world.last_sync_concern, None, "nothing starts behind");
+        assert_eq!(world.tip("main"), local, "the operator's target is theirs");
+
+        let agent = world.open();
+
+        assert_eq!(world.head_of(&agent.cwd), remote);
+        assert!(agent.cwd.join("merged-elsewhere.rs").is_file());
+        assert_eq!(
+            world.record(&agent).base_commit.as_deref(),
+            Some(remote.as_str())
+        );
+        assert_eq!(world.tip("main"), local);
+    }
+
+    /// The remote's commits an agent was born with are not its work: one
+    /// that ends having done nothing ends closed, leaves no shelf, and its
+    /// checkout is the next agent's.
+    #[test]
+    fn the_remotes_commits_are_not_counted_as_the_agents_work() {
+        let mut world = World::new("synced-not-owned");
+        world.remote_moves_ahead();
+        let first = world.open();
+        let slot = world.slot_of(&first.cwd);
+
+        world.close(&first);
+        world.sweep();
+
+        assert_eq!(world.record(&first).state, "Closed");
+        assert_eq!(world.shelves(), 0);
+        let second = world.open();
+        assert_eq!(world.slot_of(&second.cwd), slot, "the checkout was free");
+    }
+
+    /// An agent moved out of the operator's checkout continues the
+    /// operator's work, so it is cut from their `HEAD` — and still only
+    /// its own commit is its work.
+    #[test]
+    fn an_agent_moved_to_a_worktree_continues_from_head() {
+        let mut world = World::new("synced-to-worktree");
+        let local = world.tip("main");
+        world.remote_moves_ahead();
+        let beside = world.open_in_place();
+
+        let moved = world.move_to_worktree(&beside);
+
+        assert_eq!(world.head_of(&moved.cwd), local);
+        assert!(!moved.cwd.join("merged-elsewhere.rs").exists());
+        assert_eq!(
+            world.record(&moved).base_commit.as_deref(),
+            Some(local.as_str())
+        );
+        world.commit(&moved.cwd, "mine.rs", "mine");
+        let evaluation = world
+            .app
+            .workspace()
+            .evaluate_tasks(&world.root, &world.held());
+        let view = evaluation
+            .tasks
+            .iter()
+            .find(|view| view.id == moved.id)
+            .expect("the moved agent is evaluated");
+        assert_eq!(view.ahead, 1, "{view:?}");
+    }
+
+    /// A local target carrying commits the remote lacks is the operator's
+    /// own work: the next agent is cut from it, and the operator is told
+    /// that the local target is behind the remote.
+    #[test]
+    fn a_target_carrying_its_own_commits_keeps_the_local_tip() {
+        let mut world = World::new("synced-diverged");
+        world.repo.with_origin("main");
+        let mine = world.repo.commit_file("mine.rs", "");
+        world.remote_moves_ahead();
+        assert!(
+            world
+                .last_sync_concern
+                .as_deref()
+                .is_some_and(|concern| concern.contains("`main`")),
+            "{:?}",
+            world.last_sync_concern
+        );
+
+        let agent = world.open();
+
+        assert_eq!(world.head_of(&agent.cwd), mine);
+        assert!(!agent.cwd.join("merged-elsewhere.rs").exists());
+    }
+
+    /// No remote, nothing to reach for: the local target as ever.
+    #[test]
+    fn a_repository_with_no_remote_starts_from_its_own_target() {
+        let mut world = World::new("synced-no-remote");
+        let local = world.tip("main");
+
+        let agent = world.open();
+
+        assert_eq!(world.head_of(&agent.cwd), local);
     }
 }
 

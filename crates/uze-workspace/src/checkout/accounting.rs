@@ -206,14 +206,23 @@ pub fn paused_operation(root: &Path) -> Option<&'static str> {
     .map(|(_, operation)| operation)
 }
 
-/// Whether a detached `HEAD` in `path` carries commits no branch reaches.
-/// Nothing but this checkout points at them, so reusing or removing it is
-/// what would lose them. A question Git could not answer is taken as yes,
-/// as [`is_integrated`] takes it.
+/// Whether a detached `HEAD` in `path` carries commits no branch reaches,
+/// local or remote-tracking. Nothing but this checkout points at them, so
+/// reusing or removing it is what would lose them; a slot released where an
+/// agent cut from the remote's tip left it holds only what the remote has.
+/// A question Git could not answer is taken as yes, as [`is_integrated`]
+/// takes it.
 pub fn holds_unbranched_commits(path: &Path) -> bool {
     crate::git::read(
         path,
-        &["rev-list", "--max-count=1", "HEAD", "--not", "--branches"],
+        &[
+            "rev-list",
+            "--max-count=1",
+            "HEAD",
+            "--not",
+            "--branches",
+            "--remotes",
+        ],
     )
     .ok()
     .and_then(|output| output.successful().ok())
