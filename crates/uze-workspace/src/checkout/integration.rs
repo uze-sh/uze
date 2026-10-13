@@ -108,6 +108,22 @@ pub fn commits_ahead_among(tips: &BranchTips, root: &Path, base: &str, branch: &
 
 static AHEAD: LazyLock<Mutex<HashMap<IntegrationQuestion, usize>>> = LazyLock::new(Mutex::default);
 
+const TIP_FORMAT: &str = "--format=%(objectname) %(refname) %(symref)";
+
+/// The refs of a [`TIP_FORMAT`] listing that name a commit of their own.
+/// A symbolic ref is no branch's tip: `refs/remotes/origin/HEAD`, which a
+/// fetch creates since Git 2.48, would otherwise answer for a target named
+/// `HEAD`.
+fn tips_in(listing: &str) -> impl Iterator<Item = (String, String)> + '_ {
+    listing.lines().filter_map(|line| {
+        let mut fields = line.splitn(3, ' ');
+        let commit = fields.next()?;
+        let name = fields.next()?;
+        let symbolic = fields.next().is_some_and(|target| !target.is_empty());
+        (!symbolic).then(|| (name.to_owned(), commit.to_owned()))
+    })
+}
+
 /// Every local branch and remote-tracking ref, and the commit each names,
 /// read in one process.
 #[derive(Default)]
@@ -117,21 +133,10 @@ impl BranchTips {
     pub fn read(root: &Path) -> Self {
         let listing = read(
             root,
-            &[
-                "for-each-ref",
-                "--format=%(objectname) %(refname)",
-                "refs/heads/",
-                "refs/remotes/",
-            ],
+            &["for-each-ref", TIP_FORMAT, "refs/heads/", "refs/remotes/"],
         )
         .unwrap_or_default();
-        Self(
-            listing
-                .lines()
-                .filter_map(|line| line.split_once(' '))
-                .map(|(commit, name)| (name.to_owned(), commit.to_owned()))
-                .collect(),
-        )
+        Self(tips_in(&listing).collect())
     }
 
     /// The commit the local branch `name` points at.
@@ -157,22 +162,11 @@ impl BranchTips {
     fn of_target(root: &Path, target: &str) -> Self {
         let local = format!("refs/heads/{target}");
         let tracking = format!("refs/remotes/{REMOTE}/{target}");
-        let listing = read(
-            root,
-            &[
-                "for-each-ref",
-                "--format=%(objectname) %(refname)",
-                &local,
-                &tracking,
-            ],
-        )
-        .unwrap_or_default();
+        let listing =
+            read(root, &["for-each-ref", TIP_FORMAT, &local, &tracking]).unwrap_or_default();
         Self(
-            listing
-                .lines()
-                .filter_map(|line| line.split_once(' '))
-                .filter(|(_, name)| *name == local || *name == tracking)
-                .map(|(commit, name)| (name.to_owned(), commit.to_owned()))
+            tips_in(&listing)
+                .filter(|(name, _)| *name == local || *name == tracking)
                 .collect(),
         )
     }

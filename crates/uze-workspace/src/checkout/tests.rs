@@ -1498,12 +1498,18 @@ fn a_diverged_target_reaches_the_tip_its_branch_was_cut_from() {
 }
 
 /// A name that is no branch is resolved as Git resolves it, so asking
-/// against `HEAD` or a commit means what it meant.
+/// against `HEAD` or a commit means what it meant — even beside the
+/// `origin/HEAD` a fetch writes since Git 2.48, which is no branch's tip.
 #[test]
 fn a_target_that_names_no_branch_has_no_reach() {
     let repository = repository("reach-no-branch");
     let primary = repository.root();
     remote_ahead(&repository);
+    repository.git(&[
+        "symbolic-ref",
+        &format!("refs/remotes/{REMOTE}/HEAD"),
+        &format!("refs/remotes/{REMOTE}/{TARGET}"),
+    ]);
     assert_eq!(target_reach(primary, "HEAD", None), None);
     let head = tip_of(primary, "HEAD");
     assert_eq!(target_reach(primary, &head, None), None);
