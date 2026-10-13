@@ -2823,8 +2823,8 @@ mod workspace_tests {
         );
     }
 
-    /// A target that cannot be brought up to date is said when the project
-    /// falls behind, not on every pass while the remote keeps moving, and
+    /// A target that new agents cannot be cut ahead of is said when the
+    /// project falls behind, not on every pass while the remote keeps moving, and
     /// said again only after it caught up and fell behind once more.
     #[test]
     fn a_target_left_behind_is_said_once_until_it_catches_up() {
@@ -2832,7 +2832,9 @@ mod workspace_tests {
         let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home);
         let behind = |commits: usize| uze_application::TargetSyncReport {
             project: PathBuf::from("/repo"),
-            concern: Some(format!("`main` is {commits} commits behind `origin`")),
+            concern: Some(format!(
+                "`main` carries commits `origin` does not and is {commits} commits behind it"
+            )),
         };
         let caught_up = uze_application::TargetSyncReport {
             project: PathBuf::from("/repo"),
@@ -2846,7 +2848,7 @@ mod workspace_tests {
 
         let toasts = &driven.attach.model.remembered.toasts;
         assert_eq!(toasts.len(), 2, "once per time it fell behind");
-        assert_eq!(toasts[0].text, "New agents start behind the remote");
+        assert_eq!(toasts[0].text, "The local target is behind its remote");
         assert!(
             toasts[1].detail.contains("3 commits"),
             "{}",

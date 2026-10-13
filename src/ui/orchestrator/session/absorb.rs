@@ -324,10 +324,11 @@ impl Attach<'_> {
         }
     }
 
-    /// What bringing a target in line with its remote could not do, said
-    /// when the project falls behind and not again until it has caught up:
-    /// the remote moving further is the same news, and the operator is the
-    /// one who can unblock the fast-forward.
+    /// A local target carrying commits its remote lacks, which is the one
+    /// case in which a new agent starts behind the remote: said when the
+    /// project falls behind and not again until it has caught up, since the
+    /// remote moving further is the same news, and the operator is the one
+    /// who can push or rebase what only they have.
     pub(super) fn absorb_target_syncs(&mut self) {
         while let Ok(report) = self.channels.target_syncs.receiver.try_recv() {
             let behind = &mut self.model.remembered.target_sync_behind;
@@ -340,7 +341,7 @@ impl Attach<'_> {
             }
             self.model.raise_toast(
                 ToastKind::Warned,
-                "New agents start behind the remote",
+                "The local target is behind its remote",
                 concern,
                 None,
             );
