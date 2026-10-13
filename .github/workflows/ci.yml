@@ -290,7 +290,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
+          # The exclusion only spares the build a scan. On some Arm VMs the
+          # Defender service is not initialized yet when this runs
+          # (0x800106ba), and with nothing scanning there is nothing to
+          # exclude from; a stopped service must not cost the whole job.
+          try { Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE }
+          catch { Write-Host "Defender exclusion skipped: $_" }
           $kept = @(
               "$env:SystemRoot\System32",
               "$env:SystemRoot",
