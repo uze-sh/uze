@@ -235,7 +235,10 @@ mod platform {
                 continue;
             };
             let process = entry.path();
-            if pid == own || parent_in(&process) == Some(own) {
+            // One read of `stat` per process: the parent and the terminal
+            // are two fields of the same line.
+            let stat = stat_of(&process);
+            if pid == own || stat.as_ref().and_then(Stat::parent) == Some(own) {
                 continue;
             }
             if std::fs::metadata(&process)
@@ -248,29 +251,43 @@ mod platform {
             if let Ok(path) = std::fs::read_link(process.join("cwd")) {
                 directories.push(super::WorkingDirectory {
                     path,
-                    attended: terminal_in(&process),
+                    attended: stat.as_ref().and_then(Stat::terminal),
                 });
             }
         }
         Some(directories)
     }
 
-    /// The parent pid in `/proc/<pid>/stat`, read after the command name,
-    /// which is parenthesised and may itself hold spaces and parentheses.
     fn parent_in(process: &std::path::Path) -> Option<u32> {
-        stat_field(process, 1)?.parse().ok()
+        stat_of(process)?.parent()
     }
 
-    /// Whether `/proc/<pid>/stat` names a controlling terminal: `tty_nr`,
-    /// the fourth field after the command name, `0` without one.
-    fn terminal_in(process: &std::path::Path) -> Option<bool> {
-        Some(stat_field(process, 4)?.parse::<i64>().ok()? != 0)
-    }
+    /// `/proc/<pid>/stat` after the command name, which is parenthesised
+    /// and may itself hold spaces and parentheses: the fields from the
+    /// state on.
+    struct Stat(String);
 
-    fn stat_field(process: &std::path::Path, after_name: usize) -> Option<String> {
+    fn stat_of(process: &std::path::Path) -> Option<Stat> {
         let stat = std::fs::read_to_string(process.join("stat")).ok()?;
         let (_, fields) = stat.rsplit_once(')')?;
-        fields.split_whitespace().nth(after_name).map(str::to_owned)
+        Some(Stat(fields.to_owned()))
+    }
+
+    impl Stat {
+        fn field(&self, after_name: usize) -> Option<&str> {
+            self.0.split_whitespace().nth(after_name)
+        }
+
+        /// `ppid`, the first field after the command name.
+        fn parent(&self) -> Option<u32> {
+            self.field(1)?.parse().ok()
+        }
+
+        /// Whether `tty_nr`, the fourth field after the command name,
+        /// names a controlling terminal: `0` without one.
+        fn terminal(&self) -> Option<bool> {
+            Some(self.field(4)?.parse::<i64>().ok()? != 0)
+        }
     }
 }
 
