@@ -12,7 +12,7 @@ mod state;
 
 pub use protocol::{
     CellAttributes, ClientEvent, ClientRequest, Cursor, MouseMode, PROTOCOL_VERSION, Palette,
-    PaneDamage, PaneSnapshot, RenderCell, Seating, SelectionGesture, TerminalColor,
+    PaneDamage, PaneSnapshot, RenderCell, Scheme, Seating, SelectionGesture, TerminalColor,
 };
 pub use runtime::{
     Attached, Replaced, RuntimeError, Stream, answer_to_attach, attach, connect, host_pane,

@@ -406,7 +406,13 @@ fn active_palette() -> uze_terminal::Palette {
         let rgb = theme.color(token);
         (rgb.0, rgb.1, rgb.2)
     };
+    let background = theme.color(Token::SurfaceBackground);
     uze_terminal::Palette {
+        scheme: if background.is_light() {
+            uze_terminal::Scheme::Light
+        } else {
+            uze_terminal::Scheme::Dark
+        },
         foreground: triple(Token::TextPrimary),
         background: triple(Token::SurfaceBackground),
         ansi: std::array::from_fn(|index| triple(Token::ANSI[index])),

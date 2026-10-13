@@ -1332,6 +1332,7 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
 #[test]
 fn a_server_answers_with_the_palette_it_was_started_with() {
     let light = Palette {
+        scheme: crate::Scheme::Light,
         foreground: (0x1c, 0x1c, 0x1e),
         background: (0xff, 0xff, 0xff),
         ..Palette::default()
@@ -1432,6 +1433,7 @@ fn a_changed_palette_is_announced_to_the_panes_that_asked() {
     }
 
     let light = Palette {
+        scheme: crate::Scheme::Light,
         background: (0xff, 0xff, 0xff),
         ..Palette::default()
     };

@@ -9,25 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// ask their colours again (OSC 10/11) on each notification.
 const COLOR_SCHEME_NOTIFICATIONS: u16 = 2031;
 
-/// Whether the terminal reads as light or dark: the one bit a
-/// notification carries, read off the background a palette draws.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Scheme {
-    Dark,
-    Light,
-}
-
 impl Scheme {
-    pub(super) fn of(palette: &Palette) -> Self {
-        let (r, g, b) = palette.background;
-        let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
-        if luminance / 255.0 > 0.5 {
-            Self::Light
-        } else {
-            Self::Dark
-        }
-    }
-
     /// The report the terminal sends to a program that asked
     /// (`CSI ? 997 ; 1 n` for dark, `; 2 n` for light).
     pub(super) fn notification(self) -> &'static [u8] {
@@ -84,16 +66,6 @@ impl SchemeSubscription {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_scheme_is_read_off_the_background() {
-        let mut palette = Palette::default();
-        assert_eq!(Scheme::of(&palette), Scheme::Dark, "UZE's own backdrop");
-        palette.background = (0xff, 0xff, 0xff);
-        assert_eq!(Scheme::of(&palette), Scheme::Light);
-        palette.background = (0xfa, 0xf7, 0xf2);
-        assert_eq!(Scheme::of(&palette), Scheme::Light, "a warm off-white page");
-    }
 
     #[test]
     fn a_program_is_subscribed_between_setting_and_resetting_the_mode() {

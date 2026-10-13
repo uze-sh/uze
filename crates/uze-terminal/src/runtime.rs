@@ -21,8 +21,8 @@ use thiserror::Error;
 
 use crate::{
     CellAttributes, ClientEvent, ClientRequest, Cursor, MouseMode, NewSpace, PROTOCOL_VERSION,
-    Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Seating, SelectionGesture, Session,
-    SpaceId, SpaceSeat, TabId, TerminalColor,
+    Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Scheme, Seating, SelectionGesture,
+    Session, SpaceId, SpaceSeat, TabId, TerminalColor,
     launch::Launch,
     selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},

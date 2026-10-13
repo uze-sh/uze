@@ -828,9 +828,8 @@ impl Server {
             _ => false,
         };
         if changed {
-            let scheme = Scheme::of(&palette);
             for pane in self.panes.lock().expect("panes poisoned").values() {
-                pane.notify_scheme(scheme);
+                pane.notify_scheme(palette.scheme);
             }
         }
         changed
