@@ -21,7 +21,7 @@ use std::{
 };
 
 use crate::{
-    checkout::{self, commits_ahead, is_dirty},
+    checkout::{self, REMOTE, commits_ahead, is_dirty},
     subprocess::run_shell_bounded,
     task::{Agent, Isolation, WorkState},
     worktree::CompletionBehavior,
@@ -45,7 +45,6 @@ pub use sync::*;
 
 /// A gate that has not finished in this long is a hung gate.
 pub const GATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-const REMOTE: &str = "origin";
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     crate::git::write(root, args)

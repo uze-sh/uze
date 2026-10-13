@@ -228,11 +228,10 @@ fn collect_shelves_among(
                 .is_some_and(|agent| is_live(&agent.state))
         })
         .filter(|found| {
-            let into = store
-                .agent(&found.task)
-                .and_then(Agent::isolation)
-                .map_or(target, |isolation| isolation.target.as_str());
-            refs.carries(primary, &found.commit, into)
+            let isolation = store.agent(&found.task).and_then(Agent::isolation);
+            let into = isolation.map_or(target, |isolation| isolation.target.as_str());
+            let branch = isolation.map(|isolation| isolation.branch.as_str());
+            refs.carries(primary, &found.commit, into, branch)
         })
         .filter(|found| shelf::drop_shelf(primary, &found.task, &found.commit).is_ok())
         .map(|found| found.task.clone())
@@ -617,7 +616,7 @@ pub fn holds_work_among(refs: &Refs, primary: &Path, agent: &Agent, target: &str
         && !is_integrated_among(&refs.tips, primary, target, &isolation.branch))
         || refs
             .shelf_of(agent.id.as_str())
-            .is_some_and(|commit| !refs.carries(primary, commit, target))
+            .is_some_and(|commit| !refs.carries(primary, commit, target, Some(&isolation.branch)))
 }
 
 /// The repository's branches and shelves as one pass reads them: two
@@ -650,10 +649,12 @@ impl Refs {
     }
 
     /// Whether `target` already carries everything `shelf` holds, with the
-    /// target resolved from these tips where they name it.
-    pub fn carries(&self, primary: &Path, shelf: &str, target: &str) -> bool {
-        match self.tips.local(target) {
-            Some(commit) => shelf::is_in_commit(primary, shelf, commit),
+    /// target resolved from these tips at its [`target_reach`] for the
+    /// branch the shelf was cut beside, where they name it.
+    pub fn carries(&self, primary: &Path, shelf: &str, target: &str, branch: Option<&str>) -> bool {
+        let branch = branch.and_then(|branch| self.tips.local(branch));
+        match self.tips.target_reach(primary, target, branch) {
+            Some(commit) => shelf::is_in_commit(primary, shelf, &commit),
             None => shelf::is_in_target(primary, shelf, target),
         }
     }

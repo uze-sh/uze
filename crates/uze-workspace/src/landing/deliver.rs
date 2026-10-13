@@ -293,10 +293,9 @@ pub fn settle_delivered(
     // them did not, and is not delivered by their arriving. The task's own
     // shelf, by its ref: the branch a shelf names is the one it had when
     // it was cut, and a branch renamed since names it no more.
-    if refs
-        .shelf_of(task)
-        .is_some_and(|commit| !refs.carries(primary, commit, &isolation.target))
-    {
+    if refs.shelf_of(task).is_some_and(|commit| {
+        !refs.carries(primary, commit, &isolation.target, Some(&isolation.branch))
+    }) {
         return false;
     }
     if let Some(slot) = slot_path(primary, isolation) {

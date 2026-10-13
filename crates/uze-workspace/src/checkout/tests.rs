@@ -1367,3 +1367,148 @@ fn a_checkout_placed_where_its_gate_cannot_run_says_so() {
         "{warnings:?}"
     );
 }
+
+/// A remote whose target is one commit ahead of the local one, fetched
+/// the way the target sync fetches it, with the operator still standing
+/// on the local target. Answers the remote's tip.
+fn remote_ahead(repository: &Repository) -> String {
+    repository.with_origin(TARGET);
+    let other = repository.clone_origin();
+    fs::write(other.join("merged-by-someone-else.rs"), "").unwrap();
+    repository.git_in(&other, &["add", "."]);
+    repository.git_in(&other, &["commit", "-qm", "merged by someone else"]);
+    repository.git_in(&other, &["push", "--quiet"]);
+    repository.git(&["fetch", "--quiet", "origin"]);
+    tip_of(
+        repository.root(),
+        &format!("refs/remotes/{REMOTE}/{TARGET}"),
+    )
+}
+
+/// Acquires a slot for a fresh task cut from `base`, as a placement does.
+fn launch_at(
+    repository: &Repository,
+    store: &mut AgentStore,
+    label: &str,
+    base: &str,
+) -> (Agent, Acquired) {
+    let mut agent = task(label);
+    isolation(&mut agent).base_commit = base.to_owned();
+    let acquired = acquire(
+        repository.root(),
+        store,
+        isolation(&mut agent),
+        base,
+        None,
+        &nobody(),
+    )
+    .unwrap();
+    isolation(&mut agent).checkout = Some(acquired.id.clone());
+    store.upsert(agent.clone());
+    (agent, acquired)
+}
+
+/// The target is wherever the furthest of its two tips stands: an agent
+/// cut from the remote's tip carries the remote's commits, and asked
+/// against the local branch they were all "its own" — a slot with nothing
+/// in it held work, and an agent with nothing committed was ready.
+#[test]
+fn a_branch_cut_from_the_remotes_tip_owns_none_of_the_remotes_commits() {
+    let repository = repository("reach-remote-ahead");
+    let primary = repository.root();
+    let local = tip_of(primary, TARGET);
+    let remote = remote_ahead(&repository);
+    assert_ne!(local, remote);
+    assert_eq!(
+        target_reach(primary, TARGET, None).as_deref(),
+        Some(remote.as_str())
+    );
+
+    let mut store = AgentStore::default();
+    let (agent, _slot) = launch_at(&repository, &mut store, "remote-born", &remote);
+    let branch = agent.isolation().unwrap().branch.clone();
+
+    assert!(is_integrated(primary, TARGET, &branch));
+    assert!(is_integrated_among(
+        &BranchTips::read(primary),
+        primary,
+        TARGET,
+        &branch
+    ));
+    assert!(!holds_work(primary, &agent, TARGET));
+    assert_eq!(
+        tip_of(primary, TARGET),
+        local,
+        "nothing moved the local target"
+    );
+}
+
+/// The agent's own commit is its work until the remote carries it, and
+/// carried by the remote it is delivered, before the operator pulls.
+#[test]
+fn work_the_remote_carries_is_integrated_before_the_local_target_hears_of_it() {
+    let repository = repository("reach-merged-on-remote");
+    let primary = repository.root();
+    let remote = remote_ahead(&repository);
+    let mut store = AgentStore::default();
+    let (agent, slot) = launch_at(&repository, &mut store, "merged", &remote);
+    let branch = agent.isolation().unwrap().branch.clone();
+    fs::write(slot.path.join("feature.rs"), "").unwrap();
+    repository.git_in(&slot.path, &["add", "."]);
+    repository.git_in(&slot.path, &["commit", "-qm", "the feature"]);
+    assert!(!is_integrated(primary, TARGET, &branch));
+    assert!(holds_work(primary, &agent, TARGET));
+
+    repository.git(&["push", "--quiet", "origin", &format!("{branch}:{TARGET}")]);
+    repository.git(&["fetch", "--quiet", "origin"]);
+
+    assert!(is_integrated(primary, TARGET, &branch));
+    assert!(!holds_work(primary, &agent, TARGET));
+}
+
+/// A local target carrying commits the remote lacks is the operator's
+/// own work, and never skipped: the remote's tip stands for the target
+/// only for a branch that was cut from it.
+#[test]
+fn a_diverged_target_reaches_the_tip_its_branch_was_cut_from() {
+    let repository = repository("reach-diverged");
+    let primary = repository.root();
+    let remote = remote_ahead(&repository);
+    let mine = repository.commit_file("mine.rs", "");
+    let mut store = AgentStore::default();
+    let (from_remote, _) = launch_at(&repository, &mut store, "from-remote", &remote);
+    let (from_local, _) = launch_at(&repository, &mut store, "from-local", &mine);
+    let remote_branch = from_remote.isolation().unwrap().branch.clone();
+    let local_branch = from_local.isolation().unwrap().branch.clone();
+
+    assert_eq!(
+        target_reach(primary, TARGET, None).as_deref(),
+        Some(mine.as_str())
+    );
+    assert_eq!(
+        target_reach(primary, TARGET, Some(&remote_branch)).as_deref(),
+        Some(remote.as_str())
+    );
+    assert_eq!(
+        target_reach(primary, TARGET, Some(&local_branch)).as_deref(),
+        Some(mine.as_str())
+    );
+    assert!(is_integrated(primary, TARGET, &remote_branch));
+    assert!(is_integrated(primary, TARGET, &local_branch));
+}
+
+/// A name that is no branch is resolved as Git resolves it, so asking
+/// against `HEAD` or a commit means what it meant.
+#[test]
+fn a_target_that_names_no_branch_has_no_reach() {
+    let repository = repository("reach-no-branch");
+    let primary = repository.root();
+    remote_ahead(&repository);
+    assert_eq!(target_reach(primary, "HEAD", None), None);
+    let head = tip_of(primary, "HEAD");
+    assert_eq!(target_reach(primary, &head, None), None);
+    assert_eq!(
+        target_reach(primary, TARGET, None),
+        Some(tip_of(primary, &format!("refs/remotes/{REMOTE}/{TARGET}")))
+    );
+}

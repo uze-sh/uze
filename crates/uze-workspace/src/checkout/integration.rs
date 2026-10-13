@@ -25,7 +25,20 @@ use super::*;
 /// costs up to five Git processes a branch; the answer can only change when
 /// one of the two commits does, and resolving them is one process. Only a
 /// complete answer is remembered — one that fell closed is asked again.
+///
+/// A target that names a branch is asked at its [`target_reach`], so a
+/// branch cut from the remote's tip is not credited with the remote's
+/// commits; any other name is resolved as Git resolves it.
 pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
+    let tips = BranchTips::of_target(root, target);
+    if !tips.0.is_empty() {
+        let Some(branch) = resolve_commit(root, branch) else {
+            return false;
+        };
+        return tips
+            .target_reach(root, target, Some(&branch))
+            .is_some_and(|target| integrated_commits(root, target, branch));
+    }
     let Some((target, branch)) = resolve_commit_pair(root, target, branch) else {
         return false;
     };
@@ -38,12 +51,29 @@ pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
 /// question cost, and a collection asks it of every branch UZE ever cut.
 /// A name `tips` does not hold is resolved the way [`is_integrated`] would.
 pub fn is_integrated_among(tips: &BranchTips, root: &Path, target: &str, branch: &str) -> bool {
-    match (tips.local(target), tips.local(branch)) {
-        (Some(target), Some(branch)) => {
-            integrated_commits(root, target.to_owned(), branch.to_owned())
-        }
+    let branch_tip = tips.local(branch);
+    match (tips.target_reach(root, target, branch_tip), branch_tip) {
+        (Some(target), Some(branch)) => integrated_commits(root, target, branch.to_owned()),
         _ => is_integrated(root, target, branch),
     }
+}
+
+/// The remote whose tracking refs say where a target stands beyond this
+/// machine: the one the target sync fetches.
+pub const REMOTE: &str = "origin";
+
+/// The commit `target` stands at as far as this machine knows, without
+/// asking the remote: the more advanced of the local branch and the
+/// remote's tracking ref for it, as the last fetch left it.
+///
+/// When the two have diverged the local branch carries commits the remote
+/// lacks — the operator's own — and is the answer, unless `branch` was cut
+/// from the remote's tip and not from the local one: judged against the
+/// local branch, every commit the remote has would be counted as that
+/// branch's own. `None` when `target` names neither a local branch nor a
+/// tracked one: `HEAD`, a commit, a branch that is gone.
+pub fn target_reach(root: &Path, target: &str, branch: Option<&str>) -> Option<String> {
+    BranchTips::of_target(root, target).target_reach(root, target, branch)
 }
 
 /// [`commits_ahead`] of a local branch over a commit, for a pass that asks
@@ -121,6 +151,104 @@ impl BranchTips {
     pub fn contains(&self, branch: &str) -> bool {
         self.local(branch).is_some()
     }
+
+    /// The two tips a target can stand at, and nothing else: what a single
+    /// question about one target needs, in one process.
+    fn of_target(root: &Path, target: &str) -> Self {
+        let local = format!("refs/heads/{target}");
+        let tracking = format!("refs/remotes/{REMOTE}/{target}");
+        let listing = read(
+            root,
+            &[
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+                &local,
+                &tracking,
+            ],
+        )
+        .unwrap_or_default();
+        Self(
+            listing
+                .lines()
+                .filter_map(|line| line.split_once(' '))
+                .filter(|(_, name)| *name == local || *name == tracking)
+                .map(|(commit, name)| (name.to_owned(), commit.to_owned()))
+                .collect(),
+        )
+    }
+
+    /// [`target_reach`] from these tips. `branch` is the commit, or the
+    /// name, of the branch being judged.
+    pub fn target_reach(&self, root: &Path, target: &str, branch: Option<&str>) -> Option<String> {
+        let reach = match (self.local(target), self.remote(REMOTE, target)) {
+            (None, None) => return None,
+            (Some(only), None) | (None, Some(only)) => only,
+            (Some(local), Some(remote)) if local == remote => local,
+            (Some(local), Some(remote)) if descends(root, local, remote) => remote,
+            (Some(local), Some(remote)) if descends(root, remote, local) => local,
+            (Some(local), Some(remote)) => match branch {
+                Some(branch)
+                    if descends(root, remote, branch) && !descends(root, local, branch) =>
+                {
+                    remote
+                }
+                _ => local,
+            },
+        };
+        Some(reach.to_owned())
+    }
+}
+
+/// Whether `descendant` has `ancestor` in its history, remembered per pair
+/// of commits: the answer between two commits never changes, and the
+/// evaluation asks it of every recorded agent on every pass. A name is
+/// asked every time, since what it names moves.
+fn descends(root: &Path, ancestor: &str, descendant: &str) -> bool {
+    let question = IntegrationQuestion {
+        root: root.to_path_buf(),
+        target: ancestor.to_owned(),
+        branch: descendant.to_owned(),
+    };
+    let remembered = is_object_id(ancestor) && is_object_id(descendant);
+    if remembered
+        && let Some(answer) = DESCENDS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&question)
+    {
+        return *answer;
+    }
+    let Ok(output) = crate::git::read(
+        root,
+        &["merge-base", "--is-ancestor", "--", ancestor, descendant],
+    ) else {
+        return false;
+    };
+    // `--is-ancestor` answers with its exit code: 0 yes, 1 no, anything
+    // else is a question Git could not answer, and is not remembered.
+    let answer = match output.code {
+        Some(0) => true,
+        Some(1) => false,
+        _ => return false,
+    };
+    if remembered {
+        let mut answers = DESCENDS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if answers.len() >= REMEMBERED_INTEGRATIONS {
+            answers.clear();
+        }
+        answers.insert(question, answer);
+    }
+    answer
+}
+
+static DESCENDS: LazyLock<Mutex<HashMap<IntegrationQuestion, bool>>> =
+    LazyLock::new(Mutex::default);
+
+/// A full object id, in either hash Git names objects by.
+fn is_object_id(candidate: &str) -> bool {
+    matches!(candidate.len(), 40 | 64) && candidate.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 pub(super) fn integrated_commits(root: &Path, target: String, branch: String) -> bool {
@@ -194,6 +322,20 @@ pub(super) fn resolve_commit_pair(
         return None;
     };
     Some((target.to_owned(), branch.to_owned()))
+}
+
+/// The commit `name` points at, or `None` when it names none.
+fn resolve_commit(root: &Path, name: &str) -> Option<String> {
+    read(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &format!("{name}^{{commit}}"),
+        ],
+    )
 }
 
 /// Whether `branch` is in `target`, or `None` when Git could not answer a
