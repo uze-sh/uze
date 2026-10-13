@@ -138,3 +138,8 @@ pub fn install_executable(path: &Path, bytes: &[u8]) {
     uze_platform::executable::install(path, bytes)
         .unwrap_or_else(|error| panic!("installing {}: {error}", path.display()));
 }
+
+/// A pseudoterminal a test seats a process at, so the process is somebody
+/// at a keyboard rather than a daemon: what tells a stand-in for an agent
+/// working in a checkout from a process the pool may reset under.
+pub use uze_platform::terminal::Terminal;

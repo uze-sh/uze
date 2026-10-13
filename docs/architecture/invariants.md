@@ -1498,12 +1498,20 @@ primary or a harness's checkout.
 Any live process of the operator's whose working directory is inside a
 checkout holds it, for every automatic reuse and collection and for the
 operator's remove: a pane is one such process, a subagent's shell or an
-editor is another. The process table is read once per decision; a process
-that exits mid-read or whose directory is withheld is skipped, and a table
-that cannot be read at all holds every checkout. The terminal server works
-in `/`, so the checkout it was first started from is not held for its life.
+editor is another. Somebody is a person: a process that holds a
+controlling terminal, in a session a keyboard reaches. A daemon a harness
+leaves behind in a session of its own, handed to `init` and standing in
+the checkout it was first started from for the rest of its life, holds
+nothing, or the checkout was held, and its agent kept alive, for as long
+as the daemon ran. The process table is read once per decision; a process
+that exits mid-read or whose directory is withheld is skipped, a table
+that cannot be read at all holds every checkout, and a platform that
+cannot say whether anybody is behind a process (Windows) counts it. The
+terminal server works in `/`, so the checkout it was first started from is
+not held for its life.
 
 > `crates/uze-core/src/machine/process_cwd.rs::a_process_working_in_a_directory_is_seen_there`
+> `crates/uze-core/src/machine/process_cwd.rs::a_daemon_with_no_terminal_behind_it_holds_nothing`
 > `crates/uze-core/src/machine/process_cwd.rs::an_unreadable_process_table_holds_everything`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_inside_a_free_looking_slot_keeps_it`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_table_nobody_could_read_holds_every_slot`
@@ -1531,8 +1539,12 @@ An agent that ends gives its checkout back. Its commits stay on its branch;
 its uncommitted work, new files included and ignored ones left in place, is
 written to `refs/uze/shelf/<task>` with plumbing, from a copy of the
 checkout's index, without moving the branch, touching the stash or dropping
-an earlier shelf. Only then is the checkout detached and cleaned for the next
-agent. The release is the one path that resets a checkout, and it reads the
+an earlier shelf. Only then is the checkout detached at the target's tip and
+cleaned for the next agent: never left on the branch's last commit, which
+no branch reaches once that branch is pruned, and which a slot was adopted,
+shelved and released back onto on every pass until it was. A tip no branch
+reaches holds work only when the target lacks it, asked the way integration
+is asked of a branch. The release is the one path that resets a checkout, and it reads the
 process table under the repository lock first: a process inside — an agent
 another client launched among them — leaves both the checkout and its agent
 as they were. A paused operation, work a shelf cannot hold, or a shelf that
@@ -1547,6 +1559,8 @@ adopted back under the task it names.
 > `crates/uze-workspace/src/checkout/shelf_tests.rs::a_shelf_that_conflicts_changes_nothing_and_names_the_file`
 > `crates/uze-workspace/src/checkout/shelf_tests.rs::a_shelf_is_in_the_target_only_path_by_path`
 > `crates/uze-workspace/src/checkout/tests.rs::an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept`
+> `crates/uze-workspace/src/checkout/tests.rs::a_released_slot_stands_on_the_target`
+> `crates/uze-workspace/src/checkout/tests.rs::a_free_slot_left_on_a_squash_merged_tip_is_never_adopted`
 > `crates/uze-application/tests/slot_lifecycle.rs::a_week_of_agents_never_holds_more_checkouts_than_agents`
 > `crates/uze-application/tests/slot_lifecycle.rs::an_agent_another_client_launched_is_never_released_under_it`
 > `crates/uze-application/tests/slot_lifecycle.rs::shelved_work_is_resumed_somewhere_else`

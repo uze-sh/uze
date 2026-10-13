@@ -104,7 +104,24 @@ and the task alone: the task is not ended. The client's `held` and
 `echoed` still decide who is *asked about*; the process table decides
 whether anything is *done*. An agent another client launched, a placement
 whose tab has not opened yet (it is in the directory running `setup`) and a
-delivered agent still in its tab are all a process inside.
+delivered agent still in its tab are all a process inside. Anybody is a
+person: a process holding a controlling terminal. A daemon a harness
+leaves behind in a session of its own (Codex's managed app-server, handed
+to `init` with the checkout it was first started from as its working
+directory for the rest of its life) is nobody, and counting it held the
+slot and kept its agent `Running` with no pane, retried every minute. The
+fact is `uze_platform::probe::WorkingDirectory::attended`, read per
+process from the kernel; Windows keeps no such fact and answers unknown,
+which counts.
+
+The reset detaches the slot at the target's tip, not at `HEAD`. Left on
+the branch's last commit, a slot sat on a tip no branch reached once
+`prune_integrated_branches` removed the branch, and `reconcile` read it
+as work: adopted as a task, shelved and released back onto the same tip,
+one ghost record per pass. `holds_unkept_commits` asks of that tip what
+integration asks of a branch, so a tip the target carries by squash is
+never work; the reset at the target is what keeps a slot from ever
+standing on one.
 
 `checkout::reconcile` never shelves or resets. It marks a recorded slot
 holding work for an ended holder as due for release, and the occupancy pass
@@ -240,7 +257,7 @@ rule, and checked with `cargo test -p uze-extensions` and
 - [Ignored files in a slot that sits idle are deleted with the directory] → Already true of free slots today. Former parked slots now age out too. A non-reproducible ignored file belongs in `link:`, which the docs say.
 - [`refs/uze/*` is published by `git push --mirror` or a `refs/*` push refspec, and pruned by a `+refs/*:refs/*` fetch] → Documented; shelves can hold non-ignored secrets.
 - [`Presence` sees only a process's working directory] → An editor elsewhere writing into a slot is invisible. `reuse` keeps `--discard-changes`. Documented.
-- [A process the operator left in a slot pins it indefinitely] → The pin and its reason are shown in the checkouts view.
+- [A process the operator left in a slot pins it indefinitely] → The pin and its reason are shown in the checkouts view. Only a process at a terminal: a job left in a session of its own (`setsid`, `nohup` after its shell is gone) no longer pins, its work is shelved like any other, and the job sees the next agent's tree.
 - [A shelf exists only on this machine] → Same as an uncommitted tree today.
 
 ## Migration Plan

@@ -413,7 +413,9 @@ fn find(directory: &Path, name: &str) -> Option<PathBuf> {
 /// dropped: this test binary running the helper below, started through a
 /// launcher that exits at once, so the process is not one this test started
 /// — the process table leaves out a `uze`'s own children, which is exactly
-/// what somebody else's process is not.
+/// what somebody else's process is not. It sits at a terminal of its own,
+/// the way a shell in a pane does: a process in a session with no terminal
+/// is a daemon, and a daemon holds no checkout.
 fn stay_inside(directory: &Path) -> Stayer {
     let marker = directory
         .parent()
@@ -502,6 +504,10 @@ mod helpers {
             return;
         };
         let marker = PathBuf::from(marker);
+        // Kept for the whole stay: the terminal is gone the moment its
+        // master end closes.
+        let terminal = uze_testkit::process::Terminal::open();
+        terminal.sit_here();
         while marker.exists() {
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -1145,13 +1151,16 @@ mod slots {
         );
     }
 
-    /// The slot an agent with commits gave back is listed as kept on a
-    /// branch, which is what lets the operator's list show it as ready.
+    /// The slot an agent with commits gave back is listed as a free slot
+    /// standing on the target, with nothing of its own to account for:
+    /// the commits are the task's branch's, and the task's row is where
+    /// the operator reads them as ready.
     #[test]
-    fn a_released_slot_is_listed_as_held_by_its_branch() {
+    fn a_released_slot_is_listed_free_and_its_branch_keeps_the_commits() {
         let mut world = World::new("slot-listed-free");
         let agent = world.open();
         world.commit(&agent.cwd, "feature.rs", "fn feature() {}\n");
+        let committed = world.repo.git_in(&agent.cwd, &["rev-parse", "HEAD"]);
         world.close(&agent);
 
         let view = world
@@ -1166,8 +1175,15 @@ mod slots {
             .expect("the released slot is listed");
 
         assert_eq!(released.branch, None, "a released slot is detached");
-        assert!(!released.in_target, "its commits are not in the target yet");
-        assert!(released.held_by_a_branch, "but its branch keeps them");
+        assert!(released.in_target, "and stands on the target");
+        assert_eq!(released.ahead, 0);
+        assert!(!released.held_by_a_branch);
+        let branch = world.record(&agent).branch.expect("the task has a branch");
+        assert_eq!(
+            world.repo.git(&["rev-parse", &branch]),
+            committed,
+            "the branch keeps what the agent committed"
+        );
     }
 
     /// A task that ended long ago and left nothing anywhere is forgotten,

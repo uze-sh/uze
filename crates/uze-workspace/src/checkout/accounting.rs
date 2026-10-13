@@ -177,7 +177,7 @@ pub(super) fn slot_state(
     let unkept_commits = match (branch, target) {
         (Some(branch), Some(target)) => !is_integrated_among(tips, primary, target, branch),
         (Some(branch), None) => !is_integrated(primary, "HEAD", branch),
-        (None, _) => holds_unbranched_commits(path),
+        (None, _) => holds_unkept_commits(primary, path, target.unwrap_or("HEAD")),
     };
     if (unkept_commits && !declared_done) || holds_uncommitted_work(path) {
         SlotState::Pinned {
@@ -218,6 +218,22 @@ pub fn holds_unbranched_commits(path: &Path) -> bool {
     .ok()
     .and_then(|output| output.successful().ok())
     .is_none_or(|unbranched| !unbranched.trim().is_empty())
+}
+
+/// Whether a detached `HEAD` in `path` carries commits no branch reaches
+/// *and* `target` does not carry either. A released slot once stood
+/// wherever its last agent's branch ended, and that branch is pruned once
+/// the target has its work — by a forge's squash, under a commit of the
+/// target's own. What was left was a tip no branch reached whose every
+/// change the target already had: nothing to keep, and read as work it was
+/// adopted, shelved and released again on every pass, forever. The same
+/// question integration asks of a branch, asked of the commit.
+pub fn holds_unkept_commits(primary: &Path, path: &Path, target: &str) -> bool {
+    if !holds_unbranched_commits(path) {
+        return false;
+    }
+    let head = tip_of(path, "HEAD");
+    head.is_empty() || !is_integrated(primary, target, &head)
 }
 
 pub(super) fn modified_at(path: &Path) -> SystemTime {

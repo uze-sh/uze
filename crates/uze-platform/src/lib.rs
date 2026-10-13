@@ -28,6 +28,7 @@ pub mod secret;
 pub mod shell;
 pub mod stdio;
 pub mod target;
+pub mod terminal;
 pub mod tools;
 #[cfg(windows)]
 pub(crate) mod win;

@@ -264,6 +264,108 @@ fn a_squash_merged_branch_frees_its_slot_and_is_pruned() {
     );
 }
 
+/// A released slot stands on the target, where the next placement starts
+/// from, and never on the branch's last commit — a tip nothing reaches
+/// once that branch is pruned.
+#[test]
+fn a_released_slot_stands_on_the_target() {
+    let repository = repository("slots-released-at-target");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+
+    let (agent, slot) = launch(&repository, &mut store, "done");
+    fs::write(slot.path.join("feature.rs"), b"fn f() {}").unwrap();
+    repository.git_in(&slot.path, &["add", "."]);
+    repository.git_in(&slot.path, &["commit", "-qm", "the feature"]);
+    let branch_tip = tip_of(&slot.path, "HEAD");
+    repository.commit_file("elsewhere.rs", "fn g() {}");
+
+    assert_eq!(
+        release(
+            primary,
+            store.get_mut(&agent.id).unwrap(),
+            TARGET,
+            &nobody()
+        ),
+        Released::Freed { shelved: false }
+    );
+
+    assert_eq!(tip_of(&slot.path, "HEAD"), tip_of(primary, TARGET));
+    assert_eq!(
+        current_branch(&slot.path),
+        None,
+        "detached, as a free slot is"
+    );
+    assert_eq!(
+        tip_of(primary, &agent.isolation().unwrap().branch),
+        branch_tip,
+        "the branch keeps what was committed on it"
+    );
+}
+
+/// The loop a stale slot fell into: left on the last commit of a branch a
+/// forge squash-merged, then pruned, it carried a tip no branch reached
+/// whose every change the target already had. Read as work, it was
+/// adopted as a task, shelved and released — back onto the same tip —
+/// on every pass, one ghost record a minute, and never free to age out.
+#[test]
+fn a_free_slot_left_on_a_squash_merged_tip_is_never_adopted() {
+    let repository = repository("slots-stale-squashed-tip");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+
+    let (delivered, slot) = launch(&repository, &mut store, "squashed");
+    fs::write(slot.path.join("feature.rs"), b"fn f() {}").unwrap();
+    repository.git_in(&slot.path, &["add", "."]);
+    repository.git_in(&slot.path, &["commit", "-qm", "the feature"]);
+    fs::write(slot.path.join("feature.rs"), b"fn f() -> u8 { 1 }").unwrap();
+    repository.git_in(&slot.path, &["commit", "-qam", "and its fix"]);
+    let last_commit = tip_of(&slot.path, "HEAD");
+    let branch = delivered.isolation().unwrap().branch.clone();
+    repository.git(&["merge", "--squash", &branch]);
+    repository.git(&["commit", "-qm", "the feature (#7)"]);
+    assert_eq!(
+        release(
+            primary,
+            store.get_mut(&delivered.id).unwrap(),
+            TARGET,
+            &nobody()
+        ),
+        Released::Freed { shelved: false }
+    );
+    // Where a release before this one left the slot, and what pruning
+    // the branch then made of it.
+    repository.git_in(
+        &slot.path,
+        &["checkout", "--quiet", "--detach", &last_commit],
+    );
+    assert_eq!(
+        prune_integrated_branches(primary, &store, TARGET),
+        vec![branch]
+    );
+    assert!(
+        holds_unbranched_commits(&slot.path),
+        "no branch reaches the tip"
+    );
+
+    let before = store.agents.len();
+    for pass in 1..=2 {
+        let report = reconcile(primary, &mut store, TARGET);
+        assert!(
+            report.adopted.is_empty(),
+            "pass {pass} adopted {:?}",
+            report.adopted
+        );
+        assert_eq!(store.agents.len(), before, "pass {pass} recorded a task");
+    }
+    assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
+    assert_eq!(
+        trim_free_slots(primary, &store, keep_nothing(), &nobody()),
+        vec![slot.id],
+        "free, it ages out like any other"
+    );
+}
+
 /// The other button: every commit kept, each under a new identity.
 #[test]
 fn a_rebase_merged_branch_frees_its_slot() {

@@ -472,7 +472,7 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         return Released::Freed { shelved: false };
     };
     let outcome = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        shelve_and_reset(primary, &directory, presence, &id, &label, &branch)
+        shelve_and_reset(primary, &directory, presence, &id, &label, &branch, target)
     })
     .unwrap_or(Released::InUse);
     match &outcome {
@@ -494,6 +494,12 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
 /// The release's critical section, under the repository's write lock:
 /// nobody inside, no operation paused, the work shelved and the shelf
 /// still what the checkout holds, then the checkout reset and stamped.
+///
+/// Reset to the target's tip, not left where the branch ended: a free slot
+/// is what the next placement switches from, and the target is where it
+/// switches to; and a slot left on a branch's last commit sat on a tip no
+/// branch reached once that branch was pruned. The branch's commits are
+/// still its own, and a detached commit worth keeping is on the shelf.
 fn shelve_and_reset(
     primary: &Path,
     directory: &Path,
@@ -501,6 +507,7 @@ fn shelve_and_reset(
     task: &str,
     label: &str,
     branch: &str,
+    target: &str,
 ) -> Released {
     if presence.inside(directory) || Presence::observe().inside(directory) {
         return Released::InUse;
@@ -537,13 +544,22 @@ fn shelve_and_reset(
             }
         }
     }
-    if git(
-        directory,
-        &["switch", "--quiet", "--detach", "--discard-changes", "HEAD"],
-    )
-    .is_err()
-        || git(directory, &["clean", "--quiet", "-fd"]).is_err()
-    {
+    // By the target's name, which Git resolves in the same process; a
+    // target this clone cannot resolve leaves the slot where it stands.
+    let detached = [target, "HEAD"].iter().any(|stand_at| {
+        git(
+            directory,
+            &[
+                "switch",
+                "--quiet",
+                "--detach",
+                "--discard-changes",
+                stand_at,
+            ],
+        )
+        .is_ok()
+    });
+    if !detached || git(directory, &["clean", "--quiet", "-fd"]).is_err() {
         if let shelf::Shelving::Kept(kept) = &shelving {
             take_back(primary, task, kept);
         }
@@ -782,7 +798,7 @@ pub fn removal_refusal(primary: &Path, path: &Path, presence: &Presence) -> Opti
     if holds_uncommitted_work(path) {
         return Some(Refusal::UncommittedWork);
     }
-    if holds_unbranched_commits(path) {
+    if holds_unkept_commits(primary, path, "HEAD") {
         return Some(Refusal::UnbranchedCommits);
     }
     None

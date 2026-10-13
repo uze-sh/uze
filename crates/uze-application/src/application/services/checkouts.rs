@@ -308,7 +308,8 @@ struct Facts {
 impl Facts {
     /// `free` is the pool's own answer for one of UZE's slots: a free slot
     /// detached at commits its target lacks is detached where a branch
-    /// keeps them, which is what releasing it left behind.
+    /// keeps them, which is what a release left behind before releases
+    /// stood a slot on the target.
     fn read(target: &str, found: &AccountedCheckout, presence: &Presence, free: bool) -> Self {
         let in_target = checkout::is_integrated(&found.path, target, "HEAD");
         Self {

@@ -67,7 +67,7 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
             continue;
         }
         let holds_work = holds_uncommitted_work(path)
-            || holds_unbranched_commits(path)
+            || holds_unkept_commits(primary, path, target)
             || branch
                 .as_deref()
                 .is_some_and(|branch| !is_integrated(primary, target, branch));
