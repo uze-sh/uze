@@ -136,24 +136,22 @@ mod platform {
     }
 
     /// A new session, with the terminal at `slave` as its controlling one.
-    /// The descriptor is closed once it is: the terminal belongs to the
-    /// session from then on, and an open descriptor would only be handed
-    /// to whatever the process runs next.
+    /// The descriptor stays open for the process's life, and is inherited
+    /// by what it runs, the way a shell's own three are: on the BSDs,
+    /// Darwin among them, the last close of the slave detaches the terminal
+    /// from the session, where Linux keeps it until a hangup.
     fn sit_at(slave: &CStr) -> std::io::Result<()> {
         // SAFETY: plain libc calls on a path and a descriptor this process owns.
         unsafe {
             if libc::setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            let fd = libc::open(slave.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC);
+            let fd = libc::open(slave.as_ptr(), libc::O_RDWR);
             if fd < 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            let seated = libc::ioctl(fd, libc::TIOCSCTTY as _, 0);
-            let seating = std::io::Error::last_os_error();
-            libc::close(fd);
-            if seated < 0 {
-                return Err(seating);
+            if libc::ioctl(fd, libc::TIOCSCTTY as _, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
             }
         }
         Ok(())
