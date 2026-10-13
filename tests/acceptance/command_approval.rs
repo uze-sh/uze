@@ -65,7 +65,6 @@ fn approving_needs_a_person_at_a_terminal() {
     let refused = env
         .command(uze_bin())
         .current_dir(&root)
-        .env_remove(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
         .stdin(std::process::Stdio::null())
         .args(["workspace", "allow"])
         .output()

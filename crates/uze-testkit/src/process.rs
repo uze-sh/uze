@@ -114,6 +114,24 @@ impl IsolatedHome for Command {
     }
 }
 
+/// Takes a child process out of the pane and the agent identity the test
+/// binary itself may be running under: a suite run from inside a `uze
+/// workspace` pane carries every stamp a launch puts there, and a `uze`
+/// that inherits them answers as the agent asking, or as a process inside
+/// a pane, where the test meant a person at their own terminal.
+pub trait NotLaunchedByUze {
+    fn not_launched_by_uze(&mut self) -> &mut Self;
+}
+
+impl NotLaunchedByUze for Command {
+    fn not_launched_by_uze(&mut self) -> &mut Self {
+        for key in uze_terminal::launch::STAMPED_VARIABLES {
+            self.env_remove(key);
+        }
+        self.env_remove(uze_terminal::launch::PANE_VARIABLE)
+    }
+}
+
 /// Writes `bytes` to `path` as an executable, through a process that has
 /// exited before this returns (see the Unix half for why).
 pub fn install_executable(path: &Path, bytes: &[u8]) {

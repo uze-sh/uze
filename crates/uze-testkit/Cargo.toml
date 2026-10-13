@@ -10,5 +10,6 @@ description = "Shared, harness-agnostic test infrastructure for the UZE workspac
 [dependencies]
 uze-git = { path = "../uze-git" }
 uze-platform = { path = "../uze-platform" }
+uze-terminal = { path = "../uze-terminal" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

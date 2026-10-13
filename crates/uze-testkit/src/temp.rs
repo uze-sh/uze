@@ -12,7 +12,7 @@
 //! the ambient `PATH`) use [`TestEnvironment::apply`], which serializes on
 //! the crate-wide process-env lock and restores everything on drop.
 
-use crate::process::IsolatedHome;
+use crate::process::{IsolatedHome, NotLaunchedByUze};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -367,11 +367,15 @@ impl TestEnvironment {
     }
 
     /// A `Command` for `program` with HOME/UZE_HOME/PATH/cwd scoped to this
-    /// environment only — the process env of the test binary is untouched.
+    /// environment only — the process env of the test binary is untouched —
+    /// and run as a person at their own terminal would run it, whatever
+    /// pane or agent the suite itself is running in. A test that means an
+    /// agent sets the identity on the command it gets.
     pub fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
         let mut command = Command::new(program);
         command
             .isolated_home(&self.home)
+            .not_launched_by_uze()
             .env("UZE_HOME", &self.uze_home)
             .env("PATH", self.scoped_path())
             .current_dir(&self.project);

@@ -15,7 +15,7 @@
 //! owned by an enclosing launch, is an ordinary invocation.
 
 use std::path::{Path, PathBuf};
-use uze_testkit::process::IsolatedHome;
+use uze_testkit::process::{IsolatedHome, NotLaunchedByUze};
 
 use uze_core::UzeHome;
 
@@ -290,9 +290,8 @@ fn the_bypass_escape_hatch_still_carries_nothing() {
     let status = std::process::Command::new(&shim)
         .current_dir(&slot)
         .isolated_home(&env.home)
+        .not_launched_by_uze()
         .env("UZE_HOME", &env.uze_home)
-        .env_remove(uze_terminal::launch::SHIM_PID_VARIABLE)
-        .env_remove(uze_terminal::launch::SHIM_NAME_VARIABLE)
         .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &id)
         .env("UZE_BYPASS", "1")
         .env(

@@ -92,7 +92,6 @@ fn an_agent_names_its_work_through_the_real_binary() {
     let refused = env
         .command(uze_bin())
         .current_dir(&slot)
-        .env_remove(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
         .args(["agent", "work", "name", "fix/branch-naming"])
         .output()
         .expect("uze must run");

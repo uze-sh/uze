@@ -3315,6 +3315,7 @@ dependencies = [
  "serde_json",
  "uze-git",
  "uze-platform",
+ "uze-terminal",
 ]
 
 [[package]]
