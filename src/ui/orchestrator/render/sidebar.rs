@@ -423,7 +423,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         };
         rows.bottom = column_bottom - reserved - air;
         rows.y = column_bottom - foot;
-        render_spec_summary(frame, summary, model, &mut rows, hits);
+        metrics.marquee |= render_spec_summary(frame, summary, model, &mut rows, hits);
     }
     if let Some(timeline) = timeline
         && reserved > 0
@@ -470,14 +470,16 @@ pub(super) fn render_spec_summary(
     model: &WorkspaceModel,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
+) -> bool {
     let section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
-    let hovered_row = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::SelectItem(index)))) => {
-            Some(index)
-        }
+    let under = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit))) => Some(hit),
+        _ => None,
+    };
+    let hovered_row = match under {
+        Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
     let on_show = model
@@ -491,12 +493,12 @@ pub(super) fn render_spec_summary(
                 .position(|change| change.name == name)
         });
     let lit_rows: Vec<usize> = hovered_row.into_iter().chain(on_show).collect();
-    crate::ui::extension_view::render_section_with(
+    let slid = crate::ui::extension_view::render_section_with(
         frame,
         &section,
         &mut column,
         false,
-        None,
+        under.map(|hit| (hit, model.hovered_for())),
         &lit_rows,
         &mut section_hits,
     );
@@ -506,6 +508,7 @@ pub(super) fn render_spec_summary(
             WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
         )
     }));
+    slid
 }
 
 /// The rows the space tree comes to, whether or not the column can show
@@ -1183,19 +1186,17 @@ pub(super) fn render_timeline(
     );
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
-    // The branch name this header carries is the one caption in the
-    // column with no natural length — it is whatever somebody called the
-    // work — so it is the one that runs past its room. While the pointer
-    // is on the header, it slides instead of stopping at an "…": a
-    // branch is read from both ends, and the end is the half an "…" eats.
-    let hovered = model.hovered
-        == Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(
-            ViewHit::ToggleSection,
-        )));
-    let hovered_row = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::SelectItem(index)))) => {
-            Some(index)
-        }
+    // The branch name on the header and a commit's subject are captions
+    // with no natural length — they are whatever somebody wrote — so they
+    // are the ones that run past their room. Under the pointer they slide
+    // instead of stopping at an "…": a branch is read from both ends, and
+    // the end is the half an "…" eats.
+    let under = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit))) => Some(hit),
+        _ => None,
+    };
+    let hovered_row = match under {
+        Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
     let sliding = crate::ui::extension_view::render_section_with(
@@ -1203,7 +1204,7 @@ pub(super) fn render_timeline(
         &section,
         &mut column,
         model.dragging_timeline,
-        hovered.then_some(model.hovered_for()),
+        under.map(|hit| (hit, model.hovered_for())),
         hovered_row.as_slice(),
         &mut section_hits,
     );

@@ -92,16 +92,14 @@ pub(crate) fn fill(spans: &mut Vec<Span<'_>>, width: u16, state: RowState) {
 /// be cut there by the frame — which is how a long branch name on the Git
 /// section header became an unreadable fragment with no "…" to say it had
 /// been shortened.
-/// The same, with the text slid sideways by `offset` columns when it is
-/// too long for the room: a caption that cannot be shortened without
-/// losing the end of it — a branch name is read from both ends — passes
-/// through instead of stopping at an "…".
+/// The same, with the text slid sideways by the clock (see [`marquee`])
+/// when it is too long for the room: a caption that cannot be shortened
+/// without losing the end of it — a branch name is read from both ends —
+/// passes through instead of stopping at an "…".
 ///
 /// Only while something is asking to read it, which is the caller's
-/// business: this draws the frame it is given an offset for and says
-/// whether there was anything to slide. The run is the text, a gap, and
-/// the text again, so it leaves on one side as it arrives on the other
-/// rather than jumping back to the start.
+/// business: this draws the frame it is given the ticks for and says
+/// whether there was anything to slide.
 pub(crate) fn push_trailing_marquee<'a>(
     spans: &mut Vec<Span<'a>>,
     width: u16,
@@ -111,28 +109,37 @@ pub(crate) fn push_trailing_marquee<'a>(
 ) -> bool {
     let leading: u16 = spans.iter().map(|span| span.width() as u16).sum();
     let room = usize::from(width.saturating_sub(leading + TRAILING_PAD + 1).max(1));
-    let Some(window) = marquee_window(&text, room, ticks) else {
+    let Some(window) = marquee(&[(&text, Style::default().fg(hue))], room, ticks) else {
         push_trailing(spans, width, text, hue);
         return false;
     };
     spans.push(Span::raw(" ".repeat(usize::from(width).saturating_sub(
         usize::from(leading) + room + usize::from(TRAILING_PAD),
     ))));
-    spans.push(Span::styled(window, Style::default().fg(hue)));
+    spans.extend(window);
     spans.push(Span::raw(" ".repeat(TRAILING_PAD as usize)));
     true
 }
 
-/// What `room` columns show of `text` `ticks` beats of the workspace clock
-/// after the pointer came to rest on it, or `None` when it fits and there
-/// is nothing to slide. The run is the text, a gap, and the text again, so
-/// it leaves on one side as it arrives on the other rather than jumping
-/// back to the start.
+/// What `room` columns show of `pieces` `ticks` beats of the workspace
+/// clock after the pointer came to rest on them, or `None` when they fit
+/// and there is nothing to slide.
 ///
+/// The pieces — a name and the quieter detail after it — slide as one
+/// text, each column keeping the style of the piece it came from: sliding
+/// only the piece that did not fit would leave the other one cut at an
+/// "…" all the same.
+///
+/// The run is the text, a gap, and the text again, so it leaves on one
+/// side as it arrives on the other rather than jumping back to the start.
 /// It rests before it moves, and again each time it comes round whole: a
 /// pointer crossing a row on its way somewhere else should see nothing
 /// move, and a reader needs the start held long enough to begin reading.
-pub(crate) fn marquee_window(text: &str, room: usize, ticks: usize) -> Option<String> {
+pub(crate) fn marquee(
+    pieces: &[(&str, Style)],
+    room: usize,
+    ticks: usize,
+) -> Option<Vec<Span<'static>>> {
     /// Blank columns between the end of the run and its start coming
     /// round again, so the two ends are never read as one word.
     const GAP: usize = 3;
@@ -142,18 +149,30 @@ pub(crate) fn marquee_window(text: &str, room: usize, ticks: usize) -> Option<St
     /// Beats per column: a pace the eye can follow, rather than the
     /// clock's own, which is a spinner's.
     const PACE: usize = 2;
-    let length = text.chars().count();
-    if length <= room {
+    let text: Vec<(char, Style)> = pieces
+        .iter()
+        .flat_map(|(text, style)| text.chars().map(|glyph| (glyph, *style)))
+        .collect();
+    if text.len() <= room {
         return None;
     }
-    let cycle = length + GAP;
+    let cycle = text.len() + GAP;
     let offset = (ticks % (REST + cycle * PACE)).saturating_sub(REST) / PACE;
-    let run: Vec<char> = text
-        .chars()
-        .chain(std::iter::repeat_n(' ', GAP))
-        .chain(text.chars())
-        .collect();
-    Some(run.iter().skip(offset).take(room).collect())
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (glyph, style) in text
+        .iter()
+        .copied()
+        .chain(std::iter::repeat_n((' ', Style::default()), GAP))
+        .chain(text.iter().copied())
+        .skip(offset)
+        .take(room)
+    {
+        match spans.last_mut() {
+            Some(last) if last.style == style => last.content.to_mut().push(glyph),
+            _ => spans.push(Span::styled(glyph.to_string(), style)),
+        }
+    }
+    Some(spans)
 }
 
 pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: String, hue: Color) {

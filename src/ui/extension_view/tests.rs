@@ -130,7 +130,9 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
         terminal
             .draw(|frame| {
                 let mut rows = crate::ui::Rows::over(frame.area());
-                slid = render_section_with(frame, &section, &mut rows, false, tick, &[], &mut hits);
+                let sliding = tick.map(|tick| (ViewHit::ToggleSection, tick));
+                slid =
+                    render_section_with(frame, &section, &mut rows, false, sliding, &[], &mut hits);
             })
             .unwrap();
         let row: String = (0..40)
@@ -167,6 +169,62 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
     let cycle = long.chars().count() + 3;
     let (_, round) = header(long, Some(10 + cycle * 2));
     assert_eq!(first, round, "one cycle returns it: {round:?}");
+}
+
+/// A section's row slides its name under the pointer the way its header
+/// slides the caption: a commit's subject is whatever somebody wrote, and
+/// the timeline cut every long one at an "…" with no way to read the rest.
+#[test]
+fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
+    let long = "feat(workspace): a subject nobody kept under the column's width";
+    let section = Section {
+        title: "timeline".to_owned(),
+        caption: Span::new("main", Role::Muted),
+        collapsed: false,
+        resizable: false,
+        scroll: 0,
+        rows: vec![uze_extensions::view::SectionRow {
+            mark: uze_extensions::view::RowMark::Commit,
+            mark_role: Role::Muted,
+            name: Span::new(long, Role::Dim),
+            trailing: Span::new("8m", Role::Muted),
+        }],
+    };
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(32, 3)).unwrap();
+        let mut slid = false;
+        terminal
+            .draw(|frame| {
+                let mut rows = crate::ui::Rows::over(frame.area());
+                slid = render_section_with(
+                    frame,
+                    &section,
+                    &mut rows,
+                    false,
+                    sliding,
+                    &[],
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        let row: String = (0..32)
+            .map(|column| terminal.backend().buffer()[(column, 1)].symbol())
+            .collect();
+        (slid, row)
+    };
+
+    let (slid, resting) = draw(None);
+    assert!(!slid && resting.contains('…'), "{resting:?}");
+    let (slid, header) = draw(Some((ViewHit::ToggleSection, 30)));
+    assert!(!slid, "a header that fits moves nothing: {header:?}");
+    assert_eq!(header, resting, "and the row stays cut");
+
+    let (slid, first) = draw(Some((ViewHit::SelectItem(0), 0)));
+    let (_, later) = draw(Some((ViewHit::SelectItem(0), 20)));
+    assert!(slid, "a sliding row keeps the clock turning");
+    assert!(!first.contains('…'), "{first:?}");
+    assert_ne!(first, later, "and it moves with the clock");
+    assert!(later.contains("8m"), "the trailing value holds: {later:?}");
 }
 
 /// The row under the pointer has its name lifted to the bright text,
@@ -2512,4 +2570,72 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
         "another row under the pointer moves nothing here"
     );
     assert!(!slid);
+}
+
+/// A flat row whose name fits but whose detail does not slides the two as
+/// one under the pointer: the directory a change is in is the half the
+/// row cut, and the name alone had nothing to slide.
+#[test]
+fn a_flat_rows_detail_slides_with_its_name() {
+    let view = View {
+        navigator: Some(Navigator {
+            heading: "CHANGES".to_owned(),
+            badge: "1".to_owned(),
+            focused: true,
+            rows: vec![NavigatorRow::Item {
+                id: 0,
+                name: "mod.rs".to_owned(),
+                depth: 0,
+                marker: Span::new("M", Role::Warning),
+                marker_side: MarkerSide::Trailing,
+                detail: "crates/uze-extensions/src/code/deeply/nested".to_owned(),
+                selected: false,
+                icon: RowIcon::None,
+            }],
+            anchor: None,
+            choosing: None,
+            menu: None,
+        }),
+        ..sample()
+    };
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(90, 8)).unwrap();
+        let mut rendered = None;
+        terminal
+            .draw(|frame| {
+                rendered = Some(render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(28),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    uze_keys::Scope::Code,
+                    None,
+                    &mut Vec::new(),
+                ));
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row: String = (0..28).map(|column| buffer[(column, 1)].symbol()).collect();
+        (row, rendered.unwrap().marquee)
+    };
+
+    let (resting, slid) = draw(None);
+    assert!(!slid && resting.contains('…'), "{resting:?}");
+    let (first, slid) = draw(Some((ViewHit::SelectItem(0), 0)));
+    let (later, _) = draw(Some((ViewHit::SelectItem(0), 30)));
+    assert!(slid, "a sliding row keeps the clock turning");
+    assert!(
+        !first.contains('…') && first.contains("mod.rs"),
+        "{first:?}"
+    );
+    assert_ne!(first, later, "and it moves with the clock");
+    assert!(
+        first.find(" M ") == later.find(" M ") && first.contains(" M "),
+        "the marker stays pinned: {first:?} {later:?}"
+    );
 }

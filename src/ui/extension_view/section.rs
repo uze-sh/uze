@@ -22,10 +22,11 @@ pub(crate) fn render_section(
     render_section_with(frame, section, rows, dragging, None, &[], hits)
 }
 
-/// The same, with `marquee` the clock a caption too long for its room
-/// slides by — `Some` while the pointer is on this header, `None`
-/// otherwise. Answers whether a caption actually slid, which is what
-/// tells the host's own clock it has a reason to keep turning.
+/// The same, with `sliding` the row under the pointer and the clock a
+/// caption of it too long for its room slides by — the header's caption,
+/// or a row's name — instead of stopping at an "…". Answers whether
+/// anything actually slid, which is what tells the host's own clock it
+/// has a reason to keep turning.
 ///
 /// `lit_rows` are the rows lifted to the bright text the row
 /// receiving keystrokes wears: the one under the pointer, since a row that
@@ -37,7 +38,7 @@ pub(crate) fn render_section_with(
     section: &Section,
     rows: &mut crate::ui::Rows,
     dragging: bool,
-    marquee: Option<usize>,
+    sliding: Option<(ViewHit, usize)>,
     lit_rows: &[usize],
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> bool {
@@ -66,7 +67,12 @@ pub(crate) fn render_section_with(
         TextSpan::styled(format!("{fold} "), theme::fg(Token::TextSecondary)),
         TextSpan::styled(section.title.clone(), title_style),
     ];
-    let sliding = match marquee {
+    let tick_on = |hit: ViewHit| {
+        sliding
+            .filter(|(under, _)| *under == hit)
+            .map(|(_, tick)| tick)
+    };
+    let mut slid = match tick_on(ViewHit::ToggleSection) {
         Some(tick) => row::push_trailing_marquee(
             &mut spans,
             header_rect.width,
@@ -98,7 +104,7 @@ pub(crate) fn render_section_with(
     frame.render_widget(Paragraph::new(Line::from(spans)), header_rect);
     hits.push((header_rect, ViewHit::ToggleSection));
     if section.collapsed {
-        return sliding;
+        return slid;
     }
     // The divider between the header and its rows doubles as the drag
     // handle, the way the sidebar's own border does — lit in the accent
@@ -149,8 +155,20 @@ pub(crate) fn render_section_with(
                 format!("{mark} "),
                 Style::default().fg(color(row.mark_role)),
             ),
-            TextSpan::styled(text::elide(&row.name.text, name_width as usize), name_style),
         ];
+        let room = usize::from(name_width);
+        match tick_on(ViewHit::SelectItem(index))
+            .and_then(|tick| row::marquee(&[(&row.name.text, name_style)], room, tick))
+        {
+            Some(window) => {
+                slid = true;
+                spans.extend(window);
+            }
+            None => spans.push(TextSpan::styled(
+                text::elide(&row.name.text, room),
+                name_style,
+            )),
+        }
         row::push_trailing(
             &mut spans,
             rect.width,
@@ -160,5 +178,5 @@ pub(crate) fn render_section_with(
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
         hits.push((rect, ViewHit::SelectItem(index)));
     }
-    sliding
+    slid
 }

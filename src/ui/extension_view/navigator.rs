@@ -440,10 +440,10 @@ pub(super) fn render_navigator(
     // column instead of stopping at an "…": a file is told from its
     // neighbours by its end as often as by its start.
     let mut slid = false;
-    let mut slide = |hit: ViewHit, name: &str, room: usize| {
+    let mut slide = |hit: ViewHit, pieces: &[(&str, Style)], room: usize| {
         let window = sliding
             .filter(|(under, _)| *under == hit)
-            .and_then(|(_, tick)| row::marquee_window(name, room, tick));
+            .and_then(|(_, tick)| row::marquee(pieces, room, tick));
         slid |= window.is_some();
         window
     };
@@ -564,12 +564,14 @@ pub(super) fn render_navigator(
                 // row leads; a plain directory's is a name, read from the
                 // start.
                 let room = label_room(&spans, rect.width);
-                let name = match slide(ViewHit::ToggleGroup(*id), name, room) {
-                    Some(window) => window,
-                    None if name.contains('/') => text::elide_head(name, room),
-                    None => text::elide(name, room),
-                };
-                spans.push(TextSpan::styled(name, theme::fg(Token::TextSecondary)));
+                let style = theme::fg(Token::TextSecondary);
+                match slide(ViewHit::ToggleGroup(*id), &[(name, style)], room) {
+                    Some(window) => spans.extend(window),
+                    None if name.contains('/') => {
+                        spans.push(TextSpan::styled(text::elide_head(name, room), style));
+                    }
+                    None => spans.push(TextSpan::styled(text::elide(name, room), style)),
+                }
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
             }
@@ -610,22 +612,41 @@ pub(super) fn render_navigator(
                         spans.push(leading_marker(marker));
                         spans.extend(row_icon(*icon));
                         let room = label_room(&spans, rect.width);
-                        let name = slide(ViewHit::SelectItem(*id), name, room)
-                            .unwrap_or_else(|| text::elide_file_name(name, room));
-                        spans.push(TextSpan::styled(name, label_style));
+                        match slide(ViewHit::SelectItem(*id), &[(name, label_style)], room) {
+                            Some(window) => spans.extend(window),
+                            None => spans.push(TextSpan::styled(
+                                text::elide_file_name(name, room),
+                                label_style,
+                            )),
+                        }
                     }
                     MarkerSide::Trailing => {
                         spans.extend(row_icon(*icon));
                         let room = flat_label_room(&spans, rect.width, marker);
-                        let window = slide(ViewHit::SelectItem(*id), name, room);
-                        push_flat_label(
-                            &mut spans,
-                            rect.width,
-                            window.as_deref().unwrap_or(name),
-                            detail,
-                            label_style,
-                            marker,
-                        );
+                        // The name and the detail after it slide as one:
+                        // the detail is the half a flat row cuts first, and
+                        // it is what tells two files of one name apart.
+                        let quiet = theme::fg(Token::TextMuted);
+                        let gap = if detail.is_empty() { "" } else { " " };
+                        let pieces = [
+                            (name.as_str(), label_style),
+                            (gap, quiet),
+                            (detail.as_str(), quiet),
+                        ];
+                        match slide(ViewHit::SelectItem(*id), &pieces, room) {
+                            Some(window) => {
+                                spans.extend(window);
+                                push_marker(&mut spans, rect.width, marker);
+                            }
+                            None => push_flat_label(
+                                &mut spans,
+                                rect.width,
+                                name,
+                                detail,
+                                label_style,
+                                marker,
+                            ),
+                        }
                     }
                 }
                 if *selected {
@@ -718,6 +739,11 @@ pub(super) fn push_flat_label(
             theme::fg(Token::TextMuted),
         ));
     }
+    push_marker(spans, width, marker);
+}
+
+/// A flat row's marker, pinned to the right edge.
+fn push_marker(spans: &mut Vec<TextSpan<'static>>, width: u16, marker: &Span) {
     let hue = styled(marker)
         .style
         .fg
