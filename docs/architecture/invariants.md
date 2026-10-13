@@ -1369,17 +1369,44 @@ repository and every new agent paid for a checkout of its own.
 
 The local target of a project that isolates its agents is fast-forwarded
 onto the remote's on the workspace's clock, never by a placement, and by
-nothing but a fast-forward: a target carrying commits the remote lacks is
-left where it stands and the sync reports how far behind new agents start.
-A placement branches from the local tip without asking the remote, because
-that round trip was most of what creating an agent cost; a delivery fetches
-for itself and never relies on the clock.
+nothing but a fast-forward; the fetch also leaves the remote's tracking ref
+where the remote is. A new agent is cut from the furthest of the two tips
+without asking the remote: the remote's when it descends from the local
+target — which it stays while the operator stands on a target the sync
+never moves — and the local target when it carries commits the remote
+lacks, which is the one case the sync reports. An agent moved into a
+checkout of its own from the operator's is cut from their `HEAD`. A
+delivery fetches for itself and never relies on the clock.
 
 > `crates/uze-workspace/src/landing/tests.rs::the_local_target_is_fast_forwarded_onto_the_remotes`
+> `crates/uze-workspace/src/landing/tests.rs::a_target_the_operator_stands_on_is_left_for_their_pull`
 > `crates/uze-workspace/src/landing/tests.rs::a_target_carrying_its_own_commits_is_left_alone_and_reported`
 > `crates/uze-workspace/src/landing/tests.rs::a_target_nobody_stands_on_moves_only_forward`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_new_agent_starts_from_the_target_as_the_last_sync_left_it`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_project_that_does_not_isolate_is_never_synced`
+> `crates/uze-application/tests/slot_lifecycle.rs::synced_target::a_new_agent_starts_from_the_remote_while_the_operator_stands_on_the_target`
+> `crates/uze-application/tests/slot_lifecycle.rs::synced_target::an_agent_moved_to_a_worktree_continues_from_head`
+> `crates/uze-application/tests/slot_lifecycle.rs::synced_target::a_target_carrying_its_own_commits_keeps_the_local_tip`
+> `crates/uze-application/tests/slot_lifecycle.rs::synced_target::a_repository_with_no_remote_starts_from_its_own_target`
+
+### An agent's work is judged against the target it was cut from
+
+Whether a branch is in its target, whether a slot, a branch or a shelf
+still holds work, how many commits are an agent's own, and what a refresh
+rebases onto are asked against the target's reach: the furthest of the
+local target and its remote-tracking ref, and on divergence the one the
+branch was cut from. One rule, inside the integration predicate, for every
+agent however it was placed — so an agent born on the remote's tip is never
+credited with the remote's commits, and work the remote already carries is
+integrated before the operator pulls.
+
+> `crates/uze-workspace/src/checkout/tests.rs::a_branch_cut_from_the_remotes_tip_owns_none_of_the_remotes_commits`
+> `crates/uze-workspace/src/checkout/tests.rs::work_the_remote_carries_is_integrated_before_the_local_target_hears_of_it`
+> `crates/uze-workspace/src/checkout/tests.rs::a_diverged_target_reaches_the_tip_its_branch_was_cut_from`
+> `crates/uze-workspace/src/checkout/tests.rs::a_target_that_names_no_branch_has_no_reach`
+> `crates/uze-workspace/src/landing/tests.rs::an_agent_cut_from_the_remotes_tip_counts_only_its_own_commits`
+> `crates/uze-workspace/src/landing/tests.rs::an_agent_cut_behind_the_remote_counts_only_its_own_commits`
+> `crates/uze-application/tests/slot_lifecycle.rs::synced_target::the_remotes_commits_are_not_counted_as_the_agents_work`
 
 ### Publication is read from the remote, never from UZE's own records
 

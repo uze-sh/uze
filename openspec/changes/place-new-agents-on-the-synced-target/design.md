@@ -143,6 +143,16 @@ cleared when full); only a complete answer is remembered. With no tracking
 ref, or with L equal to R (the common case after a sync that could move the
 target), no Git process is spent.
 
+### D7. A released slot detached on the remote's tip is free
+
+A slot is released detached where its agent left it, and a detached `HEAD`
+carrying commits no branch reaches pins the slot, since reusing it would
+lose them. An agent cut from the remote's tip that committed nothing leaves
+its slot detached on commits only `refs/remotes/origin/*` reaches, and its
+branch is pruned as integrated: asked against `--branches` alone, the slot
+was pinned forever. `holds_unbranched_commits` excludes remote-tracking
+refs too — a commit the remote has is not lost by reusing the checkout.
+
 ## Risks / Trade-offs
 
 - [A judgement on a branch-named target, outside a pass's `BranchTips`,
