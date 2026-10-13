@@ -95,6 +95,46 @@ fn tracked_deleted_and_new_files_are_kept_and_ignored_ones_are_not() {
     );
 }
 
+/// Git trusts a tracked file's stat unless the entry is as new as the
+/// index file, and then hashes the file again. An edit that keeps the
+/// size, made in the second the index was written, is caught by exactly
+/// that rule — on the checkout's own index. The shelf works from a copy,
+/// and a copy stamped with the present trusted every stat.
+#[test]
+fn a_same_sized_edit_in_the_second_of_the_index_is_shelved() {
+    let (repository, slot, branch) = slot("shelf-racy-edit");
+    let kept = slot.join("kept.rs");
+    let index = slot_git_dir(&slot).join("index");
+    // Well in the past, so the copy's own stamp is certainly later: the
+    // entry, the file and the index all say the same second.
+    let then = std::time::SystemTime::now() - Duration::from_secs(10);
+    set_modified(&kept, then);
+    repository.git_in(&slot, &["update-index", "--refresh"]);
+    set_modified(&index, then);
+    fs::write(&kept, "fn kepT() {}\n").unwrap();
+    set_modified(&kept, then);
+
+    let commit = shelved(&repository, &slot, &branch);
+
+    assert_eq!(
+        show(&repository, &commit, "kept.rs").as_deref(),
+        Some("fn kepT() {}")
+    );
+}
+
+fn slot_git_dir(slot: &Path) -> PathBuf {
+    let pointer = fs::read_to_string(slot.join(".git")).unwrap();
+    PathBuf::from(pointer.trim().strip_prefix("gitdir: ").unwrap())
+}
+
+fn set_modified(path: &Path, at: std::time::SystemTime) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(at))
+        .unwrap();
+}
+
 #[test]
 fn a_clean_checkout_on_its_branch_has_nothing_to_shelve() {
     let (_, slot, branch) = slot("shelf-nothing");

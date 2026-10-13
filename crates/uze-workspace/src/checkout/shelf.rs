@@ -454,12 +454,27 @@ fn git_dir(slot: &Path) -> Option<PathBuf> {
 struct TemporaryIndex(PathBuf);
 
 impl TemporaryIndex {
+    /// The copy keeps the source's modification time. Git trusts an
+    /// entry's stat unless the entry is as new as the index file itself,
+    /// in which case it hashes the file again: that is what catches an
+    /// edit made in the same second the index was written, with the size
+    /// unchanged. A copy stamped with the present read every entry as
+    /// older than it, trusted every stat, and shelved nothing of such an
+    /// edit.
     fn copied_from(git_dir: &Path) -> Result<Self, String> {
         let path = git_dir.join(format!("uze-shelf-index-{}", std::process::id()));
         let source = git_dir.join("index");
         if source.exists() {
-            fs::copy(&source, &path)
-                .map_err(|error| format!("the index could not be copied: {error}"))?;
+            let copied = |error: std::io::Error| format!("the index could not be copied: {error}");
+            fs::copy(&source, &path).map_err(copied)?;
+            let written_at = fs::metadata(&source).and_then(|metadata| metadata.modified());
+            if let Ok(written_at) = written_at {
+                fs::File::options()
+                    .write(true)
+                    .open(&path)
+                    .and_then(|copy| copy.set_modified(written_at))
+                    .map_err(copied)?;
+            }
         }
         Ok(Self(path))
     }
