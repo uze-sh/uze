@@ -47,4 +47,4 @@
 - [x] 8.2 Resume such an agent on its branch cut again from the target's reach (`checkout::resume`'s `fresh` start)
 - [x] 8.3 Record a name typed over an agent's tab on the agent (`label_agent`, `spawn_agent_label`), and keep it when the first commit names the branch
 - [x] 8.4 Resume with the harness the agent last ran with (`PreservedWork::harness`, `ResumeTarget::harness`), asking only when it is no longer set up
-- [x] 8.5 Draw `widget::Scrollbar` beside recent's rows and select the row a click on its track points at
+- [x] 8.5 Scroll recent with the navigator's `NavigatorScroll`: `widget::Scrollbar` on the sidebar's divider, its handle driven by `EdgeDrag` (along scrolls, across resizes), the wheel scrolls, the keys pull the window to the selection

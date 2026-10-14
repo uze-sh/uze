@@ -153,6 +153,18 @@ impl Scrollbar {
         }
     }
 
+    /// Where the handle is drawn with `first` at the top of the window: the
+    /// rect a list that shares its track with another control registers
+    /// as the handle's own, so grabbing it scrolls and the rest of the
+    /// line keeps its other job.
+    pub(crate) fn thumb(self, first: usize) -> Rect {
+        let top = self.thumb_y(first);
+        let height = self
+            .thumb_height()
+            .min(self.track.bottom().saturating_sub(top));
+        Rect::new(self.track.x, top, self.track.width, height)
+    }
+
     /// How tall the handle is: the share of the whole that is on screen,
     /// floored at one row so it never vanishes on a list long enough to
     /// make the fraction round to nothing — which is exactly the list that

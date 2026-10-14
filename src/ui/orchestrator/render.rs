@@ -121,6 +121,9 @@ pub(super) struct FrameMetrics {
     pub(super) marquee: bool,
     /// The text the agent drawer drew, when it was open.
     pub(super) drawer: Option<crate::ui::agent_support::DrawerText>,
+    /// Where recent's list settled and the scrollbar it drew, when it was
+    /// open.
+    pub(super) recent: Option<RecentFrame>,
 }
 
 /// One frame of the management modal: where it was drawn, and the hit

@@ -81,15 +81,38 @@ impl Attach<'_> {
         self.recent_action(Action::Activate);
     }
 
-    /// Selects the row `index` names and does nothing else: where the
-    /// scroll track takes the window.
-    pub(in crate::ui::orchestrator) fn select_recent_row(&mut self, index: usize) {
-        let rows = recent_rows(&self.model);
-        if let Some(row) = rows.get(index) {
-            self.model.recent.asking = false;
-            self.model.recent.selected = Some(row.key.clone());
+    /// A drag that began on recent's scrollbar handle: along the divider it
+    /// scrolls the list and leaves the selection where it is; across it, it
+    /// hands the gesture to the divider, which resizes the column.
+    pub(super) fn drag_recent_edge(&mut self, column: u16, row: u16) {
+        let Some(mut grab) = self.model.recent.grab else {
+            return;
+        };
+        let intent = grab.decide(column, row);
+        self.model.recent.grab = Some(grab);
+        match intent {
+            Some(EdgeIntent::Scroll) => self.scroll_recent_to(row),
+            Some(EdgeIntent::Resize) => {
+                self.model.recent.grab = None;
+                self.model.dragging_sidebar = true;
+            }
+            None => {}
+        }
+    }
+
+    /// Shows the part of the list a point on the scrollbar names.
+    fn scroll_recent_to(&mut self, row: u16) {
+        if let Some(bar) = self.model.recent.bar {
+            self.model.recent.scroll.first = bar.first_at(row);
             self.model.dirty = true;
         }
+    }
+
+    /// Moves the list a line under the wheel, leaving the selection where
+    /// it is.
+    pub(in crate::ui::orchestrator) fn scroll_recent(&mut self, direction: ScrollDirection) {
+        self.model.recent.scroll = self.model.recent.scroll.scrolled(direction);
+        self.model.dirty = true;
     }
 
     /// Selects the row `index` names: a click on the row already selected

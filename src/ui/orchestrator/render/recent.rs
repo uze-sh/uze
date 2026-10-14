@@ -29,6 +29,7 @@ pub(super) fn render_recent(
     model: &WorkspaceModel,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
+    metrics: &mut FrameMetrics,
 ) {
     let list = recent_rows(model);
     let selected = selected_index(&model.recent, &list);
@@ -61,33 +62,28 @@ pub(super) fn render_recent(
             .rposition(|(_, target)| target.row() == Some(index))?;
         Some((first, last))
     });
-    let offset = focus
-        .map_or(0, |(first, last)| {
-            (last + 1).saturating_sub(visible).min(first)
-        })
-        .min(lines.len().saturating_sub(visible));
-    // The window follows the selection, so the track is a picture of the
-    // whole list: a click on it selects the row at that height, and the
-    // window follows. Its targets go first, since the rows under them
-    // reach the same column.
-    let track = Rect::new(
-        rows.x + width.saturating_sub(Scrollbar::width()),
-        rows.y,
-        Scrollbar::width(),
-        rows.remaining(),
-    );
+    // Scrolled the way the code surface's navigator is: wherever the
+    // wheel or the scrollbar left it, until the selection moves, which
+    // pulls the window just far enough to show the whole selected row.
+    let previous = model.recent.scroll;
+    let mut scroll = previous.settled(focus.map(|(_, last)| last), lines.len(), visible);
+    if let Some((first, _)) = focus
+        && scroll.revealed != previous.revealed
+        && first < scroll.first
+    {
+        scroll.first = first;
+    }
+    let offset = scroll.first;
+    // On the sidebar's divider, the way the code surface's navigator puts
+    // its own: the divider is the line and the handle the stretch of it
+    // saying where the list is. Only the handle is registered, so grabbing
+    // it scrolls and the rest of the line still moves the divider.
+    let track = Rect::new(rows.x + width, rows.y, Scrollbar::width(), rows.remaining());
     let bar = Scrollbar::measure(track, visible, lines.len());
     if let Some(bar) = bar {
-        let owners: Vec<Option<usize>> = lines.iter().map(|(_, target)| target.row()).collect();
-        for y in track.y..track.bottom() {
-            if let Some(index) = row_near(&owners, bar.item_at(y)) {
-                hits.push((
-                    Rect::new(track.x, y, track.width, 1),
-                    WorkspaceHit::RecentScrollTo(index),
-                ));
-            }
-        }
+        hits.push((bar.thumb(offset), WorkspaceHit::RecentScrollGrab));
     }
+    metrics.recent = Some(RecentFrame { scroll, bar });
     for (line, target) in lines.into_iter().skip(offset).take(visible) {
         let Some(rect) = rows.next(1) else { break };
         frame.render_widget(Paragraph::new(line), rect);
@@ -112,7 +108,7 @@ pub(super) fn render_recent(
         }
     }
     if let Some(bar) = bar {
-        bar.render(frame, offset);
+        bar.render_on_draggable(frame, offset, model.dragging_sidebar);
     }
     if let Some(rect) = foot {
         let row = selected.and_then(|index| list.get(index));
@@ -129,17 +125,6 @@ pub(super) fn render_recent(
         spans.extend(keys.spans);
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
-}
-
-/// The row the line at `line` belongs to, or the nearest one below it — a
-/// block's heading belongs to the first row under it — or above it at the
-/// end of the list.
-fn row_near(owners: &[Option<usize>], line: usize) -> Option<usize> {
-    owners
-        .iter()
-        .skip(line)
-        .find_map(|owner| *owner)
-        .or_else(|| owners.iter().take(line).rev().find_map(|owner| *owner))
 }
 
 /// The question's two answers, the keyboard on one of them: going ahead

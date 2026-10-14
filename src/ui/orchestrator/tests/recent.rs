@@ -3,6 +3,7 @@
 
 use super::workspace_tests::{driven, key_event, model_of, preserved, session};
 use super::*;
+use crossterm::event::{MouseButton, MouseEventKind};
 use ratatui::style::Modifier;
 use ratatui::{Terminal, backend::TestBackend};
 use std::time::SystemTime;
@@ -631,28 +632,79 @@ fn a_list_longer_than_the_column_draws_a_scrollbar() {
     assert_eq!(count(&many(2)), 0, "two rows do");
 }
 
-/// The track is a picture of the whole list: a click at its foot selects
-/// the last row, and selecting is all it does.
+/// The handle sits on the sidebar's divider, as the code surface's does:
+/// dragged along it, it scrolls the list and leaves the selection where it
+/// is; dragged across, it resizes the column as the divider does.
 #[test]
-fn a_click_on_the_track_selects_the_row_at_that_height() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-track"));
-    let model = many(30);
-    let (_, hits) = drawn_with_hits(&model, 16);
-    let foot = hits
-        .iter()
-        .filter_map(|(rect, hit)| match hit {
-            WorkspaceHit::RecentScrollTo(index) => Some((rect.y, *index)),
-            _ => None,
-        })
-        .max()
-        .expect("the track is a target");
-    assert_eq!(foot.1, 29, "the foot of the track is the last row");
+fn the_handle_on_the_divider_scrolls_along_it_and_resizes_across_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-grab"));
+    let mut driven = driven(many(60), &home);
+    driven.frame();
+    let handle = driven.hit(|hit| *hit == WorkspaceHit::RecentScrollGrab);
+    let bar = driven.attach.model.recent.bar.expect("the rows do not fit");
+    let foot = bar.track.bottom() - 1;
 
-    let mut driven = driven(model, &home);
-    driven.attach.select_recent_row(foot.1);
-    assert_eq!(driven.attach.model.recent.selected.as_deref(), Some("t29"));
-    assert!(driven.attach.model.recent.open, "and nothing was resumed");
-    assert!(driven.attach.model.agent_picker.is_none());
+    driven.press(handle.x, handle.y);
+    driven.mouse(handle.x, foot, MouseEventKind::Drag(MouseButton::Left));
+    driven.mouse(handle.x, foot, MouseEventKind::Up(MouseButton::Left));
+    driven.frame();
+    assert_eq!(
+        driven.attach.model.recent.scroll.first,
+        bar.total - bar.visible,
+        "the foot of the track is the last screenful"
+    );
+    assert_eq!(
+        driven.attach.model.recent.selected, None,
+        "and the selection is where it was"
+    );
+
+    let handle = driven.hit(|hit| *hit == WorkspaceHit::RecentScrollGrab);
+    let width = driven.attach.model.sidebar_width;
+    driven.press(handle.x, handle.y);
+    driven.mouse(
+        handle.x + 6,
+        handle.y,
+        MouseEventKind::Drag(MouseButton::Left),
+    );
+    driven.mouse(
+        handle.x + 8,
+        handle.y,
+        MouseEventKind::Drag(MouseButton::Left),
+    );
+    driven.mouse(
+        handle.x + 8,
+        handle.y,
+        MouseEventKind::Up(MouseButton::Left),
+    );
+    assert_ne!(
+        driven.attach.model.sidebar_width, width,
+        "across, the column moved"
+    );
+    assert!(driven.attach.model.recent.open, "and recent stayed");
+}
+
+/// The wheel scrolls the list and leaves the selection alone; moving the
+/// selection with the keys brings the window back to it.
+#[test]
+fn the_wheel_scrolls_and_the_keys_bring_the_selection_back_into_view() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-wheel"));
+    let mut driven = driven(many(60), &home);
+    driven.frame();
+    for _ in 0..20 {
+        driven.mouse(2, 6, MouseEventKind::ScrollDown);
+    }
+    driven.frame();
+    assert_eq!(driven.attach.model.recent.scroll.first, 20);
+    assert_eq!(driven.attach.model.recent.selected, None);
+
+    press(&mut driven, Action::SelectNext);
+    driven.frame();
+    assert_eq!(driven.attach.model.recent.selected.as_deref(), Some("t1"));
+    assert_eq!(
+        driven.attach.model.recent.scroll.first, 2,
+        "the selection moved, and the window went back just far enough to show \
+         it: the heading and the first row above it are scrolled past"
+    );
 }
 
 /// A space rooted below a project's root asks about a directory of the

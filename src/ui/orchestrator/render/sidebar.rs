@@ -274,7 +274,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // Recent stands where the tree stands, for the same reason: two lists
     // of agents side by side, neither would read as the one being walked.
     if model.recent.open {
-        render_recent(frame, model, &mut rows, hits);
+        render_recent(frame, model, &mut rows, hits, metrics);
         return;
     }
 

@@ -263,7 +263,14 @@ impl Attach<'_> {
             _ if self.model.recent.open => {
                 match self.model.hit_at(mouse.column, mouse.row) {
                     Some(WorkspaceHit::RecentRow(index)) => self.click_recent_row(index),
-                    Some(WorkspaceHit::RecentScrollTo(index)) => self.select_recent_row(index),
+                    // Armed, not decided: which of the divider's two jobs
+                    // this is belongs to the first movement, as on the
+                    // code surface's navigator.
+                    Some(WorkspaceHit::RecentScrollGrab) => {
+                        self.model.recent.grab = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
+                    }
+                    // The divider still resizes the column under recent.
+                    Some(WorkspaceHit::ResizeSidebar) => self.model.dragging_sidebar = true,
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
                     // The way in is the way out, and a click anywhere else
                     // leaves it the way it leaves the root picker.
@@ -446,6 +453,9 @@ impl Attach<'_> {
             _ if self.model.code_edge_drag.is_some() => {
                 self.drag_code_edge(mouse.column, mouse.row, layout.pane);
             }
+            _ if self.model.recent.grab.is_some() => {
+                self.drag_recent_edge(mouse.column, mouse.row);
+            }
             _ if self.model.dragging_timeline => {
                 // The divider follows the pointer; what is remembered
                 // is the commit rows that leaves under it, never fewer
@@ -607,6 +617,7 @@ impl Attach<'_> {
         {
             self.scroll_code_tree_to(mouse.row);
         }
+        self.model.recent.grab = None;
         self.model.dragging_code_content = false;
         self.model.dragging_timeline = false;
         self.model.dirty = true;
@@ -955,15 +966,14 @@ impl Attach<'_> {
                 };
                 return self.action_index_action(action, viewport);
             }
-            // Recent has the column while it is open, so the wheel walks
-            // its rows, the same move the arrow keys make.
+            // Recent has the column while it is open, so the wheel scrolls
+            // its list, and the selection stays where the keys left it.
             _ if self.model.recent.open => {
-                let action = if mouse.kind == MouseEventKind::ScrollUp {
-                    Action::SelectPrevious
+                self.scroll_recent(if mouse.kind == MouseEventKind::ScrollUp {
+                    ScrollDirection::Up
                 } else {
-                    Action::SelectNext
-                };
-                self.recent_action(action);
+                    ScrollDirection::Down
+                });
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -1322,7 +1332,7 @@ impl Attach<'_> {
             // Only reachable while recent is open, which the guarded arm
             // in `press` answers first.
             WorkspaceHit::RecentRow(_)
-            | WorkspaceHit::RecentScrollTo(_)
+            | WorkspaceHit::RecentScrollGrab
             | WorkspaceHit::RecentAnswer(_) => {}
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),

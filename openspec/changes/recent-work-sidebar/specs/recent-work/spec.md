@@ -221,11 +221,22 @@ typed; a name the agent asks for SHALL, being the last name given.
 - **WHEN** an agent whose tab the operator named makes its first commit
 - **THEN** its branch is named after the commit and its label stays the one the operator typed
 
-### Requirement: The scroll track pictures the whole list
+### Requirement: Recent scrolls the way the code surface's navigator does
 When recent's rows do not fit the column, it SHALL draw the product's
-scrollbar beside them, and a click on the track SHALL select the row at
-that height without acting on it.
+scrollbar on the sidebar's divider. The wheel, and dragging the handle
+along the divider, SHALL scroll the list and leave the selection where it
+is; moving the selection with the keys SHALL bring the window just far
+enough to show the selected row. Dragging the handle across the divider
+SHALL resize the column as the divider does.
 
-#### Scenario: A long list
-- **WHEN** recent holds more lines than the column shows and the operator clicks the foot of the track
-- **THEN** the last row is selected and nothing is resumed
+#### Scenario: The handle is dragged to the foot
+- **WHEN** recent holds more lines than the column shows and the operator drags the handle to the foot of the track
+- **THEN** the last screenful is shown and the selection has not moved
+
+#### Scenario: The keys after the wheel
+- **WHEN** the operator scrolled the list away from the selection and then moves the selection with the keys
+- **THEN** the window moves to show the selected row
+
+#### Scenario: The divider still resizes
+- **WHEN** the operator drags the handle sideways
+- **THEN** the sidebar is resized and recent stays open

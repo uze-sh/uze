@@ -163,7 +163,7 @@ impl NavigatorScroll {
     }
 
     /// The scroll a list of `rows` rows in `visible` lines settles at.
-    pub(super) fn settled(self, anchor: Option<usize>, rows: usize, visible: usize) -> Self {
+    pub(crate) fn settled(self, anchor: Option<usize>, rows: usize, visible: usize) -> Self {
         let mut first = self.first.min(rows.saturating_sub(visible));
         if anchor != self.revealed
             && let Some(anchor) = anchor

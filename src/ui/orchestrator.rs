@@ -660,6 +660,10 @@ pub(crate) fn attach_workspace(
                 attach.model.code_scrollbars = rendered;
             }
             attach.model.drawer_text = metrics.drawer.unwrap_or_default();
+            if let Some(frame) = metrics.recent {
+                attach.model.recent.scroll = frame.scroll;
+                attach.model.recent.bar = frame.bar;
+            }
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
@@ -773,8 +777,8 @@ impl WorkspaceShape {
 pub(super) enum WorkspaceHit {
     /// One of recent's rows, by its place in the list.
     RecentRow(usize),
-    /// A point on recent's scroll track, by the row at that height.
-    RecentScrollTo(usize),
+    /// The handle of recent's scrollbar, on the sidebar's divider.
+    RecentScrollGrab,
     /// One of the answers to the question recent's row is asking: `true`
     /// for going ahead.
     RecentAnswer(bool),

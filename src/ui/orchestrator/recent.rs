@@ -11,6 +11,7 @@
 //! answer meanwhile.
 
 use super::*;
+use crate::ui::extension_view::NavigatorScroll;
 use std::time::SystemTime;
 use uze_application::{CheckoutOwner, CheckoutView, CheckoutsView, JoinedWork, PreservedWork};
 
@@ -35,6 +36,24 @@ pub(super) struct Recent {
     /// The agents in the tree that had already finished when recent
     /// opened: one that finishes after is what the header marks.
     pub(super) finished_before: BTreeSet<PaneId>,
+    /// Where the list is scrolled to, which the wheel and the scrollbar
+    /// move and a selection the keys move pulls along — the code surface
+    /// navigator's own rule.
+    pub(super) scroll: NavigatorScroll,
+    /// The scrollbar the last frame drew on the sidebar's divider, when
+    /// the rows did not fit.
+    pub(super) bar: Option<crate::ui::widget::Scrollbar>,
+    /// A press on that scrollbar's handle, until the first movement says
+    /// whether it scrolls the list or moves the divider.
+    pub(super) grab: Option<EdgeDrag>,
+}
+
+/// What a frame of recent settled on: where the list ended up scrolled,
+/// and the scrollbar it drew.
+#[derive(Debug, Default)]
+pub(super) struct RecentFrame {
+    pub(super) scroll: NavigatorScroll,
+    pub(super) bar: Option<crate::ui::widget::Scrollbar>,
 }
 
 /// One project's read of its checkouts.

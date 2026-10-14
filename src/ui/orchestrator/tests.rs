@@ -615,6 +615,10 @@ mod workspace_tests {
             model.code_scrollbars = rendered;
         }
         model.drawer_text = metrics.drawer.unwrap_or_default();
+        if let Some(frame) = metrics.recent {
+            model.recent.scroll = frame.scroll;
+            model.recent.bar = frame.bar;
+        }
         model.absorb_manage_frame(metrics.manage);
         compute_layout(area, model.sidebar_width)
     }
