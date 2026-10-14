@@ -120,18 +120,11 @@ scenes:
         in: sidebar
         timeout: 30
         say: the row offers the way back in, once the repository has answered
+      # No picker: the task records the harness it ran with, and resuming
+      # launches that one again, since its conversation is that harness's.
       - click: resume
-        say: resume the task from its row
+        say: resume the task from its row, in the harness it ran with
         in: sidebar
-        expect: new agent
-        expect_timeout: 20
-      # No band: this picker is anchored under the sidebar row that raised
-      # it, not under the tab strip, so it starts left of where `in: pane`
-      # begins looking.
-      - click: " new agent "
-        say: pick a harness for it to run in again
-        row_offset: 1
-        offset: 3
         expect: Claude Code v
         expect_timeout: 45
         pause: 2.5
