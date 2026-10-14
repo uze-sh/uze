@@ -655,6 +655,50 @@ fn a_click_on_the_track_selects_the_row_at_that_height() {
     assert!(driven.attach.model.agent_picker.is_none());
 }
 
+/// A space rooted below a project's root asks about a directory of the
+/// repository rather than its primary checkout; the answer is kept under
+/// the primary, which is what every row looks its project up by.
+#[test]
+fn a_read_of_a_directory_below_the_root_is_kept_under_the_primary() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-rekey"));
+    let task = preserved(PROJECT, "t1", "kept", WorkStateView::Shelved);
+    let checkout = checkout_of(&task);
+    let mut model = showing(vec![task], Vec::new());
+    model.recent.reads.clear();
+    let below = Path::new(PROJECT).join("crates");
+    model.recent.reads.insert(
+        below.clone(),
+        ProjectRead {
+            asked: 7,
+            answer: None,
+        },
+    );
+    let mut driven = driven(model, &home);
+    driven
+        .attach
+        .channels
+        .checkouts
+        .sender
+        .send(CheckoutsResolution {
+            project: below.clone(),
+            asked: 7,
+            view: Some(CheckoutsView {
+                primary: PathBuf::from(PROJECT),
+                checkouts: vec![checkout],
+            }),
+        })
+        .unwrap();
+    driven.pump();
+
+    let reads = &driven.attach.model.recent.reads;
+    assert!(reads.contains_key(Path::new(PROJECT)) && !reads.contains_key(&below));
+    assert_eq!(
+        recent_rows(&driven.attach.model)[0].bytes,
+        Some(5 * 1024 * 1024 * 1024)
+    );
+    assert!(driven.attach.model.recent.covers(&below));
+}
+
 #[test]
 fn with_nothing_kept_it_says_so() {
     let model = showing(Vec::new(), Vec::new());

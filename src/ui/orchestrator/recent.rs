@@ -29,7 +29,8 @@ pub(super) struct Recent {
     /// while a question is asked. It starts on the way out: taking work
     /// away is never what a habitual enter does.
     pub(super) on_confirm: bool,
-    /// Each project's checkouts, by the directory they are read from.
+    /// Each project's checkouts, by its primary checkout once a read has
+    /// said which that is, and by the directory asked about until then.
     pub(super) reads: BTreeMap<PathBuf, ProjectRead>,
     /// The agents in the tree that had already finished when recent
     /// opened: one that finishes after is what the header marks.
@@ -47,11 +48,15 @@ pub(super) struct ProjectRead {
 
 impl Recent {
     fn view(&self, project: &Path) -> Option<&CheckoutsView> {
-        self.reads.values().find_map(|read| {
-            read.answer
-                .as_ref()?
-                .as_ref()
-                .filter(|view| view.primary == project)
+        self.reads.get(project)?.answer.as_ref()?.as_ref()
+    }
+
+    /// Whether a read already answered for the repository `directory` lies
+    /// in, so a space rooted below a project's root does not read the
+    /// same repository twice.
+    pub(super) fn covers(&self, directory: &Path) -> bool {
+        self.reads.iter().any(|(primary, read)| {
+            matches!(read.answer, Some(Some(_))) && directory.starts_with(primary)
         })
     }
 }
@@ -382,6 +387,7 @@ pub(super) fn projects_to_read(model: &WorkspaceModel) -> Vec<PathBuf> {
             .spaces
             .iter()
             .map(|space| uze_application::slot_key(&space.root))
+            .filter(|root| !model.recent.reads.contains_key(root) && !model.recent.covers(root))
     });
     for project in present.chain(spaces) {
         if !projects.contains(&project) {

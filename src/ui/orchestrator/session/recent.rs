@@ -224,22 +224,11 @@ impl Attach<'_> {
         );
     }
 
-    /// Reads again every project recent has read that `path` names, after
-    /// something changed what it holds.
-    pub(super) fn read_again(&mut self, path: &Path) {
-        let keys: Vec<PathBuf> = self
-            .model
-            .recent
-            .reads
-            .iter()
-            .filter(|(key, read)| {
-                key.as_path() == path
-                    || matches!(&read.answer, Some(Some(view)) if view.primary == path)
-            })
-            .map(|(key, _)| key.clone())
-            .collect();
-        for key in keys {
-            self.read_project(key);
+    /// Reads `project` again, after something changed what it holds, when
+    /// recent has read it before.
+    pub(super) fn read_again(&mut self, project: &Path) {
+        if self.model.recent.reads.contains_key(project) {
+            self.read_project(project.to_path_buf());
         }
     }
 
@@ -247,16 +236,40 @@ impl Attach<'_> {
     /// last question asked about that project.
     pub(super) fn absorb_checkouts(&mut self) {
         while let Ok(resolution) = self.channels.checkouts.receiver.try_recv() {
-            let Some(read) = self
-                .model
-                .recent
-                .reads
-                .get_mut(&resolution.project)
-                .filter(|read| read.asked == resolution.asked)
-            else {
+            let reads = &mut self.model.recent.reads;
+            if reads
+                .get(&resolution.project)
+                .is_none_or(|read| read.asked != resolution.asked)
+            {
                 continue;
-            };
-            read.answer = Some(resolution.view);
+            }
+            // Kept under the repository's primary checkout, whichever
+            // directory of it was asked about: that is the key every row
+            // looks its project up by.
+            let primary = resolution
+                .view
+                .as_ref()
+                .map_or_else(|| resolution.project.clone(), |view| view.primary.clone());
+            if primary != resolution.project {
+                reads.remove(&resolution.project);
+            }
+            let answer = Some(resolution.view);
+            match reads.get_mut(&primary) {
+                // A newer read of the same repository is out: this answer
+                // fills in until it lands, and is not what it waits for.
+                Some(read) if read.asked > resolution.asked => {
+                    read.answer.get_or_insert(answer.flatten());
+                }
+                _ => {
+                    reads.insert(
+                        primary,
+                        ProjectRead {
+                            asked: resolution.asked,
+                            answer,
+                        },
+                    );
+                }
+            }
             self.model.dirty = true;
         }
     }
