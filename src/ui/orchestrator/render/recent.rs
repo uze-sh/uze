@@ -226,18 +226,7 @@ fn lines_of(
                 selected == Some(index),
                 model.hovered == Some(WorkspaceHit::RecentRow(index)),
             );
-            lines.extend(
-                row_lines(model, row, state, width)
-                    .into_iter()
-                    .map(|(line, answers)| {
-                        let target = if answers {
-                            Target::Answers(index)
-                        } else {
-                            Target::Row(index)
-                        };
-                        (line, target)
-                    }),
-            );
+            lines.extend(row_lines(model, index, row, state, width));
         }
     }
     lines
@@ -245,14 +234,14 @@ fn lines_of(
 
 /// One row's lines: its name and age, and under the selected one what it
 /// waits on, where it belongs and what its checkout holds. Work waiting
-/// on the operator says why even when it is not selected, quietly. Each
-/// line says whether it is the one the question's answers are drawn on.
+/// on the operator says why even when it is not selected, quietly.
 fn row_lines(
     model: &WorkspaceModel,
+    index: usize,
     row: &RecentRow,
     state: RowState,
     width: u16,
-) -> Vec<(Line<'static>, bool)> {
+) -> Vec<(Line<'static>, Target)> {
     let selected = state == RowState::Selected;
     let asking = selected && model.recent.asking;
     let gone = row.reason == Reason::ProjectGone;
@@ -315,7 +304,12 @@ fn row_lines(
             row::fill(&mut spans, width, state);
             let mut line = Line::from(spans);
             text::clip(&mut line, usize::from(width));
-            (line, answers == Some(at))
+            let target = if answers == Some(at) {
+                Target::Answers(index)
+            } else {
+                Target::Row(index)
+            };
+            (line, target)
         })
         .collect()
 }
