@@ -601,12 +601,16 @@ fn lines(path: &Path) -> Vec<String> {
         .collect()
 }
 
+/// One `write` per line: stand-ins launched together append to the same
+/// log, and `O_APPEND` keeps each write whole but not two of them in a
+/// row, so a line and its newline written separately interleave with
+/// another process's.
 fn append_line(path: &Path, line: &str) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{line}");
+        let _ = file.write_all(format!("{line}\n").as_bytes());
     }
 }
 
