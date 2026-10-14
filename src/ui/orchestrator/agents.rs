@@ -113,7 +113,7 @@ impl WorkspaceModel {
     }
 
     /// Work no live agent tab is in front of, wherever on this machine it
-    /// is — what the preserved-work list shows.
+    /// is — what recent lists.
     ///
     /// Answered by a sweep of every project UZE has recorded, not by the
     /// per-session evaluation cache beside it: that cache is filled only

@@ -15,11 +15,13 @@ use crate::ui::widget::{
 
 mod pane;
 mod popups;
+mod recent;
 mod sidebar;
 mod tab_strip;
 
 pub(super) use pane::*;
 pub(super) use popups::*;
+use recent::*;
 pub(super) use sidebar::*;
 pub(super) use tab_strip::*;
 
@@ -180,11 +182,7 @@ pub(super) fn render(
     // a screen that is still live — so the scrim covers these two and
     // nothing else. Same placement as the management modal's: between
     // what was drawn and what is drawn over it.
-    if model.work.is_some()
-        || model.action_index.is_some()
-        || model.release_notes.is_some()
-        || question.is_some()
-    {
+    if model.action_index.is_some() || model.release_notes.is_some() || question.is_some() {
         crate::ui::widget::scrim::render(frame, frame.area());
     }
     if let Some(question) = &question {
@@ -207,9 +205,6 @@ pub(super) fn render(
         let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
         // Prepended: what is underneath must not answer a click meant here.
         hits.insert(0, (targets.popup, WorkspaceHit::ReleaseNotesBody));
-    }
-    if let Some(overlay) = &model.work {
-        render_work(frame, frame.area(), model, overlay, hits);
     }
     if let Some(index) = &model.action_index {
         render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);

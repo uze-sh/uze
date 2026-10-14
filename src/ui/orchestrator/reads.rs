@@ -494,10 +494,10 @@ pub(super) fn spawn_delivery(
 /// What a preserved task is asked to become.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkMutation {
-    /// Closed, its slot released. The work itself is kept.
-    Finish,
     /// Thrown away: the checkout removed, the branch deleted.
     Discard,
+    /// Its record let go of, its project being gone from disk.
+    Forget,
 }
 
 impl WorkMutation {
@@ -505,15 +505,15 @@ impl WorkMutation {
     /// when it is done.
     pub(super) fn underway(self) -> &'static str {
         match self {
-            Self::Finish => "finishing",
             Self::Discard => "discarding",
+            Self::Forget => "forgetting",
         }
     }
 
     pub(super) fn done(self) -> &'static str {
         match self {
-            Self::Finish => "finished",
             Self::Discard => "discarded",
+            Self::Forget => "forgotten",
         }
     }
 }
@@ -530,12 +530,11 @@ pub(super) struct MutationResolution {
     pub(super) outcome: std::result::Result<(), String>,
 }
 
-/// Finishes or discards one preserved task, off the UI thread.
+/// Discards or forgets one preserved task, off the UI thread.
 ///
 /// Discard is `git worktree remove`, then `git branch -D`, then a
 /// recursive removal of the checkout — a slot holding a build directory
-/// is tens of thousands of files — and finish opens the repository and
-/// rewrites the task store. Both used to run where the keystroke was
+/// is tens of thousands of files. It used to run where the keystroke was
 /// handled, which froze the client and every pane in it for as long as
 /// the filesystem took.
 pub(super) fn spawn_task_mutation(
@@ -556,8 +555,8 @@ pub(super) fn spawn_task_mutation(
             || {
                 tui_application(home)
                     .and_then(|app| match mutation {
-                        WorkMutation::Finish => app.workspace().finish_task(&cwd, &task),
                         WorkMutation::Discard => app.workspace().discard_task(&cwd, &task),
+                        WorkMutation::Forget => app.workspace().forget_task(&cwd, &task),
                     })
                     .map_err(|error| error.to_string())
             },
@@ -582,7 +581,6 @@ pub(super) fn spawn_checkouts(
     home: &UzeHome,
     project: PathBuf,
     asked: u64,
-    occupied: Vec<PathBuf>,
     sender: mpsc::Sender<CheckoutsResolution>,
 ) {
     let home = home.clone();
@@ -593,7 +591,7 @@ pub(super) fn spawn_checkouts(
             || {
                 tui_application(home)
                     .ok()
-                    .and_then(|app| app.workspace().checkouts(&project, &occupied))
+                    .and_then(|app| app.workspace().checkouts(&project))
             },
             None,
         );
@@ -605,82 +603,36 @@ pub(super) fn spawn_checkouts(
     });
 }
 
-/// Adopts, removes, joins or cleans up checkouts, off the UI thread: a removal is
-/// `git worktree remove` over a directory that may hold a build's worth of
-/// files, and a clean-up is several of them.
-pub(super) fn spawn_checkout_change(
+/// Joins a subagent's checkout into its agent, off the UI thread: the
+/// join replays commits onto the agent's branch and removes a directory
+/// that may hold a build's worth of files.
+pub(super) fn spawn_join(
     home: &UzeHome,
     project: PathBuf,
-    change: CheckoutChange,
-    occupied: Vec<PathBuf>,
-    sender: mpsc::Sender<CheckoutChangeResolution>,
+    join: Join,
+    sender: mpsc::Sender<JoinResolution>,
 ) {
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.checkout_change").entered();
-        let failed = |name: &str| format!("changing {name} failed");
-        let outcome = answered_or(
+        let _span = tracing::info_span!(parent: &parent, "tui.join").entered();
+        let answer = answered_or(
             || {
-                let app = tui_application(home).map_err(|error| error.to_string());
-                let workspace = app.as_ref().map(|app| app.workspace());
-                match &change {
-                    CheckoutChange::Adopt { path, name } => CheckoutOutcome::Adopted {
-                        name: name.clone(),
-                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
-                            workspace
-                                .adopt_checkout(&project, path)
-                                .map_err(|refusal| refusal.to_string())
-                        }),
-                    },
-                    CheckoutChange::Remove { path, name } => CheckoutOutcome::Removed {
-                        name: name.clone(),
-                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
-                            workspace
-                                .remove_checkout(&project, path, &occupied)
-                                .map_err(|refusal| refusal.to_string())
-                        }),
-                    },
-                    CheckoutChange::Join {
-                        parent_id,
-                        parent,
-                        topic,
-                    } => CheckoutOutcome::Joined {
-                        topic: topic.clone(),
-                        parent: parent.clone(),
-                        answer: workspace.map_err(Clone::clone).and_then(|workspace| {
-                            workspace
-                                .join_unfinished_work(&project, parent_id, topic)
-                                .map_err(|refusal| refusal.to_string())
-                        }),
-                    },
-                    CheckoutChange::CleanUp => CheckoutOutcome::CleanedUp(
-                        workspace
-                            .map(|workspace| workspace.clean_up_checkouts(&project, &occupied))
-                            .unwrap_or_default(),
-                    ),
-                }
+                tui_application(home)
+                    .map_err(|error| error.to_string())
+                    .and_then(|app| {
+                        app.workspace()
+                            .join_unfinished_work(&project, &join.parent_id, &join.topic)
+                            .map_err(|refusal| refusal.to_string())
+                    })
             },
-            match &change {
-                CheckoutChange::Adopt { name, .. } => CheckoutOutcome::Adopted {
-                    name: name.clone(),
-                    answer: Err(failed(name)),
-                },
-                CheckoutChange::Remove { name, .. } => CheckoutOutcome::Removed {
-                    name: name.clone(),
-                    answer: Err(failed(name)),
-                },
-                CheckoutChange::Join { parent, topic, .. } => CheckoutOutcome::Joined {
-                    topic: topic.clone(),
-                    parent: parent.clone(),
-                    answer: Err(failed(topic)),
-                },
-                CheckoutChange::CleanUp => {
-                    CheckoutOutcome::CleanedUp(uze_application::CleanUp::default())
-                }
-            },
+            Err(format!("joining {} failed", join.topic)),
         );
-        let _ = sender.send(CheckoutChangeResolution { project, outcome });
+        let _ = sender.send(JoinResolution {
+            project,
+            join,
+            answer,
+        });
     });
 }
 

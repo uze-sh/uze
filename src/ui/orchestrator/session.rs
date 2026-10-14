@@ -39,8 +39,8 @@ mod manage;
 mod mouse;
 mod overlays;
 mod pane_input;
+mod recent;
 mod surface;
-mod work_modal;
 
 /// Where an event leaves the loop.
 pub(super) enum Flow {
@@ -288,13 +288,19 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.preserved.receiver.try_recv() {
             self.model.remembered.preserved_pending = false;
             self.model.remembered.preserved_work = resolution.work;
-            // The project in front may be one only this answer names.
-            self.read_front_project();
-            self.keep_work_selection();
+            // A project only this answer names is read while recent is
+            // open, so its rows gain their facts without reopening it.
+            if self.model.recent.open {
+                for project in projects_to_read(&self.model) {
+                    if !self.model.recent.reads.contains_key(&project) {
+                        self.read_project(project);
+                    }
+                }
+            }
             self.model.dirty = true;
         }
         self.absorb_checkouts();
-        self.absorb_checkout_changes();
+        self.absorb_joins();
         self.absorb_task_evaluations();
         self.absorb_deliveries();
         self.absorb_task_mutations();

@@ -685,6 +685,33 @@ mod placement_tests {
         }
     }
 
+    /// Work handed over and squash-merged on the forge leaves the
+    /// preserved list on the next pass, with nobody marking it done: the
+    /// target carries its patch, and that is what delivered means.
+    #[test]
+    fn handed_over_work_squashed_on_the_forge_leaves_on_its_own() {
+        let repository = repository("handed-over-squashed");
+        let root = repository.root().to_path_buf();
+        let app = application("handed-over-squashed-home");
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
+            .unwrap();
+        let id = slot(&placed).clone();
+        squash_merged(&repository, &placed.cwd);
+        recorded(&app, &root, &id, WorkState::Ready);
+
+        app.workspace().evaluate_tasks(&root, &[]);
+
+        assert!(
+            app.workspace()
+                .preserved_work()
+                .iter()
+                .all(|work| work.id != id.as_str()),
+            "the squash carries its patch, so it is delivered"
+        );
+    }
+
     /// Delivery asks the same question before it rebases: work the tip
     /// already carries — squashed on the forge before this machine's target
     /// heard of it — is refused as delivered, never replayed onto itself.
@@ -1124,11 +1151,47 @@ mod task_service_tests {
             "the records are what says the work existed at all"
         );
 
+        assert!(
+            !preserved[0].project_present,
+            "and they say the project is gone, which is all forgetting it asks"
+        );
+
         let refusal = app.workspace().resume_task(&project, &id, &[]);
         assert!(
             refusal.is_err(),
             "a resume with nowhere to go opens nothing"
         );
+    }
+
+    /// Forgetting is how work whose repository is gone leaves the list:
+    /// the record and its conversations go, and nothing asks Git about a
+    /// repository that is not there.
+    #[test]
+    fn work_whose_repository_is_gone_is_forgotten_by_its_record_alone() {
+        let app = application("preserved-forgotten-home");
+        let project = uze_testkit::temp::scratch("preserved-forgotten");
+        std::fs::create_dir_all(&project).unwrap();
+        let id = record_an_agent(&app, &project, WorkState::Shelved, None);
+        std::fs::remove_dir_all(&project).unwrap();
+
+        app.workspace().forget_task(&project, &id).unwrap();
+
+        assert!(app.workspace().preserved_work().is_empty());
+    }
+
+    /// While the repository is there, a record dropped on its own would
+    /// leave its branch and checkout owned by nobody: discarding is the
+    /// path, and forgetting refuses.
+    #[test]
+    fn work_whose_repository_is_there_is_not_forgotten() {
+        let app = application("preserved-not-forgotten-home");
+        let project = uze_testkit::temp::scratch("preserved-not-forgotten");
+        std::fs::create_dir_all(&project).unwrap();
+        let id = record_an_agent(&app, &project, WorkState::Shelved, None);
+
+        assert!(app.workspace().forget_task(&project, &id).is_err());
+        assert_eq!(app.workspace().preserved_work().len(), 1);
+        let _ = std::fs::remove_dir_all(project);
     }
 
     /// A record whose work the target already carries is not preserved
@@ -1765,7 +1828,7 @@ mod task_service_tests {
     }
 
     #[test]
-    fn handoff_is_finished_by_the_operator_and_discard_is_the_only_deletion() {
+    fn a_handed_off_task_is_deleted_only_by_discarding_it() {
         let repository = repository("svc-finish-discard");
         let root = repository.root().to_path_buf();
         let app = application("svc-finish-discard-home");
@@ -1776,14 +1839,12 @@ mod task_service_tests {
         assert_eq!(report.outcome, DeliveryOutcome::Handoff);
         assert_eq!(state_of(&app, &root, &id), WorkStateView::Ready);
         let branch = report.task.branch.clone();
-
-        app.workspace().finish_task(&root, &id).unwrap();
-        assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrated);
         assert!(
             slot.is_dir()
                 && repository
                     .git(&["branch", "--list", &branch])
-                    .contains(&branch)
+                    .contains(&branch),
+            "a handoff keeps both until the operator says otherwise"
         );
 
         app.workspace().discard_task(&root, &id).unwrap();
@@ -2362,7 +2423,7 @@ mod task_service_tests {
         let unreadable = evaluation.unreadable.expect("the manifest is named");
         assert!(unreadable.contains("slots"), "{unreadable}");
 
-        let refused = app.workspace().finish_task(&root, &id).unwrap_err();
+        let refused = app.workspace().discard_task(&root, &id).unwrap_err();
         assert!(
             !matches!(refused, UzeError::UnknownTask(_)),
             "the task is there; the manifest is what stopped it: {refused}"

@@ -122,36 +122,42 @@ it, so keep those away from a repository you work in this way.
 
 A checkout is kept as it is only while something still needs it there: a
 rebase or merge Git has paused in it, a process working inside it, or work a
-shelf cannot hold, such as a submodule with changes of its own. The **Work**
-list says which.
-`Alt+P` opens **Work**, which lists every project with kept work or a space
-open on it, each with how many of its items need you and how much disk its
-checkouts take.
+shelf cannot hold, such as a submodule with changes of its own. Every other
+checkout goes back to the pool on its own, and one whose work is already in the
+target is cleaned up without you asking.
 
-Choose a project to see one list of everything it holds: the work uze kept and
-every checkout of the project, whoever made it. Each row is named by its branch
-and grouped by what it asks of you:
+### Recent
 
-- **Needs you**: unfinished work nobody is working on. A task that ended with
-  commits or a shelf, a conflict or failed checks, a checkout kept for one of
-  the reasons above, or a subagent waiting to be joined.
-- **In progress**: a checkout with something running inside it, or one a live
-  agent is working in.
-- **Ready for the next agent**: checkouts uze keeps clean and ready, so the
-  next agent starts at once.
-- **Others**: your own checkouts and the ones a harness keeps for itself, with
-  their facts. What they hold is yours to decide.
+`Alt+P`, or a click on **work** at the top of the sidebar, turns the sidebar
+into **recent**: every agent no pane carries, across every project uze has
+recorded, one line each with how long ago it last changed. Press `Alt+P` or
+`Esc` to go back to the tree. When agents are waiting on you, the sidebar header
+says how many beside **work**, so you know to look without opening it.
 
-The buttons change with the row you select. Resume an unfinished task with a
-new agent (`Enter` or `r`): it goes back to the checkout it left when that one
-is free, or to any other, with its shelf put back as uncommitted changes and
-its subagents beside it, ready to be joined. Deliver it, or mark it done. Open a
-space on a checkout that holds no task, or adopt a checkout you made under
-`.worktrees/` so uze can reuse it. `d` discards a task, deleting its branch, its
-shelf and any checkout it still keeps, or removes a checkout that holds no task,
-keeping its branch.
-Both ask first. Clean up removes, in one step, every checkout of yours that is
-clean, unused and already in the target.
+Agents that wait on you come first:
+
+- a rebase paused on conflicts, or checks that failed,
+- uncommitted changes,
+- a subagent ready to be joined into its agent,
+- work ready to deliver.
+
+The rest follow: work being delivered, work with the reviewer, shelved work,
+and agents that never changed anything. Select a row and it says why it is
+listed, which project it belongs to, its branch, how far it is ahead and how
+much disk its checkout takes. A checkout is never a row of its own: it is a
+fact about the agent that left it.
+
+`Enter` does the one thing that moves the selected agent on. For a subagent it
+joins its commits into its agent's branch. For anything else it resumes the
+agent with a new tab: it goes back to the checkout it left when that one is
+free, or to any other, with its shelf put back as uncommitted changes and its
+subagents beside it. If no space is open on its project, one is opened for it.
+Ready work also offers `i` to deliver it.
+
+`d` discards the selected agent's work: its branch, its shelf, any checkout it
+still keeps and its conversation. It asks first, with the keyboard on
+**cancel**. Work whose project is no longer on disk can only be forgotten,
+which removes uze's record of it and touches nothing on disk.
 
 <Cards>
   <Card title="Extensions" href="/docs/workspace#extensions" />

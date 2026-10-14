@@ -8,7 +8,7 @@ use super::*;
 
 #[cfg(test)]
 mod perf;
-mod work;
+mod recent;
 
 mod workspace_tests {
     use crate::ui::theme::{self, Token};
@@ -43,11 +43,11 @@ mod workspace_tests {
         CompletionBehavior, DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer,
         GitBadge, GitResolution, PendingDrop, PlacementResolution, PromptScope, RootPicker,
         ScrollDirection, SpecResolution, SpecSummaryState, SupportResolution, TabDragGroup,
-        UnspelledGates, UpstreamSync, Viewport, WorkOverlay, WorkResolution, WorkStateView,
-        WorkspaceModel, adopt_agent_labels, agent_activity_frame, agent_identity_for_tab,
-        answered_or, blank_pane, can_close_tab_from_menu, checkout_lost, encode_mouse,
-        evaluation_key, forward_paste, forward_scroll, next_agent_label, next_shell_label,
-        open_architect, open_code, open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        UnspelledGates, UpstreamSync, Viewport, WorkResolution, WorkStateView, WorkspaceModel,
+        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
+        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
+        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
+        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
         render::{
             self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -2926,18 +2926,18 @@ mod workspace_tests {
             "yesterday",
             WorkStateView::Shelved,
         )];
-        model.work = Some(WorkOverlay::open(None));
+        model.recent.open = true;
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
-        let scopes = [uze_keys::Scope::Work];
+        let scopes = [uze_keys::Scope::Recent];
         let ask = keymap
             .chord_for(uze_keys::Action::DiscardTask, &scopes)
             .expect("discard is bound here");
         // The question opens on its way out; the arrow moves onto going
         // ahead, and enter takes it.
         let toward_confirm = keymap
-            .chord_for(uze_keys::Action::NextProject, &scopes)
+            .chord_for(uze_keys::Action::FocusNext, &scopes)
             .expect("the answers are walked sideways");
         let answer = keymap
             .chord_for(uze_keys::Action::Activate, &scopes)
@@ -4583,6 +4583,7 @@ mod workspace_tests {
             checkout: Some(PathBuf::from(project).join(".worktrees").join(id)),
             state,
             created_at_unix: 1,
+            project_present: true,
         }
     }
 
@@ -5920,23 +5921,29 @@ mod workspace_tests {
         assert_eq!(picker.anchor, sparkle, "anchored under the ✦ button");
     }
 
-    /// Resuming from the work list asks the same question as a new agent,
-    /// so it hangs off the same button — not off the frame's corner, which
-    /// is where a list with no click behind it once put it.
+    /// Resuming from recent asks the same question as a new agent, and it
+    /// hangs off the row it was asked from — not off the frame's corner,
+    /// which is where a list with no click behind it once put it.
     #[test]
-    fn resuming_from_the_work_list_opens_the_picker_under_the_new_agent_button() {
+    fn resuming_from_recent_opens_the_picker_under_its_row() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-by-resume"));
         set_up_every_harness(&home);
         let mut model = agent_with_task(WorkStateView::Ready, 1);
         model.remembered.preserved_work =
             vec![preserved("/repo", "t9", "kept", WorkStateView::Shelved)];
-        model.work = Some(WorkOverlay::open(None));
+        model.recent.open = true;
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
-        let sparkle = driven.hit(|hit| *hit == WorkspaceHit::NewAgentMenu);
+        let row = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == WorkspaceHit::RecentRow(0)).then_some(*rect))
+            .expect("the row is drawn");
         let resume = uze_keys::active()
-            .chord_for(uze_keys::Action::ResumeTask, &[uze_keys::Scope::Work])
-            .expect("resume is bound in the list");
+            .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Recent])
+            .expect("enter is bound in recent");
 
         driven.press_key(key_event(resume));
 
@@ -5946,7 +5953,11 @@ mod workspace_tests {
             .agent_picker
             .as_ref()
             .expect("the resume asked which harness");
-        assert_eq!(picker.anchor, sparkle, "anchored under the ✦ button");
+        assert_eq!(picker.anchor, row, "anchored under the row it came from");
+        assert!(
+            !driven.attach.model.recent.open,
+            "and recent made way for the tree"
+        );
     }
 
     /// A machine where no harness was set up has nothing to launch: the
@@ -10439,8 +10450,7 @@ mod workspace_tests {
         assert_eq!(selected(&driven), Some(0), "it stops at the first item");
         press(&mut driven, uze_keys::Action::SelectNext);
         press(&mut driven, uze_keys::Action::SelectNext);
-        press(&mut driven, uze_keys::Action::SelectNext);
-        assert_eq!(selected(&driven), Some(2), "and at the last");
+        assert_eq!(selected(&driven), Some(1), "and at the last");
 
         let _ = driven.sent();
         press(&mut driven, uze_keys::Action::Activate);
@@ -10581,7 +10591,6 @@ mod workspace_tests {
             menu.items,
             vec![
                 uze_keys::Action::RenameSelection,
-                uze_keys::Action::ShowSpaceWork,
                 uze_keys::Action::CloseTab
             ]
         );
@@ -11185,18 +11194,17 @@ mod workspace_tests {
     /// rather than landing in the one in front of the operator.
     #[test]
     fn resuming_a_preserved_task_that_kept_its_checkout_opens_a_stamped_tab() {
-        resumes_the_task_in_its_projects_space(uze_keys::Action::ResumeTask, "resume");
+        resumes_the_task_in_its_projects_space(false, "resume");
     }
 
-    /// Entering a task is resuming it. It once opened a space rooted at the
-    /// task's slot, where the task did not continue and every agent asked
-    /// for landed in the project's space instead.
+    /// A click on the row already selected is enter: the pointer resumes
+    /// the way the keyboard does.
     #[test]
-    fn entering_a_preserved_task_resumes_it_rather_than_opening_its_slot() {
-        resumes_the_task_in_its_projects_space(uze_keys::Action::Activate, "enter");
+    fn clicking_the_selected_row_resumes_it() {
+        resumes_the_task_in_its_projects_space(true, "click");
     }
 
-    fn resumes_the_task_in_its_projects_space(asked_by: uze_keys::Action, name: &str) {
+    fn resumes_the_task_in_its_projects_space(by_click: bool, name: &str) {
         let repository = uze_testkit::git::Repository::new(&format!("orchestrator-{name}-kept"));
         let root = repository.root().to_path_buf();
         let home = UzeHome::at(uze_testkit::temp::scratch(&format!(
@@ -11219,17 +11227,22 @@ mod workspace_tests {
         // takes its project from the row rather than from wherever the
         // client happens to be looking.
         model.remembered.preserved_work = app.workspace().preserved_work();
-        model.work = Some(WorkOverlay::open(None));
+        model.recent.open = true;
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();
-        let resume = keymap
-            .chord_for(asked_by, &[uze_keys::Scope::Work])
-            .expect("bound in the list");
         let pick = keymap
             .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::AgentPicker])
             .expect("picking is bound here");
-        driven.press_key(key_event(resume));
+        if by_click {
+            driven.attach.click_recent_row(0);
+            driven.attach.click_recent_row(0);
+        } else {
+            let resume = keymap
+                .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Recent])
+                .expect("enter is bound in recent");
+            driven.press_key(key_event(resume));
+        }
         driven.press_key(key_event(pick));
         let resolution = driven
             .attach

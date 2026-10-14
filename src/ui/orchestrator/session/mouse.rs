@@ -260,38 +260,14 @@ impl Attach<'_> {
                 self.model.status_catalog = None;
                 self.model.dirty = true;
             }
-            _ if self.model.work.is_some() => {
+            _ if self.model.recent.open => {
                 match self.model.hit_at(mouse.column, mouse.row) {
-                    Some(WorkspaceHit::WorkRow(index)) => {
-                        if let Some(work) = self.model.work.as_mut() {
-                            work.withdraw();
-                            work.selected = index;
-                        }
-                    }
-                    Some(WorkspaceHit::WorkProject(index)) => {
-                        let key = self.model.work.as_ref().and_then(|work| {
-                            projects(&self.model, work)
-                                .into_iter()
-                                .nth(index)
-                                .map(|project| project.key)
-                        });
-                        if let Some(key) = key {
-                            self.select_project(key);
-                        }
-                    }
-                    Some(WorkspaceHit::WorkAction(action)) => self.work_action(action, viewport),
-                    Some(WorkspaceHit::WorkAnswer(yes)) => {
-                        if let Some(work) = self.model.work.as_mut() {
-                            work.on_confirm = yes;
-                        }
-                        self.work_action(Action::Activate, viewport);
-                    }
-                    Some(WorkspaceHit::WorkBody) => {}
-                    // The close mark, and a click outside the modal, close
-                    // it the way they close every other dialog here.
-                    _ => self.model.work = None,
+                    Some(WorkspaceHit::RecentRow(index)) => self.click_recent_row(index),
+                    Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
+                    // The way in is the way out, and a click anywhere else
+                    // leaves it the way it leaves the root picker.
+                    _ => self.close_recent(),
                 }
-                self.model.dirty = true;
             }
             _ if self.model.context_menu.is_some() => {
                 // `.rev()`: the popup renders last, so its own rows sit
@@ -791,11 +767,7 @@ impl Attach<'_> {
                     WorkspaceHit::SelectSpace(space) | WorkspaceHit::ToggleSpaceCollapsed(space),
                 ) = hit
                 {
-                    let items = vec![
-                        Action::RenameSelection,
-                        Action::ShowSpaceWork,
-                        Action::CloseTab,
-                    ];
+                    let items = vec![Action::RenameSelection, Action::CloseTab];
                     self.model.context_menu = Some(ContextMenu {
                         target: MenuTarget::Space(space),
                         items,
@@ -982,15 +954,15 @@ impl Attach<'_> {
                 };
                 return self.action_index_action(action, viewport);
             }
-            // A list in front of everything: the wheel walks it, and
-            // nothing behind the modal scrolls.
-            _ if self.model.work.is_some() => {
+            // Recent has the column while it is open, so the wheel walks
+            // its rows, the same move the arrow keys make.
+            _ if self.model.recent.open => {
                 let action = if mouse.kind == MouseEventKind::ScrollUp {
                     Action::SelectPrevious
                 } else {
                     Action::SelectNext
                 };
-                self.work_action(action, viewport);
+                self.recent_action(action);
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -1346,14 +1318,10 @@ impl Attach<'_> {
                 // `DraggingSpace`).
                 self.model.dragging_space = Some(DraggingSpace::armed_at(space, mouse.row));
             }
-            // Only reachable while the work modal is open, which the
-            // guarded arm in `press` answers first.
-            WorkspaceHit::WorkProject(_)
-            | WorkspaceHit::WorkRow(_)
-            | WorkspaceHit::WorkAction(_)
-            | WorkspaceHit::WorkAnswer(_)
-            | WorkspaceHit::WorkClose
-            | WorkspaceHit::WorkBody => {}
+            // Only reachable while recent is open, which the guarded arm
+            // in `press` answers first.
+            WorkspaceHit::RecentRow(_) | WorkspaceHit::RecentAnswer(_) => {}
+            WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
             // Only reachable while the question is open, which the guarded
             // arm in `press` answers first.

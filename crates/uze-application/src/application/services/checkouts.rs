@@ -1,92 +1,32 @@
-//! Every checkout of a project, as the operator sees and acts on it.
+//! Every checkout of a project, read for the facts the agents holding
+//! them are shown with.
 //!
 //! The slots are UZE's, but they share the repository with checkouts a
 //! person made, ones an agent made by hand, and ones a harness keeps for
-//! its own isolation. This is the one surface that lists all of them with
-//! their facts, and the only one that removes a checkout UZE did not make —
-//! each time because the operator chose it.
+//! its own isolation. Each is classified by its owner so a reader can
+//! tell a subagent's checkout, waiting to be joined, from the rest.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use uze_core::integration::WorktreePlace;
-use uze_core::path::Canonical as _;
 
 use uze_workspace::{
-    checkout::{self, AccountedCheckout, CheckoutId, Owner, Presence, Refusal},
+    checkout::{self, AccountedCheckout, CheckoutId, Owner},
     task::{self, AgentStore, WorkState},
-    worktree::{self, WORKTREES_DIRECTORY},
+    worktree,
 };
 
 use super::{Workspace, tasks};
 
 impl Workspace<'_> {
-    /// Every worktree of the repository `cwd` belongs to, grouped by who
-    /// it belongs to, with the facts that decide what may be done to it.
-    /// Walks every checkout to measure it, so it is a background read.
-    /// `occupied` names directories a pane is known to sit in, before its
-    /// shell reaches the process table.
+    /// Every worktree of the repository `cwd` belongs to, with who it
+    /// belongs to and the facts it is shown with. Walks every checkout to
+    /// measure it, so it is a background read.
     #[tracing::instrument(name = "workspace.checkouts", skip_all, fields(cwd = %cwd.display()))]
-    pub fn checkouts(&self, cwd: &Path, occupied: &[PathBuf]) -> Option<CheckoutsView> {
-        self.checkouts_seen(cwd, &Presence::observe_with(occupied))
-    }
-
-    /// Records a checkout somebody else made in the isolation directory as
-    /// UZE's. Answers whether it is free for the next agent at once.
-    #[tracing::instrument(name = "workspace.adopt_checkout", skip_all, fields(path = %path.display()))]
-    pub fn adopt_checkout(
-        &self,
-        cwd: &Path,
-        path: &Path,
-    ) -> std::result::Result<AdoptedCheckout, CheckoutRefusal> {
+    pub fn checkouts(&self, cwd: &Path) -> Option<CheckoutsView> {
         let (primary, target) = self.project_of(cwd)?;
-        checkout::adopt(&primary, path).map_err(CheckoutRefusal)?;
-        Ok(AdoptedCheckout {
-            free: !checkout::holds_uncommitted_work(path)
-                && checkout::is_integrated(path, &target, "HEAD"),
-        })
-    }
-
-    /// Removes one checkout's directory, keeping its branch. Inspects it
-    /// first, and refuses with the reason while it holds work, somebody is
-    /// working in it, or it is not the operator's to remove.
-    #[tracing::instrument(name = "workspace.remove_checkout", skip_all, fields(path = %path.display()))]
-    pub fn remove_checkout(
-        &self,
-        cwd: &Path,
-        path: &Path,
-        occupied: &[PathBuf],
-    ) -> std::result::Result<RemovedCheckout, CheckoutRefusal> {
-        self.remove_checkout_seen(cwd, path, &Presence::observe_with(occupied))
-    }
-
-    /// Removes every checkout of the operator's that is clean, unused and
-    /// whose work is already in the target, and says what it kept and why.
-    /// A harness's own isolation is left to its harness, and UZE's own
-    /// slots to the pool.
-    #[tracing::instrument(name = "workspace.clean_up_checkouts", skip_all, fields(cwd = %cwd.display()))]
-    pub fn clean_up_checkouts(&self, cwd: &Path, occupied: &[PathBuf]) -> CleanUp {
-        self.clean_up_seen(cwd, &Presence::observe_with(occupied))
-    }
-
-    pub(super) fn checkouts_seen(&self, cwd: &Path, presence: &Presence) -> Option<CheckoutsView> {
-        let (primary, target) = self.project_of(cwd).ok()?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
         let accounted = checkout::account(&primary, &self.harness_worktree_places());
-        let slots = checkout::slots(&primary, &store, presence);
-        let pinned: Vec<(PathBuf, String)> = slots
-            .iter()
-            .filter_map(|slot| match &slot.state {
-                checkout::SlotState::Pinned { reason } => {
-                    Some((slot.path.clone(), reason.to_string()))
-                }
-                _ => None,
-            })
-            .collect();
-        let free: Vec<&Path> = slots
-            .iter()
-            .filter(|slot| slot.state == checkout::SlotState::Free)
-            .map(|slot| slot.path.as_path())
-            .collect();
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
         // Measured side by side: a walk is one system call per file, and a
         // project's checkouts hold hundreds of thousands of them between
@@ -104,111 +44,28 @@ impl Workspace<'_> {
         let checkouts: Vec<CheckoutView> = accounted
             .iter()
             .zip(measured)
-            .map(|(found, (bytes, last_changed))| {
-                let free = free.iter().any(|path| same(path, &found.path));
-                let facts = Facts::read(&target, found, presence, free);
-                CheckoutView {
-                    name: display_name(&primary, &found.path),
-                    path: found.path.clone(),
-                    owner: self.owner_view(&found.owner, &store, &found.path),
-                    task: slot_holder(&store, &found.path).map(|agent| agent.id.to_string()),
-                    branch: found.branch.clone(),
-                    dirty: facts.dirty,
-                    in_target: facts.in_target,
-                    held_by_a_branch: facts.held_by_a_branch,
-                    ahead: facts.ahead,
-                    in_use: facts.in_use,
-                    last_changed,
-                    bytes,
-                    adoptable: is_adoptable(&primary, found),
-                    removal_refusal: self
-                        .removal_refusal(&primary, found, &store, presence)
-                        .map(|refusal| refusal.to_string()),
-                    kept_because: pinned
-                        .iter()
-                        .find(|(path, _)| same(path, &found.path))
-                        .map(|(_, reason)| reason.clone()),
-                }
+            .map(|(found, (bytes, last_changed))| CheckoutView {
+                path: found.path.clone(),
+                owner: self.owner_view(&found.owner, &store, &found.path),
+                task: slot_holder(&store, &found.path).map(|agent| agent.id.to_string()),
+                branch: found.branch.clone(),
+                dirty: checkout::holds_uncommitted_work(&found.path),
+                ahead: ahead_of(&target, found),
+                last_changed,
+                bytes,
             })
             .collect();
-        Some(CheckoutsView {
-            total_bytes: checkouts.iter().map(|checkout| checkout.bytes).sum(),
-            primary,
-            target,
-            checkouts,
-        })
-    }
-
-    pub(super) fn remove_checkout_seen(
-        &self,
-        cwd: &Path,
-        path: &Path,
-        presence: &Presence,
-    ) -> std::result::Result<RemovedCheckout, CheckoutRefusal> {
-        let primary = primary_of(cwd)?;
-        let store = task::load(&self.0.home, &primary).unwrap_or_default();
-        let accounted = checkout::account(&primary, &self.harness_worktree_places());
-        if let Some(found) = accounted.iter().find(|found| same(&found.path, path))
-            && let Some(refusal) = self.removal_refusal(&primary, found, &store, presence)
-        {
-            return Err(CheckoutRefusal(refusal));
-        }
-        let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
-        let (bytes, _) = measure(path, &others);
-        checkout::remove(&primary, path, presence).map_err(CheckoutRefusal)?;
-        Ok(RemovedCheckout {
-            name: display_name(&primary, path),
-            bytes,
-        })
-    }
-
-    pub(super) fn clean_up_seen(&self, cwd: &Path, presence: &Presence) -> CleanUp {
-        let mut clean_up = CleanUp::default();
-        let Ok((primary, target)) = self.project_of(cwd) else {
-            return clean_up;
-        };
-        let accounted = checkout::account(&primary, &self.harness_worktree_places());
-        let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
-        for found in &accounted {
-            let name = display_name(&primary, &found.path);
-            match &found.owner {
-                Owner::Harness { .. } => clean_up.left_to_harness.push(name),
-                Owner::Operator => {
-                    let reason = checkout::removal_refusal(&primary, &found.path, presence)
-                        .map(|refusal| refusal.to_string())
-                        .or_else(|| {
-                            (!checkout::is_integrated(&found.path, &target, "HEAD"))
-                                .then(|| format!("its work is not in {target}"))
-                        });
-                    if let Some(reason) = reason {
-                        clean_up.kept.push(KeptCheckout { name, reason });
-                        continue;
-                    }
-                    let (bytes, _) = measure(&found.path, &others);
-                    match checkout::remove(&primary, &found.path, presence) {
-                        Ok(()) => clean_up.removed.push(RemovedCheckout { name, bytes }),
-                        Err(refusal) => clean_up.kept.push(KeptCheckout {
-                            name,
-                            reason: refusal.to_string(),
-                        }),
-                    }
-                }
-                Owner::Agent | Owner::Subagent { .. } | Owner::Unreadable => {}
-            }
-        }
-        clean_up
+        Some(CheckoutsView { primary, checkouts })
     }
 
     /// The repository `cwd` belongs to, and what it delivers onto. A
-    /// manifest that does not parse refuses rather than judging work
-    /// against a branch the project may not deliver into.
-    fn project_of(&self, cwd: &Path) -> std::result::Result<(PathBuf, String), CheckoutRefusal> {
-        let primary = primary_of(cwd)?;
-        let policy = self
-            .policy(&primary)
-            .map_err(|error| CheckoutRefusal(Refusal::Failed(error.to_string())))?;
+    /// manifest that does not parse answers nothing rather than judging
+    /// work against a branch the project may not deliver into.
+    fn project_of(&self, cwd: &Path) -> Option<(PathBuf, String)> {
+        let primary = worktree::primary_checkout(cwd)?;
+        let policy = self.policy(&primary).ok()?;
         let target = tasks::target_of(&primary, &policy);
-        Ok((primary, target))
+        Some((primary, target))
     }
 
     /// Where each harness this installation knows keeps worktrees of its
@@ -267,93 +124,21 @@ impl Workspace<'_> {
             Owner::Operator => CheckoutOwner::Operator,
         }
     }
-
-    fn removal_refusal(
-        &self,
-        primary: &Path,
-        found: &AccountedCheckout,
-        store: &AgentStore,
-        presence: &Presence,
-    ) -> Option<Refusal> {
-        match &found.owner {
-            Owner::Harness { harness } => {
-                return Some(Refusal::LeftToHarness(self.harness_name(harness)));
-            }
-            Owner::Agent | Owner::Subagent { .. } => {
-                if let Some(holder) =
-                    slot_holder(store, &found.path).filter(|agent| agent.is_live())
-                {
-                    return Some(Refusal::HeldBy(holder.label.clone()));
-                }
-            }
-            Owner::Unreadable | Owner::Operator => {}
-        }
-        checkout::removal_refusal(primary, &found.path, presence)
-    }
 }
 
-/// What a checkout holds, read once per row.
-struct Facts {
-    dirty: bool,
-    in_target: bool,
-    held_by_a_branch: bool,
-    ahead: usize,
-    in_use: bool,
-}
-
-impl Facts {
-    /// `free` is the pool's own answer for one of UZE's slots: a free slot
-    /// detached at commits its target lacks is detached where a branch
-    /// keeps them, which is what a release left behind before releases
-    /// stood a slot on the target.
-    fn read(target: &str, found: &AccountedCheckout, presence: &Presence, free: bool) -> Self {
-        let in_target = checkout::is_integrated(&found.path, target, "HEAD");
-        Self {
-            dirty: checkout::holds_uncommitted_work(&found.path),
-            in_target,
-            held_by_a_branch: found.branch.is_none() && !in_target && free,
-            ahead: if in_target {
-                0
-            } else {
-                checkout::commits_ahead(&found.path, target, "HEAD")
-            },
-            in_use: presence.inside(&found.path),
-        }
+/// Commits the checkout's `HEAD` has that the target lacks; zero once its
+/// work is in the target, even when a squash left them counted.
+fn ahead_of(target: &str, found: &AccountedCheckout) -> usize {
+    if checkout::is_integrated(&found.path, target, "HEAD") {
+        0
+    } else {
+        checkout::commits_ahead(&found.path, target, "HEAD")
     }
 }
 
 fn slot_holder<'a>(store: &'a AgentStore, path: &Path) -> Option<&'a task::Agent> {
     let name = path.file_name()?.to_str()?;
     store.slot_owner(&CheckoutId::adopted(name))
-}
-
-fn is_adoptable(primary: &Path, found: &AccountedCheckout) -> bool {
-    found.owner == Owner::Operator
-        && found
-            .path
-            .parent()
-            .is_some_and(|parent| same(parent, &primary.join(WORKTREES_DIRECTORY)))
-}
-
-fn display_name(primary: &Path, path: &Path) -> String {
-    path.strip_prefix(primary).map_or_else(
-        |_| path.display().to_string(),
-        |relative| relative.display().to_string(),
-    )
-}
-
-fn primary_of(cwd: &Path) -> std::result::Result<PathBuf, CheckoutRefusal> {
-    worktree::primary_checkout(cwd).ok_or_else(|| {
-        CheckoutRefusal(Refusal::Failed(format!(
-            "{} is not in a Git repository",
-            cwd.display()
-        )))
-    })
-}
-
-fn same(left: &Path, right: &Path) -> bool {
-    let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
-    canonical(left) == canonical(right)
 }
 
 /// The bytes `root` takes on disk and the newest change inside it. Symbolic
@@ -393,21 +178,16 @@ fn allocated(metadata: &std::fs::Metadata) -> u64 {
     uze_platform::fs::allocated_size(metadata)
 }
 
-/// Every worktree of one project, as the operator's checkouts view reads it.
+/// Every worktree of one project.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CheckoutsView {
     pub primary: PathBuf,
-    /// What "in the target" is measured against.
-    pub target: String,
     pub checkouts: Vec<CheckoutView>,
-    pub total_bytes: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckoutView {
     pub path: PathBuf,
-    /// The path relative to the project, or whole when it lies elsewhere.
-    pub name: String,
     pub owner: CheckoutOwner,
     /// The task the store records in this checkout, by id: how a list of
     /// kept work finds the checkout each task left behind.
@@ -417,29 +197,11 @@ pub struct CheckoutView {
     /// Uncommitted work, as a slot is shelved or freed by: content UZE
     /// derives and can write again is not work.
     pub dirty: bool,
-    /// Everything its `HEAD` carries is already in the target.
-    pub in_target: bool,
-    /// Detached at a commit some branch reaches: what its `HEAD` carries
-    /// is kept on that branch, not here — a slot released after its agent
-    /// committed, ready for the next.
-    pub held_by_a_branch: bool,
     /// Commits its `HEAD` has that the target lacks; zero once it is in
     /// the target, even when a squash left them counted.
     pub ahead: usize,
-    /// A live process is working inside it.
-    pub in_use: bool,
     pub last_changed: Option<SystemTime>,
     pub bytes: u64,
-    /// Somebody else's checkout in the isolation directory, which the
-    /// operator may record as UZE's.
-    pub adoptable: bool,
-    /// Why removing it would be refused as it stands now; `None` when it
-    /// may be removed. Removal inspects again before it acts.
-    pub removal_refusal: Option<String>,
-    /// Why UZE keeps one of its own checkouts as it is rather than handing
-    /// it to the next agent, when nobody is assigned to it: a paused
-    /// operation, somebody working inside, or work a shelf could not take.
-    pub kept_because: Option<String>,
 }
 
 /// Who a checkout belongs to.
@@ -466,53 +228,6 @@ pub enum CheckoutOwner {
     /// UZE's, with a record this build cannot read.
     Unreadable,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdoptedCheckout {
-    /// Clean and level with the target: the next agent may be placed there
-    /// at once, and its directory reset for it.
-    pub free: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RemovedCheckout {
-    pub name: String,
-    /// What removing it gave back.
-    pub bytes: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KeptCheckout {
-    pub name: String,
-    pub reason: String,
-}
-
-/// What one clean-up removed, and what it left and why.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CleanUp {
-    pub removed: Vec<RemovedCheckout>,
-    pub kept: Vec<KeptCheckout>,
-    pub left_to_harness: Vec<String>,
-}
-
-impl CleanUp {
-    pub fn freed(&self) -> u64 {
-        self.removed.iter().map(|removed| removed.bytes).sum()
-    }
-}
-
-/// Why the operator's adoption or removal of a checkout was refused, said
-/// in words.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckoutRefusal(Refusal);
-
-impl std::fmt::Display for CheckoutRefusal {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-impl std::error::Error for CheckoutRefusal {}
 
 #[cfg(test)]
 mod tests;

@@ -298,22 +298,6 @@ impl Workspace<'_> {
         collected
     }
 
-    /// The operator declares a handed-off task done: its slot is free and
-    /// its branch stays.
-    #[tracing::instrument(name = "workspace.finish_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id), err)]
-    pub fn finish_task(&self, cwd: &Path, task_id: &str) -> Result<()> {
-        let (primary, _) = self
-            .repository_context(cwd)?
-            .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
-        task::locked(&self.0.home, &primary, |store| {
-            let agent = task_mut(store, task_id)
-                .filter(|agent| agent.is_isolated())
-                .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
-            agent.state = WorkState::Integrated;
-            Ok(())
-        })
-    }
-
     /// The one path that deletes work, taken only by the operator on a
     /// named task: the checkout and the branch go, the record goes with them.
     #[tracing::instrument(name = "workspace.discard_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id), err)]
@@ -339,6 +323,31 @@ impl Workspace<'_> {
             // kept working is revived by reconciliation, and it would come
             // back without the conversation it never left.
             conversation::forget(&self.0.home, &primary, &agent_id);
+            Ok(())
+        })
+    }
+
+    /// Lets go of a task whose project is no longer on disk: its record
+    /// and its conversations go, and no repository is asked anything,
+    /// since there is none left to ask. While the project is there,
+    /// discarding is the path, because a record dropped without its
+    /// branch and checkout would leave them owned by nobody.
+    #[tracing::instrument(name = "workspace.forget_task", skip_all, fields(project = %project.display(), task_id = %task_id), err)]
+    pub fn forget_task(&self, project: &Path, task_id: &str) -> Result<()> {
+        if project.is_dir() {
+            return Err(UzeError::Discard(format!(
+                "{} is still on disk; discard the work instead",
+                project.display()
+            )));
+        }
+        task::locked(&self.0.home, project, |store| {
+            let agent = task_mut(store, task_id)
+                .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
+            let agent_id = agent.id.clone();
+            store
+                .agents
+                .retain(|recorded| recorded.id.as_str() != task_id);
+            conversation::forget(&self.0.home, project, &agent_id);
             Ok(())
         })
     }

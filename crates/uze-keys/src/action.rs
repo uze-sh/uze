@@ -302,35 +302,14 @@ actions! {
         "Deliver all", "Deliver every deliverable task in this space";
     // Named for what it opened when released: an operator's keys.json
     // binds it by this name, and a new one would drop the binding.
-    ToggleWork => "toggle-preserved-work", false,
-        "Work", "Show each project's kept work and checkouts, and what each asks of you";
-    NextProject => "next-project", false,
-        "Next project", "Move to the next project of the work modal";
-    PreviousProject => "previous-project", false,
-        "Previous project", "Move to the previous project of the work modal";
-    ResumeTask => "resume-task", false,
-        "Resume", "Put the selected kept task back into a slot";
-    FinishTask => "finish-task", false,
-        "Mark done", "Record the selected task as finished";
-    // One key for the one thing that takes a row away, whichever row it
-    // is: a task's work is discarded with its checkout and branch, a
-    // checkout nobody's task holds is removed and its branch kept.
+    ToggleRecent => "toggle-preserved-work", false,
+        "Recent", "Show the agents no pane carries, across every project, and what each waits on";
+    // One key for the one thing that takes a row away: the work goes with
+    // its checkout, its branch and its conversation, or, when its project
+    // is gone from disk, the record is let go of.
     DiscardTask => "discard-task", true,
         "Discard",
-        "Discard the selected task's work, or remove the selected checkout, keeping its branch";
-    ShowSpaceWork => "show-space-work", false,
-        "Work", "Open the work modal on this space's project";
-    AdoptCheckout => "adopt-checkout", false,
-        "Adopt",
-        "Record the selected checkout as UZE's own slot; a clean one is free for \
-         the next agent at once";
-    JoinCheckout => "join-checkout", false,
-        "Join",
-        "Bring a parked agent's subagent's commits onto that agent's branch, and free \
-         its checkout";
-    CleanUpCheckouts => "clean-up-checkouts", true,
-        "Clean up",
-        "Remove every checkout of yours that is clean, unused and already in the target";
+        "Discard the selected agent's work: its checkout, branch and conversation";
 }
 
 impl fmt::Display for Action {
@@ -399,7 +378,6 @@ mod tests {
             destructive,
             BTreeSet::from_iter(
                 [
-                    "clean-up-checkouts",
                     "clear-prompt-history",
                     "close-tab",
                     "delete-file",

@@ -1243,7 +1243,7 @@ mod slots {
         let view = world
             .app
             .workspace()
-            .checkouts(&world.root, &world.held())
+            .checkouts(&world.root)
             .expect("the project's checkouts are read");
         let released = view
             .checkouts
@@ -1252,9 +1252,8 @@ mod slots {
             .expect("the released slot is listed");
 
         assert_eq!(released.branch, None, "a released slot is detached");
-        assert!(released.in_target, "and stands on the target");
-        assert_eq!(released.ahead, 0);
-        assert!(!released.held_by_a_branch);
+        assert_eq!(released.ahead, 0, "and stands on the target");
+        assert!(!released.dirty);
         let branch = world.record(&agent).branch.expect("the task has a branch");
         assert_eq!(
             world.repo.git(&["rev-parse", &branch]),

@@ -173,9 +173,9 @@ scopes! {
     /// The drawer about the agent in front: what it runs on, and what it
     /// was asked.
     AgentDrawer => "agent-drawer", "The agent drawer", Workspace, seals: true, text: false;
-    /// The work modal: each project's kept work and checkouts. Named for
+    /// The sidebar's recent mode: the agents no pane carries. Named for
     /// the surface it was when released, since keys.json binds by name.
-    Work => "preserved-work", "Work", Workspace, seals: true, text: false;
+    Recent => "preserved-work", "Recent", Workspace, seals: true, text: false;
     /// The tab/space context menu.
     ContextMenu => "context-menu", "A tab's actions", Workspace, seals: true, text: false;
 

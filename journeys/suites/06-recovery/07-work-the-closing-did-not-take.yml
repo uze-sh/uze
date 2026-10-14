@@ -8,11 +8,11 @@ about: |
   what the agent was in — by accident, or because the screen was getting
   full — must cost nothing but that.
 
-  The surface that says so is the work modal, which lists every project
-  with kept work. It used to answer only for the repositories the session
-  had already looked at, which meant a project with nothing open was
-  invisible, precisely the case the list exists for, since the thing being
-  gone is *why* the work needs finding.
+  The surface that says so is the sidebar's recent mode, which lists every
+  agent no pane carries, across every project UZE has recorded. A list
+  that answered only for the repositories the session had already looked
+  at would miss a project with nothing open, precisely the case it exists
+  for, since the thing being gone is *why* the work needs finding.
 
   What the machine must show: after the agent's tab is closed and the agent
   ended unfinished, the work is still in the repository on its own branch,
@@ -106,8 +106,10 @@ scenes:
   - scene: the work is found again without the tab that held it
     when:
       - key: "M-p"
-        say: open the work modal on the project
-        expect: NEEDS YOU
+        say: open recent
+        # A block's heading is drawn only over a row in it, so either one
+        # says the list opened and found the agent.
+        expect: "needs you|others"
         expect_timeout: 20
         pause: 1.5
     then:

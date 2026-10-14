@@ -337,7 +337,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Workspace, "alt+down", Action::NextAgent),
         // --- Workspace, the work ----------------------------------------
         bind(Scope::Workspace, "alt+i", Action::DeliverTask),
-        bind(Scope::Workspace, "alt+p", Action::ToggleWork),
+        bind(Scope::Workspace, "alt+p", Action::ToggleRecent),
         // --- Workspace, the surfaces that seal --------------------------
         bind(Scope::Code, "esc", Action::Dismiss),
         bind(Scope::Code, "tab", Action::FocusNext),
@@ -411,22 +411,18 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "pagedown", Action::ScrollPageDown),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
-        // The work modal: one keyboard for every row, since each key
-        // means one thing whichever row is selected, and a row it does
-        // not apply to says why.
-        bind(Scope::Work, "esc", Action::Dismiss),
-        bind(Scope::Work, "alt+p", Action::ToggleWork),
-        bind(Scope::Work, "right", Action::NextProject),
-        bind(Scope::Work, "left", Action::PreviousProject),
-        bind(Scope::Work, "down", Action::SelectNext),
-        bind(Scope::Work, "up", Action::SelectPrevious),
-        bind(Scope::Work, "enter", Action::Activate),
-        // The row's everyday moves hold a letter; the rarer ones —
-        // marking done, joining, adopting, cleaning up — are its buttons
-        // and rows of the index, which is where a keyboard reaches them.
-        bind(Scope::Work, "r", Action::ResumeTask),
-        bind(Scope::Work, "i", Action::DeliverTask),
-        bind(Scope::Work, "d", Action::DiscardTask),
+        // Recent: enter does what moves the selected row on, and the
+        // letters are the two things beyond it, each only where it applies.
+        bind(Scope::Recent, "esc", Action::Dismiss),
+        bind(Scope::Recent, "alt+p", Action::ToggleRecent),
+        bind(Scope::Recent, "down", Action::SelectNext),
+        bind(Scope::Recent, "up", Action::SelectPrevious),
+        bind(Scope::Recent, "enter", Action::Activate),
+        // A question's two answers, walked the way every question's are.
+        bind(Scope::Recent, "left", Action::FocusPrevious),
+        bind(Scope::Recent, "right", Action::FocusNext),
+        bind(Scope::Recent, "i", Action::DeliverTask),
+        bind(Scope::Recent, "d", Action::DiscardTask),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
@@ -602,15 +598,6 @@ mod tests {
                 // Delivering every task at once is rare and wide: the
                 // index offers it wherever there is a space to deliver.
                 "deliver-all-tasks",
-                // The work modal's rarer moves: each is a button on the
-                // row it applies to, and a row of the index while it is.
-                "finish-task",
-                // The work modal's own key opens it; this is the space
-                // menu's way straight to that space's project.
-                "show-space-work",
-                "adopt-checkout",
-                "join-checkout",
-                "clean-up-checkouts",
             ],
             "an action gained or lost a chord; say so here on purpose"
         );
@@ -787,6 +774,41 @@ mod tests {
                 .chord_for(Action::NewShellTab, &[Scope::Workspace]),
             Chord::parse("f4").ok(),
             "the entries this build understands are still applied"
+        );
+    }
+
+    /// The work modal's rarer moves are gone with it, and a keys.json
+    /// written while they were bound still loads: each binding is said
+    /// and ignored, and the recent toggle keeps the name it was bound by.
+    #[test]
+    fn a_keymap_naming_the_work_modals_retired_actions_still_loads() {
+        let mut file = KeymapFile::default();
+        for retired in [
+            "finish-task",
+            "adopt-checkout",
+            "clean-up-checkouts",
+            "join-checkout",
+            "resume-task",
+            "show-space-work",
+            "next-project",
+        ] {
+            file.set("preserved-work", retired, vec!["f6".to_owned()]);
+        }
+        file.set("workspace", "toggle-preserved-work", vec!["f7".to_owned()]);
+
+        let loaded = resolve(&file).expect("the rest of the file still applies");
+        assert_eq!(loaded.problems.len(), 7, "{:?}", loaded.problems);
+        assert!(
+            loaded
+                .problems
+                .iter()
+                .all(|problem| problem.severity == Severity::Warning)
+        );
+        assert_eq!(
+            loaded
+                .keymap
+                .chord_for(Action::ToggleRecent, &[Scope::Workspace]),
+            Chord::parse("f7").ok()
         );
     }
 

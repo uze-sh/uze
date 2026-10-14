@@ -255,43 +255,13 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // A deliberate bulk gesture: no button stands one misclick from it,
     // and the index lists it only where there is a space to deliver.
     put(Action::DeliverAllTasks, Index);
-    put(Action::ToggleWork, Control("the first-steps section"));
     put(
-        Action::NextProject,
-        Control("the work modal's sidebar of projects"),
+        Action::ToggleRecent,
+        Control("the sidebar header's name and its count of agents waiting"),
     );
-    put(
-        Action::PreviousProject,
-        Control("the work modal's sidebar of projects"),
-    );
-    put(
-        Action::ResumeTask,
-        Control("the work modal's resume button"),
-    );
-    put(
-        Action::FinishTask,
-        Control("the work modal's mark-done button"),
-    );
-    put(
-        Action::DiscardTask,
-        Control("the work modal's discard or remove button"),
-    );
-    put(
-        Action::ShowSpaceWork,
-        Control("the space header's right-click menu"),
-    );
-    put(
-        Action::AdoptCheckout,
-        Control("the work modal's adopt button"),
-    );
-    put(
-        Action::JoinCheckout,
-        Control("the work modal's join button"),
-    );
-    put(
-        Action::CleanUpCheckouts,
-        Control("the work modal's clean-up button"),
-    );
+    // Taking work away is never one misclick from a pointer: the index
+    // offers it for recent's selected row, and only where it applies.
+    put(Action::DiscardTask, Index);
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }

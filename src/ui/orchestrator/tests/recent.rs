@@ -1,0 +1,589 @@
+//! Recent: what it lists and in what order, what a row says selected and
+//! not, the header that leads into it, and what each key does to a row.
+
+use super::workspace_tests::{driven, key_event, model_of, preserved, session};
+use super::*;
+use ratatui::style::Modifier;
+use ratatui::{Terminal, backend::TestBackend};
+use std::time::SystemTime;
+use uze_application::{CheckoutOwner, CheckoutView, CheckoutsView, PreservedWork};
+
+const PROJECT: &str = "/work/project";
+const OTHER: &str = "/work/other";
+
+fn checkout_of(task: &PreservedWork) -> CheckoutView {
+    CheckoutView {
+        path: task.checkout.clone().expect("the task kept a checkout"),
+        owner: CheckoutOwner::Agent {
+            holder: Some(task.label.clone()),
+            live: false,
+        },
+        task: Some(task.id.clone()),
+        branch: Some(task.branch.clone()),
+        dirty: false,
+        ahead: 3,
+        last_changed: None,
+        bytes: 5 * 1024 * 1024 * 1024,
+    }
+}
+
+fn subagent_checkout(task: Option<&str>) -> CheckoutView {
+    CheckoutView {
+        path: Path::new(PROJECT).join(".worktrees/child"),
+        owner: CheckoutOwner::Subagent {
+            parent: "parser".to_owned(),
+            parent_id: "p1".to_owned(),
+            topic: Some("lexer".to_owned()),
+            joinable: true,
+        },
+        task: task.map(str::to_owned),
+        branch: Some("agent/child".to_owned()),
+        dirty: false,
+        ahead: 1,
+        last_changed: None,
+        bytes: 1024,
+    }
+}
+
+fn changed(task: PreservedWork, seconds_ago: u64) -> PreservedWork {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    PreservedWork {
+        created_at_unix: now - seconds_ago,
+        ..task
+    }
+}
+
+/// A model with a space open on the project, `kept` the machine's kept
+/// work and `checkouts` the project's last read.
+fn showing(kept: Vec<PreservedWork>, checkouts: Vec<CheckoutView>) -> WorkspaceModel {
+    let mut model = model_of(session(PROJECT));
+    model.remembered.preserved_work = kept;
+    model.remembered.checkouts_asked = 1;
+    model.recent.reads.insert(
+        PathBuf::from(PROJECT),
+        ProjectRead {
+            asked: 1,
+            answer: Some(Some(CheckoutsView {
+                primary: PathBuf::from(PROJECT),
+                checkouts,
+            })),
+        },
+    );
+    model.recent.open = true;
+    model
+}
+
+fn sidebar_buffer(model: &WorkspaceModel, height: u16) -> ratatui::buffer::Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(44, height)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_sidebar(
+                frame,
+                frame.area(),
+                model,
+                &[],
+                &mut Vec::new(),
+                &mut render::FrameMetrics::default(),
+            )
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+fn drawn(model: &WorkspaceModel) -> Vec<String> {
+    let buffer = sidebar_buffer(model, 30);
+    (0..buffer.area.height)
+        .map(|row| {
+            (0..buffer.area.width)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect()
+}
+
+fn row_of(lines: &[String], text: &str) -> usize {
+    lines
+        .iter()
+        .position(|line| line.contains(text))
+        .unwrap_or_else(|| panic!("{text:?} is drawn:\n{}", lines.join("\n")))
+}
+
+fn press(driven: &mut super::workspace_tests::Driven<'_>, action: Action) {
+    let chord = uze_keys::active()
+        .chord_for(
+            action,
+            &[uze_keys::Scope::Workspace, uze_keys::Scope::Recent],
+        )
+        .unwrap_or_else(|| panic!("{action} is bound"));
+    driven.press_key(key_event(chord));
+}
+
+fn reasons(model: &WorkspaceModel) -> Vec<(String, Reason)> {
+    recent_rows(model)
+        .into_iter()
+        .map(|row| (row.name, row.reason))
+        .collect()
+}
+
+#[test]
+fn every_state_lands_in_its_block_with_its_reason_and_its_move() {
+    let cases = [
+        (
+            WorkStateView::Conflicted {
+                files: vec![PathBuf::from("a"), PathBuf::from("b")],
+            },
+            Reason::Conflict { files: 2 },
+            Some("resume"),
+        ),
+        (
+            WorkStateView::GateFailed,
+            Reason::ChecksFailed,
+            Some("resume"),
+        ),
+        (
+            WorkStateView::Uncommitted,
+            Reason::Uncommitted,
+            Some("resume"),
+        ),
+        (WorkStateView::Ready, Reason::Ready, Some("resume")),
+        (
+            WorkStateView::Integrating,
+            Reason::Delivering,
+            Some("resume"),
+        ),
+        (
+            WorkStateView::Published,
+            Reason::WithReviewer,
+            Some("resume"),
+        ),
+        (WorkStateView::Shelved, Reason::Shelved, Some("resume")),
+        (WorkStateView::Running, Reason::NoChanges, Some("resume")),
+    ];
+    for (state, reason, primary) in cases {
+        let model = showing(vec![preserved(PROJECT, "t1", "work", state)], Vec::new());
+        let rows = recent_rows(&model);
+        assert_eq!(rows[0].reason, reason);
+        assert_eq!(rows[0].primary(), primary, "{reason:?}");
+        assert_eq!(
+            rows[0].delivers(),
+            reason == Reason::Ready,
+            "only ready work offers delivery: {reason:?}"
+        );
+        assert_eq!(rows[0].taking_away(), Some("discard"));
+    }
+}
+
+/// Uncommitted changes the checkout holds are what the row waits on,
+/// whatever state the record last carried.
+#[test]
+fn a_checkout_holding_changes_reads_as_uncommitted() {
+    let task = preserved(PROJECT, "t1", "parked", WorkStateView::Shelved);
+    let mut checkout = checkout_of(&task);
+    checkout.dirty = true;
+    let model = showing(vec![task], vec![checkout]);
+    assert_eq!(recent_rows(&model)[0].reason, Reason::Uncommitted);
+}
+
+#[test]
+fn what_waits_on_you_comes_first_and_each_block_by_recency() {
+    let model = showing(
+        vec![
+            changed(
+                preserved(PROJECT, "a", "old shelf", WorkStateView::Shelved),
+                7200,
+            ),
+            changed(
+                preserved(PROJECT, "b", "old ready", WorkStateView::Ready),
+                9000,
+            ),
+            changed(
+                preserved(OTHER, "c", "new review", WorkStateView::Published),
+                60,
+            ),
+            changed(
+                preserved(OTHER, "d", "new ready", WorkStateView::Ready),
+                120,
+            ),
+        ],
+        Vec::new(),
+    );
+    let names: Vec<String> = recent_rows(&model)
+        .into_iter()
+        .map(|row| row.name)
+        .collect();
+    assert_eq!(names, ["new ready", "old ready", "new review", "old shelf"]);
+}
+
+/// A subagent's task and its checkout are one row, and joining is what
+/// moves it on; a subagent checkout no task names is still listed.
+#[test]
+fn a_subagent_ready_to_join_is_one_row_whose_move_is_joining() {
+    let child = preserved(PROJECT, "child", "lexer", WorkStateView::Shelved);
+    let named = showing(vec![child], vec![subagent_checkout(Some("child"))]);
+    let rows = recent_rows(&named);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].reason, Reason::JoinReady);
+    assert_eq!(rows[0].primary(), Some("join"));
+
+    let unnamed = showing(Vec::new(), vec![subagent_checkout(None)]);
+    assert_eq!(
+        reasons(&unnamed),
+        vec![("lexer".to_owned(), Reason::JoinReady)]
+    );
+}
+
+/// Only an agent is a row: a free slot, or a checkout somebody made by
+/// hand, is not listed.
+#[test]
+fn a_checkout_no_agent_holds_is_not_listed() {
+    let free = CheckoutView {
+        path: Path::new(PROJECT).join(".worktrees/free"),
+        owner: CheckoutOwner::Agent {
+            holder: None,
+            live: false,
+        },
+        task: None,
+        branch: None,
+        dirty: false,
+        ahead: 0,
+        last_changed: None,
+        bytes: 1024,
+    };
+    let by_hand = CheckoutView {
+        owner: CheckoutOwner::Operator,
+        path: Path::new(PROJECT).join("elsewhere"),
+        ..free.clone()
+    };
+    assert!(recent_rows(&showing(Vec::new(), vec![free, by_hand])).is_empty());
+}
+
+#[test]
+fn work_whose_project_is_gone_can_only_be_forgotten() {
+    let mut gone = preserved(OTHER, "t1", "vanished", WorkStateView::Ready);
+    gone.project_present = false;
+    let model = showing(vec![gone], Vec::new());
+    let row = &recent_rows(&model)[0];
+    assert_eq!(row.reason, Reason::ProjectGone);
+    assert!(!row.reason.waits_on_you());
+    assert_eq!(row.primary(), None);
+    assert!(!row.delivers());
+    assert_eq!(row.taking_away(), Some("forget"));
+}
+
+#[test]
+fn an_unselected_row_is_one_line_and_work_waiting_on_you_says_why() {
+    let mut model = showing(
+        vec![
+            changed(
+                preserved(PROJECT, "a", "fixing", WorkStateView::GateFailed),
+                60,
+            ),
+            changed(
+                preserved(PROJECT, "b", "parked", WorkStateView::Shelved),
+                120,
+            ),
+            changed(
+                preserved(PROJECT, "c", "selected", WorkStateView::Shelved),
+                180,
+            ),
+        ],
+        Vec::new(),
+    );
+    model.recent.selected = Some("c".to_owned());
+    let lines = drawn(&model);
+
+    let parked = row_of(&lines, "parked");
+    assert!(
+        !lines[parked + 1].contains("shelved"),
+        "a row that waits on nobody says only its name:\n{}",
+        lines.join("\n")
+    );
+    let fixing = row_of(&lines, "fixing");
+    assert!(lines[fixing + 1].contains("checks failed"));
+    assert!(lines[row_of(&lines, "needs you")].contains('1'));
+    assert!(lines[row_of(&lines, "others")].contains('2'));
+}
+
+#[test]
+fn the_selected_row_says_its_reason_its_project_and_its_checkout() {
+    let task = preserved(
+        PROJECT,
+        "t1",
+        "journeys",
+        WorkStateView::Conflicted {
+            files: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+        },
+    );
+    let checkout = checkout_of(&task);
+    let mut model = showing(vec![task], vec![checkout]);
+    model.recent.selected = Some("t1".to_owned());
+    let lines = drawn(&model);
+
+    let at = row_of(&lines, "journeys");
+    assert!(
+        lines[at + 1].contains("conflict in 3 files"),
+        "{}",
+        lines.join("\n")
+    );
+    assert!(lines[at + 1].contains("project"), "the project's name");
+    assert!(
+        lines[at + 2].contains("agent/t1 · 3 ahead · 5.0 GB"),
+        "{}",
+        lines.join("\n")
+    );
+}
+
+#[test]
+fn a_project_with_no_space_open_says_resuming_opens_one() {
+    let mut model = showing(
+        vec![preserved(OTHER, "t1", "elsewhere", WorkStateView::Shelved)],
+        Vec::new(),
+    );
+    model.recent.selected = Some("t1".to_owned());
+    let lines = drawn(&model);
+    assert!(lines[row_of(&lines, "elsewhere") + 1].contains("other · new space"));
+}
+
+#[test]
+fn the_name_of_work_whose_project_is_gone_is_struck_through() {
+    let mut gone = preserved(OTHER, "t1", "vanished", WorkStateView::Shelved);
+    gone.project_present = false;
+    let model = showing(vec![gone], Vec::new());
+    let buffer = sidebar_buffer(&model, 30);
+    let lines = drawn(&model);
+    let row = row_of(&lines, "vanished") as u16;
+    let column = lines[row as usize].find("vanished").unwrap() as u16;
+    assert!(
+        buffer[(column, row)]
+            .modifier
+            .contains(Modifier::CROSSED_OUT)
+    );
+}
+
+#[test]
+fn the_header_counts_what_waits_on_you_and_marks_a_tree_agent_finishing() {
+    let mut model = showing(
+        vec![
+            preserved(PROJECT, "a", "one", WorkStateView::Ready),
+            preserved(PROJECT, "b", "two", WorkStateView::GateFailed),
+            preserved(PROJECT, "c", "three", WorkStateView::Shelved),
+        ],
+        Vec::new(),
+    );
+    model.recent.open = false;
+    let mark = theme::glyph(Symbol::MarkStanding);
+    assert!(drawn(&model)[0].contains(&format!("work {mark} 2")));
+
+    model.recent.open = true;
+    let chevron = theme::glyph(Symbol::ChevronRight);
+    assert!(drawn(&model)[0].contains(&format!("work {chevron} recent")));
+    assert!(!drawn(&model)[0].contains(&mark));
+    model.remembered.completed_agent_panes.insert(PaneId(7));
+    assert!(
+        drawn(&model)[0].contains(&mark),
+        "an agent that finished since recent opened"
+    );
+}
+
+#[test]
+fn the_toggle_opens_recent_reads_its_projects_and_keeps_the_selection() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-open"));
+    let mut model = model_of(session(PROJECT));
+    model.remembered.preserved_work = vec![
+        preserved(PROJECT, "a", "one", WorkStateView::Ready),
+        preserved(OTHER, "b", "two", WorkStateView::Ready),
+    ];
+    let mut driven = driven(model, &home);
+
+    press(&mut driven, Action::ToggleRecent);
+    let recent = &driven.attach.model.recent;
+    assert!(recent.open);
+    assert!(recent.reads.contains_key(Path::new(PROJECT)));
+    assert!(recent.reads.contains_key(Path::new(OTHER)));
+
+    press(&mut driven, Action::SelectNext);
+    let selected = driven.attach.model.recent.selected.clone();
+    assert!(selected.is_some());
+    press(&mut driven, Action::Dismiss);
+    assert!(!driven.attach.model.recent.open, "escape leaves it");
+    press(&mut driven, Action::ToggleRecent);
+    assert_eq!(driven.attach.model.recent.selected, selected);
+    press(&mut driven, Action::ToggleRecent);
+    assert!(!driven.attach.model.recent.open, "the same key closes it");
+}
+
+/// The question opens on its way out, so the enter that opened nothing
+/// by habit takes nothing either; the arrow moves onto going ahead.
+#[test]
+fn a_question_opens_on_its_way_out_and_the_arrow_reaches_going_ahead() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-ask"));
+    let model = showing(
+        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Shelved)],
+        Vec::new(),
+    );
+    let mut driven = driven(model, &home);
+
+    press(&mut driven, Action::DiscardTask);
+    press(&mut driven, Action::Activate);
+    assert!(!driven.attach.model.recent.asking);
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .task_mutation_pending
+            .is_empty()
+    );
+
+    press(&mut driven, Action::DiscardTask);
+    press(&mut driven, Action::FocusNext);
+    press(&mut driven, Action::Activate);
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .task_mutation_pending
+            .contains("t1")
+    );
+}
+
+#[test]
+fn discard_asks_on_the_row_and_declining_leaves_everything() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-decline"));
+    let model = showing(
+        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Shelved)],
+        Vec::new(),
+    );
+    let mut driven = driven(model, &home);
+
+    press(&mut driven, Action::DiscardTask);
+    assert!(driven.attach.model.recent.asking);
+    let lines = drawn(&driven.attach.model).join(" ");
+    assert!(
+        lines.contains("discard branch, commits and") && lines.contains("conversation?"),
+        "{lines}"
+    );
+    press(&mut driven, Action::Dismiss);
+    assert!(!driven.attach.model.recent.asking);
+    assert!(driven.attach.model.recent.open, "declining is not leaving");
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .task_mutation_pending
+            .is_empty()
+    );
+}
+
+#[test]
+fn work_whose_project_is_gone_is_forgotten_on_confirmation() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-forget"));
+    let mut gone = preserved(OTHER, "t1", "vanished", WorkStateView::Shelved);
+    gone.project_present = false;
+    let mut driven = driven(showing(vec![gone], Vec::new()), &home);
+
+    press(&mut driven, Action::DiscardTask);
+    let lines = drawn(&driven.attach.model).join(" ");
+    assert!(
+        lines.contains("forget this record?") && lines.contains("nothing on disk"),
+        "{lines}"
+    );
+    press(&mut driven, Action::FocusNext);
+    press(&mut driven, Action::Activate);
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .task_mutation_pending
+            .contains("t1")
+    );
+}
+
+#[test]
+fn enter_joins_a_subagent_and_recent_stays_open() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-join"));
+    let mut driven = driven(showing(Vec::new(), vec![subagent_checkout(None)]), &home);
+
+    press(&mut driven, Action::Activate);
+    assert!(driven.attach.model.remembered.join_pending);
+    assert!(driven.attach.model.recent.open);
+}
+
+#[test]
+fn deliver_is_only_for_ready_work() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-deliver"));
+    let mut driven = driven(
+        showing(
+            vec![
+                changed(preserved(PROJECT, "a", "ready", WorkStateView::Ready), 60),
+                changed(
+                    preserved(PROJECT, "b", "shelf", WorkStateView::Shelved),
+                    120,
+                ),
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+
+    press(&mut driven, Action::DeliverTask);
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .delivery_pending
+            .contains("a")
+    );
+    press(&mut driven, Action::SelectNext);
+    press(&mut driven, Action::DeliverTask);
+    assert!(
+        !driven
+            .attach
+            .model
+            .remembered
+            .delivery_pending
+            .contains("b")
+    );
+}
+
+/// The letters a row offers are rows of the index too, and only where
+/// they apply: a keyboard user who does not know them still reaches them.
+#[test]
+fn the_index_offers_what_the_selected_row_offers() {
+    let ready = showing(
+        vec![preserved(PROJECT, "t1", "ready", WorkStateView::Ready)],
+        Vec::new(),
+    );
+    assert_eq!(
+        recent_offered(&ready),
+        vec![Action::DeliverTask, Action::DiscardTask]
+    );
+    let joinable = showing(Vec::new(), vec![subagent_checkout(None)]);
+    assert!(recent_offered(&joinable).is_empty());
+}
+
+#[test]
+fn with_nothing_kept_it_says_so() {
+    let model = showing(Vec::new(), Vec::new());
+    row_of(&drawn(&model), "nothing kept");
+}
+
+#[test]
+fn recent_draws_on_a_small_terminal_without_panicking() {
+    let model = showing(
+        vec![preserved(PROJECT, "t1", "kept", WorkStateView::Ready)],
+        Vec::new(),
+    );
+    for height in 1..8 {
+        sidebar_buffer(&model, height);
+    }
+}

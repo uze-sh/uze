@@ -403,11 +403,11 @@ mod tests {
 
     #[test]
     fn two_keyboards_do_not_conflict_with_each_other() {
-        // `r` removes a plugin in management and resumes a task in the
-        // work modal. Different keyboards, no collision.
+        // `d` discards in recent and in the code surface's list alike.
+        // Different keyboards, no collision.
         Keymap::new(vec![
-            bind(Scope::Plugins, "r", Action::RemovePlugin),
-            bind(Scope::Work, "r", Action::ResumeTask),
+            bind(Scope::Recent, "d", Action::DiscardTask),
+            bind(Scope::Code, "d", Action::DiscardTask),
         ])
         .expect("different keyboards");
     }

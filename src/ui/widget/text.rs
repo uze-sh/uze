@@ -189,28 +189,6 @@ pub(crate) fn fold(text: &str, width: usize) -> Vec<String> {
     rows
 }
 
-/// `n` in subscript digits (`12` -> `₁₂`): a count that sits beside a
-/// label without competing with it for weight — the route counts in the
-/// management sidebar, the pull/push counts under an agent's branch.
-pub(crate) fn small_digits(n: usize) -> String {
-    n.to_string()
-        .chars()
-        .map(|c| match c {
-            '0' => '₀',
-            '1' => '₁',
-            '2' => '₂',
-            '3' => '₃',
-            '4' => '₄',
-            '5' => '₅',
-            '6' => '₆',
-            '7' => '₇',
-            '8' => '₈',
-            '9' => '₉',
-            _ => c,
-        })
-        .collect()
-}
-
 /// Renders a label as Unicode small capitals (`Beta` -> `ʙᴇᴛᴀ`) — the
 /// weight of capitals without their full height, for a mark that has to be
 /// noticed beside a name without shouting over it. The input is lowercased

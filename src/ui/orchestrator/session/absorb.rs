@@ -20,7 +20,9 @@ impl Attach<'_> {
     /// one was out.
     pub(super) fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
+        let mut evaluated = false;
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
+            evaluated = true;
             self.model
                 .remembered
                 .task_eval_pending
@@ -109,6 +111,13 @@ impl Attach<'_> {
         for cwd in asked_again {
             self.model
                 .schedule_evaluation(self.home, cwd, &self.channels.tasks.sender);
+        }
+        // An evaluation is what moves a task between waiting on the
+        // operator and not, and an agent that ended is evaluated as it
+        // ends: the kept work behind the header's count is swept on the
+        // same clock, so the count is current without opening recent.
+        if evaluated {
+            self.sweep_preserved_work();
         }
     }
 

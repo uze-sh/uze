@@ -1,7 +1,6 @@
 //! What happens to a checkout over its life: carried changes, collection, pruning, release, discard, removal and adoption.
 
 use super::*;
-use uze_core::path::Canonical as _;
 
 /// Copies the changes `primary`'s working tree holds over its `HEAD`
 /// into `slot`, leaving `primary` exactly as it was.
@@ -780,132 +779,9 @@ pub fn discard(primary: &Path, task: &str, isolation: &Isolation) -> Result<(), 
     .map_err(|error| error.to_string())?
 }
 
-/// Why the operator's adoption or removal of a checkout was refused.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Refusal {
-    /// The project's own checkout: the operator's, never a slot.
-    Primary,
-    /// Git does not register it as a worktree of this repository.
-    NotRegistered,
-    /// Only a checkout directly in the isolation directory can be a slot.
-    OutsideIsolationDirectory,
-    AlreadyRecorded,
-    /// Its record is one this build cannot read, a newer build's.
-    Unreadable,
-    /// A harness keeps it, and only that harness drives it.
-    LeftToHarness(String),
-    /// A live agent holds it.
-    HeldBy(String),
-    UncommittedWork,
-    UnbranchedCommits,
-    InUse,
-    Failed(String),
-}
-
-impl fmt::Display for Refusal {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Primary => formatter.write_str("it is the project's own checkout"),
-            Self::NotRegistered => formatter.write_str("Git does not list it as a worktree"),
-            Self::OutsideIsolationDirectory => write!(
-                formatter,
-                "only a checkout directly under {WORKTREES_DIRECTORY}/ can be a slot"
-            ),
-            Self::AlreadyRecorded => formatter.write_str("it is already UZE's"),
-            Self::Unreadable => {
-                formatter.write_str("its record was written by a newer UZE and is left as it is")
-            }
-            Self::LeftToHarness(harness) => write!(formatter, "it is left to {harness}"),
-            Self::HeldBy(agent) => write!(formatter, "{agent} is working in it"),
-            Self::UncommittedWork => formatter.write_str("it holds uncommitted work"),
-            Self::UnbranchedCommits => formatter.write_str("it holds commits no branch reaches"),
-            Self::InUse => formatter.write_str("a process is working inside it"),
-            Self::Failed(reason) => formatter.write_str(reason),
-        }
-    }
-}
-
-/// What would keep the operator from removing `path`, read from the
-/// checkout as it stands: the first reason, or none.
-pub fn removal_refusal(primary: &Path, path: &Path, presence: &Presence) -> Option<Refusal> {
-    if same_directory(primary, path) || path.join(".git").is_dir() {
-        return Some(Refusal::Primary);
-    }
-    if !linked_worktrees(primary)
-        .iter()
-        .any(|(registered, _)| same_directory(registered, path))
-    {
-        return Some(Refusal::NotRegistered);
-    }
-    if record::read(primary, path) == Recorded::Unreadable {
-        return Some(Refusal::Unreadable);
-    }
-    if presence.inside(path) {
-        return Some(Refusal::InUse);
-    }
-    if holds_uncommitted_work(path) {
-        return Some(Refusal::UncommittedWork);
-    }
-    if holds_unkept_commits(primary, path, "HEAD") {
-        return Some(Refusal::UnbranchedCommits);
-    }
-    None
-}
-
-/// Removes the checkout at `path` for the operator, inspecting it again
-/// under the repository's write lock first. Its branch is kept, so nothing
-/// committed is lost; only content UZE derives and can write again may be
-/// left uncommitted in it, which is the one case `--force` is passed for.
-pub fn remove(primary: &Path, path: &Path, presence: &Presence) -> Result<(), Refusal> {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        if let Some(refusal) = removal_refusal(primary, path, presence) {
-            return Err(refusal);
-        }
-        let target = path.to_string_lossy().into_owned();
-        let mut args = vec!["worktree", "remove"];
-        if is_dirty(path) {
-            args.push("--force");
-        }
-        args.extend(["--", target.as_str()]);
-        git(primary, &args)
-            .map(|_| ())
-            .map_err(|error| Refusal::Failed(error.to_string()))
-    })
-    .map_err(|error| Refusal::Failed(error.to_string()))?
-}
-
-/// Records a checkout somebody else made in the isolation directory as
-/// UZE's, so it is treated as any slot from then on — a clean one is free
-/// for the next agent at once.
-pub fn adopt(primary: &Path, path: &Path) -> Result<(), Refusal> {
-    if same_directory(primary, path) {
-        return Err(Refusal::Primary);
-    }
-    let container = primary.join(WORKTREES_DIRECTORY);
-    let Some(registered) = isolated_checkouts(primary)
-        .into_iter()
-        .map(|(registered, _)| registered)
-        .find(|registered| same_directory(registered, path))
-    else {
-        return Err(if path.parent() == Some(container.as_path()) {
-            Refusal::NotRegistered
-        } else {
-            Refusal::OutsideIsolationDirectory
-        });
-    };
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        match record::read(primary, &registered) {
-            Recorded::Ours(_) => return Err(Refusal::AlreadyRecorded),
-            Recorded::Unreadable => return Err(Refusal::Unreadable),
-            Recorded::Absent => {}
-        }
-        record::write(primary, &registered, &CheckoutRecord::made_at(&registered))
-            .map_err(Refusal::Failed)
-    })
-    .map_err(|error| Refusal::Failed(error.to_string()))?
-}
-
+#[cfg(test)]
 pub(super) fn same_directory(left: &Path, right: &Path) -> bool {
+    use uze_core::path::Canonical as _;
     let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
     canonical(left) == canonical(right)
 }

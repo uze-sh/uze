@@ -1,18 +1,7 @@
-//! A modal: a titled card over a frame the scrim has pushed back, with the
-//! mark on its title that closes it.
-//!
-//! Two modals are drawn this way — the management surface and the work
-//! modal — and a reader tells them apart by their names alone.
+//! A modal: a titled card over a frame the scrim has pushed back — where
+//! it sits on the frame, and the rect left inside its border.
 
-use ratatui::{
-    layout::Rect,
-    text::Span,
-    widgets::{Clear, Paragraph},
-};
-use uze_theme::Token;
-
-use super::Surface;
-use crate::ui::theme::{self, Symbol};
+use ratatui::layout::Rect;
 
 /// Below this width a modal keeps only a sliver of the frame behind it:
 /// the screens inside are already giving things up, and a wide margin
@@ -67,57 +56,6 @@ pub(crate) struct Chrome {
     pub(crate) close: Rect,
 }
 
-/// Clears `area` and draws the modal's border, its name on the top edge
-/// and the close mark at the other end of it.
-pub(crate) fn render(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    name: &str,
-    close_hovered: bool,
-) -> Chrome {
-    frame.render_widget(Clear, area);
-    Surface::card().render(frame, area);
-
-    // Drawn by hand rather than as the block's own title so the close mark
-    // has a rect the click can be tested against.
-    let title = Rect::new(area.x + 2, area.y, area.width.saturating_sub(4), 1);
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!(" {name} "),
-            theme::fg_bold(Token::TextBright),
-        )),
-        title,
-    );
-    // Only the close mark on the right: the key that closes the modal is
-    // the one that opened it, and the index lists it for anyone asking.
-    let mark_width = theme::width(Symbol::MarkClose);
-    let close = Rect::new(
-        title.right().saturating_sub(mark_width + 1),
-        title.y,
-        (mark_width + 2).min(area.width),
-        1.min(area.height),
-    );
-    close_mark(frame, close, close_hovered);
-    Chrome { area, close }
-}
-
-/// The mark that closes a modal, drawn into `rect` with a cell of room
-/// either side. It goes red under the pointer: at rest it is quiet chrome,
-/// and the hover is where it says that a click here throws the modal away.
-pub(crate) fn close_mark(frame: &mut ratatui::Frame<'_>, rect: Rect, hovered: bool) {
-    let tone = match hovered {
-        true => Token::StateDanger,
-        false => Token::TextMuted,
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!(" {} ", theme::glyph(Symbol::MarkClose)),
-            theme::fg(tone),
-        )),
-        rect,
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,26 +67,6 @@ mod tests {
     /// wrong question on a small screen: it held the margin proportional
     /// while a menu, a list and a drawer were already short of columns,
     /// so the border and the backdrop were paid for out of them.
-    /// The close mark is quiet at rest and red under the pointer: the
-    /// hover is where it says a click there throws the modal away.
-    #[test]
-    fn the_close_mark_goes_red_only_under_the_pointer() {
-        use ratatui::{Terminal, backend::TestBackend};
-
-        let mark_tone = |hovered: bool| {
-            let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
-            let mut close = Rect::default();
-            terminal
-                .draw(|frame| close = render(frame, frame.area(), "work", hovered).close)
-                .unwrap();
-            let buffer = terminal.backend().buffer().clone();
-            buffer[(close.x + 1, close.y)].fg
-        };
-
-        assert_eq!(mark_tone(false), theme::color(Token::TextMuted));
-        assert_eq!(mark_tone(true), theme::color(Token::StateDanger));
-    }
-
     #[test]
     fn the_margin_follows_the_width_and_a_short_frame_takes_it_all() {
         let inset = |width, height| {

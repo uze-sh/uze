@@ -34,8 +34,8 @@ impl Attach<'_> {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
             Scope::AgentPicker
-        } else if self.model.work.is_some() {
-            Scope::Work
+        } else if self.model.recent.open {
+            Scope::Recent
         } else if self.model.context_menu.is_some() {
             Scope::ContextMenu
         } else if self.model.code.as_ref().is_some_and(code::CodeView::typing) {
@@ -67,12 +67,12 @@ impl Attach<'_> {
         scopes
     }
 
-    /// What is on offer where the index is opened that holds no key: the
-    /// work modal's row in front, or, over the pane or a surface standing
-    /// in it, delivering every task of the space.
+    /// What is on offer where the index is opened that holds no key: what
+    /// recent's selected row offers, or, over the pane or a surface
+    /// standing in it, delivering every task of the space.
     fn offered_without_a_key(&self) -> Vec<Action> {
-        if let Some(work) = &self.model.work {
-            return work_list::offered(&self.model, work);
+        if self.model.recent.open {
+            return recent_offered(&self.model);
         }
         let in_the_pane = self.scopes().last() == Some(&Scope::Surfaces);
         if in_the_pane && selected_pane_cwd(&self.model).is_some() {
@@ -144,9 +144,9 @@ impl Attach<'_> {
         } else if self.model.context_menu.is_some() {
             self.model.context_menu = None;
             self.model.dirty = true;
-        } else if let Some(work) = self.model.work.as_mut() {
+        } else if self.model.recent.open {
             // A key that is not the confirmation withdraws the question.
-            work.withdraw();
+            self.model.recent.asking = false;
             self.model.dirty = true;
         } else if self.model.no_modal_open() {
             self.pane_key(key, chord);
@@ -208,7 +208,7 @@ impl Attach<'_> {
             Action::NewAgent => self.model.agent_picker.is_some() || self.model.placement_pending,
             Action::NextAgent => self.asked_for_a_tab,
             Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
-            Action::ToggleWork => self.model.work.is_some(),
+            Action::ToggleRecent => self.model.recent.open,
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
         }
@@ -273,8 +273,8 @@ impl Attach<'_> {
             self.agent_picker_action(action);
             return Flow::Continue;
         }
-        if self.model.work.is_some() {
-            self.work_action(action, viewport);
+        if self.model.recent.open {
+            self.recent_action(action);
             return Flow::Continue;
         }
         if self.model.context_menu.is_some() {
@@ -365,14 +365,7 @@ impl Attach<'_> {
                     self.model.set_busy_notice("delivering all".to_owned());
                 }
             }
-            Action::ToggleWork => {
-                let project = self
-                    .model
-                    .session
-                    .as_ref()
-                    .map(|session| uze_application::slot_key(&session.selected_space().root));
-                self.open_work(project);
-            }
+            Action::ToggleRecent => self.open_recent(),
             _ => {}
         }
         Flow::Continue

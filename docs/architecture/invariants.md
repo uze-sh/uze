@@ -1514,26 +1514,23 @@ and reset under the subagent still writing in it.
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over`
 > `tests/acceptance/engine.rs::a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand`
 
-### Every worktree is accounted for by owner, and a foreign one is only shown
+### Every worktree is accounted for by owner, and a foreign one is left alone
 
 Every worktree the repository registers is classified: an agent's slot, a
 subagent's checkout, a harness's own isolation (where its integration says
 that harness keeps them, under any checkout of the project), or the
-operator's. Only the operator, from the checkouts view, adopts or removes a
-foreign one; removal inspects first, keeps the branch, and never takes the
-primary or a harness's checkout.
+operator's. The workspace client shows a checkout only through the agent
+holding it, as a fact on that agent's row; a checkout no agent holds is
+not listed, and nothing in the client adopts or removes a foreign one.
 
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::every_worktree_is_accounted_for_by_owner`
 > `crates/uze-application/src/application/services/checkouts/tests.rs::every_checkout_is_listed_under_its_owner_with_its_facts`
-> `crates/uze-application/src/application/services/checkouts/tests.rs::removing_a_checkout_keeps_its_branch_and_never_takes_the_primary`
-> `crates/uze-application/src/application/services/checkouts/tests.rs::a_harness_checkout_is_left_to_its_harness`
-> `crates/uze-application/src/application/services/checkouts/tests.rs::cleaning_up_removes_only_what_is_done_and_says_why_it_kept_the_rest`
+> `src/ui/orchestrator/tests/recent.rs::a_checkout_no_agent_holds_is_not_listed`
 
 ### A checkout somebody is working in is occupied
 
 Any live process of the operator's whose working directory is inside a
-checkout holds it, for every automatic reuse and collection and for the
-operator's remove: a pane is one such process, a subagent's shell or an
+checkout holds it, for every automatic reuse and collection: a pane is one such process, a subagent's shell or an
 editor is another. Somebody is a person: a process that holds a
 controlling terminal, in a session a keyboard reaches. A daemon a harness
 leaves behind in a session of its own, handed to `init` and standing in
@@ -1551,7 +1548,6 @@ not held for its life.
 > `crates/uze-core/src/machine/process_cwd.rs::an_unreadable_process_table_holds_everything`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_inside_a_free_looking_slot_keeps_it`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_process_table_nobody_could_read_holds_every_slot`
-> `crates/uze-application/src/application/services/checkouts/tests.rs::a_checkout_somebody_is_working_in_is_not_removed`
 > `crates/uze-terminal/src/runtime/tests.rs::the_server_works_in_no_checkout`
 
 ### Content UZE derives is never work
@@ -2298,6 +2294,22 @@ directory under another name, and the work still lands in it.
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_space_is_matched_by_its_root_whatever_it_is_called`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_space_rooted_above_the_project_does_not_match_it`
 
+### Recent lists agents, and offers only what moves each one on
+
+The sidebar's recent mode lists every agent no pane carries, across every
+project UZE has recorded, one row per agent: what waits on the operator
+first, then the rest, each most recently changed first. Enter does the one
+thing that moves a row on — joining a subagent its agent left, resuming
+anything else — and only ready work offers delivery. Work whose project is
+gone can only be forgotten, which touches no repository; work the target
+already carries, however it was merged, leaves on its own.
+
+> `src/ui/orchestrator/tests/recent.rs::every_state_lands_in_its_block_with_its_reason_and_its_move`
+> `src/ui/orchestrator/tests/recent.rs::what_waits_on_you_comes_first_and_each_block_by_recency`
+> `src/ui/orchestrator/tests/recent.rs::a_subagent_ready_to_join_is_one_row_whose_move_is_joining`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::work_whose_repository_is_gone_is_forgotten_by_its_record_alone`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::handed_over_work_squashed_on_the_forge_leaves_on_its_own`
+
 ## Runtime projection lifecycle (ADR-014)
 
 ### A projection belongs to a project root, and no two share one
@@ -2850,8 +2862,8 @@ order, which is what retired `r` meaning both *remove* and *refresh*.
 
 ### A question is answered with the arrows and enter
 
-Every question the product asks — a dialog, the work modal's prompt, the
-code surface's delete — has two answers drawn as buttons. The arrows move
+Every question the product asks — a dialog, recent's discard, the code
+surface's delete — has two answers drawn as buttons. The arrows move
 between them, enter takes the one the keyboard is on, esc withdraws it,
 and no letter answers it: a second, invisible way to say yes is a key
 pressed by habit on the wrong question.
@@ -2859,17 +2871,17 @@ pressed by habit on the wrong question.
 > `src/ui/tests.rs::remove_confirmation_flow`
 > `src/ui/tests.rs::the_arrows_choose_an_answer_and_enter_takes_it`
 > `src/ui/orchestrator/tests.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
+> `src/ui/orchestrator/tests/recent.rs::a_question_opens_on_its_way_out_and_the_arrow_reaches_going_ahead`
 
 ### A move with no key is still reachable from the keyboard
 
 One chord per meaning keeps the keymap short, so the rarer moves hold
 none. Each is then a row of the index (F1) wherever it applies — the
-management screen's offers and screen-wide actions, the work modal's row
-in front, delivering a whole space — so leaving a move unbound never
-leaves a keyboard user without it.
+management screen's offers and screen-wide actions, what recent's
+selected row offers, delivering a whole space — so leaving a move unbound
+never leaves a keyboard user without it.
 
-> `src/ui/orchestrator/tests/work.rs::a_clean_up_asks_with_what_would_go_and_how_much`
-> `src/ui/orchestrator/tests/work.rs::an_unfinished_agents_subagent_is_joined_on_asking_and_a_running_ones_is_not_offered`
+> `src/ui/orchestrator/tests/recent.rs::the_index_offers_what_the_selected_row_offers`
 
 ### Leaving uze is never one bare keystroke away
 

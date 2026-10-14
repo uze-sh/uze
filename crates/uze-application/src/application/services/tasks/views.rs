@@ -72,6 +72,9 @@ pub struct PreservedWork {
     /// `Closed`, which is what "preserved" means.
     pub state: WorkStateView,
     pub created_at_unix: u64,
+    /// Whether the project's directory is still on disk. Work whose
+    /// project was deleted can only be forgotten.
+    pub project_present: bool,
 }
 
 /// One task as presentation sees it.
@@ -149,6 +152,7 @@ impl PreservedWork {
             checkout: landing::slot_path(project, isolation),
             state: WorkStateView::from(&agent.state),
             created_at_unix: agent.created_at_unix,
+            project_present: project.is_dir(),
         })
     }
 }

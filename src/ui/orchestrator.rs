@@ -212,18 +212,14 @@ const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
-mod checkouts;
 mod input;
+mod recent;
 mod render;
 mod session;
-mod work;
-mod work_list;
-use checkouts::*;
 use input::*;
+use recent::*;
 use render::*;
 use session::*;
-use work::*;
-use work_list::*;
 
 /// Why an attach ended.
 pub(crate) enum WorkspaceExit {
@@ -775,20 +771,14 @@ impl WorkspaceShape {
 /// hit-testing vec just for one extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceHit {
-    /// One of the work modal's projects, by its place in the sidebar.
-    WorkProject(usize),
-    /// One row of the project in front, by its index there.
-    WorkRow(usize),
-    /// One of the work modal's buttons, by the action it performs.
-    WorkAction(Action),
-    /// One of the answers to the question the work modal is asking:
-    /// `true` for going ahead.
-    WorkAnswer(bool),
-    /// The mark on the work modal's title that closes it.
-    WorkClose,
-    /// Anywhere else on the work modal: answers nothing, and is not a
-    /// click outside it.
-    WorkBody,
+    /// One of recent's rows, by its place in the list.
+    RecentRow(usize),
+    /// One of the answers to the question recent's row is asking: `true`
+    /// for going ahead.
+    RecentAnswer(bool),
+    /// The sidebar header's way in and out of recent: its name, and the
+    /// count of agents waiting on the operator beside it.
+    ToggleRecent,
     SelectTab(TabId),
     CloseTab(TabId),
     NewTab,
@@ -1340,8 +1330,8 @@ struct Channels {
     preserved: Answers<PreservedResolution>,
     /// Every checkout of a project, measured: a walk of every directory.
     checkouts: Answers<CheckoutsResolution>,
-    /// Adopting, removing and cleaning up checkouts.
-    checkout_changes: Answers<CheckoutChangeResolution>,
+    /// Joining a subagent's checkout into its agent.
+    joins: Answers<JoinResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,
@@ -1438,10 +1428,9 @@ struct Remembered {
     /// project's last one is drawn, so a read that began before a change
     /// landed never replaces the one that began after it.
     checkouts_asked: u64,
-    /// Whether a change to the checkouts is out: a clean-up walks and
-    /// removes several directories, and a second one started beside it
-    /// would inspect what the first is removing.
-    checkout_change_pending: bool,
+    /// Whether a join is out: it removes a checkout, and a second one
+    /// started beside it would inspect what the first is removing.
+    join_pending: bool,
     /// Every repository's tasks as last evaluated, keyed by its primary
     /// checkout. Display state: the truth is Git and the task store.
     tasks: BTreeMap<PathBuf, Vec<AgentView>>,
@@ -1784,8 +1773,8 @@ struct WorkspaceModel {
     /// sent before that lands in whichever space is selected — which is
     /// the bug this whole path exists to fix, reintroduced by racing it.
     pending_agent_tab: Option<PendingAgentTab>,
-    /// Open state of the work modal; `None` when closed.
-    work: Option<WorkOverlay>,
+    /// The sidebar's recent mode, and what it remembers while closed.
+    recent: Recent,
     /// Everything that can be done here, each with the key that reaches
     /// it. The workspace had no help surface at all — `alt+shift+i`
     /// delivers every task in a space, and there was no way to find that
@@ -2074,7 +2063,7 @@ impl WorkspaceModel {
             && self.agent_picker.is_none()
             && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
-            && self.work.is_none()
+            && !self.recent.open
             && self.context_menu.is_none()
             && self.approval.is_none()
             && self.action_index.is_none()
