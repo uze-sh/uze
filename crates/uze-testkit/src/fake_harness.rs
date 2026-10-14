@@ -494,9 +494,13 @@ impl Standard<'_> {
             )
             .build(),
             self.interactive(
-                FakeHarness::new(self.bin_dir, self.opencode_binary)
-                    .version_line("opencode2 v9.9.9")
-                    .on(["upgrade"], Action::AsksOnTheTerminal),
+                self.named_session(
+                    FakeHarness::new(self.bin_dir, self.opencode_binary)
+                        .version_line("opencode2 v9.9.9")
+                        .on(["upgrade"], Action::AsksOnTheTerminal),
+                    "--session",
+                    session("OpenCode", "v9.9.9 (fake)"),
+                ),
                 session("OpenCode", "v9.9.9 (fake)"),
             )
             .build(),
@@ -548,6 +552,24 @@ impl Standard<'_> {
     fn interactive(&self, builder: FakeHarnessBuilder, action: Action) -> FakeHarnessBuilder {
         if self.interactive {
             builder.on([""], action)
+        } else {
+            builder
+        }
+    }
+
+    /// Attaches the argument a harness starts a conversation UZE named
+    /// with, and continues it by, when this set is interactive: OpenCode's
+    /// `--session <id>` creates the conversation it names when there is
+    /// none. Its conversations are read back through the harness's own API,
+    /// which a stand-in does not serve, so nothing is recorded here.
+    fn named_session(
+        &self,
+        builder: FakeHarnessBuilder,
+        flag: &'static str,
+        action: Action,
+    ) -> FakeHarnessBuilder {
+        if self.interactive {
+            builder.on_prefix([flag], action)
         } else {
             builder
         }
