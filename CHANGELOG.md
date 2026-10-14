@@ -4,7 +4,27 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
-## [1.0.0-beta.14](https://github.com/uze-sh/uze/compare/v1.0.0-beta.13...v1.0.0-beta.14) - 2026-10-12
+## [1.0.0-beta.15](https://github.com/uze-sh/uze/compare/v1.0.0-beta.14...v1.0.0-beta.15) - 2026-10-14
+
+### Features
+
+- **workspace:** Place new agents on the remote-tracking target tip ([#233](https://github.com/uze-sh/uze/pull/233)) ([d7ca536](https://github.com/uze-sh/uze/commit/d7ca5364a8142e62f6e264b51f645bf5c6bcd744))
+
+### Fixes
+
+- **terminal:** Ask every live server for its protocol instead of trusting its image ([#229](https://github.com/uze-sh/uze/pull/229)) ([1c53c0e](https://github.com/uze-sh/uze/commit/1c53c0ee68f29f6a2123ad5e28868c9fdfaf20a9))
+- **terminal:** Pass the client's palette to `terminal serve` at start ([#230](https://github.com/uze-sh/uze/pull/230)) ([91cc5ec](https://github.com/uze-sh/uze/commit/91cc5ec3b80587498667a6842fc19e68b8d9d3d9))
+- **workspace:** Release slots held by a stale tip or a harness daemon ([#232](https://github.com/uze-sh/uze/pull/232)) ([48e675e](https://github.com/uze-sh/uze/commit/48e675eeddf22be78bb57b17f2d7433cefe4d830))
+- **ui:** Slide section rows and flat-row details under the pointer ([#234](https://github.com/uze-sh/uze/pull/234)) ([8d5f8e7](https://github.com/uze-sh/uze/commit/8d5f8e77bc88f7d176c569ffb8a807fa4111ea54))
+- Harden workspace crates against races, panics and unsafe writes ([#235](https://github.com/uze-sh/uze/pull/235)) ([453132b](https://github.com/uze-sh/uze/commit/453132bea25e98467e895e12df3be4b5b7b2a56a))
+- **workspace:** Admit a launch of an agent recorded without a launch key ([#236](https://github.com/uze-sh/uze/pull/236)) ([334fe6f](https://github.com/uze-sh/uze/commit/334fe6fe0620e43c734d8d35bc9f915ba4b845cc))
+
+### CI
+
+- **windows:** Skip the Defender exclusion when its service is not running ([#231](https://github.com/uze-sh/uze/pull/231)) ([ce5ca00](https://github.com/uze-sh/uze/commit/ce5ca003beab582c70e27da370291d695418bfab))
+- **release:** Install Bun for the release gate ([#237](https://github.com/uze-sh/uze/pull/237)) ([5b44ce7](https://github.com/uze-sh/uze/commit/5b44ce7a819466cbc46c7755ccf260cf19a659ed))
+
+## [1.0.0-beta.14](https://github.com/uze-sh/uze/compare/v1.0.0-beta.13...v1.0.0-beta.14) - 2026-10-13
 
 ### Features
 
@@ -30,6 +50,11 @@ pre-releases — see `docs/versioning.md`.
 - **release:** Condense generated install guidance ([#214](https://github.com/uze-sh/uze/pull/214)) ([01377a4](https://github.com/uze-sh/uze/commit/01377a461727aae8457be98f9c4e56701d9b92bb))
 - **openspec:** Add the frozen add-extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
 - **openspec:** Propose tracking the repositories an agent touches ([#224](https://github.com/uze-sh/uze/pull/224)) ([cca01b6](https://github.com/uze-sh/uze/commit/cca01b64255226e44b778d9207fffa4991adaf04))
+
+### CI
+
+- **release:** Build release binaries under bash on Windows runners ([#226](https://github.com/uze-sh/uze/pull/226)) ([4848b95](https://github.com/uze-sh/uze/commit/4848b95972d842ff1e58d0fd2331979b8c835839))
+- **release:** Write the release tag in publish, after the build and the signature ([#227](https://github.com/uze-sh/uze/pull/227)) ([72f1173](https://github.com/uze-sh/uze/commit/72f11738e0618f1b7fc90ad1c79da1def37416b7))
 
 ### Dependencies
 
