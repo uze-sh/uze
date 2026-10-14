@@ -23,7 +23,7 @@ harness reads.
 | <a className="harness-table-cell" href="https://code.claude.com" target="_blank" rel="noreferrer noopener"><img src="/harnesses/claude-code.svg" alt="" className="harness-table-icon" />Claude Code</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 | <a className="harness-table-cell" href="https://chatgpt.com/codex" target="_blank" rel="noreferrer noopener"><img src="/harnesses/codex.svg" alt="" className="harness-table-icon" />Codex</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 | <a className="harness-table-cell" href="https://opencode.ai" target="_blank" rel="noreferrer noopener"><img src="/harnesses/opencode.svg" alt="" className="harness-table-icon" />OpenCode</a> | UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="uze" /> |
-| <a className="harness-table-cell" href="https://antigravity.google" target="_blank" rel="noreferrer noopener"><img src="/harnesses/antigravity.png" alt="" className="harness-table-icon" />Antigravity</a> | its own plugin + UZE | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
+| <a className="harness-table-cell" href="https://antigravity.google" target="_blank" rel="noreferrer noopener"><img src="/harnesses/antigravity.png" alt="" className="harness-table-icon" />Antigravity</a> | its own plugin | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> | <Support level="native" /> |
 
 ### By harness
 
@@ -183,7 +183,7 @@ OpenCode has no plugin system: UZE delivers every capability to OpenCode's own n
   </Tab>
   <Tab value="antigravity">
 
-A plugin reaches Antigravity through a plugin UZE generates from the package, which carries its skills and MCP servers. UZE delivers its agents and hooks beside it, to Antigravity's own native surfaces.
+A plugin reaches Antigravity through a plugin UZE generates from the package, which carries its skills, agents, MCP servers and hooks. Nothing goes beside it.
 
 <include>../../harness-notes/antigravity.mdx</include>
 
@@ -237,9 +237,9 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 | Capability | Claude Code | Codex | OpenCode | Antigravity |
 | --- | --- | --- | --- | --- |
 | Skills | its plugin | its plugin | UZE | its plugin |
-| Agents | its plugin | UZE | UZE | UZE |
+| Agents | its plugin | UZE | UZE | its plugin |
 | MCP | its plugin | its plugin | UZE | its plugin |
-| Hooks | UZE | UZE | UZE | UZE |
+| Hooks | UZE | UZE | UZE | its plugin |
 
 </Accordion>
 <Accordion title="Who may invoke a skill">
