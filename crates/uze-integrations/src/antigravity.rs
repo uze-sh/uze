@@ -112,6 +112,13 @@ use uze_core::capability::harness::Findings;
 use uze_core::integration::{HarnessFact, ProjectResourceRoute};
 use uze_core::project_context::AgentsDirectoryResource;
 
+/// What a generated plugin carries beside its skills and MCP servers: its
+/// root `hooks.json` entries, by name, and its `agents/` files, by file name.
+struct PluginContents {
+    hooks: serde_json::Map<String, serde_json::Value>,
+    agents: Vec<(String, String)>,
+}
+
 /// Antigravity CLI's stable integration id. Never changes in receipts.
 pub const ID: &str = "antigravity";
 
@@ -781,29 +788,20 @@ impl AntigravityIntegration {
         }
     }
 
-    /// Every deliverable agent of `package`, as its generated plugin's
-    /// `agents/` holds them.
-    fn plugin_agents(&self, package: &StoredPackage) -> Result<Vec<(String, String)>> {
-        Ok(
-            uze_core::engine::package_resources_at(&package.id, &package.root)?
-                .iter()
-                .filter_map(|resource| self.plugin_agent_file(resource))
-                .collect(),
-        )
-    }
-
-    /// Every deliverable hook group of `package`, as its generated plugin's
-    /// `hooks.json` holds them.
-    fn plugin_hooks(
-        &self,
-        package: &StoredPackage,
-    ) -> Result<serde_json::Map<String, serde_json::Value>> {
-        Ok(
-            uze_core::engine::package_resources_at(&package.id, &package.root)?
+    /// Every deliverable hook group and agent of `package`, as its
+    /// generated plugin's `hooks.json` and `agents/` hold them.
+    fn plugin_contents(&self, package: &StoredPackage) -> Result<PluginContents> {
+        let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
+        Ok(PluginContents {
+            hooks: resources
                 .iter()
                 .filter_map(|resource| self.plugin_hook_entry(resource))
                 .collect(),
-        )
+            agents: resources
+                .iter()
+                .filter_map(|resource| self.plugin_agent_file(resource))
+                .collect(),
+        })
     }
 
     /// A Hook resource's delivery on its own: one named entry merged into

@@ -270,7 +270,7 @@ pub(super) fn attach_generated_plugin(
         UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
     })?;
     preflight_name_free(executable, integration, &name)?;
-    let hooks = integration.plugin_hooks(package)?;
+    let super::PluginContents { hooks, agents } = integration.plugin_contents(package)?;
     if !hooks.is_empty()
         && let Some(source) = crate::hooks::wrapper_source(super::HOOKS)
     {
@@ -279,7 +279,6 @@ pub(super) fn attach_generated_plugin(
             &source,
         )?;
     }
-    let agents = integration.plugin_agents(package)?;
     let derived_dir = super::generate::materialize_generated_plugin(
         &integration.uze_home,
         package,
