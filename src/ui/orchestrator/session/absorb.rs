@@ -20,9 +20,8 @@ impl Attach<'_> {
     /// one was out.
     pub(super) fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
-        let mut evaluated = false;
+        let mut moved = false;
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
-            evaluated = true;
             self.model
                 .remembered
                 .task_eval_pending
@@ -94,6 +93,12 @@ impl Attach<'_> {
                     None,
                 );
             }
+            moved |= self
+                .model
+                .remembered
+                .tasks
+                .get(&primary)
+                .is_none_or(|previous| !same_standing(previous, &evaluation.tasks));
             self.model
                 .remembered
                 .tasks
@@ -114,9 +119,10 @@ impl Attach<'_> {
         }
         // An evaluation is what moves a task between waiting on the
         // operator and not, and an agent that ended is evaluated as it
-        // ends: the kept work behind the header's count is swept on the
-        // same clock, so the count is current without opening recent.
-        if evaluated {
+        // ends: the kept work behind the header's count is swept when one
+        // moves something, so the count is current without opening recent
+        // and the machine's records are not walked on every quiet clock.
+        if moved {
             self.sweep_preserved_work();
         }
     }
@@ -531,4 +537,14 @@ impl Attach<'_> {
             }
         }
     }
+}
+
+/// Whether two evaluations of one project hold the same tasks in the same
+/// states: nothing either says could have moved the kept work.
+fn same_standing(previous: &[AgentView], current: &[AgentView]) -> bool {
+    previous.len() == current.len()
+        && previous
+            .iter()
+            .zip(current)
+            .all(|(before, after)| before.id == after.id && before.state == after.state)
 }

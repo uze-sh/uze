@@ -11457,6 +11457,58 @@ mod workspace_tests {
         assert_eq!(inputs, vec![agent_pane], "only the agent is told");
     }
 
+    /// The machine's kept work is walked again only when an evaluation
+    /// moved a task: a quiet clock that found everything where it was asks
+    /// nothing of every project's records.
+    #[test]
+    fn kept_work_is_swept_only_when_an_evaluation_moves_a_task() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-sweep-on-change"));
+        let model = agent_with_task(WorkStateView::Running, 0);
+        let tasks = model.remembered.tasks[Path::new("/repo")].clone();
+        let mut driven = driven(model, &home);
+        let answer = |tasks: Vec<AgentView>| WorkResolution {
+            key: PathBuf::from("/repo"),
+            answered: Some(super::EvaluationAnswer {
+                primary: PathBuf::from("/repo"),
+                branch: None,
+                target: None,
+                sync: None,
+                evaluation: uze_application::Evaluation {
+                    tasks,
+                    ..uze_application::Evaluation::default()
+                },
+            }),
+        };
+
+        driven
+            .attach
+            .channels
+            .tasks
+            .sender
+            .send(answer(tasks.clone()))
+            .unwrap();
+        driven.pump();
+        assert!(
+            !driven.attach.model.remembered.preserved_pending,
+            "nothing moved, so nothing is swept"
+        );
+
+        let mut moved = tasks;
+        moved[0].state = WorkStateView::Ready;
+        driven
+            .attach
+            .channels
+            .tasks
+            .sender
+            .send(answer(moved))
+            .unwrap();
+        driven.pump();
+        assert!(
+            driven.attach.model.remembered.preserved_pending,
+            "a task moved, so the kept work is read again"
+        );
+    }
+
     /// A toast ends at the column the tab strip's controls end at.
     ///
     /// The pane is already inset a column from the frame, and so is the
