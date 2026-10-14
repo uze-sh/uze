@@ -166,15 +166,7 @@ pub(super) struct RecentRow {
 }
 
 impl RecentRow {
-    fn of_task(task: PreservedWork, checkout: Option<&CheckoutView>) -> Self {
-        let join = checkout.and_then(join_of);
-        let reason = if !task.project_present {
-            Reason::ProjectGone
-        } else if join.is_some() {
-            Reason::JoinReady
-        } else {
-            Reason::of(&task.state, checkout.is_some_and(|checkout| checkout.dirty))
-        };
+    fn of_task(task: &PreservedWork, checkout: Option<&CheckoutView>) -> Self {
         let active = SystemTime::UNIX_EPOCH + Duration::from_secs(task.last_active_unix);
         Self {
             key: task.id.clone(),
@@ -185,14 +177,14 @@ impl RecentRow {
             },
             project: task.project.clone(),
             branch: Some(task.branch.clone()),
-            reason,
+            reason: reason_of(task, checkout),
             ahead: checkout.map(|checkout| checkout.ahead),
             bytes: checkout.map(|checkout| checkout.bytes),
             changed: checkout
                 .and_then(|checkout| checkout.last_changed)
                 .or(Some(active)),
-            task: Some(task),
-            join,
+            task: Some(task.clone()),
+            join: checkout.and_then(join_of),
         }
     }
 
@@ -286,41 +278,58 @@ fn left_behind_by(task: &PreservedWork, checkout: &CheckoutView) -> bool {
         || task.checkout.as_deref() == Some(checkout.path.as_path())
 }
 
+/// Why `task` is listed, given the checkout it left behind.
+fn reason_of(task: &PreservedWork, checkout: Option<&CheckoutView>) -> Reason {
+    if !task.project_present {
+        Reason::ProjectGone
+    } else if checkout.and_then(join_of).is_some() {
+        Reason::JoinReady
+    } else {
+        Reason::of(&task.state, checkout.is_some_and(|checkout| checkout.dirty))
+    }
+}
+
+/// The checkout `task` left behind, as its project's last read saw it.
+fn checkout_of<'a>(recent: &'a Recent, task: &PreservedWork) -> Option<&'a CheckoutView> {
+    recent.view(&task.project).and_then(|view| {
+        view.checkouts
+            .iter()
+            .find(|checkout| left_behind_by(task, checkout))
+    })
+}
+
+/// The subagent checkouts waiting to be joined that no kept task names,
+/// each with its project and its join: rows of their own.
+fn unnamed_joins<'a>(
+    recent: &'a Recent,
+    kept: &'a [&PreservedWork],
+) -> impl Iterator<Item = (&'a Path, &'a CheckoutView, Join)> {
+    recent
+        .reads
+        .values()
+        .filter_map(|read| read.answer.as_ref()?.as_ref())
+        .flat_map(|view| {
+            view.checkouts
+                .iter()
+                .map(move |checkout| (view.primary.as_path(), checkout))
+        })
+        .filter(|(_, checkout)| !kept.iter().any(|task| left_behind_by(task, checkout)))
+        .filter_map(|(primary, checkout)| Some((primary, checkout, join_of(checkout)?)))
+}
+
 /// Every row in the order it is drawn and walked: what waits on the
 /// operator first, then the rest, each most recently changed first.
 pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
     let recent = &model.recent;
-    let mut rows: Vec<RecentRow> = model
-        .preserved_tasks()
-        .into_iter()
-        .map(|task| {
-            let checkout = recent.view(&task.project).and_then(|view| {
-                view.checkouts
-                    .iter()
-                    .find(|checkout| left_behind_by(&task, checkout))
-            });
-            RecentRow::of_task(task, checkout)
-        })
+    let kept = model.preserved_tasks();
+    let mut rows: Vec<RecentRow> = kept
+        .iter()
+        .map(|task| RecentRow::of_task(task, checkout_of(recent, task)))
         .collect();
-    for read in recent.reads.values() {
-        let Some(Some(view)) = &read.answer else {
-            continue;
-        };
-        for checkout in &view.checkouts {
-            let Some(join) = join_of(checkout) else {
-                continue;
-            };
-            let named = rows.iter().any(|row| {
-                row.task
-                    .as_ref()
-                    .is_some_and(|task| left_behind_by(task, checkout))
-            });
-            let key = checkout.path.display().to_string();
-            if !named && rows.iter().all(|row| row.key != key) {
-                rows.push(RecentRow::of_subagent(&view.primary, checkout, join));
-            }
-        }
-    }
+    rows.extend(
+        unnamed_joins(recent, &kept)
+            .map(|(primary, checkout, join)| RecentRow::of_subagent(primary, checkout, join)),
+    );
     rows.sort_by(|left, right| {
         right
             .reason
@@ -332,12 +341,16 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
     rows
 }
 
-/// How many agents wait on the operator: the number the header carries.
+/// How many agents wait on the operator: the number the header carries,
+/// counted on every frame, so without building the rows it counts.
 pub(super) fn waiting_on_you(model: &WorkspaceModel) -> usize {
-    recent_rows(model)
+    let recent = &model.recent;
+    let kept = model.preserved_tasks();
+    let tasks = kept
         .iter()
-        .filter(|row| row.reason.waits_on_you())
-        .count()
+        .filter(|task| reason_of(task, checkout_of(recent, task)).waits_on_you())
+        .count();
+    tasks + unnamed_joins(recent, &kept).count()
 }
 
 /// The selected row's place in `rows`, or the first when the selection is
@@ -380,7 +393,7 @@ pub(super) fn projects_to_read(model: &WorkspaceModel) -> Vec<PathBuf> {
         .preserved_tasks()
         .into_iter()
         .filter(|task| task.project_present)
-        .map(|task| task.project);
+        .map(|task| task.project.clone());
     let spaces = model.session.iter().flat_map(|session| {
         session
             .workspace

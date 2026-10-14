@@ -56,8 +56,8 @@ impl Attach<'_> {
                 self.step_recent(&rows, index, step);
             }
             Action::Activate => {
-                if let Some(row) = row {
-                    self.act_on_recent_row(&row);
+                if let (Some(row), Some(index)) = (row, index) {
+                    self.act_on_recent_row(&row, index);
                 }
             }
             Action::DeliverTask => {
@@ -104,7 +104,7 @@ impl Attach<'_> {
         self.model.recent.selected = Some(row.key.clone());
         if already {
             let row = row.clone();
-            self.act_on_recent_row(&row);
+            self.act_on_recent_row(&row, index);
         }
         self.model.dirty = true;
     }
@@ -122,7 +122,7 @@ impl Attach<'_> {
     /// Enter on a row: join a subagent where its agent left it, resume
     /// anything else that has a task. Resuming leaves recent, since the
     /// agent is about to be a row of the tree.
-    fn act_on_recent_row(&mut self, row: &RecentRow) {
+    fn act_on_recent_row(&mut self, row: &RecentRow, index: usize) {
         if let (Some(join), Reason::JoinReady) = (&row.join, row.reason) {
             self.join_kept(row.project.clone(), join.clone());
             return;
@@ -130,7 +130,7 @@ impl Attach<'_> {
         let Some(task) = row.task.as_ref().filter(|_| row.primary().is_some()) else {
             return;
         };
-        let anchor = self.recent_row_anchor();
+        let anchor = self.recent_row_anchor(index);
         self.close_recent();
         // Placement answers with the task's own slot when it still has
         // one, and otherwise gives it a slot again on its own branch — a
@@ -149,15 +149,11 @@ impl Attach<'_> {
 
     /// Where the agent picker a resume opens hangs from: the row it was
     /// asked from, as last drawn.
-    fn recent_row_anchor(&self) -> Rect {
-        let rows = recent_rows(&self.model);
-        let index = selected_index(&self.model.recent, &rows);
+    fn recent_row_anchor(&self, index: usize) -> Rect {
         self.model
             .hits
             .iter()
-            .find_map(|(rect, hit)| {
-                (Some(*hit) == index.map(WorkspaceHit::RecentRow)).then_some(*rect)
-            })
+            .find_map(|(rect, hit)| (*hit == WorkspaceHit::RecentRow(index)).then_some(*rect))
             .unwrap_or_default()
     }
 
