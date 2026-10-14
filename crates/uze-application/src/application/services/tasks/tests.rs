@@ -3039,6 +3039,27 @@ mod derived_naming_tests {
         );
     }
 
+    /// Naming an agent asks nothing of the project's policy, so a manifest
+    /// that does not parse does not cost the operator the name they typed.
+    #[test]
+    fn a_name_is_kept_over_a_manifest_that_does_not_parse() {
+        let (app, repository) = project("label-malformed", "  branch: conventional\n");
+        let root = repository.root().to_path_buf();
+        let placed = placed(&app, &root);
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  slots: 0\n").unwrap();
+
+        app.workspace()
+            .label_agent(&placed.checkout, &placed.id, "vscode workspace")
+            .unwrap();
+
+        let primary = root.canonical().unwrap();
+        let store = task::load(&app.home, &primary).unwrap();
+        assert_eq!(
+            store.get(&AgentId::adopted(&placed.id)).unwrap().label,
+            "vscode workspace"
+        );
+    }
+
     /// An agent that ended with nothing to deliver lost its empty branch
     /// and its slot, and keeps its conversation: resuming it cuts the
     /// branch again on the target and places it, rather than refusing a

@@ -39,8 +39,9 @@ impl Workspace<'_> {
                 "a name needs at least one word".to_owned(),
             ));
         }
-        let (primary, _) = self
-            .repository_context(cwd)?
+        // The repository alone, not its policy: a label is no branch name,
+        // and a manifest that does not parse has nothing to say about it.
+        let primary = worktree::primary_checkout(cwd)
             .ok_or_else(|| UzeError::UnknownTask(agent_id.to_owned()))?;
         task::locked(&self.0.home, &primary, |store| {
             let agent = task_mut(store, agent_id)
