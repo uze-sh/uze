@@ -369,28 +369,39 @@ fn the_name_of_work_whose_project_is_gone_is_struck_through() {
     );
 }
 
+/// The way in and out is the header's name, which answers the pointer the
+/// way the header's other controls do, and carries nothing beside it.
 #[test]
-fn the_header_counts_what_waits_on_you_and_marks_a_tree_agent_finishing() {
+fn the_headers_name_opens_recent_and_brightens_under_the_pointer() {
     let mut model = showing(
-        vec![
-            preserved(PROJECT, "a", "one", WorkStateView::Ready),
-            preserved(PROJECT, "b", "two", WorkStateView::GateFailed),
-            preserved(PROJECT, "c", "three", WorkStateView::Shelved),
-        ],
+        vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
         Vec::new(),
     );
     model.recent.open = false;
-    let mark = theme::glyph(Symbol::MarkStanding);
-    assert!(drawn(&model)[0].contains(&format!("work {mark} 2")));
-
-    model.recent.open = true;
-    let chevron = theme::glyph(Symbol::ChevronRight);
-    assert!(drawn(&model)[0].contains(&format!("work {chevron} recent")));
-    assert!(!drawn(&model)[0].contains(&mark));
-    model.remembered.completed_agent_panes.insert(PaneId(7));
+    let (buffer, hits) = drawn_with_hits(&model, 20);
+    let name = hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::ToggleRecent).then_some(*rect))
+        .expect("the name is a control");
+    let drawn: String = (name.x..name.right())
+        .map(|column| buffer[(column, name.y)].symbol().to_owned())
+        .collect();
+    assert_eq!(drawn, "work");
+    assert_eq!(buffer[(name.x, name.y)].fg, theme::color(Token::TextMuted));
+    let header: String = (0..buffer.area.width)
+        .map(|column| buffer[(column, name.y)].symbol().to_owned())
+        .collect();
     assert!(
-        drawn(&model)[0].contains(&mark),
-        "an agent that finished since recent opened"
+        !header.contains(&theme::glyph(Symbol::MarkStanding)),
+        "no count beside it, though an agent waits: {header:?}"
+    );
+
+    model.hovered = Some(WorkspaceHit::ToggleRecent);
+    let (buffer, _) = drawn_with_hits(&model, 20);
+    assert_eq!(
+        buffer[(name.x, name.y)].fg,
+        theme::color(Token::TextPrimary),
+        "brighter under the pointer"
     );
 }
 

@@ -255,10 +255,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // A deliberate bulk gesture: no button stands one misclick from it,
     // and the index lists it only where there is a space to deliver.
     put(Action::DeliverAllTasks, Index);
-    put(
-        Action::ToggleRecent,
-        Control("the sidebar header's name and its count of agents waiting"),
-    );
+    put(Action::ToggleRecent, Control("the sidebar header's name"));
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);

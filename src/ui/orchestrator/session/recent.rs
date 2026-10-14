@@ -8,11 +8,8 @@ impl Attach<'_> {
     /// project holding some is read, each drawn from its last answer while
     /// the new one is out.
     pub(in crate::ui::orchestrator) fn open_recent(&mut self) {
-        let finished = self.model.remembered.completed_agent_panes.clone();
-        let recent = &mut self.model.recent;
-        recent.open = true;
-        recent.asking = false;
-        recent.finished_before = finished;
+        self.model.recent.open = true;
+        self.model.recent.asking = false;
         self.sweep_preserved_work();
         for project in projects_to_read(&self.model) {
             self.read_project(project);

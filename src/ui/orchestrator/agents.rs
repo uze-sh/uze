@@ -124,7 +124,7 @@ impl WorkspaceModel {
     /// the service hands over everything still preserved and the tabs
     /// standing in front of an agent are what subtracts.
     ///
-    /// Asked on every frame the header is drawn, so the live agents are
+    /// Asked for every frame recent is drawn, so the live agents are
     /// gathered once rather than looked up per piece of work.
     pub(in crate::ui) fn preserved_tasks(&self) -> Vec<&uze_application::PreservedWork> {
         let live: BTreeSet<&str> = self.tabs().filter_map(launched_agent_id).collect();

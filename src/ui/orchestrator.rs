@@ -782,8 +782,7 @@ pub(super) enum WorkspaceHit {
     /// One of the answers to the question recent's row is asking: `true`
     /// for going ahead.
     RecentAnswer(bool),
-    /// The sidebar header's way in and out of recent: its name, and the
-    /// count of agents waiting on the operator beside it.
+    /// The sidebar header's name, the way in and out of recent.
     ToggleRecent,
     SelectTab(TabId),
     CloseTab(TabId),

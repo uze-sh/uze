@@ -33,9 +33,6 @@ pub(super) struct Recent {
     /// Each project's checkouts, by its primary checkout once a read has
     /// said which that is, and by the directory asked about until then.
     pub(super) reads: BTreeMap<PathBuf, ProjectRead>,
-    /// The agents in the tree that had already finished when recent
-    /// opened: one that finishes after is what the header marks.
-    pub(super) finished_before: BTreeSet<PaneId>,
     /// Where the list is scrolled to, which the wheel and the scrollbar
     /// move and a selection the keys move pulls along — the code surface
     /// navigator's own rule.
@@ -370,18 +367,6 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
             .then_with(|| left.name.cmp(&right.name))
     });
     rows
-}
-
-/// How many agents wait on the operator: the number the header carries,
-/// counted on every frame, so without building the rows it counts.
-pub(super) fn waiting_on_you(model: &WorkspaceModel) -> usize {
-    let recent = &model.recent;
-    let kept = model.preserved_tasks();
-    let tasks = kept
-        .iter()
-        .filter(|task| reason_of(model, task, checkout_of(recent, task)).waits_on_you())
-        .count();
-    tasks + unnamed_joins(recent, &kept).count()
 }
 
 /// The selected row's place in `rows`, or the first when the selection is

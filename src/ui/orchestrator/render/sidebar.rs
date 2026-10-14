@@ -11,46 +11,31 @@ pub(super) fn is_unisolated(cwd: &Path) -> bool {
     !uze_application::is_isolated_checkout(cwd)
 }
 
-/// The header's name, which is also the way in and out of recent: `work`
-/// with the count of agents waiting on the operator beside it, or
-/// `work › recent` with a mark once an agent in the tree finishes while
-/// recent is in front of it.
-pub(super) fn sidebar_title(model: &WorkspaceModel) -> Vec<Span<'static>> {
+/// The header's name, which is the way in and out of recent; open, it
+/// reads `work › recent`.
+///
+/// Answers the columns of the name, the control: it answers the pointer the
+/// way the header's other controls do, brighter under it and brightest
+/// while pressed.
+pub(super) fn sidebar_title(model: &WorkspaceModel) -> (Vec<Span<'static>>, (u16, u16)) {
+    let name_hue = match chip_state(model, Some(WorkspaceHit::ToggleRecent)) {
+        ChipState::Pressed => Token::TextBright,
+        ChipState::Hovered => Token::TextPrimary,
+        ChipState::Resting | ChipState::Static => Token::TextMuted,
+    };
     let mut title = vec![
         Span::raw(" ".repeat(TRAILING_PAD as usize)),
-        Span::styled("work", theme::fg_bold(Token::TextMuted)),
+        Span::styled("work", theme::fg_bold(name_hue)),
     ];
-    let standing = |count: Option<usize>| {
-        let mark = theme::glyph(Symbol::MarkStanding);
-        Span::styled(
-            match count {
-                Some(count) => format!(" {mark} {count}"),
-                None => format!(" {mark}"),
-            },
-            theme::fg(Token::StateWarning),
-        )
-    };
+    let name = (TRAILING_PAD, Span::raw("work").width() as u16);
     if model.recent.open {
         title.push(Span::styled(
             format!(" {} ", theme::glyph(Symbol::ChevronRight)),
             theme::fg(Token::TextFaint),
         ));
         title.push(Span::styled("recent", theme::fg_bold(Token::TextBright)));
-        let finished_since = model
-            .remembered
-            .completed_agent_panes
-            .iter()
-            .any(|pane| !model.recent.finished_before.contains(pane));
-        if finished_since {
-            title.push(standing(None));
-        }
-    } else {
-        let waiting = waiting_on_you(model);
-        if waiting > 0 {
-            title.push(standing(Some(waiting)));
-        }
     }
-    title
+    (title, name)
 }
 
 /// The hue an agent's caption line is drawn in: dim, like every other
@@ -134,16 +119,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         // One column in, the pad its controls keep at the other end: the
         // header is the column's own chrome, and a name flush against the
         // edge under a right-hand pad reads as a row that slipped.
-        let title = sidebar_title(model);
-        let title_width = title.iter().map(Span::width).sum::<usize>() as u16;
+        let (title, (start, width)) = sidebar_title(model);
         frame.render_widget(Paragraph::new(Line::from(title)), rect);
         hits.push((
-            Rect::new(
-                rect.x + TRAILING_PAD,
-                rect.y,
-                title_width.saturating_sub(TRAILING_PAD),
-                1,
-            ),
+            Rect::new(rect.x + start, rect.y, width, 1),
             WorkspaceHit::ToggleRecent,
         ));
         let more = theme::glyph(Symbol::Manage);

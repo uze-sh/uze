@@ -98,20 +98,18 @@ and, when it holds a checkout, the disk that checkout takes.
 - **WHEN** the operator selects shelved work whose checkout was released
 - **THEN** the row gives no disk figure
 
-### Requirement: The header carries what waits on the operator
-While the tree is shown, the sidebar header SHALL carry the number of
-agents waiting on the operator, when there is at least one, and choosing
-it SHALL open recent. While recent is shown, the header SHALL carry a mark
-when an agent in the tree finishes, and the mark SHALL go when recent is
-left.
+### Requirement: The header's name is the way in and out of recent
+The sidebar header's name SHALL open and close recent, and SHALL answer
+the pointer as the header's other controls do. The header SHALL carry no
+count or mark beside it: what waits on the operator is read in recent.
 
-#### Scenario: Waiting work is visible from the tree
-- **WHEN** two agents with no live pane have failed checks and the tree is shown
-- **THEN** the header carries the number two, and choosing it opens recent
+#### Scenario: The name opens recent
+- **WHEN** the operator clicks the sidebar header's name while the tree is shown
+- **THEN** recent opens and the header reads `work › recent`
 
-#### Scenario: A tree agent finishes while recent is open
-- **WHEN** an agent in the tree finishes its turn while recent is shown
-- **THEN** the header carries a mark until the operator leaves recent
+#### Scenario: Nothing beside the name
+- **WHEN** agents wait on the operator and the tree is shown
+- **THEN** the header shows its name alone
 
 ### Requirement: Each state offers its primary action and discard
 The selected row SHALL offer, as enter, the one action that moves its

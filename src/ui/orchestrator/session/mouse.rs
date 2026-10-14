@@ -271,6 +271,7 @@ impl Attach<'_> {
                     }
                     // The divider still resizes the column under recent.
                     Some(WorkspaceHit::ResizeSidebar) => self.model.dragging_sidebar = true,
+                    Some(WorkspaceHit::ToggleRecent) => self.close_recent(),
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
                     // The way in is the way out, and a click anywhere else
                     // leaves it the way it leaves the root picker.

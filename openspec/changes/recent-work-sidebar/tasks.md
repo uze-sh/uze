@@ -12,14 +12,14 @@
 ## 3. Recent model and reads
 
 - [x] 3.1 Create `src/ui/orchestrator/recent.rs`: rows from preserved work plus joinable subagent checkouts, the two blocks, recency ordering (checkout `last_changed`, else `created_at_unix`), the state-to-reason projection from design.md, selection kept by row identity across leaving and re-entering
-- [x] 3.2 Sweep preserved work at client start, when an agent ends and when recent opens, so the header count is current without opening recent
+- [x] 3.2 Sweep preserved work when recent opens and after anything recent does to it
 - [x] 3.3 On opening recent, spawn the checkouts read for every project with a listed row (`spawn_*` in `orchestrator/reads.rs`, `absorb_*` beside it), each answer keyed by project and dropped when stale
 - [x] 3.4 Unit-test the projection: every `WorkStateView` lands in its block with its reason and its enter action; a missing project offers only forget
 
 ## 4. Recent rendering
 
 - [x] 4.1 Add `render/recent.rs`: one line per unselected row (name, age), the selected row expanded (reason in its token colour plus project or `· new space`, then branch · N ahead · disk), struck-through name for a missing project, a blank line between blocks, all chrome from `src/ui/widget/` and colour from `theme`
-- [x] 4.2 Sidebar header: `work › recent` while recent is shown; the waiting count beside `work` while the tree is shown, clickable to open recent; the finished-agent mark while recent is shown, cleared on leaving
+- [x] 4.2 Sidebar header: its name opens and closes recent, answering the pointer like the header's other controls, and reads `work › recent` while recent is shown
 - [x] 4.3 Footer hint shows only the keys the selected row offers, plus `esc close`
 - [x] 4.4 `TestBackend` tests: unselected rows are one line with no glyph; selected row content per state; header count and mark; strike-through
 

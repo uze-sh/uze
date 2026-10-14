@@ -82,15 +82,13 @@ deferred, since the checkout already answers for every row that has one.
 Opening recent sweeps preserved work (as opening the modal does today) and
 asks for the checkouts of every project that has a listed row, each on its
 own thread through the existing checkouts read, the answer carrying its
-project key. The header count needs the sweep without opening recent, so
-the sweep also runs whenever an evaluation adds, removes or moves a task,
-which is also how an agent that ends is seen; a quiet refresh that finds
-everything where it was sweeps nothing. Answers are kept under the
-repository's primary checkout, whichever directory of it was asked about.
-The per-project read is the same one the modal uses; only its trigger
-changes from "the project in front" to "every project with a row". The
-header's count is taken on every frame, so it is counted from the records
-and reads directly rather than by building the rows.
+project key. Kept work is swept again when recent opens and after
+anything recent did to it — a discard, a forget, a join, a name — and not
+on the evaluation clock: nothing outside recent reads it. Answers are kept
+under the repository's primary checkout, whichever directory of it was
+asked about. The per-project read is the same one the modal used; only
+its trigger changes from "the project in front" to "every project with a
+row".
 
 ### Forget is a new application operation
 `discard_task` resolves the repository first and fails when it is gone. A
