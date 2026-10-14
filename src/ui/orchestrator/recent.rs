@@ -230,6 +230,22 @@ impl RecentRow {
         }
     }
 
+    /// The keys this row offers and the word each goes by here: enter's
+    /// move, then delivering and taking away where they apply.
+    pub(super) fn offers(&self) -> Vec<(Action, &'static str)> {
+        let mut offers = Vec::new();
+        if let Some(word) = self.primary() {
+            offers.push((Action::Activate, word));
+        }
+        if self.delivers() {
+            offers.push((Action::DeliverTask, "deliver"));
+        }
+        if let Some(word) = self.taking_away() {
+            offers.push((Action::DiscardTask, word));
+        }
+        offers
+    }
+
     /// The question asked before taking the row away.
     pub(super) fn question(&self) -> &'static str {
         if self.reason == Reason::ProjectGone {
@@ -338,17 +354,16 @@ pub(super) fn selected_index(recent: &Recent, rows: &[RecentRow]) -> Option<usiz
 /// that act here, only where they would.
 pub(super) fn recent_offered(model: &WorkspaceModel) -> Vec<Action> {
     let rows = recent_rows(model);
-    let Some(row) = selected_index(&model.recent, &rows).and_then(|index| rows.get(index)) else {
-        return Vec::new();
-    };
-    let mut offered = Vec::new();
-    if row.delivers() {
-        offered.push(Action::DeliverTask);
-    }
-    if row.taking_away().is_some() {
-        offered.push(Action::DiscardTask);
-    }
-    offered
+    selected_index(&model.recent, &rows)
+        .and_then(|index| rows.get(index))
+        .map(|row| {
+            row.offers()
+                .into_iter()
+                .map(|(action, _)| action)
+                .filter(|action| *action != Action::Activate)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The project directories recent reads checkouts from: every project

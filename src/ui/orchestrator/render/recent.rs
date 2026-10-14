@@ -99,13 +99,14 @@ pub(super) fn render_recent(
                     width: rect.width.saturating_sub(2 * TRAILING_PAD),
                     ..rect
                 };
-                let word = list.get(index).and_then(RecentRow::taking_away);
-                hits.extend(button_row(
-                    frame,
-                    room,
-                    &answers(word.unwrap_or("discard"), model.recent.on_confirm),
-                    Align::Left,
-                ));
+                if let Some(word) = list.get(index).and_then(RecentRow::taking_away) {
+                    hits.extend(button_row(
+                        frame,
+                        room,
+                        &answers(word, model.recent.on_confirm),
+                        Align::Left,
+                    ));
+                }
             }
             Target::Nothing => {}
         }
@@ -161,31 +162,21 @@ fn answers(word: &str, on_confirm: bool) -> [(Button, WorkspaceHit); 2] {
 /// how to reach the other answer.
 fn keys_for(row: Option<&RecentRow>, asking: bool, on_confirm: bool) -> Vec<(Action, String)> {
     let mut keys = Vec::new();
-    match row {
-        Some(row) if asking => {
-            let word = row.taking_away().unwrap_or("discard").to_owned();
-            if on_confirm {
-                keys.push((Action::Activate, word));
-                keys.push((Action::Dismiss, "cancel".to_owned()));
-            } else {
-                keys.push((Action::Activate, "cancel".to_owned()));
-                keys.push((Action::FocusNext, word));
-            }
-            return keys;
+    if let Some(word) = row.and_then(RecentRow::taking_away).filter(|_| asking) {
+        if on_confirm {
+            keys.push((Action::Activate, word.to_owned()));
+            keys.push((Action::Dismiss, "cancel".to_owned()));
+        } else {
+            keys.push((Action::Activate, "cancel".to_owned()));
+            keys.push((Action::FocusNext, word.to_owned()));
         }
-        Some(row) => {
-            if let Some(word) = row.primary() {
-                keys.push((Action::Activate, word.to_owned()));
-            }
-            if row.delivers() {
-                keys.push((Action::DeliverTask, "deliver".to_owned()));
-            }
-            if let Some(word) = row.taking_away() {
-                keys.push((Action::DiscardTask, word.to_owned()));
-            }
-        }
-        None => {}
+        return keys;
     }
+    keys.extend(
+        row.into_iter()
+            .flat_map(RecentRow::offers)
+            .map(|(action, word)| (action, word.to_owned())),
+    );
     keys.push((Action::Dismiss, "close".to_owned()));
     keys
 }
