@@ -258,6 +258,13 @@ fn join_of(checkout: &CheckoutView) -> Option<Join> {
     }
 }
 
+/// Whether `checkout` is the one `task` left behind: the store names the
+/// task in it, or the task's record names the directory.
+fn left_behind_by(task: &PreservedWork, checkout: &CheckoutView) -> bool {
+    checkout.task.as_deref() == Some(task.id.as_str())
+        || task.checkout.as_deref() == Some(checkout.path.as_path())
+}
+
 /// Every row in the order it is drawn and walked: what waits on the
 /// operator first, then the rest, each most recently changed first.
 pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
@@ -267,10 +274,9 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
         .into_iter()
         .map(|task| {
             let checkout = recent.view(&task.project).and_then(|view| {
-                view.checkouts.iter().find(|checkout| {
-                    checkout.task.as_deref() == Some(task.id.as_str())
-                        || task.checkout.as_deref() == Some(checkout.path.as_path())
-                })
+                view.checkouts
+                    .iter()
+                    .find(|checkout| left_behind_by(&task, checkout))
             });
             RecentRow::of_task(task, checkout)
         })
@@ -284,10 +290,9 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
                 continue;
             };
             let named = rows.iter().any(|row| {
-                row.task.as_ref().is_some_and(|task| {
-                    checkout.task.as_deref() == Some(task.id.as_str())
-                        || task.checkout.as_deref() == Some(checkout.path.as_path())
-                })
+                row.task
+                    .as_ref()
+                    .is_some_and(|task| left_behind_by(task, checkout))
             });
             let key = checkout.path.display().to_string();
             if !named && rows.iter().all(|row| row.key != key) {
