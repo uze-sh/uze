@@ -89,6 +89,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-propose
+      # The gate runs the OpenCode hook bridge checks, which only Bun can
+      # load and which refuse to skip under CI.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: web/package.json
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
