@@ -290,10 +290,7 @@ impl Health<'_> {
             integration: integration.id().to_owned(),
             display_name: integration.display_name().to_owned(),
             description: integration.description().to_owned(),
-            below_minimum: integration
-                .minimum_version()
-                .filter(|minimum| detection.is_below(minimum))
-                .map(str::to_owned),
+            below_minimum: super::harness_floor::unmet(integration, &detection).map(str::to_owned),
             detection,
             setup: integration_status(integration.status(&self.0.home)),
             strategy: state::get(&self.0.home, integration.id())
@@ -387,7 +384,7 @@ impl Health<'_> {
             )
             .chain(unread)
             .chain(self.0.integrations.iter().filter_map(|integration| {
-                below_floor(
+                super::harness_floor::sentence(
                     integration.as_ref(),
                     &self.0.detect_cached(integration.as_ref()),
                 )
@@ -437,21 +434,6 @@ impl Health<'_> {
             held_back: held_back_notes(self.0, None),
         })
     }
-}
-
-/// One sentence for a detected harness older than its integration needs.
-pub(crate) fn below_floor(
-    integration: &dyn IntegrationPort,
-    detection: &uze_core::integration::HarnessDetection,
-) -> Option<String> {
-    let minimum = integration.minimum_version()?;
-    (detection.present && detection.is_below(minimum)).then(|| {
-        format!(
-            "{} {} is older than {minimum}, the oldest version UZE supports; update it",
-            integration.display_name(),
-            detection.version.as_deref().unwrap_or_default()
-        )
-    })
 }
 
 fn integration_status(status: IntegrationStatus) -> String {

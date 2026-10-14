@@ -42,6 +42,7 @@ mod context;
 mod doctor;
 mod extensions;
 mod freshness;
+mod harness_floor;
 mod inspection_cache;
 mod lifecycle;
 mod maintenance;
