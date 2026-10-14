@@ -179,6 +179,15 @@ pub(super) fn holders_of(
         .count())
 }
 
+/// Two plugins answer to one name: `uninstall` takes a name, so neither is
+/// touched.
+pub(super) fn name_held_twice() -> AttachmentInspection {
+    AttachmentInspection {
+        state: AttachmentState::Conflict,
+        reason: "more than one Antigravity plugin answers to this name".to_owned(),
+    }
+}
+
 /// The ownership decision for one installed plugin, separated from the
 /// process call so every branch is testable without an `agy` binary.
 /// Ownership is proven by registration + staged identity + content
@@ -212,12 +221,7 @@ pub(super) fn inspect_installed_plugin(
             };
         }
         [_] => {}
-        _ => {
-            return AttachmentInspection {
-                state: AttachmentState::Conflict,
-                reason: "more than one Antigravity plugin answers to this name".to_owned(),
-            };
-        }
+        _ => return name_held_twice(),
     }
     if !staged_dir.is_dir() {
         return AttachmentInspection {

@@ -106,7 +106,7 @@ use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
     GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, holders_of,
-    inspect_installed_plugin, installed_plugins, plugin_manifest_name, run_agy,
+    inspect_installed_plugin, installed_plugins, name_held_twice, plugin_manifest_name, run_agy,
 };
 use uze_core::capability::harness::Findings;
 use uze_core::integration::{HarnessFact, ProjectResourceRoute};
@@ -652,13 +652,7 @@ impl IntegrationPort for AntigravityIntegration {
                     selector,
                 ) {
                     Ok(1) => {}
-                    Ok(_) => {
-                        return Ok(AttachmentInspection {
-                            state: AttachmentState::Conflict,
-                            reason: "more than one Antigravity plugin answers to this name"
-                                .to_owned(),
-                        });
-                    }
+                    Ok(_) => return Ok(name_held_twice()),
                     Err(unreadable) => return Ok(blocked(unreadable)),
                 }
                 // Uninstalling removes only Antigravity's staged copy and
