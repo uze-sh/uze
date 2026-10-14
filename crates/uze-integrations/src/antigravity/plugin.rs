@@ -265,7 +265,7 @@ pub(super) fn attach_generated_plugin(
     executable: &str,
     integration: &AntigravityIntegration,
     package: &StoredPackage,
-) -> Result<Option<AttachmentReceipt>> {
+) -> Result<AttachmentReceipt> {
     let name = plugin_manifest_name(package).ok_or_else(|| {
         UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
     })?;
@@ -301,7 +301,7 @@ pub(super) fn attach_generated_plugin(
     // be used to predict the staged path.
     let staged_dir = integration.plugins_dir.join(&name);
     let fingerprint = fingerprint_dir(&staged_dir)?;
-    Ok(Some(AttachmentReceipt {
+    Ok(AttachmentReceipt {
         package_id: package.id.as_str().to_owned(),
         resource_identity: None,
         integration: integration.id().to_owned(),
@@ -322,7 +322,7 @@ pub(super) fn attach_generated_plugin(
             .into_iter()
             .collect(),
         },
-    }))
+    })
 }
 
 /// UZE never overwrites a plugin it does not own. The vendor's install

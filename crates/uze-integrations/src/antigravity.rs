@@ -549,7 +549,7 @@ impl IntegrationPort for AntigravityIntegration {
         _plan: &PackageExposurePlan,
     ) -> Result<Option<AttachmentReceipt>> {
         let executable = self.provisioning_executable();
-        attach_generated_plugin(&executable, self, package)
+        attach_generated_plugin(&executable, self, package).map(Some)
     }
 
     fn attach(&self, resource: &Resource) -> Result<Option<ManagedArtifact>> {

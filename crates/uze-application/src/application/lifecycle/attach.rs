@@ -256,10 +256,9 @@ impl UzeApplication {
                         });
                     }
                     // A native plan that returns no receipt explicitly
-                    // declined UZE ownership (for example, a same-name
-                    // plugin already imported by the harness). Its native
-                    // delivery remains authoritative, so avoid adding
-                    // duplicate capability-level fallbacks beside it.
+                    // declined UZE ownership. Its native delivery remains
+                    // authoritative, so avoid adding duplicate
+                    // capability-level fallbacks beside it.
                     provided = plan.provided_resource_identities;
                 }
             }
