@@ -61,10 +61,6 @@ pub fn detect() -> Option<String> {
 /// plain launch of the real binary — see the inline handling below.
 pub fn run(shim_name: &str) -> ! {
     let original_args: Vec<OsString> = env::args_os().skip(1).collect();
-    let telemetry = uze::telemetry::init(uze::telemetry::Sink::Stderr);
-    let span = tracing::info_span!("shim", harness = shim_name);
-    let _entered = span.enter();
-
     let home = match UzeHome::from_env() {
         Ok(home) => home,
         // `$HOME` itself is missing — there is no reliable `shims_dir` to
@@ -76,6 +72,13 @@ pub fn run(shim_name: &str) -> ! {
              to avoid a possible shim loop"
         )),
     };
+    // Journaled, not printed: stderr here is the pane the harness is about
+    // to draw on, and what this decides — which conversation an agent came
+    // back to, and why — is the first thing asked when one did not.
+    let telemetry =
+        uze::telemetry::init(uze::telemetry::Sink::journal(home.logs_dir(), "launcher"));
+    let span = tracing::info_span!("shim", harness = shim_name);
+    let _entered = span.enter();
 
     let bypass = env::var_os("UZE_BYPASS").is_some_and(|value| value != "0");
 

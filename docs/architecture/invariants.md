@@ -2155,6 +2155,18 @@ starts the agent anyway.
 > `crates/uze-workspace/src/continuity.rs::a_conversation_the_harness_no_longer_holds_starts_a_new_one_and_says_so`
 > `crates/uze-workspace/src/continuity.rs::unreadable_state_still_launches_the_agent`
 
+### An agent placed before launch keys still comes back
+
+A launch key proves a process was started by its agent's launch, and a
+record issued none is one a release before keys placed: its tab relaunches
+it with no key for as long as that tab lives. Such a record admits the
+launch that names it, as every record did then; one issued a key admits
+only its secret. Refusing the keyless launch would not have made it safer
+— it made every restart after the upgrade start the agent over, silently.
+
+> `crates/uze-workspace/src/conversation.rs::a_record_issued_no_key_admits_the_launch_that_names_it`
+> `tests/acceptance/session_continuity.rs::an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation`
+
 ### The record follows the agent, not the assignment
 
 An identifier written once at launch goes stale the moment the person

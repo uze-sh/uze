@@ -62,6 +62,11 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
     // Not an agent UZE launched, or not where its record put it: an
     // ordinary invocation stays ordinary.
     let Some(owner) = conversation::owner_of(home, claim) else {
+        tracing::info!(
+            agent = claim.id,
+            cwd = %claim.cwd.display(),
+            "no record backs this launch's claim; launched as an ordinary invocation"
+        );
         return LaunchPlan::nothing();
     };
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
@@ -98,8 +103,22 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
 
     if let Some(recorded) = record.get(id).and_then(|entry| entry.conversation.clone()) {
         if integration.session_exists(&recorded, claim.cwd) {
+            tracing::info!(
+                agent = %owner.agent.as_str(),
+                harness = id,
+                conversation = %recorded,
+                cwd = %claim.cwd.display(),
+                "resuming the recorded conversation"
+            );
             return LaunchPlan::args(integration.resume_session_args(&recorded));
         }
+        tracing::warn!(
+            agent = %owner.agent.as_str(),
+            harness = id,
+            conversation = %recorded,
+            cwd = %claim.cwd.display(),
+            "the recorded conversation is no longer there; starting a new one"
+        );
         let mut plan = start(home, claim.cwd, integration, &owner);
         plan.note = Some(format!(
             "the recorded conversation ({recorded}) is no longer there; starting a new one"
@@ -107,6 +126,12 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         return plan;
     }
 
+    tracing::info!(
+        agent = %owner.agent.as_str(),
+        harness = id,
+        cwd = %claim.cwd.display(),
+        "no conversation recorded for this agent; starting one"
+    );
     start(home, claim.cwd, integration, &owner)
 }
 

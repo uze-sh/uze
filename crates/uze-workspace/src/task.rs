@@ -190,9 +190,13 @@ pub struct Agent {
     /// The digest of the secret this agent's latest launch was issued
     /// ([`Agent::issue_launch_key`]): what a process proves it is this
     /// agent with, since the identifier and the directory it claims are
-    /// both its own to choose. Additive rather than a new shape: an older
-    /// build that drops it leaves the agent refused until it is launched
-    /// again, which issues a new one.
+    /// both its own to choose. Additive rather than a new shape, and
+    /// `None` is a record from before launches were issued one: its tab,
+    /// persisted by the terminal runtime with the launch that made it, is
+    /// relaunched with no secret for as long as that tab lives, so such a
+    /// record admits the launch that names it the way every record did
+    /// then (see [`Agent::admits_launch`]). The next placement issues it
+    /// a key, and from then on only that secret is admitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_key: Option<String>,
 }
@@ -359,8 +363,16 @@ impl Agent {
     }
 
     /// Whether `secret` is the one this agent's latest launch was issued.
+    ///
+    /// A record issued no key admits any launch that names it: it was
+    /// placed before keys existed, and refusing it would not make it safer
+    /// — it would make every relaunch of its tab an ordinary invocation,
+    /// which starts the agent over without a word. Agents placed that way
+    /// on a machine came back to a fresh conversation at every restart
+    /// after the upgrade that introduced the key, and nothing recorded
+    /// why.
     pub fn admits_launch(&self, secret: &str) -> bool {
-        self.launch_key.as_deref().is_some_and(|recorded| {
+        self.launch_key.as_deref().is_none_or(|recorded| {
             uze_platform::secret::matches(
                 uze_core::digest::secret_sha256(secret).as_bytes(),
                 recorded.as_bytes(),

@@ -36,6 +36,16 @@ const INTEGRATION: &str = "claude-code";
 /// A repository with one managed task in one slot: the primary, the slot
 /// itself, and the task's identifier — what a launch there claims.
 fn managed_slot(env: &TestEnvironment) -> (PathBuf, PathBuf, String) {
+    managed_slot_recorded(env, Some(LAUNCH_KEY))
+}
+
+/// [`managed_slot`] as a release before launch keys recorded it: the
+/// record names no key, and its tab relaunches it carrying none.
+fn managed_slot_before_keys(env: &TestEnvironment) -> (PathBuf, PathBuf, String) {
+    managed_slot_recorded(env, None)
+}
+
+fn managed_slot_recorded(env: &TestEnvironment, key: Option<&str>) -> (PathBuf, PathBuf, String) {
     let primary = env.root().join("repo");
     let slot = primary.join(".worktrees").join("slot-1");
     std::fs::create_dir_all(&slot).unwrap();
@@ -51,7 +61,7 @@ fn managed_slot(env: &TestEnvironment) -> (PathBuf, PathBuf, String) {
         .isolation_mut()
         .expect("an isolated agent carries its isolation")
         .checkout = Some(CheckoutId::adopted("slot-1"));
-    recorded.launch_key = Some(uze_core::digest::secret_sha256(LAUNCH_KEY));
+    recorded.launch_key = key.map(uze_core::digest::secret_sha256);
     let id = recorded.id.as_str().to_owned();
     let mut store = AgentStore::default();
     store.upsert(recorded);
@@ -93,9 +103,19 @@ fn shim(env: &TestEnvironment) -> PathBuf {
 /// from inside another agent's launch, whose identity it inherits but
 /// does not own.
 enum Launch<'a> {
-    Composed { identity: &'a str },
+    Composed {
+        identity: &'a str,
+    },
+    /// Composed by a release that issued no key: what the terminal
+    /// runtime relaunches a tab of that release with, for as long as
+    /// the tab lives.
+    ComposedBeforeKeys {
+        identity: &'a str,
+    },
     ByHand,
-    Nested { identity: &'a str },
+    Nested {
+        identity: &'a str,
+    },
 }
 
 /// Launches through the shim, exactly as a pane does.
@@ -122,6 +142,9 @@ fn launch(env: &TestEnvironment, shim: &Path, cwd: &Path, args: &[&str], launch:
             command
                 .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, identity)
                 .env(uze_terminal::launch::AGENT_KEY_VARIABLE, LAUNCH_KEY);
+        }
+        Launch::ComposedBeforeKeys { identity } => {
+            command.env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, identity);
         }
         Launch::ByHand => {}
         // An identity already owned by another pid — the enclosing launch's
@@ -303,4 +326,44 @@ fn the_bypass_escape_hatch_still_carries_nothing() {
     assert!(status.success());
 
     assert_eq!(launches(&harness), vec![Vec::<String>::new()]);
+}
+
+/// The upgrade case: an agent placed by a release that issued no launch
+/// key is relaunched by the terminal runtime, after the upgrade, with the
+/// tab it persisted then — an identity and no key. It is still that agent,
+/// and comes back to its conversation rather than starting over as an
+/// ordinary invocation would.
+#[test]
+fn an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shim = shim(&env);
+    let (_primary, slot, id) = managed_slot_before_keys(&env);
+
+    launch(
+        &env,
+        &shim,
+        &slot,
+        &[],
+        Launch::ComposedBeforeKeys { identity: &id },
+    );
+    launch(
+        &env,
+        &shim,
+        &slot,
+        &[],
+        Launch::ComposedBeforeKeys { identity: &id },
+    );
+
+    let launches = launches(&harness);
+    assert_eq!(launches.len(), 2, "{launches:?}");
+    let [flag, started] = launches[0].as_slice() else {
+        panic!("the first launch names a conversation: {launches:?}");
+    };
+    assert_eq!(flag, "--session-id", "{launches:?}");
+    assert_eq!(
+        launches[1],
+        vec!["--resume".to_owned(), started.clone()],
+        "the relaunch continues the conversation: {launches:?}"
+    );
 }

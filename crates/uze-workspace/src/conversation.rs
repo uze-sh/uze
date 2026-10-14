@@ -583,6 +583,55 @@ mod tests {
         assert_eq!(previous_owner.agent, previous_id);
     }
 
+    /// An agent placed before launches were issued a key has a record with
+    /// none and a tab that relaunches it with none: it is still that agent,
+    /// and comes back to its conversation. A record that was issued a key
+    /// is no less strict for it.
+    #[test]
+    fn a_record_issued_no_key_admits_the_launch_that_names_it() {
+        let home = home("conversation-before-keys");
+        let primary = project("conversation-before-keys-project");
+        let slot = primary.join(".worktrees").join("slot-1");
+        fs::create_dir_all(&slot).unwrap();
+        let mut store = AgentStore::default();
+        let before_keys = task_named("slot-1");
+        let mut keyed = task_named("slot-1");
+        let key = keyed.issue_launch_key().unwrap();
+        let before_keys_id = before_keys.id.clone();
+        let keyed_id = keyed.id.clone();
+        store.upsert(before_keys);
+        store.upsert(keyed);
+        task::save(&home, &primary, &store).unwrap();
+
+        let owner = |id: &AgentId, key: &str| {
+            owner_of(
+                &home,
+                Claim {
+                    id: id.as_str(),
+                    key,
+                    cwd: &slot,
+                },
+            )
+            .map(|owner| owner.agent)
+        };
+        assert_eq!(
+            owner(&before_keys_id, ""),
+            Some(before_keys_id.clone()),
+            "a launch carrying no key names the record that was issued none"
+        );
+        assert_eq!(
+            owner(&before_keys_id, "anything"),
+            Some(before_keys_id),
+            "whatever it carries, since nothing was issued to compare with"
+        );
+        assert_eq!(
+            owner(&keyed_id, ""),
+            None,
+            "a record issued a key still refuses a launch carrying none"
+        );
+        assert_eq!(owner(&keyed_id, &key), Some(keyed_id));
+    }
+
     #[test]
     fn a_claim_in_the_root_resolves_there_and_says_it_is_not_isolated() {
         let home = home("conversation-in-the-root-owner");
