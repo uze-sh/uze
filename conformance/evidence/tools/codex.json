@@ -1,7 +1,7 @@
 {
  "harness": "codex",
- "harness_version": "codex-cli 0.160.1",
- "recorded_at": "2026-10-06",
+ "harness_version": "codex-cli 0.162.1",
+ "recorded_at": "2026-10-14",
  "tools": {
   "clock.sleep": [
    "duration_ms"

@@ -7,8 +7,8 @@
 - [x] 1.5 Antigravity 1.3.4 `--experiment`: plugin with root `hooks.json` and `agents.json`; hooks load and act; subagent dispatches and reaches the plugin MCP (D7)
 - [x] 1.6 Windows Sandbox, Codex ≥0.162.1: shell PreToolUse fires, deny and transform hold (D8)
 - [x] 1.7 OpenCode 2.0.28: a skill with `disable-model-invocation: true` in `~/.claude/skills` is hidden from the model (task 7.2)
-- [ ] 1.8 Antigravity 1.3.4: generated plugin with a remote MCP under `url`; server appears and its tool reaches the model (D9)
-- [ ] 1.9 Prune what was refuted: 1.1 → antigravity census scenarios; 1.2 → `agent-session-continuity` "named by UZE" scenario and section 4; 1.3 → `portable-hooks` block-on-failure clause and section 5; 1.4 → `checkout-accounting` outside-place scenario and section 6; 1.8 → antigravity MCP scenario reverts to `serverUrl`; edit the affected decision in place
+- [x] 1.8 Antigravity 1.3.4: generated plugin with a remote MCP under `url`; server appears and its tool reaches the model (D9)
+- [x] 1.9 Prune what was refuted: 1.1 → antigravity census scenarios; 1.2 → `agent-session-continuity` "named by UZE" scenario and section 4; 1.3 → `portable-hooks` block-on-failure clause and section 5; 1.4 → `checkout-accounting` outside-place scenario and section 6; 1.8 → antigravity MCP scenario reverts to `serverUrl`; edit the affected decision in place (nothing refuted: 1.1-1.8 each confirmed, so no scenario or section was pruned)
 
 ## 2. Harness version floor
 
@@ -23,7 +23,7 @@
 - [x] 3.2 Two plugins of one name: inspection Conflict, detach removes nothing
 - [x] 3.3 Keep the manifest read (`{"imports": …}`, `null`) for budgeted inspection; delete only the 1.1.x text reading and `No imported plugins.`; an unknown CLI shape blocks
 - [x] 3.4 Unit tests: new shape, unknown shape, marketplace plugin of the target name, coexisting twin
-- [ ] 3.5 Lab check: a marketplace-installed same-name plugin makes UZE refuse install and detach
+- [x] 3.5 Lab check: a marketplace-installed same-name plugin makes UZE refuse install and detach (measured on the operator's session instead, see D3: the official marketplace needs a signed-in, online session the Lab does not have)
 - [x] 3.6 Antigravity floor 1.3.4; fix "verified against 1.1.19" in the module doc
 
 ## 4. OpenCode assigned continuity
@@ -56,12 +56,12 @@
 - [x] 7.3 If 1.5 confirmed hooks: deliver them in the generated plugin; retire shared-file receipts first; amend the `exact coverage` requirement and `antigravity.rs` evidence strings; update `conformance/DECISIONS.md` and the README
 - [x] 7.4 If 1.5 confirmed agents: deliver through the generated plugin's `agents.json`; Lab check dispatches the subagent
 - [x] 7.5 If 1.6 confirmed: remove Codex's PowerShell `Unfired` and its test; otherwise update its `why` (confirmed: the mechanism went with it, and the Windows entry line now exits with the wrapper's code, without which UZE's deny did not hold)
-- [ ] 7.6 If 1.8 confirmed: keep `url`, rewrite `httpUrl` to `url`; correct `antigravity-compatibility.md:41,52`, `generate.rs`, `antigravity.rs:37`, the Antigravity README
+- [x] 7.6 If 1.8 confirmed: keep `url`, rewrite `httpUrl` to `url`; correct `antigravity-compatibility.md:41,52`, `generate.rs`, `antigravity.rs:37`, the Antigravity README
 - [x] 7.7 Stale text: `claude/hooks.rs` "Input rewriting is not yet claimed"; `opencode.rs` hook-plan evidence; OpenCode README "Limitations"; Antigravity `SessionStart`/`overwrite` "undocumented" in hooks.rs and FACTS
 - [x] 7.8 `harness-watch` skill: OpenCode V2 source is the `dev` branch, releases are tags `v2.0.N`
 
 ## 8. Evidence and gate
 
-- [ ] 8.1 Re-record the four gates on the current releases; bump `FACTS` `VERSION`/`measured_on`, tool snapshots and `expected.json` so they agree (gates and FACTS done 2026-10-14 on Claude 2.1.299, Codex 0.162.1, OpenCode 2.0.29, Antigravity 1.3.5; tool snapshots not re-recorded; re-run once the remaining sections land)
+- [x] 8.1 Re-record the four gates on the current releases; bump `FACTS` `VERSION`/`measured_on`, tool snapshots and `expected.json` so they agree (2026-10-14 with the final binary: contract and vendor legs green on Claude 2.1.299, Codex 0.162.1, OpenCode 2.0.29, Antigravity 1.3.5; tool snapshots re-recorded, new input fields only)
 - [x] 8.2 Regenerate the harness matrix (continuity and hooks cells move)
 - [x] 8.3 `make check`, `cargo test --workspace --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, `openspec validate --all --strict`

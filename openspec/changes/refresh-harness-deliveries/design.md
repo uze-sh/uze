@@ -103,6 +103,26 @@ the operator's machine. The vendor's changelog says a marketplace install
 "no longer overwrites an existing plugin folder that came from a different
 source"; the other direction is UZE's preflight.
 
+Measured with the operator's session (task 3.5): Antigravity 1.3.5,
+2026-10-14, a throwaway `HOME` holding a copy of the signed-in token (the
+operator's `~/.gemini` untouched, the copy deleted afterwards), `uze` from
+this branch, `modern-web-guidance-plugin@antigravity-plugins-official`
+against a UZE package of the same name. The Lab cannot run this: the
+official marketplace needs a signed-in session and the Internet.
+- Marketplace first, then `uze install`: the marketplace plugin's
+  directory and listing are unchanged, and UZE records no delivery. The
+  install reported success and only `uze doctor` named the skill missing
+  (the preflight's "successful no-op"). Now the delivery is refused aloud:
+  the holder is named, with `agy plugin uninstall <name>` as the way to
+  free it.
+- UZE first, then `/plugin install` of the same name: agy answers `Plugin
+  "…" is already installed` and changes nothing, so the twin of the
+  Conflict scenario cannot be produced through the vendor's own verbs.
+- UZE's plugin uninstalled by hand and the marketplace one installed in its
+  place, then `uze remove`: UZE drops its receipt and the marketplace
+  plugin stays installed, skills intact. Inspection reported UZE's plugin
+  as "not imported"; it now says another plugin holds the name.
+
 ### D4. OpenCode: UZE names the session; following and lookup stay correct
 Since ≈2.0.19, `--session <id>` creates the session when it does not
 exist. OpenCode moves from `SessionContinuity::Observed` to `Assigned`.
@@ -262,6 +282,14 @@ README). If a generated plugin with `url` exposes the remote server and
 its tool reaches the model on 1.3.4, `url` is kept and `httpUrl` rewritten
 to it, and every place above is corrected; otherwise the item leaves the
 change and the spec scenario reverts.
+
+Measured: Antigravity 1.3.5, 2026-10-14, `experiments/antigravity/mcp-url`.
+A Streamable HTTP server in its own container on the run's network, in a
+plugin installed with `uze install`: with the generated `mcp_config.json`
+under `serverUrl` (the build before) and under `url` (this one) alike, agy
+initialized it, listed its tools, offered the tool to the model, sent the
+`tools/call`, and its result reached the next model request. `url` is
+kept; `httpUrl` is renamed to it.
 
 Probe 1.8.
 

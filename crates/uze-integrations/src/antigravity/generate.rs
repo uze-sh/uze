@@ -143,21 +143,20 @@ fn generated_plugin_document(package: &StoredPackage) -> serde_json::Value {
 }
 
 /// Translates canonical `mcp.json` servers into the vendor's
-/// `mcp_config.json` form: every server entry passes through as-is, with
-/// the legacy remote keys `url`/`httpUrl` rewritten to the modern
-/// `serverUrl` — the exact mapping Antigravity's own official
-/// legacy-migration path performs (official docs: "Legacy schema keys:
-/// `url` or `httpUrl`; Modern schema key: `serverUrl`"). Nothing is
-/// dropped; stdio `command`, `args`, `env`, `cwd` carry only the package
-/// root resolved.
+/// `mcp_config.json` form: every server entry passes through as-is, a
+/// remote one under `url`, the key Antigravity's docs make primary since
+/// 1.3.3 (`serverUrl` stays the legacy one it also reads), with `httpUrl`
+/// renamed to it. Nothing is dropped; stdio `command`, `args`, `env`, `cwd`
+/// carry only the package root resolved.
 fn translated_mcp_config(package: &StoredPackage) -> serde_json::Value {
     let mut document = serde_json::json!({ "mcpServers": {} });
     if let Some(serde_json::Value::Object(servers)) = delivered_mcp_servers(package) {
         for (name, mut server) in servers {
             if let Some(value) = server.as_object_mut()
-                && let Some(url) = value.remove("url").or_else(|| value.remove("httpUrl"))
+                && !value.contains_key("url")
+                && let Some(url) = value.remove("httpUrl")
             {
-                value.insert("serverUrl".to_owned(), url);
+                value.insert("url".to_owned(), url);
             }
             document["mcpServers"][name] = server;
         }
@@ -429,6 +428,25 @@ mod generated_native_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// The older `httpUrl` spelling reaches Antigravity as `url`; a server
+    /// already under `url` keeps it as written.
+    #[test]
+    fn a_remote_server_is_delivered_under_url() {
+        let (root, pkg) = make_package_with_mcp("remote-url");
+        fs::write(
+            pkg.root.join("mcp.json"),
+            r#"{"mcpServers":{"old":{"httpUrl":"https://old.example/mcp"},"new":{"url":"https://new.example/mcp","httpUrl":"https://ignored.example/mcp"}}}"#,
+        )
+        .unwrap();
+        let servers = &translated_mcp_config(&pkg)["mcpServers"];
+        assert_eq!(
+            servers["old"],
+            serde_json::json!({"url": "https://old.example/mcp"})
+        );
+        assert_eq!(servers["new"]["url"], "https://new.example/mcp");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn materialize_translates_and_never_writes_into_the_store() {
         let (root, pkg) = make_package_with_mcp("materialize");
@@ -459,12 +477,12 @@ mod generated_native_tests {
             serde_json::from_slice(&fs::read(dir.join("mcp_config.json")).unwrap()).unwrap();
         assert_eq!(mcp["mcpServers"]["mcp-a"]["command"], "a");
         assert_eq!(
-            mcp["mcpServers"]["remote-b"]["serverUrl"],
+            mcp["mcpServers"]["remote-b"]["url"],
             "https://example.com/mcp"
         );
         assert!(
-            mcp["mcpServers"]["remote-b"].get("url").is_none(),
-            "legacy url key must be rewritten"
+            mcp["mcpServers"]["remote-b"].get("serverUrl").is_none(),
+            "a remote server is delivered under `url`, the key Antigravity reads first"
         );
         let _ = fs::remove_dir_all(root);
     }

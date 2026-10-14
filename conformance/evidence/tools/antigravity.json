@@ -1,7 +1,7 @@
 {
  "harness": "antigravity",
- "harness_version": "1.3.3",
- "recorded_at": "2026-10-10",
+ "harness_version": "1.3.5",
+ "recorded_at": "2026-10-14",
  "tools": {
   "ask_question": [
    "questions",
@@ -84,6 +84,8 @@
    "CommandLine",
    "Cwd",
    "IsDaemon",
+   "RequestedTerminalID",
+   "RunPersistent",
    "WaitMsBeforeAsync",
    "toolAction",
    "toolSummary"

@@ -7,7 +7,7 @@
 | Surface | Status | Mechanism | Evidence |
 |---|---|---|---|
 | Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/generated/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
-| Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: `url`/`httpUrl` → `serverUrl`) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
+| Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: a remote server under `url`, `httpUrl` renamed to it) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
 | Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed directory `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root, which agy 1.2 moves to `~/.gemini/config/skills` and links back): SKILL.md and the supporting files, copied; receipt `GeneratedTree` | DOCUMENTED (root) + TESTED (lifecycle/drift) |
 | Skill invocation policy | NATIVE, both halves | `disable-slash-command: true` preserves `model=true,user=false`; `disable-model-invocation: true` (since 1.1.27) preserves `model=false,user=true` | PROVEN (`contract/skill.py::_assert_invocation`) + TESTED |
 | MCP | SUPPORTED, adapted | `agy mcp add <name> <command> [args…]` → `~/.gemini/config/mcp_config.json` | PROVEN (add/list/remove/disable) + TESTED (inspection) |
@@ -44,8 +44,10 @@ it become authoritative.
   refused (install merges, so overwriting would clobber user state).
 - **`mcp.json` is not read by the plugin system** — the vendor file is
   `mcp_config.json`, so MCP-bearing canonical packages take the generated
-  route; the translation `url`/`httpUrl` → `serverUrl` is the vendor's own
-  documented legacy-migration rule.
+  route. A remote server goes under `url`, the key the docs make primary
+  since 1.3.3 (`serverUrl` is the legacy one); measured on 1.3.5 by
+  `experiments/antigravity/mcp-url`, a Streamable HTTP server whose tool the
+  model called.
 - **Invocation policy is carried by the vendor's own controls**:
   `disable-slash-command: true` keeps a model-only Skill out of `/`, and
   `disable-model-invocation: true` (since 1.1.27) keeps a user-only Skill

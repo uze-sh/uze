@@ -196,6 +196,15 @@ pub(super) fn inspect_installed_plugin(
         .filter(|installed| installed.name == name)
         .collect();
     match matching.as_slice() {
+        // Nothing of UZE's is there; a directory under the name is a plugin
+        // installed from the vendor's marketplace, which the manifest omits.
+        [] if staged_dir.is_dir() => {
+            return AttachmentInspection {
+                state: AttachmentState::Missing,
+                reason: "Antigravity holds another plugin under this name, one UZE did not install"
+                    .to_owned(),
+            };
+        }
         [] => {
             return AttachmentInspection {
                 state: AttachmentState::Missing,
@@ -260,9 +269,7 @@ pub(super) fn attach_generated_plugin(
     let name = plugin_manifest_name(package).ok_or_else(|| {
         UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
     })?;
-    if !preflight_name_free(executable, integration, &name)? {
-        return Ok(None);
-    }
+    preflight_name_free(executable, integration, &name)?;
     let hooks = integration.plugin_hooks(package)?;
     if !hooks.is_empty()
         && let Some(source) = crate::hooks::wrapper_source(super::HOOKS)
@@ -322,23 +329,29 @@ pub(super) fn attach_generated_plugin(
 /// verb replaces an existing same-name plugin's directory exactly (measured
 /// on 1.2.17; it merged until 1.1.28), so installing over a name already
 /// held — imported by hand or installed from the vendor's marketplace, with
-/// no receipt in the ledger — would destroy someone else's plugin. It is
-/// nevertheless a successful no-op: the harness already exposes a native
-/// plugin under the requested name, and UZE must neither replace it nor
-/// present ordinary setup as failed. A census UZE cannot read refuses: the
-/// name might be held, and finding out by overwriting is not an option.
+/// no receipt in the ledger — would destroy someone else's plugin. The
+/// delivery is refused and says so: reported as a success, the package
+/// looked installed while none of it reached Antigravity (measured on
+/// 1.3.5 against a marketplace plugin, where only `uze doctor` told). A
+/// census UZE cannot read refuses too: the name might be held, and finding
+/// out by overwriting is not an option.
 fn preflight_name_free(
     executable: &str,
     integration: &AntigravityIntegration,
     name: &str,
-) -> Result<bool> {
-    holders_of(executable, &integration.command_home, name)
-        .map(|holders| holders == 0)
-        .map_err(|unreadable| {
-            UzeError::DeliveryFailed(format!(
-                "cannot tell whether Antigravity already holds a plugin named `{name}`: {unreadable}"
-            ))
-        })
+) -> Result<()> {
+    let holders = holders_of(executable, &integration.command_home, name).map_err(|unreadable| {
+        UzeError::DeliveryFailed(format!(
+            "cannot tell whether Antigravity already holds a plugin named `{name}`: {unreadable}"
+        ))
+    })?;
+    if holders == 0 {
+        return Ok(());
+    }
+    Err(UzeError::DeliveryFailed(format!(
+        "Antigravity already holds a plugin named `{name}` that UZE did not install, and UZE \
+         never replaces it; `agy plugin uninstall {name}` frees the name for this package"
+    )))
 }
 
 /// Deterministic content fingerprint of a directory tree (relative path +
@@ -592,6 +605,47 @@ mod plugin_tests {
         assert_eq!(installed_plugins(&agy, &home).unwrap().len(), 1);
         assert_eq!(holders_of(&agy, &home, "flow"), Ok(2));
         let _ = fs::remove_dir_all(home);
+    }
+
+    /// A name a marketplace plugin already holds is refused aloud: nothing
+    /// is installed over it, and the delivery says why rather than passing
+    /// for one that happened.
+    // Its stand-in `agy` is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn delivering_over_a_held_name_is_refused_and_says_so() {
+        let (root, pkg) = make_package("agy-held", r#"{"name":"flow","description":"d"}"#);
+        let integration =
+            AntigravityIntegration::new(root.join("agents"), UzeHome::at(root.join("uze")));
+        let agy = agy_listing(
+            &root,
+            r#"[{"name":"flow","source":"antigravity-plugins-official","path":"/b"}]"#,
+        );
+        let refused = attach_generated_plugin(&agy, &integration, &pkg).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("already holds a plugin named `flow`"),
+            "{refused}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// With UZE's plugin gone and another one in its folder, inspection says
+    /// the name is taken rather than that nothing is there.
+    #[test]
+    fn a_name_another_plugin_took_is_named_on_inspection() {
+        let root = temp_root("agy-taken");
+        let staged = root.join("plugins/flow");
+        fs::create_dir_all(&staged).unwrap();
+        let inspection = inspect_installed_plugin(&[], "flow", &staged, "fp");
+        assert_eq!(inspection.state, AttachmentState::Missing);
+        assert!(
+            inspection.reason.contains("another plugin"),
+            "{}",
+            inspection.reason
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     // --- Exact coverage -----------------------------------------------------

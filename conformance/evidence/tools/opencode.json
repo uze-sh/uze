@@ -1,7 +1,7 @@
 {
  "harness": "opencode",
- "harness_version": "opencode v2.0.24",
- "recorded_at": "2026-10-06",
+ "harness_version": "opencode v2.0.29",
+ "recorded_at": "2026-10-14",
  "tools": {
   "edit": [
    "newString",

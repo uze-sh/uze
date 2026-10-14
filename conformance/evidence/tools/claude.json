@@ -1,10 +1,11 @@
 {
  "harness": "claude",
- "harness_version": "2.1.291 (Claude Code)",
- "recorded_at": "2026-10-06",
+ "harness_version": "2.1.299 (Claude Code)",
+ "recorded_at": "2026-10-14",
  "tools": {
   "Agent": [
    "description",
+   "effort",
    "isolation",
    "model",
    "prompt",
@@ -78,6 +79,7 @@
    "q"
   ],
   "Read": [
+   "allow_large",
    "file_path",
    "limit",
    "offset",

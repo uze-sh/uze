@@ -2,8 +2,8 @@
  "harness": "claude",
  "harness_version": "2.1.299 (Claude Code)",
  "uze_version": "uze 1.0.0-beta.15",
- "fixture_revision": "29952682f40e233f",
- "recorded_at": "2026-10-14T12:46:02-0300",
+ "fixture_revision": "23ead9eeae7f4704",
+ "recorded_at": "2026-10-14T18:30:04-0300",
  "gate": {
   "passed": 159,
   "total": 159,

@@ -37,7 +37,7 @@
 //!   [`skills`].
 //! - MCP servers are managed through `agy mcp add <name> <cmd> [args...]`
 //!   (global `~/.gemini/config/mcp_config.json`, schema `command/args/
-//!   disabled`, remote `serverUrl`), inspected by reading that JSON file
+//!   disabled`, remote `url`, legacy `serverUrl`), inspected by reading that JSON file
 //!   directly (`agy mcp list` is human-readable only) and removed via
 //!   `agy mcp remove`.
 //! - Workspace context is read directly from `AGENTS.md` and `GEMINI.md`
