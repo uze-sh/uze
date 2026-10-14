@@ -311,6 +311,17 @@ impl Agent {
             .is_some_and(|isolation| !isolation.branch.starts_with(BRANCH_PREFIX))
     }
 
+    /// Whether the label is one somebody typed, rather than one UZE
+    /// derived: neither the generated identifier nor what the branch says.
+    /// A branch named later leaves such a label as it is.
+    pub fn has_chosen_label(&self) -> bool {
+        self.label != self.id.as_str()
+            && self
+                .isolation
+                .as_ref()
+                .is_none_or(|isolation| self.label != crate::worktree::label_of(&isolation.branch))
+    }
+
     /// Takes `branch` as this agent's name, deriving the visible label
     /// from it. The caller owns the Git rename and the validation; this is
     /// the record of it, and only an isolated agent has a branch to be
@@ -1425,6 +1436,18 @@ mod naming_tests {
         );
         task.take_name("fix/branch-naming".to_owned());
         assert!(task.is_named());
+    }
+
+    /// A label is chosen when nothing UZE derives would have produced it:
+    /// not the identifier, and not what the branch says.
+    #[test]
+    fn only_a_label_nothing_derived_reads_as_chosen() {
+        let mut task = task();
+        assert!(!task.has_chosen_label(), "the generated identifier");
+        task.take_name("fix/branch-naming".to_owned());
+        assert!(!task.has_chosen_label(), "what the branch says");
+        task.label = "vscode workspace".to_owned();
+        assert!(task.has_chosen_label());
     }
 
     #[test]
