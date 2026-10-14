@@ -147,6 +147,13 @@ and the failure is reported) and **fail-closed** for `deny`/`ask`/`transform`
 cannot be evaluated is never weakened into a no-op — and neither is a rewrite
 that never happened.
 
+That holds even when the wrapper itself never runs (it was deleted, or the
+harness gave up on it at its own timeout) on every harness that can be told
+so: Claude Code's entry for a `deny`/`ask`/`transform` group carries
+`onFailure: "block"`, and Antigravity CLI blocks a call whose hook failed to
+run on its own. Codex has no such setting: there a wrapper that never starts
+lets the call through, and the Lab records it as a declared limitation.
+
 The same rule covers everything that can go wrong before a handler is even
 reached: a payload the wrapper cannot parse and a package root that is gone
 are both failures resolved by the group's effect. Neither is ever treated as
@@ -222,14 +229,15 @@ unsupported there and not delivered.
 |---|---|---|
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
 | Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
-| Antigravity CLI | one named entry per group merged into the shared `~/.gemini/config/hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path | native (shared vendor file); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
+| Antigravity CLI | one named hook per group in the generated plugin's own root `hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path; the same entries go into the shared `~/.gemini/config/hooks.json` when the package is delivered capability by capability | native (in the plugin since 1.3.4, so enabling or disabling the plugin governs its hooks); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
 | OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
 and depends on `sh` and `jq`. Claude, Codex and Antigravity each keep one
-copy under `$UZE_HOME/runtime/attachments/<harness>/hooks/exec` — a shared
-vendor config file has no plugin root to resolve against, so every entry
-names the wrapper by absolute path.
+copy under `$UZE_HOME/runtime/attachments/<harness>/hooks/exec`, and every
+entry names it by absolute path — a shared vendor config file has no plugin
+root to resolve against, and Antigravity runs a hook from the directory that
+holds its `hooks.json`.
 
 A native entry runs it as:
 

@@ -29,7 +29,7 @@ pub(crate) fn group_entry(
     }
     entry.insert(
         "hooks".to_owned(),
-        serde_json::Value::Array(vec![handler_entry(hook, invocation)]),
+        serde_json::Value::Array(vec![handler_entry(target, hook, invocation)]),
     );
     serde_json::Value::Object(entry)
 }
@@ -42,7 +42,15 @@ pub(crate) fn group_entry(
 /// what the wrapper can spend, and `parse_manifest` refuses a group whose
 /// bound exceeds the canonical 300s maximum — so the clamp below is the
 /// cast's guard, never a truncation of a manifest UZE accepted.
-pub(super) fn handler_entry(hook: &PortableHook, invocation: &HookInvocation) -> serde_json::Value {
+///
+/// A fail-closed group also carries the harness's own block-on-failure
+/// marker where it has one, so the call is blocked even when the wrapper
+/// never runs.
+pub(super) fn handler_entry(
+    target: HookTarget,
+    hook: &PortableHook,
+    invocation: &HookInvocation,
+) -> serde_json::Value {
     let timeout: u16 = uze_core::hook::group_timeout_bound(&hook.handlers)
         .min(u32::from(uze_core::hook::MAX_TIMEOUT_SECONDS)) as u16;
     let mut invoked = serde_json::Map::new();
@@ -57,6 +65,12 @@ pub(super) fn handler_entry(hook: &PortableHook, invocation: &HookInvocation) ->
         }
     }
     invoked.insert("timeout".to_owned(), serde_json::json!(timeout));
+    if let HookRunner::Wrapper { dialect, .. } = target.runner
+        && let Some((key, value)) = dialect.failure_marker
+        && hook.effect.fails_closed()
+    {
+        invoked.insert(key.to_owned(), serde_json::json!(value));
+    }
     serde_json::Value::Object(invoked)
 }
 
@@ -110,7 +124,7 @@ pub(crate) fn agy_named_entry(
     let entries = if agy_event_is_grouped(hook.event) {
         vec![group_entry(target, hook, &invocation)]
     } else {
-        vec![handler_entry(hook, &invocation)]
+        vec![handler_entry(target, hook, &invocation)]
     };
     serde_json::json!({ hook_event_name(hook.event): entries })
 }

@@ -15,6 +15,9 @@ WEB_SEARCH_QUESTION = "Allow OpenCode to search the web"
 
 
 class OpenCodeBindings(Bindings):
+    #: Hooks run inside OpenCode, in the owned bridge plugin.
+    hooks_run_through_wrapper = False
+
     harness = "opencode"
     display_name = "OpenCode"
     #: What OpenCode V2 puts in front of a person before a call a plugin

@@ -66,14 +66,6 @@ fn spelled_for_every_shell(manifest: &str) -> String {
     document.to_string()
 }
 
-/// Codex runs a Windows shell command without firing PreToolUse
-/// (openai/codex#24453), so a shell guard is reported there, never delivered.
-#[cfg(unix)]
-const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Native;
-// What Codex was measured to fire on Windows (see above).
-#[cfg(windows)]
-const CODEX_GUARDS_SHELL: CompatibilityRoute = CompatibilityRoute::Unsupported;
-
 /// What a hook entry runs, read back: the generated wrapper it starts and
 /// the arguments the wrapper is handed. `words` is the entry's command
 /// followed by its arguments; this platform's shell may start a script
@@ -106,15 +98,6 @@ fn entry_words(handler: &serde_json::Value) -> Vec<String> {
         .chain(handler["args"].as_array().into_iter().flatten())
         .map(|word| word.as_str().unwrap().to_owned())
         .collect()
-}
-
-/// A guard on file writes, which every harness fires its pre-tool event
-/// for on every platform: what a test about an entry's mechanics guards.
-/// A deny group on a tool Codex fires its hook for on every platform:
-/// `shell` is not one, since Codex runs a Windows shell command without
-/// firing `PreToolUse` (the Windows template declares it unfired).
-fn codex_deny_group() -> &'static str {
-    r#"{"hooks":{"PreToolUse":[{"id":"protect-env","matcher":"agent.spawn","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/scripts/check","timeout":10}]}]}}"#
 }
 
 fn deny_group() -> &'static str {
@@ -162,7 +145,10 @@ fn compatibility_is_semantic_and_never_fabricates_a_stop_equivalence() {
         claude.exposure_plan(protect).route,
         CompatibilityRoute::Native
     );
-    assert_eq!(codex.exposure_plan(protect).route, CODEX_GUARDS_SHELL);
+    assert_eq!(
+        codex.exposure_plan(protect).route,
+        CompatibilityRoute::Native
+    );
     assert_eq!(
         opencode.exposure_plan(protect).route,
         // OpenCode V2 decides in `permission.evaluate`, which carries no
@@ -868,7 +854,7 @@ fn reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones() {
 
 #[test]
 fn codex_writes_its_own_hooks_json_command_form() {
-    let (root, resources) = hook_package("codex-hooks", codex_deny_group());
+    let (root, resources) = hook_package("codex-hooks", deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);
@@ -931,7 +917,7 @@ fn codex_writes_its_own_hooks_json_command_form() {
 
 #[test]
 fn foreign_codex_hooks_survive_attach_and_detach() {
-    let (root, resources) = hook_package("codex-foreign", codex_deny_group());
+    let (root, resources) = hook_package("codex-foreign", deny_group());
     let protect = hook_resource(&resources, "protect-env");
     let home = UzeHome::at(root.join("uze"));
     let codex = CodexIntegration::new(root.join("agents"), home);

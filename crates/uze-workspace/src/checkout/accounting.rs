@@ -1,6 +1,7 @@
 //! Accounting for every checkout Git knows: whose it is, and what state it is in.
 
 use super::*;
+use uze_core::integration::WorktreePlace;
 
 /// Every linked worktree Git registers, wherever it is, with the branch it
 /// has checked out — the primary checkout left out. Read from `git worktree
@@ -64,9 +65,9 @@ pub struct AccountedCheckout {
 }
 
 /// Every linked worktree of the repository, wherever it is, with its owner.
-/// `harness_dirs` pairs a harness with where, relative to any checkout of
-/// the project, it keeps worktrees of its own.
-pub fn account(primary: &Path, harness_dirs: &[(&str, &str)]) -> Vec<AccountedCheckout> {
+/// `harness_places` pairs a harness with where it keeps worktrees of its
+/// own: relative to any checkout of the project, or a directory of its own.
+pub fn account(primary: &Path, harness_places: &[(&str, WorktreePlace)]) -> Vec<AccountedCheckout> {
     let linked = linked_worktrees(primary);
     let container = primary.join(WORKTREES_DIRECTORY);
     let roots: Vec<&Path> = std::iter::once(primary)
@@ -75,10 +76,11 @@ pub fn account(primary: &Path, harness_dirs: &[(&str, &str)]) -> Vec<AccountedCh
     linked
         .iter()
         .map(|(path, branch)| {
-            let harness = harness_dirs.iter().find(|(_, directory)| {
-                roots
+            let harness = harness_places.iter().find(|(_, place)| match place {
+                WorktreePlace::InCheckout(directory) => roots
                     .iter()
-                    .any(|root| uze_platform::path::is_within(path, &root.join(directory)))
+                    .any(|root| uze_platform::path::is_within(path, &root.join(directory))),
+                WorktreePlace::Outside(directory) => uze_platform::path::is_within(path, directory),
             });
             let directly_under = |container: &Path| {
                 path.parent()

@@ -27,8 +27,10 @@ impl IntegrationPort for Keeper {
     fn capabilities(&self) -> HarnessCapabilities {
         HarnessCapabilities::default()
     }
-    fn own_worktree_dirs(&self) -> &'static [&'static str] {
-        &[".keeper/worktrees"]
+    fn own_worktree_places(&self) -> Vec<uze_core::integration::WorktreePlace> {
+        vec![uze_core::integration::WorktreePlace::InCheckout(
+            ".keeper/worktrees",
+        )]
     }
     fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
         ExposurePlan {

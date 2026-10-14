@@ -282,6 +282,8 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
         honest answer, instead of the check quietly not existing in this
         vertical — which is how the previous suite hid divergence.
         """
+        if prop == "hooks.blocks-when-wrapper-cannot-run":
+            return "Codex hook entries have no setting that blocks a call when the hook command cannot start; a handler that never runs lets the call through"
         if prop in (
             "model-only-is-not-user-invocable",
             # The same limitation, now measured rather than read: the

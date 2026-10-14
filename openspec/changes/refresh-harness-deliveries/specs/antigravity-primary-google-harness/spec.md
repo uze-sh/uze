@@ -6,7 +6,9 @@ UZE SHALL deliver a stored canonical package through `agy plugin install`
 using the canonical `plugin.json` as the vendor manifest, and SHALL compute
 `provided_resource_identities` as an exact intersection (`discovered ∩
 declared`) over the structural surfaces: `skills/`, `commands/` (converted
-to Skills by the CLI), and `mcp_config.json`-declared MCP servers.
+to Skills by the CLI), `mcp_config.json`-declared MCP servers, and every
+portable hook group the harness can run, delivered in the generated
+plugin's own root `hooks.json`.
 
 #### Scenario: Canonical package without MCP
 
@@ -28,6 +30,17 @@ to Skills by the CLI), and `mcp_config.json`-declared MCP servers.
 - **AND** installs that directory
 - **AND** exactly the canonical `mcp.json`-declared MCP resources plus the
   conventional Skill/Command resources are marked provided.
+
+#### Scenario: Canonical package with hooks
+
+- **WHEN** a canonical package declares portable hook groups Antigravity
+  can run
+- **THEN** the generated plugin carries them in its own `hooks.json`, one
+  named hook per group running the generated wrapper
+- **AND** they are marked provided, so no entry for them is written into
+  the shared `~/.gemini/config/hooks.json`
+- **AND** an entry an earlier build wrote there for one of them is retired
+  by the next install.
 
 #### Scenario: Partial coverage falls back, never disappears
 

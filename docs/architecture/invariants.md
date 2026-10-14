@@ -1213,6 +1213,15 @@ from the in-binary runtime that used to be the second implementation of this
 contract, before it was removed (ADR-040, amended).
 
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::the_wrapper_answers_every_fixture_as_recorded`
+
+A deny, ask or transform group also fails closed when the wrapper itself
+never runs — deleted, unexecutable, or past the harness's own timeout —
+wherever the harness's entry can say so: Claude Code's entry carries
+`onFailure: "block"` (2.1.295), and Antigravity blocks a call whose hook
+failed to run on its own (1.3.5). Codex has no such setting and declares it.
+
+> `crates/uze-integrations/src/hooks/tests.rs::a_fail_closed_group_carries_the_harnesss_block_on_failure_marker`
+> `conformance/contract/hooks.py::_fail_closed_unrun` (`hooks-fail-closed-unrun-tool-blocked`)
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_handler_that_cannot_run_follows_the_groups_effect`
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_missing_wrapper_dependency_follows_the_groups_effect`
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::a_denial_is_relayed_in_each_harnesss_own_dialect`
@@ -2916,6 +2925,15 @@ exit, decision and reason; a guard that cannot decide denies.
 
 > `crates/uze-integrations/src/hooks/wrapper_parity_tests.rs::every_fixture_is_answered_as_recorded_on_this_platform`
 > `crates/uze-integrations/src/hooks/host_wrapper_tests.rs::a_guard_that_cannot_decide_denies`
+
+### A hook entry's line exits with its wrapper's code
+
+A hook entry a harness runs as one line of its own PowerShell exits with
+the code the wrapper chose: Windows PowerShell's `-Command` otherwise
+reports 1 for any failure, and Codex let a call through on that 1 where
+the wrapper's 2 denies (measured on Codex 0.162.1 in Windows Sandbox).
+
+> `crates/uze-platform/src/shell.rs::tests::a_line_exits_with_its_command_s_code_under_a_host_s_powershell`
 
 ### A project command never runs in a shell it was not written for
 

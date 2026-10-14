@@ -427,10 +427,33 @@ fn every_worktree_is_accounted_for_by_owner() {
         "HEAD",
     ]);
 
-    let owners: Vec<(String, Owner)> = account(primary, &[("a-harness", ".harness/worktrees")])
-        .into_iter()
-        .map(|checkout| (checkout.branch.unwrap_or_default(), checkout.owner))
-        .collect();
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "from-a-tool",
+        "../harness-home/agent-y",
+        "HEAD",
+    ]);
+    let harness_home = primary.parent().unwrap().join("harness-home");
+
+    let owners: Vec<(String, Owner)> = account(
+        primary,
+        &[
+            (
+                "a-harness",
+                uze_core::integration::WorktreePlace::InCheckout(".harness/worktrees"),
+            ),
+            (
+                "b-harness",
+                uze_core::integration::WorktreePlace::Outside(harness_home),
+            ),
+        ],
+    )
+    .into_iter()
+    .map(|checkout| (checkout.branch.unwrap_or_default(), checkout.owner))
+    .collect();
 
     assert!(owners.contains(&(slot.branch.clone(), Owner::Agent)));
     assert!(owners.contains(&(
@@ -439,9 +462,15 @@ fn every_worktree_is_accounted_for_by_owner() {
             harness: "a-harness".to_owned()
         }
     )));
+    assert!(owners.contains(&(
+        "from-a-tool".to_owned(),
+        Owner::Harness {
+            harness: "b-harness".to_owned()
+        }
+    )));
     assert!(owners.contains(&("by-hand".to_owned(), Owner::Operator)));
     assert!(owners.contains(&("elsewhere".to_owned(), Owner::Operator)));
-    assert_eq!(owners.len(), 4, "the primary is never listed");
+    assert_eq!(owners.len(), 5, "the primary is never listed");
 }
 
 /// A lock with the same pins and fewer or more entries is what `install`

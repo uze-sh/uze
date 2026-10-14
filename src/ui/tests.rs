@@ -111,6 +111,7 @@ fn model_with_data() -> TuiModel {
         plugins: model.remembered.plugins.clone(),
         harnesses: vec![
             HarnessHealth {
+                below_minimum: None,
                 integration: "claude-code".to_owned(),
                 display_name: "Claude Code".to_owned(),
                 description: "Anthropic's official coding agent CLI".to_owned(),
@@ -131,6 +132,7 @@ fn model_with_data() -> TuiModel {
                 },
             },
             HarnessHealth {
+                below_minimum: None,
                 integration: "codex".to_owned(),
                 display_name: "Codex".to_owned(),
                 description: "OpenAI's coding agent CLI".to_owned(),

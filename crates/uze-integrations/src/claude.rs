@@ -158,8 +158,10 @@ impl IntegrationPort for ClaudeIntegration {
         "Anthropic's official coding agent CLI"
     }
 
-    fn own_worktree_dirs(&self) -> &'static [&'static str] {
-        &[".claude/worktrees"]
+    fn own_worktree_places(&self) -> Vec<uze_core::integration::WorktreePlace> {
+        vec![uze_core::integration::WorktreePlace::InCheckout(
+            ".claude/worktrees",
+        )]
     }
 
     fn invocation_prefix(&self) -> &'static str {
@@ -816,7 +818,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.1.291";
+const VERSION: &str = "2.1.299";
 
 #[cfg(test)]
 mod lifecycle_tests {

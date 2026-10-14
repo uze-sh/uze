@@ -25,12 +25,6 @@ impl WrapperTemplate for PosixWrapper {
     const RELATIVE_PATH: &'static str = "hooks/exec";
     const HEADER: &'static str = HEADER;
 
-    fn unfired(target: HookTarget) -> &'static [Unfired] {
-        target
-            .dialect()
-            .map_or(&[], |dialect| dialect.posix.unfired)
-    }
-
     fn source(target: HookTarget) -> Option<String> {
         let dialect = target.dialect()?;
         let harness = target.key();

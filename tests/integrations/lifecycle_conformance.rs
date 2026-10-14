@@ -224,7 +224,7 @@ fn fake_always_succeeding_bin_dir(root: &Path) -> PathBuf {
     let dir = root.join("fake-bin");
     for name in ["claude", "codex", "agy"] {
         FakeHarness::new(&dir, name)
-            .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+            .on_prefix(["plugin", "list"], Action::stdout("[]"))
             .on_prefix(
                 ["plugin", "install"],
                 Action::StagePlugin {

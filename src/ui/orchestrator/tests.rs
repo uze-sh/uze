@@ -4684,6 +4684,7 @@ mod workspace_tests {
             ResourceDelivery,
         };
         let health = HarnessHealth {
+            below_minimum: None,
             integration: "claude-code".to_owned(),
             display_name: "Claude Code".to_owned(),
             description: String::new(),

@@ -23,7 +23,7 @@
 use std::{ffi::OsString, path::Path};
 
 use crate::{
-    conversation::{self, Claim, ConversationOrigin, SessionId},
+    conversation::{self, Claim, ConversationOrigin},
     home::UzeHome,
     integration::{IntegrationPort, ObservationContext, SessionContinuity},
 };
@@ -148,7 +148,7 @@ fn start(
         // Named here, so nothing has to be read back and a crash between
         // this line and the harness's first write costs nothing.
         SessionContinuity::Assigned => {
-            let session = SessionId::generate();
+            let session = integration.new_session_id();
             (
                 LaunchPlan::args(integration.start_session_args(&session)),
                 ConversationOrigin::Assigned,
@@ -220,6 +220,7 @@ mod tests {
     use super::*;
     use crate::{
         checkout::CheckoutId,
+        conversation::SessionId,
         integration::HarnessDetection,
         task::{self, Agent, AgentId, AgentStore, Base},
     };

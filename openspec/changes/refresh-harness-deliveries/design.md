@@ -61,8 +61,8 @@ vendor changing its `--version` output never blocks anyone. Version
 comparison lives in core as a plain dotted-number compare; each
 integration already parses its own `--version` line.
 
-Floors this change sets: Antigravity 1.3.4 (D3), and Claude 2.1.295 if
-D5's probe says older Claude rejects `onFailure`.
+Floors this change sets: Antigravity 1.3.4 (D3). Claude needs none: D5's
+probe found older Claude ignores `onFailure`.
 
 ### D3. Antigravity census: one `agy plugin list --json` per operation
 1.3.4 returns a top-level array `[{name, enabled, version?, source, path,
@@ -89,6 +89,20 @@ lands in `import_manifest.json` and in `plugin list --json`, whether an
 import of the same name can coexist with it, and which one `agy plugin
 uninstall <name>` removes.
 
+Measured: Antigravity 1.3.4, the operator's own signed-in `~/.gemini`,
+2026-10-14 (restored afterwards). `agy plugin install
+<p>@antigravity-plugins-official` from the shell answers `unknown
+marketplace`; `agy --print "/plugin install …"` installs. The plugin is in
+`plugin list --json` (`"source": "antigravity-plugins-official"`, `path`
+under `~/.gemini/config/plugins/<name>`, the folder an import of the same
+name would use) and absent from `import_manifest.json`: the break is real
+and the CLI census sees it. Whether an import and a marketplace plugin of
+one name can coexist, and which `uninstall` removes, was not measured: the
+probe that imports over a marketplace plugin was refused as destructive on
+the operator's machine. The vendor's changelog says a marketplace install
+"no longer overwrites an existing plugin folder that came from a different
+source"; the other direction is UZE's preflight.
+
 ### D4. OpenCode: UZE names the session; following and lookup stay correct
 Since ≈2.0.19, `--session <id>` creates the session when it does not
 exist. OpenCode moves from `SessionContinuity::Observed` to `Assigned`.
@@ -112,18 +126,24 @@ Probe 1.2: launch twice with one minted id, the second continues the
 first; `GET /api/session/<id>` answers for a session outside the first
 page; `/new` inside the TUI is followed by the record.
 
+Measured: OpenCode 2.0.29, 2026-10-14, `experiments/opencode/session-assigned`
+3/3. `--session ses_uzelab…` (the schema only requires the `ses` prefix)
+creates the session under that id; a second run under it adds no session
+(6 in the directory, not 7); `GET /api/session/<id>` answers it; the
+default listing returns 50. `/new` following is unchanged code
+(`observe()` is kept) and was not re-measured.
+
 ### D5. Claude block-on-failure: one marker per hook dialect, and an upgrade path
 `onFailure: "block"` (2.1.295) is emitted on deny/ask/transform groups for
 the Claude target only. `handler_entry` is shared by the command-hook
 targets, so the dialect gains a field naming its native failure marker, if
 any; no vendor branch at the call site.
 
-Delivered entries do not pick it up on their own: inspection compares the
-written entry with the receipt's expected entry by equality
-(`hooks/event_entry.rs:122-129`), so an entry written before this change
-stays Matched forever. An entry whose current rendering differs from its
-receipt becomes Stale (as the wrapper already does, `event_entry.rs:236-243`)
-and install/setup rewrites it.
+Delivered entries pick it up on the next `uze install` or `uze setup`:
+every attach renders the entry again and replaces the version its receipt
+recorded (`merge_event_entry` with the previous content), so no Stale
+state is needed. Until that run, inspection keeps reading the earlier
+entry as Matched, which it is.
 
 The Lab proof is a "wrapper removed" variant of the contract's
 `_fail_closed` (`conformance/contract/hooks.py:360`), declared through
@@ -132,6 +152,14 @@ not a Claude-only scenario.
 
 Probe 1.3: without UZE, a missing hook command with `onFailure: "block"`
 blocks the call; whether 2.1.294 accepts or rejects the key.
+
+Measured: 2026-10-14, `experiments/claude/on-failure` (no UZE in the hook).
+Claude 2.1.299: a missing hook command and a hook past its timeout, both
+with `onFailure: "block"`, blocked the `Bash` call; the same missing
+command without the key let it run. Claude 2.1.291 (the previous Lab
+image): a denying hook carrying the key still loaded and denied, like the
+one without it, so an older Claude ignores the key rather than rejecting
+`settings.json`. The marker is emitted unconditionally; no Claude floor.
 
 ### D6. Harness worktree places may live outside the project
 `own_worktree_dirs() -> &'static [&'static str]` answers only "relative to
@@ -154,6 +182,20 @@ compatibility prompt (0.162.1), a new prompt between UZE and the operator.
 Probe 1.4: in the Lab, have each model create a worktree through its tool;
 read where it lands and that the slot record is unaffected.
 
+Measured (where, not yet the tool call): Codex 0.162.1 source,
+`codex-rs/worktree/src/settings.rs`: `$CODEX_HOME/worktrees`. OpenCode
+`packages/core/src/worktree/strategies.ts` (dev, 2026-10-14):
+`<global.data>/worktree/<project id>`, and `opencode debug paths` on 2.0.29
+reports `data` as `~/.local/share/opencode` — the XDG rule the integration
+already follows for `~/.config/opencode`, so no per-OS resolution is
+added. Measured with the tool, OpenCode 2.0.29, 2026-10-14
+(`experiments/opencode/worktree-tool`): `worktree_create` is a Code Mode
+tool, reached through `execute` as `tools["opencode"].worktree_create`, and
+the worktree it made landed at
+`~/.local/share/opencode/worktree/<project id>/<name>`, inside the declared
+place. Codex's `create_worktree` is offered through the TUI's own MCP
+server only and was not driven; its place is read from the source.
+
 ### D7. Antigravity plugin hooks and agents: measured, then moved or kept
 Docs since 1.3.4 say runtime discovery loads `<plugin_dir>/hooks.json`;
 1.3.3 added a root `agents.json`. Today hooks go to the shared
@@ -173,11 +215,44 @@ the subagent dispatches and reaches the plugin's MCP.
 Probe 1.5: `--experiment` with a hand-made plugin, reading `loaded N named
 hooks from N hooks.json file(s)` and the hook's effect.
 
+Measured: Antigravity 1.3.5, 2026-10-14, `experiments/antigravity/plugin-hooks`
+(no UZE in the plugin). `agy plugin install` reports `hooks: 1 processed`
+and `agents: 1 processed`; a headless session logs `loaded 1 named hooks
+from 1 hooks.json file(s)`; `/hooks` lists the hook with `source` the
+plugin's own `hooks.json`; `plugin list --json` adds `hooks` and `agents`
+keys to the plugin's entry. Loading is proven; whether a deny from a
+plugin hook gates a TUI call, and whether the subagent dispatches and
+reaches the plugin's MCP, are not yet measured.
+
+Measured after the move, 2026-10-14, Antigravity 1.3.5: with hooks in the
+generated plugin's `hooks.json` and no shared `hooks.json` on the machine,
+the vertical passed every hooks check (57/57); `lifecycle-plugin`, which is
+delivered as a generated plugin, has its `keeper` agent offered and
+dispatched by label, its body reaching the model
+(`experiments/antigravity/plugin-agent-dispatch`). The agent contract's own
+`flow` is delivered capability by capability, so it does not cover this
+route. Whether a plugin's subagent reaches the plugin's own MCP was not
+measured.
+
 ### D8. Codex Windows PreToolUse: measured in the Windows Sandbox
 Upstream closed #24453 as resolved in 0.159.0, with no release note. If a
 shell PreToolUse fires and deny/transform hold on the current Codex, the
 `Unfired` entry and its test go; otherwise its `why` names the version
 measured.
+
+Measured: Codex 0.162.1, 2026-10-14, Windows Sandbox as an ordinary
+account, `uze setup codex` and `uze install` from this branch, real
+`codex exec` turns (hook trust recorded by its own hash, since `codex exec`
+skips an untrusted hook in silence). A shell call fires PreToolUse as
+`Bash` with `command`, for a hand-written hook in Codex's own format and
+for UZE's: UZE's `transform` ran the rewritten command, and its `deny`
+blocked with the handler's reason once the entry line exited with the
+wrapper's code. Before that it did not: Codex runs the line with
+PowerShell's `-Command`, which reports 1 for the wrapper's 2, and Codex
+lets a call through on 1. `uze_platform::shell::command_line` now ends the
+Windows line with `exit $LASTEXITCODE`, which also carries the fail-closed
+2 of a handler that failed. Nothing declares an `Unfired` any more, so the
+mechanism went with Codex's entry.
 
 ### D9. Antigravity MCP `url`: measured before it reverses a verified fact
 The 1.3.3+ docs make `url` the primary key and `serverUrl` legacy. UZE

@@ -161,7 +161,7 @@ fn fake_harness_bin_dir(label: &str) -> PathBuf {
         FakeHarness::new(&dir, name)
             .shared_log(dir.join("commands.log"))
             .version_line(version_line)
-            .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+            .on_prefix(["plugin", "list"], Action::stdout("[]"))
             // Real `agy` stages the copy under the plugin's own declared
             // manifest name, not the source directory's basename (verified
             // against real agy 1.1.22 — see antigravity/plugin.rs's
@@ -1606,7 +1606,7 @@ fn refusing_harness_bin_dir(label: &str, with_opencode: bool) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     FakeHarness::new(&dir, "agy")
         .version_line("agy 9.9.9")
-        .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+        .on_prefix(["plugin", "list"], Action::stdout("[]"))
         .on_prefix(
             ["plugin", "install"],
             Action::Refuse {
@@ -2449,12 +2449,17 @@ fn doctor_reports_a_hook_delivered_under_another_name_as_renamed() {
     let home = temporary_home("cli-doctor-renamed");
     let fake_bin = fake_harness_bin_dir("cli-doctor-renamed-bin");
     let path = uze_testkit::process::path_with(&[&fake_bin]);
-    let add = install_via_marketplace_json(
-        &home,
-        &home.join(".uze"),
-        &crew_with_a_server_and_hooks(&home),
-        &path,
-    );
+    // A model-only Skill makes Antigravity CLI deliver the package
+    // capability by capability, which is the route that names hook entries
+    // in its shared `hooks.json`; a generated plugin carries them itself.
+    let package = crew_with_a_server_and_hooks(&home);
+    std::fs::create_dir_all(package.join("skills/quiet")).unwrap();
+    std::fs::write(
+        package.join("skills/quiet/SKILL.md"),
+        "---\nname: quiet\ndescription: Quiet.\ninvoke:\n  model: true\n  user: false\n---\nBody.\n",
+    )
+    .unwrap();
+    let add = install_via_marketplace_json(&home, &home.join(".uze"), &package, &path);
     assert!(
         add.status.success(),
         "{}",
@@ -2580,10 +2585,10 @@ fn inspect_names_the_servers_and_hooks_a_harness_receives() {
     let _ = std::fs::remove_dir_all(fake_bin);
 }
 
-/// Antigravity CLI runs a session start through its undocumented flat
-/// `SessionStart` key: the install delivers that group beside the package's
-/// other hook — through the POSIX wrapper, the only one it takes — and
-/// reports no shortfall for it.
+/// Antigravity CLI runs a session start through its flat `SessionStart`
+/// key: the install delivers that group beside the package's other hook,
+/// both in the generated plugin's own `hooks.json` — through the POSIX
+/// wrapper, the only one it takes — and reports no shortfall for it.
 #[cfg(unix)]
 #[test]
 fn antigravity_takes_a_session_start_hook_beside_the_rest() {
@@ -2620,21 +2625,27 @@ fn antigravity_takes_a_session_start_hook_beside_the_rest() {
                 .contains("ensure-ui")),
         "{antigravity}"
     );
-    assert!(
-        antigravity["attachments"]
-            .as_array()
+    let staged = home.join(".gemini/config/plugins/crew/hooks.json");
+    let hooks: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&staged)
+            .unwrap_or_else(|error| panic!("{}: {error}", staged.display())),
+    )
+    .unwrap();
+    let named = |group: &str| {
+        hooks
+            .as_object()
             .unwrap()
             .iter()
-            .any(|location| location.as_str().unwrap().ends_with(":ensure-ui")),
-        "the session start reaches Antigravity CLI: {antigravity}"
+            .find(|(name, _)| name.ends_with(&format!(":{group}")))
+            .map(|(_, entry)| entry.clone())
+    };
+    assert!(
+        named("ensure-ui").is_some_and(|entry| entry["SessionStart"].is_array()),
+        "the session start reaches Antigravity CLI: {hooks}"
     );
     assert!(
-        antigravity["attachments"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|location| location.as_str().unwrap().ends_with(":watch")),
-        "the other hook reaches Antigravity CLI: {antigravity}"
+        named("watch").is_some_and(|entry| entry["PreToolUse"].is_array()),
+        "the other hook reaches Antigravity CLI: {hooks}"
     );
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(fake_bin);

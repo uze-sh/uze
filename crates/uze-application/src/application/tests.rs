@@ -2640,3 +2640,68 @@ fn each_kind_of_the_agents_directory_is_answered_apart() {
     assert_eq!(support.project_skills, ContextMechanism::Native);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }
+
+/// A harness detected below the version its integration needs, whose every
+/// delivery is refused.
+struct FlooredRefusingIntegration;
+
+impl IntegrationPort for FlooredRefusingIntegration {
+    fn id(&self) -> &'static str {
+        "floored"
+    }
+    fn display_name(&self) -> &'static str {
+        "Floored"
+    }
+    fn minimum_version(&self) -> Option<&'static str> {
+        Some("2.0.0")
+    }
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+    fn detect(&self) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: Some("1.0.0".to_owned()),
+        }
+    }
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "floored test".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+    fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        Err(UzeError::HarnessCommand(
+            "the harness refused it".to_owned(),
+        ))
+    }
+}
+
+#[test]
+fn a_delivery_refused_below_the_floor_names_the_version_needed() {
+    let root = uze_testkit::temp::scratch("delivery-below-floor");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![Box::new(FlooredRefusingIntegration)],
+    );
+    app.ensure_default_plugins().unwrap();
+
+    let error = app
+        .setup(None)
+        .unwrap()
+        .into_iter()
+        .find(|result| result.integration == "floored")
+        .unwrap()
+        .attach_error
+        .expect("every delivery to this harness is refused");
+
+    assert!(error.contains("the harness refused it"), "{error}");
+    assert!(
+        error.contains("Floored 1.0.0 is older than 2.0.0"),
+        "the refusal must name the version needed: {error}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

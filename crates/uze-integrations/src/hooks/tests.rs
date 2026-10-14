@@ -670,6 +670,56 @@ fn merge_inspect_detach_preserve_foreign_entries_and_order() {
 }
 
 #[test]
+fn a_fail_closed_group_carries_the_harnesss_block_on_failure_marker() {
+    for effect in [HookEffect::Deny, HookEffect::Ask, HookEffect::Transform] {
+        let mut hook = hook();
+        hook.effect = effect;
+        let entry = group_entry(crate::claude::HOOKS, &hook, &invocation(&hook));
+        assert_eq!(entry["hooks"][0]["onFailure"], "block", "{effect:?}");
+    }
+    let mut observed = hook();
+    observed.effect = HookEffect::Observe;
+    let entry = group_entry(crate::claude::HOOKS, &observed, &invocation(&observed));
+    assert!(
+        entry["hooks"][0].get("onFailure").is_none(),
+        "an observational group must not block when it fails"
+    );
+    let codex = group_entry(crate::codex::HOOKS, &hook(), &invocation(&hook()));
+    assert!(
+        codex["hooks"][0].get("onFailure").is_none(),
+        "a harness without the control gets no key"
+    );
+}
+
+/// An entry an earlier build wrote without the marker is replaced by the
+/// next attach, never left beside the new one.
+#[test]
+fn the_next_attach_adds_the_marker_to_an_entry_written_without_it() {
+    let root = uze_testkit::temp::scratch("hooks-marker-upgrade");
+    fs::create_dir_all(&root).unwrap();
+    let config = root.join("settings.json");
+    let current = group_entry(crate::claude::HOOKS, &hook(), &invocation(&hook()));
+    let mut earlier = current.clone();
+    earlier["hooks"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("onFailure");
+    merge_event_entry(&config, HookEvent::PreToolUse, &earlier, &[]).unwrap();
+    merge_event_entry(
+        &config,
+        HookEvent::PreToolUse,
+        &current,
+        &[serde_json::to_string(&earlier).unwrap()],
+    )
+    .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    let entries = value["hooks"]["PreToolUse"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["hooks"][0]["onFailure"], "block");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn merging_replaces_the_previous_version_of_the_same_group() {
     let root = uze_testkit::temp::scratch("hooks-replace");
     fs::create_dir_all(&root).unwrap();
@@ -995,6 +1045,59 @@ fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// A generated plugin whose own `hooks.json` runs the shared wrapper keeps
+/// it alive after the last shared-file entry goes: an entry moving into the
+/// plugin is detached from the shared file, and taking the wrapper with it
+/// would leave the plugin's hooks exiting 127. Told on Antigravity, whose
+/// generated plugin carries its hooks.
+// Antigravity's named entries are served by the POSIX wrapper alone.
+#[cfg(unix)]
+#[test]
+fn a_plugin_that_runs_the_wrapper_keeps_it_after_the_last_entry() {
+    let root = uze_testkit::temp::scratch("hooks-prune-plugin");
+    fs::create_dir_all(&root).unwrap();
+    let home = UzeHome::at(root.join("home"));
+    let config = root.join("hooks.json");
+    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
+    materialize_wrapper(
+        &wrapper,
+        &wrapper_source(crate::antigravity::HOOKS).unwrap(),
+    )
+    .unwrap();
+    let entry = agy_named_entry(
+        crate::antigravity::HOOKS,
+        &hook(),
+        &wrapper,
+        Path::new("/pkg"),
+    );
+    let expected = serde_json::to_string(&entry).unwrap();
+    let name = "pkg@market:protect-env";
+    merge_named_entry(&config, name, &entry, &[]).unwrap();
+    uze_core::state::record_receipt(&home, hook_receipt(&config, name, &expected, &wrapper))
+        .unwrap();
+    uze_core::state::record_receipt(
+        &home,
+        uze_core::integration::AttachmentReceipt {
+            package_id: "pkg@market".to_owned(),
+            resource_identity: None,
+            integration: "antigravity".to_owned(),
+            artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
+                kind: "antigravity-plugin-generated".to_owned(),
+                selector: "pkg".to_owned(),
+                detail: [(RUNS_HOOK_WRAPPER.to_owned(), serde_json::json!(true))]
+                    .into_iter()
+                    .collect(),
+            },
+        },
+    )
+    .unwrap();
+
+    remove_named_entry(&config, name, &expected).unwrap();
+    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
+    assert!(wrapper.exists(), "the plugin's hooks still run the wrapper");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// A ledger that cannot be read has not answered "nothing uses it"; it
 /// has not answered at all. Deleting a wrapper live entries still run
 /// leaves every one of them exiting 127 — which every harness reads as
@@ -1278,23 +1381,6 @@ fn every_wrapper_harness_has_a_windows_wrapper() {
     ] {
         assert!(PowerShellWrapper::source(target).is_some(), "{target}");
     }
-}
-
-/// Codex on Windows runs a shell command without firing PreToolUse, which
-/// only the Windows template declares, so a shell guard is reported there
-/// and delivered everywhere else.
-#[test]
-fn codex_s_windows_shell_gap_is_declared_by_the_windows_template_alone() {
-    let gap = PowerShellWrapper::unfired(crate::codex::HOOKS);
-    assert!(
-        gap.iter()
-            .any(|unfired| unfired.event == HookEvent::PreToolUse
-                && unfired.tool == "shell"
-                && unfired.why.contains("openai/codex/issues/24453")),
-        "{gap:?}"
-    );
-    assert!(PosixWrapper::unfired(crate::codex::HOOKS).is_empty());
-    assert!(PowerShellWrapper::unfired(crate::claude::HOOKS).is_empty());
 }
 
 /// An exec-form handler whose script nothing starts here is never

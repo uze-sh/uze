@@ -82,11 +82,55 @@ pub struct HeldBack {
     pub action: String,
 }
 
+/// Where a harness keeps worktrees of its own.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WorktreePlace {
+    /// A directory relative to any checkout of the project.
+    InCheckout(&'static str),
+    /// A directory of the harness's own, outside every project.
+    Outside(std::path::PathBuf),
+}
+
 /// Read-only detection of a harness binary. No side effects.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HarnessDetection {
     pub present: bool,
     pub version: Option<String>,
+}
+
+impl HarnessDetection {
+    /// Whether the detected version is older than `minimum`. A version that
+    /// cannot be read as dotted numbers meets the floor: a vendor changing
+    /// its `--version` line must never block anyone.
+    pub fn is_below(&self, minimum: &str) -> bool {
+        match (self.version.as_deref().and_then(dotted), dotted(minimum)) {
+            (Some(found), Some(minimum)) => {
+                let width = found.len().max(minimum.len());
+                let pad = |parts: Vec<u64>| {
+                    let mut parts = parts;
+                    parts.resize(width, 0);
+                    parts
+                };
+                pad(found) < pad(minimum)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// `v2.0.24`, `0.162.1`, `1.3.4-beta` → their leading dotted numbers.
+fn dotted(version: &str) -> Option<Vec<u64>> {
+    let numeric: String = version
+        .trim_start_matches('v')
+        .chars()
+        .take_while(|character| character.is_ascii_digit() || *character == '.')
+        .collect();
+    let parts = numeric
+        .split('.')
+        .map(str::parse)
+        .collect::<std::result::Result<Vec<u64>, _>>()
+        .ok()?;
+    (!parts.is_empty()).then_some(parts)
 }
 
 /// Diagnosable, machine-level integration status for `uze doctor`.
@@ -199,6 +243,13 @@ pub trait IntegrationPort: Send + Sync {
         ""
     }
 
+    /// The oldest harness version this integration's deliveries are written
+    /// for. Below it nothing is worked around: `doctor` and `status` name the
+    /// version needed instead. `None` declares no floor.
+    fn minimum_version(&self) -> Option<&'static str> {
+        None
+    }
+
     fn capabilities(&self) -> HarnessCapabilities;
 
     /// The hook semantics this harness can preserve (ADR-033): the semantic
@@ -244,12 +295,12 @@ pub trait IntegrationPort: Send + Sync {
     // nothing. One trait rather than two by decision (AGENTS.md); the
     // grouping is what says which module asks.
 
-    /// Where, relative to any checkout of a project, this harness keeps
-    /// worktrees of its own isolation. A worktree found there is accounted
-    /// for as that harness's: shown, never driven, never removed. Defaults
-    /// to none.
-    fn own_worktree_dirs(&self) -> &'static [&'static str] {
-        &[]
+    /// Where this harness keeps worktrees of its own isolation, including
+    /// the ones it makes when the model calls a worktree tool it provides.
+    /// A worktree found there is accounted for as that harness's: shown,
+    /// never driven, never removed. Defaults to none.
+    fn own_worktree_places(&self) -> Vec<WorktreePlace> {
+        Vec::new()
     }
 
     /// How this harness lets an agent's conversation be picked up again.
@@ -259,6 +310,13 @@ pub trait IntegrationPort: Send + Sync {
     /// has looked into its mechanism.
     fn session_continuity(&self) -> SessionContinuity {
         SessionContinuity::Unsupported
+    }
+
+    /// The name UZE gives a conversation it is about to start, in the shape
+    /// this harness accepts. Only [`SessionContinuity::Assigned`] asks; the
+    /// default is a UUID.
+    fn new_session_id(&self) -> SessionId {
+        SessionId::generate()
     }
 
     /// Arguments that start a conversation UZE has named. Only
@@ -850,6 +908,42 @@ pub fn qualified_exposure_name_candidates(
         return Vec::new();
     };
     vec![qualified_capability_name(active_plugin_name, &logical)]
+}
+
+#[cfg(test)]
+mod version_floor_tests {
+    use super::HarnessDetection;
+
+    fn detected(version: &str) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: Some(version.to_owned()),
+        }
+    }
+
+    #[test]
+    fn a_version_is_compared_by_its_numbers() {
+        assert!(detected("1.3.3").is_below("1.3.4"));
+        assert!(detected("1.2.17").is_below("1.3.4"));
+        assert!(!detected("1.3.4").is_below("1.3.4"));
+        assert!(!detected("1.10.0").is_below("1.3.4"));
+        assert!(!detected("2.1.296").is_below("2.1.295"));
+    }
+
+    #[test]
+    fn vendor_spellings_are_read() {
+        assert!(detected("v2.0.18").is_below("2.0.19"));
+        assert!(!detected("v2.0.28").is_below("2.0.19"));
+        assert!(!detected("1.3.4-beta.2").is_below("1.3.4"));
+        assert!(detected("1.3").is_below("1.3.1"));
+        assert!(!detected("1.3").is_below("1.3.0"));
+    }
+
+    #[test]
+    fn an_unreadable_version_meets_the_floor() {
+        assert!(!detected("unknown").is_below("1.3.4"));
+        assert!(!HarnessDetection::default().is_below("1.3.4"));
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{
-    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Unfired, WrapperDialect,
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
 };
 
 /// Codex mirrors Claude Code's event names in its own `hooks.json` command
@@ -48,25 +48,17 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 transform: Some(
                     "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":%s}}' \"$updated_json\"",
                 ),
-                unfired: &[],
             },
             powershell: Some(Decisions {
                 deny: "[Console]::Out.Write('{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":' + $reasonJson + '}}')",
                 allow: "if ($hookEvent -eq 'stop') { [Console]::Out.Write('{}') }",
-                // Measured and reported upstream: a Windows shell command runs
-                // as `command_execution`, which fires no PreToolUse hook.
                 transform: Some(
                     "[Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":' + $updatedJson + '}}')",
                 ),
-                unfired: &[Unfired {
-                    event: HookEvent::PreToolUse,
-                    tool: "shell",
-                    why: "Codex runs a Windows shell command without firing it \
-                          (https://github.com/openai/codex/issues/24453)",
-                }],
             }),
             deny_exit: "2",
             unwritten_exit: "2",
+            failure_marker: None,
         },
         // Codex's entries carry a command string only: one quoted shell line.
         entry: EntryShape::EventLine,

@@ -1,12 +1,13 @@
 //! Conversation continuity for OpenCode.
 //!
-//! OpenCode names its own conversation and continues one with
-//! `--session <id>`. Its sessions live in a database UZE will not open;
-//! what it does read is the harness's own API — `opencode api GET
-//! /api/session` — which lists each conversation with the directory it
-//! belongs to and when it was created. Asking the vendor through the
-//! interface it publishes is both cheaper to keep working than a private
-//! store and the only one it documents.
+//! `--session <id>` continues a conversation, and creates it under that id
+//! when there is none, so UZE names it at launch. Its sessions live in a
+//! database UZE will not open; what it does read is the harness's own API —
+//! `opencode api GET /api/session[/<id>]` — asked by id whether a
+//! conversation is still there, and listed for the one the person started
+//! from inside the TUI. Asking the vendor through the interface it
+//! publishes is both cheaper to keep working than a private store and the
+//! only one it documents.
 //!
 //! That call spawns the real binary, so it belongs off the launch path: the
 //! read-back runs where a background answer already runs, never in the shim.
@@ -29,8 +30,19 @@ use crate::shared::process;
 
 const RESUME_FLAG: &str = "--session";
 const LISTING_ARGS: [&str; 3] = ["api", "GET", "/api/session"];
+/// What the API answers, with exit 1, for an id it holds no session under
+/// (2.0.29).
+const NOT_FOUND: &str = "SessionNotFoundError";
 /// The API answers in milliseconds; every comparison here is in seconds.
 const MILLISECONDS: u64 = 1_000;
+
+/// A name in the only shape OpenCode's schema requires: a `ses` prefix.
+pub(super) fn new_id() -> SessionId {
+    SessionId::new(format!(
+        "ses_{}",
+        SessionId::generate().as_str().replace('-', "")
+    ))
+}
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
     vec![
@@ -63,15 +75,22 @@ pub(super) fn observe(
         .map(|(_, session)| session)
 }
 
-/// Whether the harness still lists `session`.
+/// Whether the harness still holds `session`, asked by id: the listing is
+/// one page, and a conversation past it is not gone.
 pub(super) fn exists(executable: &Path, home: &Path, session: &SessionId) -> bool {
+    let path = format!("/api/session/{}", session.as_str());
     // Unreadable is not gone: a harness that cannot answer keeps its
     // conversation, and a resume that then fails is its own error rather
     // than a conversation UZE dropped on a guess.
-    let Some(listed) = listing(executable, home) else {
-        return true;
-    };
-    listed.iter().any(|entry| entry.id == session.as_str())
+    process::capture(executable, home, &["api", "GET", path.as_str()])
+        .map_or(true, |output| !names_a_missing_session(&output.stdout))
+}
+
+fn names_a_missing_session(payload: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()
+        .and_then(|document| document.get("_tag")?.as_str().map(|tag| tag == NOT_FOUND))
+        .unwrap_or(false)
 }
 
 fn listing(executable: &Path, home: &Path) -> Option<Vec<Listed>> {
@@ -170,6 +189,26 @@ mod tests {
     fn a_conversation_from_before_the_launch_is_never_adopted() {
         let entries = [("ses_previous", "/work/slot", 100)];
         assert_eq!(observed(&entries, "/work/slot", 500), None);
+    }
+
+    #[test]
+    fn a_minted_name_has_the_shape_opencode_accepts() {
+        let id = new_id();
+        assert!(id.as_str().starts_with("ses_"), "{id}");
+        assert!(!id.as_str().contains('-'), "{id}");
+        assert_ne!(new_id(), id);
+    }
+
+    #[test]
+    fn only_the_harness_saying_so_makes_a_session_missing() {
+        assert!(names_a_missing_session(
+            br#"{"_tag":"SessionNotFoundError","sessionID":"ses_x","message":"Session not found: ses_x"}"#
+        ));
+        assert!(!names_a_missing_session(
+            br#"{"data":{"id":"ses_x","location":{"directory":"/work"}}}"#
+        ));
+        assert!(!names_a_missing_session(b"HTTP 502 Bad Gateway"));
+        assert!(!names_a_missing_session(b""));
     }
 
     #[test]

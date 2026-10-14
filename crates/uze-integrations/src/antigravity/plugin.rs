@@ -25,7 +25,7 @@ use uze_core::{
 };
 
 use super::AntigravityIntegration;
-use crate::shared::process::{capture, json, run_quiet};
+use crate::shared::process::{json, run_quiet};
 
 /// The `kind` stamped on explicit-plugin receipts. Only this module and its
 /// composition root interpret it.
@@ -96,62 +96,87 @@ pub(super) fn run_agy(
     run_quiet(Path::new(executable), command_home, label, args)
 }
 
-/// The full `agy plugin list` document, which the CLI writes as JSON
-/// (verified against 1.1.19; `{"imports":[...]}`). An unreadable listing is
-/// an error — inspection must never guess about ownership from silence.
+/// One plugin Antigravity holds, as its own records name it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Installed {
+    pub(super) name: String,
+}
+
+/// The plugins Antigravity holds, read for inspection, which runs on
+/// budgeted paths: its own `import_manifest.json` first — an `agy` start is
+/// a quarter of a second, paid three times by a removal — and the CLI only
+/// when the manifest is absent or in a shape this build does not know.
 ///
-/// `agy` prints its own `import_manifest.json`, so that is read first: an
-/// `agy` start is a quarter of a second, paid three times by a removal.
-/// Trusted only in the shape the CLI prints; anything else asks the CLI.
-///
-/// Nothing imported is an answer too, spelled two ways that are not a
-/// listing (1.2.11): the manifest keeps `"imports": null`, and the CLI
-/// prints a sentence instead of JSON. Read as unreadable, uninstalling the
-/// last plugin — what every update of the only one does — could never be
-/// confirmed, and blocked the update.
+/// The manifest knows imports only; a plugin installed from the vendor's
+/// marketplace is seen by [`listed_plugins`], which install and detach ask.
+/// Nothing imported is an answer too: the manifest keeps `"imports": null`
+/// after the last uninstall (1.2.11), and reading that as unreadable would
+/// block the removal every update of the only plugin is made of.
 pub(super) fn installed_plugins(
     executable: &str,
     command_home: &Path,
-) -> std::result::Result<serde_json::Value, String> {
+) -> std::result::Result<Vec<Installed>, String> {
     let recorded = std::fs::read(command_home.join(".gemini/config/import_manifest.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|manifest| match manifest.get("imports") {
-            Some(serde_json::Value::Null) => Some(no_imports()),
-            Some(serde_json::Value::Array(imports))
-                if imports.iter().all(|entry| entry.get("name").is_some()) =>
-            {
-                Some(manifest)
-            }
+            Some(serde_json::Value::Null) => Some(Vec::new()),
+            Some(serde_json::Value::Array(imports)) => named(imports),
             _ => None,
         });
-    if let Some(recorded) = recorded {
-        return Ok(recorded);
+    match recorded {
+        Some(recorded) => Ok(recorded),
+        None => listed_plugins(executable, command_home),
     }
-    json(
-        Path::new(executable),
-        command_home,
-        &["plugin", "list"],
-        "agy",
-    )
-    .or_else(|unreadable| {
-        let said = capture(Path::new(executable), command_home, &["plugin", "list"])
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
-        match said.as_deref() {
-            Some(NOTHING_IMPORTED) => Ok(no_imports()),
-            _ => Err(unreadable),
-        }
-    })
 }
 
-/// What `agy plugin list` prints in place of a listing when nothing is
-/// imported.
-const NOTHING_IMPORTED: &str = "No imported plugins.";
+/// Every plugin Antigravity holds, imported or installed from its
+/// marketplace, as `agy plugin list --json` prints them (an array of
+/// `{name, enabled, version, source, path, skills}` since 1.3.4). A shape
+/// this build does not know is an error: ownership is never guessed from
+/// silence.
+pub(super) fn listed_plugins(
+    executable: &str,
+    command_home: &Path,
+) -> std::result::Result<Vec<Installed>, String> {
+    let listing = json(
+        Path::new(executable),
+        command_home,
+        &["plugin", "list", "--json"],
+        "agy",
+    )?;
+    listing
+        .as_array()
+        .and_then(|entries| named(entries))
+        .ok_or_else(|| "`agy plugin list --json` printed a listing this UZE cannot read".to_owned())
+}
 
-fn no_imports() -> serde_json::Value {
-    serde_json::json!({ "imports": [] })
+/// The names in a list of plugin entries; `None` when any entry has none.
+fn named(entries: &[serde_json::Value]) -> Option<Vec<Installed>> {
+    entries
+        .iter()
+        .map(|entry| {
+            entry
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(|name| Installed {
+                    name: name.to_owned(),
+                })
+        })
+        .collect()
+}
+
+/// How many plugins Antigravity holds under `name`, asked of the CLI, which
+/// sees marketplace installs the manifest does not.
+pub(super) fn holders_of(
+    executable: &str,
+    command_home: &Path,
+    name: &str,
+) -> std::result::Result<usize, String> {
+    Ok(listed_plugins(executable, command_home)?
+        .iter()
+        .filter(|installed| installed.name == name)
+        .count())
 }
 
 /// The ownership decision for one installed plugin, separated from the
@@ -161,20 +186,14 @@ fn no_imports() -> serde_json::Value {
 /// fingerprint is the only thing that distinguishes UZE's copy from a
 /// user-imported same-name plugin.
 pub(super) fn inspect_installed_plugin(
-    listing: &serde_json::Value,
+    listing: &[Installed],
     name: &str,
     staged_dir: &Path,
     expected_fingerprint: &str,
 ) -> AttachmentInspection {
-    let Some(entries) = listing.get("imports").and_then(serde_json::Value::as_array) else {
-        return AttachmentInspection {
-            state: AttachmentState::Blocked,
-            reason: "agy plugin list has no imports array".to_owned(),
-        };
-    };
-    let matching: Vec<&serde_json::Value> = entries
+    let matching: Vec<&Installed> = listing
         .iter()
-        .filter(|entry| entry.get("name").and_then(serde_json::Value::as_str) == Some(name))
+        .filter(|installed| installed.name == name)
         .collect();
     match matching.as_slice() {
         [] => {
@@ -241,11 +260,25 @@ pub(super) fn attach_generated_plugin(
     let name = plugin_manifest_name(package).ok_or_else(|| {
         UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
     })?;
-    if !preflight_name_free(executable, integration, &name) {
+    if !preflight_name_free(executable, integration, &name)? {
         return Ok(None);
     }
-    let derived_dir =
-        super::generate::materialize_generated_plugin(&integration.uze_home, package)?;
+    let hooks = integration.plugin_hooks(package)?;
+    if !hooks.is_empty()
+        && let Some(source) = crate::hooks::wrapper_source(super::HOOKS)
+    {
+        crate::hooks::materialize_wrapper(
+            &super::HOOKS.wrapper_path(&integration.uze_home),
+            &source,
+        )?;
+    }
+    let agents = integration.plugin_agents(package)?;
+    let derived_dir = super::generate::materialize_generated_plugin(
+        &integration.uze_home,
+        package,
+        &hooks,
+        &agents,
+    )?;
     let args: Vec<&Path> = vec![Path::new("plugin"), Path::new("install"), &derived_dir];
     run_quiet(
         Path::new(executable),
@@ -274,6 +307,10 @@ pub(super) fn attach_generated_plugin(
                 ("package_root".to_owned(), serde_json::json!(package.root)),
                 ("fingerprint".to_owned(), serde_json::json!(fingerprint)),
                 ("origin".to_owned(), serde_json::json!("generated")),
+                (
+                    crate::hooks::RUNS_HOOK_WRAPPER.to_owned(),
+                    serde_json::json!(!hooks.is_empty()),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -281,31 +318,27 @@ pub(super) fn attach_generated_plugin(
     }))
 }
 
-/// UZE never overwrites an import it does not own. The vendor's install
+/// UZE never overwrites a plugin it does not own. The vendor's install
 /// verb replaces an existing same-name plugin's directory exactly (measured
 /// on 1.2.17; it merged until 1.1.28), so installing over a name already
-/// registered — with no receipt in the ledger — would destroy someone
-/// else's plugin: foreign state, not something to clobber or silently
-/// resume. It is nevertheless a successful no-op: the harness already
-/// exposes a native plugin under the requested name, and UZE must neither
-/// replace it nor present ordinary setup as failed.
-fn preflight_name_free(executable: &str, integration: &AntigravityIntegration, name: &str) -> bool {
-    // If the listing itself is unreadable (agy absent, malformed output),
-    // let the install verb speak for itself rather than double-guessing here.
-    if let Ok(listing) = installed_plugins(executable, &integration.command_home) {
-        let already = listing
-            .get("imports")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|entries| {
-                entries.iter().any(|entry| {
-                    entry.get("name").and_then(serde_json::Value::as_str) == Some(name)
-                })
-            });
-        if already {
-            return false;
-        }
-    }
-    true
+/// held — imported by hand or installed from the vendor's marketplace, with
+/// no receipt in the ledger — would destroy someone else's plugin. It is
+/// nevertheless a successful no-op: the harness already exposes a native
+/// plugin under the requested name, and UZE must neither replace it nor
+/// present ordinary setup as failed. A census UZE cannot read refuses: the
+/// name might be held, and finding out by overwriting is not an option.
+fn preflight_name_free(
+    executable: &str,
+    integration: &AntigravityIntegration,
+    name: &str,
+) -> Result<bool> {
+    holders_of(executable, &integration.command_home, name)
+        .map(|holders| holders == 0)
+        .map_err(|unreadable| {
+            UzeError::DeliveryFailed(format!(
+                "cannot tell whether Antigravity already holds a plugin named `{name}`: {unreadable}"
+            ))
+        })
 }
 
 /// Deterministic content fingerprint of a directory tree (relative path +
@@ -482,29 +515,91 @@ mod plugin_tests {
         let _ = fs::remove_dir_all(home);
     }
 
-    /// With no manifest to read, the CLI is asked, and it says there is
-    /// nothing imported in a sentence rather than in JSON.
-    // Its stand-in programs are POSIX shell scripts.
+    /// A stand-in `agy` that prints `listing` for `plugin list --json`.
+    // It is a POSIX shell script.
+    #[cfg(unix)]
+    fn agy_listing(home: &Path, listing: &str) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let agy = home.join("agy");
+        fs::create_dir_all(home).unwrap();
+        fs::write(&agy, format!("#!/bin/sh\ncat <<'EOF'\n{listing}\nEOF\n")).unwrap();
+        fs::set_permissions(&agy, fs::Permissions::from_mode(0o755)).unwrap();
+        agy.to_string_lossy().into_owned()
+    }
+
+    /// With no manifest to read, the CLI's JSON listing (1.3.4) is asked,
+    /// and a plugin from the marketplace is in it like an import.
+    // Its stand-in `agy` is a POSIX shell script.
     #[cfg(unix)]
     #[test]
-    fn the_cli_saying_nothing_is_imported_lists_nothing_imported() {
-        use std::os::unix::fs::PermissionsExt;
+    fn the_cli_listing_names_imports_and_marketplace_plugins_alike() {
+        let home = temp_root("agy-cli-listing");
+        let agy = agy_listing(
+            &home,
+            r#"[{"name":"flow","enabled":true,"source":"antigravity","path":"/h/.gemini/config/plugins/flow","skills":[]},
+               {"name":"gdocs","enabled":true,"version":"1.0.0","source":"antigravity-plugins-official","path":"/h/x","skills":[]}]"#,
+        );
 
-        let home = temp_root("agy-nothing-imported");
-        let agy = home.join("agy");
-        fs::write(&agy, "#!/bin/sh\necho 'No imported plugins.'\n").unwrap();
-        fs::set_permissions(&agy, fs::Permissions::from_mode(0o755)).unwrap();
+        let listed = installed_plugins(&agy, &home).unwrap();
 
-        let listing = installed_plugins(&agy.to_string_lossy(), &home).unwrap();
+        assert_eq!(
+            listed.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
+            ["flow", "gdocs"]
+        );
+        assert_eq!(holders_of(&agy, &home, "gdocs"), Ok(1));
+        assert_eq!(holders_of(&agy, &home, "free"), Ok(0));
+        let _ = fs::remove_dir_all(home);
+    }
 
-        assert_eq!(listing, serde_json::json!({ "imports": [] }));
+    /// A listing in a shape this build does not know, such as the
+    /// `{"imports": [...]}` object of the 1.1 CLI or its sentence for an
+    /// empty one, is an answer UZE cannot read: never a free name.
+    // Its stand-in `agy` is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_listing_this_build_cannot_read_is_an_error() {
+        for listing in [
+            r#"{"imports":[]}"#,
+            "No imported plugins.",
+            r#"[{"enabled":true}]"#,
+        ] {
+            let home = temp_root("agy-cli-unknown");
+            let agy = agy_listing(&home, listing);
+            assert!(holders_of(&agy, &home, "flow").is_err(), "{listing}");
+            assert!(installed_plugins(&agy, &home).is_err(), "{listing}");
+            let _ = fs::remove_dir_all(home);
+        }
+    }
+
+    /// The manifest, which inspection reads first, knows imports only; the
+    /// CLI, which install and detach ask, sees the marketplace twin.
+    // Its stand-in `agy` is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_marketplace_twin_is_seen_by_the_census_install_and_detach_ask() {
+        let home = temp_root("agy-twin");
+        fs::create_dir_all(home.join(".gemini/config")).unwrap();
+        fs::write(
+            home.join(".gemini/config/import_manifest.json"),
+            r#"{"imports":[{"name":"flow","source":"antigravity"}]}"#,
+        )
+        .unwrap();
+        let agy = agy_listing(
+            &home,
+            r#"[{"name":"flow","source":"antigravity","path":"/a"},{"name":"flow","source":"antigravity-plugins-official","path":"/b"}]"#,
+        );
+
+        assert_eq!(installed_plugins(&agy, &home).unwrap().len(), 1);
+        assert_eq!(holders_of(&agy, &home, "flow"), Ok(2));
         let _ = fs::remove_dir_all(home);
     }
 
     // --- Exact coverage -----------------------------------------------------
 
-    fn listing_with(name: &str) -> serde_json::Value {
-        serde_json::json!({"imports":[{"name": name, "source":"antigravity", "components":["skills"]}]})
+    fn listing_with(name: &str) -> Vec<Installed> {
+        vec![Installed {
+            name: name.to_owned(),
+        }]
     }
 
     /// A. Conventional skill + declared MCP → covered; skill outside
@@ -598,7 +693,7 @@ mod plugin_tests {
 
     #[test]
     fn an_absent_plugin_is_missing_not_blocked() {
-        let listing = serde_json::json!({"imports":[]});
+        let listing: Vec<Installed> = Vec::new();
         let inspection =
             inspect_installed_plugin(&listing, "flow", Path::new("/nope/flow"), "fingerprint");
         assert_eq!(inspection.state, AttachmentState::Missing);
@@ -646,10 +741,7 @@ mod plugin_tests {
 
     #[test]
     fn two_entries_answering_to_one_name_are_ambiguous() {
-        let listing = serde_json::json!({"imports":[
-            {"name":"flow","source":"antigravity"},
-            {"name":"flow","source":"other"}
-        ]});
+        let listing = [listing_with("flow"), listing_with("flow")].concat();
         let inspection =
             inspect_installed_plugin(&listing, "flow", Path::new("/nope/flow"), "fingerprint");
         assert_eq!(inspection.state, AttachmentState::Conflict);

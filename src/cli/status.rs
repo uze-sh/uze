@@ -426,10 +426,22 @@ pub(crate) fn harness_rows(harnesses: &[HarnessHealth]) -> Vec<Vec<String>> {
             vec![
                 progress::title(&harness.display_name),
                 harness.detection.version.clone().unwrap_or_default(),
-                setup_state(&harness.setup),
+                match &harness.below_minimum {
+                    Some(minimum) => below_minimum(minimum),
+                    None => setup_state(&harness.setup),
+                },
             ]
         })
         .collect()
+}
+
+/// A harness older than its integration needs, with the version to update to.
+fn below_minimum(minimum: &str) -> String {
+    format!(
+        "{} {}",
+        progress::warning_icon(),
+        progress::label(format!("needs {minimum} or newer"))
+    )
 }
 
 /// A harness's setup as the mark and word a person reads.
@@ -461,6 +473,9 @@ pub(crate) fn render_harness_detail(harness: &HarnessHealth) -> String {
         ]);
     }
     rows.push(vec![progress::label("setup"), setup_state(&harness.setup)]);
+    if let Some(minimum) = &harness.below_minimum {
+        rows.push(vec![progress::label("version"), below_minimum(minimum)]);
+    }
     if let Some(provisioning) = &harness.provisioning {
         rows.push(vec![
             progress::label("installed by"),

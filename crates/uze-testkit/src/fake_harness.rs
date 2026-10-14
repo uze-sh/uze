@@ -6,7 +6,7 @@
 //! ```ignore
 //! let claude = fake_harness::FakeHarness::new(&env.fake_bin, "claude")
 //!     .version_line("9.9.9 (Fake Claude)")
-//!     .on_prefix(["plugin", "list"], Action::stdout(r#"{"imports":[]}"#))
+//!     .on_prefix(["plugin", "list"], Action::stdout("[]"))
 //!     .on_prefix(["mcp", "add"], Action::mcp_entry_mark(&state_dir))
 //!     .build();
 //! ```
@@ -109,7 +109,7 @@ pub enum Action {
     RecordConversation { transcripts_root: PathBuf },
     /// Antigravity's stub-install lifecycle: `plugin install <root>`
     /// stages a byte copy under `dest/<basename>` and `plugin list`
-    /// answers `{"imports":[{"name":...}]}` from persisted state.
+    /// answers the 1.3.4 `--json` array (`[{"name":...}]`) from persisted state.
     VendorAgy { state_dir: PathBuf, dest: PathBuf },
     /// What the Codex installer ends with: a question asked on the
     /// terminal, whatever stdin is, answered by nobody when no one is

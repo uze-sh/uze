@@ -47,6 +47,12 @@ class Bindings:
     #: Registry id, matching the integration's own.
     harness = ""
 
+    #: Whether delivered hooks are started through the generated wrapper
+    #: file. A harness that runs them in its own process (a generated
+    #: plugin) has no wrapper to lose, so the scene that deletes it would
+    #: prove nothing there.
+    hooks_run_through_wrapper = True
+
     #: The name UZE's reports give this harness (`display_name()`).
     display_name = ""
 

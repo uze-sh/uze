@@ -285,11 +285,16 @@ impl Health<'_> {
         installed: &[StoredPackage],
     ) -> HarnessHealth {
         let runtime_shim_active = self.0.runtime_shim_is_active(integration);
+        let detection = self.0.detect_cached(integration);
         HarnessHealth {
             integration: integration.id().to_owned(),
             display_name: integration.display_name().to_owned(),
             description: integration.description().to_owned(),
-            detection: self.0.detect_cached(integration),
+            below_minimum: integration
+                .minimum_version()
+                .filter(|minimum| detection.is_below(minimum))
+                .map(str::to_owned),
+            detection,
             setup: integration_status(integration.status(&self.0.home)),
             strategy: state::get(&self.0.home, integration.id())
                 .ok()
@@ -381,6 +386,12 @@ impl Health<'_> {
                     .map(|region| format!("{region}: malformed")),
             )
             .chain(unread)
+            .chain(self.0.integrations.iter().filter_map(|integration| {
+                below_floor(
+                    integration.as_ref(),
+                    &self.0.detect_cached(integration.as_ref()),
+                )
+            }))
             .collect();
         // Read out of the sources the inspection already observed rather
         // than asked of the filesystem again: `status` and `agent context
@@ -426,6 +437,21 @@ impl Health<'_> {
             held_back: held_back_notes(self.0, None),
         })
     }
+}
+
+/// One sentence for a detected harness older than its integration needs.
+pub(crate) fn below_floor(
+    integration: &dyn IntegrationPort,
+    detection: &uze_core::integration::HarnessDetection,
+) -> Option<String> {
+    let minimum = integration.minimum_version()?;
+    (detection.present && detection.is_below(minimum)).then(|| {
+        format!(
+            "{} {} is older than {minimum}, the oldest version UZE supports; update it",
+            integration.display_name(),
+            detection.version.as_deref().unwrap_or_default()
+        )
+    })
 }
 
 fn integration_status(status: IntegrationStatus) -> String {
@@ -526,6 +552,86 @@ mod tests {
                 state: self.verdict,
                 reason: "test".to_owned(),
             }
+        }
+    }
+
+    /// A harness detected at `version` whose integration needs `1.3.4`.
+    struct Floored {
+        version: Option<&'static str>,
+    }
+    impl IntegrationPort for Floored {
+        fn id(&self) -> &'static str {
+            "floored"
+        }
+        fn display_name(&self) -> &'static str {
+            "Floored"
+        }
+        fn minimum_version(&self) -> Option<&'static str> {
+            Some("1.3.4")
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: self.version.map(str::to_owned),
+            }
+        }
+    }
+
+    fn floored(version: Option<&'static str>) -> (UzeApplication, std::path::PathBuf) {
+        let base = uze_testkit::temp::scratch("doctor-floor");
+        let app = UzeApplication::new(
+            UzeHome::at(base.join("home")),
+            vec![Box::new(Floored { version })],
+        );
+        (app, base)
+    }
+
+    #[test]
+    fn a_harness_below_its_floor_is_named_with_the_version_it_needs() {
+        let (app, base) = floored(Some("1.3.3"));
+        let project = base.join("project");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join("agents.yaml"), "{}\n").unwrap();
+
+        let harness = app.health().harness("floored").unwrap();
+        assert_eq!(harness.below_minimum.as_deref(), Some("1.3.4"));
+
+        let issues = app.health().status(&project).unwrap().issues;
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.starts_with("Floored 1.3.3 is older than 1.3.4")),
+            "{issues:?}"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_harness_at_its_floor_or_unreadable_is_not_reported() {
+        for version in [Some("1.3.4"), Some("2.0.0"), Some("nightly"), None] {
+            let (app, base) = floored(version);
+            let project = base.join("project");
+            fs::create_dir_all(&project).unwrap();
+            fs::write(project.join("agents.yaml"), "{}\n").unwrap();
+            assert_eq!(app.health().harness("floored").unwrap().below_minimum, None);
+            let issues = app.health().status(&project).unwrap().issues;
+            assert!(
+                !issues.iter().any(|issue| issue.contains("oldest version")),
+                "{version:?}: {issues:?}"
+            );
+            fs::remove_dir_all(&base).ok();
         }
     }
 

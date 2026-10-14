@@ -145,6 +145,25 @@ impl UzeApplication {
         integration: &dyn IntegrationPort,
         native_delivery: NativeDelivery,
     ) -> Result<PackageDelivery> {
+        self.deliver_package_at_any_version(package, resources, integration, native_delivery)
+            .map_err(|error| {
+                match crate::application::doctor::below_floor(
+                    integration,
+                    &self.detect_cached(integration),
+                ) {
+                    Some(floor) => uze_core::UzeError::DeliveryFailed(format!("{error}. {floor}")),
+                    None => error,
+                }
+            })
+    }
+
+    fn deliver_package_at_any_version(
+        &self,
+        package: &StoredPackage,
+        resources: &[&Resource],
+        integration: &dyn IntegrationPort,
+        native_delivery: NativeDelivery,
+    ) -> Result<PackageDelivery> {
         let _span = tracing::info_span!(
             "integration.attach",
             integration = integration.id(),

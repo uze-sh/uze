@@ -30,6 +30,12 @@ pub(crate) struct WrapperDialect {
     /// the whole denial, so failing to write it must not read as an
     /// allowance wherever the harness has a status that blocks.
     pub(crate) unwritten_exit: &'static str,
+    /// The key and value the harness's own entry takes to block a call
+    /// whose hook cannot start or outlives its timeout, written on every
+    /// fail-closed group. Without it the wrapper is the only thing failing
+    /// closed, and a wrapper that never runs fails open. `None` where the
+    /// harness offers no such control.
+    pub(crate) failure_marker: Option<(&'static str, &'static str)>,
 }
 
 /// Where the harness's payload keeps what the hook context is made of, as
@@ -74,17 +80,6 @@ pub(crate) struct Decisions {
     /// `$updatedJson` in PowerShell); `None` where the harness takes no
     /// rewritten input, which keeps `transform` from being claimed there.
     pub(crate) transform: Option<&'static str>,
-    /// What the harness never fires an event for under this template's
-    /// platform.
-    pub(crate) unfired: &'static [Unfired],
-}
-
-/// An event the harness never fires for a portable tool, and why.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Unfired {
-    pub(crate) event: HookEvent,
-    pub(crate) tool: &'static str,
-    pub(crate) why: &'static str,
 }
 
 /// Every portable field variable any alias of this harness can set. They are
@@ -117,9 +112,6 @@ pub(crate) trait WrapperTemplate {
     /// The wrapper for `target`, or `None` where this template has no
     /// dialect for it: then its hooks are not delivered, and say so.
     fn source(target: HookTarget) -> Option<String>;
-    /// What `target` never fires an event for under this template's
-    /// platform (see [`Decisions::unfired`]).
-    fn unfired(target: HookTarget) -> &'static [Unfired];
 }
 
 // Every template is compiled on every platform, so the one a platform does
@@ -155,14 +147,6 @@ pub(crate) fn dependencies_here() -> &'static [&'static str] {
     match shell::FAMILY {
         Family::Posix => &[uze_core::hook::WRAPPER_DEPENDENCY],
         Family::PowerShell => &[],
-    }
-}
-
-/// What this platform's harness never fires an event for.
-pub(crate) fn unfired_here(target: HookTarget) -> &'static [Unfired] {
-    match shell::FAMILY {
-        Family::Posix => PosixWrapper::unfired(target),
-        Family::PowerShell => PowerShellWrapper::unfired(target),
     }
 }
 
@@ -240,7 +224,8 @@ pub(super) fn prune_shared_wrapper(uze_home: &UzeHome, integration_id: &str, tar
     // exist to refuse.
     let still_used = match uze_core::state::receipts(uze_home, None) {
         Ok(ledger) => ledger.iter().any(|receipt| {
-            receipt.integration == integration_id && entry_is_attached(receipt, target)
+            receipt.integration == integration_id
+                && (entry_is_attached(receipt, target) || runs_the_wrapper(receipt))
         }),
         Err(_) => true,
     };
@@ -252,6 +237,19 @@ pub(super) fn prune_shared_wrapper(uze_home: &UzeHome, integration_id: &str, tar
     if let Some(parent) = path.parent() {
         let _ = fs::remove_dir(parent);
     }
+}
+
+/// The detail key a receipt for something other than a hook entry carries
+/// when what it delivered runs the shared wrapper (a generated plugin with
+/// its own `hooks.json`), so the wrapper outlives the last entry.
+pub(crate) const RUNS_HOOK_WRAPPER: &str = "runs_hook_wrapper";
+
+fn runs_the_wrapper(receipt: &uze_core::integration::AttachmentReceipt) -> bool {
+    matches!(
+        &receipt.artifact,
+        uze_core::integration::ManagedArtifact::IntegrationOwned { detail, .. }
+            if detail.get(RUNS_HOOK_WRAPPER) == Some(&serde_json::Value::Bool(true))
+    )
 }
 
 /// Whether this receipt's hook entry is still in the harness's config file.

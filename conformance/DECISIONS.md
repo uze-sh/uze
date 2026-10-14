@@ -480,6 +480,40 @@ declaration names exactly what the vendor must change).
 
 ---
 
+## Antigravity's hooks and agents move into the generated plugin
+
+**Context.** The entry below moved Antigravity's hooks out of the generated
+plugin because 1.1.24 never opened a plugin's `hooks.json`. The 1.3.4 docs
+say a plugin's root `hooks.json` is loaded, and on 1.3.5 it is:
+`experiments/antigravity/plugin-hooks` installs a hand-made plugin and the
+session logs `loaded 1 named hooks from 1 hooks.json file(s)`, with `/hooks`
+naming the plugin's own file as the source.
+
+**Chosen.** The generated plugin carries its package's hook groups in its
+own root `hooks.json`, as the same named entries the shared file held
+(`<package>:<group-id>`, running the generated wrapper), and package-level
+coverage claims them again. Enabling or disabling the plugin now governs
+its hooks, the plugin's receipt is the only one, and UZE stops writing into
+a file the operator shares with other tools. Entries an earlier build left
+in the shared file are retired by the next install, because the plan that
+grew to cover them retires the capability receipts it now provides. The
+plugin receipt records `runs_hook_wrapper`, so the shared wrapper is not
+pruned while the plugin still runs it. The shared file keeps carrying a
+package's groups when the package is delivered capability by capability.
+
+Measured with the product, not a probe: the Antigravity vertical on 1.3.5
+with this delivery passed every hooks check (57/57), including deny, ask,
+transform and the session events, with no shared `hooks.json` on the
+machine at all. Agents ride along the same way, under the plugin's `agents/` declared
+by its root `agents.json`, and are dispatched by label from there
+(`experiments/antigravity/plugin-agent-dispatch`).
+
+**Discarded.** Keeping both routes (two receipts for one group, and a hook
+that survives `agy plugin disable`); waiting for a plugin-hook check of its
+own (the contract already fails if the harness loads nothing).
+
+---
+
 ## Antigravity's hooks move to the file the harness actually reads
 
 **Context.** `hooks > delivery` measured what no document could settle: on

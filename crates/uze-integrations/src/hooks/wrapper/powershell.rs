@@ -14,13 +14,6 @@ impl WrapperTemplate for PowerShellWrapper {
     const RELATIVE_PATH: &'static str = "hooks/exec.ps1";
     const HEADER: &'static str = HEADER;
 
-    fn unfired(target: HookTarget) -> &'static [Unfired] {
-        target
-            .dialect()
-            .and_then(|dialect| dialect.powershell)
-            .map_or(&[], |decisions| decisions.unfired)
-    }
-
     fn source(target: HookTarget) -> Option<String> {
         let dialect = target.dialect()?;
         let Decisions {

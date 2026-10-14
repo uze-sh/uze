@@ -7,12 +7,11 @@ use crate::hooks::{
 };
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
-/// `allow`/`ask`/`deny` decisions. Beside the documented events it reads a
-/// `SessionStart` key the docs do not list (the binary's
-/// `CallSessionStartHook`, measured on 1.2.17): flat like `Stop`, run once
-/// for a new conversation at its first model call, and never for one
-/// resumed with `--continue`, so its only source is `startup`. Being
-/// undocumented, the Lab measures it every run (`hooks > events`).
+/// `allow`/`ask`/`deny` decisions. Its `SessionStart` key (measured on
+/// 1.2.17, documented since 1.3.4) is flat like `Stop`, runs once for a new
+/// conversation at its first model call, and never for one resumed with
+/// `--continue`, so its only source is `startup`; the Lab measures it every
+/// run (`hooks > events`).
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "antigravity",
     events: &[
@@ -36,8 +35,8 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 tool: ".toolCall.name // empty",
                 input: ".toolCall.args // {}",
                 cwd: ".workspacePaths[0] // empty",
-                // Its session-start hook (undocumented, measured on 1.2.17)
-                // fires for a new conversation only and carries no source.
+                // Its session-start hook fires for a new conversation only
+                // and carries no source (measured on 1.2.17).
                 implied_source: Some("startup"),
             },
             // Only the pre-tool event carries a decision; the others answer
@@ -47,13 +46,13 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             posix: Decisions {
                 deny: "printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\"",
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
-                // A rewrite is `overwrite` (the tool call's whole args) beside
-                // `allow`: the hook result's field the docs do not list
-                // (`PreToolHookResult.overwrite`, 1.3.0), measured by the Lab.
+                // A rewrite is `overwrite` beside `allow`, which the vendor
+                // merges into the call's args shallowly, key by key (docs,
+                // 1.3.4): handing back the whole input rewrites every key it
+                // has, and cannot remove one. Measured by the Lab.
                 transform: Some(
                     "printf '{\"decision\":\"allow\",\"overwrite\":%s}' \"$updated_json\"",
                 ),
-                unfired: &[],
             },
             // Measured on 1.2.16 on Windows: the entry is run as
             // `cmd /c "<command>"` (an `args` array is ignored), the payload
@@ -66,7 +65,6 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 transform: Some(
                     "[Console]::Out.Write('{\"decision\":\"allow\",\"overwrite\":' + $updatedJson + '}')",
                 ),
-                unfired: &[],
             }),
             // The decision is the stdout document; a non-zero exit is a
             // failed hook here, not a block.
@@ -76,6 +74,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // reason that cannot fail to encode, so this is the last resort
             // of a closed stdout, and says so in the hook log.
             unwritten_exit: "2",
+            failure_marker: None,
         },
         // The shared `hooks.json` is a map of named hooks, not an array of
         // group entries per event.

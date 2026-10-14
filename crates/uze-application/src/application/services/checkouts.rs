@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use uze_core::integration::WorktreePlace;
 use uze_core::path::Canonical as _;
 
 use uze_workspace::{
@@ -70,7 +71,7 @@ impl Workspace<'_> {
     pub(super) fn checkouts_seen(&self, cwd: &Path, presence: &Presence) -> Option<CheckoutsView> {
         let (primary, target) = self.project_of(cwd).ok()?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
-        let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
+        let accounted = checkout::account(&primary, &self.harness_worktree_places());
         let slots = checkout::slots(&primary, &store, presence);
         let pinned: Vec<(PathBuf, String)> = slots
             .iter()
@@ -146,7 +147,7 @@ impl Workspace<'_> {
     ) -> std::result::Result<RemovedCheckout, CheckoutRefusal> {
         let primary = primary_of(cwd)?;
         let store = task::load(&self.0.home, &primary).unwrap_or_default();
-        let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
+        let accounted = checkout::account(&primary, &self.harness_worktree_places());
         if let Some(found) = accounted.iter().find(|found| same(&found.path, path))
             && let Some(refusal) = self.removal_refusal(&primary, found, &store, presence)
         {
@@ -166,7 +167,7 @@ impl Workspace<'_> {
         let Ok((primary, target)) = self.project_of(cwd) else {
             return clean_up;
         };
-        let accounted = checkout::account(&primary, &self.harness_worktree_dirs());
+        let accounted = checkout::account(&primary, &self.harness_worktree_places());
         let others: Vec<PathBuf> = accounted.iter().map(|found| found.path.clone()).collect();
         for found in &accounted {
             let name = display_name(&primary, &found.path);
@@ -212,15 +213,15 @@ impl Workspace<'_> {
 
     /// Where each harness this installation knows keeps worktrees of its
     /// own, as data core classifies by: core never names a harness.
-    fn harness_worktree_dirs(&self) -> Vec<(&'static str, &'static str)> {
+    fn harness_worktree_places(&self) -> Vec<(&'static str, WorktreePlace)> {
         self.0
             .integrations
             .iter()
             .flat_map(|integration| {
                 integration
-                    .own_worktree_dirs()
-                    .iter()
-                    .map(|directory| (integration.id(), *directory))
+                    .own_worktree_places()
+                    .into_iter()
+                    .map(|place| (integration.id(), place))
             })
             .collect()
     }

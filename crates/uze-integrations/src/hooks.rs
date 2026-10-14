@@ -236,14 +236,6 @@ impl HookTarget {
             // wrapper needs the harness's document for a rewrite.
             supports_input_transform: matches!(self.runner, HookRunner::Bridge { .. })
                 || wrapper::transforms_here(self),
-            unfired: wrapper::unfired_here(self)
-                .iter()
-                .map(|unfired| uze_core::hook::UnfiredTool {
-                    event: unfired.event,
-                    tool: unfired.tool.to_owned(),
-                    why: unfired.why.to_owned(),
-                })
-                .collect(),
         }
     }
 

@@ -425,7 +425,8 @@ mod imp {
     /// The call operator, then bare words and single-quoted strings, in
     /// which a doubled quote is one quote.
     pub(super) fn words(line: &str) -> Option<Vec<String>> {
-        let line = line.trim_start();
+        let line = line.trim();
+        let line = line.strip_suffix(EXIT_WITH_COMMAND).unwrap_or(line);
         let line = line.strip_prefix('&').unwrap_or(line);
         let mut words = Vec::new();
         let mut word: Option<String> = None;
@@ -454,13 +455,20 @@ mod imp {
     }
 
     /// A quoted first word is a string to PowerShell, not a command: the
-    /// call operator runs it.
+    /// call operator runs it. The line exits with the command's own code: a
+    /// host running it with `powershell -Command` otherwise reads 1 for any
+    /// failure, and Codex lets a call through on a hook's 1 where its 2
+    /// denies (measured on 0.162.1 in Windows Sandbox).
     pub(super) fn command_line(program: &str, arguments: &[String]) -> String {
         std::iter::once(format!("& {}", quote(program)))
             .chain(arguments.iter().map(|argument| quote(argument)))
             .collect::<Vec<_>>()
             .join(" ")
+            + EXIT_WITH_COMMAND
     }
+
+    /// What [`command_line`] ends a line with.
+    const EXIT_WITH_COMMAND: &str = "; exit $LASTEXITCODE";
 
     #[cfg(test)]
     #[test]
@@ -567,6 +575,30 @@ mod tests {
     /// A native command's exit code is the line's, and in PowerShell a
     /// native command that fails before a cmdlet that succeeds still fails
     /// the line, as it would under `sh -e`.
+    /// A line run by a host's own `powershell -Command`, as Codex runs a
+    /// hook's, exits with its command's code: Codex denies on a hook's 2 and
+    /// lets the call through on the 1 PowerShell reports for any failure.
+    /// Windows only: the line is PowerShell there.
+    #[cfg(windows)]
+    #[test]
+    fn a_line_exits_with_its_command_s_code_under_a_host_s_powershell() {
+        let root = uze_testkit::temp::scratch("line exit code");
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("deny.ps1");
+        std::fs::write(&script, "exit 2\r\n").unwrap();
+        let (program, arguments) = super::script(&script.display().to_string());
+        let status = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &command_line(&program, &arguments),
+            ])
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A sealed line survives `cmd /c`, as Antigravity hands a hook's line
     /// to it: a path with a space, an argument with spaces and one with
     /// quotes reach the script as written, and so does its standard input.

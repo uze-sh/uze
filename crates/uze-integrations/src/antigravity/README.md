@@ -58,40 +58,44 @@ it become authoritative.
 - **No runtime shim**; internal invocations always resolve the real `agy`
   outside `$UZE_HOME/shims`.
 
-- **Agents are a generated Markdown file** in the global agents directory,
-  named with the label and carrying `name: <label>` and `description`:
+- **Agents are a generated Markdown file**, inside the generated plugin's
+  `agents/` (declared by its root `agents.json`, which 1.3.3 reads) when the
+  package is delivered as a plugin, else in the global agents directory;
+  either way named with the label and carrying `name: <label>` and `description`:
   Antigravity 1.2.x reads the name from the frontmatter, lists no agent
   without one, scans no subdirectory, and silently drops an agent with a
   Claude-style `model` or string `tools`, so nothing else is carried and
   the loss is reported as Degraded. The delivery itself is Native: 1.3.3
   offers `invoke_subagent` to the agent a person starts on, which
   dispatches a delivered agent by its label (Lab `agent-*-exposed`,
-  `agent-*-dispatch-delivers-body`).
+  `agent-*-dispatch-delivers-body`; from a plugin,
+  `experiments/antigravity/plugin-agent-dispatch` on 1.3.5).
 
 ## Delivery notes
 
-  **Hooks are delivered into the shared `~/.gemini/config/hooks.json`**
-  (ADR-033/ADR-040), not into the generated plugin: one named entry per
-  canonical group, keyed `<package>:<group-id>`, grouped with the translated
-  matcher for the tool events and flat for `Stop`, whose command is the
+  **Hooks are delivered in the generated plugin's own root `hooks.json`**
+  (ADR-033/ADR-040): one named hook per canonical group, keyed
+  `<package>:<group-id>`, grouped with the translated matcher for the tool
+  events and flat for `Stop` and `SessionStart`, whose command is the
   generated `hooks/exec` wrapper under
   `$UZE_HOME/runtime/attachments/antigravity/hooks/exec` — absolute, because
   the harness runs a hook with its cwd set to the directory holding
-  `hooks.json`, and no `uze` sits on the execution path. The document root
-  *is* the named-hook map, so UZE owns exactly its own keys: a hand-written
-  hook in the same file is never read, rewritten or removed, and drift or an
-  unreadable file blocks the mutation. This is the same shape as Codex's
-  shared `hooks.json` delivery.
+  `hooks.json`, and no `uze` sits on the execution path. Enabling or
+  disabling the plugin governs its hooks, and the plugin's receipt is the
+  only one: its fingerprint covers the file. The generated plugin's receipt
+  records that it runs the shared wrapper, so the wrapper is kept while it
+  does.
 
-  It is delivered there because **the harness does not read a plugin's
-  `hooks.json`.** The vendor's own plugin guide says hooks in
-  `plugins/<name>/hooks.json` are "registered and run during the agent's
-  lifecycle"; on 1.1.24 they are not. `agy plugin validate` counts them, the
-  plugin is listed with a `hooks` component and enabled in `config.json`,
-  and the session still reports `loaded 0 named hooks from 0 hooks.json
-  file(s)` — it never opens the file. The Conformance Lab measures that live
-  every run (`hooks > delivery`), so if a later build starts reading plugin
-  hooks, the check says so and the delivery can move back.
+  Until 1.1.24 the harness did not read a plugin's `hooks.json` (`loaded 0
+  named hooks from 0 hooks.json file(s)`), so the entries went into the
+  shared `~/.gemini/config/hooks.json`. Since 1.3.4 it does (measured on
+  1.3.5, `experiments/antigravity/plugin-hooks`), and the delivery moved
+  back. The shared file still carries a package's groups when the package is
+  delivered capability by capability (a Skill with a non-default invocation
+  policy), with the same key-owned merge rules: a hand-written hook beside
+  them is never read, rewritten or removed, and drift or an unreadable file
+  blocks the mutation. Entries an earlier build left there are retired by
+  the next install once the plugin covers them.
 
   One vendor gate stands in front of every delivered hook: the executor
   reads `enable_json_hooks` (field 17 of the backend's

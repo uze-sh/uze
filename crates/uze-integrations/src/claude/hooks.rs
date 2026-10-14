@@ -9,8 +9,7 @@ use crate::hooks::{
 /// Claude Code documents `PreToolUse`/`PostToolUse`/`Stop` command hooks
 /// with per-group matchers: observations, approvals, denials and asks
 /// (`permissionDecision: ask`, which puts the call to the person with the
-/// reason) are expressible. Input rewriting is not yet claimed — a `transform` effect
-/// therefore degrades instead of silently attaching without its rewrite.
+/// reason) are expressible, and so is input rewriting (`updatedInput`).
 /// `SessionStart` also fires natively, matched on the session's source.
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "claude",
@@ -56,7 +55,6 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 transform: Some(
                     "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":%s}}' \"$updated_json\"",
                 ),
-                unfired: &[],
             },
             powershell: Some(Decisions {
                 deny: concat!(
@@ -70,12 +68,15 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
                 transform: Some(
                     "[Console]::Out.Write('{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":' + $updatedJson + '}}')",
                 ),
-                unfired: &[],
             }),
             deny_exit: "0",
             // Exit 2 blocks the call and hands stderr to the model: what is
             // left when the document that would have said so is not.
             unwritten_exit: "2",
+            // 2.1.295 blocks the call when the hook cannot start or times
+            // out; 2.1.291 loads an entry carrying it and ignores the key
+            // (measured, `experiments/claude/on-failure`).
+            failure_marker: Some(("onFailure", "block")),
         },
         // Claude's entries accept `command` + `args`, so the wrapper is
         // started directly with nothing to quote.

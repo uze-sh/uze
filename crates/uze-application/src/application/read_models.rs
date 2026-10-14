@@ -665,6 +665,9 @@ pub struct HarnessHealth {
     /// — display only, never a lookup key.
     pub description: String,
     pub detection: HarnessDetection,
+    /// The version this integration needs, set only when the detected one
+    /// is older (`IntegrationPort::minimum_version`).
+    pub below_minimum: Option<String>,
     pub setup: String,
     pub strategy: Option<String>,
     pub provisioning: Option<state::ProvisioningRecord>,

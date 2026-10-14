@@ -52,6 +52,8 @@ def assert_contract(cfg, prov_ip, bindings):
             if expected["aliases"].get("file.read"):
                 _deny_unprompted(cfg, bindings, expected)
             _fail_closed(cfg, bindings, expected)
+            if bindings.hooks_run_through_wrapper:
+                _fail_closed_unrun(cfg, bindings, expected)
             _exec_form(cfg, bindings, expected)
             _unmet_requirement(cfg, bindings, expected)
         if "ask" in effects:
@@ -386,6 +388,40 @@ def _fail_closed(cfg, bindings, expected):
             detail="the call never ran while its guard could not"
             if "fail-closed" not in side
             else "it ran",
+        )
+
+
+#: The generated wrapper every delivered hook entry starts, under UZE_HOME.
+WRAPPERS = "/work/home/.uze/runtime/attachments/*/hooks/exec"
+
+
+def _fail_closed_unrun(cfg, bindings, expected):
+    """A deny group fails closed even when the wrapper it was delivered
+    with never runs: with the wrapper deleted after delivery, the call the
+    guard would deny must not run either. Only the harness's own entry can
+    keep this promise, so a harness without such a control declares it."""
+    shell = expected["aliases"]["shell"]
+    call = bindings.call(shell["call"], mark=MARKED, side=f"{SIDE}/unrun")
+    with describe("fail-closed-unrun"):
+        _, side, turn = _scene(
+            cfg,
+            bindings,
+            "fail-closed-unrun",
+            "hook-effects",
+            [{"tool": vocabulary.call_tool(shell), "args": call}],
+            before=f"rm -f {WRAPPERS}",
+        )
+        settled = turn is not None and turn.settled
+        declared.absence(
+            bindings,
+            "hooks-fail-closed-unrun-tool-blocked",
+            "hooks.blocks-when-wrapper-cannot-run",
+            "unrun" in side,
+            settled=settled,
+            proof=settled,
+            detail="it ran with its guard's wrapper gone"
+            if "unrun" in side
+            else "the call never ran while its guard's wrapper was gone",
         )
 
 

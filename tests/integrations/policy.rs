@@ -287,7 +287,11 @@ fn a_harness_invocation_control_written_by_hand_is_pointed_at_invoke() {
                 root.join("config/opencode.json"),
                 home.clone(),
             )),
-            &["slash", "metadata.opencode/autoinvoke"],
+            &[
+                "slash",
+                "metadata.opencode/autoinvoke",
+                "disable-model-invocation",
+            ],
         ),
         (
             Box::new(AntigravityIntegration::new(

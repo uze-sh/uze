@@ -922,6 +922,7 @@ mod tests {
 
     fn health(present: bool) -> HarnessHealth {
         HarnessHealth {
+            below_minimum: None,
             integration: "claude-code".to_owned(),
             display_name: "Claude Code".to_owned(),
             description: String::new(),

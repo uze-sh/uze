@@ -436,6 +436,7 @@ mod tests {
 
     fn configured_harness(runtime_shim_active: bool) -> HarnessHealth {
         HarnessHealth {
+            below_minimum: None,
             integration: "claude-code".to_owned(),
             display_name: "Claude Code".to_owned(),
             description: "test harness".to_owned(),

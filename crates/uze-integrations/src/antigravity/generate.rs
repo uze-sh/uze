@@ -95,10 +95,8 @@ pub(super) fn generated_exact_coverage(
                     provided.insert(resource.identity());
                 }
             }
-            // Hooks are deliberately absent: the plugin carries no
-            // `hooks.json` any more, because the vendor never reads one from
-            // a plugin directory. They are delivered capability-level, as
-            // named entries merged into the shared `~/.gemini/config/hooks.json`.
+            // Hooks are covered by the integration, which knows which groups
+            // can be delivered here (`AntigravityIntegration::plugin_hooks`).
             _ => {}
         }
     }
@@ -178,6 +176,8 @@ fn translated_mcp_config(package: &StoredPackage) -> serde_json::Value {
 pub(super) fn materialize_generated_plugin(
     uze_home: &UzeHome,
     package: &StoredPackage,
+    hooks: &serde_json::Map<String, serde_json::Value>,
+    agents: &[(String, String)],
 ) -> Result<PathBuf> {
     let dir = generated_package_dir_for_id(uze_home, package.id.as_str());
     uze_core::persistence::replace_dir(&dir, |staging| {
@@ -223,14 +223,32 @@ pub(super) fn materialize_generated_plugin(
             )
             .map_err(UzeError::write(staging.join("mcp_config.json")))?;
         }
-        // No `hooks.json` is written here. AGY 1.1.24 reads hooks from its
-        // shared customization roots and never opens a plugin's `hooks.json`,
-        // whatever its own plugin guide says (measured in the Conformance Lab:
-        // `agy plugin validate` counts the file's hooks while the session
-        // reports `loaded 0 named hooks from 0 hooks.json file(s)`). A file the
-        // vendor never reads is not a delivery, so hooks go to
-        // `~/.gemini/config/hooks.json` as receipt-owned named entries instead
-        // (see `AntigravityIntegration::hook_exposure_plan`).
+        // The plugin's own `hooks.json`, one named hook per canonical group,
+        // each running the shared wrapper: Antigravity loads it from the
+        // plugin root (1.3.5, `experiments/antigravity/plugin-hooks`), so
+        // enabling or disabling the plugin governs its hooks too.
+        // Its agents, each under its label and declared by the plugin's root
+        // `agents.json` (1.3.3); the same definitions the global agents
+        // directory would hold.
+        if !agents.is_empty() {
+            let agents_dir = staging.join("agents");
+            fs::create_dir_all(&agents_dir).map_err(UzeError::write(&agents_dir))?;
+            for (file_name, content) in agents {
+                write_file(&agents_dir.join(file_name), content.as_bytes())?;
+            }
+            fs::write(
+                staging.join("agents.json"),
+                br#"{"entries":[{"path":"agents"}]}"#,
+            )
+            .map_err(UzeError::write(staging.join("agents.json")))?;
+        }
+        if !hooks.is_empty() {
+            fs::write(
+                staging.join("hooks.json"),
+                serde_json::to_vec_pretty(hooks).expect("generated hooks are serializable"),
+            )
+            .map_err(UzeError::write(staging.join("hooks.json")))?;
+        }
         Ok(())
     })?;
     Ok(dir)
@@ -416,7 +434,8 @@ mod generated_native_tests {
         let (root, pkg) = make_package_with_mcp("materialize");
         let uze_home = UzeHome::at(root.join("uze"));
         let before: BTreeSet<PathBuf> = walk(&pkg.root);
-        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let after: BTreeSet<PathBuf> = walk(&pkg.root);
         assert_eq!(
             before, after,
@@ -468,7 +487,8 @@ mod generated_native_tests {
         )
         .unwrap();
         let uze_home = UzeHome::at(root.join("uze"));
-        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let skill = fs::read_to_string(dir.join("skills/commit/SKILL.md")).unwrap();
         assert!(
             skill.contains(&format!("Run {}/scripts/x.sh", pkg.root.display())),
@@ -490,7 +510,8 @@ mod generated_native_tests {
             "fixture must be marketplace-qualified"
         );
         let uze_home = UzeHome::at(root.join("uze"));
-        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         assert!(
             !dir.file_name().unwrap().to_str().unwrap().contains('@'),
             "generated dir name must not contain '@': {dir:?}"
@@ -502,12 +523,12 @@ mod generated_native_tests {
     fn materialize_is_deterministic_across_rebuilds() {
         let (root, pkg) = make_package_with_mcp("deterministic");
         let uze_home = UzeHome::at(root.join("uze"));
-        materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let first = fs::read(
             generated_package_dir_for_id(&uze_home, pkg.id.as_str()).join("mcp_config.json"),
         )
         .unwrap();
-        materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let second = fs::read(
             generated_package_dir_for_id(&uze_home, pkg.id.as_str()).join("mcp_config.json"),
         )
@@ -527,7 +548,8 @@ mod generated_native_tests {
     fn the_generated_plugin_carries_no_hooks_and_claims_none() {
         let (root, pkg) = make_package_with_hooks("plugin-hooks");
         let uze_home = UzeHome::at(root.join("uze"));
-        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         assert!(
             !dir.join("hooks.json").exists(),
             "a file the harness never reads is not a delivery"
@@ -563,7 +585,7 @@ mod generated_native_tests {
     fn remove_generated_plugin_deletes_only_the_derived_directory() {
         let (root, pkg) = make_package_with_mcp("removal");
         let uze_home = UzeHome::at(root.join("uze"));
-        materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         assert!(generated_package_dir_for_id(&uze_home, pkg.id.as_str()).exists());
         remove_generated_plugin_by_id(&uze_home, pkg.id.as_str()).unwrap();
         assert!(!generated_package_dir_for_id(&uze_home, pkg.id.as_str()).exists());
@@ -601,7 +623,8 @@ mod generated_native_tests {
         )
         .unwrap();
         let uze_home = UzeHome::at(root.join("uze"));
-        let dir = materialize_generated_plugin(&uze_home, &pkg).unwrap();
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let delivered: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join("mcp_config.json")).unwrap()).unwrap();
         assert_eq!(

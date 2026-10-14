@@ -466,11 +466,20 @@ fn vendor_agy(state_dir: &Path, dest: &Path, arguments: &[String]) -> ExitCode {
         let id = stage_plugin(&root, dest);
         append_line(&installed, &id);
     } else if joined.starts_with("plugin list") {
-        let imports: Vec<Value> = lines(&installed)
+        // The 1.3.4 listing: one array of every plugin it holds.
+        let listed: Vec<Value> = lines(&installed)
             .iter()
-            .map(|id| json!({ "name": id }))
+            .map(|id| {
+                json!({
+                    "name": id,
+                    "enabled": true,
+                    "source": "antigravity",
+                    "path": dest.join(id),
+                    "skills": [],
+                })
+            })
             .collect();
-        print!("{}", json!({ "imports": imports }));
+        print!("{}", Value::Array(listed));
     } else if joined.starts_with("plugin uninstall")
         && let Some(id) = arguments.get(2)
     {

@@ -80,7 +80,7 @@ answers it.
 |---|---|---|
 | Claude Code | `github.com/anthropics/claude-code` `CHANGELOG.md` | `code.claude.com/docs` (plugins, plugin marketplaces, skills, hooks, memory, settings, mcp) |
 | Codex | `github.com/openai/codex` releases; the source at the release tag when the docs are silent | `learn.chatgpt.com/docs` (config, AGENTS.md, skills, hooks, plugins, mcp; moved from `developers.openai.com/codex`) |
-| OpenCode | V2 has no release notes: the commit log of the `v2` branch of `github.com/anomalyco/opencode`, current version from `opencode.ai/update/api/latest/cli/npm` (GitHub Releases and `opencode.ai/changelog` are V1 only) | the docs on that branch, `services/www/src/docs/content/*.mdx`; the tool sources under `packages/core/src/tool/` for names and input fields |
+| OpenCode | V2 has no release notes: the commit log of the `dev` branch of `github.com/anomalyco/opencode` (V2 was promoted from `v2` to `dev` on 2026-10-10; releases are the tags `v2.0.N`), current version from `opencode.ai/update/api/latest/cli/npm` (GitHub Releases and `opencode.ai/changelog` are V1 only) | the docs on that branch, `services/www/src/docs/content/*.mdx`; the tool sources under `packages/core/src/tool/` for names and input fields |
 | Antigravity CLI | `agy changelog` (ships in the binary) | in the binary: `~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/`; Google's developer blog |
 
 The Antigravity docs and changelog are only reliably current inside the

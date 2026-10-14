@@ -16,10 +16,13 @@
 //!   there is no link-preserving install route at all. The staged tree is
 //!   therefore always a Derived Artifact (ADR-013 §5): integration-owned,
 //!   rebuildable from the Store, never authoritative.
-//! - `agy plugin list` prints machine-readable JSON on stdout
-//!   (`{"imports":[{name,source,importedAt,components}]}`) — inspection
-//!   and ownership proofs are cheap and reliable. `plugin uninstall`
-//!   removes the staged tree and the registration.
+//! - `agy plugin list --json` prints every plugin it holds, imported or
+//!   installed from its marketplace, as an array of
+//!   `{name, enabled, version, source, path, skills}` (1.3.4); its own
+//!   `import_manifest.json` (`{"imports":[{name,source,...}]}`) knows the
+//!   imports alone. Inspection reads the manifest, install and detach ask
+//!   the CLI. `plugin uninstall` removes the staged tree and the
+//!   registration, by name.
 //! - The canonical UZE `plugin.json` (name + description) **is** a valid
 //!   Antigravity plugin manifest — extra fields are tolerated — so the
 //!   North Star package ships no Antigravity-specific file and still takes
@@ -102,8 +105,8 @@ use crate::shared::provision::{
 use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
-    GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, inspect_installed_plugin,
-    installed_plugins, plugin_manifest_name, run_agy,
+    GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, holders_of,
+    inspect_installed_plugin, installed_plugins, plugin_manifest_name, run_agy,
 };
 use uze_core::capability::harness::Findings;
 use uze_core::integration::{HarnessFact, ProjectResourceRoute};
@@ -255,6 +258,12 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn homepage(&self) -> Option<&'static str> {
         Some("https://antigravity.google")
+    }
+
+    /// 1.3.4 is the first `agy plugin list --json` that prints the array
+    /// the plugin census reads, with marketplace installs in it.
+    fn minimum_version(&self) -> Option<&'static str> {
+        Some("1.3.4")
     }
 
     /// Reads the shared `AGENTS.md` natively (official docs: identical
@@ -500,13 +509,22 @@ impl IntegrationPort for AntigravityIntegration {
         }) {
             return None;
         }
-        let provided = generate::generated_exact_coverage(package, resources);
+        let mut provided = generate::generated_exact_coverage(package, resources);
+        provided.extend(
+            resources
+                .iter()
+                .filter(|resource| {
+                    self.plugin_hook_entry(resource).is_some()
+                        || self.plugin_agent_file(resource).is_some()
+                })
+                .map(|resource| resource.identity()),
+        );
         Some(PackageExposurePlan {
             package_id: package.id.clone(),
             route: CompatibilityRoute::Native,
             envelope: PackageEnvelope::Generated,
             provided_resource_identities: provided,
-            evidence: "The canonical plugin.json is a valid Antigravity plugin manifest; UZE installs a plugin it generates from the package into a UZE-owned derived directory — never the Store tree, which agy would stage with `${PLUGIN_ROOT}` unresolved and with the package's agents under their bare names. The plugin carries the skills (package root resolved) and the MCP servers in `mcp_config.json`. Agents and hooks are delivered on their own: agents as labelled files in the global agents directory, hooks as receipt-owned entries in the shared ~/.gemini/config/hooks.json, since the harness never reads a plugin's hooks.json."
+            evidence: "The canonical plugin.json is a valid Antigravity plugin manifest; UZE installs a plugin it generates from the package into a UZE-owned derived directory — never the Store tree, which agy would stage with `${PLUGIN_ROOT}` unresolved and with the package's agents under their bare names. The plugin carries the skills (package root resolved), the MCP servers in `mcp_config.json`, the hooks in its own root `hooks.json` (one named hook per group, running the generated wrapper) and the agents under `agents/`, declared by its root `agents.json`, each named by its label: Antigravity loads both from a plugin since 1.3.4."
                 .to_owned(),
         })
     }
@@ -617,6 +635,25 @@ impl IntegrationPort for AntigravityIntegration {
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if kind == PLUGIN_KIND || kind == GENERATED_PLUGIN_KIND =>
             {
+                // `uninstall` removes by name, and the manifest inspection
+                // just read cannot see a marketplace plugin of the same
+                // name: the CLI is asked, and a name held twice is left
+                // alone rather than risk removing the other one.
+                match holders_of(
+                    &self.provisioning_executable(),
+                    &self.command_home,
+                    selector,
+                ) {
+                    Ok(1) => {}
+                    Ok(_) => {
+                        return Ok(AttachmentInspection {
+                            state: AttachmentState::Conflict,
+                            reason: "more than one Antigravity plugin answers to this name"
+                                .to_owned(),
+                        });
+                    }
+                    Err(unreadable) => return Ok(blocked(unreadable)),
+                }
                 // Uninstalling removes only Antigravity's staged copy and
                 // its registration; the stored package UZE owns stays
                 // exactly where it is.
@@ -708,18 +745,79 @@ impl AntigravityIntegration {
         agent_file_plan(&self.agents_dir, &label, "md", content, route)
     }
 
-    /// A Hook resource's delivery: one named entry merged into the shared
-    /// `~/.gemini/config/hooks.json`, keyed `<package>:<group-id>`. The
-    /// wrapper lives under UZE's own state rather than inside a plugin: a
-    /// shared config file has no plugin root to resolve against, and the
-    /// harness runs a hook with its cwd set to the directory holding
-    /// `hooks.json`, so every path in the entry is absolute.
+    /// The named entry a hook group takes inside the generated plugin's
+    /// `hooks.json`: the one the shared file would hold, so both routes
+    /// run the same wrapper with the same matcher. `None` for a group this
+    /// harness cannot run.
+    fn plugin_hook_entry(&self, resource: &Resource) -> Option<(String, serde_json::Value)> {
+        if resource.capability.kind != CapabilityKind::Hook {
+            return None;
+        }
+        match self.hook_exposure_plan(resource).mechanism {
+            ExposureMechanism::Managed(ManagedArtifact::HookConfigEntry {
+                entry_name,
+                expected,
+                ..
+            }) => Some((entry_name, serde_json::from_str(&expected).ok()?)),
+            _ => None,
+        }
+    }
+
+    /// The file an agent takes inside the generated plugin's `agents/`: the
+    /// definition the global agents directory would hold, under the same
+    /// name. `None` for an agent this harness cannot run.
+    fn plugin_agent_file(&self, resource: &Resource) -> Option<(String, String)> {
+        if resource.capability.kind != CapabilityKind::Agent {
+            return None;
+        }
+        let plan = self.agent_exposure_plan(resource);
+        match plan.mechanism {
+            ExposureMechanism::Managed(ManagedArtifact::GeneratedFile { path, content })
+                if plan.route != CompatibilityRoute::Unsupported =>
+            {
+                Some((path.file_name()?.to_string_lossy().into_owned(), content))
+            }
+            _ => None,
+        }
+    }
+
+    /// Every deliverable agent of `package`, as its generated plugin's
+    /// `agents/` holds them.
+    fn plugin_agents(&self, package: &StoredPackage) -> Result<Vec<(String, String)>> {
+        Ok(
+            uze_core::engine::package_resources_at(&package.id, &package.root)?
+                .iter()
+                .filter_map(|resource| self.plugin_agent_file(resource))
+                .collect(),
+        )
+    }
+
+    /// Every deliverable hook group of `package`, as its generated plugin's
+    /// `hooks.json` holds them.
+    fn plugin_hooks(
+        &self,
+        package: &StoredPackage,
+    ) -> Result<serde_json::Map<String, serde_json::Value>> {
+        Ok(
+            uze_core::engine::package_resources_at(&package.id, &package.root)?
+                .iter()
+                .filter_map(|resource| self.plugin_hook_entry(resource))
+                .collect(),
+        )
+    }
+
+    /// A Hook resource's delivery on its own: one named entry merged into
+    /// the shared `~/.gemini/config/hooks.json`, keyed `<package>:<group-id>`.
+    /// The wrapper lives under UZE's own state rather than inside a plugin,
+    /// and the harness runs a hook with its cwd set to the directory holding
+    /// `hooks.json`, so every path in the entry is absolute — which is also
+    /// what lets a generated plugin carry the same entry unchanged.
     fn hook_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         HOOKS.entry_plan(
             &self.uze_home,
             resource,
             self.hooks_config_path(),
-            "Antigravity CLI reads named hooks from its shared `~/.gemini/config/hooks.json`: UZE merges one named entry per canonical hook (`<package>:<group-id>`, matcher and timeout preserved, grouped for the tool events and flat for Stop; its undocumented `SessionStart` key runs once for a new conversation, flat like Stop, so a group waiting only for a resume or a clear is reported Unsupported) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps that exact entry receipt-owned. The generated plugin carries no hooks.json: the harness never reads one from a plugin directory (Conformance Lab, `hooks > delivery`).",
+            "Antigravity CLI reads named hooks from its shared `~/.gemini/config/hooks.json`: UZE merges one named entry per canonical hook (`<package>:<group-id>`, matcher and timeout preserved, grouped for the tool events and flat for Stop; its `SessionStart` key runs once for a new conversation, flat like Stop, so a group waiting only for a resume or a clear is reported Unsupported) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps that exact entry receipt-owned. Inside a generated plugin the same entries go to the plugin's own root hooks.json instead, which Antigravity loads since 1.3.4 (experiment `antigravity/plugin-hooks`, 1.3.5); the shared file carries a group only when the package is delivered capability by capability.",
         )
     }
 }
@@ -772,20 +870,20 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "hooks",
-        fact: "runs a flat `SessionStart` entry its docs do not list, once per new \
-               conversation at its first model call, never on `--continue`",
+        fact: "runs a flat `SessionStart` entry once per new conversation at its \
+               first model call, never on `--continue`",
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_events",
     },
     HarnessFact {
         subject: "hooks",
-        fact: "runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, a field its docs do not list",
+        fact: "runs the args a PreToolUse hook hands back as `overwrite` beside `allow`, merged shallowly into the call's own",
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "1.3.3";
+const VERSION: &str = "1.3.5";
 
 #[cfg(test)]
 mod detach_tests {

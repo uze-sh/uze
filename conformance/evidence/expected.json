@@ -135,6 +135,17 @@
         "opencode v2.0.24"
       ],
       "observed_at": "2026-10-06"
+    },
+    {
+      "harness": "codex",
+      "check": "hooks-fail-closed-unrun-tool-blocked",
+      "suite": "hooks",
+      "reason": "Codex hook entries have no setting that blocks a call when the hook command cannot start; a handler that never runs lets the call through",
+      "measurement": "with the delivered wrapper deleted, the denied shell call ran",
+      "versions": [
+        "codex-cli 0.162.1"
+      ],
+      "observed_at": "2026-10-14"
     }
   ]
 }

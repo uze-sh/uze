@@ -79,6 +79,10 @@ pub struct OpenCodeIntegration {
     /// `HOME` for the conversation listing the harness answers: the parent
     /// of `agents_home`, as for every peer.
     command_home: PathBuf,
+    /// Where `worktree_create` makes checkouts by default: `<data>/worktree`,
+    /// `<data>` being `$XDG_DATA_HOME/opencode`, else
+    /// `~/.local/share/opencode` (`opencode debug paths`, 2.0.29).
+    worktree_dir: PathBuf,
     uze_home: UzeHome,
 }
 
@@ -88,6 +92,10 @@ impl OpenCodeIntegration {
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
+        let command_home = agents_home
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| agents_home.clone());
         Self {
             // Its own root, not the `~/.agents/skills` it also reads: that
             // one is Codex's, and OpenCode's own root wins a name found in
@@ -95,10 +103,8 @@ impl OpenCodeIntegration {
             skills_dir: config_dir.join("skills"),
             agents_dir: config_dir.join("agents"),
             config_path,
-            command_home: agents_home
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| agents_home.clone()),
+            worktree_dir: command_home.join(".local/share/opencode/worktree"),
+            command_home,
             uze_home,
         }
     }
@@ -115,11 +121,15 @@ impl OpenCodeIntegration {
         let config_root = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".config"));
-        Ok(Self::new(
+        let mut integration = Self::new(
             home.join(".agents"),
             config_root.join("opencode/opencode.json"),
             uze_home,
-        ))
+        );
+        if let Some(data_root) = std::env::var_os("XDG_DATA_HOME") {
+            integration.worktree_dir = PathBuf::from(data_root).join("opencode/worktree");
+        }
+        Ok(integration)
     }
 }
 
@@ -207,8 +217,31 @@ impl IntegrationPort for OpenCodeIntegration {
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
         HOOKS.capabilities()
     }
+    /// `worktree_create` (2.0.27) makes a checkout there, and `session_move`
+    /// can carry the session into it.
+    fn own_worktree_places(&self) -> Vec<uze_core::integration::WorktreePlace> {
+        vec![uze_core::integration::WorktreePlace::Outside(
+            self.worktree_dir.clone(),
+        )]
+    }
+
+    /// `--session <id>` creates the conversation when none has that id
+    /// (measured on 2.0.29, `experiments/opencode/session-assigned`), so UZE
+    /// names it at launch. The read-back stays, for a conversation the
+    /// person starts from inside the TUI.
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
-        uze_core::integration::SessionContinuity::Observed
+        uze_core::integration::SessionContinuity::Assigned
+    }
+
+    fn new_session_id(&self) -> uze_core::session::SessionId {
+        session::new_id()
+    }
+
+    fn start_session_args(
+        &self,
+        session: &uze_core::session::SessionId,
+    ) -> Vec<std::ffi::OsString> {
+        session::resume_args(session)
     }
 
     fn resume_session_args(
@@ -276,10 +309,16 @@ impl IntegrationPort for OpenCodeIntegration {
         match resource.capability.kind {
             CapabilityKind::Agent => opencode_agent_findings(&self.harness_keys(), resource),
             // `slash` is V1's, which V2 no longer reads; `autoinvoke` is
-            // what UZE writes from `invoke.model`.
+            // what UZE writes from `invoke.model`; Claude's
+            // `disable-model-invocation` hides a skill from OpenCode's model
+            // too (measured on 2.0.29, `experiments/opencode/claude-skill-control`).
             _ => crate::shared::skill::hand_written_controls(
                 resource,
-                &[&["slash"], &["metadata", "opencode/autoinvoke"]],
+                &[
+                    &["slash"],
+                    &["metadata", "opencode/autoinvoke"],
+                    &["disable-model-invocation"],
+                ],
             ),
         }
     }
@@ -584,7 +623,7 @@ impl OpenCodeIntegration {
     fn hook_plan(&self, resource: &Resource) -> ExposurePlan {
         let path =
             hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
-        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The V2 tool hooks carry the tool input but no block signal, and the only decision point (permission.evaluate) carries the action's resources rather than the input, so deny/ask are diagnosed Unsupported before attach — never fabricated. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. SessionStart is not claimed: on OpenCode 2.0.18 a plugin's event stream carries no `session.created` for a new session, and nothing in it tells a new session from a continued one (Conformance Lab, experiment opencode/session-start).";
+        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The tool hook refuses a denied call whether or not the tool asks for permission, and `permission.evaluate` puts an `ask` to the person on the tools that ask before they act. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. A new session is `session.created` on the plugin's event stream; a resumed one announces nothing, so `startup` is the only session source (Conformance Lab, `hooks > events`).";
         hook_projection::hook_plan(resource, HOOKS, true, evidence, |_| {
             Some(ManagedArtifact::ManagedHookFile { path })
         })
@@ -847,7 +886,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.0.24";
+const VERSION: &str = "2.0.29";
 
 #[cfg(test)]
 mod lifecycle_tests {

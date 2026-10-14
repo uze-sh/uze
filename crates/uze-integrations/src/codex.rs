@@ -231,6 +231,16 @@ impl IntegrationPort for CodexIntegration {
         HOOKS.capabilities()
     }
 
+    /// `create_worktree`, a tool Codex 0.162 offers the model by default,
+    /// makes checkouts under `$CODEX_HOME/worktrees`
+    /// (`codex-rs/worktree/src/settings.rs`). This integration resolves
+    /// every Codex path from the command home, so this one does too.
+    fn own_worktree_places(&self) -> Vec<uze_core::integration::WorktreePlace> {
+        vec![uze_core::integration::WorktreePlace::Outside(
+            self.command_home.join(".codex").join("worktrees"),
+        )]
+    }
+
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
         uze_core::integration::SessionContinuity::Observed
     }
@@ -765,7 +775,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "0.160.1";
+const VERSION: &str = "0.162.1";
 
 /// The installer's documented switch for skipping its "Start Codex now?" prompt.
 const NON_INTERACTIVE: &str = "CODEX_NON_INTERACTIVE";

@@ -35,9 +35,9 @@ impl SessionId {
     }
 
     /// A fresh RFC 4122 version 4 identifier, for a harness that lets UZE
-    /// name the conversation it is about to start. The shape is not a
-    /// preference: the harnesses that accept a name demand a UUID and
-    /// refuse anything else.
+    /// name the conversation it is about to start. The default shape, not a
+    /// universal one: a harness that refuses a UUID mints its own name
+    /// (`IntegrationPort::new_session_id`).
     pub fn generate() -> Self {
         Self(format_uuid_v4(random_bytes()))
     }

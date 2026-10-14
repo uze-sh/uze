@@ -566,8 +566,10 @@ def phase_hooks_gate(cfg, prov_ip):
     google-antigravity/antigravity-cli#893 — and `phase_hooks_api_key_mode`
     re-runs this control hook there every run. If a future build closed the
     gate in signed-in mode too, this check would say so instead of the suite
-    quietly proving nothing. `phase_hooks_delivery` answers the other half:
-    whether the harness loads what UZE itself delivered.
+    quietly proving nothing. The other half, whether the harness loads what
+    UZE itself delivered (the generated plugin's own `hooks.json` since
+    1.3.4), is the hooks contract: none of its deny, ask or transform checks
+    can pass on hooks the harness never loaded.
 
     Returns True when the control hook denied the command.
     """
