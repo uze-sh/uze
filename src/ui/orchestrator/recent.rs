@@ -166,7 +166,7 @@ pub(super) struct RecentRow {
 }
 
 impl RecentRow {
-    fn of_task(task: &PreservedWork, checkout: Option<&CheckoutView>) -> Self {
+    fn of_task(task: &PreservedWork, checkout: Option<&CheckoutView>, reason: Reason) -> Self {
         let active = SystemTime::UNIX_EPOCH + Duration::from_secs(task.last_active_unix);
         Self {
             key: task.id.clone(),
@@ -177,7 +177,7 @@ impl RecentRow {
             },
             project: task.project.clone(),
             branch: Some(task.branch.clone()),
-            reason: reason_of(task, checkout),
+            reason,
             ahead: checkout.map(|checkout| checkout.ahead),
             bytes: checkout.map(|checkout| checkout.bytes),
             changed: checkout
@@ -278,9 +278,18 @@ fn left_behind_by(task: &PreservedWork, checkout: &CheckoutView) -> bool {
         || task.checkout.as_deref() == Some(checkout.path.as_path())
 }
 
-/// Why `task` is listed, given the checkout it left behind.
-fn reason_of(task: &PreservedWork, checkout: Option<&CheckoutView>) -> Reason {
-    if !task.project_present {
+/// Why `task` is listed, given the checkout it left behind. A delivery
+/// this client asked for and is still waiting on is drawn as delivering
+/// at once, the way the tab strip's button is, rather than once the
+/// record says so.
+fn reason_of(
+    model: &WorkspaceModel,
+    task: &PreservedWork,
+    checkout: Option<&CheckoutView>,
+) -> Reason {
+    if model.remembered.delivery_pending.contains(&task.id) {
+        Reason::Delivering
+    } else if !task.project_present {
         Reason::ProjectGone
     } else if checkout.and_then(join_of).is_some() {
         Reason::JoinReady
@@ -324,7 +333,10 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
     let kept = model.preserved_tasks();
     let mut rows: Vec<RecentRow> = kept
         .iter()
-        .map(|task| RecentRow::of_task(task, checkout_of(recent, task)))
+        .map(|task| {
+            let checkout = checkout_of(recent, task);
+            RecentRow::of_task(task, checkout, reason_of(model, task, checkout))
+        })
         .collect();
     rows.extend(
         unnamed_joins(recent, &kept)
@@ -348,7 +360,7 @@ pub(super) fn waiting_on_you(model: &WorkspaceModel) -> usize {
     let kept = model.preserved_tasks();
     let tasks = kept
         .iter()
-        .filter(|task| reason_of(task, checkout_of(recent, task)).waits_on_you())
+        .filter(|task| reason_of(model, task, checkout_of(recent, task)).waits_on_you())
         .count();
     tasks + unnamed_joins(recent, &kept).count()
 }
