@@ -232,6 +232,10 @@ pub fn acquire(
 /// the work up where the branch stands. Same choice of slot as
 /// [`acquire`]; the difference is that nothing is cut and nothing is
 /// reset past the branch's own tip.
+///
+/// `fresh` is where a branch that held nothing comes back: an agent that
+/// ended with nothing to deliver had its empty branch removed, and
+/// resuming it is resuming the conversation, on a branch cut again there.
 pub fn resume(
     primary: &Path,
     store: &AgentStore,
@@ -239,20 +243,22 @@ pub fn resume(
     isolation: &Isolation,
     cap: Option<usize>,
     presence: &Presence,
+    fresh: Option<&str>,
 ) -> Result<Acquired, AcquireError> {
     if !branch_exists(primary, &isolation.branch) {
         // A branch deleted by hand while its work sat on the shelf comes
         // back where the shelf was cut, which is where that work stands on.
-        let Some(shelf) = shelf::shelf_of(primary, task.as_str()) else {
-            return Err(AcquireError::Git(format!(
-                "branch {} no longer exists; there is nothing to resume",
-                isolation.branch
-            )));
+        let start = match (shelf::shelf_of(primary, task.as_str()), fresh) {
+            (Some(shelf), _) => format!("{shelf}^1"),
+            (None, Some(tip)) if !tip.trim().is_empty() => tip.to_owned(),
+            (None, _) => {
+                return Err(AcquireError::Git(format!(
+                    "branch {} no longer exists; there is nothing to resume",
+                    isolation.branch
+                )));
+            }
         };
-        git(
-            primary,
-            &["branch", "--", &isolation.branch, &format!("{shelf}^1")],
-        )?;
+        git(primary, &["branch", "--", &isolation.branch, &start])?;
     }
     take(
         primary,

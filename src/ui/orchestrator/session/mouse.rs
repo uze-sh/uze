@@ -263,6 +263,7 @@ impl Attach<'_> {
             _ if self.model.recent.open => {
                 match self.model.hit_at(mouse.column, mouse.row) {
                     Some(WorkspaceHit::RecentRow(index)) => self.click_recent_row(index),
+                    Some(WorkspaceHit::RecentScrollTo(index)) => self.select_recent_row(index),
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
                     // The way in is the way out, and a click anywhere else
                     // leaves it the way it leaves the root picker.
@@ -1320,7 +1321,9 @@ impl Attach<'_> {
             }
             // Only reachable while recent is open, which the guarded arm
             // in `press` answers first.
-            WorkspaceHit::RecentRow(_) | WorkspaceHit::RecentAnswer(_) => {}
+            WorkspaceHit::RecentRow(_)
+            | WorkspaceHit::RecentScrollTo(_)
+            | WorkspaceHit::RecentAnswer(_) => {}
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
             // Only reachable while the question is open, which the guarded
@@ -1360,6 +1363,11 @@ impl Attach<'_> {
                 toggle_space_collapsed(&mut self.model, space);
             }
             WorkspaceHit::ResumeLostCheckout(tab) => {
+                let harness = self
+                    .model
+                    .tab(tab)
+                    .and_then(|tab| agent_for_tab(&self.identities, tab))
+                    .map(|identity| identity.integration.to_owned());
                 let resume = self
                     .model
                     .lost_task(tab)
@@ -1367,6 +1375,7 @@ impl Attach<'_> {
                         primary: primary.clone(),
                         task: task.id.clone(),
                         replacing: Some(tab),
+                        harness,
                     });
                 if let Some(resume) = resume {
                     // The revived agent is created in the *selected*

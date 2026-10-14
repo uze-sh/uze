@@ -4583,6 +4583,8 @@ mod workspace_tests {
             checkout: Some(PathBuf::from(project).join(".worktrees").join(id)),
             state,
             created_at_unix: 1,
+            last_active_unix: 1,
+            harness: "claude-code".to_owned(),
             project_present: true,
         }
     }
@@ -5929,8 +5931,11 @@ mod workspace_tests {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-by-resume"));
         set_up_every_harness(&home);
         let mut model = agent_with_task(WorkStateView::Ready, 1);
-        model.remembered.preserved_work =
-            vec![preserved("/repo", "t9", "kept", WorkStateView::Shelved)];
+        // The harness it ran with is no longer set up, so there is a
+        // question to ask.
+        let mut kept = preserved("/repo", "t9", "kept", WorkStateView::Shelved);
+        kept.harness = "a-retired-harness".to_owned();
+        model.remembered.preserved_work = vec![kept];
         model.recent.open = true;
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
@@ -5957,6 +5962,36 @@ mod workspace_tests {
         assert!(
             !driven.attach.model.recent.open,
             "and recent made way for the tree"
+        );
+    }
+
+    /// An agent is resumed with the harness it ran with, without being
+    /// asked: its conversation is that harness's, and the picker would
+    /// only offer the chance to start it somewhere it has none.
+    #[test]
+    fn resuming_from_recent_launches_the_harness_it_ran_with() {
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "orchestrator-resume-same-harness",
+        ));
+        set_up_every_harness(&home);
+        let mut model = agent_with_task(WorkStateView::Ready, 1);
+        model.remembered.preserved_work =
+            vec![preserved("/repo", "t9", "kept", WorkStateView::Shelved)];
+        model.recent.open = true;
+        let mut driven = driven(model, &home);
+
+        let resume = uze_keys::active()
+            .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Recent])
+            .expect("enter is bound in recent");
+        driven.press_key(key_event(resume));
+
+        assert!(
+            driven.attach.model.agent_picker.is_none(),
+            "nothing is asked"
+        );
+        assert!(
+            driven.attach.model.placement_pending,
+            "and the agent is being placed"
         );
     }
 
@@ -11293,6 +11328,56 @@ mod workspace_tests {
             sent.iter()
                 .any(|request| matches!(request, ClientRequest::SelectSpace { .. })),
             "in the space rooted at its own project: {sent:?}"
+        );
+    }
+
+    /// A name typed over an agent's tab is the agent's own, so the agent
+    /// is found by it once its tab is gone: the rename reaches the
+    /// record, not only the tab.
+    #[test]
+    fn renaming_an_agents_tab_names_the_agent() {
+        let repository = uze_testkit::git::Repository::new("orchestrator-rename-agent");
+        let root = repository.root().to_path_buf();
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-rename-agent-home"));
+        let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+        let placement = app
+            .workspace()
+            .place_new_agent(
+                &root,
+                Some(uze_application::PlacementKind::Isolated),
+                "claude-code",
+                &[],
+            )
+            .unwrap();
+        let id = placement.placement.agent().as_str().to_owned();
+        let mut model = agent_session();
+        stamp_first_tab(&mut model, &id);
+        first_tab_mut(&mut model).pane.cwd = placement.cwd.clone();
+        let tab = first_tab_mut(&mut model).id;
+        model.renaming = Some((
+            crate::ui::orchestrator::RenameTarget::Tab(tab),
+            crate::ui::orchestrator::RenameBuffer::new("vscode workspace".to_owned()),
+        ));
+        let mut driven = driven(model, &home);
+
+        let enter = uze_keys::active()
+            .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Rename])
+            .expect("enter takes a rename");
+        driven.press_key(key_event(enter));
+        let answer = driven
+            .attach
+            .channels
+            .labels
+            .receiver
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the name is recorded");
+
+        assert_eq!(answer.outcome, Ok(()));
+        assert!(
+            app.workspace()
+                .tasks(&root)
+                .iter()
+                .any(|task| task.id == id && task.label == "vscode workspace")
         );
     }
 

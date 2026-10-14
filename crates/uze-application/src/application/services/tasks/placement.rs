@@ -392,9 +392,27 @@ impl Workspace<'_> {
                     launch_key: String::new(),
                 });
             }
-            let acquired =
-                checkout::resume(&primary, &snapshot, &id, task, policy.slots, &presence)
-                    .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+            // An agent that ended with nothing to deliver left a
+            // conversation and no branch: it comes back on the target as a
+            // new agent would, so nothing is measured against a base its
+            // branch never had.
+            let fresh = (*state == WorkState::Closed
+                && !checkout::branch_exists(&primary, &task.branch))
+            .then(|| checkout::target_reach(&primary, &target, None))
+            .flatten();
+            if let Some(tip) = &fresh {
+                task.base_commit = tip.clone();
+            }
+            let acquired = checkout::resume(
+                &primary,
+                &snapshot,
+                &id,
+                task,
+                policy.slots,
+                &presence,
+                fresh.as_deref(),
+            )
+            .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
             if let Some(shelf) = checkout::shelf::shelf_of(&primary, id.as_str()) {
                 put_back(&primary, &acquired.path, &shelf)?;
                 restored.push((id.as_str().to_owned(), shelf));
@@ -540,8 +558,9 @@ fn resume_children(
         if has_shelf.is_none() && !holds_commits {
             continue;
         }
-        let acquired = checkout::resume(primary, &current, &child_id, isolation, cap, presence)
-            .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
+        let acquired =
+            checkout::resume(primary, &current, &child_id, isolation, cap, presence, None)
+                .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
         taken.push(acquired.path.clone());
         checkout::record::write(
             primary,

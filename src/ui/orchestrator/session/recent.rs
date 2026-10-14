@@ -81,6 +81,17 @@ impl Attach<'_> {
         self.recent_action(Action::Activate);
     }
 
+    /// Selects the row `index` names and does nothing else: where the
+    /// scroll track takes the window.
+    pub(in crate::ui::orchestrator) fn select_recent_row(&mut self, index: usize) {
+        let rows = recent_rows(&self.model);
+        if let Some(row) = rows.get(index) {
+            self.model.recent.asking = false;
+            self.model.recent.selected = Some(row.key.clone());
+            self.model.dirty = true;
+        }
+    }
+
     /// Selects the row `index` names: a click on the row already selected
     /// does what enter would.
     pub(in crate::ui::orchestrator) fn click_recent_row(&mut self, index: usize) {
@@ -131,6 +142,7 @@ impl Attach<'_> {
                 primary: task.project.clone(),
                 task: task.id.clone(),
                 replacing: None,
+                harness: Some(task.harness.clone()),
             }),
         );
     }
@@ -264,6 +276,23 @@ impl Attach<'_> {
                 resolution.project,
                 &self.channels.tasks.sender,
             );
+            self.model.dirty = true;
+        }
+    }
+
+    /// Names recorded for agents: a failure is said, since the tab shows
+    /// the name either way and only the record would quietly lack it.
+    pub(super) fn absorb_labels(&mut self) {
+        while let Ok(resolution) = self.channels.labels.receiver.try_recv() {
+            match resolution.outcome {
+                Ok(()) => self.sweep_preserved_work(),
+                Err(error) => self.model.raise_toast(
+                    ToastKind::Failed,
+                    "name not kept",
+                    format!("{}: {error}", resolution.label),
+                    None,
+                ),
+            }
             self.model.dirty = true;
         }
     }

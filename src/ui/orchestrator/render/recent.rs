@@ -2,7 +2,7 @@
 //! each, with what the selected one is about said beneath it.
 
 use super::*;
-use crate::ui::widget::{Align, Button, RowState, button_row, hint};
+use crate::ui::widget::{Align, Button, RowState, Scrollbar, button_row, hint};
 
 /// What a click on one of recent's lines reaches.
 #[derive(Clone, Copy, PartialEq)]
@@ -66,6 +66,28 @@ pub(super) fn render_recent(
             (last + 1).saturating_sub(visible).min(first)
         })
         .min(lines.len().saturating_sub(visible));
+    // The window follows the selection, so the track is a picture of the
+    // whole list: a click on it selects the row at that height, and the
+    // window follows. Its targets go first, since the rows under them
+    // reach the same column.
+    let track = Rect::new(
+        rows.x + width.saturating_sub(Scrollbar::width()),
+        rows.y,
+        Scrollbar::width(),
+        rows.remaining(),
+    );
+    let bar = Scrollbar::measure(track, visible, lines.len());
+    if let Some(bar) = bar {
+        let owners: Vec<Option<usize>> = lines.iter().map(|(_, target)| target.row()).collect();
+        for y in track.y..track.bottom() {
+            if let Some(index) = row_near(&owners, bar.item_at(y)) {
+                hits.push((
+                    Rect::new(track.x, y, track.width, 1),
+                    WorkspaceHit::RecentScrollTo(index),
+                ));
+            }
+        }
+    }
     for (line, target) in lines.into_iter().skip(offset).take(visible) {
         let Some(rect) = rows.next(1) else { break };
         frame.render_widget(Paragraph::new(line), rect);
@@ -88,6 +110,9 @@ pub(super) fn render_recent(
             Target::Nothing => {}
         }
     }
+    if let Some(bar) = bar {
+        bar.render(frame, offset);
+    }
     if let Some(rect) = foot {
         let row = selected.and_then(|index| list.get(index));
         let keys = hint::named_within(
@@ -103,6 +128,17 @@ pub(super) fn render_recent(
         spans.extend(keys.spans);
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
+}
+
+/// The row the line at `line` belongs to, or the nearest one below it — a
+/// block's heading belongs to the first row under it — or above it at the
+/// end of the list.
+fn row_near(owners: &[Option<usize>], line: usize) -> Option<usize> {
+    owners
+        .iter()
+        .skip(line)
+        .find_map(|owner| *owner)
+        .or_else(|| owners.iter().take(line).rev().find_map(|owner| *owner))
 }
 
 /// The question's two answers, the keyboard on one of them: going ahead

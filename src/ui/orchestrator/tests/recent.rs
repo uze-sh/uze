@@ -52,6 +52,7 @@ fn changed(task: PreservedWork, seconds_ago: u64) -> PreservedWork {
         .as_secs();
     PreservedWork {
         created_at_unix: now - seconds_ago,
+        last_active_unix: now - seconds_ago,
         ..task
     }
 }
@@ -163,6 +164,8 @@ fn every_state_lands_in_its_block_with_its_reason_and_its_move() {
         ),
         (WorkStateView::Shelved, Reason::Shelved, Some("resume")),
         (WorkStateView::Running, Reason::NoChanges, Some("resume")),
+        // Ended with nothing to deliver, listed for its conversation.
+        (WorkStateView::Closed, Reason::NoChanges, Some("resume")),
     ];
     for (state, reason, primary) in cases {
         let model = showing(vec![preserved(PROJECT, "t1", "work", state)], Vec::new());
@@ -569,6 +572,87 @@ fn the_index_offers_what_the_selected_row_offers() {
     );
     let joinable = showing(Vec::new(), vec![subagent_checkout(None)]);
     assert!(recent_offered(&joinable).is_empty());
+}
+
+fn many(count: usize) -> WorkspaceModel {
+    showing(
+        (0..count)
+            .map(|at| {
+                changed(
+                    preserved(
+                        PROJECT,
+                        &format!("t{at}"),
+                        &format!("agent {at}"),
+                        WorkStateView::Shelved,
+                    ),
+                    60 * (at as u64 + 1),
+                )
+            })
+            .collect(),
+        Vec::new(),
+    )
+}
+
+fn drawn_with_hits(
+    model: &WorkspaceModel,
+    height: u16,
+) -> (ratatui::buffer::Buffer, Vec<(Rect, WorkspaceHit)>) {
+    let mut terminal = Terminal::new(TestBackend::new(44, height)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| {
+            render_sidebar(
+                frame,
+                frame.area(),
+                model,
+                &[],
+                &mut hits,
+                &mut render::FrameMetrics::default(),
+            )
+        })
+        .unwrap();
+    (terminal.backend().buffer().clone(), hits)
+}
+
+/// A list longer than the column draws the one scrollbar the product has,
+/// and a list that fits draws none.
+#[test]
+fn a_list_longer_than_the_column_draws_a_scrollbar() {
+    let thumb = theme::glyph(Symbol::ScrollThumb);
+    let count = |model: &WorkspaceModel| {
+        let (buffer, _) = drawn_with_hits(model, 16);
+        buffer
+            .content()
+            .iter()
+            .filter(|cell| cell.symbol() == thumb)
+            .count()
+    };
+    assert!(count(&many(30)) > 0, "thirty rows do not fit in sixteen");
+    assert_eq!(count(&many(2)), 0, "two rows do");
+}
+
+/// The track is a picture of the whole list: a click at its foot selects
+/// the last row, and selecting is all it does.
+#[test]
+fn a_click_on_the_track_selects_the_row_at_that_height() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-track"));
+    let model = many(30);
+    let (_, hits) = drawn_with_hits(&model, 16);
+    let foot = hits
+        .iter()
+        .filter_map(|(rect, hit)| match hit {
+            WorkspaceHit::RecentScrollTo(index) => Some((rect.y, *index)),
+            _ => None,
+        })
+        .max()
+        .expect("the track is a target");
+    assert_eq!(foot.1, 29, "the foot of the track is the last row");
+
+    let mut driven = driven(model, &home);
+    driven.attach.select_recent_row(foot.1);
+    assert_eq!(driven.attach.model.recent.selected.as_deref(), Some("t29"));
+    assert!(driven.attach.model.recent.open, "and nothing was resumed");
+    assert!(driven.attach.model.agent_picker.is_none());
 }
 
 #[test]

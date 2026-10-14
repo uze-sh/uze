@@ -40,3 +40,11 @@
 - [x] 7.1 Update `docs/architecture/invariants.md`: the checkouts-view entries become recent's, each tied to its new test
 - [x] 7.2 Update `journeys/suites/06-recovery/07-work-the-closing-did-not-take.yml` to find the work through recent, and the workspace docs page it proves (`web/content/docs/workspace/agents.mdx`)
 - [x] 7.3 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast` and `openspec validate recent-work-sidebar --strict`
+
+## 8. Conversations and names
+
+- [x] 8.1 List an agent that ended with nothing to deliver while its last conversation began within 30 days (`PreservedWork::last_active_unix`, `CONVERSATION_KEPT_SECONDS`), and order recent by last activity
+- [x] 8.2 Resume such an agent on its branch cut again from the target's reach (`checkout::resume`'s `fresh` start)
+- [x] 8.3 Record a name typed over an agent's tab on the agent (`label_agent`, `spawn_agent_label`), and keep it when the first commit names the branch
+- [x] 8.4 Resume with the harness the agent last ran with (`PreservedWork::harness`, `ResumeTarget::harness`), asking only when it is no longer set up
+- [x] 8.5 Draw `widget::Scrollbar` beside recent's rows and select the row a click on its track points at

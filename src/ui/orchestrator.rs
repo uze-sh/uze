@@ -773,6 +773,8 @@ impl WorkspaceShape {
 pub(super) enum WorkspaceHit {
     /// One of recent's rows, by its place in the list.
     RecentRow(usize),
+    /// A point on recent's scroll track, by the row at that height.
+    RecentScrollTo(usize),
     /// One of the answers to the question recent's row is asking: `true`
     /// for going ahead.
     RecentAnswer(bool),
@@ -1332,6 +1334,8 @@ struct Channels {
     checkouts: Answers<CheckoutsResolution>,
     /// Joining a subagent's checkout into its agent.
     joins: Answers<JoinResolution>,
+    /// Recording a name typed over an agent's tab on the agent itself.
+    labels: Answers<LabelResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
     artifacts: Answers<ArtifactsResolution>,

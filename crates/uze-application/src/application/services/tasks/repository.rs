@@ -140,7 +140,16 @@ impl Workspace<'_> {
                     .unwrap_or_default();
                 agents.into_iter().filter_map({
                     let project = project.clone();
-                    move |agent| PreservedWork::from_agent(&project, &agent)
+                    let home = self.0.home.clone();
+                    move |agent| {
+                        // Only an agent that ended with nothing is asked
+                        // about its conversation: every other one is
+                        // listed on its work alone.
+                        let conversed_at = (agent.state == WorkState::Closed)
+                            .then(|| last_conversation(&home, &project, &agent.id))
+                            .flatten();
+                        PreservedWork::from_agent(&project, &agent, conversed_at)
+                    }
                 })
             })
             .collect();
@@ -209,4 +218,14 @@ impl Workspace<'_> {
                 .collect(),
         })
     }
+}
+
+/// When `agent` last launched into a conversation the record still names.
+fn last_conversation(home: &UzeHome, project: &Path, agent: &AgentId) -> Option<u64> {
+    conversation::load(home, project, agent)
+        .harnesses
+        .values()
+        .filter(|harness| harness.conversation.is_some())
+        .map(|harness| harness.launched_at_unix)
+        .max()
 }

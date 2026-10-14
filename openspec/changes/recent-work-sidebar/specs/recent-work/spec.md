@@ -48,9 +48,11 @@ Recent SHALL list in two blocks. The first SHALL hold the work waiting on
 the operator: a paused rebase, failed checks, uncommitted changes, a
 subagent ready to be joined, and work ready to deliver. The second SHALL
 hold the rest: work being delivered, work with the reviewer, shelved
-work, and work with no changes yet. Each block SHALL
+work, work with no changes yet, and agents that ended with only a recent
+conversation. Each block SHALL
 be ordered by how recently its agent last changed, most recent first.
-Integrated and closed work SHALL NOT be listed.
+Integrated work SHALL NOT be listed, nor an agent that ended with nothing
+but an old conversation, or none.
 
 #### Scenario: Ready work waits on the operator
 - **WHEN** one agent's work is ready to deliver and another's is with the reviewer
@@ -134,7 +136,14 @@ row offers SHALL be shown for that row.
 ### Requirement: Resuming leaves the operator on the resumed agent
 Resuming from recent SHALL leave recent and show the tree with the resumed
 agent selected, in a space rooted at its project, opened for it when none
-was open.
+was open. It SHALL launch the harness the agent last ran with, without
+asking, while that harness is set up, and SHALL ask only when it is not.
+The launch SHALL carry the agent's identity, so the agent continues its
+conversation the same way it does when the workspace is reopened.
+
+#### Scenario: The harness it ran with
+- **WHEN** the operator resumes an agent that ran with a harness still set up, among others
+- **THEN** that harness is launched and no harness is asked for
 
 #### Scenario: Resuming into a closed project
 - **WHEN** the operator resumes work whose project has no open space
@@ -197,3 +206,26 @@ SHALL be drawn from their last answer meanwhile.
 #### Scenario: Many projects
 - **WHEN** the operator opens recent on a machine holding many projects
 - **THEN** the list is drawn at once, and the per-row facts fill in as their reads answer
+
+### Requirement: A name typed over an agent's tab is the agent's
+Renaming an agent's tab SHALL record the name as that agent's label, so
+recent lists the agent by it once its tab is gone. Naming the agent's
+branch after its first commit SHALL NOT replace a label the operator
+typed; a name the agent asks for SHALL, being the last name given.
+
+#### Scenario: The tab is renamed and closed
+- **WHEN** the operator renames an agent's tab to "vscode workspace" and closes it
+- **THEN** recent lists the agent as "vscode workspace"
+
+#### Scenario: The first commit names the branch
+- **WHEN** an agent whose tab the operator named makes its first commit
+- **THEN** its branch is named after the commit and its label stays the one the operator typed
+
+### Requirement: The scroll track pictures the whole list
+When recent's rows do not fit the column, it SHALL draw the product's
+scrollbar beside them, and a click on the track SHALL select the row at
+that height without acting on it.
+
+#### Scenario: A long list
+- **WHEN** recent holds more lines than the column shows and the operator clicks the foot of the track
+- **THEN** the last row is selected and nothing is resumed

@@ -27,6 +27,29 @@ impl Workspace<'_> {
     /// Renaming to the name it already carries is not an error — the
     /// record is confirmed and Git is left alone — so an agent may state
     /// its branch's name without first asking what it is.
+    /// Records the name the operator typed over an agent's tab as that
+    /// agent's label, so it is the name the agent goes by once its tab is
+    /// gone. Only the label: a name a person types is no branch name, and
+    /// the branch keeps whatever naming gave it.
+    #[tracing::instrument(name = "workspace.label_agent", skip_all, fields(cwd = %cwd.display(), agent = %agent_id), err)]
+    pub fn label_agent(&self, cwd: &Path, agent_id: &str, label: &str) -> Result<()> {
+        let label = label.trim();
+        if label.is_empty() {
+            return Err(UzeError::TaskNaming(
+                "a name needs at least one word".to_owned(),
+            ));
+        }
+        let (primary, _) = self
+            .repository_context(cwd)?
+            .ok_or_else(|| UzeError::UnknownTask(agent_id.to_owned()))?;
+        task::locked(&self.0.home, &primary, |store| {
+            let agent = task_mut(store, agent_id)
+                .ok_or_else(|| UzeError::UnknownTask(agent_id.to_owned()))?;
+            agent.label = label.to_owned();
+            Ok(())
+        })
+    }
+
     #[tracing::instrument(name = "workspace.name_task", skip_all, fields(agent = %claim.id, cwd = %claim.cwd.display(), proposed = %proposed), err)]
     pub fn name_task(&self, claim: Claim<'_>, proposed: &str) -> Result<NamedTask> {
         let not_an_agent =

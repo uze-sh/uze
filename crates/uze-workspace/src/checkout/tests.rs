@@ -900,6 +900,7 @@ fn a_task_whose_checkout_was_removed_resumes_on_its_own_branch() {
         task.isolation().unwrap(),
         None,
         &nobody(),
+        None,
     )
     .unwrap();
     assert_eq!(resumed.branch, task.isolation().unwrap().branch);

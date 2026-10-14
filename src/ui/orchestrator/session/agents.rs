@@ -18,9 +18,23 @@ impl Attach<'_> {
     /// up, where the picker would be a single row to confirm, and the agent
     /// starts at once. None set up still opens it: its one row is the way
     /// to setting one up.
+    ///
+    /// A resumed agent that names the harness it ran with is launched with
+    /// it at once while that harness is still set up: its conversation is
+    /// that harness's, and asking would only offer the chance to lose it.
     pub(super) fn offer_agents(&mut self, anchor: Rect, resume: Option<ResumeTarget>) {
         let mut options = agent_options(self.home);
-        if options.len() == 1 {
+        let previous = resume
+            .as_ref()
+            .and_then(|resume| resume.harness.as_deref())
+            .and_then(|harness| {
+                options
+                    .iter()
+                    .position(|option| option.integration == harness)
+            });
+        if let Some(previous) = previous {
+            self.start_agent(options.remove(previous), resume);
+        } else if options.len() == 1 {
             self.start_agent(options.remove(0), resume);
         } else {
             self.model.agent_picker = Some(AgentPicker {

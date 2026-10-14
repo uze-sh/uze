@@ -105,12 +105,37 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
+    /// Records a name typed over an agent's tab as that agent's own, off
+    /// this thread: the tab's label goes with the tab, and the agent is
+    /// found again by the name it was given.
+    fn label_agent_of(&mut self, tab: TabId, label: &str) {
+        let Some((agent, cwd)) = self
+            .model
+            .tab(tab)
+            .and_then(|tab| Some((launched_agent_id(tab)?.to_owned(), tab.pane.cwd.clone())))
+        else {
+            return;
+        };
+        spawn_agent_label(
+            self.home,
+            cwd,
+            agent,
+            label.to_owned(),
+            self.channels.labels.sender.clone(),
+        );
+    }
+
     /// The inline rename buffer over a tab or a space label.
     pub(super) fn rename_action(&mut self, action: Action) {
         match action {
             Action::Activate => {
                 if let Some((target, buffer)) = self.model.renaming.take() {
                     let trimmed = buffer.text().trim().to_owned();
+                    if let RenameTarget::Tab(tab) = target
+                        && !trimmed.is_empty()
+                    {
+                        self.label_agent_of(tab, &trimmed);
+                    }
                     if !trimmed.is_empty() {
                         let _ = send_request(
                             &mut self.stream,

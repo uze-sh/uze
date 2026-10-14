@@ -603,6 +603,38 @@ pub(super) fn spawn_checkouts(
     });
 }
 
+/// What recording an operator's name for an agent answered.
+pub(super) struct LabelResolution {
+    pub(super) label: String,
+    pub(super) outcome: std::result::Result<(), String>,
+}
+
+/// Records the name the operator typed over an agent's tab on the agent's
+/// record, off the UI thread: it is a write of the project's task store
+/// under its lock.
+pub(super) fn spawn_agent_label(
+    home: &UzeHome,
+    cwd: PathBuf,
+    agent: String,
+    label: String,
+    sender: mpsc::Sender<LabelResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.label_agent").entered();
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.workspace().label_agent(&cwd, &agent, &label))
+                    .map_err(|error| error.to_string())
+            },
+            Err("naming the agent failed".to_owned()),
+        );
+        let _ = sender.send(LabelResolution { label, outcome });
+    });
+}
+
 /// Joins a subagent's checkout into its agent, off the UI thread: the
 /// join replays commits onto the agent's branch and removes a directory
 /// that may hold a build's worth of files.

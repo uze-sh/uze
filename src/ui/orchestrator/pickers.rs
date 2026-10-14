@@ -43,6 +43,10 @@ pub(super) struct ResumeTarget {
     /// resume was asked for from that row rather than from the preserved
     /// list — the one the revived agent replaces.
     pub(super) replacing: Option<TabId>,
+    /// The integration the agent last ran with, when it is known: resuming
+    /// launches it again rather than asking, since its conversation is
+    /// that harness's.
+    pub(super) harness: Option<String>,
 }
 
 /// Open state for the agent drawer: what the agent in front runs on, and

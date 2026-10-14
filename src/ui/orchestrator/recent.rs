@@ -170,7 +170,7 @@ impl RecentRow {
         } else {
             Reason::of(&task.state, checkout.is_some_and(|checkout| checkout.dirty))
         };
-        let created = SystemTime::UNIX_EPOCH + Duration::from_secs(task.created_at_unix);
+        let active = SystemTime::UNIX_EPOCH + Duration::from_secs(task.last_active_unix);
         Self {
             key: task.id.clone(),
             name: if task.label.is_empty() {
@@ -185,7 +185,7 @@ impl RecentRow {
             bytes: checkout.map(|checkout| checkout.bytes),
             changed: checkout
                 .and_then(|checkout| checkout.last_changed)
-                .or(Some(created)),
+                .or(Some(active)),
             task: Some(task),
             join,
         }

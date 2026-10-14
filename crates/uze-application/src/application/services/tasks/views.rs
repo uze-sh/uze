@@ -51,6 +51,11 @@ pub struct UpstreamSync {
     pub push: usize,
 }
 
+/// How long the conversation of an agent that ended with nothing to deliver
+/// keeps it listed: long enough to come back to an idea days later, short
+/// enough that every quick question asked of an agent does not pile up.
+pub const CONVERSATION_KEPT_SECONDS: u64 = 30 * 24 * 60 * 60;
+
 /// One piece of preserved work, as the list that crosses projects sees it.
 ///
 /// Deliberately thinner than a [`AgentView`]. Readiness, publication and how
@@ -68,10 +73,15 @@ pub struct PreservedWork {
     pub label: String,
     pub branch: String,
     pub checkout: Option<PathBuf>,
-    /// The state the record itself carries — never `Integrated` or
-    /// `Closed`, which is what "preserved" means.
+    /// The state the record itself carries — never `Integrated`, and
+    /// `Closed` only while the conversation it left is recent.
     pub state: WorkStateView,
     pub created_at_unix: u64,
+    /// When the agent was last launched, as far as its record says.
+    pub last_active_unix: u64,
+    /// The integration the agent was launched with: resuming it launches
+    /// that harness again, in the conversation it left there.
+    pub harness: String,
     /// Whether the project's directory is still on disk. Work whose
     /// project was deleted can only be forgotten.
     pub project_present: bool,
@@ -139,10 +149,23 @@ impl PreservedWork {
     /// carries, not the one a Git read would draw — because this is what
     /// lets the list answer for a machine without asking a repository
     /// anything.
-    pub(super) fn from_agent(project: &Path, agent: &Agent) -> Option<Self> {
+    ///
+    /// An agent that ended with nothing to deliver is still preserved while
+    /// the conversation it left is recent: `conversed_at` is when the last
+    /// one was launched. What was discussed is worth coming back to even
+    /// when no line was written.
+    pub(super) fn from_agent(
+        project: &Path,
+        agent: &Agent,
+        conversed_at: Option<u64>,
+    ) -> Option<Self> {
         let isolation = agent.isolation()?;
-        if matches!(agent.state, WorkState::Integrated | WorkState::Closed) {
-            return None;
+        let recent_conversation =
+            conversed_at.is_some_and(|at| at + CONVERSATION_KEPT_SECONDS >= task::now_unix());
+        match agent.state {
+            WorkState::Integrated => return None,
+            WorkState::Closed if !recent_conversation => return None,
+            _ => {}
         }
         Some(Self {
             project: project.to_path_buf(),
@@ -152,6 +175,8 @@ impl PreservedWork {
             checkout: landing::slot_path(project, isolation),
             state: WorkStateView::from(&agent.state),
             created_at_unix: agent.created_at_unix,
+            last_active_unix: agent.created_at_unix.max(conversed_at.unwrap_or_default()),
+            harness: agent.harness.clone(),
             project_present: project.is_dir(),
         })
     }

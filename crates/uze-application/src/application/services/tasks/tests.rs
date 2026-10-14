@@ -1179,6 +1179,43 @@ mod task_service_tests {
         assert!(app.workspace().preserved_work().is_empty());
     }
 
+    /// Records that `agent` launched into a conversation `seconds_ago`.
+    fn conversed(app: &UzeApplication, project: &Path, agent: &str, seconds_ago: u64) {
+        let mut record = conversation::ConversationRecord::new(AgentId::adopted(agent));
+        record.launched(
+            "claude-code",
+            conversation::ConversationOrigin::Assigned,
+            Some(conversation::SessionId::new("6a1f")),
+            None,
+        );
+        if let Some(entry) = record.harnesses.get_mut("claude-code") {
+            entry.launched_at_unix = task::now_unix() - seconds_ago;
+        }
+        conversation::save(&app.home, project, &record).unwrap();
+    }
+
+    /// An agent can be opened only to talk an idea through: it ends with
+    /// nothing to deliver, and what was said is still worth coming back
+    /// to. Listed while that conversation is recent, and not before it
+    /// had one or once it is old.
+    #[test]
+    fn an_agent_that_ended_with_only_a_conversation_is_listed_while_it_is_recent() {
+        let app = application("preserved-conversation-home");
+        let project = uze_testkit::temp::scratch("preserved-conversation");
+        std::fs::create_dir_all(&project).unwrap();
+        let talked = record_an_agent(&app, &project, WorkState::Closed, None);
+        conversed(&app, &project, &talked, 3600);
+        let silent = record_an_agent(&app, &project, WorkState::Closed, None);
+        let forgotten = record_an_agent(&app, &project, WorkState::Closed, None);
+        conversed(&app, &project, &forgotten, CONVERSATION_KEPT_SECONDS + 3600);
+
+        let preserved = app.workspace().preserved_work();
+        let listed: Vec<&str> = preserved.iter().map(|work| work.id.as_str()).collect();
+        assert_eq!(listed, [talked.as_str()], "not {silent} nor {forgotten}");
+        assert!(preserved[0].last_active_unix > preserved[0].created_at_unix.saturating_sub(1));
+        let _ = std::fs::remove_dir_all(project);
+    }
+
     /// While the repository is there, a record dropped on its own would
     /// leave its branch and checkout owned by nobody: discarding is the
     /// path, and forgetting refuses.
@@ -2973,6 +3010,73 @@ mod derived_naming_tests {
             task.state,
             WorkStateView::Ready,
             "and it is still deliverable"
+        );
+    }
+
+    /// A name the operator typed over the agent's tab is the agent's
+    /// label from then on, and naming the branch after the first commit
+    /// does not take it away.
+    #[test]
+    fn a_name_the_operator_typed_outlives_the_derivation() {
+        let (app, repository) = project("derive-vs-typed", "  branch: conventional\n");
+        let root = repository.root().to_path_buf();
+        let placed = placed(&app, &root);
+        app.workspace()
+            .label_agent(&placed.checkout, &placed.id, "  vscode workspace ")
+            .unwrap();
+        let checkout = placed.checkout.clone();
+        commits(&repository, &checkout, "feat(api): answer ping now");
+
+        let evaluation = app
+            .workspace()
+            .evaluate_tasks(&root, std::slice::from_ref(&checkout));
+
+        let task = evaluation.tasks.last().unwrap();
+        assert_eq!(task.branch, "feat/answer-ping-now", "the branch is named");
+        assert_eq!(
+            task.label, "vscode workspace",
+            "and the label is the operator's"
+        );
+    }
+
+    /// An agent that ended with nothing to deliver lost its empty branch
+    /// and its slot, and keeps its conversation: resuming it cuts the
+    /// branch again on the target and places it, rather than refusing a
+    /// branch that is gone.
+    #[test]
+    fn an_agent_that_ended_with_nothing_is_resumed_on_its_branch_cut_again() {
+        let (app, repository) = project("resume-closed", "  branch: conventional\n");
+        let root = repository.root().to_path_buf();
+        let placed = placed(&app, &root);
+        let primary = root.canonical().unwrap();
+        let branch = format!("agent/{}", placed.id);
+        repository.git(&[
+            "worktree",
+            "remove",
+            "--force",
+            &placed.checkout.to_string_lossy(),
+        ]);
+        repository.git(&["branch", "-D", &branch]);
+        task::locked(&app.home, &primary, |store| {
+            let agent = store.get_mut(&AgentId::adopted(&placed.id)).unwrap();
+            agent.state = WorkState::Closed;
+            agent.isolation_mut().unwrap().checkout = None;
+            Ok(())
+        })
+        .unwrap();
+
+        let resumed = app.workspace().resume_task(&root, &placed.id, &[]).unwrap();
+
+        assert!(resumed.cwd.is_dir(), "it has a checkout again");
+        assert_eq!(
+            checkout::current_branch(&resumed.cwd).as_deref(),
+            Some(branch.as_str()),
+            "on its own branch, cut again"
+        );
+        assert_eq!(
+            repository.git(&["rev-parse", &branch]),
+            repository.git(&["rev-parse", "main"]),
+            "from the target, since it held nothing"
         );
     }
 
