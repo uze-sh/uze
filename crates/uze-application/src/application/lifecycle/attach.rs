@@ -145,7 +145,9 @@ impl UzeApplication {
         integration: &dyn IntegrationPort,
         native_delivery: NativeDelivery,
     ) -> Result<PackageDelivery> {
-        self.deliver_package_at_any_version(package, resources, integration, native_delivery)
+        // A delivery that failed on a harness older than its integration
+        // needs says so: the version is the likelier cause than the error.
+        self.attempt_package_delivery(package, resources, integration, native_delivery)
             .map_err(|error| {
                 match crate::application::harness_floor::sentence(
                     integration,
@@ -157,7 +159,7 @@ impl UzeApplication {
             })
     }
 
-    fn deliver_package_at_any_version(
+    fn attempt_package_delivery(
         &self,
         package: &StoredPackage,
         resources: &[&Resource],
