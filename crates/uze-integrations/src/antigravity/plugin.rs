@@ -179,9 +179,26 @@ pub(super) fn holders_of(
         .count())
 }
 
+/// Why `agy plugin uninstall <name>` must not run, from how many plugins
+/// the CLI says hold the name; `None` when exactly one does, UZE's. With
+/// none, the import manifest that called UZE's plugin present and the CLI
+/// disagree, and removing by name is a guess.
+pub(super) fn uninstall_refused(
+    holders: std::result::Result<usize, String>,
+) -> Option<AttachmentInspection> {
+    match holders {
+        Ok(1) => None,
+        Ok(0) => Some(crate::shared::plan::blocked(
+            "Antigravity's import manifest lists this plugin and `agy plugin list` does not",
+        )),
+        Ok(_) => Some(name_held_twice()),
+        Err(unreadable) => Some(crate::shared::plan::blocked(unreadable)),
+    }
+}
+
 /// Two plugins answer to one name: `uninstall` takes a name, so neither is
 /// touched.
-pub(super) fn name_held_twice() -> AttachmentInspection {
+fn name_held_twice() -> AttachmentInspection {
     AttachmentInspection {
         state: AttachmentState::Conflict,
         reason: "more than one Antigravity plugin answers to this name".to_owned(),
@@ -608,6 +625,22 @@ mod plugin_tests {
         assert_eq!(installed_plugins(&agy, &home).unwrap().len(), 1);
         assert_eq!(holders_of(&agy, &home, "flow"), Ok(2));
         let _ = fs::remove_dir_all(home);
+    }
+
+    /// Uninstalling by name runs only when the CLI names exactly one holder.
+    #[test]
+    fn uninstall_runs_only_for_a_name_one_plugin_holds() {
+        assert_eq!(uninstall_refused(Ok(1)), None);
+        for (holders, state) in [
+            (Ok(0), AttachmentState::Blocked),
+            (Ok(2), AttachmentState::Conflict),
+            (Err("unreadable".to_owned()), AttachmentState::Blocked),
+        ] {
+            assert_eq!(
+                uninstall_refused(holders).map(|refused| refused.state),
+                Some(state)
+            );
+        }
     }
 
     /// A name a marketplace plugin already holds is refused aloud: nothing

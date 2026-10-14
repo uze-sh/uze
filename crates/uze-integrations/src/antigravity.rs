@@ -106,7 +106,7 @@ use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
     GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, holders_of,
-    inspect_installed_plugin, installed_plugins, name_held_twice, plugin_manifest_name, run_agy,
+    inspect_installed_plugin, installed_plugins, plugin_manifest_name, run_agy, uninstall_refused,
 };
 use uze_core::capability::harness::Findings;
 use uze_core::integration::{HarnessFact, ProjectResourceRoute};
@@ -646,14 +646,12 @@ impl IntegrationPort for AntigravityIntegration {
                 // just read cannot see a marketplace plugin of the same
                 // name: the CLI is asked, and a name held twice is left
                 // alone rather than risk removing the other one.
-                match holders_of(
+                if let Some(held) = uninstall_refused(holders_of(
                     &self.provisioning_executable(),
                     &self.command_home,
                     selector,
-                ) {
-                    Ok(1) => {}
-                    Ok(_) => return Ok(name_held_twice()),
-                    Err(unreadable) => return Ok(blocked(unreadable)),
+                )) {
+                    return Ok(held);
                 }
                 // Uninstalling removes only Antigravity's staged copy and
                 // its registration; the stored package UZE owns stays
