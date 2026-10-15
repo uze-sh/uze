@@ -6,19 +6,8 @@ environment variables for the pane's first process, SHALL apply them to
 that process, SHALL persist them with the tab exactly as it persists the
 tab's command, SHALL apply them again when it respawns the tab with that
 command, and SHALL report them back to clients as part of the tab. The
-runtime SHALL NOT interpret any of them. It SHALL accept an environment
-only together with a command, SHALL refuse a request whose environment
-exceeds a documented bound on entries or total size, and SHALL refuse a
-variable whose name is empty or contains `=`. A tab respawned as a plain
-shell SHALL carry and report none of them.
-
-#### Scenario: A shell never carries a launch environment
-- **WHEN** a client creates a tab with an environment and no command
-- **THEN** the request is refused and no tab is created
-
-#### Scenario: An oversized environment is refused
-- **WHEN** a client creates a tab whose environment exceeds the documented bound
-- **THEN** the request is refused and no tab is created
+runtime SHALL NOT interpret any of them. A tab respawned as a plain shell
+SHALL carry and report none of them.
 
 #### Scenario: The environment reaches the first process
 - **WHEN** a client creates a tab with a command and an environment
@@ -36,6 +25,24 @@ shell SHALL carry and report none of them.
 #### Scenario: A shell respawn carries nothing
 - **WHEN** a tab whose agent exited is restored as a plain shell
 - **THEN** the shell starts without the launch's environment and the tab reports none
+
+### Requirement: A launch environment is accepted only within its bounds
+The terminal runtime SHALL accept a launch environment only together with a
+command, SHALL refuse a request whose environment exceeds a documented bound
+on entries or total size, and SHALL refuse a variable whose name is empty or
+contains `=`.
+
+#### Scenario: A shell never carries a launch environment
+- **WHEN** a client creates a tab with an environment and no command
+- **THEN** the request is refused and no tab is created
+
+#### Scenario: An oversized environment is refused
+- **WHEN** a client creates a tab whose environment exceeds the documented bound
+- **THEN** the request is refused and no tab is created
+
+#### Scenario: A malformed variable name is refused
+- **WHEN** a client creates a tab whose environment names a variable that is empty or contains `=`
+- **THEN** the request is refused and no tab is created
 
 ### Requirement: A pane inherits nothing that identifies the server's own launch
 The terminal runtime SHALL strip from every pane it spawns the variables

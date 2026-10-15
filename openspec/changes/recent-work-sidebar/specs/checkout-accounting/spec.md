@@ -2,13 +2,12 @@
 
 ### Requirement: The client shows a checkout only through the agent holding it
 The workspace client SHALL show a subagent's checkout under the agent it
-belongs to, and SHALL show the checkout an agent holds only as an
-attribute of that agent, as `recent-work` describes. The client SHALL NOT
-list checkouts no agent holds, and SHALL NOT offer to open a space in a
-checkout, to adopt one, to remove one, or to clean up the operator's
-checkouts. The only destructive action the client offers on an agent's
-checkout is discarding that agent's work, on the operator's explicit
-confirmation. Reading a checkout's facts SHALL never hold up drawing.
+belongs to, and the checkout an agent holds only as an attribute of that
+agent, as `recent-work` describes. It SHALL NOT list checkouts no agent
+holds, and SHALL NOT offer to open a space in a checkout, to adopt one, to
+remove one, or to clean up the operator's checkouts. The only destructive
+action it offers on an agent's checkout is discarding that agent's work, on
+the operator's explicit confirmation.
 
 #### Scenario: A foreign checkout is left alone
 - **WHEN** a project holds a harness's own worktree and one the operator added by hand
@@ -21,6 +20,14 @@ confirmation. Reading a checkout's facts SHALL never hold up drawing.
 #### Scenario: Discarding is the only removal offered
 - **WHEN** the operator acts on an agent's kept work from the client
 - **THEN** discarding it is the only action that removes its checkout, and it happens only on confirmation
+
+### Requirement: Reading a checkout's facts never holds up drawing
+The workspace client SHALL read a checkout's facts off the drawing path, so
+reading them SHALL never hold up drawing.
+
+#### Scenario: A slow checkout does not stall the client
+- **WHEN** reading the facts of an agent's checkout takes a long time
+- **THEN** the client keeps drawing and shows those facts once they arrive
 
 ## REMOVED Requirements
 

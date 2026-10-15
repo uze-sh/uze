@@ -8,6 +8,15 @@ contain `< > : " / \ | ? *` or a control character, SHALL NOT end in a dot or
 a space, and SHALL NOT be a reserved device name. Writing a label such as
 `plugin:capability` SHALL NEVER create an NTFS alternate data stream.
 
+#### Scenario: A label with a colon is never a stream
+
+- **WHEN** a capability labelled `plugin:capability` is written for a harness
+  on Windows
+- **THEN** every name written is an ordinary name the filesystem accepts
+- **AND THEN** no alternate data stream is created
+
+### Requirement: A loose capability on Windows is named `<plugin>-<capability>`
+
 On Windows, a loose skill or agent SHALL be written under
 `<plugin>-<capability>`. Two packages that map to the same on-disk name SHALL
 fail the install, naming both, before anything is written. The label each

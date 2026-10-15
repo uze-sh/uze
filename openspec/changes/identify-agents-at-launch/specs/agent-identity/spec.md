@@ -33,10 +33,12 @@ The identifier SHALL be persisted with the tab it was launched into, SHALL
 be applied again when the terminal runtime respawns that tab after a
 restart, and SHALL be reported back to clients as part of the tab, so a
 client learns which agent a pane belongs to from the session it is handed
-and never by inspecting the process. The reported identity says what the
-tab was launched for; whether that process still runs is reported
-separately, as it is today. A tab respawned as a plain shell SHALL report
-no identity.
+and never by inspecting the process. A tab respawned as a plain shell SHALL
+report no identity.
+
+#### Scenario: The identity says what the tab was launched for
+- **WHEN** a client reads a tab whose agent's process is no longer running
+- **THEN** the tab reports the identity it was launched with, and whether that process still runs is reported separately, as it is today
 
 #### Scenario: A restart keeps the identity
 - **WHEN** the terminal runtime restores an agent's tab after its server was restarted
@@ -56,16 +58,7 @@ project's records name an agent with that identifier, and the directory
 the process stands in is inside the directory that agent's record names
 as its own. An identifier failing either check SHALL be treated as
 absent, so a process that alters its own environment cannot reach an
-agent whose directory it does not stand in. Where two records name the
-same directory, the identifier alone tells them apart, and a process
-there that alters its identifier is trusted as the agent it names; the
-system SHALL therefore never grant, by identity alone, an action that
-reaches beyond the agent's own directory — a branch is named only for an
-agent whose record gives it a directory of its own.
-
-#### Scenario: Two records over one directory are told apart by the identifier alone
-- **WHEN** two agents are recorded over the same directory and a process there alters its identifier to the other's
-- **THEN** it is treated as the other agent, and nothing it can do by that identity reaches outside the shared directory
+agent whose directory it does not stand in.
 
 #### Scenario: An identifier no record names is ignored
 - **WHEN** a process carries an identifier the project's records do not contain
@@ -78,6 +71,21 @@ agent whose record gives it a directory of its own.
 #### Scenario: Two agents in one directory are told apart
 - **WHEN** two agents are running in the same directory, each launched with its own identifier
 - **THEN** each reader resolves each process to its own agent
+
+### Requirement: Identity alone never reaches beyond the agent's own directory
+The system SHALL never grant, by identity alone, an action that reaches
+beyond the agent's own directory: a branch SHALL be named only for an agent
+whose record gives it a directory of its own. Where two records name the
+same directory, the identifier alone tells them apart, so a process there
+that alters its identifier is trusted as the agent it names.
+
+#### Scenario: Two records over one directory are told apart by the identifier alone
+- **WHEN** two agents are recorded over the same directory and a process there alters its identifier to the other's
+- **THEN** it is treated as the other agent, and nothing it can do by that identity reaches outside the shared directory
+
+#### Scenario: An agent sharing a directory names no branch
+- **WHEN** an agent whose record gives it no directory of its own asks to name its work
+- **THEN** no branch is named for it
 
 ### Requirement: A launch made by an agent is not an agent
 The system SHALL treat a harness process started from inside an agent's

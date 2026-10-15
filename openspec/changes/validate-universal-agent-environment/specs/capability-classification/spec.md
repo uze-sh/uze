@@ -35,16 +35,6 @@ provenance separately from its compatibility route and exposure state.
 they SHALL NOT by themselves claim that a harness has discovered or exposed a
 capability.
 
-For every relevant (capability, integration-supplied harness capabilities)
-pair, the system SHALL emit exactly one compatibility route of `NATIVE`,
-`ADAPTABLE`, `DEGRADED`, or `UNSUPPORTED` with a non-empty rationale. It SHALL
-also report an exposure or verification state when one is known. `ADAPTABLE`
-requires a safe explicit adapter; `DEGRADED` names preserved and missing
-semantics; `UNSUPPORTED` includes absent semantic equivalence. Lack of a real
-conformance run SHALL be `UNVERIFIED`, and an authentication, quota,
-executable, service, or timeout block SHALL be `BLOCKED_BY_ENVIRONMENT`;
-neither SHALL be promoted to `UNSUPPORTED`.
-
 #### Scenario: Standard skill has not yet been exposed
 - **WHEN** a `SKILL.md` Agent Skill is discovered and the selected harness
   documents direct Agent Skills consumption
@@ -52,10 +42,13 @@ neither SHALL be promoted to `UNSUPPORTED`.
 - **AND THEN** its route and exposure state are reported independently rather
   than inferred from the representation
 
-#### Scenario: Real harness is blocked by quota
-- **WHEN** a conformance probe receives a quota or session-limit response
-- **THEN** the capability route remains unchanged
-- **AND THEN** verification is `BLOCKED_BY_ENVIRONMENT`
+### Requirement: Emit exactly one compatibility route per capability and harness
+For every relevant (capability, integration-supplied harness capabilities)
+pair, the system SHALL emit exactly one compatibility route of `NATIVE`,
+`ADAPTABLE`, `DEGRADED`, or `UNSUPPORTED` with a non-empty rationale. It SHALL
+also report an exposure or verification state when one is known. `ADAPTABLE`
+requires a safe explicit adapter; `DEGRADED` names preserved and missing
+semantics; `UNSUPPORTED` includes absent semantic equivalence.
 
 #### Scenario: Blocking hook lacks an equivalent
 - **WHEN** a project enhancement requires a hook that can veto execution and
@@ -63,6 +56,22 @@ neither SHALL be promoted to `UNSUPPORTED`.
 - **THEN** the result is `UNSUPPORTED`
 - **AND THEN** the rationale names the missing blocking behavior rather than
   claiming a post-execution hook is equivalent
+
+### Requirement: Do not promote an unverified or blocked result to unsupported
+Lack of a real conformance run SHALL be `UNVERIFIED`, and an authentication,
+quota, executable, service, or timeout block SHALL be
+`BLOCKED_BY_ENVIRONMENT`; neither SHALL be promoted to `UNSUPPORTED`.
+
+#### Scenario: Real harness is blocked by quota
+- **WHEN** a conformance probe receives a quota or session-limit response
+- **THEN** the capability route remains unchanged
+- **AND THEN** verification is `BLOCKED_BY_ENVIRONMENT`
+
+#### Scenario: No real conformance run exists
+- **WHEN** a capability's route has never been exercised by a real
+  conformance run
+- **THEN** verification is `UNVERIFIED`
+- **AND THEN** the route is not reported as `UNSUPPORTED` for that reason
 
 ### Requirement: Do not classify feature parity by translation alone
 The system SHALL NOT classify a capability as `ADAPTABLE` merely because a

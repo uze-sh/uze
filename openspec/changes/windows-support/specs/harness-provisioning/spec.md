@@ -5,14 +5,9 @@
 On Windows, `uze setup <harness>` SHALL take the harness vendor's documented
 Windows installation or update route, without a POSIX shell. It SHALL verify
 the executable under the name Windows resolves: `.exe`, or a `PATHEXT`
-launcher such as `.cmd`.
-
-A harness that is already installed by any route SHALL be updated through the
-harness's own update command. A harness whose vendor documents no automatic
+launcher such as `.cmd`. A harness whose vendor documents no automatic
 Windows route SHALL be reported Blocked, naming the documented manual routes,
 as on any other platform.
-
-Setup SHALL NOT update a harness executable that a running process holds.
 
 #### Scenario: Claude Code on a clean Windows machine
 
@@ -36,6 +31,27 @@ Setup SHALL NOT update a harness executable that a running process holds.
   (`codex.cmd`)
 - **THEN** UZE detects it, verifies it and launches it through that launcher
 
+### Requirement: An installed harness is updated through its own update command
+
+A harness that is already installed by any route SHALL be updated through the
+harness's own update command.
+
+#### Scenario: A harness already installed on Windows
+
+- **WHEN** `uze setup <harness>` runs on Windows and the harness is already
+  installed, by whatever route
+- **THEN** UZE updates it through the harness's own update command
+
+### Requirement: Setup never updates an executable a running process holds
+
+Setup SHALL NOT update a harness executable that a running process holds.
+
+#### Scenario: A harness running while setup runs
+
+- **WHEN** `uze setup <harness>` runs on Windows while a process runs that
+  harness's executable
+- **THEN** the executable is not updated
+
 ### Requirement: A runtime shim on Windows is a copy of the binary that setup keeps current
 
 On Windows, a runtime shim SHALL be a copy of the installed `uze.exe` named
@@ -45,6 +61,16 @@ replace a shim whose content differs from the installed `uze.exe`. A shim
 that is running SHALL be set aside, never overwritten, and the image set
 aside SHALL be removed once nothing runs it.
 
+#### Scenario: A shim after an upgrade while a harness runs
+
+- **WHEN** `uze upgrade` installs a new release on Windows while an agent
+  runs through the `claude.exe` shim
+- **THEN** the running session is untouched
+- **AND THEN** the next launch of `claude` in a pane runs a copy of the new
+  `uze.exe`
+
+### Requirement: A shim on Windows stands in for the harness it launches
+
 A shim SHALL:
 
 - launch the real harness and forward its exit code;
@@ -53,14 +79,6 @@ A shim SHALL:
 
 The workspace SHALL see the harness, not the shim, as the pane's foreground
 program. On Windows, shims SHALL take effect inside the workspace's panes.
-
-#### Scenario: A shim after an upgrade while a harness runs
-
-- **WHEN** `uze upgrade` installs a new release on Windows while an agent
-  runs through the `claude.exe` shim
-- **THEN** the running session is untouched
-- **AND THEN** the next launch of `claude` in a pane runs a copy of the new
-  `uze.exe`
 
 #### Scenario: A pane launched through a shim
 

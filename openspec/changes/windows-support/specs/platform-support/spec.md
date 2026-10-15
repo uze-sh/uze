@@ -6,10 +6,7 @@ UZE SHALL support Windows 10 22H2 (build 19045) and Windows 11, on x86_64
 and aarch64, under the same proof every supported platform carries: its
 automated checks SHALL build, run, lint, test and perform the product journeys
 on Windows hardware of each architecture shipped. Every CLI command and the
-terminal workspace SHALL be available there. UZE SHALL require only `git.exe`,
-from any distribution, and a terminal that understands VT sequences. No POSIX
-shell, POSIX tool, WSL or compatibility layer SHALL be on any path UZE itself
-runs.
+terminal workspace SHALL be available there.
 
 #### Scenario: The same journeys run on Windows
 
@@ -24,6 +21,12 @@ runs.
 - **WHEN** `uze` runs for a user whose environment has no `HOME` variable
 - **THEN** the user's home is resolved from the platform, and `$UZE_HOME`
   defaults to `.uze` under it
+
+### Requirement: Windows needs only Git and a VT terminal
+
+On Windows, UZE SHALL require only `git.exe`, from any distribution, and a
+terminal that understands VT sequences. No POSIX shell, POSIX tool, WSL or
+compatibility layer SHALL be on any path UZE itself runs.
 
 #### Scenario: No POSIX tool is reachable
 
@@ -92,18 +95,6 @@ SHALL meet the POSIX installer's requirements:
   before placing anything.
 - **Refusal before download:** refuse, before downloading, an unsupported
   architecture, a Windows build below 19045, or a host without `git.exe`.
-- **Configuration:** honour `UZE_VERSION`, `UZE_BASE_URL` and `UZE_BIN_DIR`.
-- **Receipt:** write the same `state/install.json` receipt that
-  `uze upgrade` reads.
-
-The installer SHALL use only what Windows PowerShell 5.1 and PowerShell 7
-carry. A truncated download SHALL run nothing. A failure SHALL be raised as a
-terminating error that places nothing, and SHALL NOT close the user's
-session. The installer SHALL add its install directory to the user's `Path`
-without rewriting other entries' expansion, and the current session SHALL see
-it. It SHALL warn when the host's reputation policy may block an unsigned
-binary. It SHALL offer an uninstall that removes the binary, its `Path`
-entry and the shims, and stops the workspace server.
 
 #### Scenario: A checksum that does not match
 
@@ -123,8 +114,55 @@ entry and the shims, and stops the workspace server.
 - **THEN** it raises an error naming the build and the minimum, and
   downloads nothing
 
+### Requirement: The PowerShell installer is configured and leaves a receipt as the POSIX one does
+
+Like the POSIX installer, `install.ps1` SHALL honour `UZE_VERSION`,
+`UZE_BASE_URL` and `UZE_BIN_DIR`, and SHALL write the same
+`state/install.json` receipt that `uze upgrade` reads.
+
+#### Scenario: A pinned version
+
+- **WHEN** the installer runs with `UZE_VERSION` set
+- **THEN** it installs that release rather than the latest
+
 #### Scenario: The receipt names what was placed
 
 - **WHEN** the installer completes
 - **THEN** `state/install.json` names the placed `uze.exe` and the version it
   reported, so that `uze upgrade` recognises it as the installer's binary
+
+### Requirement: The PowerShell installer runs on stock PowerShell and fails without side effects
+
+The installer SHALL use only what Windows PowerShell 5.1 and PowerShell 7
+carry. A truncated download SHALL run nothing. A failure SHALL be raised as a
+terminating error that places nothing, and SHALL NOT close the user's
+session.
+
+#### Scenario: A download cut short
+
+- **WHEN** the connection drops while `irm https://uze.sh/i | iex` is
+  downloading the installer or the archive
+- **THEN** nothing runs that was not fully received, nothing is placed, and
+  the user's PowerShell session stays open
+
+### Requirement: The PowerShell installer puts uze on the user's Path and can take it off
+
+The installer SHALL add its install directory to the user's `Path` without
+rewriting other entries' expansion, and the current session SHALL see it. It
+SHALL warn when the host's reputation policy may block an unsigned binary. It
+SHALL offer an uninstall that removes the binary, its `Path` entry and the
+shims, and stops the workspace server.
+
+#### Scenario: The install directory reaches Path
+
+- **WHEN** the installer completes for a user whose `Path` holds an entry
+  spelled with `%USERPROFILE%`
+- **THEN** the install directory is on the user's `Path`, that entry is
+  still spelled with `%USERPROFILE%`, and `uze` resolves in the current
+  session
+
+#### Scenario: Uninstall
+
+- **WHEN** the user runs the installer's uninstall
+- **THEN** the binary, its `Path` entry and the shims are removed, and the
+  workspace server is stopped

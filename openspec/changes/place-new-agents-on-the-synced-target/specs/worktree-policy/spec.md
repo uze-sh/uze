@@ -46,15 +46,16 @@ delivery SHALL fetch the target for itself.
 ## ADDED Requirements
 
 ### Requirement: An agent's work is judged against the target it was cut from
-Every judgement the system makes about an isolated agent's work — whether
-its branch is in the target, whether its checkout, branch or shelf still
-holds work the target lacks, how many commits are its own, and what a
-refresh rebases it onto — SHALL be asked against the most advanced of the
-local target and the remote's tracking ref for it that this machine already
-has; when the two have diverged, against the one the agent's branch
-descends from, and the local target when it descends from neither. The same
-rule SHALL hold for every agent, however it was placed, and asking it SHALL
-NOT contact the remote.
+Every judgement the system makes about an isolated agent's work SHALL be
+asked against the most advanced of the local target and the remote's
+tracking ref for it that this machine already has; when the two have
+diverged, against the one the agent's branch descends from, and the local
+target when it descends from neither. The same rule SHALL hold for every
+agent, however it was placed, and asking it SHALL NOT contact the remote.
+
+#### Scenario: Every judgement asks the same target
+- **WHEN** the system asks whether an agent's branch is in the target, whether its checkout, branch or shelf still holds work the target lacks, how many commits are its own, or what a refresh rebases it onto
+- **THEN** each question is asked against the same target ref, chosen by this rule
 
 #### Scenario: The remote's commits are not counted as the agent's
 - **WHEN** an agent was cut from the remote's tip, which is ahead of the local target, and has committed nothing

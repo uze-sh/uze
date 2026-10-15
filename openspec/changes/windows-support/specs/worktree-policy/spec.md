@@ -10,6 +10,21 @@ Windows PowerShell 5.1 on Windows. A command's exit status SHALL be the
 status of its last command, and a failing command within it SHALL fail the
 command.
 
+#### Scenario: A failing first command fails the step
+
+- **WHEN** a Windows setup step `pnpm install; Copy-Item .env.example .env`
+  runs and `pnpm install` fails
+- **THEN** the step is reported failed
+
+#### Scenario: A step spelled for both platforms
+
+- **WHEN** `setup` declares `posix: pnpm install && cp .env.example .env` and
+  `windows: pnpm install; Copy-Item .env.example .env`
+- **THEN** each platform runs its own spelling, and the placed checkouts are
+  equivalent
+
+### Requirement: A command with no spelling for the platform is never run in another shell
+
 A command with no spelling for the platform SHALL NOT be run in another
 shell:
 
@@ -36,15 +51,8 @@ spelling for the current platform.
 - **AND THEN** delivery of that agent's work stops before the target moves,
   naming the gate
 
-#### Scenario: A failing first command fails the step
+#### Scenario: Status names a command missing a spelling
 
-- **WHEN** a Windows setup step `pnpm install; Copy-Item .env.example .env`
-  runs and `pnpm install` fails
-- **THEN** the step is reported failed
-
-#### Scenario: A step spelled for both platforms
-
-- **WHEN** `setup` declares `posix: pnpm install && cp .env.example .env` and
-  `windows: pnpm install; Copy-Item .env.example .env`
-- **THEN** each platform runs its own spelling, and the placed checkouts are
-  equivalent
+- **WHEN** `uze status` runs on Windows in a project whose gate has only a
+  `posix` spelling
+- **THEN** it names that gate as having no spelling for Windows

@@ -112,9 +112,7 @@ placed or released — three days when the project
 declares none — and SHALL then remove the directory on the next
 collection, keeping its branch. The rule SHALL apply to free checkouts
 only, and SHALL be decided from the checkouts' present state alone, with
-no record of past use. A project MAY declare the age as `idle_days` under
-its worktree policy; it SHALL NOT be able to declare a number of checkouts
-to keep.
+no record of past use.
 
 #### Scenario: Four agents, four checkouts
 - **WHEN** four agents end with nothing left in their checkouts and four new agents are created the same day
@@ -139,6 +137,14 @@ to keep.
 #### Scenario: A task that left work is never forgotten
 - **WHEN** a task ended more than the idle age ago and its branch or its shelf still holds work
 - **THEN** its record is kept
+
+### Requirement: The idle age is the only thing a project declares about the pool
+A project MAY declare the age as `idle_days` under its worktree policy; it
+SHALL NOT be able to declare a number of checkouts to keep.
+
+#### Scenario: A declared age replaces the default
+- **WHEN** a project declares `idle_days: 7` and a free checkout has gone unused for five days
+- **THEN** its directory is kept
 
 #### Scenario: A manifest still declaring a spare count
 - **WHEN** a project's `agents.yaml` declares `spare` under `workspace:`

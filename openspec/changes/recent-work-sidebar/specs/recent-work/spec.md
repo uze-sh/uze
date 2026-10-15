@@ -47,16 +47,17 @@ be listed, since the tree shows it.
 Recent SHALL list in two blocks. The first SHALL hold the work waiting on
 the operator: a paused rebase, failed checks, uncommitted changes, a
 subagent ready to be joined, and work ready to deliver. The second SHALL
-hold the rest: work being delivered, work with the reviewer, shelved
-work, work with no changes yet, and agents that ended with only a recent
-conversation. Each block SHALL
-be ordered by how recently its agent last changed, most recent first.
-Integrated work SHALL NOT be listed, nor an agent that ended with nothing
-but an old conversation, or none.
+hold the rest. Each block SHALL be ordered by how recently its agent last
+changed, most recent first. Integrated work SHALL NOT be listed, nor an
+agent that ended with nothing but an old conversation, or none.
 
 #### Scenario: Ready work waits on the operator
 - **WHEN** one agent's work is ready to deliver and another's is with the reviewer
 - **THEN** the ready one is in the first block and the other in the second
+
+#### Scenario: The rest is listed second
+- **WHEN** listed agents hold work being delivered, work with the reviewer, shelved work, work with no changes yet, or ended with only a recent conversation
+- **THEN** each is in the second block
 
 #### Scenario: Recency orders each block
 - **WHEN** two shelved agents last changed an hour and a day ago

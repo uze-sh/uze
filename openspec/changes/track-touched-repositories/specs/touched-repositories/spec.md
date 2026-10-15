@@ -12,16 +12,8 @@ The workspace sidebar SHALL list, beneath each agent it shows, the Git
 repositories that agent touched: the agent's own checkout first, then every
 other repository in the order the agent first touched it. Each repository
 SHALL be named by its directory name, marked as the agent's own checkout or
-as another repository, and SHALL carry the lines added and removed that are
-attributed to the agent (see "Git alone measures what is attributed"). A
-repository with nothing attributed left to show SHALL stay listed, without
-counts, for as long as the agent is shown.
-
-The level SHALL be drawn only when the agent touched at least one
-repository other than its own checkout; an agent that stayed home is drawn
-as it is today. The agent row SHALL say how many other repositories there
-are and SHALL fold and unfold the level; the level SHALL start unfolded,
-and the fold SHALL survive the client leaving and coming back.
+as another repository, and carry the lines added and removed attributed to
+the agent.
 
 #### Scenario: An agent that edited a sibling repository
 - **WHEN** an agent working in `uze-terminal-orchestrator` edits a file in
@@ -31,13 +23,31 @@ and the fold SHALL survive the client leaving and coming back.
   another repository second
 - **AND THEN** the agent row SHALL say there is one other repository
 
-#### Scenario: An agent that stayed in its checkout
-- **WHEN** an agent touched no repository besides its own checkout
-- **THEN** no level SHALL be drawn beneath it
+### Requirement: A touched repository stays listed while its agent is shown
+A repository with nothing attributed left to show SHALL stay listed,
+without counts, for as long as the agent is shown.
 
 #### Scenario: A change that was reverted
 - **WHEN** the agent's edits in another repository are undone
 - **THEN** that repository SHALL stay listed beneath the agent with no counts
+
+### Requirement: The level is drawn only for an agent that left its checkout
+The level SHALL be drawn only when the agent touched at least one
+repository other than its own checkout; an agent that stayed home is drawn
+as it is today.
+
+#### Scenario: An agent that stayed in its checkout
+- **WHEN** an agent touched no repository besides its own checkout
+- **THEN** no level SHALL be drawn beneath it
+
+### Requirement: The agent row counts and folds its level
+The agent row SHALL say how many other repositories there are and SHALL
+fold and unfold the level; the level SHALL start unfolded, and the fold
+SHALL survive the client leaving and coming back.
+
+#### Scenario: A new level starts unfolded
+- **WHEN** an agent touches its first repository other than its own checkout
+- **THEN** its level SHALL be drawn unfolded
 
 #### Scenario: Folding
 - **WHEN** the operator folds an agent's level and reattaches the client
@@ -61,32 +71,39 @@ say so and open nothing.
 
 ### Requirement: Repositories are witnessed from the launch, on every platform
 UZE SHALL learn which repositories an agent touched only from what the
-launch it made can observe, and SHALL NOT write into any harness's own
-configuration, nor install anything that runs in a session it did not
-launch, to do so. Two witnesses SHALL nominate repositories:
-- **Git:** every Git command the agent's process tree runs, in any
-  repository on the machine. A command that can change a repository
-  (commit, add, checkout, reset, rebase, merge, stash, apply, and the like)
-  SHALL nominate it; a command that only reads (status, diff, log) SHALL
-  NOT, and the repository SHALL be listed only once Git measures a change
-  attributed to the agent in it. Git commands the harness runs for its own
-  housekeeping SHALL NOT nominate a repository on their own.
-- **The edit observer:** every path a harness's file tools write, mapped to
-  the repository containing it.
-
-The agent's own checkout SHALL always be listed first. A path outside any
-Git repository SHALL nominate nothing. Both witnesses SHALL work on Linux,
-macOS and Windows.
-
-A harness whose edit observer cannot be scoped to the one process UZE
-launched SHALL be declared Unsupported for the observer, with the reason
-shown where the workspace reports what each harness supports, and SHALL
-still be witnessed through Git.
+launch it made can observe. Two witnesses SHALL nominate repositories: Git, from
+every Git command the agent's process tree runs in any repository on the
+machine, and the edit observer, from every path a harness's file tools
+write, mapped to the repository containing it. The agent's own checkout
+SHALL always be listed first. Both witnesses SHALL work on Linux, macOS and
+Windows.
 
 #### Scenario: An edit in a repository UZE has never seen
 - **WHEN** an agent writes `/home/op/code/scratch-lib/src/a.rs` through its
   harness's file tool, in a repository UZE holds no record of
 - **THEN** `scratch-lib` SHALL be listed beneath the agent
+
+#### Scenario: A temporary file outside any repository
+- **WHEN** the agent writes `/tmp/notes.md`
+- **THEN** no repository SHALL be nominated for it
+
+### Requirement: Witnessing reaches nothing outside the launch
+To learn which repositories an agent touched, UZE SHALL NOT write into any
+harness's own configuration, nor install anything that runs in a session it
+did not launch.
+
+#### Scenario: A session UZE did not launch
+- **WHEN** the operator runs the same harness outside the workspace
+- **THEN** nothing UZE added SHALL run in that session
+
+### Requirement: Git nominates only a repository the agent could have changed
+A Git command that can change a repository (commit, add, checkout, reset,
+rebase, merge, stash, apply, and the like) SHALL nominate it; a command
+that only reads (status, diff, log) SHALL NOT, and the repository SHALL be
+listed only once Git measures a change attributed to the agent in it. Git
+commands the harness runs for its own housekeeping SHALL NOT nominate a
+repository on their own. A path outside any Git repository SHALL nominate
+nothing.
 
 #### Scenario: A commit made through the shell
 - **WHEN** an agent runs `git -C ../other commit -am fix`
@@ -96,34 +113,24 @@ still be witnessed through Git.
 - **WHEN** an agent runs `git -C ../other log` and changes nothing there
 - **THEN** `other` SHALL NOT be listed
 
+### Requirement: An edit observer that cannot be scoped is declared Unsupported
+A harness whose edit observer cannot be scoped to the one process UZE
+launched SHALL be declared Unsupported for the observer, with the reason
+shown where the workspace reports what each harness supports, and SHALL
+still be witnessed through Git.
+
 #### Scenario: A harness whose observer cannot be scoped
 - **WHEN** an agent runs on a harness declared Unsupported for the edit
   observer and commits in another repository
 - **THEN** that repository SHALL still be listed beneath the agent
 
-#### Scenario: A session UZE did not launch
-- **WHEN** the operator runs the same harness outside the workspace
-- **THEN** nothing UZE added SHALL run in that session
-
-#### Scenario: A temporary file outside any repository
-- **WHEN** the agent writes `/tmp/notes.md`
-- **THEN** no repository SHALL be nominated for it
-
 ### Requirement: Git alone measures what is attributed
 The lines shown for a repository SHALL be computed from Git, comparing what
 the repository holds now — commits and working tree, untracked files
 included — with what it held before the agent touched it. No witness SHALL
-contribute a count. What is attributed SHALL be:
-- for the agent's own checkout when that checkout is isolated, every change
-  since the agent was placed in it;
-- for a path the edit observer named, the change from that file's content
-  before the agent first wrote it; a file the agent created counts whole;
-- for a repository nominated by Git alone, every change since the agent
-  first ran Git in it, and the row SHALL say that its counts start there.
-
-A file that was already changed before the agent first wrote it SHALL count
-only the agent's lines. UZE SHALL write nothing into a repository it does
-not own in order to measure it.
+contribute a count. A file that was already changed before the agent first
+wrote it SHALL count only the agent's lines. UZE SHALL write nothing into a
+repository it does not own in order to measure it.
 
 #### Scenario: A file that was already dirty
 - **WHEN** a file had 40 changed lines before the agent edited it and the
@@ -150,6 +157,25 @@ not own in order to measure it.
 - **WHEN** UZE measures a repository it does not own
 - **THEN** that repository's object database, refs, index and working tree
   SHALL be unchanged by UZE
+
+### Requirement: What is attributed follows how a repository was nominated
+What is attributed SHALL be:
+- for the agent's own checkout when that checkout is isolated, every change
+  since the agent was placed in it;
+- for a path the edit observer named, the change from that file's content
+  before the agent first wrote it; a file the agent created counts whole;
+- for a repository nominated by Git alone, every change since the agent
+  first ran Git in it, and the row SHALL say that its counts start there.
+
+#### Scenario: A file the agent created
+- **WHEN** the agent creates a 20-line file in another repository through
+  its harness's file tool
+- **THEN** that repository SHALL show the 20 lines
+
+#### Scenario: A repository seen only through Git
+- **WHEN** a repository is nominated by Git alone
+- **THEN** it SHALL show every change since the agent first ran Git in it,
+  and its row SHALL say that its counts start there
 
 ### Requirement: What an agent touched is kept as a record
 The repositories an agent touched, the evidence for them and the content
