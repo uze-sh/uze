@@ -107,8 +107,16 @@ scenes:
     when:
       - key: "M-p"
         say: open recent
+        expect: "a all"
+        expect_timeout: 20
+        pause: 1.0
+      # Recent lists named agents by default, and this one ended before
+      # anything named it: it is the generated id's, listed once recent is
+      # asked for every agent.
+      - key: "a"
+        say: list every agent, not only the named ones
         # A block's heading is drawn only over a row in it, so either one
-        # says the list opened and found the agent.
+        # says the list found the agent.
         expect: "needs you|others"
         expect_timeout: 20
         pause: 1.5
