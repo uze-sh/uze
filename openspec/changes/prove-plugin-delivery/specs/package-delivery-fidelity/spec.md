@@ -2,7 +2,7 @@
 
 ### Requirement: Coverage is computed from the manifest the harness reads
 
-When a package delivered to a harness carries more than one manifest the harness could read, the system SHALL determine which one the harness reads by that harness's precedence. It SHALL compute the capabilities that the envelope covers from that manifest alone, and SHALL deliver every other capability through exactly one other route. When the manifest the harness reads would expose the package in a way that UZE does not intend, the system SHALL deliver an envelope without it, and SHALL say so in the route's reason.
+When a package delivered to a harness carries more than one manifest the harness could read, the system SHALL determine which one the harness reads by that harness's precedence. It SHALL compute the capabilities the envelope covers from that manifest alone, and SHALL deliver every other capability through exactly one other route. When that manifest would expose the package in a way UZE does not intend, the system SHALL deliver an envelope without it, and SHALL say so in the route's reason.
 
 #### Scenario: Codex reads the root manifest first
 - **WHEN** a package ships `.codex-plugin/plugin.json` and a root `plugin.json` declaring the Agent Plugins schema, and is delivered to Codex

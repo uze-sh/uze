@@ -29,9 +29,9 @@ When a project declares a plugin that ships rules, `uze <plugin>@<market>`
 and `uze install` SHALL copy the rules, byte for byte, into a location under
 `.agents/rules/` namespaced by the plugin's identity in `agents.lock`. They
 SHALL never write into the project's own rules or another plugin's. The
-copies SHALL then be delivered by the project's rules route on every harness,
-exactly as the project's own rules are. Nothing about them SHALL be
-delivered to a location a harness reads for every project.
+copies SHALL be delivered by the project's rules route on every harness, as
+the project's own rules are. Nothing about them SHALL be delivered to a
+location a harness reads for every project.
 
 #### Scenario: Rules land in the declaring project only
 - **WHEN** project A runs `uze acme-conventions@acme` and project B on the same machine does not declare it

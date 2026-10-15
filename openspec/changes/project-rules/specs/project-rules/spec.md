@@ -32,6 +32,11 @@ checkout root. A `model_decision` rule SHALL declare `description`. Any other
 field SHALL be ignored. The body after the frontmatter is the instruction
 delivered to the agent.
 
+#### Scenario: A field outside the trigger's is ignored
+- **WHEN** a rule declares `trigger: model_decision`, a `description` and a field UZE does not define
+- **THEN** it is delivered as a `model_decision` rule and the extra field has no effect
+
+### Requirement: A file that is not a valid rule is reported, never delivered
 A file whose frontmatter does not parse, declares no or an unknown
 `trigger`, or omits the field its trigger requires SHALL NOT be delivered
 by UZE and SHALL be reported with the reason.
@@ -73,8 +78,8 @@ On every harness that receives rules, the system SHALL deliver:
 
 - an `always_on` rule's body at the start of every session;
 - for each `model_decision` rule, at the start of every session, one line
-  naming the rule's path and its `description`, so the agent can read the
-  rule when it decides the description applies;
+  naming the rule's path and its `description`, so the agent can read it
+  when the description applies;
 - a `glob` rule's body after a tool call that read, edited or wrote a path
   matching one of its patterns, at most once per session;
 - nothing for a `manual` rule, which the person references themselves.
@@ -117,9 +122,8 @@ mechanism needs a rules directory inside the project.
 
 ### Requirement: A package's rules never reach a harness's machine-wide rules
 The system SHALL NOT deliver a package's `rules/` directory, or any rule it
-contains, to a location a harness reads for every project. This covers a
-plugin a harness installs for the whole machine, and the harness's global
-rules directories. A package that contains `rules/` SHALL be delivered to
+contains, to a location a harness reads for every project, such as a plugin
+installed for the whole machine or a global rules directory. A package that contains `rules/` SHALL be delivered to
 such a harness without it, in a plugin UZE generates rather than the package
 tree unchanged. Until project delivery of package rules exists, the package's
 rules SHALL be reported as not delivered, with the reason.
@@ -132,12 +136,15 @@ rules SHALL be reported as not delivered, with the reason.
 ### Requirement: The rules engine is installed once per machine and activated by the checkout
 The system SHALL install the rules engine as part of machine setup for each
 harness that needs it, as receipt-owned entries in that harness's own
-configuration (a command hook in Claude Code's and Codex's user settings, a
-generated plugin in OpenCode's global plugin directory), never touching
-foreign entries. The engine SHALL decide at run time, from the session's
+configuration, never touching foreign entries. The engine SHALL decide at run time, from the session's
 working directory, which checkout it is in and SHALL answer nothing for a
 checkout without `.agents/rules/`. It SHALL NOT require any per-project
 command, file or registration to activate.
+
+#### Scenario: Setup places the engine in each harness's own configuration
+- **WHEN** machine setup installs the rules engine
+- **THEN** Claude Code's and Codex's user settings carry a command hook for it and OpenCode's global plugin directory carries a generated plugin
+- **AND** every foreign entry in those configurations is unchanged
 
 #### Scenario: A project without rules pays nothing
 - **WHEN** an agent works in a checkout with no `.agents/rules/` directory
@@ -158,8 +165,7 @@ It SHALL be observational: it SHALL never deny, delay beyond its timeout, or
 alter a tool's input. Any failure — a missing dependency, an unreadable rule,
 an unknown payload — SHALL let the tool call proceed with no context added,
 and SHALL be reportable by `uze doctor`. The engine SHALL record which rules
-it delivered per session only in UZE's generated tier, so that deleting that
-record costs at most a repeated delivery.
+it delivered per session only in UZE's generated tier, so deleting it costs at most a repeated delivery.
 
 #### Scenario: Missing dependency fails open
 - **WHEN** the engine's dependency (`jq` for the `sh` engine) is absent

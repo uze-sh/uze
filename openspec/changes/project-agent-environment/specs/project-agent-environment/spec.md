@@ -184,13 +184,12 @@ edits the file at all.
 
 ### Requirement: Install converges what the manifest no longer declares
 `uze install` SHALL converge removals as well as additions: a plugin the
-manifest no longer declares is removed from `agents.lock`, so a
-declarative manifest is declarative in both directions. It SHALL NOT
+manifest no longer declares is removed from `agents.lock`. It SHALL NOT
 remove the package from this machine's Store or detach it from any
-harness — those are shared with every other project and are machine scope
-(`uze plugin remove`). Converging the lock is therefore not a destructive
-act and SHALL NOT require confirmation: the lock is derived, and what it
-loses is what the person just deleted from the file they author.
+harness, which other projects share and which are machine scope (`uze
+plugin remove`). Converging the lock SHALL NOT require confirmation: the
+lock is derived, and what it loses is what the person just deleted from
+the file they author.
 
 #### Scenario: An undeclared plugin leaves the lock
 - **WHEN** the user removes a plugin from `agents.yaml` and runs `uze

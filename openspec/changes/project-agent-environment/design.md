@@ -250,6 +250,13 @@ a line. *Report drift only in `status`* — rejected: the person who
 edits `agents.yaml` is usually inside the client, and a report they have
 to leave to read is a report they do not read.
 
+### 12. A malformed lock is regenerated, not protected
+
+The requirement that a malformed lock is repaired by regeneration replaces
+the original "never overwritten by a subsequent write" rule, which was
+right while the lock was the only declaration a project had and wrong once
+it became derived.
+
 ## Candidate ADRs
 
 - **Editing the authored manifest without a document-model dependency** — the

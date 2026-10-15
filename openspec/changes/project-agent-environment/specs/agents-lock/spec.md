@@ -110,10 +110,6 @@ it. No command SHALL ask a person to repair a lock by editing it, and no
 command SHALL refuse to proceed solely because the existing lock is
 unreadable.
 
-This replaces the original "never overwritten by a subsequent write"
-rule, which was right while the lock was the only declaration a project
-had and wrong once it became derived.
-
 #### Scenario: Malformed YAML is reported and regenerable
 - **WHEN** `agents.lock` contains invalid YAML
 - **THEN** reading it fails with a malformed-lock error naming the path

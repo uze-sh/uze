@@ -1,16 +1,19 @@
 ## ADDED Requirements
 
 ### Requirement: A handler may name a program and its words instead of a shell line
-A command handler MAY give `args`, a list of words, beside `command`. With `args` present, `command` SHALL be the path of a script or executable inside the package, relative to its root, and each word of `args` SHALL reach the handler intact, whatever it contains. The system SHALL choose the program that runs the script for the platform it delivers to: on POSIX a file with an execute bit runs itself; otherwise the file's extension selects an interpreter from a fixed table, and an `interpreter` list given by the author replaces the table. A handler the system cannot place on a platform SHALL be treated there like a handler with no spelling for it.
+A command handler MAY give `args`, a list of words, beside `command`. With `args` present, `command` SHALL be the path of a script or executable inside the package, relative to its root, and each word of `args` SHALL reach the handler intact, whatever it contains.
+
+#### Scenario: Words with spaces and quotes arrive intact
+- **WHEN** the package root contains a space and an argument is `it's "$HOME"`
+- **THEN** the handler receives the script path and that argument as single, literal words
+
+### Requirement: The system chooses the program that runs an exec-form script on each platform
+The system SHALL choose the program that runs an exec-form script for the platform it delivers to: on POSIX a file with an execute bit runs itself; otherwise the file's extension selects an interpreter from a fixed table, and an `interpreter` list given by the author replaces the table. A handler the system cannot place on a platform SHALL be treated there like a handler with no spelling for it.
 
 #### Scenario: A Python guard written once runs on both platforms
 - **WHEN** a deny group's handler is `{"type": "command", "command": "hooks/guard.py", "args": ["--strict"]}`
 - **THEN** on Linux the wrapper runs `python3` with the script's absolute path and `--strict`
 - **AND** on Windows it runs the Python the machine answers with (`py -3`, `python` or `python3`) with the same words
-
-#### Scenario: Words with spaces and quotes arrive intact
-- **WHEN** the package root contains a space and an argument is `it's "$HOME"`
-- **THEN** the handler receives the script path and that argument as single, literal words
 
 #### Scenario: A shebang decides on POSIX
 - **WHEN** `hooks/guard` is executable and starts with `#!/usr/bin/env -S uv run --script`

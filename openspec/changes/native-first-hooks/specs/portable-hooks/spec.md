@@ -19,7 +19,7 @@ The system SHALL deliver a package's portable hooks as a self-contained artifact
 - **AND** the plugin runs the author's handlers with the same context and decision contract as the wrapper on the other harnesses
 
 ### Requirement: Handlers receive the hook context as environment and answer with exit codes
-Command handlers SHALL receive the hook context as environment variables and SHALL NOT be required to parse any harness payload or emit any harness JSON. The wrapper SHALL set `HOOK_HARNESS`, `HOOK_EVENT`, `HOOK_TOOL` (portable alias, empty when the tool has none), `HOOK_TOOL_NATIVE`, `HOOK_CWD`, `HOOK_INPUT` (the tool input as JSON) and `PLUGIN_ROOT`, plus the portable fields of the matched alias. A handler's exit code SHALL be the decision: `0` allows, `3` denies with the reason read from stderr; any other exit code, a failure to start, or a timeout is a handler failure that follows the group's effect — fail-closed (a denial) for `deny` and `ask`, fail-open (the tool proceeds, the failure is reported) for `observe` and `allow`. Handlers of one group SHALL run sequentially in manifest order and the first denial SHALL stop the remaining handlers, regardless of how the harness schedules its own hooks.
+Command handlers SHALL receive the hook context as environment variables and SHALL NOT be required to parse any harness payload or emit any harness JSON. The wrapper SHALL set `HOOK_HARNESS`, `HOOK_EVENT`, `HOOK_TOOL` (the portable alias, or empty), `HOOK_TOOL_NATIVE`, `HOOK_CWD`, `HOOK_INPUT` (the tool input as JSON) and `PLUGIN_ROOT`, plus the portable fields of the matched alias. A handler's exit code SHALL be the decision: `0` allows, `3` denies with the reason read from stderr.
 
 #### Scenario: A shell handler reads the portable command
 - **WHEN** a `shell`-matched pre-tool hook fires on any harness for a command line
@@ -31,6 +31,9 @@ Command handlers SHALL receive the hook context as environment variables and SHA
 - **THEN** the harness receives its own blocking decision carrying that reason and the tool does not run
 - **AND** the remaining handlers of the group are not started
 
+### Requirement: A handler failure follows the group's effect
+Any exit code other than `0` or `3`, a failure to start, or a timeout SHALL be a handler failure that follows the group's effect: fail-closed (a denial) for `deny` and `ask`, fail-open (the tool proceeds, the failure is reported) for `observe` and `allow`.
+
 #### Scenario: A crashing deny handler still denies
 - **WHEN** a handler of a `deny` group cannot start, exits with a code other than 0 or 3, or exceeds its timeout
 - **THEN** the intercepted tool is denied and the reason names the failure
@@ -40,6 +43,13 @@ Command handlers SHALL receive the hook context as environment variables and SHA
 - **WHEN** the wrapper's own dependency is not available on the machine (for the `sh` wrapper, `jq`)
 - **THEN** a `deny` or `ask` group denies the intercepted tool with a reason naming the missing dependency
 - **AND** an `observe` or `allow` group lets the tool proceed and reports the missing dependency
+
+### Requirement: Handlers of one group run in order and the first denial stops the rest
+Handlers of one group SHALL run sequentially in manifest order and the first denial SHALL stop the remaining handlers, regardless of how the harness schedules its own hooks.
+
+#### Scenario: A later handler never runs after a denial
+- **WHEN** a group lists two handlers and the first exits with code 3
+- **THEN** the second handler is not started, on every harness that delivers the hook
 
 ### Requirement: The portable tool vocabulary defines fields
 The system SHALL maintain one vocabulary of portable tool aliases in which each alias names the portable fields it guarantees to handlers and, per harness, the native tool name and the native field each portable field is read from. Matchers, generated wrappers and compatibility assessment SHALL derive from this vocabulary alone. A tool matched through `native:<name>` SHALL yield only `HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty.
@@ -59,19 +69,22 @@ The system SHALL maintain one vocabulary of portable tool aliases in which each 
 - **AND** an alias the harness cannot deliver is declared with a reason, never omitted
 
 ### Requirement: The wrapper is the only implementation of the contract
-The system SHALL carry no hook runtime of its own: the generated wrapper (and, on a harness without command hooks, the generated plugin that is the same runtime) SHALL be the only thing that runs an authored handler, and no packager binary SHALL appear on any delivered hook's execution path. Where no wrapper template applies to the target platform or harness, the hook SHALL be reported Unsupported with that reason and nothing SHALL be attached. The answer the wrapper gives for each recorded fixture — the native decision document, the exit status and the reason — SHALL be held as a golden per harness, so a changed answer is a reviewed change of contract.
+The system SHALL carry no hook runtime of its own: the generated wrapper (and, on a harness without command hooks, the generated plugin that is the same runtime) SHALL be the only thing that runs an authored handler, and no packager binary SHALL appear on any delivered hook's execution path. Where no wrapper template applies to the target platform or harness, the hook SHALL be reported Unsupported with that reason and nothing SHALL be attached.
 
 #### Scenario: Platform without a wrapper template delivers nothing
 - **WHEN** a hook is delivered on a platform or harness for which no wrapper template exists
 - **THEN** no native hook entry is written
 - **AND** the hook is reported Unsupported with the reason that no wrapper template covers this platform
 
+### Requirement: The wrapper's answers are held as goldens per harness
+The answer the wrapper gives for each recorded fixture (the native decision document, the exit status and the reason) SHALL be held as a golden per harness, so a changed answer is a reviewed change of contract.
+
 #### Scenario: Every recorded fixture answers as recorded
 - **WHEN** the generated wrapper is run against a recorded fixture payload for a harness
 - **THEN** its native decision document, exit status and reason are the recorded ones
 
 ### Requirement: Each handler is bounded by the deadline its author declared
-The generated wrapper SHALL run each handler under the `timeout` its author declared in `hooks.json`, and SHALL stop a handler that exceeds it — together with the processes that handler started — before continuing. A handler stopped that way SHALL be a handler failure like any other, resolved by the group's declared effect and reported with a reason naming the deadline. The native entry's own group timeout SHALL remain the harness's backstop and SHALL be sized so it is never the bound that fires first.
+The generated wrapper SHALL run each handler under the `timeout` its author declared in `hooks.json`, and SHALL stop a handler that exceeds it — together with the processes that handler started — before continuing. A handler stopped that way SHALL be a handler failure, resolved by the group's declared effect and reported with a reason naming the deadline. The native entry's own group timeout SHALL remain the harness's backstop and SHALL be sized so it is never the bound that fires first.
 
 #### Scenario: A hanging handler in a deny group blocks at its deadline
 - **WHEN** a `deny` group's handler declares a 1s timeout and does not answer

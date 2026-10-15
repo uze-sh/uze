@@ -4,12 +4,18 @@
 
 The Lab SHALL exercise the full portable-hook semantic surface against real
 harnesses wherever the harness's capability profile preserves it: every
-canonical event (`PreToolUse`, `PostToolUse`, `Stop`), every claimed effect
-(`ask`, `transform` where supported), explicit `native:<tool>` matchers, and
-runtime failure paths (timeout, non-executable handler, malformed handler
-output) with their fail-open/fail-closed consequences. Each exercised path
-SHALL be an asserted check or a registered adaptive result per the
-adaptive-result registry.
+canonical event, every claimed effect, explicit `native:<tool>` matchers, and
+runtime failure paths with their fail-open/fail-closed consequences. Each
+exercised path SHALL be an asserted check or a registered adaptive result per
+the adaptive-result registry.
+
+#### Scenario: The exercised surface
+
+- **WHEN** the Lab runs a harness whose capability profile preserves hooks
+- **THEN** it exercises the canonical events `PreToolUse`, `PostToolUse` and
+  `Stop`, the effects `ask` and `transform` where supported, explicit
+  `native:<tool>` matchers, and the failure paths timeout, non-executable
+  handler and malformed handler output
 
 #### Scenario: PostToolUse marker reaches the conversation
 

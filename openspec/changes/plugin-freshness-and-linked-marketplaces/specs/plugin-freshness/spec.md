@@ -15,17 +15,6 @@ declared ref points at now. No version field SHALL be introduced into
 `plugin.json`, `marketplace.json`, `agents.yaml` or `agents.lock`, and no
 surface SHALL report a version number the chain does not carry.
 
-A marketplace read from a checkout this machine develops has no meaningful
-"newer": the working tree is what exists. Its plugins SHALL report as
-linked rather than as fresh or stale.
-
-A package with no marketplace ref to compare against SHALL report
-**unpinned**, which is distinct from **not checked**: the first says there
-is nothing to compare, the second says the comparison was attempted and did
-not answer. The package built into the binary is not one of these — it
-SHALL keep its own offline comparison against the embedded snapshot and
-report **up to date** or **behind** from it.
-
 #### Scenario: A plugin resolved at the ref's current head is up to date
 - **WHEN** a plugin's locked marketplace revision equals the revision the
   marketplace's declared ref resolves to
@@ -42,6 +31,26 @@ report **up to date** or **behind** from it.
   attempt to establish it failed
 - **THEN** it reports **not checked**, never "up to date"
 
+### Requirement: A plugin from a linked marketplace reports as linked
+
+A marketplace read from a checkout this machine develops has no meaningful
+"newer": the working tree is what exists. Its plugins SHALL report as
+linked rather than as fresh or stale.
+
+#### Scenario: A plugin from a linked marketplace reports as linked
+- **WHEN** a plugin's marketplace is linked to a checkout on this machine
+- **THEN** it reports **linked**, naming the checkout, and no commit
+  comparison is made or displayed for it
+
+### Requirement: A package with nothing to compare reports unpinned, and the built-in package compares offline
+
+A package with no marketplace ref to compare against SHALL report
+**unpinned**, which is distinct from **not checked**: the first says there
+is nothing to compare, the second says the comparison was attempted and did
+not answer. The package built into the binary is not one of these — it
+SHALL keep its own offline comparison against the embedded snapshot and
+report **up to date** or **behind** from it.
+
 #### Scenario: A package installed from a path or URL reports unpinned
 - **WHEN** a package was installed directly from a path or a Git URL rather
   than through a registered marketplace
@@ -52,11 +61,6 @@ report **up to date** or **behind** from it.
 - **WHEN** the package built into the binary differs from the snapshot this
   binary carries
 - **THEN** it reports **behind**, offline, as it does today
-
-#### Scenario: A plugin from a linked marketplace reports as linked
-- **WHEN** a plugin's marketplace is linked to a checkout on this machine
-- **THEN** it reports **linked**, naming the checkout, and no commit
-  comparison is made or displayed for it
 
 ### Requirement: Establishing freshness is a write-free read on every read path
 
@@ -86,19 +90,8 @@ argument it SHALL consider every plugin the manifest declares; with a
 plugin name it SHALL consider only that one.
 
 `uze install` SHALL continue to reproduce what `agents.lock` records and
-SHALL NOT move a locked revision, so a clone of a project reaches the bytes
-the project was locked at whatever has been pushed since.
-
-`uze update` SHALL ask the same trust question an explicit
-`uze plugin update` asks, per plugin, against the revision it replaces.
-
-`uze update` SHALL NOT reach into machine state silently. Under the grammar
-in force today (ADR-019) it is project-scoped: run outside a project, or
-against a plugin the project does not declare, it SHALL fail with an error
-naming `uze plugin update` as the machine-level equivalent — the rule
-`uze remove` already holds against `uze plugin remove`. A grammar change
-that makes the root verbs cover both scopes SHALL replace that failure with
-a report of what it did to each scope, never with silence.
+SHALL NOT move a locked revision, so a clone reaches the bytes the project
+was locked at.
 
 #### Scenario: Install reproduces a pin the ref has moved past
 - **WHEN** a marketplace's declared ref has moved and `uze install` is run
@@ -115,18 +108,32 @@ a report of what it did to each scope, never with silence.
 - **THEN** only that plugin's marketplace entry and integrity are rewritten,
   and every other lock entry is byte-identical
 
-#### Scenario: Update never changes a scope it did not name
-- **WHEN** `uze update` is run where there is no project, or names a plugin
-  the project does not declare
-- **THEN** under ADR-019's grammar it fails without touching machine state
-  and the error names `uze plugin update`; under a grammar where the root
-  verbs cover both scopes it reports which scopes it changed
+### Requirement: `uze update` asks the trust question per plugin
+
+`uze update` SHALL ask the same trust question an explicit
+`uze plugin update` asks, per plugin, against the revision it replaces.
 
 #### Scenario: Update refuses a revision that asks to execute something new
 - **WHEN** a revision `uze update` would install introduces an executable
   capability the installed revision did not have
 - **THEN** the installed revision is left in place, the plugin is reported
   as needing an explicit decision, and the rest of the update proceeds
+
+### Requirement: `uze update` never reaches into machine state silently
+
+`uze update` SHALL NOT reach into machine state silently. Under the grammar
+in force today (ADR-019) it is project-scoped: run outside a project, or
+against a plugin the project does not declare, it SHALL fail with an error
+naming `uze plugin update` as the machine-level equivalent. A grammar
+change that makes the root verbs cover both scopes SHALL replace that
+failure with a report of what it did to each scope, never with silence.
+
+#### Scenario: Update never changes a scope it did not name
+- **WHEN** `uze update` is run where there is no project, or names a plugin
+  the project does not declare
+- **THEN** under ADR-019's grammar it fails without touching machine state
+  and the error names `uze plugin update`; under a grammar where the root
+  verbs cover both scopes it reports which scopes it changed
 
 ### Requirement: A linked marketplace is never the source of a pin
 
@@ -136,26 +143,33 @@ into `agents.lock`. The project's existing lock entry SHALL be left exactly
 as it is, and the operator SHALL be told that the marketplace is linked and
 therefore not a source of pins.
 
+#### Scenario: Updating a project whose marketplace is linked
+- **WHEN** `uze update` is run and one of the project's marketplaces is
+  linked
+- **THEN** that marketplace's lock entry is unchanged, the plugins from it
+  are re-ingested from the checkout, and the report names the link as the
+  reason its pin did not move
+
+### Requirement: A linked marketplace's plugins are not checked against the lock's integrity
+
 A linked marketplace's plugins SHALL NOT have their `integrity` checked:
 the pin was taken from a commit, a working tree being edited cannot match
 it by construction, and checking it would refuse exactly the plugin the link
 exists to serve. The report SHALL say the check was not made and why.
-
-A linked checkout's package content SHALL be what Git does not ignore:
-files the author tracks, and files they have written but not yet committed.
-A file the checkout's own ignore rules exclude SHALL NOT be ingested and
-SHALL NOT cause a re-ingest, so an editor's temporary file or a build
-artifact never reaches a harness as package content.
-
-A linked checkout that cannot be read — a broken manifest, a conflict left
-by an interrupted rebase — SHALL leave the Store's current bytes in place
-and report the problem, never empty or half-fill the package.
 
 #### Scenario: Reproducing a project whose marketplace is linked
 - **WHEN** `uze install` reproduces a plugin whose marketplace is linked and
   the checkout's content differs from the lock's `integrity`
 - **THEN** the plugin is ingested from the checkout, the integrity check is
   not applied, and the report says the marketplace is linked
+
+### Requirement: A linked checkout's package content is what Git does not ignore
+
+A linked checkout's package content SHALL be what Git does not ignore:
+files the author tracks, and files they have written but not yet committed.
+A file the checkout's own ignore rules exclude SHALL NOT be ingested and
+SHALL NOT cause a re-ingest, so an editor's temporary file or a build
+artifact never reaches a harness as package content.
 
 #### Scenario: An ignored file is not package content
 - **WHEN** a linked checkout's plugin directory gains a file its ignore
@@ -167,17 +181,16 @@ and report the problem, never empty or half-fill the package.
   ignored nor yet committed
 - **THEN** it is ingested and every harness resolves it
 
+### Requirement: A linked checkout that cannot be read leaves the Store's bytes in place
+
+A linked checkout that cannot be read — a broken manifest, a conflict left
+by an interrupted rebase — SHALL leave the Store's current bytes in place
+and report the problem, never empty or half-fill the package.
+
 #### Scenario: A broken linked checkout does not break the command
 - **WHEN** a linked marketplace's checkout cannot be read
 - **THEN** the Store keeps the bytes it has, every other marketplace
   resolves normally, and the problem is reported by name
-
-#### Scenario: Updating a project whose marketplace is linked
-- **WHEN** `uze update` is run and one of the project's marketplaces is
-  linked
-- **THEN** that marketplace's lock entry is unchanged, the plugins from it
-  are re-ingested from the checkout, and the report names the link as the
-  reason its pin did not move
 
 ### Requirement: Background work never refuses the operator's own action
 
@@ -211,10 +224,6 @@ revision that introduces one SHALL be reported as available and SHALL NOT
 be applied. What it applies is machine scope only: no project's
 `agents.yaml` or `agents.lock` SHALL be written by it.
 
-A failure to establish freshness for one plugin SHALL NOT stop the others
-and SHALL NOT be reported as an error the operator must act on; it leaves
-that plugin **not checked**.
-
 #### Scenario: Opening the client never blocks on the network
 - **WHEN** the client opens and a marketplace's source is slow or
   unreachable
@@ -236,6 +245,18 @@ that plugin **not checked**.
 - **WHEN** the worker applies any update
 - **THEN** no `agents.yaml` and no `agents.lock` in any project is modified
   by it
+
+### Requirement: A plugin whose freshness cannot be established is left not checked
+
+A failure to establish freshness for one plugin SHALL NOT stop the others
+and SHALL NOT be reported as an error the operator must act on; it leaves
+that plugin **not checked**.
+
+#### Scenario: One unanswered plugin does not stop the rest
+- **WHEN** the client establishes freshness and one plugin's marketplace
+  fails to answer
+- **THEN** every other plugin's freshness is established, that plugin
+  reports **not checked**, and no error asks the operator to act
 
 ### Requirement: A freshness state is reported as one of five things, everywhere
 

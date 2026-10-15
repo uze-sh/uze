@@ -41,12 +41,9 @@ A marketplace entry SHALL carry the name the project refers to it by,
 exactly one source — a Git remote with an optional reference and
 subdirectory, or a local path — and the plugins the project installs from
 it, as bare names. A plugin's identity is the pair of its name and the
-marketplace above it, which is `plugin@marketplace` (ADR-036) spelled
-structurally; the marketplace's own reference is what moves them, so a
-plugin entry SHALL carry no fields of its own.
-
-There SHALL be no top-level `plugins:` key: a plugin a project declares is
-a name under the marketplace that carries it.
+marketplace above it (`plugin@marketplace`, ADR-036); the marketplace's
+own reference is what moves them, so a plugin entry SHALL carry no fields
+of its own. There SHALL be no top-level `plugins:` key.
 
 #### Scenario: Each source form parses to its own variant
 - **WHEN** a manifest declares a marketplace as a Git remote or as a local
@@ -269,8 +266,7 @@ The isolation policy SHALL be read from the manifest in the primary
 checkout — the repository the worktrees are born from — for every task in
 that repository. An isolated checkout SHALL NOT declare or override a
 policy of its own, and a manifest found inside one SHALL be ignored in
-favor of the primary's. There is no per-worktree policy, and no scope
-above the project: an undeclared policy resolves to the built-in default
+favor of the primary's. There is no scope above the project: an undeclared policy resolves to the built-in default
 on every machine, so a repository projects the same `AGENTS.md`
 everywhere.
 
