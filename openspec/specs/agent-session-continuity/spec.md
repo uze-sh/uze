@@ -8,14 +8,13 @@ operator picking a preserved task back up — continues the work instead of
 starting a stranger in the same checkout.
 ## Requirements
 ### Requirement: A managed agent's conversation is recorded against its task
-The system SHALL record, for every agent it launches — whether it works in
-the space's own root or in a checkout of its own — the identifier of the
-conversation that agent's harness started, together with the harness it
-belongs to. The record SHALL live in UZE's own state beside the agent's
-record, never inside any checkout, and SHALL be keyed by the agent's
-identity so that it survives a checkout being reset, moved or removed, and
-so that it survives the agent being isolated. The system SHALL NOT record
-any harness credential or conversation content.
+The system SHALL record, for every agent it launches, in the space's root or
+in a checkout of its own, the identifier of the conversation its harness
+started and the harness it belongs to. The record SHALL live in UZE's own
+state beside the agent's record, never inside any checkout, keyed by the
+agent's identity so it survives the checkout being reset, moved or removed
+and the agent being isolated. The system SHALL NOT record any harness
+credential or conversation content.
 
 #### Scenario: A new agent's conversation is recorded
 - **WHEN** an agent is launched for the first time

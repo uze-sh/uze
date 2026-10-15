@@ -12,12 +12,11 @@ program runs in it.
 
 The workspace client SHALL start a selection when the left button is pressed
 over a pane and SHALL extend it, as the pointer moves with the button held,
-from the cell the press landed on to the cell under the pointer, in reading
-order: whole rows between the first and the last, partial rows at either end.
-A drag that leaves the pane SHALL select up to the pane's edge. The selection
-SHALL be drawn over the pane as it grows, in a way that stays legible over any
-colour the pane's content uses. A press that is released without having moved
-to another cell SHALL select nothing.
+from the pressed cell to the cell under the pointer in reading order. A drag
+that leaves the pane SHALL select up to the pane's edge. The selection SHALL
+be drawn over the pane as it grows, legible over any colour the pane's
+content uses. A press released without moving to another cell SHALL select
+nothing.
 
 #### Scenario: A drag across rows
 
@@ -36,17 +35,20 @@ to another cell SHALL select nothing.
 - **WHEN** the operator presses and releases on the same cell
 - **THEN** nothing is selected and nothing is copied
 
+#### Scenario: A drag that leaves the pane
+
+- **WHEN** the operator drags from inside a pane to a point outside it
+- **THEN** the selection reaches the pane's edge and nothing beyond it
+
 ### Requirement: Releasing a selection copies it
 
 When the button is released over a non-empty selection, the client SHALL put
 the selected text on the system clipboard, with no further key or command,
-and SHALL say so in a toast that names how much was copied. The text SHALL
-carry one line per selected row, SHALL NOT carry the blanks a terminal pads
-each row with nor blank rows at its end, and SHALL NOT carry the blank cell a
-wide character spills into. A selection that covered only blanks SHALL copy
-nothing and SHALL NOT be delivered to the pane's program as a click. The clipboard SHALL be reached through the terminal the operator is
-using, so the copy lands on the machine the operator sits at when UZE runs on
-another one or under WSL.
+and SHALL say so in a toast naming how much was copied. The text SHALL carry
+one line per selected row, and SHALL NOT carry the blanks a terminal pads
+each row with, blank rows at its end, or the blank cell a wide character
+spills into. A selection of only blanks SHALL copy nothing and SHALL NOT be
+delivered to the pane's program as a click.
 
 #### Scenario: Copying a word
 
@@ -65,6 +67,24 @@ another one or under WSL.
 
 - **WHEN** a selection covers the ends of rows shorter than the pane
 - **THEN** the copied lines end at their last non-blank character
+
+#### Scenario: A wide character is copied once
+
+- **WHEN** a selection covers a wide character and the blank cell it spills into
+- **THEN** the copied text carries the character once and no blank after it
+
+### Requirement: The copy lands on the machine the operator sits at
+
+The clipboard SHALL be reached through the terminal the operator is using,
+so the copy lands on the machine the operator sits at when UZE runs on
+another one or under WSL.
+
+#### Scenario: Copying from UZE under WSL
+
+- **WHEN** UZE runs under WSL, or on a remote machine, and the operator
+  releases a selection
+- **THEN** the text is on the clipboard of the machine the operator's
+  terminal runs on
 
 ### Requirement: A selection stays drawn until the next gesture
 

@@ -6,19 +6,13 @@ workspace finished its turn, so work done out of sight is not found late.
 ## Requirements
 ### Requirement: The operator chooses which finished turns make a sound
 
-The operator SHALL have two ways to make the same choice, writing the same
-record: the workspace client's own control and the CLI —
-`uze config notification on|off|silent` (the grammar change names the CLI;
-this change carries the choice itself). Three choices for a finished agent
-turn exist: Silent, Out of sight, and Always, where `on` is Always and `off`
-is Out of sight. A machine on which the operator never chose
-SHALL behave as Silent. The choice SHALL be machine-scoped: it SHALL apply to
-every workspace on the machine and SHALL NOT be written into any project. It
-SHALL be kept in the operator's settings file, `config.toml` at the root of
-the UZE home, as a value the operator can also write by hand; a value UZE does
-not recognise SHALL behave as Silent. `uze config notification test` SHALL
-ring once regardless of the choice in force, so the person can hear what
-their machine will sound like.
+The operator SHALL choose, for a finished agent turn, between Silent, Out of
+sight and Always, through the client's own control or `uze config
+notification on|off|silent`, both writing the same record. A machine with no
+choice made, or holding a value UZE does not recognise, SHALL behave as
+Silent. The choice SHALL be machine-scoped, applying to every workspace and
+written into no project, and SHALL be kept in `config.toml` at the UZE
+home's root, as a value the operator can also write by hand.
 
 #### Scenario: A fresh machine is silent
 
@@ -41,6 +35,21 @@ their machine will sound like.
 - **WHEN** the operator runs `uze config notification off`
 - **THEN** `config.toml` holds the value the workspace client's own control
   would have written, and both surfaces show the same choice as in force
+
+#### Scenario: The CLI's words name the three choices
+
+- **WHEN** the operator runs `uze config notification on`, `off` or `silent`
+- **THEN** the choice in force is Always, Out of sight or Silent respectively
+
+#### Scenario: An unrecognised value is silent
+
+- **WHEN** `config.toml` holds a value for the choice that UZE does not recognise
+- **THEN** no sound is made when an agent's turn ends
+
+### Requirement: The operator can hear the chime before choosing
+
+`uze config notification test` SHALL ring once regardless of the choice in
+force, so the person can hear what their machine will sound like.
 
 #### Scenario: Test rings whatever the choice says
 

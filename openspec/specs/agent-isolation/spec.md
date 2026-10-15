@@ -32,11 +32,6 @@ agent that is not isolated SHALL have no branch of its own, no delivery and
 no preserved work; its conversation SHALL be recorded and resumed as any
 agent's is. Several agents MAY share one root.
 
-Where the work in its checkout stands SHALL be read for it as for any
-other agent — the checkout's answer, which every agent sharing that
-checkout reads alike. Only *delivering* it is withheld, because the branch
-is the operator's and UZE did not cut it.
-
 #### Scenario: Launching an agent creates nothing on disk
 - **WHEN** an agent is launched in a space
 - **THEN** no checkout and no branch are created, and the agent runs in the space's root
@@ -45,33 +40,31 @@ is the operator's and UZE did not cut it.
 - **WHEN** an agent runs in the space's root
 - **THEN** UZE never switches or resets the branch that directory is on
 
+### Requirement: A root agent's work is read but never delivered
+Where the work in an agent's checkout stands SHALL be read for an agent in
+the space's root as for any other agent: the checkout's answer, which every
+agent sharing that checkout reads alike. Only delivering it SHALL be
+withheld, because the branch is the operator's and UZE did not cut it.
+
+#### Scenario: Agents sharing the root read one answer
+- **WHEN** two agents run in the space's root and the operator's branch holds work the target lacks
+- **THEN** both are shown the same account of where that work stands, read from the checkout
+- **AND** neither is offered a delivery
+
 ### Requirement: Isolation is an action on one agent
-The system SHALL offer, for a single agent, an action named **To worktree**
-that gives it a checkout of its own: a slot is acquired as the project's policy says, the
-agent's record gains its isolation — the checkout, the branch and what the
-branch was cut from — and the agent is relaunched there. The agent's
-identity SHALL NOT change, and its conversation record SHALL stay that
-agent's.
-
-Whether the *harness's* conversation follows is the harness's answer, not
-UZE's: one that binds a conversation to the directory it ran in cannot
-resume it in the new checkout and starts a fresh one there. UZE SHALL
-resume where the harness can and start a new conversation where it
-cannot, never refusing the isolation over it.
-
-The action SHALL be offered only where it can be honoured: inside a Git
-working tree with a commit to branch from. Where a slot cannot be
-acquired, the agent SHALL be left exactly where it is and the reason
-stated.
+The system SHALL offer, for a single agent, a **To worktree** action giving
+it a checkout of its own: a slot acquired as the project's policy says, the
+agent's record gaining that isolation, and the agent relaunched there. Its
+identity SHALL NOT change, and its conversation record SHALL stay its own.
+The action SHALL be offered only inside a Git working tree with a commit to
+branch from; where a slot cannot be acquired, the agent SHALL be left where
+it is and the reason stated.
 
 #### Scenario: An agent is isolated
 - **WHEN** the operator isolates an agent running in the space's root
 - **THEN** a checkout is created for it, its record carries that isolation, and it is relaunched there
+- **AND THEN** the record names the checkout, the branch and what the branch was cut from
 - **AND THEN** it is the same agent: the same identity, and the same conversation record
-
-#### Scenario: A harness that binds its conversation to a directory
-- **WHEN** an agent whose harness stores its conversation under the directory it ran in is isolated
-- **THEN** the agent is relaunched in the checkout with a conversation of its own, and the isolation is not refused
 
 #### Scenario: Isolation is not offered where it cannot be honoured
 - **WHEN** the space's root is not a Git working tree, or has no commit to branch from
@@ -113,6 +106,21 @@ anything from the operator's own tree.
 - **WHEN** the menu of an agent in the space's root is opened while the root holds uncommitted changes
 - **THEN** it offers "To worktree" and "To worktree, no changes", and no label speaks of isolating or cleaning
 
+### Requirement: The harness decides whether an isolated agent's conversation follows it
+Whether the harness's conversation follows an isolated agent SHALL be the
+harness's answer, not UZE's: UZE SHALL resume it where the harness can and
+start a new conversation where it cannot, as for a harness that binds a
+conversation to the directory it ran in, never refusing the isolation over
+it.
+
+#### Scenario: A harness that binds its conversation to a directory
+- **WHEN** an agent whose harness stores its conversation under the directory it ran in is isolated
+- **THEN** the agent is relaunched in the checkout with a conversation of its own, and the isolation is not refused
+
+#### Scenario: A harness that resumes anywhere
+- **WHEN** an agent whose harness can resume a conversation from any directory is isolated
+- **THEN** the agent is relaunched in the checkout continuing the conversation it was in
+
 ### Requirement: An isolated agent is the subject of delivery
 The system SHALL treat an isolated agent exactly as a task is treated
 today: its work is delivered by the project's completion behaviour, it can
@@ -146,16 +154,13 @@ not isolated SHALL leave nothing to release.
 - **THEN** its slot is not handed to the next agent, and the work stays reachable
 
 ### Requirement: The column groups an agent by where it works
-The sidebar SHALL draw a space's agents in two groups: the agents working
-in the space's root first, the isolated agents after them, each group in
-its own order. A blank row SHALL separate the groups, and only when both
-groups have an agent in them. An isolated agent's row SHALL carry the
-connector that says it branches off the project; an agent in the root
-SHALL not. The two SHALL be drawn in different colours, so which group a
-row belongs to is answered without reading it.
-
-Isolating an agent SHALL move its row from the first group to the second,
-which is how the operator sees that the action happened.
+The sidebar SHALL draw a space's agents in two groups, those working in the
+space's root first and the isolated ones after, each in its own order, with
+a blank row between them only when both groups have an agent. An isolated
+agent's row SHALL carry the connector that says it branches off the project;
+a root agent's SHALL not. The groups SHALL be drawn in different colours, so
+a row's group is answered without reading it. Isolating an agent SHALL move
+its row from the first group to the second.
 
 #### Scenario: A space with both kinds of agent
 - **WHEN** a space has agents in its root and isolated agents
@@ -204,14 +209,11 @@ so a space can be created without the pointer.
 
 ### Requirement: Preserved work is found without the space it was left in
 The preserved-work list SHALL answer from UZE's records of every project it
-has recorded an agent for, not from the projects the current session
-happens to have opened. Work held by an agent that no live pane carries
-SHALL be listed whether or not a space is open on its project, and SHALL
-remain listed until it is resumed, finished or discarded.
-
-Because the list crosses projects, each entry SHALL name the project its
-work belongs to. Two agents carrying the same branch name in two projects
-SHALL be distinguishable from the list alone.
+has recorded an agent for, not from the projects the session happens to have
+opened. Work held by an agent no live pane carries SHALL be listed whether
+or not a space is open on its project, until it is resumed, finished or
+discarded. Each entry SHALL name its project, and two agents carrying the
+same branch name in two projects SHALL be told apart from the list alone.
 
 #### Scenario: The space the work was left in was closed
 - **WHEN** an agent holding work has no live pane and no space is open on its project

@@ -7,14 +7,13 @@ its siblings — so that neither is a generated identifier, and neither
 overwrites a name a person chose.
 ## Requirements
 ### Requirement: The work is named through a surface any harness can reach
-The system SHALL provide a command, `uze agent work name <type>/<subject>`,
-that an agent runs to name the work it is doing. It SHALL take no
-identifier argument and SHALL name only the work of the agent running it,
-inside the directory that agent's record gives it. It SHALL NOT depend on
-a harness event, a launch prompt, or a vendor-specific capability, because
-a name every harness can supply is the only name always available. An
-agent working in the operator's checkout SHALL take the name as its label
-alone, and its branch, which is the operator's, SHALL be left as it is.
+The system SHALL provide `uze agent work name <type>/<subject>`, which an
+agent runs to name its work. It SHALL take no identifier argument and SHALL
+name only the work of the agent running it, inside the directory that
+agent's record gives it. It SHALL NOT depend on a harness event, a launch
+prompt or a vendor-specific capability, so every harness can supply a name.
+An agent in the operator's checkout SHALL take the name as its label alone,
+and the operator's branch SHALL be left as it is.
 
 #### Scenario: The task is found from inside its checkout
 - **WHEN** an agent runs the naming command from anywhere inside its

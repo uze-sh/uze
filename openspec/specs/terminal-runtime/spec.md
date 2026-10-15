@@ -345,15 +345,13 @@ process.
   having been open
 
 ### Requirement: A space is a root, and the runtime knows nothing else about it
-The terminal runtime SHALL identify a space by its root alone. It SHALL
-NOT carry, persist or report a kind for a space, and nothing it does with
-panes, tabs or processes SHALL depend on one. When asked to open a space
-for a root, the runtime SHALL reuse the existing space for that root, and
-create one only when there is none.
-
-A persisted workspace written by a version that recorded a kind per space
-SHALL be read by the rule the `upgrade-resilience` capability states for a
-document of an older version.
+The terminal runtime SHALL identify a space by its root alone. It SHALL NOT
+carry, persist or report a kind for a space, and nothing it does with panes,
+tabs or processes SHALL depend on one. Asked to open a space for a root, it
+SHALL reuse that root's existing space, creating one only when there is
+none. A persisted workspace from a version that recorded a kind per space
+SHALL be read by the rule `upgrade-resilience` states for a document of an
+older version.
 
 #### Scenario: A root names one space
 - **WHEN** a client opens a space for a root that already has one
@@ -589,14 +587,13 @@ in one document under the user's UZE state.
 - **AND THEN** a server that cannot answer it is ended instead, and the spaces, tabs and panes it held are restored by the server that replaces it
 
 ### Requirement: A space has a root
-The system SHALL give every space a root directory, chosen when the space
-is created, and SHALL derive the space's behaviour from that root: an agent
-or a shell created in the space starts from it, and a root that is a Git
-repository with a commit gives agents isolated checkouts. Starting `uze`
-SHALL ensure a space rooted at the launch directory's workspace root exists
-and SHALL select it for that client, creating it only when no space has
-that root. Creating a space explicitly SHALL ask for its root, prefilled
-with the selected space's.
+The system SHALL give every space a root directory, chosen when the space is
+created, and SHALL derive the space's behaviour from it: an agent or a shell
+created in the space starts from it, and a root that is a Git repository
+with a commit gives agents isolated checkouts. Starting `uze` SHALL ensure a
+space rooted at the launch directory's workspace root exists, creating it
+only when none has that root, and SHALL select it for that client. Creating
+a space explicitly SHALL ask for its root.
 
 #### Scenario: The launch directory becomes a space
 - **WHEN** a user starts `uze` in a directory no space is rooted at
@@ -609,6 +606,10 @@ with the selected space's.
 #### Scenario: A new space starts from a chosen root
 - **WHEN** a user creates a space and confirms a root
 - **THEN** the space's first shell opens in that root and agents created in it start from it
+
+#### Scenario: The root asked for is prefilled
+- **WHEN** a user creates a space explicitly
+- **THEN** the root is asked for, prefilled with the selected space's root
 
 ### Requirement: A new space's root is chosen, not typed
 Creating a space SHALL offer the directories that exist rather than accept a
@@ -627,11 +628,11 @@ typed, and SHALL create the space at the directory the person lands on.
 ### Requirement: A tab belongs with the agent it was born from
 A shell opened while an agent is in front of the person SHALL belong with
 that agent and SHALL start in that agent's own directory. The tab strip
-SHALL show one context at a time — that agent followed by the shells that
-belong with it, and no other agent's. A shell belonging to no agent SHALL
-belong to the space, reachable from the space's own row. Closing an agent
-SHALL hand the shells opened alongside it to the space rather than closing
-them, and SHALL remain a confirmed action, never a click on the strip.
+SHALL show one context at a time: that agent and the shells that belong with
+it, and no other agent's. A shell of no agent SHALL belong to the space,
+reachable from its row. Closing an agent SHALL hand the shells opened
+alongside it to the space rather than closing them, and SHALL remain a
+confirmed action, never a click on the strip.
 
 #### Scenario: Switching agents switches the strip
 - **WHEN** a user selects a different agent
@@ -696,15 +697,12 @@ entry ahead of the shims SHALL say so when a harness is started from it.
   only thing there was to start
 
 ### Requirement: The workspace sets up this machine's harnesses before it opens
-Before its first frame the workspace SHALL decide what it needs from the
-harnesses this machine has, never from whether UZE ran on it before. A
-harness is set up for the workspace when a setup verified its executable
-and its shim is in place; what every command prepares on its way through
-makes a harness able to receive plugins and is not that. A harness that is
-installed and not set up SHALL be set up from the executable already there,
-without asking and without taking the vendor's update route. Only a machine
-with no harness installed SHALL be asked which harnesses to provision, and
-that answer takes the vendor's official route.
+Before its first frame the workspace SHALL judge what it needs by the
+harnesses this machine has, never by whether UZE ran on it before. A harness
+is set up when a setup verified its executable and its shim is in place, not
+when merely prepared to receive plugins. An installed harness not set up
+SHALL be set up from its installed executable, without asking or taking the
+vendor's update route.
 
 #### Scenario: A clean install on a machine that already has harnesses
 - **WHEN** the workspace opens with no harness set up and harnesses
@@ -712,14 +710,6 @@ that answer takes the vendor's official route.
 - **THEN** each installed harness is set up without a question, its shim is
   placed, no vendor install or update route runs, and the workspace opens
   on the report, pausing only when something failed or warned
-
-#### Scenario: A machine with no harness
-- **WHEN** the workspace opens and no harness is installed on the machine
-- **THEN** the person is asked which harnesses to provision, before
-  anything is recorded or a shim placed
-- **AND** each harness picked goes through its vendor's official installer,
-  and no other installer runs
-- **AND** declining the question sets up nothing, and the workspace opens
 
 #### Scenario: The terminal runtime ran first
 - **WHEN** the terminal runtime already laid out its own directory under
@@ -732,4 +722,23 @@ that answer takes the vendor's official route.
 - **WHEN** the workspace opens and a harness installed since the last setup,
   or one whose shim is gone, is found
 - **THEN** that harness alone is set up, and the others are left as they are
+
+#### Scenario: A harness prepared for plugins is not yet set up
+- **WHEN** the workspace opens and a harness was prepared to receive plugins
+  by a command on its way through, but no setup verified its executable or
+  placed its shim
+- **THEN** that harness is set up from its installed executable, without a
+  question
+
+### Requirement: Only a machine with no harness is asked what to provision
+Only a machine with no harness installed SHALL be asked which harnesses to
+provision, and that answer SHALL take the vendor's official route.
+
+#### Scenario: A machine with no harness
+- **WHEN** the workspace opens and no harness is installed on the machine
+- **THEN** the person is asked which harnesses to provision, before
+  anything is recorded or a shim placed
+- **AND** each harness picked goes through its vendor's official installer,
+  and no other installer runs
+- **AND** declining the question sets up nothing, and the workspace opens
 

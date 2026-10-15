@@ -1,7 +1,7 @@
 # worktree-policy Specification
 
 ## Purpose
-TBD - created by archiving change add-portable-worktree-policy. Update Purpose after archive.
+Keeps every agent the workspace launches in an isolated checkout of its own, reuses those checkouts as slots without ever discarding work on an automatic path, and lets work reach the target branch only through the system, as the project declares it.
 ## Requirements
 ### Requirement: Every agent is isolated and the primary checkout belongs to the operator
 The system SHALL start every agent it launches into a worktree space (see
@@ -9,9 +9,7 @@ the `space-kinds` capability) in an isolated checkout of its own, created
 before the agent's process starts, without asking the operator and without
 requiring any harness to cooperate. The primary checkout SHALL never be
 assigned to an agent of a worktree space. Where a slot cannot be acquired
-the system SHALL NOT start the agent and SHALL state the reason. An agent
-of a workspace space is the operator's deliberate choice to work in the
-root, and is outside this requirement.
+the system SHALL NOT start the agent and SHALL state the reason.
 
 #### Scenario: The first agent is isolated
 - **WHEN** an operator creates an agent in a worktree space over a repository with no other agent running
@@ -39,17 +37,18 @@ root, and is outside this requirement.
 - **THEN** no agent starts in the space's root
 - **AND** the operator is told why
 
+#### Scenario: An agent of a workspace space works in the root
+- **WHEN** the operator creates an agent in a workspace space
+- **THEN** it starts in the space's root, by the operator's deliberate choice, and no checkout is created for it
+
 ### Requirement: Isolated checkouts are reusable slots
-The system SHALL keep isolated checkouts under the primary checkout's fixed
-isolation directory, each named by a generated identifier that never
-changes, and SHALL reuse a free checkout for a new agent before creating
-another. Reuse SHALL put the working tree at the task's base with no tracked
-or untracked file from the previous task, and SHALL preserve ignored files.
-A checkout holding uncommitted changes, or commits absent from its base,
-SHALL never be reused; uncommitted changes confined to content the system
-derives are not work (`checkout-accounting`). A checkout in which any
-process is working SHALL never be reused. The number of checkouts SHALL be bounded by peak
-concurrency, and a project MAY declare a cap.
+The system SHALL keep isolated checkouts in the primary checkout's isolation
+directory, under generated names that never change, and SHALL reuse a free
+one before creating another, reset to the task's base with no tracked or
+untracked file left and ignored files kept. One holding uncommitted changes
+beyond derived content (`checkout-accounting`), commits absent from its
+base, or a working process SHALL never be reused. Checkouts SHALL be bounded
+by peak concurrency; a project MAY cap them.
 
 #### Scenario: A free checkout is reused
 - **WHEN** a task ends with its checkout clean and a new agent is created
@@ -87,16 +86,13 @@ concurrency, and a project MAY declare a cap.
 - **THEN** no new agent is started until one is free, and the operator is told why
 
 ### Requirement: Nothing that can hold work is removed automatically
-The system SHALL NOT remove a working tree holding uncommitted changes, nor
-a branch holding commits absent from its target, on any automatic path.
-Whether a branch's work is in the target SHALL be answered by what the
-target carries and not by commit identity alone: every commit reachable
-from it, or the same patch present under commits of its own, as a squash
-merge and a rebase merge each leave it. A branch whose work is in the
-target MAY be removed, as MAY the directory of a free checkout
-beyond the spare slots `checkout-accounting` keeps, while keeping its
-branch. A checkout in which any process is working SHALL NOT be removed. Discarding work SHALL happen only on an explicit operator
-action naming the task.
+The system SHALL NOT remove a checkout where a process is working, nor, on
+any automatic path, a working tree with uncommitted changes or a branch with
+commits absent from its target. A branch whose commits, or their patches,
+the target carries SHALL count as integrated whatever the commit identities,
+and MAY be removed, as MAY a free checkout's directory past the spare slots
+(`checkout-accounting`), keeping its branch. Only an explicit operator
+action naming the task SHALL discard work.
 
 #### Scenario: A dirty orphan is preserved, not deleted
 - **WHEN** startup finds a checkout with uncommitted changes and no live agent
@@ -121,13 +117,11 @@ action naming the task.
 
 ### Requirement: A task's identity is immutable and its name is derived
 The system SHALL give every agent launch a generated task identifier that
-never changes, and SHALL key the checkout and the task's persisted state on
-it. The branch SHALL start from that identifier under the `agent/` prefix,
-and both the branch and the visible label SHALL then be names rather than
-derivations: replaced once while they are still generated, never overwritten
-afterwards (see the `agent-work-naming` capability). A readable name derived
-at publish time SHALL remain as the fallback for a task nobody named, not as
-the mechanism by which work is named. Task state SHALL be persisted outside
+never changes, keying its checkout and persisted state. The branch SHALL
+start as that identifier under `agent/`; branch and label SHALL then be
+replaced once while still generated and never overwritten afterwards
+(`agent-work-naming`). A name derived at publish time SHALL be only the
+fallback for a task nobody named. Task state SHALL be persisted outside
 every checkout and written atomically.
 
 #### Scenario: The branch starts from the identifier
@@ -170,12 +164,12 @@ delivered, MAY trigger an evaluation but SHALL NOT be required.
 
 ### Requirement: An agent is placed on the target as the remote has it
 The system SHALL bring the local target in line with the remote's before
-cutting a new agent's branch from it, by fast-forward and by nothing else.
-A target carrying commits the remote lacks, and one Git refuses to move
-because the primary checkout has work in the way, SHALL be left exactly as
-they stand, and the placement SHALL report how far behind the agent starts.
-A repository with no remote, or whose target the remote does not have, SHALL
-be placed from its local target with nothing to report.
+cutting a new agent's branch from it, by fast-forward only. A target
+carrying commits the remote lacks, and one Git refuses to move because the
+primary checkout has work in the way, SHALL be left exactly as they stand,
+and the placement SHALL report how far behind the agent starts. A repository
+with no remote, or whose target the remote lacks, SHALL be placed from its
+local target with nothing to report.
 
 #### Scenario: A new agent starts from what the remote has
 - **WHEN** the remote's target has moved since this machine last fetched and an agent is created
@@ -191,29 +185,10 @@ be placed from its local target with nothing to report.
 
 ### Requirement: Delivery follows the declared completion and only the system writes the target
 The system SHALL deliver a ready task only on an explicit operator action,
-one task at a time, never while one of its subagents' checkouts holds work
-not yet joined (`checkout-accounting`), according to the project's declared completion
-behavior. `handoff` SHALL leave the branch for the operator. `merge` SHALL
-rebase the task's branch onto the target's tip inside the task's checkout,
-run the project's declared gate on the rebased commits, and advance the
-target by fast-forward only. `pr` SHALL publish the branch under its
-readable name and open a pull request against the target. No agent SHALL
-write the target branch; the system SHALL write it only in the fast-forward
-step. The target's tip SHALL be taken from where the target lives: the
-remote-tracking branch after a fetch when delivery publishes a pull
-request, the local branch otherwise. Delivery SHALL NOT update the
-operator's checked-out target except in the fast-forward step of `merge`;
-the only other write to it is the fast-forward that brings it in line with
-the remote before an agent is placed.
-
-#### Scenario: Handoff never touches the target
-- **WHEN** the operator delivers a ready task in a project declaring handoff
-- **THEN** the branch is reported as ready for the operator and the target is unchanged
-
-#### Scenario: Merge advances the target linearly after the gate
-- **WHEN** the operator delivers a ready task in a project declaring merge
-- **THEN** the branch is rebased onto the target, the gate passes on the rebased commits, and the target moves to the branch's tip
-- **AND** the target's history is linear
+one task at a time, according to the project's declared completion behavior,
+and never while one of its subagents' checkouts holds work not yet joined
+(`checkout-accounting`). No agent SHALL write the target branch; the system
+SHALL write it only in the fast-forward step of `merge`.
 
 #### Scenario: A gate failure leaves the target untouched
 - **WHEN** the gate fails on the rebased commits
@@ -266,20 +241,52 @@ the remote before an agent is placed.
 - **WHEN** the target has moved while a live task's working tree is dirty
 - **THEN** the task is left as it is until its tree is clean and its pane quiet
 
+### Requirement: Each completion behavior delivers in one way
+`handoff` SHALL leave the branch for the operator. `merge` SHALL rebase the
+task's branch onto the target's tip inside the task's checkout, run the
+project's declared gate on the rebased commits, and advance the target by
+fast-forward only. `pr` SHALL publish the branch under its readable name and
+open a pull request against the target.
+
+#### Scenario: Handoff never touches the target
+- **WHEN** the operator delivers a ready task in a project declaring handoff
+- **THEN** the branch is reported as ready for the operator and the target is unchanged
+
+#### Scenario: Merge advances the target linearly after the gate
+- **WHEN** the operator delivers a ready task in a project declaring merge
+- **THEN** the branch is rebased onto the target, the gate passes on the rebased commits, and the target moves to the branch's tip
+- **AND** the target's history is linear
+
 #### Scenario: A pull request targets the declared branch
 - **WHEN** the operator delivers a ready task in a project declaring pr
 - **THEN** the branch is pushed under its readable name and a pull request against the target is opened
 
+### Requirement: Delivery reads the target from where it lives
+The target's tip SHALL be taken from the remote-tracking branch after a
+fetch when delivery publishes a pull request, and from the local branch
+otherwise. Delivery SHALL NOT update the operator's checked-out target
+except in the fast-forward step of `merge`; the only other write to it is
+the fast-forward that brings it in line with the remote before an agent is
+placed.
+
+#### Scenario: Merge mode delivers onto the local target
+- **WHEN** the operator delivers a ready task in a project declaring merge
+- **THEN** the branch is rebased onto the local target branch's tip
+- **AND** the operator's checked-out target moves only in the final fast-forward
+
+#### Scenario: Pr mode leaves the operator's target alone
+- **WHEN** the operator delivers a ready task in a project declaring pr
+- **THEN** the target's tip is read from the remote-tracking branch after a fetch
+- **AND** the operator's local target branch is not written
+
 ### Requirement: Existing checkouts are adopted at startup
-The system SHALL reconcile the isolation directory, the `agent/` branches
-and its persisted task state when a repository's space starts. A checkout
-is taken as the system's own only as `checkout-accounting` states: by the
-record it carries, or on sight when a launched agent's record names it or
-it bears a legacy `agent-<n>` name. A checkout without a record SHALL NOT
-be adopted by inference, whatever its name or place; it is listed to the
-operator. A task without a checkout SHALL be marked from where its branch
-stands. Stale worktree registry entries SHALL be pruned only after
-reconciliation.
+The system SHALL reconcile the isolation directory, `agent/` branches and
+task state when a repository's space starts. A checkout is UZE's only as
+`checkout-accounting` states: by its record, or on sight when a launched
+agent's record names it or it bears a legacy `agent-<n>` name. Any other
+SHALL NOT be adopted by inference, and is listed to the operator. A task
+without a checkout SHALL be marked from where its branch stands. Stale
+registry entries SHALL be pruned only after reconciliation.
 
 #### Scenario: A legacy checkout is adopted
 - **WHEN** the isolation directory holds checkouts named `agent-<n>`, created before task state existed
@@ -294,20 +301,13 @@ reconciliation.
 - **THEN** the entry is pruned only after every remaining checkout has been adopted
 
 ### Requirement: The declaration is projected without triggering foreign isolation
-The system SHALL render a project's declaration into a marker-owned managed
-region of the shared instruction file. The region SHALL open by stating that
-it applies to an agent the workspace launched, and that an agent started any
-other way can ignore it. It SHALL then state the isolation layout, that a
-reader inside an isolated checkout is already isolated and commits on its
-own branch and never on the target, that a reader anywhere else in the
-project is on the operator's branch and commits there without switching,
-resetting or stashing it, that delivery is performed by the system for
-isolated work, and that a subagent's checkout is asked for, joined and
-listed through the agent's `work` verbs rather than made with Git.
-The region SHALL carry nothing that is not about the workspace, and in
-particular nothing about authoring plugins.
-The rendering SHALL be deterministic, and SHALL NOT instruct any reader to
-create a top-level worktree.
+The system SHALL render a project's declaration deterministically into a
+marker-owned managed region of the shared instruction file. The region SHALL
+open by stating that it applies only to an agent the workspace launched,
+then state the isolation layout, where each reader commits, that the system
+delivers isolated work, and how a subagent gets a checkout. It SHALL carry
+nothing but the workspace, and SHALL NOT tell any reader to create a
+top-level worktree.
 
 #### Scenario: Reconciling a declaration projects it
 - **WHEN** the workspace is running on a project that declares an isolation policy
@@ -343,6 +343,11 @@ create a top-level worktree.
 #### Scenario: The region says nothing about plugins
 - **WHEN** a project declares a policy with a work-naming vocabulary
 - **THEN** the projected region carries no instruction about creating, checking or installing plugins or marketplaces
+
+#### Scenario: The projected text states the layout and the subagent verbs
+- **WHEN** a project declares an isolation policy
+- **THEN** the projected text states the isolation layout and that delivery of isolated work is performed by the system
+- **AND** it states that a subagent's checkout is asked for, joined and listed through the agent's `work` verbs, never made with Git
 
 ### Requirement: A declaration stays editable
 The system SHALL key the projected region's identity on the rendered
@@ -413,23 +418,13 @@ placed, and told how its work is delivered, under that policy.
 - **THEN** it is delivered the new way
 
 ### Requirement: The workspace keeps its region in step while it runs
-While the workspace is running on a project, the system SHALL keep the
-shared instruction file in the project's primary checkout carrying the
-region its current declaration renders, without the operator asking: when
-a space opens on the project, when the declaration changes (by an edit to
-`agents.yaml`, by hand or through the workspace), and before an agent starts in the primary
-checkout. The system SHALL NOT write the region into an isolated checkout:
-there the file is part of the agent's branch, and what the agent reads is
-the region its branch was cut with, which the operator brings forward by
-committing the primary checkout's file like the declaration itself. The
-system SHALL keep the region only in an `AGENTS.md` the project has, and
-SHALL NOT create the file: a project without one has given its agents no
-instructions yet, and `uze install` is what creates it. When an
-agent is isolated with a copy of the primary checkout's changes, a change to
-`AGENTS.md` that lies only inside UZE's managed regions SHALL NOT be copied.
-A region edited by hand SHALL be reported once per client session and
-file, left untouched, and never removed. The synchronization SHALL never
-hold up what the workspace client draws.
+While the workspace runs on a project, the system SHALL keep the primary
+checkout's shared instruction file carrying the region its current
+declaration renders, unasked: when a space opens on it, when the declaration
+changes, and before an agent starts in the primary checkout. It SHALL NOT
+write it into an isolated checkout, whose file is part of the agent's
+branch, and SHALL keep it only in an `AGENTS.md` the project has, never
+creating one, and SHALL never hold up what the client draws.
 
 #### Scenario: An edit to agents.yaml reaches the file
 - **WHEN** the operator edits the policy in `agents.yaml` while the workspace is running
@@ -448,16 +443,37 @@ hold up what the workspace client draws.
 - **WHEN** the operator commits the primary checkout's `agents.yaml` and `AGENTS.md` on the branch isolated checkouts are cut from (the declared target, else the primary checkout's branch), and pushes it when completion is `pr`
 - **THEN** an agent placed in an isolated checkout afterwards reads the current region
 
+#### Scenario: A project with no AGENTS.md
+- **WHEN** the workspace synchronizes a project that declares a policy and has no `AGENTS.md`
+- **THEN** no `AGENTS.md` is created, and the operator's checkout is left as it was
+
+#### Scenario: A declaration changed through the workspace reaches the file
+- **WHEN** the operator changes the policy through the workspace rather than by editing `agents.yaml`
+- **THEN** the shared instruction file carries the new region without any command being run
+
+### Requirement: Isolating an agent leaves the synchronized region behind
+When an agent is isolated with a copy of the primary checkout's changes, a
+change to `AGENTS.md` that lies only inside UZE's managed regions SHALL NOT
+be copied; every other change is carried.
+
+#### Scenario: Only the synchronized region stays behind
+- **WHEN** an agent in the primary checkout is isolated while `AGENTS.md` differs from the last commit outside UZE's managed regions as well as inside them
+- **THEN** the isolated checkout carries the change outside the regions and not the change inside them
+
 #### Scenario: Isolating an agent does not carry the synchronized region
 - **WHEN** an agent in the primary checkout is isolated with a copy of its changes while `AGENTS.md` differs from the last commit only inside UZE's managed regions
 - **THEN** the isolated checkout's `AGENTS.md` is the committed one
 - **AND** every other change, `agents.yaml` included, is carried as before
 
-#### Scenario: A project with no AGENTS.md
-- **WHEN** the workspace synchronizes a project that declares a policy and has no `AGENTS.md`
-- **THEN** no `AGENTS.md` is created, and the operator's checkout is left as it was
+### Requirement: A hand-edited region is reported and left alone
+A region edited by hand SHALL be reported once per client session and file,
+left untouched, and never removed.
 
 #### Scenario: A hand-edited region
 - **WHEN** the region has been changed by hand and the workspace synchronizes
 - **THEN** the workspace reports the drift once and leaves the file's bytes untouched
+
+#### Scenario: A hand-edited region is reported once
+- **WHEN** the workspace synchronizes the same hand-edited region again in one client session
+- **THEN** the drift is not reported a second time and the region is still not removed
 
