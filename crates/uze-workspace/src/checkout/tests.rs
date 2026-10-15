@@ -1636,9 +1636,14 @@ mod ownership {
             unreachable!()
         };
         assert_eq!(recorded.moving_to, None, "the move was completed");
-        let registered = repository.git(&["worktree", "list", "--porcelain"]);
-        assert!(registered.contains(&*taken.path.to_string_lossy()));
-        assert!(!registered.contains(&*slot.path.to_string_lossy()));
+        let registered: Vec<PathBuf> = repository
+            .git(&["worktree", "list", "--porcelain"])
+            .lines()
+            .filter_map(|line| line.strip_prefix("worktree "))
+            .map(uze_git::native_path)
+            .collect();
+        assert!(registered.contains(&taken.path), "{registered:?}");
+        assert!(!registered.contains(&slot.path), "{registered:?}");
     }
 
     #[test]
