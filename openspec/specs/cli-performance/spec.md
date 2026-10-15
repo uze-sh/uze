@@ -108,11 +108,7 @@ Every command in UZE's CLI surface SHALL be explicitly classified as
 either subject to the low-millisecond budget or exempt as a justified-slow
 operation. This classification SHALL be enforced automatically: a command
 added to the CLI without a corresponding classification SHALL cause the
-test suite to fail, and a command classified as budget-bound SHALL have
-its own automated test asserting that the application call it dispatches
-to meets the budget. The classification SHALL name that test, and the
-suite SHALL fail when the named test does not exist in the module it
-names. It SHALL NOT be possible for a new command to ship
+test suite to fail. It SHALL NOT be possible for a new command to ship
 fast-by-assumption, silently regress past the budget, or remain
 unclassified because a human reviewer did not think to check it.
 
@@ -122,6 +118,18 @@ unclassified because a human reviewer did not think to check it.
   reason)
 - **THEN** the test suite fails, identifying the unclassified command by
   name
+
+#### Scenario: A justified-slow command requires a stated reason
+- **WHEN** a command is classified as exempt from the budget
+- **THEN** the classification records a human-readable justification (e.g.
+  "performs a network install"), so an exemption is a deliberate,
+  reviewable decision rather than a silent default
+
+### Requirement: A budget-bound command names the test that holds it to the budget
+A command classified as budget-bound SHALL have its own automated test
+asserting that the application call it dispatches to meets the budget.
+The classification SHALL name that test, and the suite SHALL fail when
+the named test does not exist in the module it names.
 
 #### Scenario: A budget-bound command without its own performance test fails the test suite
 - **WHEN** a command is classified as budget-bound
@@ -134,12 +142,6 @@ unclassified because a human reviewer did not think to check it.
 - **WHEN** the test a budget-bound command's classification names is
   renamed or removed
 - **THEN** the test suite fails, naming the command and the missing test
-
-#### Scenario: A justified-slow command requires a stated reason
-- **WHEN** a command is classified as exempt from the budget
-- **THEN** the classification records a human-readable justification (e.g.
-  "performs a network install"), so an exemption is a deliberate,
-  reviewable decision rather than a silent default
 
 ### Requirement: A missing or corrupt cache never breaks a command
 A command that depends on cached detection SHALL still succeed, falling
@@ -173,9 +175,8 @@ view, or write any other file only when the content would differ.
 When resolving a harness executable — for detection, for its cached
 fingerprint, and for the runtime shim's own resolution — UZE SHALL skip
 `PATH` entries that live on a filesystem reached over a network protocol
-(`9p`, the mount a Windows drive appears as inside WSL). A harness UZE
-integrates keeps its state under `$HOME` on this machine; an executable on
-such a mount is not it. Whether a harness started through the workspace's
+(`9p`, the mount a Windows drive appears as inside WSL): a harness UZE
+integrates lives on this machine, never on such a mount. Whether a harness started through the workspace's
 shim is decided from the process that runs, never by walking the operator's
 `PATH`.
 

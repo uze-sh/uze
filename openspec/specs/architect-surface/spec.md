@@ -12,9 +12,7 @@ in `agents.yaml`: one directory, or a list of them, each relative to the
 project root. The declaration SHALL name places only, never kinds: what a
 file is, it says by its own content, so the surface reads the Mermaid
 files under every declared directory and ignores the rest. The declaration
-SHALL be optional. A path that is absolute, or that leaves the project,
-SHALL be refused rather than followed, and the refusal SHALL name that
-entry; nothing SHALL be read until the declaration is fixed.
+SHALL be optional.
 
 #### Scenario: The project declares a directory
 - **WHEN** `agents.yaml` holds `workspace: { artifacts: docs }`
@@ -37,11 +35,6 @@ entry; nothing SHALL be read until the declaration is fixed.
 - **AND THEN** it SHALL show how to declare them, and SHALL NOT present
   this as an error
 
-#### Scenario: The declared path leaves the project
-- **WHEN** `workspace.artifacts` is `[docs, ../elsewhere]`
-- **THEN** nothing SHALL be read, and the surface SHALL say that the
-  `../elsewhere` entry of `workspace.artifacts` needs fixing
-
 #### Scenario: The declared directory holds no diagram
 - **WHEN** every declared directory exists and none holds a Mermaid file
 - **THEN** the surface SHALL name the declared paths and say they hold no
@@ -52,6 +45,16 @@ entry; nothing SHALL be read until the declaration is fixed.
 - **THEN** the manifest SHALL be rejected, saying `workspace.artifacts`
   takes a directory or a list of them
 
+### Requirement: A declared path outside the project is refused
+A path in `workspace.artifacts` that is absolute, or that leaves the
+project, SHALL be refused rather than followed, and the refusal SHALL name
+that entry; nothing SHALL be read until the declaration is fixed.
+
+#### Scenario: The declared path leaves the project
+- **WHEN** `workspace.artifacts` is `[docs, ../elsewhere]`
+- **THEN** nothing SHALL be read, and the surface SHALL say that the
+  `../elsewhere` entry of `workspace.artifacts` needs fixing
+
 ### Requirement: An artifact is a Mermaid file, described by itself
 Every file ending in `.mmd` or `.mermaid` under the declared directory,
 to a bounded depth and skipping hidden entries, SHALL be one artifact. No
@@ -59,23 +62,12 @@ manifest, index or registration SHALL be required beside the files. An
 artifact's **area** SHALL be derived from the diagram's first word: the C4
 family is one area, `sequenceDiagram` another, `flowchart` and `graph` a
 third, and any other Mermaid diagram a fourth that is listed rather than
-hidden. An artifact's **name** SHALL be its Mermaid front-matter `title`,
-else the diagram's own `title` statement, else its file name made
-readable.
+hidden.
 
 #### Scenario: A file is added to the directory
 - **WHEN** a `.mmd` file beginning with `C4Container` is added under the
   declared directory and the surface is opened
 - **THEN** it SHALL be listed under the C4 area with no other file edited
-
-#### Scenario: A title in the front matter
-- **WHEN** a file opens with a front matter whose `title` is `Containers`
-- **THEN** the artifact SHALL be listed as `Containers`, and the front
-  matter SHALL NOT be drawn as part of the diagram
-
-#### Scenario: A file with no title
-- **WHEN** `install-pipeline.mmd` carries no title of either kind
-- **THEN** it SHALL be listed by a name derived from `install-pipeline`
 
 #### Scenario: A comment before the diagram's first word
 - **WHEN** a file's first lines are blank or `%%` comments
@@ -86,6 +78,19 @@ readable.
 - **THEN** it SHALL still be listed, under its own area
 - **AND THEN** opening it SHALL say it could not be drawn rather than
   showing an empty board
+
+### Requirement: An artifact is named by its own title
+An artifact's **name** SHALL be its Mermaid front-matter `title`, else the
+diagram's own `title` statement, else its file name made readable.
+
+#### Scenario: A title in the front matter
+- **WHEN** a file opens with a front matter whose `title` is `Containers`
+- **THEN** the artifact SHALL be listed as `Containers`, and the front
+  matter SHALL NOT be drawn as part of the diagram
+
+#### Scenario: A file with no title
+- **WHEN** `install-pipeline.mmd` carries no title of either kind
+- **THEN** it SHALL be listed by a name derived from `install-pipeline`
 
 ### Requirement: Artifacts are listed by area, and C4 from the outside in
 Artifacts SHALL be ordered by area, and within an area by name — except
@@ -108,17 +113,24 @@ container, then component, then dynamic, then any other C4 diagram.
 The surface SHALL show, on a single row above the board, a selector for
 the area and a selector for the artifact within it, each naming what is
 currently open. Opening a selector SHALL list its choices over the board;
-the area list SHALL say how many artifacts each area holds. While a list is
-open it SHALL take the keyboard: up and down move the highlight, left and
-right step between the two lists, activate opens the highlighted choice,
-and dismiss closes the list without leaving the surface. A list longer than
-the board SHALL keep the highlight in view and say where it is in the
-whole.
+the area list SHALL say how many artifacts each area holds.
 
 #### Scenario: Choosing another area
 - **WHEN** the area selector is opened and `Sequence` is activated
 - **THEN** the first artifact of the Sequence area SHALL open
 - **AND THEN** both selectors SHALL name the new area and artifact
+
+#### Scenario: A selector is clicked
+- **WHEN** a selector is clicked, and then one of its choices
+- **THEN** the click on the choice SHALL open it, and SHALL NOT also reach
+  the board underneath
+
+### Requirement: An open selector list takes the keyboard
+While a list is open it SHALL take the keyboard: up and down move the
+highlight, left and right step between the two lists, activate opens the
+highlighted choice, and dismiss closes the list without leaving the
+surface. A list longer than the board SHALL keep the highlight in view and
+say where it is in the whole.
 
 #### Scenario: A list longer than the board
 - **WHEN** the artifact list holds more entries than the board has rows
@@ -129,11 +141,6 @@ whole.
 #### Scenario: Dismiss with a list open
 - **WHEN** a list is open and dismiss is triggered
 - **THEN** the list SHALL close and the surface SHALL stay open
-
-#### Scenario: A selector is clicked
-- **WHEN** a selector is clicked, and then one of its choices
-- **THEN** the click on the choice SHALL open it, and SHALL NOT also reach
-  the board underneath
 
 ### Requirement: Diagrams are drawn in terminal cells alone
 A diagram SHALL be drawn with characters in cells, colored by the active
@@ -162,11 +169,7 @@ The surface SHALL draw flowcharts (`flowchart` / `graph`, with nested
 subgraphs, node shapes, solid, dotted and thick edges, and edge labels),
 the C4 family (persons, systems, containers, components, their database
 and external variants, boundaries, deployment nodes and relations), and
-sequence diagrams (participants and messages in order). Styling
-statements, and a C4 macro the surface does not know, SHALL be ignored
-without failing the rest of the diagram. A statement that cannot be read
-SHALL fail that one artifact, with the reason shown in its place, and
-never the surface.
+sequence diagrams (participants and messages in order).
 
 #### Scenario: A flowchart with nested subgraphs
 - **WHEN** a flowchart nests one subgraph inside another
@@ -188,6 +191,17 @@ never the surface.
 - **THEN** the label SHALL be left off rather than written over a line or
   a box
 
+#### Scenario: An edge that cannot be routed
+- **WHEN** no path exists for an edge
+- **THEN** the rest SHALL still be drawn, and the footer SHALL say how
+  many edges were not routed
+
+### Requirement: What cannot be drawn fails one artifact, never the surface
+Styling statements, and a C4 macro the surface does not know, SHALL be
+ignored without failing the rest of the diagram. A statement that cannot
+be read SHALL fail that one artifact, with the reason shown in its place,
+and never the surface.
+
 #### Scenario: A styling statement
 - **WHEN** a diagram holds `classDef`, `style`, `linkStyle` or
   `UpdateLayoutConfig`
@@ -199,17 +213,12 @@ never the surface.
   the statement
 - **AND THEN** every other artifact SHALL still open
 
-#### Scenario: An edge that cannot be routed
-- **WHEN** no path exists for an edge
-- **THEN** the rest SHALL still be drawn, and the footer SHALL say how
-  many edges were not routed
-
 ### Requirement: The board moves freely, by pointer and by key
 The drawing SHALL sit on a board larger than itself. The board SHALL be
 moved by dragging it with the pointer, by the wheel in both axes, by the
 four pan actions, and by page up and page down. It SHALL be free to move
-until the drawing's edge reaches the middle of the view, so that any box
-can be brought to the middle. An artifact SHALL open centred when it fits
+until the drawing's edge reaches the middle of the view, so any box can
+reach the middle. An artifact SHALL open centred when it fits
 the view. The board's empty space SHALL be marked by a faint dot grid that
 moves with the drawing and never shows through a box or a label.
 
@@ -279,24 +288,15 @@ A box in a C4 artifact SHALL lead **inside** when another C4 artifact of
 the project draws a boundary with the same alias; only C4 artifacts SHALL
 be joined this way. A box SHALL lead **to the code** when it carries a
 Mermaid `$link` (C4) or a `click … href` (flowchart) naming a path in the
-project. A box that leads somewhere SHALL carry a mark in its border
-saying which of the two, and the footer SHALL say what activating it does.
-Activating a selected box, clicking its mark, or clicking it a second time
-SHALL follow it. Going inside SHALL add the box to a trail shown in the
-menu; the level-up action and a click on a trail entry SHALL go back, with
-the box that was entered selected and in view. Following a box to the code
-SHALL open the code surface on that path.
+project. Activating a selected box, clicking its mark, or clicking it a
+second time SHALL follow it. Following a box to the code SHALL open the
+code surface on that path.
 
 #### Scenario: Going inside a container
 - **WHEN** the container view holds a box `core`, the component view holds
   `Container_Boundary(core, …)`, and `core` is selected and activated
 - **THEN** the component view SHALL open
 - **AND THEN** the menu SHALL show the trail from the container view to it
-
-#### Scenario: Coming back up
-- **WHEN** the level-up action is triggered one level inside
-- **THEN** the container view SHALL open with `core` selected and in view
-- **AND THEN** the trail SHALL be gone
 
 #### Scenario: Down to the code
 - **WHEN** a component carries `$link="crates/uze-core/src/store.rs"` and
@@ -310,6 +310,27 @@ SHALL open the code surface on that path.
 #### Scenario: A box that leads nowhere
 - **WHEN** a box with no matching boundary and no link is activated
 - **THEN** nothing SHALL happen, and the box SHALL carry no mark
+
+### Requirement: A box that leads somewhere says where
+A box that leads somewhere SHALL carry a mark in its border saying which
+of the two, inside or to the code, and the footer SHALL say what
+activating it does.
+
+#### Scenario: A box that leads inside is selected
+- **WHEN** a box whose alias another C4 artifact draws as a boundary is
+  selected
+- **THEN** its border SHALL carry the mark for leading inside
+- **AND THEN** the footer SHALL say that activating it goes inside
+
+### Requirement: Going inside a C4 view leaves a trail back out
+Going inside SHALL add the box to a trail shown in the menu; the level-up
+action and a click on a trail entry SHALL go back, with the box that was
+entered selected and in view.
+
+#### Scenario: Coming back up
+- **WHEN** the level-up action is triggered one level inside
+- **THEN** the container view SHALL open with `core` selected and in view
+- **AND THEN** the trail SHALL be gone
 
 #### Scenario: Choosing an artifact from the menu while inside
 - **WHEN** an artifact is opened from a selector while a trail is shown
@@ -362,21 +383,22 @@ it reports SHALL be the one the surface would show. The reader is the
 agent that wrote the file, so the command SHALL sit in the `agent`
 namespace and SHALL offer both text and JSON.
 
-An artifact SHALL be reported in one of three states: drawn; drawn with a
-stated number of relations that found no path; or not drawn, with the
-reason quoted. The second SHALL fail the check like the third, because a
-diagram missing a relation still draws every box.
-
-A project's *declaration* SHALL be judged apart from what its directory
-holds. Declaring no artifacts, and declaring a directory that holds none,
-SHALL both pass. A declaration the host will not follow, and a declared
-directory that cannot be read, SHALL fail.
-
 #### Scenario: A diagram type the surface does not draw
 - **WHEN** the declared directory holds a file beginning with `gantt`
 - **THEN** the check SHALL report it not drawn, with the surface's own
   reason
 - **AND THEN** the command SHALL exit non-zero
+
+#### Scenario: A statement that cannot be read
+- **WHEN** a C4 relation names only one end
+- **THEN** the check SHALL quote the statement back
+- **AND THEN** every other artifact SHALL still be reported
+
+### Requirement: The check reports each artifact in one of three states
+An artifact SHALL be reported in one of three states: drawn; drawn with a
+stated number of relations that found no path; or not drawn, with the
+reason quoted. The second SHALL fail the check like the third, because a
+diagram missing a relation still draws every box.
 
 #### Scenario: A diagram whose relations have nowhere to go
 - **WHEN** a flowchart joins every node to every other, and the layout
@@ -385,10 +407,11 @@ directory that cannot be read, SHALL fail.
 - **AND THEN** the command SHALL exit non-zero, as for one that does not
   draw at all
 
-#### Scenario: A statement that cannot be read
-- **WHEN** a C4 relation names only one end
-- **THEN** the check SHALL quote the statement back
-- **AND THEN** every other artifact SHALL still be reported
+### Requirement: The check judges a declaration apart from what its directory holds
+A project's *declaration* SHALL be judged apart from what its directory
+holds. Declaring no artifacts, and declaring a directory that holds none,
+SHALL both pass. A declaration the host will not follow, and a declared
+directory that cannot be read, SHALL fail.
 
 #### Scenario: A project with nothing declared
 - **WHEN** `agents.yaml` declares no `artifacts:`
@@ -401,4 +424,3 @@ directory that cannot be read, SHALL fail.
 #### Scenario: A declaration the host will not follow
 - **WHEN** `artifacts.path` leaves the project
 - **THEN** the check SHALL report the refusal and SHALL exit non-zero
-

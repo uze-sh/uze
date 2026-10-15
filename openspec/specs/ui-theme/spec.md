@@ -41,14 +41,13 @@ SHALL NOT be required to declare anything at all in order to load.
 
 A theme SHALL be able to name another theme it varies, inheriting every
 declaration that theme makes and overriding only what it states itself.
-Resolution SHALL merge declarations rather than resolved values, so an
-ancestor's references still follow a descendant that repaints what they
-point at. A chain that loops back on itself SHALL be refused, naming the
+Resolution SHALL merge declarations rather than resolved values, so
+references follow what a descendant repaints. A chain that loops back on itself SHALL be refused, naming the
 loop.
 
-Separately from any theme, the operator SHALL be able to declare overrides
-that apply over whichever theme is active, and those SHALL keep applying
-when the active theme changes.
+Apart from any theme, the operator SHALL be able to declare overrides that
+apply over whichever theme is active and SHALL keep applying when it
+changes.
 
 #### Scenario: A variation states only what it changes
 
@@ -225,15 +224,8 @@ content unreadable against its own background.
 An extension SHALL continue to describe its content in semantic terms only.
 Introducing the theme vocabulary SHALL NOT give an extension a way to name a
 chrome colour, and SHALL NOT require an extension to know the theme schema.
-
-A glyph that *is* the content — a diagram's lines, corners, junctions and
-arrowheads, a rendered document's rule — SHALL be allowed through as given,
-the way a colour that belongs to content is. Such a glyph SHALL be coloured
-by a semantic role and never by a value, SHALL be written by a file named
-for it with the reason stated, and SHALL have a plain ASCII form wherever
-the drawing depends on it to be read. A glyph that marks, separates or
-labels the surface around the content remains chrome and SHALL come from
-the vocabulary.
+A glyph that marks, separates or labels the surface around the content is
+chrome and SHALL come from the vocabulary.
 
 #### Scenario: An extension's chrome follows the active theme
 
@@ -248,6 +240,21 @@ the vocabulary.
 - **THEN** that colour is drawn as given, and it remains the only way an
   extension can put a specific colour on screen
 
+#### Scenario: A chrome glyph written inline by an extension
+
+- **WHEN** a file that is not named for content glyphs writes a chrome
+  glyph inline
+- **THEN** the build fails, naming the file and the rule
+
+### Requirement: A glyph that is the content is let through as given
+
+A glyph that *is* the content — a diagram's lines, corners, junctions and
+arrowheads, a rendered document's rule — SHALL be allowed through as given,
+the way a colour that belongs to content is. Such a glyph SHALL be coloured
+by a semantic role and never by a value, SHALL be written by a file named
+for it with the reason stated, and SHALL have a plain ASCII form wherever
+the drawing depends on it to be read.
+
 #### Scenario: A diagram's lines are content
 
 - **WHEN** an extension draws a diagram whose boxes and edges are made of
@@ -260,28 +267,12 @@ the vocabulary.
 - **WHEN** the operator switches the diagram to its ASCII rendering
 - **THEN** every glyph the drawing depends on is an ASCII character
 
-#### Scenario: A chrome glyph written inline by an extension
-
-- **WHEN** a file that is not named for content glyphs writes a chrome
-  glyph inline
-- **THEN** the build fails, naming the file and the rule
-
 ### Requirement: The glyph set is selected independently of the palette
 
 UZE SHALL carry more than one glyph set for its symbol vocabulary, and SHALL
 let the operator select one as machine-scoped state independently of which
 theme is active. Selecting a set SHALL NOT change any colour, and selecting a
 theme SHALL NOT change the selected set.
-
-A set SHALL declare the symbols it means to change and SHALL inherit the
-rest, so a set exists to state a difference rather than to restate the whole
-vocabulary — except where the set makes a promise about every symbol, as the
-ASCII set does.
-
-A set SHALL apply beneath the active theme and above the built-in default, so
-a theme that declares a symbol of its own still decides that symbol, and the
-set supplies every symbol no theme declared. The operator's own overrides
-SHALL continue to apply over both.
 
 One of the sets SHALL be drawn entirely within ASCII, so a terminal with no
 Unicode font has a complete answer that costs no palette.
@@ -298,6 +289,30 @@ Unicode font has a complete answer that costs no palette.
   its own
 - **THEN** the glyphs stay the ones the operator selected, rather than
   reverting to whatever the theme's ancestry carried
+
+#### Scenario: A set drawn from a patched icon font declares its own widths
+
+- **WHEN** a set's glyph occupies a different number of terminal cells than
+  its codepoint alone implies
+- **THEN** UZE lays the containing row out from the width the set declares,
+  so columns stay aligned
+
+#### Scenario: The selected set survives across invocations
+
+- **WHEN** a glyph set is selected and UZE is later run again
+- **THEN** that set is in force, in both the TUI and the CLI
+
+#### Scenario: The operator can see what sets exist and which is active
+
+- **WHEN** the operator asks UZE which glyph sets exist
+- **THEN** UZE lists every set it carries and identifies the active one
+
+### Requirement: A glyph set applies beneath the theme and above the default
+
+A set SHALL apply beneath the active theme and above the built-in default, so
+a theme that declares a symbol of its own still decides that symbol, and the
+set supplies every symbol no theme declared. The operator's own overrides
+SHALL continue to apply over both.
 
 #### Scenario: A theme's own symbol still decides that symbol
 
@@ -317,12 +332,12 @@ Unicode font has a complete answer that costs no palette.
 - **THEN** the set applies over the built-in default, the way overrides
   already do
 
-#### Scenario: A set drawn from a patched icon font declares its own widths
+### Requirement: A glyph set states a difference rather than the whole vocabulary
 
-- **WHEN** a set's glyph occupies a different number of terminal cells than
-  its codepoint alone implies
-- **THEN** UZE lays the containing row out from the width the set declares,
-  so columns stay aligned
+A set SHALL declare the symbols it means to change and SHALL inherit the
+rest, so a set exists to state a difference rather than to restate the whole
+vocabulary — except where the set makes a promise about every symbol, as the
+ASCII set does.
 
 #### Scenario: A set states a difference rather than the whole vocabulary
 
@@ -331,28 +346,14 @@ Unicode font has a complete answer that costs no palette.
   leaves out is drawn from the built-in default, so a set never has to
   restate a glyph it does not mean to change
 
-#### Scenario: The selected set survives across invocations
-
-- **WHEN** a glyph set is selected and UZE is later run again
-- **THEN** that set is in force, in both the TUI and the CLI
-
-#### Scenario: The operator can see what sets exist and which is active
-
-- **WHEN** the operator asks UZE which glyph sets exist
-- **THEN** UZE lists every set it carries and identifies the active one
-
 ### Requirement: A set may draw what plain Unicode cannot
 
 The symbol vocabulary SHALL be able to name marks that only a patched icon
-font can draw — the kinds of thing a file tree's rows are, among them — and
-a set that cannot draw one SHALL resolve it to nothing rather than to a
-substitute. UZE SHALL then draw nothing and reserve no space for it, so a
-surface reads the same as it did before the mark existed.
-
-This is what keeps the vocabulary honest about the emoji rule: plain
-Unicode has no folder or document mark a terminal does not take from its
-emoji font, and UZE carries no emoji, so "nothing" is the correct answer
-for a set with no patched font behind it rather than a gap in that set.
+font can draw, and a set that cannot draw one SHALL resolve it to nothing
+rather than to a substitute. UZE SHALL then draw nothing and reserve no space for it, so a
+surface reads the same as it did before the mark existed. Since UZE carries
+no emoji and plain Unicode has no such mark outside an emoji font, nothing
+is the correct answer for a set with no patched font behind it.
 
 #### Scenario: A set with no icons for a mark simply does not draw it
 
@@ -372,13 +373,11 @@ for a set with no patched font behind it rather than a gap in that set.
 UZE SHALL provide a surface inside the product where the themes this machine
 can draw with and the glyph sets UZE carries are both listed and selectable,
 and SHALL render each glyph set in its own glyphs so the operator decides by
-seeing what this terminal actually draws.
+what this terminal draws.
 
-No terminal can be asked which font it is rendering with. UZE SHALL therefore
-NOT infer the glyph set from the terminal, the environment, or the platform,
-and SHALL NOT ask the operator to declare which font they installed — a
-question they would have to answer from memory about a fact only the screen
-can settle.
+No terminal can say which font it renders with, so UZE SHALL NOT infer the
+glyph set from the terminal, the environment, or the platform, and SHALL NOT
+ask the operator to declare which font they installed.
 
 #### Scenario: A set is judged by its own marks
 

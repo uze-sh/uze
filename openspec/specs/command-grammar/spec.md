@@ -13,9 +13,8 @@ the repository root; else the nearest ancestor holding `AGENTS.md`. When
 none of the three is found, there SHALL be **no project**, and no command
 SHALL treat the working directory as one.
 
-`AGENTS.md` SHALL NOT take precedence over a repository root: it is a file
-UZE writes, so its presence in a subdirectory is evidence that something ran
-there, not that a project begins there.
+`AGENTS.md` SHALL NOT take precedence over a repository root: UZE writes
+it, so it shows that something ran there, not that a project begins there.
 
 #### Scenario: A nested AGENTS.md does not become the project root
 - **WHEN** a repository holds `AGENTS.md` in a subdirectory and no
@@ -111,9 +110,8 @@ because other projects share them.
 `uze remove <plugin> -m` SHALL remove it from this machine, inspecting every
 managed artifact before detaching it and refusing when any has drifted.
 
-The system SHALL NOT infer whether another project still wants a package.
-Nothing on this machine records which projects declare which plugins, and a
-removal justified by a guess is worse than one the operator asked for.
+The system SHALL NOT infer whether another project still wants a package:
+nothing on this machine records which projects declare which plugins.
 
 #### Scenario: Removing from a project keeps the package
 - **WHEN** `uze remove <plugin>` runs inside a project that declares it
@@ -144,17 +142,20 @@ NOT exist, and no alias for its removed verbs SHALL be kept.
 
 `uze theme` SHALL be replaced by `uze config`, whose sub-surfaces name the
 machine's authored configuration they set, each typed rather than a generic
-key/value store: `uze config theme list|set|show` (today's theme verbs),
-`uze config icons [set]` (today's `glyphs`, named by what it actually
-chooses — which glyph set the installed font can draw), and
-`uze config notification on|off|silent|test`. All three SHALL be
+key/value store: `uze config theme list|set|show`, `uze config icons [set]`
+and `uze config notification on|off|silent|test`. All three SHALL be
 machine-scoped and SHALL write the operator's own settings file
 (`config.toml`), never a project's.
+
+#### Scenario: The theme verbs move under config
+- **WHEN** the person runs `uze config theme list`, `set` or `show`
+- **THEN** it behaves as the `uze theme` verb of the same name did
 
 #### Scenario: The glyphs verb carries its real name
 - **WHEN** the person runs `uze config icons`
 - **THEN** the glyph sets UZE carries are listed, marking the active one —
-  the behavior `uze theme glyphs` had, under the name of what it chooses
+  the behavior `uze theme glyphs` had, under the name of what it chooses:
+  which glyph set the installed font can draw
 
 #### Scenario: The chime choice is made from the CLI
 - **WHEN** the person runs `uze config notification silent`

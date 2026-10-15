@@ -12,34 +12,43 @@ terminal.
 The surface SHALL find a checkout's spec-driven-development layout by
 looking, at the checkout root, for the marker each known dialect's tool
 defines, and SHALL NOT require anything to be declared in `agents.yaml`.
-The dialects read SHALL be OpenSpec (an `openspec/` directory), Spec Kit
-(`.specify/`), Superpowers (`docs/superpowers/`) and GSD (`.planning/`),
-each a catalog entry of data read through the same code. A checkout
-holding more than one marker SHALL be read for every one of them, and a
-unit SHALL name its tool beside it only while more than one tool shares
-the list. A checkout where no marker is found and no decision is found
-SHALL be told which layouts the surface reads, and SHALL NOT be shown an
-error. Decisions are not a tool's, and are found without a marker.
+The dialects read SHALL be OpenSpec (`openspec/`), Spec Kit (`.specify/`),
+Superpowers (`docs/superpowers/`) and GSD (`.planning/`), each a catalog
+entry of data read through the same code.
 
 #### Scenario: An OpenSpec checkout
 - **WHEN** the surface is opened on a checkout whose root holds `openspec/`
 - **THEN** its changes and specs SHALL be listed with no `agents.yaml` edit
-
-#### Scenario: A checkout with no known layout
-- **WHEN** the surface is opened on a checkout with no known marker
-- **THEN** the surface SHALL say no spec layout was found
-- **AND THEN** it SHALL name the layouts it reads, and SHALL NOT present
-  this as an error
-
-#### Scenario: A checkout carrying two tools
-- **WHEN** the checkout root holds both `openspec/` and `.specify/`
-- **THEN** the units of both SHALL be listed, each naming its tool
 
 #### Scenario: The checkout is an agent's worktree
 - **WHEN** the surface is opened from a tab whose checkout is an agent's
   worktree
 - **THEN** the artifacts SHALL be read from that worktree, as its branch
   has them, and not from the operator's checkout
+
+### Requirement: A checkout carrying several tools is read for each
+A checkout holding more than one marker SHALL be read for every one of
+them, and a unit SHALL name its tool beside it only while more than one
+tool shares the list.
+
+#### Scenario: A checkout carrying two tools
+- **WHEN** the checkout root holds both `openspec/` and `.specify/`
+- **THEN** the units of both SHALL be listed, each naming its tool
+
+#### Scenario: A checkout carrying one tool
+- **WHEN** the checkout root holds only `openspec/`
+- **THEN** its units SHALL be listed without naming their tool
+
+### Requirement: A checkout with no known layout is told which ones are read
+A checkout where no marker is found and no decision is found SHALL be told
+which layouts the surface reads, and SHALL NOT be shown an error.
+Decisions are not a tool's, and are found without a marker.
+
+#### Scenario: A checkout with no known layout
+- **WHEN** the surface is opened on a checkout with no known marker
+- **THEN** the surface SHALL say no spec layout was found
+- **AND THEN** it SHALL name the layouts it reads, and SHALL NOT present
+  this as an error
 
 #### Scenario: Decisions without a tool
 - **WHEN** a checkout carries no known marker and its declared places hold ADRs
@@ -50,20 +59,21 @@ Every file the surface lists SHALL be given one role, read from the
 dialect's catalog entry: **why** (the motivation), **how** (the design),
 **steps** (the work, as checkboxes), **contract** (a requirement that
 outlives the change), **decision** (a decision record the unit carries),
-or **other**. A Markdown file in a unit SHALL be a decision when it
-carries a record's numbered name (`NNN-slug.md`), whatever the dialect
-calls it, and SHALL be listed after the design. The roles, and not a tool's file
-names, SHALL be what the surface orders and marks by. A file in a unit
-that the catalog gives no role SHALL be listed as **other** rather than
-hidden. For OpenSpec: `proposal.md` is why, `design.md` is how,
-`tasks.md` is steps, and every `spec.md` under a change's `specs/` is a
-contract, named by its capability path.
+or **other**. The roles, and not a tool's file names, SHALL be what the
+surface orders and marks by. A file in a unit that the catalog gives no
+role SHALL be listed as **other** rather than hidden.
 
 #### Scenario: A change's artifacts in role order
 - **WHEN** a change holds `tasks.md`, `design.md`, `proposal.md` and
   `specs/spec-surface/spec.md`
 - **THEN** they SHALL be listed as proposal, design, tasks, and the
   `spec-surface` contract, in that order
+
+#### Scenario: OpenSpec's files take their roles
+- **WHEN** an OpenSpec change holds `proposal.md`, `design.md`, `tasks.md`
+  and `specs/ui/theme/spec.md`
+- **THEN** they SHALL be given the roles why, how, steps and contract, the
+  contract named by its capability path `ui/theme`
 
 #### Scenario: A file the catalog does not name
 - **WHEN** a change holds `notes.md` beside its proposal
@@ -75,36 +85,29 @@ contract, named by its capability path.
 - **THEN** each of its Markdown files SHALL still be listed as other, and
   the change SHALL NOT be dropped
 
+### Requirement: A numbered Markdown file in a unit is a decision
+A Markdown file in a unit SHALL be a decision when it carries a record's
+numbered name (`NNN-slug.md`), whatever the dialect calls it, and SHALL be
+listed after the design.
+
 #### Scenario: A change carrying its decision
 - **WHEN** a change holds `proposal.md`, `design.md` and `adr/017-lock.md`, a decision record
 - **THEN** the record SHALL be listed after the design, as a decision, named by its title
 
 ### Requirement: Units are offered as three subjects
 The surface SHALL offer at most three subjects: the **changes**, the
-**specs** that outlive them, and the **decisions** the project keeps. What
-a tool puts away SHALL NOT be a subject of its own: archived changes SHALL
-be the last band of the changes, **archived**, newest first and folded
-until the viewer is put in it. A subject none of the detected tools keeps,
-or, for decisions, that no declared place holds, SHALL NOT be offered; one
-a tool keeps but that holds nothing yet SHALL be offered and say so.
-Changes SHALL be listed one group per unit, holding its artifacts. Specs
-SHALL be listed by capability path. Changes SHALL be the subject the
-surface opens on.
+**specs** that outlive them, and the **decisions** the project keeps. A
+subject none of the detected tools keeps, or, for decisions, that no
+declared place holds, SHALL NOT be offered; one a tool keeps but that
+holds nothing yet SHALL be offered and say so. Changes SHALL be listed one
+group per unit, holding its artifacts. Specs SHALL be listed by capability
+path. Changes SHALL be the subject the surface opens on.
 
 #### Scenario: Opening the surface
 - **WHEN** the surface opens on an OpenSpec checkout
 - **THEN** it SHALL show the changes subject, one group per directory
   under `openspec/changes/` other than `archive`, and after them the
   archived band, folded
-
-#### Scenario: Switching to the archive
-- **WHEN** the archived band is opened
-- **THEN** the archived changes SHALL be listed with the most recently
-  archived first
-
-#### Scenario: A project with no changes in flight
-- **WHEN** `openspec/changes/` holds only `archive/`
-- **THEN** the changes subject SHALL open on the archived band
 
 #### Scenario: Never more than three
 - **WHEN** a checkout carries every shipped tool's marker and its declared
@@ -116,15 +119,26 @@ surface opens on.
 - **THEN** every decision in the declared places SHALL be listed, in the
   order their file names give, each with its status
 
+### Requirement: Archived changes are the last band of the changes
+What a tool puts away SHALL NOT be a subject of its own: archived changes
+SHALL be the last band of the changes, **archived**, newest first and
+folded until the viewer is put in it.
+
+#### Scenario: Switching to the archive
+- **WHEN** the archived band is opened
+- **THEN** the archived changes SHALL be listed with the most recently
+  archived first
+
+#### Scenario: A project with no changes in flight
+- **WHEN** `openspec/changes/` holds only `archive/`
+- **THEN** the changes subject SHALL open on the archived band
+
 ### Requirement: A unit's steps carry their progress
 For every change in flight with a steps artifact, the surface SHALL count
-its Markdown checkboxes, checked and unchecked, and show `checked/total` beside the
-unit. For a tool that records a finished plan by writing a summary beside
-it rather than by ticking it (GSD), each plan SHALL count as one step,
-done once its summary exists. A unit whose every step is done SHALL be
-marked complete. A steps artifact with no checkbox SHALL show no count
-rather than `0/0`. Archived units SHALL show no count: their steps are
-read only when opened.
+its Markdown checkboxes, checked and unchecked, and show `checked/total`
+beside the unit. A unit whose every step is done SHALL be marked complete.
+A steps artifact with no checkbox SHALL show no count rather than `0/0`.
+Archived units SHALL show no count: their steps are read only when opened.
 
 #### Scenario: A change part-way through
 - **WHEN** a change's `tasks.md` holds seven `- [x]` and five `- [ ]`
@@ -133,6 +147,11 @@ read only when opened.
 #### Scenario: A finished change not yet archived
 - **WHEN** every checkbox in a change's `tasks.md` is checked
 - **THEN** the change SHALL be marked complete
+
+### Requirement: A plan finished by its summary counts as a done step
+For a tool that records a finished plan by writing a summary beside it
+rather than by ticking it (GSD), each plan SHALL count as one step, done
+once its summary exists.
 
 #### Scenario: A plan finished by its summary
 - **WHEN** a GSD phase holds two plans and a summary beside one of them
@@ -143,14 +162,9 @@ Changes in flight SHALL be listed in bands, in this order: the changes
 this checkout is working on, then the changes still in progress, then the
 complete changes of a tool that archives them, headed as ready to archive,
 then the complete changes of a tool that leaves them where they were
-written, headed as done. A finished change that was never archived is so
-told apart from one still being worked on. The done band SHALL open
-folded unless the viewer lands in it. Within a band, changes SHALL keep
-the order their tool lists them in, which for OpenSpec is by name. A
-band with no change SHALL NOT be drawn. A band's heading SHALL be set apart from
-the units under it by form, not only by indentation, SHALL say how many
-units it holds, and SHALL be separated from the band above it by a blank
-row.
+written, headed as done. The done band SHALL open folded unless the viewer lands in
+it. Within a band, changes SHALL keep the order their tool lists them in,
+which for OpenSpec is by name.
 
 #### Scenario: A mix of states
 - **WHEN** change `b` is this checkout's, `a` is at `3/10`, and `c` is at
@@ -165,6 +179,23 @@ row.
 #### Scenario: A change with no steps
 - **WHEN** a change has no steps artifact, or one with no checkbox
 - **THEN** it SHALL be listed with the changes in progress
+
+### Requirement: A band's heading stands apart from its units
+A band with no change SHALL NOT be drawn. A band's heading SHALL be set
+apart from the units under it by form, not only by indentation, SHALL say
+how many units it holds, and SHALL be separated from the band above it by
+a blank row.
+
+#### Scenario: Two bands drawn
+- **WHEN** one change is this checkout's and three are in progress
+- **THEN** each band SHALL open with a heading drawn unlike a unit's row,
+  saying `1` and `3` respectively
+- **AND THEN** a blank row SHALL stand between the first band and the
+  heading of the second
+
+#### Scenario: A band with nothing in it
+- **WHEN** no change is complete
+- **THEN** no ready to archive or done heading SHALL be drawn
 
 ### Requirement: The change this checkout is working on is marked
 A unit SHALL be marked as this checkout's own when a file under it differs
@@ -218,19 +249,39 @@ delete any file.
 The surface SHALL open by a `toggle-spec` action, bound once in the scope
 that opens surfaces so it answers from the workspace and from every
 surface, and by a button leading the tab strip's extension group, before
-the architect and code buttons; the same action SHALL close it. It SHALL stand where the pane is, as the architect and code surfaces
-do, and SHALL NOT be drawn as a dialog over it; opening it SHALL close
-whichever of the other two was standing there. While it is open its scope SHALL seal the keyboard from the pane
-underneath. Every key it answers to SHALL be a named, rebindable action
-listed in the action index, and its footer SHALL advertise keys read from
-the keymap. Where the viewer was SHALL be remembered per checkout, by the
-unit's and the artifact's names, and restored on reopening when both still
-exist.
+the architect and code buttons; the same action SHALL close it. It SHALL
+stand where the pane is, as the architect and code surfaces do, and SHALL
+NOT be drawn as a dialog over it; opening it SHALL close whichever of the
+other two was standing there.
 
 #### Scenario: Opening from the tab strip
 - **WHEN** the spec button in the tab strip is clicked
 - **THEN** the surface SHALL open over the workspace, and the button SHALL
   be the one lit
+
+#### Scenario: Opening over another surface
+- **WHEN** the code surface is open and `toggle-spec` is triggered
+- **THEN** the spec surface SHALL stand in its place, and the code surface
+  SHALL be closed
+
+### Requirement: The spec surface owns the keyboard through named actions
+While the surface is open its scope SHALL seal the keyboard from the pane
+underneath. Every key it answers to SHALL be a named, rebindable action
+listed in the action index, and its footer SHALL advertise keys read from
+the keymap.
+
+#### Scenario: A key typed while the surface is open
+- **WHEN** a letter bound to nothing in the spec scope is typed
+- **THEN** it SHALL NOT reach the pane underneath
+
+#### Scenario: A rebound key
+- **WHEN** the user's keymap binds one of the surface's actions to another
+  chord
+- **THEN** the footer SHALL show that chord
+
+### Requirement: Where the viewer was is remembered per checkout
+Where the viewer was SHALL be remembered per checkout, by the unit's and
+the artifact's names, and restored on reopening when both still exist.
 
 #### Scenario: Coming back to a checkout
 - **WHEN** the surface is closed on change `x`'s design and reopened on
@@ -244,16 +295,11 @@ exist.
 ### Requirement: The sidebar summarises what this checkout is working on
 When the checkout in front is working on one or more changes, by the rule
 that marks a change as this checkout's, the workspace sidebar SHALL show a
-`tasks` section about those changes alone, as the timeline beside it is
-about that checkout alone. Its header SHALL say how many of their
-steps are done out of all of them, folded or open. Open, it SHALL
-list one row per such change with its own `checked/total`. Activating a
-row SHALL open the spec surface on that change. The section SHALL be
-folded until opened, and opening or folding it SHALL leave the sidebar's
-other sections as they were. A checkout working on no change, or with no spec layout, SHALL
-show no section. Reading it SHALL happen off the thread that draws, SHALL
-open only the changes the checkout touched, and SHALL be repeated while
-the tab stays in front.
+`tasks` section about those changes alone. Its header SHALL say how many of their steps
+are done out of all of them, folded or open. Open, it SHALL list one row
+per such change with its own `checked/total`. Activating a row SHALL open
+the spec surface on that change. A checkout working on no change, or with
+no spec layout, SHALL show no section.
 
 #### Scenario: The macro, folded
 - **WHEN** this checkout is working on changes holding 12 checked boxes
@@ -269,9 +315,25 @@ the tab stays in front.
 - **WHEN** the tab in front is in a checkout that touched no change
 - **THEN** no `tasks` section SHALL be drawn
 
+### Requirement: The sidebar's tasks section folds on its own
+The `tasks` section SHALL be folded until opened, and opening or folding
+it SHALL leave the sidebar's other sections as they were.
+
 #### Scenario: Opening the section beside an open timeline
 - **WHEN** the `tasks` section is opened while the timeline is open
 - **THEN** the timeline SHALL stay open
+
+### Requirement: The sidebar's tasks section is read off the drawing thread
+Reading the `tasks` section SHALL happen off the thread that draws, SHALL
+open only the changes the checkout touched, and SHALL be repeated while
+the tab stays in front.
+
+#### Scenario: A box is ticked while the tab is in front
+- **WHEN** a checkbox in a change this checkout is working on is checked
+  while its tab stays in front
+- **THEN** the section header SHALL come to count it without the tab being
+  left and entered again
+- **AND THEN** the workspace SHALL keep drawing while the section is read
 
 ### Requirement: Reading the artifacts never blocks the workspace
 Detecting the dialect, walking its directories, reading its files and
@@ -294,17 +356,33 @@ checkout SHALL be dropped.
 The surface SHALL look for decisions in every place `workspace.artifacts`
 declares, as deep as each goes, and SHALL NOT require a tool's marker or a
 fixed directory. A Markdown file SHALL be a decision when its name is a
-record's, as every ADR tool names one: a number of at least three digits,
-optionally after `adr-`, a hyphen or underscore, and a slug; a dated
-document named `YYYY-MM-DD-slug.md` SHALL NOT be one. Its title
-SHALL be the front matter's `title`, else its first `# ` heading without
-adr-tools' `N. ` numbering, else its slug. Its status SHALL be the front
-matter's `status`, else the header's `Status:` field, else the first line
-of a `## Status` section, reduced to the state before its first link or
-clause. A record with none of these SHALL be listed with no status rather
-than dropped, and no other field SHALL be read as its status. Every other
-file SHALL be ignored, without a report. A project that declares no place
-SHALL be offered no decisions subject.
+record's: a number of at least three digits, optionally after `adr-`, a
+hyphen or underscore, and a slug; a dated `YYYY-MM-DD-slug.md` SHALL NOT
+be one. Every other file SHALL be ignored, without a report. A project
+that declares no place SHALL be offered no decisions subject.
+
+#### Scenario: A guide is not a decision
+- **WHEN** a declared place holds `guide.md`, `README.md` and
+  `adr-template.md`
+- **THEN** none SHALL be listed, and nothing SHALL be reported about them
+
+#### Scenario: A dated plan beside the records
+- **WHEN** a declared place holds `plans/2026-01-02-catalog.md`
+- **THEN** it SHALL NOT be listed as a decision
+
+#### Scenario: Nothing declared
+- **WHEN** the project's `agents.yaml` has no `workspace.artifacts`
+- **THEN** no decisions subject SHALL be offered, even where a `docs/adr/`
+  exists
+
+### Requirement: A decision's title and status are read from the record itself
+A decision's title SHALL be the front matter's `title`, else its first
+`# ` heading without adr-tools' `N. ` numbering, else its slug. Its status
+SHALL be the front matter's `status`, else the header's `Status:` field,
+else the first line of a `## Status` section, reduced to the state before
+its first link or clause. A record with none of these SHALL be listed with
+no status rather than dropped, and no other field SHALL be read as its
+status.
 
 #### Scenario: An adr-tools record
 - **WHEN** a declared place holds `0001-keep-one-lock.md` with
@@ -328,16 +406,6 @@ SHALL be offered no decisions subject.
   state as `Situação: Aceita`
 - **THEN** it SHALL be listed by its title with no status
 
-#### Scenario: A guide is not a decision
-- **WHEN** a declared place holds `guide.md`, `README.md` and
-  `adr-template.md`
-- **THEN** none SHALL be listed, and nothing SHALL be reported about them
-
-#### Scenario: Nothing declared
-- **WHEN** the project's `agents.yaml` has no `workspace.artifacts`
-- **THEN** no decisions subject SHALL be offered, even where a `docs/adr/`
-  exists
-
 ### Requirement: Supersession is read from the status, as the templates write it
 A decision SHALL be listed as superseded when its status opens with
 `superseded` or adr-tools' `superceded`, and the record its status names —
@@ -345,12 +413,7 @@ by a link to a record file, or as `ADR-NNNN` — SHALL be shown as
 superseding it; each side SHALL name the other. The same SHALL hold for the
 formats that keep it as a field: adrkit's front matter `supersedes` and
 `supersededBy`, and the `Supersedes:` header field of OpenSpec's
-`spec-driven-with-adr` schema. Any other link from a status to a record,
-and adrkit's `relatesTo`, SHALL be shown once on each of the two records as
-related, with no direction claimed, and a pair already related by
-supersession SHALL NOT be shown again as related. Links outside the status SHALL NOT relate records. A
-reference the surface cannot resolve to a record SHALL be shown as written
-rather than dropped.
+`spec-driven-with-adr` schema.
 
 #### Scenario: adr-tools' supersede
 - **WHEN** `0001-keep-one-lock.md`'s status reads
@@ -365,28 +428,33 @@ rather than dropped.
   `0001-use-sqlite.md` still reads `accepted`
 - **THEN** 0001 SHALL be listed as superseded by 0002
 
+#### Scenario: MADR's supersede without a link
+- **WHEN** a record's front matter holds `status: "superseded by ADR-0009"`
+  and `0009-pick-another.md` is in the places
+- **THEN** the record SHALL be listed as superseded by 0009
+
+### Requirement: Any other link from a status relates two records without a direction
+Any other link from a status to a record, and adrkit's `relatesTo`, SHALL
+be shown once on each of the two records as related, with no direction
+claimed, and a pair already related by supersession SHALL NOT be shown
+again as related. Links outside the status SHALL NOT relate records.
+
 #### Scenario: adrkit's relations
 - **WHEN** a record's front matter holds `supersedes: ["0005"]` and
   `relatesTo: ["0002"]`
 - **THEN** 0005 SHALL be listed as superseded by it, and it and 0002 SHALL
   each show the other as related
 
-#### Scenario: A dated plan beside the records
-- **WHEN** a declared place holds `plans/2026-01-02-catalog.md`
-- **THEN** it SHALL NOT be listed as a decision
-
-#### Scenario: MADR's supersede without a link
-- **WHEN** a record's front matter holds `status: "superseded by ADR-0009"`
-  and `0009-pick-another.md` is in the places
-- **THEN** the record SHALL be listed as superseded by 0009
-
 #### Scenario: A link in prose
 - **WHEN** a record's header holds its own `Supersedes in part: [019](…)`
   line, outside its status
 - **THEN** no relation SHALL be shown between the two records
 
+### Requirement: A reference to no known record is shown as written
+A reference the surface cannot resolve to a record SHALL be shown as
+written rather than dropped.
+
 #### Scenario: A reference to a record that is gone
 - **WHEN** a record's status supersedes a file the places do not hold
 - **THEN** the reference SHALL be shown as written, and the record SHALL
   still be listed
-
