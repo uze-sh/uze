@@ -153,15 +153,16 @@ impl<'a> Hints<'a> {
                 false => format!(" {separator} "),
             };
             let label = format!(" {}", name.to_lowercase());
+            let lead_width = text::columns(&lead);
             let keys_width: usize = keys.iter().map(|key| text::columns(&key.text)).sum();
-            let cost = text::columns(&lead) + keys_width + text::columns(&label);
+            let cost = lead_width + keys_width + text::columns(&label);
             if used + cost > width as usize {
                 break;
             }
             if !lead.is_empty() {
-                spans.push(Span::styled(lead.clone(), theme::fg(Token::TextFaint)));
+                spans.push(Span::styled(lead, theme::fg(Token::TextFaint)));
             }
-            let mut x = used + text::columns(&lead);
+            let mut x = used + lead_width;
             let lit = keys
                 .iter()
                 .any(|key| key.action.is_some() && key.action == self.hovered);
