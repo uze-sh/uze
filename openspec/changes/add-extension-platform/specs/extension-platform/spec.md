@@ -14,7 +14,7 @@ no change to the workspace client's code. The built-in `code` and `architect`
 extensions SHALL be hosted through that contract with no change an operator
 can observe.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** A1 (staleness and job policy live in the orchestrator), A2 (the architect's artifact read is not a `Host` call), A3 (the code timeline belongs to the orchestrator's Git badge and outlives the code view). The migration cannot yet be done "with no change an operator can observe" as designed.
+> **Unresolved review findings** (design.md): A1, A2, A3.
 
 #### Scenario: The built-ins behave as before
 - **WHEN** the operator opens the code surface and the architect surface after the change
@@ -30,19 +30,28 @@ holding `protocol`, `id`, `name`, `description`, `surfaces`, `sources`,
 `actions`, `events`, `commands` and `wants`. Values in the manifest SHALL be
 literals or field references (`{field}`) into the answer of a source or the
 current selection; the manifest SHALL NOT contain conditionals, loops or
-expressions. Unknown keys SHALL be refused, and a manifest declaring a
-`protocol` this build does not know SHALL be refused with the version it
-declares and the versions this build accepts. JSON SHALL be accepted as YAML.
+expressions. Unknown keys SHALL be refused.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** S15 (ids need a charset and built-in ids must be reserved) and the dependency-policy exposure of parsing third-party YAML with `noyalib` 0.0.x.
+> **Unresolved review findings** (design.md): S15.
 
 #### Scenario: An expression is refused
 - **WHEN** a manifest writes `marker: "{done > 0 ? done : '-'}"`
 - **THEN** the check fails saying a template is a field reference, not an expression
 
+### Requirement: A manifest's protocol is checked and JSON is read as YAML
+A manifest declaring a `protocol` this build does not know SHALL be refused
+with the version it declares and the versions this build accepts. JSON SHALL
+be accepted as YAML.
+
+> **Unresolved review findings** (design.md): `noyalib` 0.0.x.
+
 #### Scenario: A newer protocol is named, not guessed
 - **WHEN** a manifest declares `protocol: 2` to a build that knows only `1`
 - **THEN** the extension is refused with a message naming both versions, and the rest of the plugin installs
+
+#### Scenario: A JSON manifest is read
+- **WHEN** `extension.yaml` is written as a JSON object
+- **THEN** it is read as the same manifest its YAML spelling would be
 
 ### Requirement: A surface is a full-frame view or a sidebar section
 A surface SHALL be of kind `view` (full frame, opened like the code surface)
@@ -80,17 +89,12 @@ when the view is opened again, the way the built-in surfaces remember theirs.
 - **THEN** the same item and mode are shown
 
 ### Requirement: The catalog is the vocabulary a surface is built from
-A surface SHALL be built only from the host's catalog, each entry a meaning
-the host draws in the active theme:
-- navigator: a flat list, a list grouped by a field, or a tree from a path field; each item with a name, a detail, a trailing marker, a badge and an icon kind;
-- chips: `subjects` (what is being looked at) and `modes` (how it is shown);
-- content: `message` (text and a hint), `markdown`, `code` (text with a language for highlighting), `table` (named columns over a list), `details` (key/value pairs), `progress` (done over total, with a label), `chart` (bar or sparkline over numeric fields), `log` (lines with a tone), `stack` (a vertical sequence of the above);
-- section rows: a step mark (done or not), a status mark (a semantic role), a name and a trailing value;
-- chrome: a menu of actions on an item, a confirmation, a notice, a toast.
-Colour SHALL be named only as a semantic role; no manifest or answer SHALL
-name a colour value or a glyph.
+A surface SHALL be built only from the host's catalog of navigators, chips,
+content, section rows and chrome, each entry a meaning the host draws in the
+active theme. Colour SHALL be named only as a semantic role; no manifest or
+answer SHALL name a colour value or a glyph.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** The scope is proposed to shrink to what the openspec board needs (a grouped list, markdown, progress, message, confirmation), with the rest added on a second consumer; and M4 (the render cost of `code` highlighting and tables).
+> **Unresolved review findings** (design.md): the proposed shrink to the openspec board's catalog; M4.
 
 #### Scenario: A colour value is refused
 - **WHEN** a manifest writes `role: "#ff0000"`
@@ -100,6 +104,26 @@ name a colour value or a glyph.
 - **WHEN** an extension's content is `markdown` and the code surface previews a Markdown file
 - **THEN** both are rendered by the same renderer, in the same theme
 
+#### Scenario: A navigator is a list, a grouped list or a tree
+- **WHEN** a surface declares a navigator
+- **THEN** it is a flat list, a list grouped by a field, or a tree from a path field, each item with a name, a detail, a trailing marker, a badge and an icon kind
+
+#### Scenario: Chips name the subject and the mode
+- **WHEN** a surface declares chips
+- **THEN** they are `subjects` (what is being looked at) and `modes` (how it is shown)
+
+#### Scenario: Content is one of the catalog's kinds
+- **WHEN** a surface declares content
+- **THEN** it is `message` (text and a hint), `markdown`, `code` (text with a language for highlighting), `table` (named columns over a list), `details` (key/value pairs), `progress` (done over total, with a label), `chart` (bar or sparkline over numeric fields), `log` (lines with a tone), or `stack` (a vertical sequence of the above)
+
+#### Scenario: A section row is built from marks, a name and a value
+- **WHEN** a `section` surface declares its rows
+- **THEN** each row is a step mark (done or not), a status mark (a semantic role), a name and a trailing value
+
+#### Scenario: Chrome is a menu, a confirmation, a notice or a toast
+- **WHEN** a surface asks for chrome
+- **THEN** it is a menu of actions on an item, a confirmation, a notice or a toast
+
 ### Requirement: Actions are named, offered where they apply, and reachable by key and pointer
 An action SHALL declare an `id`, a `label`, where it applies (`on: <surface>`
 or `on: <surface>.item`), an optional suggested key, an optional
@@ -108,7 +132,7 @@ confirmation, and what it does: run a program, or a built-in (`clipboard`,
 menu; every action SHALL appear in the surface's footer and in the action
 index with the key the keymap resolved for it.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** A4 (see the input-keymap delta).
+> **Unresolved review findings** (design.md): A4.
 
 #### Scenario: An item action is in the item's menu
 - **WHEN** the operator opens the menu of a navigator item on a surface with an `archive` action on `board.item`
@@ -125,7 +149,7 @@ at least `checkout.changed`, `work.named`, `agent.started`, `agent.finished`,
 `install.converged`, `rebase.paused` and `theme.changed`. Events SHALL be
 coalesced so that a burst of the same event causes one refresh.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** `checkout.changed` taken from the badge fires only for the focused checkout, `agent.*` events come from a repaint heuristic, and per-frame coalescing does not give "one run per burst". The event list and wording must be narrowed to what is observable.
+> **Unresolved review findings** (design.md): the event list must narrow to what is observable.
 
 #### Scenario: An undeclared event costs nothing
 - **WHEN** an agent finishes and an extension declared only `checkout.changed`
@@ -142,7 +166,7 @@ checkout with the same program contract, its answer printed as the program
 wrote it and its exit code returned. Extension commands SHALL be listed by
 `uze ext <extension> --help` and SHALL NOT appear among UZE's own commands.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** S11 ("printed as the program wrote it" contradicts sanitization; consent, enablement and confinement must apply to CLI runs), M7 (one clap leaf cannot carry the performance classification, and ADR-019's machine/project split is mixed under `uze ext`).
+> **Unresolved review findings** (design.md): S11, M7.
 
 #### Scenario: A declared command runs
 - **WHEN** the operator runs `uze ext openspec status`
@@ -158,7 +182,7 @@ SHALL list, enable (after showing and accepting its grants) and disable
 installed extensions, machine-wide. An extension id equal to one of these verbs,
 or to `help`, SHALL be refused by the check.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** M7 (machine-scoped verbs share a noun with project-scoped commands), S15 (reserve `code`, `architect` and `uze` as well), S4 (`uze ext <id>` is ambiguous when two plugins ship the same id).
+> **Unresolved review findings** (design.md): M7, S15, S4.
 
 #### Scenario: Enabling from the CLI shows the grants
 - **WHEN** the operator runs `uze ext enable openspec` in a terminal
@@ -175,7 +199,7 @@ whether they are enabled, and SHALL let the operator disable and re-enable an
 installed extension. A disabled extension SHALL run no program and deliver no
 surface.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** The owed decision on machine-wide vs. per-project enablement, and S4 (identity must be `plugin@marketplace/id`).
+> **Unresolved review findings** (design.md): enablement scope; S4.
 
 #### Scenario: Disabling stops every program
 - **WHEN** the operator disables an extension

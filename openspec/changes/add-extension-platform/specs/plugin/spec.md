@@ -8,7 +8,7 @@ installing the plugin SHALL deliver its extensions to the workspace client
 only, never to a harness. Removing the plugin SHALL remove its extensions and
 their accepted grants.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** A5 (discovering extensions as routed package resources sends them into harness delivery, contradicting "never to a harness"; dedicated discovery is proposed), and removal must say `uze plugin remove`, because dropping a plugin from `agents.yaml` keeps it in the Store.
+> **Unresolved review findings** (design.md): A5, removal via `uze plugin remove`.
 
 #### Scenario: Check covers the plugin's extensions
 - **WHEN** a plugin carries an extension whose manifest has an unknown key
@@ -25,7 +25,7 @@ source once in a scratch checkout under the same confinement as the host, and
 report every problem it finds with the file, the field and the fix, exiting
 non-zero when there is one.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** S12 (the dry run executes untrusted sources without consent, unconfined where confinement is missing: run only with `--run` under enforced confinement, or against `--checkout` or canned answers) and M8 (verifying every field reference needs `examples:` fixtures and is best effort otherwise).
+> **Unresolved review findings** (design.md): S12, M8.
 
 #### Scenario: A binding to a missing field is caught
 - **WHEN** a navigator item names `marker: "{completedTasks}"` and the source's answer has no `completedTasks`

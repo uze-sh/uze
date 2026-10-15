@@ -13,7 +13,7 @@ checkout the surface is open on as its working directory, and SHALL NOT keep
 it running after it answers. A declaration that spells a program as a single
 string to be split or interpreted by a shell SHALL be refused by the check.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** M8 ("no process remains" cannot be tested; `setsid` escapes the process-group kill, so it narrows to the group), S6 (the working directory must be a Git worktree root, never `$HOME`, `/` or an ancestor of `$UZE_HOME`), and S12 (the check's dry run executes untrusted programs).
+> **Unresolved review findings** (design.md): M8, S6, S12.
 
 #### Scenario: A source is run on demand and exits
 - **WHEN** a surface needs the data of a source and no fresh answer is cached
@@ -26,16 +26,19 @@ string to be split or interpreted by a shell SHALL be refused by the check.
 ### Requirement: Input is one JSON document on stdin
 The host SHALL write exactly one JSON object to the program's standard input
 and close it. The object SHALL carry `protocol` (the contract version), a
-`context` object (`checkout`, `branch`, `work` when the checkout has a named
-work, `surface`, `extension`), and an `input` object holding only the fields
+`context` object naming where the question comes from, and an `input` object holding only the fields
 the declaration named in its `input` list, taken from the selected item or
 the surface's state. Nothing the declaration did not name SHALL be sent.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** S8 (a substituted value starting with `-` is an argument-injection vector wherever inputs reach argv).
+> **Unresolved review findings** (design.md): S8.
 
 #### Scenario: Only declared inputs reach the program
 - **WHEN** a source declares `input: [change, mode]` and the operator has selected change `support-macos` in mode `tasks`
 - **THEN** the program's stdin carries `input: {"change": "support-macos", "mode": "tasks"}` and no other field of the selection
+
+#### Scenario: The context names where the question comes from
+- **WHEN** the host runs a program
+- **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface` and `extension`
 
 ### Requirement: Output is one JSON document on stdout
 A program SHALL answer with one JSON value on standard output: a list of
@@ -44,7 +47,7 @@ and for an action either nothing or an object whose optional `toast` and
 `refresh` fields the host applies. Standard error SHALL be kept only as the
 reason of a refusal or failure, bounded, and never parsed as an answer.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** UX (`sh` authors cannot produce correct JSON without `jq`; an `output: lines` or JSONL mode is proposed).
+> **Unresolved review findings** (design.md): an `output: lines` mode for `sh` authors.
 
 #### Scenario: A list source feeds a navigator
 - **WHEN** a list source prints `[{"name": "support-macos", "status": "in-progress"}]`
@@ -76,7 +79,7 @@ stopped together with every process it started, and the run SHALL count as a
 failure naming the bound that was hit. A manifest MAY lower the bounds for
 one program and SHALL NOT raise them above the host's ceiling.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** S13 (time and output bounds do not bound PIDs, CPU, disk or descendants; a global cap on concurrent runs and a debounce floor are missing).
+> **Unresolved review findings** (design.md): S13.
 
 #### Scenario: A program that hangs is stopped
 - **WHEN** a source is still running when its time limit passes
@@ -92,7 +95,7 @@ its answer SHALL carry the question it answers, so an answer that arrives
 after the viewer moved on is dropped rather than drawn. While a run is in
 flight the surface SHALL keep drawing its last answer.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** A1 (job ordering, one read at a time, panic fallbacks and answers orphaned by a closed surface are orchestrator policy the contract does not yet express) and M4 (building views from large answers must not happen on the render thread).
+> **Unresolved review findings** (design.md): A1, M4.
 
 #### Scenario: A slow source does not freeze the client
 - **WHEN** a source takes five seconds to answer
@@ -108,7 +111,7 @@ SHALL run the source again only when a declared event, an action's `refresh`,
 or an explicit refresh names it. A remembered answer SHALL be rebuildable:
 deleting it costs nothing but a run.
 
-> **Unresolved review finding (plan frozen 2026-09-27; see design.md):** M2 (a disk cache is not allowed from `uze-extensions` and cannot be invalidated across restarts; an in-memory cache per session is proposed, which changes this requirement's "rebuildable" wording).
+> **Unresolved review findings** (design.md): M2.
 
 #### Scenario: Reopening a surface costs no run
 - **WHEN** the operator closes the board and opens it again with nothing changed
