@@ -37,6 +37,13 @@ context: |
 #     tasks:
 #       - Break tasks into chunks of max 2 hours
 rules:
+  specs:
+    - >-
+        Keep each requirement's body (the text before its first scenario)
+        under 500 characters: the SHALL/MUST statement and at most a
+        short why. Examples and edge cases go into scenarios, longer
+        rationale into design.md, and two behaviors into two requirements.
+        `openspec validate --strict` gates CI and fails on anything longer.
   design:
     - If this change adds/removes a container or component, adds an
       external dependency, or changes a relationship between them, update

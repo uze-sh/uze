@@ -11,7 +11,7 @@
      intended to. `ci.yml` is the source of truth — this is the local proxy. -->
 
 - [ ] `make check` (fmt, clippy, cargo-deny, tests, ruff)
-- [ ] `openspec validate --all`
+- [ ] `openspec validate --all --strict`
 - [ ] Conformance verticals for every harness this touches (`make lab-run`)
 - [ ] `CREDITS.md` regenerated (`make attributions`) if dependencies changed
 

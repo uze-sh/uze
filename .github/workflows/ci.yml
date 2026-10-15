@@ -656,10 +656,10 @@ jobs:
 
   # The specs and the changes in flight: a delta that no longer applies, a
   # requirement with no scenario or a malformed header is a broken spec,
-  # and nothing else here reads them. Not `--strict` yet: 1.14's style
-  # warnings (requirement length, placeholder Purpose) fail most of the
-  # existing specs, and a gate that is red on day one is one people learn
-  # to skip. The version is pinned so a CLI release cannot turn this red.
+  # and nothing else here reads them. `--strict` fails on warnings too:
+  # an overlong requirement or a placeholder Purpose is cheapest to fix in
+  # the change that wrote it. The version is pinned so a CLI release
+  # cannot turn this red; a bump is a change that clears its new warnings.
   openspec:
     name: OpenSpec
     runs-on: ubuntu-24.04
@@ -671,7 +671,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - run: npx --yes @fission-ai/openspec@1.14.2 validate --all --no-interactive
+      - run: npx --yes @fission-ai/openspec@1.14.2 validate --all --strict --no-interactive
 
   # ── Stage 2 · Prove it against the real thing ───────────────────────
   #
