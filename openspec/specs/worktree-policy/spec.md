@@ -42,8 +42,8 @@ the system SHALL NOT start the agent and SHALL state the reason.
 - **THEN** it starts in the space's root, by the operator's deliberate choice, and no checkout is created for it
 
 ### Requirement: Isolated checkouts are reusable slots
-The system SHALL keep isolated checkouts in the primary checkout's isolation
-directory, under generated names that never change, and SHALL reuse a free
+The system SHALL keep isolated checkouts in the primary checkout's fixed
+isolation directory, under generated names that never change, and SHALL reuse a free
 one before creating another, reset to the task's base with no tracked or
 untracked file left and ignored files kept. One holding uncommitted changes
 beyond derived content (`checkout-accounting`), commits absent from its

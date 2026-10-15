@@ -9,12 +9,12 @@ Git written by hand.
 ## Requirements
 ### Requirement: A checkout carries a record that UZE made it
 When it makes a checkout, the system SHALL record that it made it, its path
-and, for a subagent's checkout, the agent and commit it was split from.
-Which agent holds a checkout SHALL stay the task store's answer. The record
+and, for a subagent's, the agent and commit it was split from. Who holds a
+checkout SHALL stay the task store's answer, never the record's. The record
 SHALL live with the checkout, surviving the loss of UZE's state and gone
 once the worktree is removed, by UZE or Git. A record naming another path
 SHALL be ignored; one this build cannot read SHALL keep the checkout from
-reuse and removal, and SHALL NOT be written over.
+reuse and removal and SHALL NOT be written over.
 
 #### Scenario: A made checkout is recorded
 - **WHEN** the system makes a checkout
@@ -126,12 +126,12 @@ either number under its worktree policy.
 
 ### Requirement: Every worktree of a project is accounted for
 The system SHALL account for every worktree the repository registers,
-wherever it is, classifying each by owner: an agent's checkout, a subagent's
-(with its agent), a harness's own isolation, recognised from where that
-harness's integration declares it keeps worktrees, or the operator's, for
-one no integration claims and UZE did not record. For each it SHALL know its
-branch, whether it is dirty, whether its work is in the target, when it last
-changed, and whether it is in use.
+wherever it is, by owner: an agent's checkout, a subagent's (with its
+agent), a harness's own isolation, recognised from where its integration
+declares it keeps worktrees relative to any checkout of the project, or the
+operator's, for one no integration claims and UZE did not record. For each
+it SHALL know its branch, whether it is dirty, whether its work is in the
+target, when it last changed, and whether it is in use.
 
 #### Scenario: A harness's own isolation is named as such
 - **WHEN** a harness creates a worktree where its integration declares that harness keeps them, from the primary or from inside a slot
@@ -167,13 +167,13 @@ SHALL NOT keep a working directory in any checkout.
 - **THEN** every checkout is taken as in use for that decision, and none is reused or removed
 
 ### Requirement: An agent gives a subagent a checkout by asking for one
-The system SHALL offer the agent audience a verb giving the calling agent,
-for a topic, a subagent checkout: from the same slot pool and cap as an
-agent's, prepared the same way, on a new branch from the caller's current
-commit, recorded as the caller's child with that commit, labelled by the
-topic. It SHALL answer with the checkout's absolute path, identify the
-caller by the identity UZE stamped into its environment, and answer a topic
-with a live child with that child's checkout.
+The system SHALL offer the agent audience a verb giving the calling agent a
+subagent checkout for a topic: from an agent's slot pool and cap, prepared
+alike, on a new branch from the caller's current commit, recorded as its
+child with that commit, labelled by the topic. It SHALL answer with the
+absolute path, identify the caller by the identity UZE stamped into its
+environment at launch, and answer a topic it already has a live child for
+with that child's checkout.
 
 #### Scenario: A subagent gets a warm checkout
 - **WHEN** an isolated agent asks for a subagent checkout for topic `parser` while a free slot exists

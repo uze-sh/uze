@@ -58,15 +58,16 @@ the target cannot preserve, SHALL be `unsupported`; any other loss SHALL be
 The system SHALL hand a command handler the normalized hook context as
 `HOOK_*` environment and read its decision from its exit code: `0` allows,
 the canonical deny exit denies with the reason on stderr, any other status
-is a failure the group's effect resolves. The reason read back SHALL be
-bounded, as SHALL each handler, by its declared timeout.
-It SHALL support observation, allow, deny and ask where the target has
-them, and SHALL report, not attach, a group whose effect it cannot preserve.
+is a failure the group's effect resolves. The reason read back and each
+handler's run SHALL be bounded, the run by its declared timeout. It SHALL
+support observation, allow, deny and ask where the target has them, and
+report, not attach, a group whose effect it cannot preserve.
 
 #### Scenario: First deny wins in deterministic order
 - **WHEN** one group declares several pre-tool command handlers
 - **THEN** they run sequentially in manifest order
 - **AND** a deny stops the later handlers and the intercepted operation where the target supports blocking
+
 ### Requirement: Managed Hook delivery preserves user configuration
 The system SHALL add only receipt-owned Hook artifacts and configuration
 entries. Reconciliation SHALL inspect the exact managed content and removal
