@@ -79,7 +79,11 @@ fn showing(kept: Vec<PreservedWork>, checkouts: Vec<CheckoutView>) -> WorkspaceM
 }
 
 fn sidebar_buffer(model: &WorkspaceModel, height: u16) -> ratatui::buffer::Buffer {
-    let mut terminal = Terminal::new(TestBackend::new(44, height)).unwrap();
+    sidebar_buffer_at(model, 44, height)
+}
+
+fn sidebar_buffer_at(model: &WorkspaceModel, width: u16, height: u16) -> ratatui::buffer::Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|frame| {
             render_sidebar(
@@ -96,7 +100,11 @@ fn sidebar_buffer(model: &WorkspaceModel, height: u16) -> ratatui::buffer::Buffe
 }
 
 fn drawn(model: &WorkspaceModel) -> Vec<String> {
-    let buffer = sidebar_buffer(model, 30);
+    drawn_at(model, 44)
+}
+
+fn drawn_at(model: &WorkspaceModel, width: u16) -> Vec<String> {
+    let buffer = sidebar_buffer_at(model, width, 30);
     (0..buffer.area.height)
         .map(|row| {
             (0..buffer.area.width)
@@ -432,6 +440,24 @@ fn the_toggle_opens_recent_reads_its_projects_and_keeps_the_selection() {
     assert!(!driven.attach.model.recent.open, "the same key closes it");
 }
 
+#[test]
+fn the_manage_mark_opens_manage_in_one_click_while_recent_is_open() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-manage"));
+    let mut driven = driven(
+        showing(
+            vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
+            Vec::new(),
+        ),
+        &home,
+    );
+    driven.frame();
+    let more = driven.hit(|hit| *hit == WorkspaceHit::OpenManage);
+
+    driven.press(more.x, more.y);
+    assert!(!driven.attach.model.recent.open);
+    assert!(driven.attach.model.manage.is_some());
+}
+
 /// The question opens on its way out, so the enter that opened nothing
 /// by habit takes nothing either; the arrow moves onto going ahead.
 #[test]
@@ -762,10 +788,29 @@ fn a_read_of_a_directory_below_the_root_is_kept_under_the_primary() {
     assert!(driven.attach.model.recent.covers(&below));
 }
 
+/// The foot is one line with the two keys that matter on the row:
+/// escape leaves every surface alike and delivering is in the action
+/// index, so neither takes the room the two need.
+#[test]
+fn the_foot_offers_resume_and_discard_on_one_line() {
+    let mut model = showing(
+        vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
+        Vec::new(),
+    );
+    model.recent.selected = Some("a".to_owned());
+    let lines = drawn(&model);
+    let foot = &lines[row_of(&lines, "enter resume")];
+    assert!(foot.contains("d discard"), "{foot:?}");
+    assert!(
+        !foot.contains("deliver") && !foot.contains("close"),
+        "{foot:?}"
+    );
+}
+
 #[test]
 fn with_nothing_kept_it_says_so() {
     let model = showing(Vec::new(), Vec::new());
-    row_of(&drawn(&model), "nothing kept");
+    row_of(&drawn(&model), "nothing kept yet");
 }
 
 #[test]

@@ -273,6 +273,12 @@ impl Attach<'_> {
                     Some(WorkspaceHit::ResizeSidebar) => self.model.dragging_sidebar = true,
                     Some(WorkspaceHit::ToggleRecent) => self.close_recent(),
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
+                    // Drawn beside recent's way out, so it is reached in
+                    // one click rather than one to leave and one to open.
+                    Some(WorkspaceHit::OpenManage) => {
+                        self.close_recent();
+                        self.open_manage();
+                    }
                     // The way in is the way out, and a click anywhere else
                     // leaves it the way it leaves the root picker.
                     _ => self.close_recent(),

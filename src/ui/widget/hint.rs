@@ -68,43 +68,70 @@ pub(crate) fn entries_within(
     scopes: &[uze_keys::Scope],
     entries: &[Entry],
 ) -> Line<'static> {
-    let keymap = uze_keys::active();
-    let separator = theme::glyph(Symbol::HintSeparator);
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0usize;
-    for entry in entries {
-        let (keys, name) = match entry {
-            Entry::Key(action, name) => match keymap.chord_for(*action, scopes) {
-                Some(chord) => (key_text(chord), name),
-                None => continue,
-            },
-            Entry::Run(first, last, name) => {
-                match (
-                    keymap.chord_for(*first, scopes),
-                    keymap.chord_for(*last, scopes),
-                ) {
-                    (Some(first), Some(last)) => (run_text(first, last), name),
-                    _ => continue,
-                }
-            }
-        };
-        let lead = match spans.is_empty() {
-            true => String::new(),
-            false => format!(" {separator} "),
-        };
-        let label = format!(" {}", name.to_lowercase());
-        let cost = lead.chars().count() + keys.chars().count() + label.chars().count();
+    for hint in hints(scopes, entries) {
+        let lead = !spans.is_empty();
+        let cost = hint.width() + if lead { separator_width() } else { 0 };
         if used + cost > width as usize {
             break;
         }
         used += cost;
-        if !lead.is_empty() {
-            spans.push(Span::styled(lead, theme::fg(Token::TextFaint)));
-        }
-        spans.push(Span::styled(keys, theme::fg_bold(Token::Accent)));
-        spans.push(Span::styled(label, theme::fg(Token::TextMuted)));
+        hint.push_onto(&mut spans, lead);
     }
     Line::from(spans)
+}
+
+/// One hint as drawn: the key, and what it does.
+struct Hint {
+    keys: String,
+    label: String,
+}
+
+impl Hint {
+    fn width(&self) -> usize {
+        self.keys.chars().count() + self.label.chars().count()
+    }
+
+    fn push_onto(self, spans: &mut Vec<Span<'static>>, lead: bool) {
+        if lead {
+            let separator = theme::glyph(Symbol::HintSeparator);
+            spans.push(Span::styled(
+                format!(" {separator} "),
+                theme::fg(Token::TextFaint),
+            ));
+        }
+        spans.push(Span::styled(self.keys, theme::fg_bold(Token::Accent)));
+        spans.push(Span::styled(self.label, theme::fg(Token::TextMuted)));
+    }
+}
+
+fn separator_width() -> usize {
+    usize::from(theme::width(Symbol::HintSeparator)) + 2
+}
+
+/// Every entry with a chord in `scopes`, spelled the way a hint draws it.
+fn hints(scopes: &[uze_keys::Scope], entries: &[Entry]) -> Vec<Hint> {
+    let keymap = uze_keys::active();
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let (keys, name) = match entry {
+                Entry::Key(action, name) => (key_text(keymap.chord_for(*action, scopes)?), name),
+                Entry::Run(first, last, name) => (
+                    run_text(
+                        keymap.chord_for(*first, scopes)?,
+                        keymap.chord_for(*last, scopes)?,
+                    ),
+                    name,
+                ),
+            };
+            Some(Hint {
+                keys,
+                label: format!(" {}", name.to_lowercase()),
+            })
+        })
+        .collect()
 }
 
 /// A key as a hint spells it: an arrow key as the arrow the theme draws,

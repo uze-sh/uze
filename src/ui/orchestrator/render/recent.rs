@@ -41,16 +41,8 @@ pub(super) fn render_recent(
         rect
     });
     let lines = lines_of(model, &list, selected, width);
-    if lines.is_empty()
-        && let Some(rect) = rows.next(1)
-    {
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                lead(),
-                Span::styled("nothing kept", theme::fg(Token::TextMuted)),
-            ])),
-            rect,
-        );
+    if lines.is_empty() {
+        render_empty(frame, rows, width);
     }
     let visible = usize::from(rows.remaining());
     let focus = selected.and_then(|index| {
@@ -127,6 +119,36 @@ pub(super) fn render_recent(
     }
 }
 
+/// What recent is for, said where its rows would be: a title, and what
+/// will arrive here, folded to the column.
+fn render_empty(frame: &mut ratatui::Frame<'_>, rows: &mut Rows, width: u16) {
+    let room = usize::from(width.saturating_sub(2 * TRAILING_PAD));
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            lead(),
+            Span::styled("nothing kept yet", theme::fg_bold(Token::TextSecondary)),
+        ]),
+    ];
+    lines.extend(
+        text::fold(
+            "an agent closed with work in its checkout waits here to be picked up again",
+            room,
+        )
+        .into_iter()
+        .map(|words| {
+            Line::from(vec![
+                lead(),
+                Span::styled(words, theme::fg(Token::TextMuted)),
+            ])
+        }),
+    );
+    for line in lines {
+        let Some(rect) = rows.next(1) else { break };
+        frame.render_widget(Paragraph::new(line), rect);
+    }
+}
+
 /// The question's two answers, the keyboard on one of them: going ahead
 /// in the hue of what it takes away, and the way out.
 fn answers(word: &str, on_confirm: bool) -> [(Button, WorkspaceHit); 2] {
@@ -142,9 +164,10 @@ fn answers(word: &str, on_confirm: bool) -> [(Button, WorkspaceHit); 2] {
     ]
 }
 
-/// What the foot offers for `row`: enter's move and the two letters, each
-/// under the word it means here, or, while it asks, what enter takes and
-/// how to reach the other answer.
+/// What the foot offers for `row`: enter's move and the one that takes
+/// the row away, or, while it asks, what enter takes and how to reach the
+/// other answer. One line, so only those two: escape leaves every surface
+/// alike, and delivering is reached through the action index.
 fn keys_for(row: Option<&RecentRow>, asking: bool, on_confirm: bool) -> Vec<(Action, String)> {
     let mut keys = Vec::new();
     if let Some(word) = row.and_then(RecentRow::taking_away).filter(|_| asking) {
@@ -160,9 +183,9 @@ fn keys_for(row: Option<&RecentRow>, asking: bool, on_confirm: bool) -> Vec<(Act
     keys.extend(
         row.into_iter()
             .flat_map(RecentRow::offers)
+            .filter(|(action, _)| matches!(action, Action::Activate | Action::DiscardTask))
             .map(|(action, word)| (action, word.to_owned())),
     );
-    keys.push((Action::Dismiss, "close".to_owned()));
     keys
 }
 
