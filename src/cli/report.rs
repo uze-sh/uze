@@ -771,8 +771,8 @@ pub(crate) fn undelivered_failure<'a>(
         .collect();
     (!lines.is_empty()).then(|| {
         uze_application::UzeError::DeliveryFailed(format!(
-            "installed, but not delivered everywhere:\n{}\n`uze status -m` lists each as \
-             partially delivered until a later install or update reaches every harness",
+            "installed, but not delivered everywhere:\n{}\nonce the cause is fixed, `uze setup` \
+             delivers them again; until then `uze status -m` lists each as partially delivered",
             lines.join("\n")
         ))
     })
