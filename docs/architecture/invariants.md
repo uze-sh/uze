@@ -1351,11 +1351,29 @@ operator's tree is exactly what they left.
 
 ### A checkout is a slot; a task is what comes and goes
 
-Slots are long-lived directories named by an identifier that never changes.
-A new agent takes a free slot before a directory is created: the tree is put
-at the base with none of the previous task's tracked or untracked files, and
-ignored artifacts survive. A slot holding work is never reused.
+Slots are long-lived directories, each named after the agent that holds
+it, because every harness keys its conversation by directory and an agent
+must come back to the one it left. A new agent takes a free slot before a
+directory is created, renamed to the agent's name with Git's own worktree
+move: the tree is put at the base with none of the previous task's tracked
+or untracked files, and ignored artifacts survive. A slot holding work is
+never reused; one any process works in, attended or not, or one Git refuses
+to move, is never renamed and does not count against the cap. Release and
+collection rename nothing, so an agent resumed before its slot was taken
+finds it where it was; an agent placed by an earlier build keeps the
+generated name it last held; and an agent whose path another checkout holds
+is placed at a generated name and told its conversation was not carried.
 
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::a_new_agent_is_placed_at_a_directory_named_after_it`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::a_renamed_slot_is_the_systems_at_its_new_path_and_nowhere_else`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::a_slot_a_daemon_works_in_is_never_renamed_and_does_not_count_against_the_cap`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::a_locked_slot_is_never_renamed`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::the_slot_an_agent_would_come_back_to_is_handed_on_last`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::an_agent_whose_path_another_checkout_holds_is_placed_elsewhere_and_told`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::a_released_slot_keeps_its_agents_name_and_resuming_it_moves_nothing`
+> `crates/uze-workspace/src/checkout/tests.rs::ownership::an_agent_an_earlier_build_placed_resumes_in_its_generated_slot`
+> `crates/uze-application/tests/slot_lifecycle.rs::work_shelf::shelved_work_is_resumed_at_its_own_path_after_its_checkout_was_handed_on`
+> `conformance/contract/continuity.py` (scene `continuity-placed-again`, all four harnesses)
 > `crates/uze-workspace/src/checkout/tests.rs::a_free_slot_is_reused_and_ignored_artifacts_survive`
 > `crates/uze-workspace/src/checkout/tests.rs::a_previous_tasks_edits_never_reach_the_next`
 > `crates/uze-workspace/src/checkout/tests.rs::a_new_directory_appears_only_when_none_is_free_and_the_cap_holds`
@@ -1499,7 +1517,11 @@ a recorded checkout under the isolation directory is reused, collected or
 pruned. The slots of agents UZE launched and the `agent-<n>` of the builds
 before slots are recorded on sight; an earlier build's adoption by
 inference is not inherited. A record read from another checkout, or one a
-newer build wrote, makes nothing reusable and is never written over.
+newer build wrote, makes nothing reusable and is never written over. A
+checkout renamed to its agent carries the move in its record before Git
+renames it, so a crash in between leaves it recognised at its new path and
+repaired before any prune; a copy names no such move and is still not
+taken.
 
 This is what the 2026-09-26 incident broke: a subagent's checkout, seconds
 old and so clean and level with the target, was adopted, read as free,
@@ -1511,6 +1533,9 @@ and reset under the subagent still writing in it.
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::the_record_outlives_lost_state`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::the_record_goes_with_the_worktree`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_copied_checkout_does_not_inherit_the_record`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_checkout_mid_move_is_recognised_at_its_new_path_and_a_copy_is_not`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_move_interrupted_inside_git_is_repaired_before_anything_is_pruned`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_move_that_never_happened_is_withdrawn`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_record_from_a_newer_build_is_neither_reused_removed_nor_written_over`
 > `tests/acceptance/engine.rs::a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand`
 
@@ -1581,7 +1606,7 @@ process table under the repository lock first: a process inside — an agent
 another client launched among them — leaves both the checkout and its agent
 as they were. A paused operation, work a shelf cannot hold, or a shelf that
 could not be written pins the checkout instead, with its reason. Resuming
-prefers the checkout the task left, recreates a branch deleted by hand, and
+places the task at the checkout it left, recreates a branch deleted by hand, and
 refuses, keeping the shelf, when the shelf no longer applies. A shelf whose
 every path the target carries is collected; a shelf nothing records is
 adopted back under the task it names.
@@ -1595,7 +1620,7 @@ adopted back under the task it names.
 > `crates/uze-workspace/src/checkout/tests.rs::a_free_slot_left_on_a_squash_merged_tip_is_never_adopted`
 > `crates/uze-application/tests/slot_lifecycle.rs::a_week_of_agents_never_holds_more_checkouts_than_agents`
 > `crates/uze-application/tests/slot_lifecycle.rs::an_agent_another_client_launched_is_never_released_under_it`
-> `crates/uze-application/tests/slot_lifecycle.rs::shelved_work_is_resumed_somewhere_else`
+> `crates/uze-application/tests/slot_lifecycle.rs::shelved_work_is_resumed_at_its_own_path_after_its_checkout_was_handed_on`
 > `crates/uze-application/tests/slot_lifecycle.rs::a_shelf_that_does_not_apply_is_kept`
 > `crates/uze-application/tests/slot_lifecycle.rs::a_lost_task_store_lists_the_shelf_again`
 

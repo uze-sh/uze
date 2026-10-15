@@ -38,6 +38,16 @@ workspace:
   idle_days: 3   # after this long unused, a free checkout goes
 ```
 
+An agent always comes back to the same directory, `.worktrees/<agent>`,
+because every harness keeps its conversation by directory: resume an agent
+days later and it picks up the conversation it left. When a checkout goes
+to another agent, uze renames it to that agent's directory, and the build
+cache goes with it. A cache that records its own absolute path, such as a
+Python virtualenv, a direnv allow list or a CMake build tree, needs
+repairing after that. `setup` runs every time an agent takes a checkout, so
+that is the place to do it. Antigravity asks you to trust each agent's
+folder the first time it opens there.
+
 A checkout is only ever reused or removed when uze made it, and never while
 something is still working in it. A worktree you or a tool added by hand is
 shown, never touched.

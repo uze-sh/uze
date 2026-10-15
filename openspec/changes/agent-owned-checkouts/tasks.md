@@ -25,6 +25,6 @@
 
 - [ ] 5.1 Update journeys that read slot names (`04-workspace/01-agents-and-slots.yml`, `02-a-shell-opened-beside-an-agent.yml`, `05-delivery/01-handing-the-work-back.yml`) and add a `07-upgrade` scene where an older build meets agent-named checkouts
 - [ ] 5.2 Rebuild the Lab image and run the continuity contract on all four harnesses, and the full verticals
-- [ ] 5.3 Document in the workspace docs that `setup` runs whenever an agent takes a slot and is where path-bound caches are repaired, and that Antigravity asks to trust each agent's folder
-- [ ] 5.4 Update `docs/architecture/invariants.md` (the "identifier that never changes" entry and the copied-checkout entry), each tied to its test
+- [x] 5.3 Document in the workspace docs that `setup` runs whenever an agent takes a slot and is where path-bound caches are repaired, and that Antigravity asks to trust each agent's folder
+- [x] 5.4 Update `docs/architecture/invariants.md` (the "identifier that never changes" entry and the copied-checkout entry), each tied to its test
 - [ ] 5.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`, `openspec validate --all --strict`
