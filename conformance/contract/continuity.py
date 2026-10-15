@@ -48,6 +48,10 @@ LAUNCH_KEY_DIGEST = "sha256:" + hashlib.sha256(LAUNCH_KEY.encode()).hexdigest()
 #: replayed as history it could only have from the resumed conversation.
 FIRST_MARKER = "UZE_CONFORMANCE_ACORN"
 SECOND_MARKER = "UZE_CONFORMANCE_WALNUT"
+#: The same pair for the agent whose checkout is placed again, so its proof
+#: can never be the first scene's request read twice.
+FIRST_PLACED_MARKER = "UZE_CONFORMANCE_CHESTNUT"
+SECOND_PLACED_MARKER = "UZE_CONFORMANCE_HAZELNUT"
 
 #: UZE's own state, keyed the way `uze-core` keys it: a project's records
 #: live in one directory at `state/projects/<project id>/`, where the
@@ -142,7 +146,20 @@ def launcher(harness):
 ENDED_MARKER = "UZE_CONFORMANCE_PROCESS_ENDED"
 
 
-def relaunch_command(harness, args=""):
+def place_the_checkout_again():
+    """The shell run between the two launches when the agent's checkout was
+    collected while it was away: the directory is removed and the branch is
+    checked out again at the same path, which is where UZE places an agent
+    it resumes. The second launch then starts in a checkout that is new on
+    disk at the path the first one stood in."""
+    return (
+        f"cd {PROJECT} && git worktree remove --force .worktrees/{SLOT_NAME} && "
+        f"git worktree add -q .worktrees/{SLOT_NAME} agent/{SLOT_NAME} && "
+        f"cd .worktrees/{SLOT_NAME}"
+    )
+
+
+def relaunch_command(harness, args="", between=""):
     """The shell one terminal runs: the launcher, a marker when it returns,
     the launcher again. `args` is whatever this harness needs on the line
     both times.
@@ -157,26 +174,56 @@ def relaunch_command(harness, args=""):
     accompanies it: the shell's `$$` is not the harness's pid, and an
     identity with no owner yet is exactly what a launch UZE composed looks
     like to the first shim that reads it.
+
+    `between` runs after the first process ends and before the second
+    starts, for a scene that changes the world in the meantime.
     """
     run = (
         f"{AGENT_IDENTITY_VARIABLE}={SLOT_NAME} {AGENT_KEY_VARIABLE}={LAUNCH_KEY} "
         f"{launcher(harness)} {args}"
     ).strip()
-    return f"{run}; printf '\\n{ENDED_MARKER}\\n'; {run}"
+    middle = f"{between}; " if between else ""
+    return f"{run}; printf '\\n{ENDED_MARKER}\\n'; {middle}{run}"
 
 
 def assert_contract(cfg, prov_ip, bindings):
     with describe("continuity"):
-        _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings)
+        _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings, Scene.SAME_CHECKOUT)
+        _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings, Scene.PLACED_AGAIN)
 
 
-def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
+class Scene:
+    """Where the second process starts: in the checkout the first one left,
+    or in one placed again at its path after that one was collected. Each
+    names its checks and carries its own pair of sentinels."""
+
+    def __init__(self, prefix, between, first, second, place):
+        self.prefix = prefix
+        self.between = between
+        self.first = first
+        self.second = second
+        self.place = place
+
+
+Scene.SAME_CHECKOUT = Scene(
+    "continuity", "", FIRST_MARKER, SECOND_MARKER, "in the same checkout"
+)
+Scene.PLACED_AGAIN = Scene(
+    "continuity-placed-again",
+    place_the_checkout_again(),
+    FIRST_PLACED_MARKER,
+    SECOND_PLACED_MARKER,
+    "in a checkout placed again at the same path",
+)
+
+
+def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings, scene):
     with bindings.relaunch_in(
-        cfg, prov_ip, SLOT, prelude(bindings.launcher_name())
+        cfg, prov_ip, SLOT, prelude(bindings.launcher_name()), scene.between
     ) as tui:
         plain, matched = bindings.prepare(tui)
         check(
-            "continuity-first-process-ready",
+            f"{scene.prefix}-first-process-ready",
             bool(matched),
             f"{bindings.harness} reached its prompt in the task's checkout"
             if matched
@@ -186,16 +233,16 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
             return
         bindings.await_input(tui)
 
-        tui.type(f"{FIRST_MARKER}: remember this word and say it back later")
+        tui.type(f"{scene.first}: remember this word and say it back later")
         tui.submit()
-        tui.snapshot("continuity-first-turn", tui.collect(reads=6))
+        tui.snapshot(f"{scene.prefix}-first-turn", tui.collect(reads=6))
 
         # The process ends and another starts in its place — what the
         # terminal runtime does when it restores a workspace after a
         # restart, with no client in the room to compose a command.
         plain, ended = _end_the_process(tui, bindings)
         check(
-            "continuity-first-process-ended",
+            f"{scene.prefix}-first-process-ended",
             bool(ended),
             "the first process exited and the shell went on to the next"
             if ended
@@ -208,9 +255,9 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
         # process ended is the second process's, and may be its prompt.
         plain, matched = bindings.rejoin(tui, plain.split(ENDED_MARKER, 1)[-1])
         check(
-            "continuity-second-process-ready",
+            f"{scene.prefix}-second-process-ready",
             bool(matched),
-            "a second process started in the same checkout"
+            f"a second process started {scene.place}"
             if matched
             else plain[-160:].replace("\n", " "),
         )
@@ -218,13 +265,13 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings):
             return
         bindings.await_input(tui)
 
-        tui.type(f"{SECOND_MARKER}: what was the word?")
+        tui.type(f"{scene.second}: what was the word?")
         tui.submit()
-        tui.snapshot("continuity-second-turn", tui.collect(reads=6))
+        tui.snapshot(f"{scene.prefix}-second-turn", tui.collect(reads=6))
 
         check(
-            "continuity-relaunch-carries-the-turn",
-            _carried(cfg),
+            f"{scene.prefix}-relaunch-carries-the-turn",
+            _carried(cfg, scene),
             "a request from the relaunched process carries the earlier turn",
         )
 
@@ -257,7 +304,7 @@ def _end_the_process(tui, bindings):
     return plain, False
 
 
-def _carried(cfg):
+def _carried(cfg, scene):
     """One request holding both sentinels.
 
     The union across requests is not enough here: the first process's own
@@ -268,6 +315,6 @@ def _carried(cfg):
     """
     for record in provider_struct(cfg):
         markers = record.get("summary", {}).get("continuity_markers", {})
-        if markers.get(FIRST_MARKER) and markers.get(SECOND_MARKER):
+        if markers.get(scene.first) and markers.get(scene.second):
             return True
     return False

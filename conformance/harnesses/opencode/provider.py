@@ -101,7 +101,12 @@ ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: process was given the conversation the first one made — the union across
 #: requests cannot say that, since the first process's own request already
 #: carried the first of them.
-CONTINUITY_MARKERS = ["UZE_CONFORMANCE_ACORN", "UZE_CONFORMANCE_WALNUT"]
+CONTINUITY_MARKERS = [
+    "UZE_CONFORMANCE_ACORN",
+    "UZE_CONFORMANCE_WALNUT",
+    "UZE_CONFORMANCE_CHESTNUT",
+    "UZE_CONFORMANCE_HAZELNUT",
+]
 SKILL_MARKERS = [
     "flow:analyze",
     "flow:commit",

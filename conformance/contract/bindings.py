@@ -131,10 +131,12 @@ class Bindings:
         another, the same rule the integration's own `shim_name` follows."""
         return self.launcher or self.harness
 
-    def relaunch_in(self, cfg, prov_ip, cwd, prelude):
+    def relaunch_in(self, cfg, prov_ip, cwd, prelude, between=""):
         """A terminal in `cwd` that runs this harness, and then runs it
         again when the first one ends — what the terminal runtime does when
-        it restores a workspace after a restart.
+        it restores a workspace after a restart. `between` runs in the
+        shell after the first process ends, for a scene that moves the
+        agent before it comes back.
 
         Both launches go through UZE's own launcher, because that is where
         the resume-or-start decision is made, and the shell between them is

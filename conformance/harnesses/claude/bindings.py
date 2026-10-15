@@ -28,9 +28,9 @@ class ClaudeBindings(Bindings):
         final = f"{prelude}\ncd {cwd} && {self.launch}"
         return Tui(cfg, claude_container(cfg, prov_ip, final), "claude-isolation")
 
-    def relaunch_in(self, cfg, prov_ip, cwd, prelude):
+    def relaunch_in(self, cfg, prov_ip, cwd, prelude, between=""):
         """Two launches in one terminal, back to back."""
-        relaunch = continuity.relaunch_command(self.launcher_name())
+        relaunch = continuity.relaunch_command(self.launcher_name(), between=between)
         final = f"{prelude}\ncd {cwd} && {relaunch}"
         return Tui(cfg, claude_container(cfg, prov_ip, final), "claude-continuity")
 

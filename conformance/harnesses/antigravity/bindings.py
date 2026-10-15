@@ -40,13 +40,15 @@ class AntigravityBindings(Bindings):
         )
         return Tui(cfg, docker_base(cfg, prov_ip, setup), "antigravity-isolation")
 
-    def relaunch_in(self, cfg, prov_ip, cwd, prelude):
+    def relaunch_in(self, cfg, prov_ip, cwd, prelude, between=""):
         """Two launches in one terminal, back to back."""
         setup = agy_setup(
             cfg,
             prov_ip,
             include_mcp=False,
-            final_cmd=continuity.relaunch_command(self.launcher_name()),
+            final_cmd=continuity.relaunch_command(
+                self.launcher_name(), between=between
+            ),
             prelude=f"{prelude}\ncd {cwd}",
         )
         return Tui(cfg, docker_base(cfg, prov_ip, setup), "antigravity-continuity")

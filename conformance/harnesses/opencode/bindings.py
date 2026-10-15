@@ -95,12 +95,12 @@ chmod +x /tmp/lab-bin/opencode
 export PATH=/tmp/lab-bin:$PATH
 """
 
-    def relaunch_in(self, cfg, prov_ip, cwd, prelude):
+    def relaunch_in(self, cfg, prov_ip, cwd, prelude, between=""):
         """Two launches in one terminal, back to back, through the scene's
         own launcher rather than the image's — the task record this contract
         writes lives under the run's `UZE_HOME`, and the launcher has to read
         the same one."""
-        relaunch = continuity.relaunch_command(self.launcher_name())
+        relaunch = continuity.relaunch_command(self.launcher_name(), between=between)
         final = f"{prelude}\n{self.STANDALONE_WRAPPER}\ncd {cwd} && {relaunch}"
         return Tui(cfg, opencode_container(cfg, prov_ip, final), "opencode-continuity")
 
