@@ -25,9 +25,9 @@ world:
   project: demo-app
   released: v0.0.0-alpha.6
   manifest: |
-    worktrees:
+    workspace:
       target: main
-      completion: handoff
+      delivery: handoff
       slots: 2
 
 scenes:

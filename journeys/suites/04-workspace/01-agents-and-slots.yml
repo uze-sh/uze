@@ -182,7 +182,7 @@ scenes:
       - git: { worktrees: 4 }
         about: Git still registers the freed checkout
 
-  - scene: the next agent takes the freed slot, not a new directory
+  - scene: the next agent takes the freed slot under its own name, not a new directory
     when:
       - click: "new"
         in: sidebar
@@ -208,12 +208,14 @@ scenes:
         pause: 2.0
     then:
       - dir: "{project}/.worktrees/*"
-        same_as: slots
+        count: 3
         about: no fourth directory was created
       - tasks: { count: 4 }
         about: a fourth task was recorded
-      - tasks: { newest_checkout_in: slots }
-        about: the new agent took a slot that already existed
+      - tasks: { newest_checkout_is_its_own: true }
+        about: |
+          the freed slot was renamed to the new agent, so the directory it
+          works in is the one it comes back to
       - tasks: { checkouts: 3 }
         about: four tasks have passed through three slots
       - tasks: { one_task_per_checkout: true }

@@ -209,7 +209,7 @@ this, and the linter refuses it rather than the reviewer. Synchronization is
 | `file` | files matching a glob: `count`, `exists`, `contains` |
 | `launcher` | launchers matching a glob, each of which must run the `uze` under test (a link on Unix, a copy named `<name>.exe` on Windows): `exists: false` for none |
 | `git` | `worktrees:` count, `branches:` pattern + `count:`, `dirty:`, `in:` |
-| `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_in: <capture>`, `one_task_per_checkout` |
+| `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_is_its_own`, `one_task_per_checkout` |
 | `process` | `matching:` + `alive:`, scoped to this world's processes; `count:` where one thing is one process, `same_as:`/`more_than: <capture>` where it is not — a login shell forks a child on some hosts |
 | `cmd` | runs a command: `exit:`, `stdout_contains:` — the *subject*, asserted beside the filesystem checks |
 | `tree` | every path under the given roots, by content: `same_as: <capture>` for a "nothing moved" claim, `except:` to drop paths by glob (a lock every command takes and drops is about the command having run, not about what it left behind) |

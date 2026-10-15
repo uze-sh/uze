@@ -126,9 +126,11 @@ scenes:
       - process: { matching: codex, cwd: "/.worktrees/", alive: true }
         about: the second agent's own process is running, in a checkout
       - dir: "{project}/.worktrees/*"
-        same_as: occupied_slot
+        count: 1
         about: |
-          the same directory, reused — which is only safe because the close
-          took everything that was standing in it
+          the same directory, reused under the new agent's name — which is
+          only safe because the close took everything that was standing in it
+      - tasks: { newest_checkout_is_its_own: true }
+        about: the slot was renamed to the agent now holding it
       - git: { worktrees: 2 }
         about: and no second checkout was needed

@@ -84,15 +84,14 @@ more. Wait on a condition with `wait: screen|file|shell` + `until:`.
 `about:` as the outcome ("the slot survives its agent — a checkout is reused,
 not destroyed"), never the mechanism.
 
-Carry state between scenes with `capture` — that is how "the next agent took
-a slot that already existed" is expressible at all:
+Carry state between scenes with `capture` — that is how "the slot survived
+its agent" is expressible at all:
 
 ```yaml
 - capture: { name: slots, dirs: "{project}/.worktrees/*" }
 # ... later scene ...
 - dir: "{project}/.worktrees/*"
   same_as: slots
-- tasks: { newest_checkout_in: slots }
 ```
 
 Where UZE writes what a check reads: tasks in

@@ -1195,15 +1195,16 @@ class Checker:
             task["state"]["state"] == wanted["any_state"] for task in tasks
         ):
             return False, f"no task is {wanted['any_state']!r}: {shape}"
-        if remembered := wanted.get("newest_checkout_in"):
-            before = self.runner.captures.get(remembered)
-            if before is None:
-                return False, f"no capture named {remembered!r}"
-            if not tasks or tasks[-1].get("checkout") not in set(before):
-                return False, (
-                    f"the newest task took a checkout outside {sorted(before)}: "
-                    f"{tasks[-1].get('checkout') if tasks else 'no tasks'}"
-                )
+        # A checkout is named after the agent holding it, so a reused slot
+        # was renamed to the newest task rather than lent under the name of
+        # the one before.
+        if wanted.get("newest_checkout_is_its_own") and (
+            not tasks or tasks[-1].get("checkout") != tasks[-1]["id"]
+        ):
+            return False, (
+                f"the newest task's checkout is not named after it: "
+                f"{shape[-1] if shape else 'no tasks'}"
+            )
         return True, f"{shape}"
 
     def _launcher(self, spec: dict) -> tuple[bool, str]:

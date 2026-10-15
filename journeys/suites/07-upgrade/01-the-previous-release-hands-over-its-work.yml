@@ -29,12 +29,12 @@ world:
   # series wrote a shape of the agents record this build deliberately has
   # no rung for, and that release is what this journey pinned until it
   # stopped proving anything.
-  released: v1.0.0-beta.10
+  released: v1.0.0-beta.15
   manifest: |
-    worktrees:
-      default: isolated
+    workspace:
+      worktree: always
       target: main
-      completion: handoff
+      delivery: handoff
       slots: 3
 
 scenes:
@@ -93,9 +93,11 @@ scenes:
         say: pick Claude Code
         row_offset: 1
         offset: 3
-        # The tab, not the header's `agent 2: preparing`: the tab opens
-        # once the checkout exists, and the checks below read it.
-        expect: 'agent 2(?!: preparing)'
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it. The
+        # release's agent was named from its commit, so this one is the
+        # first `agent <n>` the project has.
+        expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
     then:
@@ -133,3 +135,35 @@ scenes:
             " "$(git -C "$slot" rev-parse --abbrev-ref HEAD)"
           stdout_contains: carried
         about: and the carried record still names the branch the release's work is on
+
+  - scene: the release opens again on a checkout named after its agent
+    when:
+      - shell: "{uze} workspace stop"
+        say: this build lets go of the workspace
+        check: false
+      - open: ["{released_uze}", "workspace"]
+        say: the release a user has installed opens on the project again
+        expect: demo-app
+        expect_timeout: 30
+        pause: 2.0
+      - shell: "{released_uze} workspace stop"
+        say: and lets go of it
+        check: false
+    then:
+      - cmd:
+          run: |
+            {python} -c "
+            import glob, json, os
+            agents = [a for s in glob.glob('{uze_home}/state/projects/*/agents.json')
+                      for a in json.load(open(s))['agents'] if a.get('isolation')]
+            own = [a for a in agents if a['isolation'].get('checkout') == a['id']]
+            kept = [a['id'] for a in own if os.path.isdir('{project}/.worktrees/' + a['id'])]
+            print('kept' if own and kept == [a['id'] for a in own] else 'lost: %s' % agents)
+            "
+          stdout_contains: kept
+        about: |
+          this build placed its agent in a directory named after the agent;
+          the release, which looks a checkout's owner up by the directory's
+          name, still finds it its agent's and neither collects nor takes it
+      - git: { worktrees: 3 }
+        about: and Git still registers both agents' checkouts
