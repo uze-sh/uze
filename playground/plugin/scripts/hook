@@ -1,0 +1,18 @@
+#!/bin/sh
+# hook <log|deny>: the playground's one hook handler (ADR-033: HOOK_*
+# environment in, exit code out).
+#
+#   log  — appends the event to the log below and allows.
+#   deny — denies a shell command carrying `ping-deny`, allows anything else.
+#
+# The log is how a person sees an observing hook ran: it says nothing to
+# the harness.
+log="${TMPDIR:-/tmp}/uze-playground-hooks.log"
+printf '%s %s %s %s\n' "$(date '+%H:%M:%S')" "${HOOK_HARNESS:-?}" \
+  "${HOOK_EVENT:-?}" "${HOOK_COMMAND:-}" >> "$log"
+case "$1:$HOOK_COMMAND" in
+  deny:*ping-deny*)
+    echo "pong (UZE_PLAYGROUND_HOOK: deny-ping refused this command)" >&2
+    exit 3 ;;
+esac
+exit 0

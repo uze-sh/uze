@@ -1,0 +1,7 @@
+{
+  "name": "playground",
+  "description": "The playground plugin, read straight from a uze checkout.",
+  "plugins": [
+    { "name": "playground", "source": "./plugin", "category": "development" }
+  ]
+}

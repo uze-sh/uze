@@ -77,19 +77,10 @@ stage_sessions() {
   python3 "${playground_root}/sessions.py" "$1/sessions"
 }
 
-# The playground plugin, laid out as a marketplace. The world makes it a Git
-# repository itself, with its own Git, since a marketplace is one.
+# The playground marketplace, copied out of the checkout. The world makes it a
+# Git repository itself, with its own Git, since a marketplace is one.
 stage_market() {
   local market="$1/market"
-  mkdir -p "$market/plugins"
-  cp -R "${playground_root}/plugin" "$market/plugins/playground"
-  cat > "$market/marketplace.json" <<'JSON'
-{
-  "name": "playground",
-  "owner": { "name": "uze playground" },
-  "plugins": [
-    { "name": "playground", "source": "./plugins/playground", "category": "development" }
-  ]
-}
-JSON
+  mkdir -p "$market"
+  cp -R "${playground_root}/plugin" "${playground_root}/marketplace.json" "$market/"
 }

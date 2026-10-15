@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install playground-plugin playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -32,6 +32,11 @@ release-notes: ## Preview the GitHub Release page for the latest tag (cliff.rele
 # passes no features.
 install: ## Force-rebuild (no version bump) and install/replace `uze`, with the OTLP exporter compiled in.
 	$(CARGO) install --path . --bin uze --locked --features telemetry $(INSTALL_ARGS)
+
+playground-plugin: ## Install the playground plugin's MCP server and link its marketplace to this checkout.
+	cargo install --locked --force --path . --features dev-servers --bin playground-mcp
+	uze market list | grep -q '^ *playground ' || uze market add "$(CURDIR)/playground"
+	uze market link playground "$(CURDIR)/playground"
 
 playground-windows: ## Open a fresh Windows Sandbox with this checkout's uze installed (run from WSL).
 	./playground/windows/up.sh

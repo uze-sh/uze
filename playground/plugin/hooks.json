@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "id": "session-start",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {
+              "posix": "${PLUGIN_ROOT}/scripts/hook log",
+              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "id": "deny-ping",
+        "matcher": "shell",
+        "effect": "deny",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {
+              "posix": "${PLUGIN_ROOT}/scripts/hook deny",
+              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" deny"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "after-shell",
+        "matcher": "shell",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {
+              "posix": "${PLUGIN_ROOT}/scripts/hook log",
+              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "id": "stop",
+        "effect": "observe",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {
+              "posix": "${PLUGIN_ROOT}/scripts/hook log",
+              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

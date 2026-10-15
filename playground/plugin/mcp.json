@@ -1,6 +1,8 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
-    "tools": {
+    "pingpong": {
+      "type": "stdio",
       "command": "playground-mcp",
       "args": []
     }

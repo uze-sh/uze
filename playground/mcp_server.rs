@@ -22,11 +22,13 @@ struct AddArgs {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-struct StatusArgs {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[allow(dead_code)]
-    unused: Option<String>,
+struct HelloArgs {
+    #[serde(default)]
+    name: Option<String>,
 }
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct NoArgs {}
 
 #[derive(Debug, Clone)]
 struct PlaygroundServer {
@@ -53,9 +55,15 @@ impl PlaygroundServer {
         (args.left + args.right).to_string()
     }
 
-    #[tool(description = "Returns a deterministic status value for the playground MCP server.")]
-    fn status(&self, Parameters(_args): Parameters<StatusArgs>) -> String {
-        "UZE_PLAYGROUND_MCP_READY".to_owned()
+    #[tool(description = "Answers a ping with a pong, proving the server was delivered.")]
+    fn ping(&self, Parameters(_args): Parameters<NoArgs>) -> String {
+        "pong (UZE_PLAYGROUND_MCP: ping)".to_owned()
+    }
+
+    #[tool(description = "Greets the given name, or the world when none is given.")]
+    fn hello(&self, Parameters(args): Parameters<HelloArgs>) -> String {
+        let name = args.name.as_deref().unwrap_or("world");
+        format!("hello, {name} (UZE_PLAYGROUND_MCP: hello)")
     }
 }
 
@@ -63,7 +71,7 @@ impl PlaygroundServer {
 impl ServerHandler for PlaygroundServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_instructions("Deterministic playground MCP tools")
+            .with_instructions("The playground's ping-pong tools")
     }
 }
 

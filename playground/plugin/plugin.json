@@ -1,17 +1,9 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "playground",
-  "version": "0.1.0",
-  "description": "Portable UZE playground with planning, review, release, and MCP capabilities.",
+  "version": "0.2.0",
+  "description": "A ping-pong plugin declaring every capability UZE delivers, for trying a harness by hand.",
   "author": {
     "name": "UZE"
-  },
-  "interface": {
-    "displayName": "Playground",
-    "shortDescription": "A portable local plugin for real UZE dogfooding.",
-    "longDescription": "Exercises skills and a deterministic MCP server through the UZE package lifecycle.",
-    "developerName": "UZE",
-    "category": "Developer Tools",
-    "capabilities": ["Skills", "MCP"],
-    "defaultPrompt": "Use the plan skill to plan a scoped change."
   }
 }

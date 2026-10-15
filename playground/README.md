@@ -101,25 +101,40 @@ running, and `wsl -d uze-playground` returns to it.
 
 ## The plugin
 
-[`plugin/`](plugin) is one portable Agent Plugin (`playground`):
+[`plugin/`](plugin) is one portable Agent Plugin (`playground`) declaring one
+of every capability UZE delivers, each answering with a marker you can look
+for:
 
-- `plan`: short, explicit implementation planning;
-- `review`: focused repository review;
-- `release`: a safe local release checklist;
-- `tools`, an MCP server ([`mcp_server.rs`](mcp_server.rs), built as
-  `playground-mcp`) with deterministic `echo`, `add` and `status` tools.
+| capability | what it is | try | answers |
+|---|---|---|---|
+| instructions | [`AGENTS.md`](plugin/AGENTS.md), composed into the project's | `ping` | `pong (UZE_PLAYGROUND_INSTRUCTION)` |
+| skill, model + user | [`ping`](plugin/skills/ping/SKILL.md) | `/playground:ping` | `pong (UZE_PLAYGROUND_SKILL: ping)` |
+| skill, user only | [`hello`](plugin/skills/hello/SKILL.md) | `/playground:hello` | `hello, world (UZE_PLAYGROUND_SKILL: hello)` |
+| skill, model only | [`secret`](plugin/skills/secret/SKILL.md) | "what is the playground's secret word?" | `tangerine (UZE_PLAYGROUND_SKILL: secret)` |
+| agent | [`pong`](plugin/agents/pong.md) | "hand a ping to the playground:pong agent" | `pong (UZE_PLAYGROUND_AGENT: pong)` |
+| hook, deny | `deny-ping` on `PreToolUse` | "run `echo ping-deny`" | refused: `pong (UZE_PLAYGROUND_HOOK: deny-ping …)` |
+| hooks, observe | `SessionStart`, `PostToolUse`, `Stop` | any session | a line each in `$TMPDIR/uze-playground-hooks.log` |
+| MCP | `pingpong`, [`mcp_server.rs`](mcp_server.rs) built as `playground-mcp` | "call the pingpong `ping` tool" | `pong (UZE_PLAYGROUND_MCP: ping)` |
+
+The MCP server also has `hello`, `echo` and `add`. The hooks share one
+handler, [`scripts/hook`](plugin/scripts/hook) (and its Windows spelling).
+`secret` is the one a harness may only *degrade*: some cannot withhold a
+skill from the person, and the install says which.
 
 It has no vendor envelope, so it shows how uze delivers portable
 capabilities to a harness with nothing harness-specific in the package.
+[`marketplace.json`](marketplace.json) makes this directory its
+marketplace.
 
-To try a skill in a harness, ask for it by name:
+### On this machine
 
-```text
-Use the plan skill to create a three-step plan for adding a small CLI command. Start with the skill's activation marker.
+Outside a playground world, install it on your own machine with:
+
+```sh
+make playground-plugin                 # playground-mcp on PATH, marketplace linked here
+uze install -m playground@playground   # or `uze playground@playground` in one project
 ```
 
-And the MCP server:
-
-```text
-Use the tools MCP server tool `add` to calculate 19 plus 23. Include the tool result in your answer.
-```
+The marketplace is linked to this checkout, so an edit to `plugin/` reaches
+the harnesses on the next `uze install` with no commit. `uze remove -m
+playground@playground` takes it off again.
