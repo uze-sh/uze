@@ -187,20 +187,16 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// Selects the row `index` names: a click on the row already selected
-    /// does what enter would.
+    /// Selects the row `index` names, and only selects it: resuming
+    /// launches an agent, and a second click meant to select launched one
+    /// nobody asked for. Enter is the one way to act on a row.
     pub(in crate::ui::orchestrator) fn click_recent_row(&mut self, index: usize) {
         let rows = recent_rows(&self.model);
         let Some(row) = rows.get(index) else {
             return;
         };
-        let already = selected_index(&self.model.recent, &rows) == Some(index);
         self.model.recent.asking = false;
         self.model.recent.selected = Some(row.key.clone());
-        if already {
-            let row = row.clone();
-            self.act_on_recent_row(&row, index);
-        }
         self.model.dirty = true;
     }
 

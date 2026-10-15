@@ -997,3 +997,23 @@ fn the_search_row_leads_recent_with_the_key_beside_it() {
     assert!(search.contains("a all"), "{search:?}");
     row_of(&lines, "nothing named yet");
 }
+
+/// A click selects a row and nothing more, however often it lands: only
+/// enter resumes, so a second click never launches an agent by accident.
+#[test]
+fn a_click_on_the_selected_row_only_selects_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-click"));
+    let mut driven = driven(
+        showing(
+            vec![preserved(PROJECT, "a", "parser", WorkStateView::Shelved)],
+            Vec::new(),
+        ),
+        &home,
+    );
+    driven.attach.click_recent_row(0);
+    driven.attach.click_recent_row(0);
+    assert_eq!(driven.attach.model.recent.selected.as_deref(), Some("a"));
+    assert!(driven.attach.model.agent_picker.is_none());
+    assert!(!driven.attach.model.placement_pending);
+    assert!(driven.attach.model.recent.open);
+}

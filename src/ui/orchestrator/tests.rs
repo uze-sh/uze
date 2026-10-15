@@ -11234,17 +11234,10 @@ mod workspace_tests {
     /// rather than landing in the one in front of the operator.
     #[test]
     fn resuming_a_preserved_task_that_kept_its_checkout_opens_a_stamped_tab() {
-        resumes_the_task_in_its_projects_space(false, "resume");
+        resumes_the_task_in_its_projects_space("resume");
     }
 
-    /// A click on the row already selected is enter: the pointer resumes
-    /// the way the keyboard does.
-    #[test]
-    fn clicking_the_selected_row_resumes_it() {
-        resumes_the_task_in_its_projects_space(true, "click");
-    }
-
-    fn resumes_the_task_in_its_projects_space(by_click: bool, name: &str) {
+    fn resumes_the_task_in_its_projects_space(name: &str) {
         let repository = uze_testkit::git::Repository::new(&format!("orchestrator-{name}-kept"));
         let root = repository.root().to_path_buf();
         let home = UzeHome::at(uze_testkit::temp::scratch(&format!(
@@ -11277,15 +11270,10 @@ mod workspace_tests {
         let pick = keymap
             .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::AgentPicker])
             .expect("picking is bound here");
-        if by_click {
-            driven.attach.click_recent_row(0);
-            driven.attach.click_recent_row(0);
-        } else {
-            let resume = keymap
-                .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Recent])
-                .expect("enter is bound in recent");
-            driven.press_key(key_event(resume));
-        }
+        let resume = keymap
+            .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::Recent])
+            .expect("enter is bound in recent");
+        driven.press_key(key_event(resume));
         driven.press_key(key_event(pick));
         let resolution = driven
             .attach
