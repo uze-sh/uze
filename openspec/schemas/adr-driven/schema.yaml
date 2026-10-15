@@ -218,6 +218,35 @@ artifacts:
 apply:
   requires: [tasks]
   tracks: tasks.md
+  # The closed escalation list below is also stated, at length and with its
+  # reasoning, in the plugin's `auto` skill. They are deliberately in both
+  # places - this one ships into the project and drives apply with no skill
+  # loaded - so an edit to one condition belongs in both files.
   instruction: |
-    Read context files, work through pending tasks, mark complete as you go.
-    Pause if you hit blockers or need clarification.
+    Read context files, work through pending tasks in order, and mark each
+    complete as you go. Before ticking a box, verify with the project's own
+    commands - the gate is an exit code, never a judgement that it looks
+    right. Never weaken or delete a test to make a gate pass.
+
+    Where the task list runs out, decide - do not stop to ask. Record the
+    decision in this change's decisions.md (template: templates/decisions.md)
+    in the same commit as the work it justifies, and continue. A decision
+    earns an entry when you chose between real alternatives and a reviewer
+    could reasonably have chosen the other one; routine implementation
+    belongs in the commit message instead. The agent writes entries and
+    never edits their `status`; the reviewer writes `status` and never
+    rewrites an entry.
+
+    Stop and hand back ONLY for: an irreversible or destructive action
+    outside this change's scope; a step that would violate a REQUIREMENT
+    under specs/; three failed hypotheses on the same task item; a needed
+    credential, or a secret found in the working tree; a discovery that
+    invalidates the proposal's `## Why`. This list is closed. Finishing a
+    task item is not on it - the next unchecked box is already authorized,
+    and asking to continue is the failure mode this wording exists to
+    prevent. Neither is an ambiguity that has a defensible answer: pick the
+    reading most consistent with proposal.md and specs/, record it, carry on.
+
+    For a long or unattended run, the `auto` skill carries the full contract
+    (stall counter, one commit per completed item, resuming from a cold
+    context).

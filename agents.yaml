@@ -36,3 +36,4 @@ marketplaces:
     plugins:
       - git
       - tui
+      - openspec

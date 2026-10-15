@@ -14,13 +14,18 @@ context: |
   architect surface renders - `agents.yaml`'s `artifacts:` points there.
   This is the diagrammable source of truth, and it is load-bearing: the
   architect's tests draw the real files, so a diagram that stops routing is
-  a red build. Validate with `cargo test -p uze-extensions`.
+  a red build. Validate with `uze agent artifacts check` (`make
+  artifacts`), which draws every file in the directory, and
+  `cargo test -p uze-extensions`, which draws the ones it names.
 
-  Architecture decisions: significant, hard-to-reverse decisions get a
-  numbered ADR under docs/adr/ (Nygard style: Context/Decision/
-  Consequences). Formalized at archive time (see `operations.archive`
-  below) for a decision flagged in a change's design.md that held up
-  through implementation, or recorded ad hoc with the `adr` skill.
+  Architecture decisions: the default is NO ADR - most changes, including
+  most good ones, produce none. A significant, hard-to-reverse decision
+  gets a numbered ADR under docs/adr/ (Nygard style: Context/Decision/
+  Consequences) only at archive time (see `operations.archive` below),
+  for a decision flagged in a change's design.md or recorded in its
+  decisions.md that held up through implementation. The `adr` skill
+  (from the `openspec@ai` plugin) records one outside that flow only when
+  asked, or to backfill a decision predating this convention.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
@@ -45,8 +50,8 @@ rules:
       the design can still change while the change is in flight.
   tasks:
     - If design.md notes a required diagram update, include a task for it
-      that runs `cargo test -p uze-extensions` before considering the
-      change done.
+      that runs `make artifacts` and `cargo test -p uze-extensions` before
+      considering the change done.
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
@@ -58,14 +63,23 @@ operations:
       # contains ": " parses as an implicit key and the whole file is
       # rejected (and silently ignored by `openspec`).
       - >-
-        Before moving the change, check design.md's `## Candidate ADRs`
-        note (if any) for decisions that are still architecturally
+        Before moving the change, read BOTH sources of candidate
+        decisions: design.md's `## Candidate ADRs` note (decisions known
+        before implementing) and decisions.md (decisions taken during
+        implementation), for decisions that are still architecturally
         significant AND hard to reverse now that implementation is done -
         a new external dependency, a technology/pattern choice with
         long-term consequences, a boundary expensive to move later. Judge
         by what was actually built, not what was originally flagged - if
         the approach changed along the way, a flagged decision may no
         longer apply, and an unflagged one may now qualify.
+      - >-
+        Every decisions.md entry must be resolved before the change is
+        archived: `accepted` entries are the ADR candidates above,
+        `overturned` ones must already have their follow-up work in
+        tasks.md, and an entry still `pending` means the change is not
+        ready to archive - say so and stop rather than archiving an
+        unreviewed decision.
       - >-
         The default is no ADR, and that is the expected outcome: the
         archived change is already the record of what was done and why.

@@ -32,11 +32,12 @@ naming them, and the absorbed records are listed under
 - **An ADR is written when an OpenSpec change is archived**, not while the
   approach could still change. The `operations.archive` guidance in
   `openspec/config.yaml` is the trigger: a decision flagged in that
-  change's `design.md` that actually held up through implementation earns
-  a record. Writing the ADR up front produces a decision that a later
-  slice contradicts, and then two ADRs where one belonged. Use the `adr`
-  skill to record one ad hoc — a decision made outside an OpenSpec change,
-  or backfilling one that predates this convention.
+  change's `design.md`, or recorded in its `decisions.md` during
+  implementation, that actually held up earns a record. Writing the ADR up
+  front produces a decision that a later slice contradicts, and then two
+  ADRs where one belonged. The `adr` skill (`openspec@ai`) records one
+  outside that flow — when asked for, or backfilling one that predates
+  this convention — but it is not a second routine door.
 - **The default is no ADR.** Most changes — including most good ones —
   produce none. The archive under `openspec/changes/archive/` is already
   the log of what was done and why; an ADR is the rarer thing: a record

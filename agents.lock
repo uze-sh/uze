@@ -2,11 +2,14 @@ version: 1
 marketplaces:
   ai:
     git: https://github.com/hiukky/ai
-    revision: 66db2e8d1f3a23e7b6c676cec32688a8157b88f4
+    revision: 973d69d9daa0ed0cc802023128087b01aa9c8683
 plugins:
   git:
     marketplace: ai
     integrity: sha256:09654d7ed6e64c83c4b832254c0207a8be81d13a8c8ab5e81a636b9a56d168f9
+  openspec:
+    marketplace: ai
+    integrity: sha256:06302d508da06064549003bf213b272d5378c3242c22d5f54c4784197a3551d1
   tui:
     marketplace: ai
     integrity: sha256:aab7de3c377ebd36aea0dbec2562ec1577e18da05f60b44895db01e9d7907d57
