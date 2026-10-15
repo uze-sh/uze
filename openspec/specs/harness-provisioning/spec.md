@@ -1,7 +1,9 @@
 # harness-provisioning Specification
 
 ## Purpose
-TBD - created by archiving change provision-harnesses-through-official-sources. Update Purpose after archive.
+How `uze setup` installs, updates and verifies a harness through its vendor's
+official route, places its runtime shim and delivers the stored packages to
+it, and why installing a plugin never provisions a harness.
 ## Requirements
 ### Requirement: Explicit setup provisions a selected supported harness
 
@@ -9,22 +11,6 @@ When a user invokes `uze setup <harness>`, UZE SHALL use only that
 integration's documented official installation or update route to ensure its
 CLI executable is available at the latest stable channel, then verify the
 executable before preparing UZE-owned integration state.
-
-After a verified setup, UZE SHALL create or refresh the generic runtime shim
-for that harness. Setup SHALL be the one writer of runtime shims: preparing
-a harness on the way through a package install SHALL NOT create one. Opening
-the workspace invokes the same setup for the harnesses it finds installed
-and not yet set up, verifying the executable already there without taking
-the vendor's install or update route; only on a machine with no harness
-does it ask which harnesses to provision, and those take the official
-route. The shim SHALL be a transparent launch boundary unless the owning
-integration declares additional runtime contribution.
-
-The vendor installer's output SHALL NOT interleave with UZE's report: it is
-written to a per-harness log, `$UZE_HOME/cache/logs/setup-<harness>.log`,
-replaced on each run, and the installer runs in a session of its own with
-no controlling terminal and no standard input. The setup report names that
-log for each harness.
 
 #### Scenario: Harness executable is absent
 
@@ -52,12 +38,61 @@ log for each harness.
   attempt
 - **AND** prepares UZE-owned integration prerequisites only after verification.
 
+### Requirement: Setup is the one writer of runtime shims
+
+After a verified setup, UZE SHALL create or refresh the generic runtime shim
+for that harness. Setup SHALL be the one writer of runtime shims: preparing
+a harness on the way through a package install SHALL NOT create one. The
+shim SHALL be a transparent launch boundary unless the owning integration
+declares additional runtime contribution.
+
+#### Scenario: A verified setup places the shim
+
+- **WHEN** `uze setup codex` verifies the Codex executable
+- **THEN** the runtime shim for Codex is created or refreshed.
+
+#### Scenario: A package install places no shim
+
+- **WHEN** a plugin is installed and prepares a detected harness that has
+  no runtime shim
+- **THEN** no runtime shim is created for that harness.
+
+### Requirement: Opening the workspace sets up the harnesses it finds
+
+Opening the workspace SHALL invoke the same setup for the harnesses it finds
+installed and not yet set up, verifying the executable already there
+without taking the vendor's install or update route. Only on a machine with
+no harness SHALL it ask which harnesses to provision, and those SHALL take
+the official route.
+
 #### Scenario: The workspace opens on an installed harness that is not set up
 
 - **WHEN** `uze workspace` opens and a harness is installed but not set up
 - **THEN** setup runs for it from the executable already there, verified by
   its version and not updated
 - **AND** its shim is placed as for an explicit `uze setup`.
+
+#### Scenario: The workspace opens on a machine with no harness
+
+- **WHEN** `uze workspace` opens and no supported harness is installed
+- **THEN** it asks which harnesses to provision
+- **AND** each one chosen is set up through its official install route.
+
+### Requirement: A vendor installer's output is logged, never interleaved
+
+The vendor installer's output SHALL NOT interleave with UZE's report: it
+SHALL be written to a per-harness log,
+`$UZE_HOME/cache/logs/setup-<harness>.log`, replaced on each run, and the
+installer SHALL run in a session of its own with no controlling terminal
+and no standard input. The setup report SHALL name that log for each
+harness.
+
+#### Scenario: Setup runs a vendor installer
+
+- **WHEN** `uze setup opencode` runs OpenCode's official installer
+- **THEN** the installer's output is written to
+  `$UZE_HOME/cache/logs/setup-opencode.log`, replacing the previous run's
+- **AND** none of it appears in UZE's report, which names that log.
 
 ### Requirement: Setup uses vendor-owned provisioning semantics
 

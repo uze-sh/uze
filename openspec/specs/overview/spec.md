@@ -1,7 +1,9 @@
 # overview Specification
 
 ## Purpose
-TBD - created by archiving change overview-workspace-semantic-health. Update Purpose after archive.
+What the workspace Overview says about the project and the marketplace at the
+current directory: semantic states computed by the Application layer, shown
+according to the kind of workspace, with indicators that each carry one meaning.
 ## Requirements
 ### Requirement: Overview reports semantic project state
 The system SHALL report the workspace project half as semantic states, not file facts: `Environment` ∈ {NotConfigured, Invalid, InstallRequired, Ready}, `Memory` ∈ {None, Ready, Issue}, and a `Plugins` quantity. The state SHALL be computed by the Application layer; the TUI SHALL render it verbatim and never re-derive it from `agents.lock` bytes.

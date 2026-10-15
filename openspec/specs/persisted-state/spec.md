@@ -8,20 +8,22 @@ state document inherits the rules instead of relearning them.
 ## Requirements
 ### Requirement: Every durable thing belongs to one tier, and the tier says what losing it costs
 UZE SHALL keep what it persists in tiers distinguished by what deleting
-them costs, and each thing SHALL belong to exactly one:
+them costs, and each thing SHALL belong to exactly one: **bytes** (the
+installed packages), **record** (what UZE was told or decided), **generated**
+(what UZE produced for another program to read) and **remembered** (what
+UZE observed and kept to go faster). A thing SHALL NOT sit in a tier that
+claims a different cost than it has; content UZE generated for a harness
+SHALL NOT sit beside the records that describe it.
 
-- **bytes** — the installed packages. Removing them costs the packages
-  until they are acquired again.
-- **record** — what UZE was told or decided: intent and ownership. Nothing
-  else on the machine knows it, so removing it costs the operator.
-- **generated** — what UZE produced for another program to read. Removing
-  it costs nothing: it is produced again.
-- **remembered** — what UZE observed and kept to go faster. Removing it
-  costs nothing: it is observed again.
+#### Scenario: Deleting the bytes
+- **WHEN** the operator deletes the installed packages
+- **THEN** the packages are gone until they are acquired again
 
-A thing SHALL NOT sit in a tier that claims a different cost than it has.
-In particular, content UZE generated for a harness SHALL NOT sit beside the
-records that describe it.
+#### Scenario: Deleting a record
+- **WHEN** the operator deletes what UZE was told or decided, its intent
+  and ownership
+- **THEN** that is lost to the operator, because nothing else on the
+  machine knows it
 
 #### Scenario: Deleting the generated tier
 - **WHEN** the operator deletes everything UZE generated for other programs
@@ -128,13 +130,8 @@ across to the shape it writes now, keep it, and say nothing: carrying a
 document across is the product working, not an event.
 
 A document SHALL NOT be set aside, emptied or recorded again from the
-machine merely because its version is older than this build's. That is
-reserved for a document whose shape this build cannot carry across at all.
-
-What a version change means SHALL be written in one place, as a step from
-one shape to the next, so that the knowledge lives where the next document
-can reach it rather than in one file's own prose. A step SHALL be
-removable once no machine can be below it.
+machine merely because its version is older than this build's; that is
+reserved for a shape this build cannot carry across at all.
 
 #### Scenario: Upgrading with work in flight
 
@@ -164,6 +161,28 @@ removable once no machine can be below it.
 - **THEN** the rule for the document's class applies, as it does for bytes
   that are not the document at all
 
+### Requirement: A version change is written once, as a step between shapes
+
+What a version change means SHALL be written in one place, as a step from
+one shape to the next, so that the knowledge lives where the next document
+can reach it rather than in one file's own prose. A step SHALL be
+removable once no machine can be below it.
+
+#### Scenario: A document changes shape
+
+- **WHEN** a change gives a document UZE owns a new shape
+- **THEN** what the change means SHALL be written as a step from the
+  previous shape to the new one, beside the steps before it
+- **AND THEN** every reader of the document SHALL reach it through those
+  steps rather than through knowledge kept in its own code
+
+#### Scenario: No machine can be below a step
+
+- **WHEN** no machine can still hold a document in the shape a step
+  starts from
+- **THEN** that step MAY be removed without changing what any build does
+  with a document it can still meet
+
 ### Requirement: Only a version this build is ahead of may be set aside
 
 Recovery moves in one direction. A document from a version older than this
@@ -171,10 +190,8 @@ build's is this build's to set aside and record again; a document from a
 version *newer* than this build's SHALL be left exactly as it is, and the
 operation that needed it SHALL be refused with that reason.
 
-Two builds on one machine is an ordinary state — a release beside a
-development build — and a rule that set aside whatever it could not read
-would have them take turns destroying each other's records, each saying
-it had recovered.
+Two builds on one machine is an ordinary state, and a rule that set aside
+whatever it could not read would have them destroy each other's records.
 
 #### Scenario: An older build meets a newer build's document
 
@@ -198,9 +215,7 @@ read it, UZE SHALL move the bytes aside under a name that is no longer
 that document, start the record again from what is on disk, and say so
 once.
 
-This is reached only after carrying the document across was not possible.
-A document whose shape this build knows is carried across silently, and
-none of this applies to it.
+This applies only once carrying the document across was not possible.
 
 #### Scenario: A task document this build cannot read
 

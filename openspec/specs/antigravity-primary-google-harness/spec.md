@@ -1,7 +1,10 @@
 # antigravity-primary-google-harness Specification
 
 ## Purpose
-TBD - created by archiving change migrate-primary-harness-to-antigravity. Update Purpose after archive.
+How UZE supports Antigravity CLI as its Google-family harness: a peer
+integration that delivers packages through `agy`'s own plugin, MCP and
+commands-to-Skills mechanisms with receipt-proven ownership, reads `AGENTS.md`
+natively, and replaces Gemini CLI.
 ## Requirements
 ### Requirement: Antigravity CLI is a first-class peer integration
 

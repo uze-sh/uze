@@ -57,22 +57,25 @@ process. The new release SHALL first run at the next launch.
 ### Requirement: The workspace sidebars announce releases
 
 Both sidebars SHALL show, above the sections at their foot, a notice for an
-update that was installed and is not yet running, and for nothing else: a
-release that is only available, or that this binary will not install
-itself, is not announced there — `uze upgrade` is where a person asks, and
-where the reason is told. The notice SHALL name the version and SHALL
-keep its dismissal visible at any sidebar width. Activating the notice SHALL
-open that release's notes — its own section of the `CHANGELOG.md` published
-at its tag, and no other release's — in a modal inside the client, from
-which the release page can be opened; dismissing it
-SHALL put away the notice for that release in every client and every later
-run.
+update that was installed and is not yet running, and for nothing else. The
+notice SHALL name the version and SHALL keep its dismissal visible at any
+sidebar width. Activating it SHALL open, in a modal inside the client, that
+release's own section of the `CHANGELOG.md` at its tag, from which the
+release page can be opened; dismissing it SHALL put away the notice for
+that release in every client and every later run.
+
+#### Scenario: A release that is only available
+
+- **WHEN** a newer release is published and has not been installed
+- **THEN** neither sidebar shows a notice, and `uze upgrade` is where a
+  person asks about it
 
 #### Scenario: A release this binary will not install
 
 - **WHEN** a newer release is published and the running binary is not the
   one a receipt names
-- **THEN** neither sidebar shows a notice
+- **THEN** neither sidebar shows a notice, and `uze upgrade` is where the
+  reason is told
 
 #### Scenario: Opening the notes
 
@@ -139,15 +142,10 @@ The system SHALL provide `uze upgrade`: it asks for the newest release now
 and replaces the binary under the rules above, rather than waiting for a
 background pass, and reports what it did.
 
-It SHALL be the *only* name for that operation. The background check a CLI
+It SHALL be the *only* name for that operation: the background check a CLI
 command hands to a detached process SHALL be this same command under a
-hidden flag, not a second verb — two spellings of one operation is what
-ADR-019 refused, and `self-update` beside `upgrade` would be exactly that.
-
-`upgrade` names the binary and nothing else. It sits at the root beside
-`setup`, `doctor` and `theme`, which are about the tool rather than about
-a project or about `~/.uze/*` package state — the category ADR-019's
-machine-level namespaces (`market`, `plugin`, `harness`) do not cover.
+hidden flag, not a second verb, since ADR-019 refused two spellings of one
+operation. `upgrade` names the binary and nothing else.
 
 #### Scenario: Asking for a release now
 - **WHEN** `uze upgrade` is run from a binary a receipt names and a newer
@@ -169,6 +167,13 @@ machine-level namespaces (`market`, `plugin`, `harness`) do not cover.
   process
 - **THEN** that process is `uze upgrade` under a hidden flag, and no second
   release-checking verb exists
+
+#### Scenario: Where it sits
+- **WHEN** a person reads the CLI's commands
+- **THEN** `upgrade` sits at the root beside `setup`, `doctor` and `theme`,
+  which are about the tool rather than about a project or about `~/.uze/*`
+  package state, and not under ADR-019's machine-level namespaces
+  (`market`, `plugin`, `harness`)
 
 #### Scenario: It touches no plugin
 - **WHEN** `uze upgrade` runs

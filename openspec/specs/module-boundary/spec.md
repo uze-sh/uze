@@ -66,11 +66,10 @@ workspace.
 The build SHALL fail when code that belongs to the package manager names
 the workspace's domain (tasks, checkouts, work naming, landing finished
 work, recorded conversations, or the workspace's policy), which lives in
-the `uze-workspace` crate. In `uze-core` the crate graph holds the rule,
-since `uze-core` does not depend on `uze-workspace`. In `uze-application`,
-which orchestrates both, an architecture test holds it over a listed set of
-package-manager and shared files, and the workspace's half is everything
-the list leaves out.
+the `uze-workspace` crate. In `uze-core` the crate graph holds the rule;
+in `uze-application`, which orchestrates both, an architecture test holds it
+over a listed set of package-manager and shared files, the workspace's half
+being everything the list leaves out.
 
 #### Scenario: A package-manager path reaches for a task
 - **WHEN** a change makes a listed package-manager file of

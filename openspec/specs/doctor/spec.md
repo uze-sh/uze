@@ -1,7 +1,9 @@
 # doctor Specification
 
 ## Purpose
-TBD - created by archiving change cache-attachment-inspection. Update Purpose after archive.
+Keeps `uze doctor` and the other reads that report attachment health fast in
+steady state by caching verified attachment verdicts, while every anomaly,
+removal and bootstrap decision stays on live evidence.
 ## Requirements
 ### Requirement: Attachment inspection verdicts are cached on read paths
 The system SHALL serve `Matched` per-receipt attachment verdicts from a
