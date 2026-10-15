@@ -74,7 +74,7 @@ jobs:
         with:
           # git-cliff needs the full history plus existing tags.
           fetch-depth: 0
-      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           # Every tool pinned: a job that pushes to this repository runs no
           # binary chosen by whoever published last. cargo-release and
@@ -420,7 +420,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           # git-cliff pinned to the same version `propose` uses: both render
           # the same commits, and a reader comparing the changelog against the

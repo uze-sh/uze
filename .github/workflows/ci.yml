@@ -264,7 +264,7 @@ jobs:
       # Before the Windows PATH is reduced below: the action runs in bash,
       # which that step takes away.
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-nextest@0.9.146
       # `.cargo/config.toml` pins `jobs = 2` as a courtesy to a 4-vCPU WSL
@@ -408,7 +408,7 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-llvm-cov@0.9.0
       # The same suite the test job runs, so the same Bun: without it the
@@ -456,7 +456,7 @@ jobs:
       # 2026-09-03). The audit itself is unchanged: our Cargo.lock
       # against the RustSec advisory database.
       - name: Install cargo-audit
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-audit@0.22.2
       - run: cargo audit
@@ -482,7 +482,7 @@ jobs:
       # whether what it links has a known defect, and a red one here is
       # read by a different person.
       - name: Install cargo-deny and cargo-about
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-deny@0.20.2,cargo-about@0.9.2
       # Licences, advisories, bans and sources — the policy lives in
@@ -635,7 +635,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install ruff
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: ruff@0.16.4
       - run: ruff format --check conformance/ .github/scripts/
