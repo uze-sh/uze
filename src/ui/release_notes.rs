@@ -24,7 +24,7 @@ use crate::self_update::ReleaseNotes;
 use crate::ui::{
     extension_view,
     theme::{self, Token},
-    widget::{Scrollbar, Surface, dialog, hint},
+    widget::{Scrollbar, Surface, dialog, hint::Hints},
 };
 
 /// The notes, as far as they have arrived.
@@ -197,7 +197,11 @@ fn body_lines(modal: &ReleaseNotesModal, width: u16) -> Vec<Line<'static>> {
         Notes::Unavailable => {
             let mut lines = muted("The notes could not be read. The release page has them:");
             lines.push(Line::default());
-            lines.push(hint::line(&[Scope::ReleaseNotes], &[Action::Activate]));
+            lines.push(
+                Hints::new(&[Scope::ReleaseNotes])
+                    .key(Action::Activate)
+                    .line(),
+            );
             lines
         }
         Notes::Ready(notes) => rendered_notes(&notes.body, width),

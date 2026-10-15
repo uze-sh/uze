@@ -2447,14 +2447,11 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
     use uze_keys::{Action, Scope};
 
     let scopes = [Scope::Global, Scope::Management, Scope::Plugins];
-    let line: Line<'static> = crate::ui::widget::hint::line(
-        &scopes,
-        &[
-            Action::UpdatePlugin,
-            Action::Refresh,
-            Action::OpenActionIndex,
-        ],
-    );
+    let line: Line<'static> = crate::ui::widget::hint::Hints::new(&scopes)
+        .key(Action::UpdatePlugin)
+        .key(Action::Refresh)
+        .key(Action::OpenActionIndex)
+        .line();
     let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
     let keymap = uze_keys::active();
     for action in [Action::UpdatePlugin, Action::Refresh] {
@@ -2474,7 +2471,9 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
     // An action with no key here is skipped rather than printed keyless:
     // a hint is a list of shortcuts, and what has none is offered where a
     // pointer can reach it.
-    let unbound: Line<'static> = crate::ui::widget::hint::line(&scopes, &[Action::NewSpace]);
+    let unbound: Line<'static> = crate::ui::widget::hint::Hints::new(&scopes)
+        .key(Action::NewSpace)
+        .line();
     assert!(unbound.spans.is_empty());
 }
 
@@ -5731,5 +5730,70 @@ fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() 
             .count(),
         1,
         "a gap installed by hand hands nothing over"
+    );
+}
+
+/// A key a footer hint names is pressed by clicking it: the click and the
+/// keystroke land in the same place, through the same door.
+#[test]
+fn clicking_a_footer_hint_is_pressing_its_key() {
+    use uze_keys::Action;
+    let fresh = || TuiModel {
+        route: Route::Keys,
+        focus: Focus::Content,
+        overlay: Overlay::None,
+        ..model_with_data()
+    };
+    let draw = |model: &mut TuiModel| {
+        let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), model, false, &mut hits);
+            })
+            .unwrap();
+        model.hits = hits;
+    };
+
+    let mut clicked = fresh();
+    draw(&mut clicked);
+    let key = clicked
+        .hits
+        .iter()
+        .filter(|(_, hit)| *hit == Hit::OfferedAction(Action::SelectNext))
+        .map(|(rect, _)| *rect)
+        .max_by_key(|rect| rect.y)
+        .expect("the footer offers the key that moves down");
+    clicked.click(key.x, key.y);
+
+    let mut pressed = fresh();
+    pressed.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+    assert_eq!(clicked.key_screen.selected, 1);
+    assert_eq!(clicked.key_screen.selected, pressed.key_screen.selected);
+}
+
+/// Beneath an open dialog the footer's keys are no targets: the dialog
+/// takes any offered action under the pointer as its answer, and a key
+/// on the screen behind it must never answer for it.
+#[test]
+fn a_hint_beneath_a_dialog_is_no_target() {
+    let model = TuiModel {
+        route: Route::Plugins,
+        overlay: Overlay::HarnessHelp,
+        ..model_with_data()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(150, 26)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &model, false, &mut hits);
+        })
+        .unwrap();
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::SelectNext)),
+        "no hint key is registered while a dialog is open"
     );
 }

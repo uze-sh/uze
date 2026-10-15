@@ -232,6 +232,7 @@ pub(super) fn render(
                 Some(WorkspaceHit::DrawerScope(scope)) => Some(scope),
                 _ => None,
             },
+            hovered_hint: model.hovered_hint(),
             clearing: drawer.clearing,
             live_labels: model
                 .tabs()
@@ -267,6 +268,7 @@ pub(super) fn render(
                         .into_iter()
                         .map(|(rect, scope)| (rect, WorkspaceHit::DrawerScope(scope))),
                 )
+                .chain(hint_targets(targets.hints))
                 .chain(std::iter::once((targets.body, WorkspaceHit::DrawerBody))),
         );
     }
@@ -360,7 +362,10 @@ fn render_extension(
                 _ => None,
             },
         },
-        scope,
+        crate::ui::extension_view::FooterKeys {
+            scope,
+            hovered: model.hovered_hint(),
+        },
         match &model.selection {
             Some(Selection::Text(marking)) => Some(marking),
             _ => None,
@@ -380,6 +385,11 @@ fn render_extension(
             .into_iter()
             .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
     );
+    // After the row menu's: one opened low enough to cover the footer
+    // answers for the cells it covers.
+    if let Some(drawn) = &metrics.code {
+        hits.extend(hint_targets(drawn.hints.clone()));
+    }
     view.confirm.clone().map(|confirm| Question {
         confirm,
         scope,

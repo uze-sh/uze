@@ -433,7 +433,10 @@ fn framed(
                     resizing: false,
                     sliding: None,
                 },
-                scope,
+                FooterKeys {
+                    scope,
+                    hovered: None,
+                },
                 None,
                 &mut hits,
             );
@@ -559,7 +562,10 @@ fn a_notice_is_said_at_the_end_of_the_footer() {
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut Vec::new(),
             );
@@ -949,7 +955,10 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut hits,
             );
@@ -1096,7 +1105,10 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                         resizing: false,
                         sliding: None,
                     },
-                    uze_keys::Scope::Architect,
+                    FooterKeys {
+                        scope: uze_keys::Scope::Architect,
+                        hovered: None,
+                    },
                     None,
                     &mut hits,
                 )
@@ -1782,7 +1794,10 @@ fn marked_text_is_inverted_where_it_was_drawn() {
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 Some(&selection),
                 &mut hits,
             );
@@ -1821,7 +1836,10 @@ fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut Vec::new(),
             );
@@ -2017,7 +2035,10 @@ fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut hits,
             );
@@ -2144,7 +2165,10 @@ fn chrome_uses_the_hosts_palette_and_content_keeps_its_own() {
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut Vec::new(),
             );
@@ -2269,7 +2293,10 @@ fn drawn_with(view: &View, scroll: NavigatorScroll) -> (Vec<String>, NavigatorSc
                     resizing: false,
                     sliding: None,
                 },
-                uze_keys::Scope::Code,
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                },
                 None,
                 &mut Vec::new(),
             )
@@ -2535,7 +2562,10 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
                         resizing: false,
                         sliding,
                     },
-                    uze_keys::Scope::Spec,
+                    FooterKeys {
+                        scope: uze_keys::Scope::Spec,
+                        hovered: None,
+                    },
                     None,
                     &mut Vec::new(),
                 ));
@@ -2613,7 +2643,10 @@ fn a_flat_rows_detail_slides_with_its_name() {
                         resizing: false,
                         sliding,
                     },
-                    uze_keys::Scope::Code,
+                    FooterKeys {
+                        scope: uze_keys::Scope::Code,
+                        hovered: None,
+                    },
                     None,
                     &mut Vec::new(),
                 ));

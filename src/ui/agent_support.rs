@@ -12,7 +12,8 @@ use uze_application::{CapabilityKind, HarnessCapabilities};
 use crate::ui::selection::{self, TextRow, TextSelection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    Chip, ChipState, Edge, Rule, Surface, hint,
+    Chip, ChipState, Edge, Rule, Surface,
+    hint::Hints,
     row::{self, RowState},
     text,
 };
@@ -120,6 +121,8 @@ pub(super) struct DrawerPrompts<'a> {
     /// The scope tab under the pointer, which lightens like every other
     /// control the pointer is over.
     pub(super) hovered_scope: Option<PromptScope>,
+    /// The key of the clearing question under the pointer.
+    pub(super) hovered_hint: Option<uze_keys::Action>,
     pub(super) clearing: bool,
     /// What each agent still open is called now, by its id. A record
     /// carries the name its tab had when it was asked, and a tab is
@@ -146,6 +149,8 @@ pub(super) struct DrawerTargets {
     pub(super) body: Rect,
     pub(super) prompts: Vec<(Rect, usize)>,
     pub(super) scopes: Vec<(Rect, PromptScope)>,
+    /// The keys the clearing question names.
+    pub(super) hints: Vec<(Rect, uze_keys::Action)>,
     /// The text it drew, for the pointer to mark.
     pub(super) text: DrawerText,
 }
@@ -307,6 +312,7 @@ pub(super) fn render(
         body: drawer,
         prompts: Vec::new(),
         scopes: Vec::new(),
+        hints: Vec::new(),
         text: DrawerText {
             heading: format!("{}\n{:?}", agent.path, prompts.scope),
             ..DrawerText::default()
@@ -329,10 +335,8 @@ pub(super) fn render(
     let mut bottom = inner.bottom();
     if prompts.clearing && bottom > heading_y {
         bottom -= 1;
-        frame.render_widget(
-            Paragraph::new(clearing_question(inner.width)),
-            Rect::new(inner.x, bottom, inner.width, 1),
-        );
+        targets.hints = clearing_question(prompts.hovered_hint)
+            .render(frame, Rect::new(inner.x, bottom, inner.width, 1));
     }
 
     // The heading, its rule, at least one record, a row of air, the card.
@@ -822,17 +826,14 @@ fn first_shown(blocks: &[Vec<Line<'static>>], selected: usize, room: usize) -> u
 }
 
 /// What a first `x` asked, with the key that answers it.
-fn clearing_question(width: u16) -> Line<'static> {
-    let mut line = hint::named_within(
-        width,
-        &DRAWER_SCOPES,
-        &[(
+fn clearing_question(hovered: Option<uze_keys::Action>) -> Hints<'static> {
+    Hints::new(&DRAWER_SCOPES)
+        .named(
             uze_keys::Action::ClearPromptHistory,
-            "again to forget every prompt in this space".to_owned(),
-        )],
-    );
-    line.style = theme::fg(Token::StateWarning);
-    line
+            "again to forget every prompt in this space",
+        )
+        .tone(Token::StateWarning)
+        .hovered(hovered)
 }
 
 fn render_note(frame: &mut ratatui::Frame<'_>, list: Rect, note: &str) {
@@ -1123,6 +1124,7 @@ mod tests {
                 agent_known: true,
                 selected: 0,
                 hovered_scope: None,
+                hovered_hint: None,
                 clearing: false,
                 live_labels: HashMap::new(),
                 selection,
@@ -1184,6 +1186,7 @@ mod tests {
             agent_known: true,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::from([("a".to_owned(), "context card".to_owned())]),
             selection: None,
@@ -1207,6 +1210,7 @@ mod tests {
             agent_known: true,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,
@@ -1286,6 +1290,7 @@ mod tests {
             agent_known: false,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,
@@ -1323,6 +1328,7 @@ mod tests {
             agent_known: true,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,
@@ -1344,6 +1350,7 @@ mod tests {
             agent_known: true,
             selected: 45,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,
@@ -1378,6 +1385,7 @@ mod tests {
                 agent_known: true,
                 selected: 0,
                 hovered_scope,
+                hovered_hint: None,
                 clearing: false,
                 live_labels: HashMap::new(),
                 selection: None,
@@ -1511,6 +1519,7 @@ mod tests {
             agent_known: true,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,
@@ -1551,6 +1560,7 @@ mod tests {
             agent_known: true,
             selected: 0,
             hovered_scope: None,
+            hovered_hint: None,
             clearing: false,
             live_labels: HashMap::new(),
             selection: None,

@@ -27,7 +27,7 @@ use super::worker::{
 };
 use super::{overlay, view};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Edge, Rule, Surface, hint, modal, text};
+use crate::ui::widget::{self, Edge, Rule, Surface, footer::Leading, hint::Hints, modal, text};
 
 /// How long a resolution of the machine stands for before opening the
 /// modal re-resolves it. The window exists for one case: the session's
@@ -505,20 +505,21 @@ fn render_header(
     close_hovered: bool,
     hits: &mut Vec<(Rect, Hit)>,
 ) -> Rect {
-    let mut close_line = hint::line(&model.scopes(), &[uze_keys::Action::Dismiss]);
-    if close_hovered {
-        for span in &mut close_line.spans {
-            span.style = span.style.fg(theme::color(Token::StateDanger));
-        }
-    }
-    let close_width = (close_line.width() as u16).min(area.width);
+    let dismiss = uze_keys::Action::Dismiss;
+    let scopes = model.scopes();
+    let close_hint = Hints::new(&scopes)
+        .key(dismiss)
+        .hovered(close_hovered.then_some(dismiss));
+    let close_width = close_hint.width().min(area.width);
     let close = Rect::new(
         area.right().saturating_sub(close_width),
         area.y,
         close_width,
         area.height,
     );
-    frame.render_widget(Paragraph::new(close_line), close);
+    // The modal's own chrome answers this one, wherever the client hosts
+    // it, so the target the hint hands back is the rect it was given.
+    close_hint.render(frame, close);
 
     let name = format!("{:<NAME_WIDTH$}", "manage");
     frame.render_widget(
@@ -564,14 +565,16 @@ fn render_footer(
     trailers.extend(health_status(model).map(|line| (line, Hit::HealthStatus)));
     trailers.extend(release_notice(model).map(|line| (line, Hit::OpenReleaseNotes)));
     let (lines, targets): (Vec<_>, Vec<_>) = trailers.into_iter().unzip();
-    let rects = widget::footer::render(
+    let scopes = model.scopes();
+    let drawn = widget::footer::render(
         frame,
         area,
         CHROME_INSET - RULE_INSET,
-        footer_line(model),
+        footer_leading(model, &scopes),
         lines,
     );
-    hits.extend(rects.into_iter().zip(targets));
+    hits.extend(drawn.trailers.into_iter().zip(targets));
+    hits.extend(model.hint_targets(drawn.hints));
 }
 
 /// A newer release than this one, said where the footer says what just
@@ -628,37 +631,25 @@ fn health_status(model: &TuiModel) -> Option<Line<'static>> {
 /// Every key in it comes from the keymap — `chord_for`, through the hint
 /// widget — so a rebound key says its new chord here without anyone
 /// remembering to.
-fn hint_line(model: &TuiModel) -> Line<'static> {
-    use hint::Entry;
+fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     use uze_keys::Action;
-    let mut entries = vec![Entry::Run(
-        Action::SelectPrevious,
-        Action::SelectNext,
-        "move".to_owned(),
-    )];
+    let mut hints = Hints::new(scopes)
+        .run(Action::SelectPrevious, Action::SelectNext, "move")
+        .hovered(model.hovered_offer);
     if model.route == Route::Plugins {
-        entries.push(Entry::Run(
-            Action::FocusContent,
-            Action::FocusSidebar,
-            "expand".to_owned(),
-        ));
+        hints = hints.run(Action::FocusContent, Action::FocusSidebar, "expand");
     }
     if let Some(label) = activate_label(model) {
-        entries.push(Entry::Key(Action::Activate, label));
+        hints = hints.named(Action::Activate, label);
     }
     if model.has_filter() {
-        entries.push(Entry::Key(Action::StartFilter, "filter".to_owned()));
+        hints = hints.named(Action::StartFilter, "filter");
     }
     if model.route == Route::Plugins {
-        entries.push(Entry::Key(Action::AddMarketplace, "add".to_owned()));
+        hints = hints.named(Action::AddMarketplace, "add");
     }
     let screens = model::routes().len().min(9) as u8;
-    entries.push(Entry::Run(
-        Action::SelectTab(1),
-        Action::SelectTab(screens),
-        "section".to_owned(),
-    ));
-    hint::entries_within(u16::MAX, &model.scopes(), &entries)
+    hints.run(Action::SelectTab(1), Action::SelectTab(screens), "section")
 }
 
 /// What Enter does here, in the word the footer gives it, or `None` where
@@ -705,9 +696,9 @@ fn activate_label(model: &TuiModel) -> Option<String> {
 
 /// What the footer says: how the last thing went while there is anything
 /// to say about it, and otherwise what can be done here.
-fn footer_line(model: &TuiModel) -> Line<'static> {
+fn footer_leading<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Leading<'a> {
     let (hue, text) = match &model.status {
-        model::Status::Idle => return hint_line(model),
+        model::Status::Idle => return Leading::Hints(hints(model, scopes)),
         model::Status::Working(value) => (
             Token::StateWarning,
             format!(
@@ -718,7 +709,7 @@ fn footer_line(model: &TuiModel) -> Line<'static> {
         model::Status::Success(value) => (Token::StateSuccess, value.clone()),
         model::Status::Error(value) => (Token::StateDanger, value.clone()),
     };
-    Line::from(Span::styled(text, theme::fg_bold(hue)))
+    Leading::Status(Line::from(Span::styled(text, theme::fg_bold(hue))))
 }
 
 #[cfg(test)]

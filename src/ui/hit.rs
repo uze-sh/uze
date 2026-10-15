@@ -58,7 +58,8 @@ pub(crate) enum Hit {
     OpenReleaseNotes,
     /// The footer's health status: what needs attention, if anything.
     HealthStatus,
-    /// A detail view's button for one of the selected row's offers.
+    /// A detail view's button for one of the selected row's offers, or a
+    /// key a hint names: either is the action, performed as its key is.
     OfferedAction(uze_keys::Action),
     /// One of an open question's two answers: `true` for the affirmative.
     /// Its own target rather than an action, because the action that
@@ -84,6 +85,21 @@ pub(crate) enum Hit {
 }
 
 impl TuiModel {
+    /// The keys a hint drew, as targets. None while a dialog is open: it
+    /// takes any offered action under the pointer as its own answer, and a
+    /// key on the screen behind it must not answer for it.
+    pub(crate) fn hint_targets(
+        &self,
+        keys: Vec<(Rect, uze_keys::Action)>,
+    ) -> impl Iterator<Item = (Rect, Hit)> {
+        let keys = match self.overlay {
+            Overlay::None => keys,
+            _ => Vec::new(),
+        };
+        keys.into_iter()
+            .map(|(rect, action)| (rect, Hit::OfferedAction(action)))
+    }
+
     /// The hit under the pointer. Hover and click must resolve the same
     /// rect for the same pixel, so both go through here.
     pub(crate) fn hit_at(&self, column: u16, row: u16) -> Option<&Hit> {

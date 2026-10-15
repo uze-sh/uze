@@ -2,10 +2,8 @@
 
 use super::*;
 
-/// A hairline top border plus the hint text directly under it — the same
-/// shape `management::render_footer` uses.
 /// A footer row: the keys on the left, and what the surface has to say
-/// right-aligned at the other end.
+/// right-aligned at the other end. Answers with where each key landed.
 ///
 /// The hints are given what is left of the row rather than the whole
 /// width: drawn over each other, a narrow board reads `g ren3 boxes · 2
@@ -15,41 +13,47 @@ pub(super) fn render_footer_row(
     frame: &mut ratatui::Frame<'_>,
     footer: Rect,
     commands: &[Command],
-    scope: uze_keys::Scope,
+    keys: FooterKeys,
     trailing: Option<TextSpan<'static>>,
-) {
+) -> Vec<(Rect, uze_keys::Action)> {
     let Some(trailing) = trailing else {
-        render_footer(frame, footer, commands, scope);
-        return;
+        return render_footer(frame, footer, commands, keys);
     };
     let width = (trailing.width() as u16).min(footer.width / 2);
     let hints = Rect {
         width: footer.width.saturating_sub(width + FOOTER_GAP),
         ..footer
     };
-    render_footer(frame, hints, commands, scope);
+    let targets = render_footer(frame, hints, commands, keys);
     let mut line = Line::from(trailing);
     text::clip(&mut line, usize::from(width));
     frame.render_widget(
         Paragraph::new(line).alignment(ratatui::layout::Alignment::Right),
         Rect::new(footer.right() - width, footer.y, width, 1),
     );
+    targets
 }
 
 pub(super) fn render_footer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     commands: &[Command],
-    scope: uze_keys::Scope,
-) {
+    keys: FooterKeys,
+) -> Vec<(Rect, uze_keys::Action)> {
     // The overlay is what is open, so its own scope is what a key would
     // resolve against — the same stack `Attach::scopes` builds.
-    let scopes = [uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope];
-    let actions: Vec<uze_keys::Action> = commands.iter().copied().filter_map(action_of).collect();
-    frame.render_widget(
-        Paragraph::new(hint::within(area.width, &scopes, &actions)),
-        area,
-    );
+    let scopes = [
+        uze_keys::Scope::Global,
+        uze_keys::Scope::Workspace,
+        keys.scope,
+    ];
+    commands
+        .iter()
+        .copied()
+        .filter_map(action_of)
+        .fold(Hints::new(&scopes), Hints::key)
+        .hovered(keys.hovered)
+        .render(frame, area)
 }
 
 /// What each extension command means in the product's own vocabulary, read

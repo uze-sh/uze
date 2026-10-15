@@ -416,7 +416,7 @@ pub(crate) fn render_screen_header(
     let note = summary
         .unwrap_or_else(|| Span::raw(route.subtitle()))
         .style(theme::fg(theme::Token::TextMuted));
-    widget::screen_header::inline(frame, area, route.label(), note, None)
+    widget::screen_header::inline(frame, area, route.label(), note, None).below
 }
 
 /// Every content screen's outer inset. No border, no background: content

@@ -135,14 +135,16 @@ impl Attach<'_> {
         // places are the pane and one column more — the content's groove
         // hugs the frame's edge, in the margin the pane keeps from it —
         // and the bar's leading slot, wherever its navigation was drawn.
-        let on_surface = layout
-            .pane
-            .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-            || self.on_content_scrollbar(mouse.column, mouse.row)
-            || self
-                .model
-                .hit_at(mouse.column, mouse.row)
-                .is_some_and(WorkspaceHit::is_open_surfaces);
+        // A key a hint names is the host's wherever it is drawn: what it
+        // performs is an action, which the surface beneath never sees.
+        let over = self.model.hit_at(mouse.column, mouse.row);
+        let on_hint = matches!(over, Some(WorkspaceHit::HintAction(_)));
+        let on_surface = !on_hint
+            && (layout
+                .pane
+                .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+                || self.on_content_scrollbar(mouse.column, mouse.row)
+                || over.is_some_and(WorkspaceHit::is_open_surfaces));
         self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar);
         match mouse {
             _ if self.model.approval.is_some() => {
@@ -246,6 +248,7 @@ impl Attach<'_> {
                     Some(WorkspaceHit::DrawerPrompt(index)) => self.select_drawer_prompt(index),
                     Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
                     Some(WorkspaceHit::DrawerBody) => {}
+                    Some(WorkspaceHit::HintAction(action)) => return self.act(action, viewport),
                     _ => self.model.support_dropdown = None,
                 }
                 self.model.dirty = true;
@@ -1177,7 +1180,9 @@ impl Attach<'_> {
             ..
         } = *viewport;
         match hit {
-            WorkspaceHit::QuickAction(action) => return self.act(action, viewport),
+            WorkspaceHit::QuickAction(action) | WorkspaceHit::HintAction(action) => {
+                return self.act(action, viewport);
+            }
             WorkspaceHit::DismissToast(index) => self.model.dismiss_toast(index),
             // The offer is answered and the message goes: leaving it up
             // would say the thing is still waiting on the reader.

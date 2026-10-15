@@ -34,7 +34,7 @@ use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, button_row, hint, mark, screen_header, text};
+use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, screen_header, text};
 
 /// Below this many columns the panel goes and the tree takes the width.
 const NARROW: u16 = 88;
@@ -459,23 +459,10 @@ fn render_tree_header(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let model = screen.model;
-    let action = uze_keys::Action::AddMarketplace;
-    let mut offer = hint::line(&model.scopes(), &[action]);
-    if model.hovered_offer == Some(action) {
-        for span in &mut offer.spans {
-            span.style = span.style.fg(theme::color(Token::Accent));
-        }
-    }
-    let offer_width = (offer.width() as u16).min(rect.width);
-    hits.push((
-        Rect::new(
-            rect.right().saturating_sub(offer_width),
-            rect.y,
-            offer_width,
-            1,
-        ),
-        Hit::OfferedAction(action),
-    ));
+    let scopes = model.scopes();
+    let offer = Hints::new(&scopes)
+        .key(uze_keys::Action::AddMarketplace)
+        .hovered(model.hovered_offer);
     let note = Span::styled(
         format!(
             "{} · {}",
@@ -484,7 +471,8 @@ fn render_tree_header(
         ),
         theme::fg(Token::TextMuted),
     );
-    screen_header::inline(frame, rect, Route::Plugins.label(), note, Some(offer));
+    let heading = screen_header::inline(frame, rect, Route::Plugins.label(), note, Some(offer));
+    hits.extend(model.hint_targets(heading.offers));
 }
 
 /// Every line the tree draws, top to bottom: each group's heading, a row

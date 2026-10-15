@@ -2,7 +2,7 @@
 //! each, with what the selected one is about said beneath it.
 
 use super::*;
-use crate::ui::widget::{Align, Button, Field, RowState, Scrollbar, button_row, hint};
+use crate::ui::widget::{Align, Button, Field, RowState, Scrollbar, button_row, hint::Hints};
 
 /// What a click on one of recent's lines reaches.
 #[derive(Clone, Copy, PartialEq)]
@@ -110,16 +110,21 @@ pub(super) fn render_recent(
     }
     if let Some(rect) = foot {
         let row = selected.and_then(|index| list.get(index));
-        let keys = hint::named_within(
-            width.saturating_sub(2 * TRAILING_PAD),
-            &[
-                uze_keys::Scope::Global,
-                uze_keys::Scope::Workspace,
-                uze_keys::Scope::Recent,
-            ],
-            &keys_for(row, model.recent.asking, model.recent.on_confirm),
-        );
-        frame.render_widget(Paragraph::new(keys.centered()), rect);
+        let scopes = [
+            uze_keys::Scope::Global,
+            uze_keys::Scope::Workspace,
+            uze_keys::Scope::Recent,
+        ];
+        let keys = keys_for(row, model.recent.asking, model.recent.on_confirm)
+            .into_iter()
+            .fold(Hints::new(&scopes), |hints, (action, word)| {
+                hints.named(action, word)
+            })
+            .hovered(model.hovered_hint());
+        let room = width.saturating_sub(2 * TRAILING_PAD);
+        let drawn = keys.width().min(room);
+        let centred = Rect::new(rect.x + (rect.width - drawn) / 2, rect.y, drawn, 1);
+        hits.extend(hint_targets(keys.render(frame, centred)));
     }
 }
 
@@ -141,22 +146,24 @@ fn render_search(
     let mut field = room;
     if !recent.filtering {
         let name = if recent.show_all { "named" } else { "all" };
-        let toggle = hint::named_within(
-            room.width / 2,
-            &[
-                uze_keys::Scope::Global,
-                uze_keys::Scope::Workspace,
-                uze_keys::Scope::Recent,
-            ],
-            &[(Action::ToggleAllWork, name.to_owned())],
-        );
-        let toggle_width = toggle.width() as u16;
+        let scopes = [
+            uze_keys::Scope::Global,
+            uze_keys::Scope::Workspace,
+            uze_keys::Scope::Recent,
+        ];
+        let hovered = model.hovered == Some(WorkspaceHit::RecentShowAll);
+        let toggle = Hints::new(&scopes)
+            .named(Action::ToggleAllWork, name)
+            .hovered(hovered.then_some(Action::ToggleAllWork));
+        let toggle_width = toggle.width().min(room.width / 2);
         let at = Rect {
             x: room.right().saturating_sub(toggle_width),
             width: toggle_width,
             ..room
         };
-        frame.render_widget(Paragraph::new(toggle), at);
+        // The whole control answers, label and key alike: it is the
+        // search's own switch, which the field beside it is the rest of.
+        toggle.render(frame, at);
         hits.push((at, WorkspaceHit::RecentShowAll));
         field.width = field.width.saturating_sub(toggle_width + 1);
     }

@@ -895,6 +895,10 @@ pub(super) enum WorkspaceHit {
     /// than naming a surface: a control that took its own path to the
     /// same place is a second implementation to keep agreeing.
     QuickAction(Action),
+    /// A key a hint names, performed the same way. Apart from
+    /// [`WorkspaceHit::QuickAction`] only so pointing at one does not
+    /// light the other where both offer the same action.
+    HintAction(Action),
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
     /// The release notes modal's own area: a click on it is reading, and
@@ -1995,11 +1999,26 @@ struct GitBadge {
     timeline_checked_at: Instant,
     checked_at: Instant,
 }
+/// The keys a hint drew, as targets.
+fn hint_targets(keys: Vec<(Rect, Action)>) -> impl Iterator<Item = (Rect, WorkspaceHit)> {
+    keys.into_iter()
+        .map(|(rect, action)| (rect, WorkspaceHit::HintAction(action)))
+}
+
 impl WorkspaceModel {
     /// Beats of the workspace clock since the pointer came to rest on what
     /// it is over.
     pub(super) fn hovered_for(&self) -> usize {
         self.tick.wrapping_sub(self.hovered_since)
+    }
+
+    /// The action of the hint key under the pointer, which every hint
+    /// line is drawn lit for.
+    pub(super) fn hovered_hint(&self) -> Option<Action> {
+        match self.hovered {
+            Some(WorkspaceHit::HintAction(action)) => Some(action),
+            _ => None,
+        }
     }
 
     /// Records, for every open space, which tab its context agent is

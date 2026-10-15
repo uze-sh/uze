@@ -27,7 +27,7 @@ use uze_extensions::view::{
 use crate::ui::selection::{Glyph, TextRow, TextSelection};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    self, Edge, Rule, Scrollbar, Surface, TRAILING_PAD, hint, mark, row, text,
+    self, Edge, Rule, Scrollbar, Surface, TRAILING_PAD, hint::Hints, mark, row, text,
 };
 
 mod footer;
@@ -106,6 +106,18 @@ pub(crate) struct Rendered {
     /// The heading of the content drawn, which names what a selection
     /// started on it was made in.
     pub(crate) heading: String,
+    /// Where each key the footer names landed, for the host to perform as
+    /// that key is. Apart from the view's own hits because an action is
+    /// the host's vocabulary, never the extension's.
+    pub(crate) hints: Vec<(Rect, uze_keys::Action)>,
+}
+
+/// The keys a surface's footer names: read from the scope the surface is
+/// open in, the one under the pointer drawn lit.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FooterKeys {
+    pub(crate) scope: uze_keys::Scope,
+    pub(crate) hovered: Option<uze_keys::Action>,
 }
 
 /// Where the host holds the navigator this frame: the width it was
@@ -126,16 +138,18 @@ pub(crate) fn render(
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    scope: uze_keys::Scope,
+    keys: FooterKeys,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
-    let mut rendered = render_surface(frame, view, area, held, scope, selection, hits);
+    let mut rendered = render_surface(frame, view, area, held, keys, selection, hits);
     // A question is drawn over the content by the caller, with a scrim
     // and nothing else to point at: what lies under it is not text a
-    // press can start marking until it is answered.
+    // press can start marking, nor a key a click can press, until it is
+    // answered.
     if view.confirm.is_some() {
         rendered.text_rows.clear();
+        rendered.hints.clear();
     }
     rendered
 }
@@ -145,7 +159,7 @@ fn render_surface(
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    scope: uze_keys::Scope,
+    keys: FooterKeys,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -156,7 +170,7 @@ fn render_surface(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let mut rendered = render_board(frame, view, area, scope, selection, hits);
+        let mut rendered = render_board(frame, view, area, keys, selection, hits);
         rendered.content_space = board_space(area);
         return rendered;
     }
@@ -235,11 +249,11 @@ fn render_surface(
             );
         }
     }
-    render_footer_row(
+    rendered.hints = render_footer_row(
         frame,
         footer,
         &view.footer,
-        scope,
+        keys,
         view.notice.as_ref().map(styled),
     );
     rendered.content_space = uze_extensions::view::Size {
@@ -339,7 +353,7 @@ fn render_board(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    scope: uze_keys::Scope,
+    keys: FooterKeys,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -416,7 +430,7 @@ fn render_board(
         )),
         _ => None,
     };
-    render_footer_row(frame, footer, &view.footer, scope, trailing);
+    rendered.hints = render_footer_row(frame, footer, &view.footer, keys, trailing);
     rendered
 }
 
