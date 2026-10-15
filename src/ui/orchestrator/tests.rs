@@ -11689,6 +11689,64 @@ mod workspace_tests {
         assert!(driven.attach.model.remembered.commands_awaiting.is_empty());
     }
 
+    /// A hint's key is clicked only where it would be pressed: with the
+    /// agent drawer open, the surface's footer still shows `m map`, but
+    /// `m` there is the drawer's to answer, and the click does what the
+    /// keystroke does rather than reaching past the drawer.
+    #[test]
+    fn a_hint_click_performs_only_what_its_key_would_here() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use uze_extensions::code;
+        use uze_keys::Action;
+
+        let with_drawer_over_code = || {
+            let (mut model, first, _second) = two_agents_with_shells();
+            model.session.as_mut().expect("session").select_tab(first);
+            let mut view = code::CodeView::opening(
+                PathBuf::from("/repo"),
+                "/repo".to_owned(),
+                code::ContentMode::Contents,
+            );
+            view.take_request();
+            model.code = Some(view);
+            let drawer = drawer_over(&model);
+            model.support_dropdown = Some(drawer);
+            model
+        };
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-hint-scope"));
+        let wide = Rect::new(0, 0, 200, 40);
+
+        let mut clicked = driven(with_drawer_over_code(), &home);
+        clicked.area = wide;
+        clicked.frame();
+        let map = clicked.hit(|hit| *hit == WorkspaceHit::HintAction(Action::ToggleMap));
+        clicked.press(map.x, map.y);
+
+        let mut pressed = driven(with_drawer_over_code(), &home);
+        pressed.area = wide;
+        pressed.frame();
+        pressed.press_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+
+        let showing = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .code
+                .as_ref()
+                .map(code::CodeView::showing)
+        };
+        assert_eq!(
+            showing(&clicked),
+            Some(code::ContentMode::Contents),
+            "the map stays shut"
+        );
+        assert_eq!(showing(&clicked), showing(&pressed));
+        assert_eq!(
+            clicked.attach.model.support_dropdown.is_some(),
+            pressed.attach.model.support_dropdown.is_some()
+        );
+    }
+
     /// A key the open surface's footer names is pressed by clicking it,
     /// through the door the keystroke takes, and lights under the pointer.
     #[test]
