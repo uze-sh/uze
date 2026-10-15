@@ -176,6 +176,8 @@ scopes! {
     /// The sidebar's recent mode: the agents no pane carries. Named for
     /// the surface it was when released, since keys.json binds by name.
     Recent => "preserved-work", "Recent", Workspace, seals: true, text: false;
+    /// Recent's search, while it takes text.
+    RecentFilter => "recent-filter", "Searching recent", Workspace, seals: true, text: true;
     /// The tab/space context menu.
     ContextMenu => "context-menu", "A tab's actions", Workspace, seals: true, text: false;
 

@@ -85,6 +85,9 @@ pub struct PreservedWork {
     /// Whether the project's directory is still on disk. Work whose
     /// project was deleted can only be forgotten.
     pub project_present: bool,
+    /// Whether somebody named it — its branch, or its label — rather than
+    /// it being known by what UZE generated for it.
+    pub named: bool,
 }
 
 /// One task as presentation sees it.
@@ -178,6 +181,7 @@ impl PreservedWork {
             last_active_unix: agent.created_at_unix.max(conversed_at.unwrap_or_default()),
             harness: agent.harness.clone(),
             project_present: project.is_dir(),
+            named: agent.is_named() || agent.has_chosen_label(),
         })
     }
 }

@@ -4590,6 +4590,7 @@ mod workspace_tests {
             last_active_unix: 1,
             harness: "claude-code".to_owned(),
             project_present: true,
+            named: true,
         }
     }
 
@@ -11267,6 +11268,9 @@ mod workspace_tests {
         // client happens to be looking.
         model.remembered.preserved_work = app.workspace().preserved_work();
         model.recent.open = true;
+        // Nobody named the agent placed above, so it is listed only once
+        // recent is asked for every agent.
+        model.recent.show_all = true;
         let mut driven = driven(model, &home);
 
         let keymap = uze_keys::active();

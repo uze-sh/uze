@@ -278,6 +278,8 @@ impl Attach<'_> {
                         self.model.recent.grab = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
                     }
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
+                    Some(WorkspaceHit::RecentSearch) => self.recent_action(Action::StartFilter),
+                    Some(WorkspaceHit::RecentShowAll) => self.recent_action(Action::ToggleAllWork),
                     // The way in is the way out.
                     _ => self.close_recent(),
                 }
@@ -1339,7 +1341,9 @@ impl Attach<'_> {
             // in `press` answers first.
             WorkspaceHit::RecentRow(_)
             | WorkspaceHit::RecentScrollGrab
-            | WorkspaceHit::RecentAnswer(_) => {}
+            | WorkspaceHit::RecentAnswer(_)
+            | WorkspaceHit::RecentSearch
+            | WorkspaceHit::RecentShowAll => {}
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
             // Only reachable while the question is open, which the guarded

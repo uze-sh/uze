@@ -880,3 +880,120 @@ fn recent_draws_on_a_small_terminal_without_panicking() {
         sidebar_buffer(&model, height);
     }
 }
+
+fn names(model: &WorkspaceModel) -> Vec<String> {
+    recent_rows(model).into_iter().map(|row| row.name).collect()
+}
+
+fn type_into(driven: &mut super::workspace_tests::Driven<'_>, text: &str) {
+    for character in text.chars() {
+        let chord = uze_keys::Chord::parse(&character.to_string()).unwrap();
+        driven.press_key(key_event(chord));
+    }
+}
+
+/// An agent nobody named is known by its generated id, so recent lists
+/// the named ones until asked for every agent, and asking again goes back.
+#[test]
+fn recent_lists_named_work_until_asked_for_every_agent() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-named"));
+    let unnamed = PreservedWork {
+        named: false,
+        ..preserved(PROJECT, "x1y2z3", "x1y2z3", WorkStateView::Ready)
+    };
+    let mut driven = driven(
+        showing(
+            vec![
+                preserved(PROJECT, "a", "parser", WorkStateView::Ready),
+                unnamed,
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+    assert_eq!(names(&driven.attach.model), ["parser"]);
+
+    press(&mut driven, Action::ToggleAllWork);
+    assert_eq!(names(&driven.attach.model).len(), 2);
+
+    press(&mut driven, Action::ToggleAllWork);
+    assert_eq!(names(&driven.attach.model), ["parser"]);
+}
+
+/// The search narrows by anything a row says — its name, its branch, its
+/// project, its state — walks what it let through, and esc takes the
+/// words away with it.
+#[test]
+fn the_search_narrows_by_what_a_row_says_and_esc_clears_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-search"));
+    let mut driven = driven(
+        showing(
+            vec![
+                preserved(PROJECT, "a", "parser", WorkStateView::Ready),
+                preserved(OTHER, "b", "lexer", WorkStateView::Shelved),
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+    press(&mut driven, Action::StartFilter);
+    assert!(driven.attach.model.recent.filtering);
+
+    type_into(&mut driven, "LEX");
+    assert_eq!(names(&driven.attach.model), ["lexer"], "by name, any case");
+    driven.press_key(key_event(uze_keys::Chord::parse("backspace").unwrap()));
+    driven.press_key(key_event(uze_keys::Chord::parse("backspace").unwrap()));
+    driven.press_key(key_event(uze_keys::Chord::parse("backspace").unwrap()));
+    type_into(&mut driven, "agent/a");
+    assert_eq!(names(&driven.attach.model), ["parser"], "by branch");
+    driven.attach.model.recent.filter = "other".to_owned();
+    assert_eq!(names(&driven.attach.model), ["lexer"], "by project");
+    driven.attach.model.recent.filter = "ready to deliver".to_owned();
+    assert_eq!(names(&driven.attach.model), ["parser"], "by state");
+
+    press(&mut driven, Action::Dismiss);
+    assert!(!driven.attach.model.recent.filtering);
+    assert!(driven.attach.model.recent.filter.is_empty());
+    assert!(
+        driven.attach.model.recent.open,
+        "esc left the search, not recent"
+    );
+}
+
+/// The letters typed into the search are the search's: `a` is a letter
+/// there, not the key that lists every agent.
+#[test]
+fn a_letter_typed_into_the_search_is_never_a_key() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-letter"));
+    let mut driven = driven(
+        showing(
+            vec![preserved(PROJECT, "a", "parser", WorkStateView::Ready)],
+            Vec::new(),
+        ),
+        &home,
+    );
+    press(&mut driven, Action::StartFilter);
+    type_into(&mut driven, "ad");
+    assert_eq!(driven.attach.model.recent.filter, "ad");
+    assert!(!driven.attach.model.recent.show_all);
+    assert!(!driven.attach.model.recent.asking);
+}
+
+/// The search row leads the column with its key, and the key that lists
+/// every agent sits beside it; with the unnamed left out and none named,
+/// the list says so rather than that nothing was kept.
+#[test]
+fn the_search_row_leads_recent_with_the_key_beside_it() {
+    let model = showing(
+        vec![PreservedWork {
+            named: false,
+            ..preserved(PROJECT, "x1y2z3", "x1y2z3", WorkStateView::Ready)
+        }],
+        Vec::new(),
+    );
+    let lines = drawn(&model);
+    let search = &lines[row_of(&lines, "search")];
+    assert!(search.contains('/'), "{search:?}");
+    assert!(search.contains("a all"), "{search:?}");
+    row_of(&lines, "nothing named yet");
+}

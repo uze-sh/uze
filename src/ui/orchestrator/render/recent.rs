@@ -2,7 +2,7 @@
 //! each, with what the selected one is about said beneath it.
 
 use super::*;
-use crate::ui::widget::{Align, Button, RowState, Scrollbar, button_row, hint};
+use crate::ui::widget::{Align, Button, Field, RowState, Scrollbar, button_row, hint};
 
 /// What a click on one of recent's lines reaches.
 #[derive(Clone, Copy, PartialEq)]
@@ -40,9 +40,15 @@ pub(super) fn render_recent(
         rows.bottom -= 1;
         rect
     });
+    if rows.remaining() > 3
+        && let Some(rect) = rows.next(1)
+    {
+        render_search(frame, model, rect, hits);
+        rows.next(1);
+    }
     let lines = lines_of(model, &list, selected, width);
     if lines.is_empty() {
-        render_empty(frame, rows, width);
+        render_empty(frame, rows, width, empty_title(model));
     }
     let visible = usize::from(rows.remaining());
     let focus = selected.and_then(|index| {
@@ -117,13 +123,74 @@ pub(super) fn render_recent(
     }
 }
 
+/// The search row: the field, and beside it the key that lists every
+/// agent or only the named ones, which goes while the field takes text
+/// because a letter typed there is a letter of the search.
+fn render_search(
+    frame: &mut ratatui::Frame<'_>,
+    model: &WorkspaceModel,
+    rect: Rect,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let recent = &model.recent;
+    let room = Rect {
+        x: rect.x + TRAILING_PAD,
+        width: rect.width.saturating_sub(2 * TRAILING_PAD),
+        ..rect
+    };
+    let mut field = room;
+    if !recent.filtering {
+        let name = if recent.show_all { "named" } else { "all" };
+        let toggle = hint::named_within(
+            room.width / 2,
+            &[
+                uze_keys::Scope::Global,
+                uze_keys::Scope::Workspace,
+                uze_keys::Scope::Recent,
+            ],
+            &[(Action::ToggleAllWork, name.to_owned())],
+        );
+        let toggle_width = toggle.width() as u16;
+        let at = Rect {
+            x: room.right().saturating_sub(toggle_width),
+            width: toggle_width,
+            ..room
+        };
+        frame.render_widget(Paragraph::new(toggle), at);
+        hits.push((at, WorkspaceHit::RecentShowAll));
+        field.width = field.width.saturating_sub(toggle_width + 1);
+    }
+    let placeholder = if recent.filtering {
+        "name, branch, project, state…"
+    } else {
+        "search"
+    };
+    Field::new(&recent.filter, placeholder)
+        .focused(recent.filtering)
+        .render_search(frame, field);
+    hits.push((field, WorkspaceHit::RecentSearch));
+}
+
+/// What the empty list says: nothing kept at all, nothing the search
+/// matches, or nothing named while unnamed agents are left out.
+fn empty_title(model: &WorkspaceModel) -> &'static str {
+    let every = every_recent_row(model);
+    if every.is_empty() {
+        "nothing kept yet"
+    } else if !model.recent.filter.trim().is_empty() {
+        "nothing matches"
+    } else {
+        "nothing named yet"
+    }
+}
+
 /// What recent is for, said where its rows would be: a title alone,
 /// centred in the room the rows would take.
-fn render_empty(frame: &mut ratatui::Frame<'_>, rows: &mut Rows, width: u16) {
+fn render_empty(frame: &mut ratatui::Frame<'_>, rows: &mut Rows, width: u16, title: &'static str) {
     let middle = rows.remaining().saturating_sub(1) / 2;
     rows.next(middle);
     let Some(rect) = rows.next(1) else { return };
-    let title = Span::styled("nothing kept yet", theme::fg_bold(Token::TextSecondary));
+    let title = Span::styled(title, theme::fg_bold(Token::TextSecondary));
     let mut line = Line::from(title).centered();
     text::clip(&mut line, usize::from(width));
     frame.render_widget(Paragraph::new(line), rect);

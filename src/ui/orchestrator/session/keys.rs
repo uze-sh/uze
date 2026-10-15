@@ -34,6 +34,8 @@ impl Attach<'_> {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
             Scope::AgentPicker
+        } else if self.model.recent.has_keys() && self.model.recent.filtering {
+            Scope::RecentFilter
         } else if self.model.recent.has_keys() {
             Scope::Recent
         } else if self.model.context_menu.is_some() {
@@ -162,6 +164,8 @@ impl Attach<'_> {
             picker.typed(character);
         } else if let Some((_, buffer)) = self.model.renaming.as_mut() {
             buffer.insert(character);
+        } else if self.model.recent.has_keys() && self.model.recent.filtering {
+            self.model.recent.filter.push(character);
         } else if self
             .model
             .code

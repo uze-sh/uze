@@ -423,6 +423,15 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Recent, "right", Action::FocusNext),
         bind(Scope::Recent, "i", Action::DeliverTask),
         bind(Scope::Recent, "d", Action::DiscardTask),
+        bind(Scope::Recent, "/", Action::StartFilter),
+        bind(Scope::Recent, "a", Action::ToggleAllWork),
+        // Its search walks the rows it narrows, so a match is reached
+        // without leaving it; enter keeps the words and acts on the row.
+        bind(Scope::RecentFilter, "esc", Action::Dismiss),
+        bind(Scope::RecentFilter, "enter", Action::Activate),
+        bind(Scope::RecentFilter, "backspace", Action::EraseBack),
+        bind(Scope::RecentFilter, "down", Action::SelectNext),
+        bind(Scope::RecentFilter, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "down", Action::SelectNext),
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),

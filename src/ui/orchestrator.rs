@@ -782,6 +782,11 @@ pub(super) enum WorkspaceHit {
     /// One of the answers to the question recent's row is asking: `true`
     /// for going ahead.
     RecentAnswer(bool),
+    /// Recent's search row, which a click starts typing into.
+    RecentSearch,
+    /// The key beside the search that lists every agent or only the
+    /// named ones.
+    RecentShowAll,
     /// The sidebar header's name, the way in and out of recent.
     ToggleRecent,
     SelectTab(TabId),
@@ -919,6 +924,8 @@ impl WorkspaceHit {
             WorkspaceHit::RecentRow(_)
                 | WorkspaceHit::RecentScrollGrab
                 | WorkspaceHit::RecentAnswer(_)
+                | WorkspaceHit::RecentSearch
+                | WorkspaceHit::RecentShowAll
                 | WorkspaceHit::ToggleRecent
         )
     }

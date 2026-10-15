@@ -310,6 +310,10 @@ actions! {
     DiscardTask => "discard-task", true,
         "Discard",
         "Discard the selected agent's work: its checkout, branch and conversation";
+    // Recent lists named work by default: an agent nobody named is known
+    // only by its generated id, which says nothing until asked for.
+    ToggleAllWork => "toggle-all-work", false,
+        "All", "Show every agent recent holds, not only the named ones";
 }
 
 impl fmt::Display for Action {

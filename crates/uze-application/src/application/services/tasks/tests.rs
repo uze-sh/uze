@@ -1216,6 +1216,24 @@ mod task_service_tests {
         let _ = std::fs::remove_dir_all(project);
     }
 
+    /// Recent lists named work by default, so the list says which agents
+    /// somebody named: a branch taken off UZE's own namespace is a name,
+    /// and the generated one is not.
+    #[test]
+    fn preserved_work_says_whether_somebody_named_it() {
+        let app = application("preserved-named-home");
+        let project = uze_testkit::temp::scratch("preserved-named");
+        std::fs::create_dir_all(&project).unwrap();
+        let unnamed = record_an_agent(&app, &project, WorkState::Shelved, None);
+        let named = record_an_agent(&app, &project, WorkState::Shelved, Some("fix/recent"));
+
+        let preserved = app.workspace().preserved_work();
+        let named_of = |id: &str| preserved.iter().find(|work| work.id == id).unwrap().named;
+        assert!(!named_of(&unnamed));
+        assert!(named_of(&named));
+        let _ = std::fs::remove_dir_all(project);
+    }
+
     /// While the repository is there, a record dropped on its own would
     /// leave its branch and checkout owned by nobody: discarding is the
     /// path, and forgetting refuses.

@@ -44,6 +44,9 @@ impl Attach<'_> {
         if !model.recent.open || drawn_over {
             return;
         }
+        // A click anywhere but the search leaves it, on the words typed;
+        // a click on it starts it again.
+        self.model.recent.filtering = false;
         let elsewhere = column >= sidebar.right();
         if elsewhere != self.model.recent.keys_elsewhere {
             self.model.recent.keys_elsewhere = elsewhere;
@@ -57,6 +60,11 @@ impl Attach<'_> {
         let rows = recent_rows(&self.model);
         let index = selected_index(&self.model.recent, &rows);
         let row = index.and_then(|index| rows.get(index)).cloned();
+        if self.model.recent.filtering {
+            self.recent_filter_action(action, &rows, index, row);
+            self.model.dirty = true;
+            return;
+        }
         if self.model.recent.asking {
             match action {
                 Action::FocusNext | Action::FocusPrevious => {
@@ -76,7 +84,13 @@ impl Attach<'_> {
             return;
         }
         match action {
+            // Esc takes the words away before it takes recent away.
+            Action::Dismiss if !self.model.recent.filter.is_empty() => {
+                self.model.recent.filter.clear();
+            }
             Action::ToggleRecent | Action::Dismiss => self.close_recent(),
+            Action::StartFilter => self.model.recent.filtering = true,
+            Action::ToggleAllWork => self.model.recent.show_all = !self.model.recent.show_all,
             Action::SelectNext | Action::SelectPrevious => {
                 let step = if action == Action::SelectNext { 1 } else { -1 };
                 self.step_recent(&rows, index, step);
@@ -98,6 +112,38 @@ impl Attach<'_> {
             _ => {}
         }
         self.model.dirty = true;
+    }
+
+    /// What a key does while the search takes text: the arrows walk what
+    /// it let through, enter leaves it on the words and acts on the row,
+    /// and esc leaves it with the words gone.
+    fn recent_filter_action(
+        &mut self,
+        action: Action,
+        rows: &[RecentRow],
+        index: Option<usize>,
+        row: Option<RecentRow>,
+    ) {
+        match action {
+            Action::EraseBack => {
+                self.model.recent.filter.pop();
+            }
+            Action::Dismiss => {
+                self.model.recent.filtering = false;
+                self.model.recent.filter.clear();
+            }
+            Action::SelectNext | Action::SelectPrevious => {
+                let step = if action == Action::SelectNext { 1 } else { -1 };
+                self.step_recent(rows, index, step);
+            }
+            Action::Activate => {
+                self.model.recent.filtering = false;
+                if let (Some(row), Some(index)) = (row, index) {
+                    self.act_on_recent_row(&row, index);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// A click on one of the question's answers: the same as walking to it

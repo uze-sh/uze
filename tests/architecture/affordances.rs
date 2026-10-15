@@ -259,6 +259,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);
+    put(
+        Action::ToggleAllWork,
+        Control("clicking the key beside recent's search"),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
