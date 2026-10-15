@@ -177,8 +177,17 @@ fn lead() -> Span<'static> {
 /// which lines are titles and which are what they hold.
 const ROW_INDENT: u16 = 2;
 
-fn row_lead() -> Span<'static> {
-    Span::raw(" ".repeat(usize::from(TRAILING_PAD + ROW_INDENT)))
+fn indent() -> Span<'static> {
+    Span::raw(" ".repeat(usize::from(ROW_INDENT)))
+}
+
+/// A row's leading margin: on the selected row, the thin bar the space
+/// tree's row in front wears, so the two lists mark selection alike.
+fn gutter(selected: bool) -> Span<'static> {
+    let mut gutter = space_gutter(selected, true);
+    let gap = TRAILING_PAD.saturating_sub(theme::width(Symbol::BarThin));
+    gutter.content = format!("{}{}", gutter.content, " ".repeat(usize::from(gap))).into();
+    gutter
 }
 
 /// The mark in that step, on the row's first line: bright on the selected
@@ -254,7 +263,7 @@ fn row_lines(
         theme::fg(Token::TextPrimary)
     };
     let mut first = vec![
-        lead(),
+        gutter(selected),
         bullet(selected),
         Span::styled(row.name.clone(), name_style),
     ];
@@ -271,7 +280,11 @@ fn row_lines(
         } else {
             Token::TextMuted
         };
-        let mut reason = vec![row_lead(), Span::styled(row.reason.words(), theme::fg(hue))];
+        let mut reason = vec![
+            gutter(selected),
+            indent(),
+            Span::styled(row.reason.words(), theme::fg(hue)),
+        ];
         if selected {
             let project = if gone || space_open_on(model, &row.project) {
                 project_name(&row.project)
@@ -288,19 +301,21 @@ fn row_lines(
         let room = usize::from(width.saturating_sub(2 * TRAILING_PAD + ROW_INDENT));
         for words in text::fold(row.question(), room) {
             lines.push(vec![
-                row_lead(),
+                gutter(selected),
+                indent(),
                 Span::styled(words, theme::fg(Token::StateWarning)),
             ]);
         }
     } else if selected {
         lines.push(vec![
-            row_lead(),
+            gutter(selected),
+            indent(),
             Span::styled(facts_of(row), theme::fg(Token::TextMuted)),
         ]);
     }
     let answers = asking.then_some(lines.len());
     if answers.is_some() {
-        lines.push(vec![row_lead()]);
+        lines.push(vec![gutter(selected), indent()]);
     }
     lines
         .into_iter()

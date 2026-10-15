@@ -837,6 +837,26 @@ fn the_foot_offers_resume_and_discard_on_one_line() {
     );
 }
 
+/// The selected row wears the thin bar the space tree's row in front
+/// wears, down every line of it; the others leave the column empty.
+#[test]
+fn the_selected_row_wears_the_trees_thin_bar() {
+    let mut model = showing(
+        vec![
+            preserved(PROJECT, "a", "one", WorkStateView::Ready),
+            preserved(PROJECT, "b", "two", WorkStateView::Ready),
+        ],
+        Vec::new(),
+    );
+    model.recent.selected = Some("a".to_owned());
+    let lines = drawn(&model);
+    let bar = crate::ui::theme::glyph(crate::ui::theme::Symbol::BarThin);
+    let selected = row_of(&lines, "one");
+    assert!(lines[selected].starts_with(&bar), "{lines:?}");
+    assert!(lines[selected + 1].starts_with(&bar), "{lines:?}");
+    assert!(!lines[row_of(&lines, "two")].starts_with(&bar), "{lines:?}");
+}
+
 #[test]
 fn with_nothing_kept_it_says_so_in_a_title_alone() {
     let model = showing(Vec::new(), Vec::new());
