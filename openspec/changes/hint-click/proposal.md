@@ -11,8 +11,9 @@ second one would copy and the reason no second one exists.
 
 - Every hint a surface draws becomes a pointer target: hovering a key
   lights it, clicking it performs the action exactly as pressing it does.
-- A run of keys written as one hint (`↓↑ move`) offers each key on its own;
-  its shared label is not a target.
+- A hint of one key is a target over its key and its name. A run of keys
+  written as one hint (`↓↑ move`, `1–5 section`) is not a target: the
+  pointer walks those lists by pointing at what it wants.
 - Hints drawn beneath an open dialog are not targets, so a click there can
   never be read as the dialog's answer.
 - The hint widget draws into the rect it is given and hands back where each

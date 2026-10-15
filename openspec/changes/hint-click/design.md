@@ -66,9 +66,15 @@ like every other hint. A line that is a question rather than a list (the
 prompt-history clearing note in `agent_support.rs`) keeps its warning
 colour as a tone the widget is given, not as a repaint of its spans.
 
-**A run is two targets.** `↓↑ move` registers `↓` for the first action and
-`↑` for the second; `1–9` registers its two ends. The label is inert,
-since it names both and neither.
+**A hint of one key is one target, its name included.** The first cut
+made only the key a target, and a click on the name beside it did
+nothing, which read as a broken control: the pointer aims at the words as
+often as at the key.
+
+**A run is no target.** `↓↑ move`, `→← expand` and `1–5 section` are the
+keyboard's way through a list; the pointer walks the same list by clicking
+the row, the tab or the screen it wants. A first cut offered each end of a
+run as a one-column target, which read as noise rather than as a control.
 
 **Width by display width.** Placement uses `Span::width()`, not
 `chars().count()`, so an arrow glyph that is wider than one cell cannot

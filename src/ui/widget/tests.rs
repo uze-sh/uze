@@ -9,7 +9,7 @@ use super::{
     Align, Button, Chip, ChipState, Edge, Field, RowState, Rule, Surface, Toast, ToastKind,
     action_index, button_row, field, hint::Hints, mark, row, surface::fill, text, toast,
 };
-use crate::ui::theme::{self, Symbol};
+use crate::ui::theme;
 
 fn drawn(
     width: u16,
@@ -1168,15 +1168,14 @@ fn under(buffer: &ratatui::buffer::Buffer, rect: Rect) -> String {
 
 const HINT_SCOPES: [uze_keys::Scope; 2] = [uze_keys::Scope::Global, uze_keys::Scope::Management];
 
-/// A hint is the action it names: each key it draws comes back as a
-/// target over exactly that key, so a click lands on what was read.
+/// A hint of one key is the action it names: its target covers the key
+/// and its name, so a click lands on whatever of it was read.
 #[test]
-fn every_key_a_hint_draws_is_a_target_over_that_key() {
+fn a_single_key_hint_is_a_target_over_what_it_says() {
     use uze_keys::Action;
     let mut targets = Vec::new();
     let buffer = drawn(60, 1, |frame| {
         targets = Hints::new(&HINT_SCOPES)
-            .run(Action::SelectPrevious, Action::SelectNext, "move")
             .key(Action::Refresh)
             .key(Action::Dismiss)
             .render(frame, Rect::new(4, 0, 56, 1));
@@ -1185,41 +1184,40 @@ fn every_key_a_hint_draws_is_a_target_over_that_key() {
         .iter()
         .map(|(rect, action)| (under(&buffer, *rect), *action))
         .collect();
+    let named = |key: &str, action: Action| format!("{key} {}", action.label().to_lowercase());
     assert_eq!(
         read,
         vec![
-            (theme::glyph(Symbol::ArrowUp), Action::SelectPrevious),
-            (theme::glyph(Symbol::ArrowDown), Action::SelectNext),
-            ("f5".to_owned(), Action::Refresh),
-            ("esc".to_owned(), Action::Dismiss),
-        ],
-        "each end of a run is its own target, and no label is one"
+            (named("f5", Action::Refresh), Action::Refresh),
+            (named("esc", Action::Dismiss), Action::Dismiss),
+        ]
     );
 }
 
-/// A run that is a range offers its two ends; the dash between them
-/// performs nothing.
+/// A run is the keyboard's way through a list, and is read, never pointed
+/// at: neither its ends nor its name is a target, and the hints beside it
+/// still land where they are drawn.
 #[test]
-fn a_range_offers_its_ends_and_not_its_dash() {
+fn a_run_is_no_target() {
     use uze_keys::Action;
     let mut targets = Vec::new();
-    let buffer = drawn(40, 1, |frame| {
+    let buffer = drawn(60, 1, |frame| {
         targets = Hints::new(&HINT_SCOPES)
+            .run(Action::SelectPrevious, Action::SelectNext, "move")
             .run(Action::SelectTab(1), Action::SelectTab(5), "section")
-            .render(frame, Rect::new(0, 0, 40, 1));
+            .key(Action::Refresh)
+            .hovered(Some(Action::SelectNext))
+            .render(frame, Rect::new(0, 0, 60, 1));
     });
-    let read: Vec<String> = targets
-        .iter()
-        .map(|(rect, _)| under(&buffer, *rect))
-        .collect();
-    assert_eq!(read, ["1", "5"]);
     assert_eq!(
         targets
             .iter()
             .map(|(_, action)| *action)
             .collect::<Vec<_>>(),
-        [Action::SelectTab(1), Action::SelectTab(5)]
+        [Action::Refresh]
     );
+    let refresh = format!("f5 {}", Action::Refresh.label().to_lowercase());
+    assert_eq!(under(&buffer, targets[0].0), refresh);
 }
 
 /// What does not fit is left out whole, and what was left out is no

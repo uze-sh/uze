@@ -5733,13 +5733,14 @@ fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() 
     );
 }
 
-/// A key a footer hint names is pressed by clicking it: the click and the
-/// keystroke land in the same place, through the same door.
+/// A key a footer hint names is pressed by clicking anywhere on the hint,
+/// its name included: the click and the keystroke land in the same place,
+/// through the same door.
 #[test]
 fn clicking_a_footer_hint_is_pressing_its_key() {
     use uze_keys::Action;
     let fresh = || TuiModel {
-        route: Route::Keys,
+        route: Route::Plugins,
         focus: Focus::Content,
         overlay: Overlay::None,
         ..model_with_data()
@@ -5757,20 +5758,21 @@ fn clicking_a_footer_hint_is_pressing_its_key() {
 
     let mut clicked = fresh();
     draw(&mut clicked);
-    let key = clicked
+    let hint = clicked
         .hits
         .iter()
-        .filter(|(_, hit)| *hit == Hit::OfferedAction(Action::SelectNext))
+        .filter(|(_, hit)| *hit == Hit::OfferedAction(Action::StartFilter))
         .map(|(rect, _)| *rect)
         .max_by_key(|rect| rect.y)
-        .expect("the footer offers the key that moves down");
-    clicked.click(key.x, key.y);
+        .expect("the footer offers the key that starts a search");
+    // On the last letter of its name, not on its key.
+    clicked.click(hint.right() - 1, hint.y);
 
     let mut pressed = fresh();
-    pressed.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    pressed.apply_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
-    assert_eq!(clicked.key_screen.selected, 1);
-    assert_eq!(clicked.key_screen.selected, pressed.key_screen.selected);
+    assert!(clicked.filtering, "the click started the search");
+    assert_eq!(clicked.filtering, pressed.filtering);
 }
 
 /// Beneath an open dialog the footer's keys are no targets: the dialog
@@ -5793,7 +5795,7 @@ fn a_hint_beneath_a_dialog_is_no_target() {
     assert!(
         !hits
             .iter()
-            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::SelectNext)),
+            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::StartFilter)),
         "no hint key is registered while a dialog is open"
     );
 }

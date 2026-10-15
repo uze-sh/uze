@@ -1,12 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: A hint is the action it names
-Every key a surface advertises in a hint SHALL be a pointer target for the
-action it names. Pointing at the key SHALL light it before it is clicked,
-and clicking it SHALL perform that action exactly as pressing the key does,
-through the same gate that decides whether the action is offered there.
-What a hint says beside its keys SHALL NOT be a target of its own. A hint
-written inside text that scrolls is exempt, and says so where it is drawn.
+Every hint of one key a surface draws SHALL be a pointer target for the
+action it names, over its key and its words. Pointing at it SHALL light it
+before it is clicked, and clicking it SHALL perform that action exactly as
+pressing the key does. A run of keys SHALL NOT be a target. A hint written
+inside scrolling text is exempt.
 
 #### Scenario: Clicking a key is pressing it
 - **WHEN** an operator clicks the `d` of a `d delete` hint in a surface's
@@ -25,10 +24,16 @@ written inside text that scrolls is exempt, and says so where it is drawn.
 - **THEN** each lights identically, because the look belongs to the hint and
   not to the surface that drew it
 
-#### Scenario: A run offers each of its keys
-- **WHEN** a hint names a run of keys as one entry, such as `↓↑ move`
-- **THEN** each key of the run is a target for its own action, and the
-  run's label is not a target
+#### Scenario: A hint's words are as much its target as its key
+- **WHEN** an operator clicks the word `delete` of a `d delete` hint
+- **THEN** the outcome is the one pressing `d` produces
+
+#### Scenario: A run is read, not pointed at
+- **WHEN** a hint names a run of keys as one entry, such as `↓↑ move` or
+  `1–5 section`
+- **THEN** no part of it is a target and it never lights, because it is
+  the keyboard's way through a list the pointer walks by pointing at what
+  it wants
 
 #### Scenario: A rebound key is still the target
 - **WHEN** an operator rebinds an action that a hint advertises

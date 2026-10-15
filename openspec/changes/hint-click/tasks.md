@@ -1,9 +1,9 @@
 ## 1. The widget
 
 - [x] 1.1 Replace `line`/`within`/`named_within`/`entries_within` in `src/ui/widget/hint.rs` with `Hints` (`new(scopes)`, `key`, `named`, `run`, `hovered`, `tone`, `width`, `render(frame, rect) -> Vec<(Rect, Action)>`, and the documented text-only `line()`), measuring by display width
-- [x] 1.2 A run renders one target per key end; an unbound action and an entry dropped for width render no target
+- [x] 1.2 A hint of one key renders one target over its key and name; a run, an unbound action and an entry dropped for width render none
 - [x] 1.3 The hovered key's label is drawn lit through a theme token; no caller paints a hint
-- [x] 1.4 Widget tests: rects land on the drawn keys (including after an arrow glyph), run ends, width cut, hover look, unbound action; port the existing hint tests in `src/ui/tests.rs`
+- [x] 1.4 Widget tests: rects land on the drawn hints, a run is no target, width cut, hover look, unbound action; port the existing hint tests in `src/ui/tests.rs`
 - [x] 1.5 `widget::footer::render` and `widget::screen_header::inline` take `Hints` instead of a `Line` and return the targets they drew
 
 ## 2. Management modal
