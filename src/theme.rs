@@ -49,12 +49,9 @@ pub const ADAPTIVE_LIGHT: &str = "light";
 /// resolves to.
 const MAX_ANCESTRY: usize = 8;
 
-/// The theme in force: the one selected, or the default when none is.
+/// The theme in force: the one selected, or adaptive when none is.
 pub fn active_id(app: &UzeApplication) -> Result<String> {
-    Ok(app
-        .themes()
-        .active()?
-        .unwrap_or_else(|| uze_theme::builtin_names()[0].to_owned()))
+    app.themes().active()
 }
 
 /// Selects `id` and draws with it from now on, once it is proven to
@@ -251,7 +248,7 @@ pub fn follow_desktop(home: UzeHome) {
 }
 
 fn adaptive_in_force(app: &UzeApplication) -> bool {
-    matches!(app.themes().active(), Ok(Some(id)) if id == ADAPTIVE)
+    matches!(app.themes().active(), Ok(id) if id == ADAPTIVE)
 }
 
 fn desktop_background() -> Option<Background> {
@@ -365,8 +362,8 @@ pub fn install(home: &UzeHome) -> Vec<String> {
 /// flake that only ever appears on a runner with more cores than the author's
 /// machine.
 ///
-/// `Ok(None)` is "nothing to apply": no theme chosen, no glyph set, no
-/// overrides — the built-in default is already in force and needs no I/O.
+/// `Ok(None)` is "nothing to apply": the selection draws in the built-in
+/// default, with no glyph set and no overrides — already in force.
 fn chosen(home: &UzeHome) -> std::result::Result<Option<Loaded>, String> {
     let Ok(app) = UzeApplication::from_env(home.clone()) else {
         // Appearance is not worth failing a command over. If the facade
@@ -375,22 +372,20 @@ fn chosen(home: &UzeHome) -> std::result::Result<Option<Loaded>, String> {
         return Ok(None);
     };
 
-    // A glyph set, or overrides, with no theme selected still apply: how
-    // this terminal draws is the operator's, not a property of having
-    // chosen a palette. Either is a third way to have an opinion, and
-    // resolving `default` is how one gets applied without a theme.
+    // A glyph set, or overrides, on the default still apply: how this
+    // terminal draws is the operator's, not a property of having chosen a
+    // palette.
     let has_opinion = |app: &UzeApplication| {
         matches!(app.themes().glyphs(), Ok(Some(_))) || home.theme_overrides_path().exists()
     };
     // A settings file that does not parse is reported, not read as empty:
     // the theme it names is silently not in force, which is exactly the
     // case that has to say so every time until it is fixed.
-    let id = match app.themes().active() {
-        Ok(Some(id)) => id,
-        Ok(None) if has_opinion(&app) => uze_theme::DEFAULT_THEME.to_owned(),
-        Ok(None) => return Ok(None),
-        Err(error) => return Err(error.to_string()),
-    };
+    let id = app.themes().active().map_err(|error| error.to_string())?;
+    let draws_in = concrete(&app, &id).map_err(|error| error.to_string())?;
+    if draws_in == uze_theme::DEFAULT_THEME && !has_opinion(&app) {
+        return Ok(None);
+    }
 
     resolve(&app, home, &id)
         .map(Some)
@@ -449,9 +444,8 @@ mod tests {
         let home = scratch("theme-adaptive-follows");
         select(&home, ADAPTIVE);
 
-        // Nothing has been observed yet: dark, as UZE always drew.
-        let loaded = chosen(&home).expect("resolves").expect("chosen");
-        assert_eq!(background_drawn(&loaded), Background::Dark);
+        // Nothing has been observed yet: dark, the default already in force.
+        assert!(matches!(chosen(&home), Ok(None)));
 
         app(&home)
             .themes()
@@ -463,6 +457,18 @@ mod tests {
             concrete(&app(&home), ADAPTIVE).expect("concrete"),
             ADAPTIVE_LIGHT
         );
+    }
+
+    #[test]
+    fn with_nothing_chosen_the_light_the_person_asked_for_is_followed() {
+        let home = scratch("theme-adaptive-default");
+        assert_eq!(app(&home).themes().active().expect("active"), ADAPTIVE);
+        app(&home)
+            .themes()
+            .observe_background(Background::Light)
+            .expect("observed");
+        let loaded = chosen(&home).expect("resolves").expect("chosen");
+        assert_eq!(background_drawn(&loaded), Background::Light);
     }
 
     #[test]

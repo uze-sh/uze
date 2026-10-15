@@ -47,11 +47,11 @@ impl Background {
     }
 }
 
-/// The theme the operator chose, or `None` while they have not chosen —
-/// which is not an error state: the built-in default is what a fresh
-/// installation draws with, and choosing is how you leave it.
-pub fn active(home: &UzeHome) -> Result<Option<String>> {
-    config::get(home, SECTION, THEME)
+/// The theme the operator chose, or [`ADAPTIVE`] while they have not
+/// chosen: a fresh installation follows the light or dark the person
+/// already asked their desktop for, and choosing is how you leave it.
+pub fn active(home: &UzeHome) -> Result<String> {
+    Ok(config::get(home, SECTION, THEME)?.unwrap_or_else(|| ADAPTIVE.to_owned()))
 }
 
 /// The glyph set the operator chose, or `None` while they have not chosen.
@@ -151,21 +151,18 @@ mod tests {
     }
 
     #[test]
-    fn no_selection_is_not_an_error() {
+    fn no_selection_is_adaptive() {
         let home = home("theme-none");
-        assert_eq!(active(&home).expect("readable"), None);
+        assert_eq!(active(&home).expect("readable"), ADAPTIVE);
     }
 
     #[test]
     fn a_selection_survives_being_written_and_read_back() {
         let home = home("theme-selection");
         set_active(&home, "nocturne").expect("written");
-        assert_eq!(
-            active(&home).expect("readable").as_deref(),
-            Some("nocturne")
-        );
+        assert_eq!(active(&home).expect("readable"), "nocturne");
         set_active(&home, "ascii").expect("written");
-        assert_eq!(active(&home).expect("readable").as_deref(), Some("ascii"));
+        assert_eq!(active(&home).expect("readable"), "ascii");
     }
 
     #[test]
@@ -177,7 +174,7 @@ mod tests {
         // whole point of them being separate.
         set_active(&home, "dawn").expect("written");
 
-        assert_eq!(active(&home).expect("readable").as_deref(), Some("dawn"));
+        assert_eq!(active(&home).expect("readable"), "dawn");
         assert_eq!(glyphs(&home).expect("readable").as_deref(), Some("nerd"));
     }
 
@@ -185,7 +182,7 @@ mod tests {
     fn a_glyph_set_can_be_chosen_with_no_theme_chosen() {
         let home = home("theme-glyphs-only");
         set_glyphs(&home, "ascii").expect("written");
-        assert_eq!(active(&home).expect("readable"), None);
+        assert_eq!(active(&home).expect("readable"), ADAPTIVE);
         assert_eq!(glyphs(&home).expect("readable").as_deref(), Some("ascii"));
     }
 
@@ -196,10 +193,7 @@ mod tests {
         let home = home("theme-only-active");
         set_active(&home, "nocturne").expect("written");
 
-        assert_eq!(
-            active(&home).expect("readable").as_deref(),
-            Some("nocturne")
-        );
+        assert_eq!(active(&home).expect("readable"), "nocturne");
         assert_eq!(glyphs(&home).expect("readable"), None);
     }
 

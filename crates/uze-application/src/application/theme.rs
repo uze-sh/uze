@@ -61,18 +61,18 @@ impl Themes<'_> {
                 path: Some(path.clone()),
             }))
             .map(|summary| ThemeSummary {
-                active: active.as_deref() == Some(summary.id.as_str()),
+                active: active == summary.id,
                 ..summary
             });
         Ok(summaries.collect())
     }
 
-    /// The selected theme's id, or `None` while the operator has not chosen.
+    /// The selected theme's id, adaptive while the operator has not chosen.
     // At debug: the workspace reads it every few seconds while it follows
     // the desktop, and an `info` span each time fills the journal. A failure
     // is still recorded, at error.
     #[tracing::instrument(name = "themes.active", level = "debug", skip_all, err)]
-    pub fn active(&self) -> Result<Option<String>> {
+    pub fn active(&self) -> Result<String> {
         appearance::active(&self.0.home)
     }
 

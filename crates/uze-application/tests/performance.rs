@@ -618,7 +618,7 @@ fn theme_selection_meets_the_budget() {
         // The adaptive selection, the one built-in, and the 32 written.
         assert_eq!(listed.len(), 34);
         assert_eq!(sets.len(), 3);
-        assert_eq!(active.as_deref(), Some("theme-7"));
+        assert_eq!(active, "theme-7");
         assert!(path.is_some());
     };
     read(&app());
