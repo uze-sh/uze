@@ -50,11 +50,6 @@ location. A file UZE renders (a `SKILL.md`, an agent definition, a manifest,
 an MCP configuration, a policy sidecar) SHALL be written as a regular file,
 and a file UZE carries unchanged SHALL be copied as a regular file; neither
 SHALL be a link, and nothing a harness reads SHALL resolve into the store.
-UZE SHALL own the artifact's lifecycle through a receipt that proves its
-content: it SHALL rebuild the artifact when the store package changes through
-UZE and SHALL remove it on `uze remove`/uninstall. The store SHALL remain the
-single source of truth; a materialized artifact SHALL be reproducible from
-the store and the engine alone.
 
 #### Scenario: Store update is reflected without a rewrite
 - **WHEN** a UZE-managed attachment was materialized from a package in the
@@ -82,6 +77,23 @@ the store and the engine alone.
 - **THEN** `uze doctor` reports the attachment Drifted
 - **AND THEN** UZE does not remove or overwrite it without the operator's
   action
+
+### Requirement: UZE owns an attachment's lifecycle through a receipt
+UZE SHALL own the artifact's lifecycle through a receipt that proves its
+content: it SHALL rebuild the artifact when the store package changes through
+UZE and SHALL remove it on `uze remove`/uninstall. The store SHALL remain the
+single source of truth; a materialized artifact SHALL be reproducible from
+the store and the engine alone.
+
+#### Scenario: The receipt proves what was materialized
+- **WHEN** UZE materializes an attachment into a harness's discovery location
+- **THEN** a receipt records the artifact and the content that proves it
+
+#### Scenario: An attachment is reproducible from the store
+- **WHEN** a materialized attachment is deleted and UZE delivers the package
+  again
+- **THEN** the same artifact is produced from the store and the engine alone,
+  with nothing read from the deleted copy
 
 ### Requirement: Attachment never disturbs unrelated entries in a shared discovery location
 A harness's user-scope discovery location MAY already contain entries UZE
@@ -114,12 +126,12 @@ or directory inside the project for the attached skill to be available.
 
 ### Requirement: No launcher and no wrapper are required for normal invocation
 The system SHALL NOT require `uze claude`, `uze codex`, or any UZE-specific
-subcommand to start a harness with the attached capability available. The
-system SHALL NOT install a process wrapper that replaces the harness's own
-executable on the user's PATH, and SHALL NOT edit the user's shell startup
-files. Outside the workspace, a harness command SHALL run the harness's own
-executable. Where a capability reaches a harness only when the workspace
-launches it, the system SHALL report that, never leave it silently missing.
+subcommand to start a harness with the attached capability available. It
+SHALL NOT install a process wrapper replacing the harness's executable on
+the user's PATH, nor edit the user's shell startup files. Outside the
+workspace, a harness command SHALL run the harness's own executable. Where a
+capability reaches a harness only through the workspace's launch, the system
+SHALL report that, never leave it silently missing.
 
 #### Scenario: Plain harness invocation is sufficient
 - **WHEN** `uze setup` and `uze add` have completed for a harness
@@ -156,16 +168,23 @@ state, verified independently of process invocation) from a runtime phase (a
 plain harness invocation with no UZE-specific arguments and no test-authored
 preparation step executed immediately before that invocation). A test SHALL
 NOT claim runtime transparency was verified solely because setup succeeded.
-Real-harness conformance SHALL run against a temporary, isolated home
-directory and UZE home, never the operator's real harness configuration.
-Authentication or quota failures during a runtime probe SHALL be classified
-as an environment block, never as incompatibility.
 
 #### Scenario: Setup-only success is not reported as runtime-verified
 - **WHEN** a setup-phase test confirms the managed attachment exists on disk
 - **AND WHEN** no runtime-phase invocation of the real harness has run
 - **THEN** the capability's transparent-attachment verification remains
   unverified, not verified
+
+### Requirement: Real-harness conformance runs isolated and names environment blocks
+Real-harness conformance SHALL run against a temporary, isolated home
+directory and UZE home, never the operator's real harness configuration.
+Authentication or quota failures during a runtime probe SHALL be classified
+as an environment block, never as incompatibility.
+
+#### Scenario: A conformance run leaves the operator's configuration alone
+- **WHEN** a real-harness conformance run completes
+- **THEN** it ran with a temporary home directory and UZE home, and the
+  operator's real harness configuration is unchanged
 
 #### Scenario: Quota failure during a runtime probe is an environment block
 - **WHEN** a runtime-phase probe invokes the real harness and the harness
@@ -215,16 +234,7 @@ harness discovers, follows, expands and accepts, each fact stating the
 harness version it was measured on and the conformance check that proves it.
 A test SHALL fail a fact that names no measured version, or whose check is
 not a function the conformance Lab defines, and the table SHALL be rendered
-into the published harness matrix. The fields a harness accepts on an agent
-SHALL be declared as data in that harness's vertical (its agent dialect), and
-that one declaration SHALL render the delivered file, answer `plugin check`
-and state the loss at install, so the three never disagree.
-
-#### Scenario: A harness that drops a field is told before install
-- **WHEN** an agent declares `model: haiku` at the root and OpenCode's
-  agent dialect does not carry it
-- **THEN** the install delivers the agent without the field and reports it
-  Degraded for OpenCode, naming the field
+into the published harness matrix.
 
 #### Scenario: A fact names a check the Lab defines
 - **WHEN** a harness states a fact whose `proven_by` names a function the
@@ -237,4 +247,16 @@ and state the loss at install, so the three never disagree.
 - **THEN** that contract check fails in the conformance run, while a fact
   proved only by an experiment under `conformance/experiments/` is
   rechecked only when that experiment is run on demand
+
+### Requirement: A harness's agent dialect is declared once
+The fields a harness accepts on an agent SHALL be declared as data in that
+harness's vertical (its agent dialect), and that one declaration SHALL render
+the delivered file, answer `plugin check` and state the loss at install, so
+the three never disagree.
+
+#### Scenario: A harness that drops a field is told before install
+- **WHEN** an agent declares `model: haiku` at the root and OpenCode's
+  agent dialect does not carry it
+- **THEN** the install delivers the agent without the field and reports it
+  Degraded for OpenCode, naming the field
 

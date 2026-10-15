@@ -4,7 +4,7 @@
 Registry of marketplace discovery sources that maps a marketplace name to a generic Git/local source and resolves `marketplace.json` for plugin discovery.
 ## Requirements
 ### Requirement: Marketplace registry stores generic Git/local sources
-The system SHALL store marketplace entries as `{name, source: Git|Local}` in `~/.uze/state/marketplaces.json`, where Git is a generic URL (not GitHub-specific) and Local is a filesystem path. The registry SHALL NOT copy plugin bytes. A Git source SHALL be recorded as its canonical identity (see the `marketplace-access` capability), not as the spelling the operator typed: a short locator (`owner/repo`, `<alias>:owner/repo`), an `scp`-style locator (`git@host:owner/repo`) and an `ssh://git@host/…` URL with no port all record the same `https://` URL, and a source already registered in another spelling of the same repository SHALL be matched, not reported as a conflict. A local path SHALL be recognised only when it is spelled as one: starting with `/`, `./`, `../` or `~`, or a bare `.` or `..`. A single segment with no prefix (`ai`) SHALL be refused, suggesting `./ai` when that directory exists. A two-or-more-segment argument with no prefix is a short locator, and SHALL be refused as ambiguous when it is also an existing directory.
+The system SHALL store marketplace entries as `{name, source: Git|Local}` in `~/.uze/state/marketplaces.json`, where Git is a generic URL (not GitHub-specific) and Local is a filesystem path. The registry SHALL NOT copy plugin bytes. A Git source SHALL be recorded as its canonical identity (see the `marketplace-access` capability), not as the spelling the operator typed, and a source already registered in another spelling of the same repository SHALL be matched, not reported as a conflict.
 
 #### Scenario: Add local marketplace
 - **WHEN** user runs `uze market add /home/hiukky/ai`
@@ -14,14 +14,6 @@ The system SHALL store marketplace entries as `{name, source: Git|Local}` in `~/
 - **WHEN** user runs `uze market add https://github.com/hiukky/ai`
 - **THEN** system records `ai → Git{url:https://github.com/hiukky/ai}` without cloning plugins
 
-#### Scenario: Add the current directory
-- **WHEN** user runs `uze market add .` inside a marketplace checkout
-- **THEN** system records the checkout as a Local source, exactly as its absolute path would
-
-#### Scenario: A bare word is not a path
-- **WHEN** user runs `uze market add ai` and `./ai` is a marketplace checkout
-- **THEN** system records nothing and fails suggesting `uze market add ./ai`
-
 #### Scenario: Add Git marketplace by short locator
 - **WHEN** user runs `uze market add hiukky/ai` and the machine's default host is `github`
 - **THEN** system records `ai → Git{url:https://github.com/hiukky/ai}`, the same entry the full URL records
@@ -30,12 +22,31 @@ The system SHALL store marketplace entries as `{name, source: Git|Local}` in `~/
 - **WHEN** user runs `uze market add git@github.com:hiukky/ai.git`
 - **THEN** system records `ai → Git{url:https://github.com/hiukky/ai}` and does not read the argument as a local path
 
+#### Scenario: Every spelling of a repository records one URL
+- **WHEN** user adds the same repository as a short locator (`owner/repo`, `<alias>:owner/repo`), an `scp`-style locator (`git@host:owner/repo`) or an `ssh://git@host/…` URL with no port
+- **THEN** each records the same `https://` URL
+
+#### Scenario: Another spelling of a registered source
+- **WHEN** user adds `git@github.com:hiukky/ai.git` while `https://github.com/hiukky/ai` is registered
+- **THEN** system matches the existing entry and reports no conflict
+
+### Requirement: A local marketplace path is recognised by its spelling
+A local path SHALL be recognised only when it is spelled as one: starting with `/`, `./`, `../` or `~`, or a bare `.` or `..`. A single segment with no prefix (`ai`) SHALL be refused, suggesting `./ai` when that directory exists. A two-or-more-segment argument with no prefix is a short locator, and SHALL be refused as ambiguous when it is also an existing directory.
+
+#### Scenario: Add the current directory
+- **WHEN** user runs `uze market add .` inside a marketplace checkout
+- **THEN** system records the checkout as a Local source, exactly as its absolute path would
+
+#### Scenario: A bare word is not a path
+- **WHEN** user runs `uze market add ai` and `./ai` is a marketplace checkout
+- **THEN** system records nothing and fails suggesting `uze market add ./ai`
+
 #### Scenario: Short locator that is also a directory
 - **WHEN** user runs `uze market add hiukky/ai` and `./hiukky/ai` exists in the working directory
 - **THEN** system records nothing and fails naming both readings, `./hiukky/ai` for the directory and `github:hiukky/ai` for the repository
 
 ### Requirement: Marketplace add validates marketplace manifest
-The system SHALL validate that the marketplace source contains a readable `marketplace.json` with `plugins[]` entries (`name`, `source`, and an optional free-text `category`), and that the manifest's own `name` is lowercase kebab-case of at most 64 characters (see the `plugin` capability). The name SHALL be checked before anything is recorded or mirrored. An entry SHALL NOT describe its plugin: any other field on it, `description` and `keywords` included, SHALL be ignored rather than refused, so a manifest written for another reader still registers.
+The system SHALL validate that the marketplace source contains a readable `marketplace.json` with `plugins[]` entries (`name`, `source`, an optional free-text `category`), and that its own `name` is lowercase kebab-case of at most 64 characters (the `plugin` capability's rule), checked before anything is recorded or mirrored. An entry SHALL NOT describe its plugin: any other field on it, `description` and `keywords` included, SHALL be ignored rather than refused.
 
 #### Scenario: Valid marketplace
 - **WHEN** `marketplace.json` exists and is well-formed
@@ -51,7 +62,8 @@ The system SHALL validate that the marketplace source contains a readable `marke
   and records nothing
 
 #### Scenario: An entry that still describes its plugin
-- **WHEN** a `plugins[]` entry carries `description` or `keywords`
+- **WHEN** a `plugins[]` entry carries `description` or `keywords`, as a
+  manifest written for another reader may
 - **THEN** `marketplace add` succeeds and neither value is read
 
 ### Requirement: Marketplace list and remove manage registry
@@ -86,14 +98,13 @@ The system SHALL treat the embedded official marketplace (`plugins/uze`, `market
 
 ### Requirement: A marketplace's catalogue is served from a cache
 What a marketplace registered from a Git source offers SHALL be read from
-a cached checkout under `UZE_HOME`'s cache directory rather than by
-cloning the source: one checkout per marketplace, recording the source it
-was read from and when. A catalogue SHALL stand for a bounded time, after
-which the next read clones the source again; registering the same source
-again SHALL refresh it immediately; removing the marketplace SHALL drop
-it. A marketplace registered from a local path SHALL be read in place on
-every read. The cache is reconstructable and never authoritative: deleting
-it costs one clone, never correctness.
+a cached checkout in `UZE_HOME`'s cache, one per marketplace
+recording its source and when it was read, rather than by cloning the
+source. A catalogue SHALL stand for a bounded time, after which the next
+read clones the source again; registering the same source again SHALL
+refresh it immediately; removing the marketplace SHALL drop it. A
+marketplace registered from a local path SHALL be read in place on every
+read.
 
 #### Scenario: A listing does not need the repository
 - **WHEN** a marketplace was registered from a Git URL and its repository
@@ -127,6 +138,11 @@ it costs one clone, never correctness.
 - **WHEN** `market remove` succeeds
 - **THEN** the marketplace's cache entry is removed with its registration
 
+#### Scenario: Deleting the cache costs one clone
+- **WHEN** the cache directory is deleted
+- **THEN** the next read clones the source again and answers exactly as
+  before, since the cache is reconstructable and never authoritative
+
 ### Requirement: Detach follows the receipt ledger, not detection
 The per-package removal SHALL undo every harness artifact the receipts ledger owns for the package, whether or not the harness's vendor binary is detected in the context the command runs in: the ledger is what says UZE delivered something, so an undetected-but-delivered harness is a receipt to tear down through its integration, never a harness to skip.
 
@@ -137,10 +153,8 @@ The per-package removal SHALL undo every harness artifact the receipts ledger ow
 ### Requirement: A plugin's listing is read from its own manifest
 What the system shows about an offered plugin — its `description` and
 `keywords`, in the plugin listing, `market inspect`, the plugins screen and
-every JSON report of them — SHALL be read from that plugin's `plugin.json`
-at the revision the catalogue was read at: in place for a local
-marketplace, from the cached catalogue for a Git one, from the embedded
-snapshot for the official one. Reading it SHALL NOT clone or fetch beyond
+their JSON reports — SHALL be read from that plugin's `plugin.json`
+at the revision the catalogue was read at. Reading it SHALL NOT clone or fetch beyond
 what reading the catalogue already did. A plugin whose `plugin.json` is
 missing, unreadable or carries no such field SHALL be listed without it,
 never dropped from the listing and never failing it.
@@ -149,6 +163,12 @@ never dropped from the listing and never failing it.
 - **WHEN** a linked marketplace's plugin changes the `description` in its
   `plugin.json`, and nothing else
 - **THEN** the next plugin listing shows the new description
+
+#### Scenario: Each source kind is read at its catalogue's revision
+- **WHEN** plugins are listed from a local, a Git and the official marketplace
+- **THEN** each `plugin.json` is read in place for the local one, from the
+  cached catalogue for the Git one and from the embedded snapshot for the
+  official one
 
 #### Scenario: A Git marketplace lists from its cached catalogue
 - **WHEN** a marketplace registered from a Git URL is listed while its

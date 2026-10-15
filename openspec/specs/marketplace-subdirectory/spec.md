@@ -1,7 +1,9 @@
 # marketplace-subdirectory Specification
 
 ## Purpose
-TBD - created by archiving change marketplace-in-a-subdirectory. Update Purpose after archive.
+Let a marketplace live in a subdirectory of a Git repository, such as a
+monorepo, and say on registration exactly which checkout and subdirectory
+will be read and how.
 ## Requirements
 ### Requirement: A marketplace can live below its repository root
 

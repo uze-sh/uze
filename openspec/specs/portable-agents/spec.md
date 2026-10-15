@@ -37,8 +37,7 @@ harness under the label `<plugin>:<logical name>`, the same qualified label
 Skills use (ADR-026). Where the harness's plugin mechanism namespaces agents,
 the agent SHALL be delivered inside the package's plugin; where the harness
 reads a global agent root, the delivered file SHALL be a regular file named
-with the label. Codex's representation is a UZE-generated standalone TOML
-custom-agent file in `~/.codex/agents/`. Two packages declaring an agent of
+with the label. Two packages declaring an agent of
 the same name SHALL both be delivered, each under its own label.
 
 #### Scenario: Native harness receives an agent
@@ -57,24 +56,16 @@ the same name SHALL both be delivered, each under its own label.
 #### Scenario: Codex receives an agent
 
 - **WHEN** a package with an Agent capability is attached to Codex
-- **THEN** UZE writes a generated TOML custom-agent file carrying the label as
-  `name`, the description, and the body as `developer_instructions`, without
-  modifying Store bytes
+- **THEN** UZE writes a generated standalone TOML custom-agent file in
+  `~/.codex/agents/` carrying the label as `name`, the description, and the
+  body as `developer_instructions`, without modifying Store bytes
 - **AND** the route is Native when every authored root field was carried, and
   Degraded naming each root field that was not
 
 ### Requirement: Only the portable frontmatter subset is projected
 
 The system SHALL treat `name` (replaced by the label) and `description` as the
-portable frontmatter root, and the body as the prompt. A field a harness
-spells differently SHALL be written under a `harness:` block keyed by the
-harness id or one of its aliases (`claude-code`, `codex`, `opencode`,
-`antigravity`/`agy`); each integration renders only its own block's fields
-into its delivered file and never delivers the block itself. Each integration
-declares which block fields it knows and the shape each must have: a known
-field of the wrong shape is not delivered, a field the harness drops an agent
-over is left out, and an unknown field is carried as written on a harness
-that tolerates unknown fields and left out on one that refuses them (Codex).
+portable frontmatter root, and the body as the prompt.
 Authored root fields other than `name` and `description` SHALL reach only
 Claude Code, since the canonical format is Claude's; on every other harness
 they are not carried. A root field that is not carried SHALL be named in the route
@@ -88,6 +79,13 @@ evidence and SHALL make the route Degraded for that harness.
 - **AND** the route is Degraded with evidence naming `model` and `tools` as
   not carried to this harness
 
+### Requirement: A field a harness spells differently goes in its own block
+
+A field a harness spells differently SHALL be written under a `harness:` block
+keyed by the harness id or one of its aliases (`claude-code`, `codex`,
+`opencode`, `antigravity`/`agy`); each integration renders only its own
+block's fields into its delivered file and never delivers the block itself.
+
 #### Scenario: Each harness receives its own block
 
 - **WHEN** an agent's `harness:` block gives `claude-code`, `codex`,
@@ -95,22 +93,57 @@ evidence and SHALL make the route Degraded for that harness.
 - **THEN** each harness's delivered file carries the model its own block
   names, and no delivered file carries the `harness:` block
 
+### Requirement: A block field is delivered only in a shape the harness accepts
+
+Each integration declares which block fields it knows and the shape each must
+have. A known field of the wrong shape SHALL NOT be delivered, a field the
+harness drops an agent over SHALL be left out, and an unknown field SHALL be
+carried as written on a harness that tolerates unknown fields and left out on
+one that refuses them (Codex).
+
+#### Scenario: A known field of the wrong shape
+
+- **WHEN** an agent's `opencode` block gives `tools` as a list rather than a
+  map
+- **THEN** the file delivered to OpenCode does not carry `tools`
+
+#### Scenario: An unknown field on a harness that refuses them
+
+- **WHEN** an agent's `codex` block carries a field the Codex integration does
+  not know
+- **THEN** the file delivered to Codex leaves that field out
+
 ### Requirement: Agent definitions are checked before install
 
 `uze agent plugin check`, and `uze agent market check` for each plugin it
 lists, SHALL validate every agent definition below `agents/`: UTF-8,
 parseable YAML frontmatter, a non-empty `description`, every part of the
 agent's label obeying the package name rule, and a `harness:` block that is a
-mapping of mappings redefining no identity field. Each integration's check
-SHALL report a block field of the wrong shape as an error and a field it
-leaves out as a warning. A failing agent SHALL be reported with its path and
-the fault.
+mapping of mappings redefining no identity field. A failing agent SHALL be
+reported with its path and the fault.
 
 #### Scenario: Agent without frontmatter
 
 - **WHEN** a plugin contains `agents/reviewer.md` with no frontmatter
 - **THEN** `uze agent plugin check` reports `agents/reviewer.md` and the
   missing frontmatter
+
+### Requirement: Each integration checks its own harness block
+
+Each integration's check SHALL report a block field of the wrong shape as an
+error and a field it leaves out as a warning.
+
+#### Scenario: A block field of the wrong shape fails the check
+
+- **WHEN** an agent's `opencode` block gives `tools` as a list
+- **THEN** `uze agent plugin check` reports an error naming the agent's path
+  and `tools`
+
+#### Scenario: A block field the harness leaves out warns
+
+- **WHEN** an agent's block carries a field its integration leaves out
+- **THEN** `uze agent plugin check` reports a warning naming the field and
+  still passes
 
 ### Requirement: Agent lifecycle safety
 

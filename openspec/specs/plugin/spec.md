@@ -77,19 +77,33 @@ one can be derived, the corrected name.
 
 ### Requirement: The case a person types is forgiven
 The system SHALL lowercase a plugin, marketplace or alias name a person
-types to refer to one that exists or to choose an alias (the
-`<plugin>@<market>` install spec, the `update`, `remove` and `inspect`
-plugin argument, the name argument of `uze market remove`, `link`, `unlink`
-and `inspect`, `--alias`, the `--market` of `uze agent plugin create`, and a
-name typed at the collision prompt) before resolving it. Resolution against
-the record SHALL stay exact. A name that becomes an authored file's name,
-the `<name>` of `uze agent market create` and `uze agent plugin create`,
-SHALL NOT be lowercased but refused under the name rule, and neither SHALL
-a name read from a file, because the harness reading the same file does
-not forgive it.
+types to refer to one that exists or to choose an alias before resolving
+it. Resolution against the record SHALL stay exact.
 
 #### Scenario: Install and remove in another case
 - **WHEN** the operator runs `uze install -m Flow@AI` and then
   `uze remove -m FLOW`
 - **THEN** `flow@ai` is installed and then removed
+
+#### Scenario: Every typed reference is forgiven
+- **WHEN** a person types a name in another case as the `<plugin>@<market>`
+  install spec, the `update`, `remove` or `inspect` plugin argument, the
+  name argument of `uze market remove`, `link`, `unlink` or `inspect`,
+  `--alias`, the `--market` of `uze agent plugin create`, or at the
+  collision prompt
+- **THEN** the name is lowercased before it is resolved
+
+### Requirement: A name that becomes or comes from a file is not forgiven
+A name that becomes an authored file's name, the `<name>` of `uze agent
+market create` and `uze agent plugin create`, SHALL NOT be lowercased but
+refused under the name rule, and neither SHALL a name read from a file,
+because the harness reading the same file does not forgive it.
+
+#### Scenario: A scaffold name in another case is refused
+- **WHEN** the operator runs `uze agent plugin create Flow --market ai`
+- **THEN** the command fails under the name rule and nothing is written
+
+#### Scenario: A name read from a file in another case is refused
+- **WHEN** a plugin's `plugin.json` carries `"name": "Flow"`
+- **THEN** the name is refused under the name rule rather than lowercased
 

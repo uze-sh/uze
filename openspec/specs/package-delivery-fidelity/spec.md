@@ -1,22 +1,20 @@
 # package-delivery-fidelity Specification
 
 ## Purpose
-TBD - created by archiving change deliver-the-whole-plugin. Update Purpose after archive.
+Deliver a package to each harness whole and exactly once: a generated plugin
+carries every file the package holds, each capability takes one route,
+names and the `${PLUGIN_ROOT}` placeholder mean the same everywhere, and a
+fallback to a lesser route is said out loud.
 ## Requirements
 ### Requirement: A generated plugin carries the whole package
 
 When the system generates a harness-native plugin from a package, the
-plugin's root SHALL contain every file the Store holds for that package, at
-the same relative path, as files the harness can copy without following links
-into the Store. Generated or rewritten files (the harness manifest, a
-`SKILL.md` carrying a translated invocation policy) replace their canonical
-counterparts at the same path. A path the harness would load as a
-component the canonical format does not define (for Claude Code:
-`commands/`, `bin/`, `output-styles/`, `workflows/`, `themes/`,
-`monitors/`, `settings.json`, `.lsp.json`, and its own `hooks/hooks.json`
-and `.mcp.json`) SHALL NOT be carried, and `uze inspect` SHALL name each
-such path the package contains as not delivered to that harness. Store bytes
-SHALL remain unchanged.
+plugin's root SHALL contain every file the Store holds for that package,
+save a harness-only component, at the same relative path, as files the
+harness can copy without following links into the Store. Generated or
+rewritten files (the harness manifest, a `SKILL.md` carrying a translated
+invocation policy) replace their canonical counterparts at the same path.
+Store bytes SHALL remain unchanged.
 
 #### Scenario: A file outside skills/ is reachable from the plugin root
 
@@ -25,6 +23,22 @@ SHALL remain unchanged.
 - **THEN** `phases/plan.md` exists under the generated plugin's root
 - **AND** a skill resolving `${PLUGIN_ROOT}/phases/plan.md` reads that file
 
+#### Scenario: The harness cache copy is complete
+
+- **WHEN** Claude Code installs the generated plugin and copies it into its
+  plugin cache
+- **THEN** the cached copy contains every skill directory with its files
+- **AND** no entry in the generated plugin is a symbolic link into the Store
+
+### Requirement: A harness-only component is not carried into a generated plugin
+
+A path the harness would load as a component the canonical format does not
+define SHALL NOT be carried into the generated plugin, and `uze inspect`
+SHALL name each such path the package contains as not delivered to that
+harness. For Claude Code these are `commands/`, `bin/`, `output-styles/`,
+`workflows/`, `themes/`, `monitors/`, `settings.json`, `.lsp.json`, and its
+own `hooks/hooks.json` and `.mcp.json`.
+
 #### Scenario: A harness-only component is not delivered
 
 - **WHEN** a package contains `bin/tool` and `commands/legacy.md`
@@ -32,13 +46,6 @@ SHALL remain unchanged.
 - **AND** both remain in the Store package
 - **AND** `uze inspect` names `bin` and `commands` as not delivered to Claude
   Code
-
-#### Scenario: The harness cache copy is complete
-
-- **WHEN** Claude Code installs the generated plugin and copies it into its
-  plugin cache
-- **THEN** the cached copy contains every skill directory with its files
-- **AND** no entry in the generated plugin is a symbolic link into the Store
 
 ### Requirement: Agents keep their plugin-qualified name
 
@@ -64,7 +71,7 @@ capabilities the harness would load from that envelope — including those it
 discovers by default without the manifest naming them — SHALL be treated as
 covered and SHALL NOT be delivered again through another route. A canonical
 hook declaration beside an envelope that declares its own hooks SHALL be
-treated as covered by the envelope, not delivered twice.
+treated as covered by the envelope.
 
 #### Scenario: Envelope without a skills list
 
