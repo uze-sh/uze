@@ -510,9 +510,9 @@ fn a_closed_agent_gives_its_slot_back_and_its_work_is_kept_on_a_shelf() {
     );
 
     let (_, reused) = engine.launch(Steps::new());
-    assert_eq!(
-        reused, slot,
-        "the freed slot is taken instead of a new working tree"
+    assert!(
+        !slot.exists() && reused.exists(),
+        "the freed slot is renamed to the next agent instead of a new working tree"
     );
     let occupied = engine.occupied();
     assert!(
@@ -546,7 +546,10 @@ fn a_closed_agent_gives_its_slot_back_and_its_work_is_kept_on_a_shelf() {
     );
 
     let (_, next) = engine.launch(Steps::new());
-    assert_eq!(next, kept, "the checkout goes to the next agent");
+    assert!(
+        !kept.exists() && next.exists(),
+        "the checkout goes to the next agent"
+    );
     assert!(!next.join("draft.rs").exists(), "carrying none of it");
 }
 
@@ -628,8 +631,8 @@ fn a_subagents_checkout_is_split_and_joined_beside_one_made_by_hand() {
     );
 
     let (_, next) = engine.launch(Steps::new());
-    assert_eq!(
-        next, child,
+    assert!(
+        !child.exists() && next.exists(),
         "the joined subagent's checkout went back to the pool"
     );
 }
