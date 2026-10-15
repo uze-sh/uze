@@ -83,8 +83,8 @@ pub(super) fn render_recent(
             Target::Row(index) => hits.push((rect, WorkspaceHit::RecentRow(index))),
             Target::Answers(index) => {
                 let room = Rect {
-                    x: rect.x + TRAILING_PAD,
-                    width: rect.width.saturating_sub(2 * TRAILING_PAD),
+                    x: rect.x + TRAILING_PAD + ROW_INDENT,
+                    width: rect.width.saturating_sub(2 * TRAILING_PAD + ROW_INDENT),
                     ..rect
                 };
                 if let Some(word) = list.get(index).and_then(RecentRow::taking_away) {
@@ -113,40 +113,20 @@ pub(super) fn render_recent(
             ],
             &keys_for(row, model.recent.asking, model.recent.on_confirm),
         );
-        let mut spans = vec![lead()];
-        spans.extend(keys.spans);
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        frame.render_widget(Paragraph::new(keys.centered()), rect);
     }
 }
 
-/// What recent is for, said where its rows would be: a title, and what
-/// will arrive here, folded to the column.
+/// What recent is for, said where its rows would be: a title alone,
+/// centred in the room the rows would take.
 fn render_empty(frame: &mut ratatui::Frame<'_>, rows: &mut Rows, width: u16) {
-    let room = usize::from(width.saturating_sub(2 * TRAILING_PAD));
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            lead(),
-            Span::styled("nothing kept yet", theme::fg_bold(Token::TextSecondary)),
-        ]),
-    ];
-    lines.extend(
-        text::fold(
-            "an agent closed with work in its checkout waits here to be picked up again",
-            room,
-        )
-        .into_iter()
-        .map(|words| {
-            Line::from(vec![
-                lead(),
-                Span::styled(words, theme::fg(Token::TextMuted)),
-            ])
-        }),
-    );
-    for line in lines {
-        let Some(rect) = rows.next(1) else { break };
-        frame.render_widget(Paragraph::new(line), rect);
-    }
+    let middle = rows.remaining().saturating_sub(1) / 2;
+    rows.next(middle);
+    let Some(rect) = rows.next(1) else { return };
+    let title = Span::styled("nothing kept yet", theme::fg_bold(Token::TextSecondary));
+    let mut line = Line::from(title).centered();
+    text::clip(&mut line, usize::from(width));
+    frame.render_widget(Paragraph::new(line), rect);
 }
 
 /// The question's two answers, the keyboard on one of them: going ahead
@@ -191,6 +171,28 @@ fn keys_for(row: Option<&RecentRow>, asking: bool, on_confirm: bool) -> Vec<(Act
 
 fn lead() -> Span<'static> {
     Span::raw(" ".repeat(usize::from(TRAILING_PAD)))
+}
+
+/// How far a row sits in from its group's title: the step is what says
+/// which lines are titles and which are what they hold.
+const ROW_INDENT: u16 = 2;
+
+fn row_lead() -> Span<'static> {
+    Span::raw(" ".repeat(usize::from(TRAILING_PAD + ROW_INDENT)))
+}
+
+/// The mark in that step, on the row's first line: bright on the selected
+/// row and quiet on the rest, so the step reads as a list rather than as
+/// room left empty.
+fn bullet(selected: bool) -> Span<'static> {
+    let glyph = theme::glyph(Symbol::MarkDot);
+    let gap = usize::from(ROW_INDENT.saturating_sub(theme::width(Symbol::MarkDot)));
+    let hue = if selected {
+        Token::TextBright
+    } else {
+        Token::TextFaint
+    };
+    Span::styled(format!("{glyph}{}", " ".repeat(gap)), theme::fg(hue))
 }
 
 /// Every line of the list, each with what a click on it reaches.
@@ -251,7 +253,11 @@ fn row_lines(
     } else {
         theme::fg(Token::TextPrimary)
     };
-    let mut first = vec![lead(), Span::styled(row.name.clone(), name_style)];
+    let mut first = vec![
+        lead(),
+        bullet(selected),
+        Span::styled(row.name.clone(), name_style),
+    ];
     row::push_trailing(
         &mut first,
         width,
@@ -265,7 +271,7 @@ fn row_lines(
         } else {
             Token::TextMuted
         };
-        let mut reason = vec![lead(), Span::styled(row.reason.words(), theme::fg(hue))];
+        let mut reason = vec![row_lead(), Span::styled(row.reason.words(), theme::fg(hue))];
         if selected {
             let project = if gone || space_open_on(model, &row.project) {
                 project_name(&row.project)
@@ -279,28 +285,34 @@ fn row_lines(
     if asking {
         // Folded rather than cut: what goes is the whole point of asking,
         // and a narrow column would otherwise lose the end of it.
-        let room = usize::from(width.saturating_sub(2 * TRAILING_PAD));
+        let room = usize::from(width.saturating_sub(2 * TRAILING_PAD + ROW_INDENT));
         for words in text::fold(row.question(), room) {
             lines.push(vec![
-                lead(),
+                row_lead(),
                 Span::styled(words, theme::fg(Token::StateWarning)),
             ]);
         }
     } else if selected {
         lines.push(vec![
-            lead(),
+            row_lead(),
             Span::styled(facts_of(row), theme::fg(Token::TextMuted)),
         ]);
     }
     let answers = asking.then_some(lines.len());
     if answers.is_some() {
-        lines.push(vec![lead()]);
+        lines.push(vec![row_lead()]);
     }
     lines
         .into_iter()
         .enumerate()
         .map(|(at, mut spans)| {
-            row::fill(&mut spans, width, state);
+            // The selected row wears the overlay the tree's row in front
+            // wears: one meaning, one tone, in either list.
+            if state == RowState::Selected {
+                row::pad_to(&mut spans, width, front_ground());
+            } else {
+                row::fill(&mut spans, width, state);
+            }
             let mut line = Line::from(spans);
             text::clip(&mut line, usize::from(width));
             let target = if answers == Some(at) {

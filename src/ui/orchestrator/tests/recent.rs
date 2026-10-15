@@ -808,9 +808,16 @@ fn the_foot_offers_resume_and_discard_on_one_line() {
 }
 
 #[test]
-fn with_nothing_kept_it_says_so() {
+fn with_nothing_kept_it_says_so_in_a_title_alone() {
     let model = showing(Vec::new(), Vec::new());
-    row_of(&drawn(&model), "nothing kept yet");
+    let lines = drawn(&model);
+    let title = &lines[row_of(&lines, "nothing kept yet")];
+    let before = title.find("nothing").unwrap();
+    assert!(before > 2, "the title is centred: {title:?}");
+    assert!(
+        !lines.iter().any(|line| line.contains("picked up again")),
+        "{lines:?}"
+    );
 }
 
 #[test]

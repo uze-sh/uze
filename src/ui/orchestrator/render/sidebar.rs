@@ -914,6 +914,12 @@ pub(super) fn render_space_caption(
     hits.push((rect, WorkspaceHit::SelectSpace(space.id)));
 }
 
+/// The overlay the row in front wears: a trace of the accent over the
+/// panel a space sits on.
+pub(super) fn front_ground() -> Color {
+    theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle)
+}
+
 /// The ground under a space's rows: the panel itself where a space is
 /// `lifted`, and the same panel faded where it is not. Every space is a
 /// block either way — what the fill says is which blocks have something
