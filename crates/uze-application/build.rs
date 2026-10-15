@@ -14,7 +14,12 @@ use std::{
 };
 
 fn main() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Read when the script runs, never baked in when it is compiled: cargo
+    // reruns a build script after its checkout moves without recompiling
+    // it, and a path compiled in would still name the old directory.
+    let manifest_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"),
+    );
     let repo_root = manifest_dir
         .parent()
         .and_then(Path::parent)
