@@ -20,8 +20,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
 
-[target.'cfg(unix)'.dev-dependencies]
-libc = "0.2"
-
 [dev-dependencies]
 uze-testkit = { path = "../uze-testkit" }
