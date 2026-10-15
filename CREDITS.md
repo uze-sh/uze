@@ -260,7 +260,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `mio` | 1.2.3 | MIT |
 | `miow` | 0.6.1 | MIT OR Apache-2.0 |
 | `nix` | 0.28.0 | MIT |
-| `noyalib` | 0.0.53 | MIT OR Apache-2.0 |
+| `noyalib` | 0.0.57 | MIT OR Apache-2.0 |
 | `nu-ansi-term` | 0.50.3 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -292,8 +292,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `ref-cast-impl` | 1.0.27 | MIT OR Apache-2.0 |
 | `regex-automata` | 0.4.18 | MIT OR Apache-2.0 |
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
-| `rmcp` | 3.5.0 | Apache-2.0 |
-| `rmcp-macros` | 3.5.0 | Apache-2.0 |
+| `rmcp` | 3.5.1 | Apache-2.0 |
+| `rmcp-macros` | 3.5.1 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -310,7 +310,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `serde_derive` | 1.0.229 | MIT OR Apache-2.0 |
 | `serde_derive_internals` | 0.30.0 | MIT OR Apache-2.0 |
 | `serde_ignored` | 0.1.14 | MIT OR Apache-2.0 |
-| `serde_json` | 1.0.151 | MIT OR Apache-2.0 |
+| `serde_json` | 1.0.154 | MIT OR Apache-2.0 |
 | `serial2` | 0.2.38 | BSD-2-Clause OR Apache-2.0 |
 | `sha2` | 0.11.0 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
@@ -343,10 +343,10 @@ accepts, which is why the table sums to more than the number of crates.
 | `tokio` | 1.53.2 | MIT |
 | `tokio-macros` | 2.7.2 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
-| `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_edit` | 0.25.15+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_parser` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_writer` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_datetime` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_edit` | 0.25.17+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_parser` | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_writer` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | `tracing` | 0.1.44 | MIT |
 | `tracing-appender` | 0.2.5 | MIT |
 | `tracing-attributes` | 0.1.31 | MIT |
