@@ -135,7 +135,7 @@ jobs:
         if: steps.plan.outputs.pending != '0'
         run: docker save conformance-harness:latest | zstd -T0 -3 -o /tmp/lab-image.tar.zst
       - if: steps.plan.outputs.pending != '0'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: lab-image
           path: /tmp/lab-image.tar.zst
@@ -212,7 +212,7 @@ jobs:
           UZE_EVIDENCE_DIR: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/evidence
       - name: Upload evidence
         if: always() && env.PROVEN == ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: conformance-evidence-${{ matrix.harness }}-${{ matrix.part }}
           path: /tmp/harness-conformance/${{ matrix.harness }}-${{ matrix.part }}/run1/
@@ -233,7 +233,7 @@ jobs:
           mkdir -p /tmp/proof
           echo "${VERSION} at ${GITHUB_SHA}" > /tmp/proof/proof.txt
       - if: success() && env.PROVEN == '' && env.KEY != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ env.KEY }}
           path: /tmp/proof/proof.txt

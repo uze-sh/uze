@@ -41,7 +41,7 @@ jobs:
         run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
       - name: Hand it to the verticals
         run: docker save conformance-harness:latest | zstd -T0 -3 -o /tmp/lab-image.tar.zst
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: lab-image-stability
           path: /tmp/lab-image.tar.zst
@@ -104,7 +104,7 @@ jobs:
           exit $fails
       - name: Upload stability logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: conformance-stability-${{ matrix.harness }}
           path: /tmp/stability/${{ matrix.harness }}/
