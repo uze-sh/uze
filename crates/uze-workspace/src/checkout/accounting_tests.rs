@@ -33,7 +33,7 @@ fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agen
     let owner = agent.id.clone();
     let isolation = agent.isolation_mut().unwrap();
     let base = isolation.base_commit.clone();
-    let acquired = acquire(primary, store, &owner, isolation, &base, None, &nobody()).unwrap();
+    let acquired = acquire(primary, store, &owner, isolation, &base, None, &nobody).unwrap();
     isolation.checkout = Some(acquired.id.clone());
     store.upsert(agent.clone());
     (agent, acquired)
@@ -42,7 +42,7 @@ fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agen
 /// Ends `agent` the way the occupancy sweep does, and records it.
 fn end(repository: &Repository, store: &mut AgentStore, agent: &Agent) -> Released {
     let mut ended = store.get(&agent.id).unwrap().clone();
-    let released = release(repository.root(), &mut ended, TARGET, &nobody());
+    let released = release(repository.root(), &mut ended, TARGET, &nobody);
     store.upsert(ended);
     released
 }
@@ -719,7 +719,7 @@ mod in_use {
         let mut store = AgentStore::default();
         let (agent, slot) = launch(&repository, &mut store, "left");
         end(&repository, &mut store, &agent);
-        let somebody = Presence::Known(vec![slot.path.join("src")]);
+        let somebody = Presence::Known(vec![Occupant::somebody(slot.path.join("src"))]);
 
         assert_eq!(
             slots(primary, &store, &somebody)[0].state,
@@ -744,14 +744,14 @@ mod in_use {
             slots(primary, &store, &Presence::Unknown)[0].state,
             SlotState::Free
         );
-        let (_, next) = acquire_for(&repository, &store, &Presence::Unknown);
+        let (_, next) = acquire_for(&repository, &store, &|| Presence::Unknown);
         assert!(next.created);
     }
 
     fn acquire_for(
         repository: &Repository,
         store: &AgentStore,
-        presence: &Presence,
+        observe: &dyn Fn() -> Presence,
     ) -> (Agent, Acquired) {
         let primary = repository.root();
         let agent = Agent::isolated(
@@ -769,7 +769,7 @@ mod in_use {
             isolation,
             &isolation.base_commit,
             None,
-            presence,
+            observe,
         )
         .unwrap();
         (agent, acquired)

@@ -16,41 +16,54 @@
 use crate::path::Canonical as _;
 use std::path::{Path, PathBuf};
 
-/// The directories this user's processes were working in when observed.
+/// Where this user's processes were working when observed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Presence {
-    Known(Vec<PathBuf>),
+    Known(Vec<Occupant>),
     /// The process table could not be read.
     Unknown,
+}
+
+/// A directory one of this user's processes was working in.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Occupant {
+    pub path: PathBuf,
+    /// Whether somebody is behind the process. False only for one the
+    /// platform says holds no terminal: one it cannot say about counts.
+    pub attended: bool,
+}
+
+impl Occupant {
+    /// A process somebody is behind: a pane's shell, an editor, a build.
+    pub fn somebody(path: PathBuf) -> Self {
+        Self {
+            path,
+            attended: true,
+        }
+    }
+
+    /// A process nobody is behind: a daemon in a session of its own.
+    pub fn daemon(path: PathBuf) -> Self {
+        Self {
+            path,
+            attended: false,
+        }
+    }
 }
 
 impl Presence {
     /// Reads the process table. This process and the ones it started are
     /// left out: the `uze` deciding, and the Git it runs inside the very
     /// checkouts it is deciding about, are not somebody at work there.
-    /// Neither is a process with no terminal behind it.
     pub fn observe() -> Self {
         match working_directories() {
             Some(directories) => Self::Known(
                 directories
                     .into_iter()
-                    .filter(|directory| directory.attended != Some(false))
-                    .map(|directory| directory.path)
-                    .collect(),
-            ),
-            None => Self::Unknown,
-        }
-    }
-
-    /// Every process of this user's but this one and the ones it started,
-    /// attended or not: for a decision that moves a directory, which a
-    /// daemon standing in it would follow without a word.
-    pub fn observe_everyone() -> Self {
-        match working_directories() {
-            Some(directories) => Self::Known(
-                directories
-                    .into_iter()
-                    .map(|directory| directory.path)
+                    .map(|directory| Occupant {
+                        path: directory.path,
+                        attended: directory.attended != Some(false),
+                    })
                     .collect(),
             ),
             None => Self::Unknown,
@@ -62,25 +75,40 @@ impl Presence {
     /// the table.
     pub fn observe_with(known: &[PathBuf]) -> Self {
         match Self::observe() {
-            Self::Known(mut directories) => {
-                directories.extend_from_slice(known);
-                Self::Known(directories)
+            Self::Known(mut occupants) => {
+                occupants.extend(known.iter().cloned().map(Occupant::somebody));
+                Self::Known(occupants)
             }
             Self::Unknown => Self::Unknown,
         }
     }
 
-    /// Whether any observed process works in `directory` or below it.
+    /// Whether somebody works in `directory` or below it. A process with
+    /// no terminal behind it is nobody.
     pub fn inside(&self, directory: &Path) -> bool {
-        let Self::Known(directories) = self else {
+        self.any_inside(directory, |occupant| occupant.attended)
+    }
+
+    /// Whether any process at all works in `directory` or below it,
+    /// attended or not: for a decision that moves a directory, which a
+    /// daemon standing in it would follow without a word.
+    pub fn anyone_inside(&self, directory: &Path) -> bool {
+        self.any_inside(directory, |_| true)
+    }
+
+    fn any_inside(&self, directory: &Path, counts: impl Fn(&Occupant) -> bool) -> bool {
+        let Self::Known(occupants) = self else {
             return true;
         };
         let canonical = directory
             .canonical()
             .unwrap_or_else(|_| directory.to_path_buf());
-        directories
+        occupants
             .iter()
-            .any(|working| working.starts_with(&canonical) || working.starts_with(directory))
+            .filter(|occupant| counts(occupant))
+            .any(|occupant| {
+                occupant.path.starts_with(&canonical) || occupant.path.starts_with(directory)
+            })
     }
 }
 
@@ -208,14 +236,18 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let (sleeper, mut shell, _) = start_sleeper(&directory, Terminal::None);
 
-        let seen = Presence::observe().inside(&directory);
+        let presence = Presence::observe();
         let state = describe(sleeper, &directory);
         // SAFETY: `sleeper` is the positive pid of the process started above.
         unsafe { libc::kill(sleeper, libc::SIGKILL) };
         shell.wait().unwrap();
         assert!(
-            !seen,
+            !presence.inside(&directory),
             "a daemon nobody is behind held the directory: {state}"
+        );
+        assert!(
+            presence.anyone_inside(&directory),
+            "yet a move of the directory would carry it along: {state}"
         );
 
         let _ = std::fs::remove_dir_all(&directory);

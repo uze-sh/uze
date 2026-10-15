@@ -157,7 +157,7 @@ impl Workspace<'_> {
                 isolation,
                 &base_tip,
                 policy.slots,
-                &checkout::Presence::observe_with(occupied),
+                &|| checkout::Presence::observe_with(occupied),
             ) {
                 Ok(acquired) => acquired,
                 // Nothing was taken, and the reconciliation above is
@@ -277,7 +277,7 @@ impl Workspace<'_> {
                 &isolation,
                 &base_tip,
                 policy.slots,
-                &checkout::Presence::observe_with(occupied),
+                &|| checkout::Presence::observe_with(occupied),
             ) {
                 Ok(acquired) => acquired,
                 Err(refusal) => return Ok(Err(refusal.to_string())),
@@ -352,7 +352,7 @@ impl Workspace<'_> {
             .repository_context(cwd)?
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
         let target = target_of(&primary, &policy);
-        let presence = checkout::Presence::observe_with(occupied);
+        let observe = || checkout::Presence::observe_with(occupied);
         let mut acquired_slot = None;
         let mut restored: Vec<(String, String)> = Vec::new();
         let mut placement = task::locked(&self.0.home, &primary, |store| {
@@ -412,7 +412,7 @@ impl Workspace<'_> {
                 &id,
                 task,
                 policy.slots,
-                &presence,
+                &observe,
                 fresh.as_deref(),
             )
             .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
@@ -435,7 +435,7 @@ impl Workspace<'_> {
             // and a slot left holding restored work under a record that
             // never names it would be adopted and shelved again as a task
             // of its own, while the shelf it came from still stands.
-            match resume_children(&primary, store, &id, policy.slots, &presence, &mut taken) {
+            match resume_children(&primary, store, &id, policy.slots, &observe, &mut taken) {
                 Ok(children) => restored.extend(children),
                 Err(error) => {
                     for slot in &taken {
@@ -541,7 +541,7 @@ fn resume_children(
     store: &mut AgentStore,
     parent: &AgentId,
     cap: Option<usize>,
-    presence: &checkout::Presence,
+    observe: &dyn Fn() -> checkout::Presence,
     taken: &mut Vec<PathBuf>,
 ) -> Result<Vec<(String, String)>> {
     let mut restored = Vec::new();
@@ -567,7 +567,7 @@ fn resume_children(
             continue;
         }
         let acquired =
-            checkout::resume(primary, &current, &child_id, isolation, cap, presence, None)
+            checkout::resume(primary, &current, &child_id, isolation, cap, observe, None)
                 .map_err(|error| UzeError::ResumeFailed(error.to_string()))?;
         taken.push(acquired.path.clone());
         checkout::record::write(

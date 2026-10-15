@@ -92,9 +92,13 @@ one with a generated name nobody owns, then the most recently used, as
 today. This keeps the slot an agent just left for that agent where the pool
 allows. A slot is not taken when Git would refuse (an initialized
 submodule, a lock), when its target path exists, or when any process works
-in it — the full process table, not `Presence`, which ignores processes
-with no terminal on purpose (`process_cwd.rs`) and would let a Codex
-app-server daemon follow the rename into another agent's path. A slot set
+in it — `Presence::anyone_inside`, every process the table holds, not
+`inside`, which ignores processes with no terminal on purpose
+(`process_cwd.rs`) and would let a Codex app-server daemon follow the
+rename into another agent's path. Both answers come from one read of the
+table, made under the lock by the observer `take` is handed, as `release`
+makes its own before a reset: what the caller read before waiting for the
+lock may be stale by the time a slot moves. A slot set
 aside this way does not count against the cap for the `create` that
 replaces it, so the operator is never told every slot is in use when one
 is merely unmovable.

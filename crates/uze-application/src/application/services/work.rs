@@ -117,7 +117,7 @@ impl Workspace<'_> {
                 isolation,
                 &head,
                 policy.slots,
-                &Presence::observe_with(occupied),
+                &|| Presence::observe_with(occupied),
             )
             .map_err(|refusal| refused(&refusal.to_string()))?;
             isolation.checkout = Some(acquired.id.clone());
@@ -291,7 +291,7 @@ impl Workspace<'_> {
                     let into = parent.branch.clone();
                     // Joined, it holds nothing its agent's branch lacks, and
                     // the release records it so.
-                    checkout::release(primary, child, &into, &Presence::observe());
+                    checkout::release(primary, child, &into, &Presence::observe);
                     Ok(JoinedWork::Joined { commits })
                 }
             }

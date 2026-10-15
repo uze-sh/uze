@@ -54,7 +54,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-pub use crate::process_cwd::Presence;
+pub use crate::process_cwd::{Occupant, Presence};
 use crate::{
     task::{Agent, AgentId, AgentStore, Base, Isolation, WorkState},
     worktree::{BRANCH_PREFIX, WORKTREES_DIRECTORY, WorktreePolicy, label_of},

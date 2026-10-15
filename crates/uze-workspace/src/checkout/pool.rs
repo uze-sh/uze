@@ -239,7 +239,7 @@ pub fn acquire(
     isolation: &Isolation,
     base_tip: &str,
     cap: Option<usize>,
-    presence: &Presence,
+    observe: &dyn Fn() -> Presence,
 ) -> Result<Acquired, AcquireError> {
     take(
         primary,
@@ -247,7 +247,7 @@ pub fn acquire(
         &isolation.branch,
         Start::Branching { base_tip },
         cap,
-        presence,
+        observe,
         &own_checkout(owner, isolation),
     )
 }
@@ -267,7 +267,7 @@ pub fn resume(
     task: &AgentId,
     isolation: &Isolation,
     cap: Option<usize>,
-    presence: &Presence,
+    observe: &dyn Fn() -> Presence,
     fresh: Option<&str>,
 ) -> Result<Acquired, AcquireError> {
     if !branch_exists(primary, &isolation.branch) {
@@ -291,7 +291,7 @@ pub fn resume(
         &isolation.branch,
         Start::Existing,
         cap,
-        presence,
+        observe,
         &own_checkout(task, isolation),
     )
 }
@@ -308,7 +308,7 @@ pub(super) fn take(
     branch: &str,
     start: Start<'_>,
     cap: Option<usize>,
-    presence: &Presence,
+    observe: &dyn Fn() -> Presence,
     home: &CheckoutId,
 ) -> Result<Acquired, AcquireError> {
     // Reuse resets a slot's working tree to this commit, so a base nobody
@@ -322,7 +322,10 @@ pub(super) fn take(
         ));
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        let existing = slots(primary, store, presence);
+        // Read here, under the lock, right before a slot is moved or reset:
+        // a process that arrived while the lock was awaited is still seen.
+        let presence = observe();
+        let existing = slots(primary, store, &presence);
         let mut home = home.clone();
         let mut displaced = false;
         if fs::symlink_metadata(home.directory(primary)).is_ok() {
@@ -345,19 +348,15 @@ pub(super) fn take(
                 std::cmp::Reverse(modified_at(&slot.path)),
             )
         });
-        // Every process, not only the attended ones `presence` counts: a
-        // daemon standing in a slot would follow the rename into the next
-        // agent's checkout without a word.
-        let everyone = (!candidates.is_empty()).then(Presence::observe_everyone);
         let mut set_aside = 0;
         // Git refuses a locked checkout and one with an initialized
         // submodule before it renames anything, so a refusal is a slot set
         // aside like one somebody works in.
         for slot in candidates {
-            if everyone
-                .as_ref()
-                .is_some_and(|everyone| everyone.inside(&slot.path))
-            {
+            // Every process, not only the attended ones a slot's state
+            // counts: a daemon standing in a slot would follow the rename
+            // into the next agent's checkout without a word.
+            if presence.anyone_inside(&slot.path) {
                 set_aside += 1;
                 continue;
             }

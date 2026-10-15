@@ -179,7 +179,7 @@ impl Workspace<'_> {
         echoed: &[String],
     ) -> (Vec<ReleasedTask>, bool) {
         let target = target_of(primary, policy);
-        let presence = checkout::Presence::observe_with(occupied);
+        let observe = || checkout::Presence::observe_with(occupied);
         let mut released = Vec::new();
         let mut in_use = false;
         let mut looked_at: Vec<AgentId> = Vec::new();
@@ -202,7 +202,7 @@ impl Workspace<'_> {
                 // A subagent's work is judged against its agent's branch,
                 // as the collection judges it, never against the project's.
                 let into = delivers_into(agent, &target);
-                let outcome = checkout::release(primary, agent, &into, &presence);
+                let outcome = checkout::release(primary, agent, &into, &observe);
                 let mut unfinished = agent.state == WorkState::Shelved;
                 let parent = agent.parent.clone();
                 // A subagent released after its agent: its work reaches the
@@ -213,7 +213,7 @@ impl Workspace<'_> {
                     parent.state = WorkState::Shelved;
                 }
                 if outcome != checkout::Released::InUse
-                    && release_children(primary, store, id.as_str(), &presence)
+                    && release_children(primary, store, id.as_str(), &observe)
                 {
                     unfinished = true;
                 }

@@ -40,7 +40,7 @@ fn an_isolation_directory_committed_as_a_link_places_no_checkout_outside_the_pro
         isolation(&mut agent),
         &base,
         None,
-        &nobody(),
+        &nobody,
     );
     assert!(refused.is_err(), "a checkout was placed through the link");
     assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
@@ -62,7 +62,7 @@ fn an_isolation_directory_the_repository_tracks_is_refused() {
         isolation(&mut agent),
         &base,
         None,
-        &nobody(),
+        &nobody,
     ) else {
         panic!("a checkout was placed among tracked files");
     };
@@ -107,7 +107,7 @@ fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agen
         isolation(&mut agent),
         &base,
         None,
-        &nobody(),
+        &nobody,
     )
     .unwrap();
     isolation(&mut agent).checkout = Some(acquired.id.clone());
@@ -143,7 +143,7 @@ fn an_agent_that_left_an_empty_checkout_frees_its_slot_for_the_next() {
         repository.root(),
         store.get_mut(&first.id).unwrap(),
         &target,
-        &nobody(),
+        &nobody,
     );
     assert_eq!(released, Released::Freed { shelved: false });
     assert_eq!(
@@ -177,7 +177,7 @@ fn an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept() {
             primary,
             store.get_mut(&committed.id).unwrap(),
             TARGET,
-            &nobody()
+            &nobody
         ),
         Released::Freed { shelved: false },
         "its commits are kept by its branch"
@@ -189,12 +189,7 @@ fn an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept() {
     assert_moved_from(&slot.path, &other);
     fs::write(other.path.join("draft.rs"), b"unsaved").unwrap();
     assert_eq!(
-        release(
-            primary,
-            store.get_mut(&dirty.id).unwrap(),
-            TARGET,
-            &nobody()
-        ),
+        release(primary, store.get_mut(&dirty.id).unwrap(), TARGET, &nobody),
         Released::Freed { shelved: true },
         "its uncommitted work is kept on a shelf"
     );
@@ -248,7 +243,7 @@ fn a_squash_merged_branch_frees_its_slot_and_is_pruned() {
             repository.root(),
             store.get_mut(&delivered.id).unwrap(),
             TARGET,
-            &nobody(),
+            &nobody,
         ),
         Released::Freed { shelved: false },
         "its work is in the target, under the forge's own commit"
@@ -279,12 +274,7 @@ fn a_released_slot_stands_on_the_target() {
     repository.commit_file("elsewhere.rs", "fn g() {}");
 
     assert_eq!(
-        release(
-            primary,
-            store.get_mut(&agent.id).unwrap(),
-            TARGET,
-            &nobody()
-        ),
+        release(primary, store.get_mut(&agent.id).unwrap(), TARGET, &nobody),
         Released::Freed { shelved: false }
     );
 
@@ -327,7 +317,7 @@ fn a_free_slot_left_on_a_squash_merged_tip_is_never_adopted() {
             primary,
             store.get_mut(&delivered.id).unwrap(),
             TARGET,
-            &nobody()
+            &nobody
         ),
         Released::Freed { shelved: false }
     );
@@ -384,7 +374,7 @@ fn a_rebase_merged_branch_frees_its_slot() {
             repository.root(),
             store.get_mut(&delivered.id).unwrap(),
             TARGET,
-            &nobody(),
+            &nobody,
         ),
         Released::Freed { shelved: false },
         "the same patch is in the target under another commit"
@@ -591,7 +581,7 @@ fn commits_made_on_a_detached_head_hold_the_slot_until_they_are_kept() {
         primary,
         forgotten.get_mut(&adopted).unwrap(),
         TARGET,
-        &nobody(),
+        &nobody,
     );
     assert_eq!(released, Released::Freed { shelved: true });
     let kept = shelf::shelf_of(primary, adopted.as_str()).unwrap();
@@ -723,7 +713,7 @@ fn a_new_directory_appears_only_when_none_is_free_and_the_cap_holds() {
         blocked.isolation().unwrap(),
         &tip_of(primary, TARGET),
         Some(2),
-        &nobody(),
+        &nobody,
     )
     .unwrap_err();
     assert!(
@@ -739,7 +729,7 @@ fn a_new_directory_appears_only_when_none_is_free_and_the_cap_holds() {
         blocked.isolation().unwrap(),
         &tip_of(primary, TARGET),
         Some(2),
-        &nobody(),
+        &nobody,
     )
     .unwrap();
     assert_moved_from(&a.path, &reused);
@@ -830,7 +820,7 @@ fn a_slot_a_pane_still_sits_in_is_neither_reused_nor_removed_after_delivery() {
     let mut store = AgentStore::default();
     let (first, slot) = launch(&repository, &mut store, "first");
     set_state(&mut store, &first.id, WorkState::Integrated);
-    let inside = vec![slot.path.join("src")];
+    let inside = Presence::Known(vec![Occupant::somebody(slot.path.join("src"))]);
 
     assert_eq!(
         slots(primary, &store, &nobody())[0].state,
@@ -838,7 +828,7 @@ fn a_slot_a_pane_still_sits_in_is_neither_reused_nor_removed_after_delivery() {
         "the record alone reads as free"
     );
     assert_eq!(
-        slots(primary, &store, &Presence::Known(inside.clone()))[0].state,
+        slots(primary, &store, &inside)[0].state,
         SlotState::Occupied {
             task: first.id.clone()
         },
@@ -853,7 +843,7 @@ fn a_slot_a_pane_still_sits_in_is_neither_reused_nor_removed_after_delivery() {
         second.isolation().unwrap(),
         &tip_of(primary, TARGET),
         None,
-        &Presence::Known(inside.clone()),
+        &|| inside.clone(),
     )
     .unwrap();
     assert!(
@@ -863,12 +853,7 @@ fn a_slot_a_pane_still_sits_in_is_neither_reused_nor_removed_after_delivery() {
     assert_ne!(acquired.path, slot.path);
     // The new directory belongs to no recorded task and reads as idle,
     // so an immediate sweep may take it; the pane's own must survive.
-    let removed = trim_free_slots(
-        primary,
-        &store,
-        keep_nothing(),
-        &Presence::Known(inside.clone()),
-    );
+    let removed = trim_free_slots(primary, &store, keep_nothing(), &inside);
     assert!(
         !removed.contains(&slot.id) && slot.path.is_dir(),
         "the directory is not swept out from under the pane: {removed:?}"
@@ -902,7 +887,7 @@ fn a_task_whose_checkout_was_removed_resumes_on_its_own_branch() {
         &task.id,
         task.isolation().unwrap(),
         None,
-        &nobody(),
+        &nobody,
         None,
     )
     .unwrap();
@@ -1202,7 +1187,7 @@ fn a_repository_without_a_commit_cannot_host_a_slot() {
         task("x").isolation().unwrap(),
         "HEAD",
         None,
-        &nobody(),
+        &nobody,
     )
     .unwrap_err();
     assert!(matches!(error, AcquireError::Git(_)), "{error}");
@@ -1406,7 +1391,7 @@ fn launch_at(
         isolation(&mut agent),
         base,
         None,
-        &nobody(),
+        &nobody,
     )
     .unwrap();
     isolation(&mut agent).checkout = Some(acquired.id.clone());
@@ -1610,38 +1595,6 @@ fn assert_moved_from(before: &Path, taken: &Acquired) {
 mod ownership {
     use super::*;
 
-    /// A process nobody's terminal reaches, working in `directory` until it
-    /// is dropped: started by a shell that exits at once, so it is no
-    /// child of this one and the process table counts it, and it holds no
-    /// terminal, so [`Presence::observe`] does not.
-    struct Daemon(libc::pid_t);
-
-    impl Daemon {
-        fn inside(directory: &Path) -> Self {
-            let output = std::process::Command::new("/bin/sh")
-                .args(["-c", "/bin/sleep 120 </dev/null >/dev/null 2>&1 & echo $!"])
-                .current_dir(directory)
-                .stdin(std::process::Stdio::null())
-                .output()
-                .unwrap();
-            let pid = String::from_utf8(output.stdout)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap();
-            Self(pid)
-        }
-    }
-
-    impl Drop for Daemon {
-        fn drop(&mut self) {
-            // SAFETY: a positive pid names the one sleeper this test started.
-            unsafe {
-                libc::kill(self.0, libc::SIGKILL);
-            }
-        }
-    }
-
     /// A slot the next agent may take: its agent's work landed.
     fn freed(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agent, Acquired) {
         let (agent, slot) = launch(repository, store, label);
@@ -1693,7 +1646,7 @@ mod ownership {
         let repository = repository("own-daemon");
         let mut store = AgentStore::default();
         let (_, slot) = freed(&repository, &mut store, "first");
-        let _daemon = Daemon::inside(&slot.path);
+        let daemon = Presence::Known(vec![Occupant::daemon(slot.path.clone())]);
         let next = task("second");
 
         let acquired = acquire(
@@ -1703,7 +1656,7 @@ mod ownership {
             next.isolation().unwrap(),
             &tip_of(repository.root(), TARGET),
             Some(1),
-            &nobody(),
+            &|| daemon.clone(),
         )
         .expect("a slot that cannot move is no slot an agent can have");
 
@@ -1767,7 +1720,7 @@ mod ownership {
             late.isolation().unwrap(),
             &tip_of(repository.root(), TARGET),
             None,
-            &nobody(),
+            &nobody,
         )
         .unwrap();
 
@@ -1793,12 +1746,7 @@ mod ownership {
         let mut store = AgentStore::default();
         let (agent, slot) = launch(&repository, &mut store, "first");
         let target = TARGET.to_owned();
-        release(
-            primary,
-            store.get_mut(&agent.id).unwrap(),
-            &target,
-            &nobody(),
-        );
+        release(primary, store.get_mut(&agent.id).unwrap(), &target, &nobody);
         assert!(slot.path.is_dir(), "release renames nothing");
 
         let ended = store.get(&agent.id).unwrap().clone();
@@ -1808,7 +1756,7 @@ mod ownership {
             &agent.id,
             ended.isolation().unwrap(),
             None,
-            &nobody(),
+            &nobody,
             Some(&tip_of(primary, TARGET)),
         )
         .unwrap();
@@ -1835,7 +1783,7 @@ mod ownership {
             agent.isolation().unwrap(),
             &base,
             None,
-            &nobody(),
+            &nobody,
         )
         .unwrap();
         assert_eq!(placed.id, generated);
@@ -1850,7 +1798,7 @@ mod ownership {
             &agent.id,
             agent.isolation().unwrap(),
             None,
-            &nobody(),
+            &nobody,
             None,
         )
         .unwrap();

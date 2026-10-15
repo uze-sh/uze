@@ -495,7 +495,12 @@ pub enum Released {
 /// before anything changes, a process working inside — an agent another
 /// client launched, one still running its `setup`, a shell somebody left —
 /// leaves the checkout and the task exactly as they were.
-pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Presence) -> Released {
+pub fn release(
+    primary: &Path,
+    agent: &mut Agent,
+    target: &str,
+    observe: &dyn Fn() -> Presence,
+) -> Released {
     let id = agent.id.as_str().to_owned();
     let label = agent.label.clone();
     let Some(isolation) = agent.isolation() else {
@@ -514,7 +519,7 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
         return Released::Freed { shelved: false };
     };
     let outcome = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        shelve_and_reset(primary, &directory, presence, &id, &label, &branch, target)
+        shelve_and_reset(primary, &directory, observe, &id, &label, &branch, target)
     })
     .unwrap_or(Released::InUse);
     match &outcome {
@@ -545,13 +550,13 @@ pub fn release(primary: &Path, agent: &mut Agent, target: &str, presence: &Prese
 fn shelve_and_reset(
     primary: &Path,
     directory: &Path,
-    presence: &Presence,
+    observe: &dyn Fn() -> Presence,
     task: &str,
     label: &str,
     branch: &str,
     target: &str,
 ) -> Released {
-    if presence.inside(directory) || Presence::observe().inside(directory) {
+    if observe().inside(directory) {
         return Released::InUse;
     }
     if let Some(operation) = paused_operation(directory) {

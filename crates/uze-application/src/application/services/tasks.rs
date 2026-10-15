@@ -258,7 +258,7 @@ fn release_children(
     primary: &Path,
     store: &mut AgentStore,
     parent: &str,
-    presence: &checkout::Presence,
+    observe: &dyn Fn() -> checkout::Presence,
 ) -> bool {
     let mut unfinished_child = false;
     for child in store.agents.iter_mut() {
@@ -271,7 +271,7 @@ fn release_children(
             continue;
         }
         let into = delivers_into(child, "");
-        checkout::release(primary, child, &into, presence);
+        checkout::release(primary, child, &into, observe);
         if child.state == WorkState::Shelved {
             unfinished_child = true;
         }
