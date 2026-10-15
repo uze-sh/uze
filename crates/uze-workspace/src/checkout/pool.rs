@@ -323,22 +323,18 @@ pub(super) fn take(
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         let existing = slots(primary, store, presence);
-        let target = home.directory(primary);
-        if fs::symlink_metadata(&target).is_ok() {
+        let mut home = home.clone();
+        let mut displaced = false;
+        if fs::symlink_metadata(home.directory(primary)).is_ok() {
             if let Some(slot) = existing
                 .iter()
-                .find(|slot| &slot.id == home && slot.state == SlotState::Free)
+                .find(|slot| slot.id == home && slot.state == SlotState::Free)
             {
                 return reuse(primary, slot, branch, start);
             }
-            let mut displaced = create(primary, branch, start, &CheckoutId::generate())?;
-            displaced.displaced = true;
-            return Ok(displaced);
+            home = CheckoutId::generate();
+            displaced = true;
         }
-        // Every process, not only the attended ones `presence` counts: a
-        // daemon standing in a slot would follow the rename into the next
-        // agent's checkout without a word.
-        let everyone = Presence::observe_everyone();
         let mut candidates: Vec<&Slot> = existing
             .iter()
             .filter(|slot| slot.state == SlotState::Free)
@@ -349,19 +345,28 @@ pub(super) fn take(
                 std::cmp::Reverse(modified_at(&slot.path)),
             )
         });
+        // Every process, not only the attended ones `presence` counts: a
+        // daemon standing in a slot would follow the rename into the next
+        // agent's checkout without a word.
+        let everyone = (!candidates.is_empty()).then(Presence::observe_everyone);
         let mut set_aside = 0;
         // Git refuses a locked checkout and one with an initialized
         // submodule before it renames anything, so a refusal is a slot set
         // aside like one somebody works in.
         for slot in candidates {
-            if everyone.inside(&slot.path) {
+            if everyone
+                .as_ref()
+                .is_some_and(|everyone| everyone.inside(&slot.path))
+            {
                 set_aside += 1;
                 continue;
             }
-            match move_slot(primary, slot, home) {
-                Ok(moved) => return reuse(primary, &moved, branch, start),
-                Err(_) => set_aside += 1,
+            if let Ok(moved) = move_slot(primary, slot, &home) {
+                let mut taken = reuse(primary, &moved, branch, start)?;
+                taken.displaced = displaced;
+                return Ok(taken);
             }
+            set_aside += 1;
         }
         // A slot that could not move is no slot an agent can have, and
         // counting it would tell the operator every one is in use.
@@ -370,7 +375,9 @@ pub(super) fn take(
         {
             return Err(AcquireError::CapReached { cap });
         }
-        create(primary, branch, start, home)
+        let mut created = create(primary, branch, start, &home)?;
+        created.displaced = displaced;
+        Ok(created)
     })
     .map_err(|error| AcquireError::Git(error.to_string()))?
 }
