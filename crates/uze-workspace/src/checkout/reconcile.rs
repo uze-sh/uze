@@ -174,6 +174,7 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
     }
     report.adopted.extend(adopt_shelves(primary, store, target));
 
+    record::settle_moves(primary);
     let _ = git(primary, &["worktree", "prune"]);
     report
 }

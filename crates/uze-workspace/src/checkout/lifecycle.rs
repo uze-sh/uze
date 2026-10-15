@@ -451,6 +451,7 @@ pub(super) fn set_aside(primary: &Path, slot: &Path) -> bool {
         && !destination.exists()
         && fs::rename(slot, &destination).is_ok();
     if moved {
+        record::settle_moves(primary);
         return git(primary, &["worktree", "prune"]).is_ok();
     }
     let path = slot.to_string_lossy().into_owned();

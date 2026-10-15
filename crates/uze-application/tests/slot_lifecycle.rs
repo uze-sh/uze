@@ -325,6 +325,13 @@ impl World {
             .unwrap_or_default()
     }
 
+    /// Whether the slot at `from` was handed on to the checkout at `to`:
+    /// renamed to its new agent, so it is gone from where it stood and no
+    /// copy of it was left.
+    fn handed_on(&self, from: &Path, to: &Path) -> bool {
+        from != to && !from.exists() && to.exists()
+    }
+
     fn slot_of(&self, checkout: &Path) -> String {
         checkout.file_name().unwrap().to_string_lossy().into_owned()
     }
@@ -644,8 +651,8 @@ mod work_shelf {
         let next = world.open();
 
         assert_eq!(world.shelf(&agent), None, "nothing was shelved");
-        assert_eq!(
-            next.cwd, agent.cwd,
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
             "the checkout was free for the next agent"
         );
         assert!(
@@ -673,7 +680,10 @@ mod work_shelf {
         let next = world.open();
 
         assert_eq!(world.shelf(&agent), None, "a managed region is not work");
-        assert_eq!(next.cwd, agent.cwd, "the checkout was free");
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
+            "the checkout was free"
+        );
     }
 
     /// "A hand edit beside a managed region" is work, and is shelved.
@@ -821,13 +831,17 @@ mod work_shelf {
         assert_eq!(world.shelf(&agent), None, "a clean tree needs no shelf");
         assert_eq!(world.tip(&branch), tip, "the branch keeps the commit");
         assert_eq!(world.record(&agent).state, "Shelved");
-        assert_eq!(next.cwd, agent.cwd, "the checkout went to the next agent");
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
+            "the checkout went to the next agent"
+        );
     }
 
-    /// "Resumed somewhere else": the work comes back unstaged in a
-    /// different checkout, and the shelf is gone.
+    /// "Resumed at its own path": its checkout went to another agent, and
+    /// the work comes back unstaged in a checkout at the path it left, so
+    /// the harness finds its conversation there; the shelf is gone.
     #[test]
-    fn shelved_work_is_resumed_somewhere_else() {
+    fn shelved_work_is_resumed_at_its_own_path_after_its_checkout_was_handed_on() {
         let mut world = World::new("shelf-resume-elsewhere");
         let agent = world.open();
         let branch = world.branch_of(&agent);
@@ -836,14 +850,14 @@ mod work_shelf {
         world.repo.git_in(&agent.cwd, &["add", "README.md"]);
         world.close(&agent);
         let other = world.open();
-        assert_eq!(
-            other.cwd, agent.cwd,
+        assert!(
+            world.handed_on(&agent.cwd, &other.cwd),
             "the old checkout was taken by another agent"
         );
 
         let resumed = world.resume(&agent).expect("the shelved task resumes");
 
-        assert_ne!(resumed.cwd, agent.cwd, "it resumed in a different checkout");
+        assert_eq!(resumed.cwd, agent.cwd, "it resumed where it worked");
         assert_eq!(world.repo.branch_of(&resumed.cwd), branch);
         assert_eq!(
             std::fs::read_to_string(resumed.cwd.join("README.md")).unwrap(),
@@ -966,8 +980,8 @@ mod work_shelf {
         let shelf = world.shelf(&agent).expect("the work was shelved");
         world.commit_on_branch_elsewhere(&branch, "README.md", "somebody else's version\n");
         let other = world.open();
-        assert_eq!(
-            other.cwd, agent.cwd,
+        assert!(
+            world.handed_on(&agent.cwd, &other.cwd),
             "its own checkout is taken, so the resume goes elsewhere"
         );
 
@@ -994,8 +1008,8 @@ mod work_shelf {
         let slots = world.slots();
         world.open();
         assert_eq!(
-            world.slots(),
-            slots,
+            world.slots().len(),
+            slots.len(),
             "the checkout the resume tried is free again"
         );
     }
@@ -1149,7 +1163,7 @@ mod slots {
 
         let second = world.open();
 
-        assert_eq!(second.cwd, first.cwd);
+        assert!(world.handed_on(&first.cwd, &second.cwd));
         assert_eq!(world.slots().len(), 1);
         assert_eq!(world.linked_worktrees(), 1);
         assert_ne!(world.repo.branch_of(&second.cwd), world.branch_of(&first));
@@ -1168,7 +1182,7 @@ mod slots {
 
         let second = world.open();
 
-        assert_eq!(second.cwd, first.cwd);
+        assert!(world.handed_on(&first.cwd, &second.cwd));
         assert!(
             world.status(&second.cwd).is_empty(),
             "the tree carries no edit"
@@ -1192,7 +1206,10 @@ mod slots {
 
         let second = world.open();
 
-        assert_eq!(second.cwd, first.cwd, "no new directory for the next agent");
+        assert!(
+            world.handed_on(&first.cwd, &second.cwd),
+            "no new directory for the next agent"
+        );
         assert!(world.shelf(&first).is_some(), "the work was kept first");
         assert!(world.status(&second.cwd).is_empty());
     }
@@ -1470,7 +1487,7 @@ mod slots {
         let first = world.open();
         world.close(&first);
         let second = world.open();
-        assert_eq!(second.cwd, first.cwd);
+        assert!(world.handed_on(&first.cwd, &second.cwd));
         let slot = world.slot_of(&second.cwd);
         world.edit_store(|agents| {
             for agent in agents.iter_mut() {
@@ -1508,7 +1525,7 @@ mod slots {
 
         let next = world.open();
 
-        assert_eq!(next.cwd, agent.cwd);
+        assert!(world.handed_on(&agent.cwd, &next.cwd));
         assert_eq!(world.slots().len(), 1);
     }
 
@@ -1526,7 +1543,7 @@ mod slots {
 
         let next = world.open();
 
-        assert_eq!(next.cwd, agent.cwd);
+        assert!(world.handed_on(&agent.cwd, &next.cwd));
         assert_eq!(world.slots().len(), 1);
     }
 
@@ -1538,7 +1555,7 @@ mod slots {
         let first = world.open();
         world.close(&first);
         let second = world.open();
-        assert_eq!(second.cwd, first.cwd);
+        assert!(world.handed_on(&first.cwd, &second.cwd));
         world.edit_store(|agents| {
             let created_of_first = agents
                 .iter()
@@ -1617,7 +1634,9 @@ mod slots {
             .try_open()
             .expect("both checkouts are free once their work is kept");
 
-        assert!(third.cwd == first.cwd || third.cwd == second.cwd);
+        assert!(
+            world.handed_on(&first.cwd, &third.cwd) || world.handed_on(&second.cwd, &third.cwd)
+        );
         assert_eq!(world.slots().len(), 2);
     }
 
@@ -1652,8 +1671,8 @@ mod slots {
             Some("fn orphan() {}")
         );
         let next = world.open();
-        assert_eq!(
-            next.cwd, agent.cwd,
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
             "the checkout is free once its work is kept"
         );
     }
@@ -1685,7 +1704,10 @@ mod slots {
             Some("parked by an earlier build")
         );
         let next = world.open();
-        assert_eq!(next.cwd, agent.cwd, "the checkout is free");
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
+            "the checkout is free"
+        );
     }
 
     /// "An unintegrated branch outlives its checkout".
@@ -1761,16 +1783,17 @@ mod pool {
 
         let second: Vec<Agent> = (0..4).map(|_| world.open()).collect();
 
-        assert_eq!(
-            world.slots(),
-            before,
-            "the same four directories, none created"
-        );
         let reused: BTreeSet<String> = second
             .iter()
             .map(|agent| world.slot_of(&agent.cwd))
             .collect();
-        assert_eq!(reused, before);
+        assert_eq!(
+            world.slots(),
+            reused,
+            "the same four directories, none created"
+        );
+        assert_eq!(reused.len(), before.len());
+        assert!(reused.is_disjoint(&before), "each renamed to its new agent");
     }
 
     /// "An idle project gives its disk back".
@@ -1889,7 +1912,7 @@ mod ending {
         assert_eq!(world.record(&agent).state, "Shelved");
         assert!(world.shelf(&agent).is_some());
         assert!(world.branch_exists(&branch));
-        assert_eq!(next.cwd, agent.cwd);
+        assert!(world.handed_on(&agent.cwd, &next.cwd));
     }
 
     /// "Work merged after its agent ended" settles as integrated.
@@ -1922,7 +1945,10 @@ mod ending {
         let next = world.open();
         world.sweep();
 
-        assert_eq!(next.cwd, agent.cwd, "the merged work freed its checkout");
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
+            "the merged work freed its checkout"
+        );
         assert_eq!(world.record(&agent).state, "Integrated");
     }
 
@@ -1969,12 +1995,12 @@ mod children {
             "the child's commits stay on its branch"
         );
         assert_eq!(
-            world.slots(),
-            directories,
+            world.slots().len(),
+            directories.len(),
             "both checkouts went to the next agents"
         );
-        assert!(others.iter().any(|other| other.cwd == agent.cwd));
-        assert!(others.iter().any(|other| other.cwd == child.path));
+        assert!(!agent.cwd.exists() && !child.path.exists());
+        assert!(others.iter().all(|other| other.cwd.exists()));
     }
 
     /// "Clean children go back to the pool".
@@ -1992,8 +2018,17 @@ mod children {
         world.close(&agent);
         let others: Vec<Agent> = (0..2).map(|_| world.open()).collect();
 
-        assert_eq!(world.slots(), directories, "no directory was created");
-        assert!(others.iter().any(|other| other.cwd == child.path));
+        assert_eq!(
+            world.slots().len(),
+            directories.len(),
+            "no directory was created"
+        );
+        assert!(
+            others
+                .iter()
+                .any(|other| world.handed_on(&child.path, &other.cwd)),
+            "the child's checkout was handed on"
+        );
     }
 
     /// A child's uncommitted work is shelved with its agent and comes back
@@ -2012,10 +2047,7 @@ mod children {
         world.close(&agent);
         assert!(world.shelves() >= 1, "the child's work is shelved");
         let others: Vec<Agent> = (0..2).map(|_| world.open()).collect();
-        assert!(
-            others.iter().any(|other| other.cwd == child.path),
-            "the child's checkout was freed"
-        );
+        assert!(!child.path.exists(), "the child's checkout was freed");
         for other in &others {
             world.close(other);
         }
@@ -2186,7 +2218,10 @@ mod synced_target {
         assert_eq!(world.record(&first).state, "Closed");
         assert_eq!(world.shelves(), 0);
         let second = world.open();
-        assert_eq!(world.slot_of(&second.cwd), slot, "the checkout was free");
+        assert!(
+            !world.root.join(".worktrees").join(&slot).exists() && second.cwd.exists(),
+            "the checkout was free"
+        );
     }
 
     /// An agent moved out of the operator's checkout continues the

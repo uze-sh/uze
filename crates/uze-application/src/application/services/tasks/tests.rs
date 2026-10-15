@@ -170,9 +170,9 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        assert_eq!(
-            second.cwd, first.cwd,
-            "the freed slot is reused instead of a new directory"
+        assert!(
+            !first.cwd.exists() && second.cwd.exists(),
+            "the freed slot is renamed to the next agent instead of a new directory"
         );
 
         // The branch it left behind carries nothing the target lacks, so
@@ -249,9 +249,9 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        assert_eq!(
-            next.cwd, abandoned.cwd,
-            "its checkout goes to the next agent"
+        assert!(
+            !abandoned.cwd.exists(),
+            "its checkout goes to the next agent, renamed to it"
         );
         assert!(
             !next.cwd.join("draft.rs").exists(),
@@ -520,7 +520,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        assert_eq!(second.cwd, first.cwd);
+        assert!(!first.cwd.exists(), "the slot was renamed, not copied");
         assert!(matches!(
             second.placement,
             Placement::Isolated { reused: true, .. }
@@ -550,7 +550,7 @@ mod placement_tests {
             .workspace()
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
-        assert_eq!(second.cwd, first.cwd, "the freed slot is reused");
+        assert!(!first.cwd.exists(), "the freed slot is reused");
         let mut store = task::load(&app.home, &primary).unwrap();
         store.get_mut(&before).unwrap().state = uze_workspace::task::WorkState::Running;
         task::save(&app.home, &primary, &store).unwrap();
@@ -1646,7 +1646,7 @@ mod task_service_tests {
 
         // The freed slot goes to the next agent, who dirties it.
         let (second, reused) = launched(&app, &root);
-        assert_eq!(reused, slot, "the delivered slot was free to reuse");
+        assert!(!slot.exists(), "the delivered slot was free to reuse");
         std::fs::write(reused.join("draft.rs"), "in progress").unwrap();
 
         app.workspace().evaluate_tasks(&root, &[]);

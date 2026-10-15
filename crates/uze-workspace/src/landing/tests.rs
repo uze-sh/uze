@@ -42,6 +42,7 @@ fn launch_from(repository: &Repository, store: &mut AgentStore, label: &str, bas
         base.to_owned(),
         TARGET.into(),
     );
+    let owner = agent.id.clone();
     let isolation = agent
         .isolation_mut()
         .expect("an isolated agent carries its isolation");
@@ -49,6 +50,7 @@ fn launch_from(repository: &Repository, store: &mut AgentStore, label: &str, bas
     let acquired = acquire(
         primary,
         store,
+        &owner,
         isolation,
         &base,
         None,

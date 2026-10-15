@@ -42,6 +42,21 @@ impl Presence {
         }
     }
 
+    /// Every process of this user's but this one and the ones it started,
+    /// attended or not: for a decision that moves a directory, which a
+    /// daemon standing in it would follow without a word.
+    pub fn observe_everyone() -> Self {
+        match working_directories() {
+            Some(directories) => Self::Known(
+                directories
+                    .into_iter()
+                    .map(|directory| directory.path)
+                    .collect(),
+            ),
+            None => Self::Unknown,
+        }
+    }
+
     /// The process table, plus directories the caller already knows
     /// somebody is in — a pane the terminal drew, before its shell is in
     /// the table.

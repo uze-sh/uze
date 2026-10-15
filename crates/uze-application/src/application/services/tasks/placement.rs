@@ -146,12 +146,14 @@ impl Workspace<'_> {
                 base_tip.clone(),
                 target.clone(),
             );
+            let owner = agent.id.clone();
             let isolation = agent
                 .isolation_mut()
                 .expect("an agent built isolated carries its isolation");
             let acquired = match checkout::acquire(
                 &primary,
                 store,
+                &owner,
                 isolation,
                 &base_tip,
                 policy.slots,
@@ -271,6 +273,7 @@ impl Workspace<'_> {
             let acquired = match checkout::acquire(
                 &primary,
                 store,
+                &id,
                 &isolation,
                 &base_tip,
                 policy.slots,
@@ -462,6 +465,11 @@ impl Workspace<'_> {
         if let Some(acquired) = acquired_slot {
             let consent = self.consent(&primary, &policy);
             placement.warnings = checkout::materialize(&primary, &acquired.path, &consent);
+            if acquired.displaced {
+                placement
+                    .warnings
+                    .insert(0, checkout::CONVERSATION_NOT_CARRIED.to_owned());
+            }
             placement.awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         }
         placement.view = self.placed_view(&primary, placement.placement.agent().as_str(), &policy);

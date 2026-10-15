@@ -36,6 +36,7 @@ fn an_isolation_directory_committed_as_a_link_places_no_checkout_outside_the_pro
     let refused = acquire(
         primary,
         &AgentStore::default(),
+        &agent.id.clone(),
         isolation(&mut agent),
         &base,
         None,
@@ -57,6 +58,7 @@ fn an_isolation_directory_the_repository_tracks_is_refused() {
     let Err(refused) = acquire(
         primary,
         &AgentStore::default(),
+        &agent.id.clone(),
         isolation(&mut agent),
         &base,
         None,
@@ -101,6 +103,7 @@ fn launch(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agen
     let acquired = acquire(
         primary,
         store,
+        &agent.id.clone(),
         isolation(&mut agent),
         &base,
         None,
@@ -155,8 +158,7 @@ fn an_agent_that_left_an_empty_checkout_frees_its_slot_for_the_next() {
     );
 
     let (_, reused) = launch(&repository, &mut store, "second");
-    assert!(!reused.created, "the freed slot is taken, not a new one");
-    assert_eq!(reused.path, slot.path);
+    assert_moved_from(&slot.path, &reused);
 }
 
 #[test]
@@ -184,10 +186,7 @@ fn an_agent_that_left_work_behind_frees_its_slot_with_the_work_kept() {
     assert_eq!(commits_ahead(primary, TARGET, &branch), 1);
 
     let (dirty, other) = launch(&repository, &mut store, "dirty");
-    assert_eq!(
-        other.path, slot.path,
-        "the first agent's checkout is reused"
-    );
+    assert_moved_from(&slot.path, &other);
     fs::write(other.path.join("draft.rs"), b"unsaved").unwrap();
     assert_eq!(
         release(
@@ -255,8 +254,7 @@ fn a_squash_merged_branch_frees_its_slot_and_is_pruned() {
         "its work is in the target, under the forge's own commit"
     );
     let (_, reused) = launch(&repository, &mut store, "next");
-    assert!(!reused.created, "the freed slot is taken, not a new one");
-    assert_eq!(reused.path, slot.path);
+    assert_moved_from(&slot.path, &reused);
     assert_eq!(
         prune_integrated_branches(primary, &store, TARGET),
         vec![delivered.isolation().unwrap().branch.clone()],
@@ -413,7 +411,7 @@ fn a_free_slot_is_reused_and_ignored_artifacts_survive() {
         !reused.created,
         "the free slot is taken before a directory is created"
     );
-    assert_eq!(reused.path, slot.path);
+    assert_moved_from(&slot.path, &reused);
     assert_eq!(
         repository.branch_of(&reused.path),
         second.isolation().unwrap().branch
@@ -444,7 +442,7 @@ fn a_previous_tasks_edits_never_reach_the_next() {
     set_state(&mut store, &first.id, WorkState::Integrated);
 
     let (_, reused) = launch(&repository, &mut store, "second");
-    assert_eq!(reused.path, slot.path);
+    assert_moved_from(&slot.path, &reused);
     assert!(
         !reused.path.join("only-on-branch.rs").exists(),
         "the tree is at the base, not at the previous branch"
@@ -655,7 +653,10 @@ fn an_integrated_branch_is_pruned_and_an_unintegrated_one_is_not() {
     // The reused slot moved on to a third branch, so neither of the
     // two above is checked out anywhere.
     let (_, _) = launch(&repository, &mut store, "third");
-    assert_eq!(second.path, slot.path);
+    assert!(
+        !second.created,
+        "the second agent took the first one's slot"
+    );
 
     let removed = prune_integrated_branches(primary, &store, TARGET);
     assert_eq!(removed, vec![delivered.isolation().unwrap().branch.clone()]);
@@ -718,6 +719,7 @@ fn a_new_directory_appears_only_when_none_is_free_and_the_cap_holds() {
     let error = acquire(
         primary,
         &store,
+        &blocked.id,
         blocked.isolation().unwrap(),
         &tip_of(primary, TARGET),
         Some(2),
@@ -733,14 +735,14 @@ fn a_new_directory_appears_only_when_none_is_free_and_the_cap_holds() {
     let reused = acquire(
         primary,
         &store,
+        &blocked.id,
         blocked.isolation().unwrap(),
         &tip_of(primary, TARGET),
         Some(2),
         &nobody(),
     )
     .unwrap();
-    assert!(!reused.created);
-    assert_eq!(reused.path, a.path);
+    assert_moved_from(&a.path, &reused);
 }
 
 #[test]
@@ -847,6 +849,7 @@ fn a_slot_a_pane_still_sits_in_is_neither_reused_nor_removed_after_delivery() {
     let acquired = acquire(
         primary,
         &store,
+        &second.id,
         second.isolation().unwrap(),
         &tip_of(primary, TARGET),
         None,
@@ -1195,6 +1198,7 @@ fn a_repository_without_a_commit_cannot_host_a_slot() {
     let error = acquire(
         repository.root(),
         &store,
+        &AgentId::adopted("x"),
         task("x").isolation().unwrap(),
         "HEAD",
         None,
@@ -1398,6 +1402,7 @@ fn launch_at(
     let acquired = acquire(
         repository.root(),
         store,
+        &agent.id.clone(),
         isolation(&mut agent),
         base,
         None,
@@ -1583,4 +1588,274 @@ fn instructions_committed_as_a_link_out_of_the_checkout_are_never_written_throug
     let _ = carry_changes(primary, &acquired.path);
 
     assert_eq!(fs::read_to_string(&outside).unwrap(), through_the_link);
+}
+
+/// `taken` is the slot that stood at `before`, renamed to its new agent's
+/// name: reused, never created, and gone from where it was.
+fn assert_moved_from(before: &Path, taken: &Acquired) {
+    assert!(!taken.created, "the free slot is taken, not a new one");
+    assert!(
+        !before.exists(),
+        "{} was renamed, not copied",
+        before.display()
+    );
+    assert_eq!(
+        taken.path.file_name().and_then(|name| name.to_str()),
+        Some(taken.id.as_str()),
+        "and it carries its new agent's name"
+    );
+}
+
+/// What the pool does now that an agent owns its checkout's path.
+mod ownership {
+    use super::*;
+
+    /// A process nobody's terminal reaches, working in `directory` until it
+    /// is dropped: started by a shell that exits at once, so it is no
+    /// child of this one and the process table counts it, and it holds no
+    /// terminal, so [`Presence::observe`] does not.
+    struct Daemon(libc::pid_t);
+
+    impl Daemon {
+        fn inside(directory: &Path) -> Self {
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", "/bin/sleep 120 </dev/null >/dev/null 2>&1 & echo $!"])
+                .current_dir(directory)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            let pid = String::from_utf8(output.stdout)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            Self(pid)
+        }
+    }
+
+    impl Drop for Daemon {
+        fn drop(&mut self) {
+            // SAFETY: a positive pid names the one sleeper this test started.
+            unsafe {
+                libc::kill(self.0, libc::SIGKILL);
+            }
+        }
+    }
+
+    /// A slot the next agent may take: its agent's work landed.
+    fn freed(repository: &Repository, store: &mut AgentStore, label: &str) -> (Agent, Acquired) {
+        let (agent, slot) = launch(repository, store, label);
+        set_state(store, &agent.id, WorkState::Integrated);
+        (agent, slot)
+    }
+
+    #[test]
+    fn a_new_agent_is_placed_at_a_directory_named_after_it() {
+        let repository = repository("own-new");
+        let mut store = AgentStore::default();
+
+        let (agent, acquired) = launch(&repository, &mut store, "first");
+
+        assert!(acquired.created);
+        assert_eq!(acquired.id.as_str(), agent.id.as_str());
+        assert_eq!(
+            acquired.path,
+            CheckoutId::adopted(agent.id.as_str()).directory(repository.root())
+        );
+        assert!(!acquired.displaced);
+    }
+
+    #[test]
+    fn a_renamed_slot_is_the_systems_at_its_new_path_and_nowhere_else() {
+        let repository = repository("own-renamed-record");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (_, slot) = freed(&repository, &mut store, "first");
+
+        let (_, taken) = launch(&repository, &mut store, "second");
+
+        assert_moved_from(&slot.path, &taken);
+        assert!(matches!(
+            record::read(primary, &taken.path),
+            Recorded::Ours(_)
+        ));
+        let Recorded::Ours(recorded) = record::read(primary, &taken.path) else {
+            unreachable!()
+        };
+        assert_eq!(recorded.moving_to, None, "the move was completed");
+        let registered = repository.git(&["worktree", "list", "--porcelain"]);
+        assert!(registered.contains(&*taken.path.to_string_lossy()));
+        assert!(!registered.contains(&*slot.path.to_string_lossy()));
+    }
+
+    #[test]
+    fn a_slot_a_daemon_works_in_is_never_renamed_and_does_not_count_against_the_cap() {
+        let repository = repository("own-daemon");
+        let mut store = AgentStore::default();
+        let (_, slot) = freed(&repository, &mut store, "first");
+        let _daemon = Daemon::inside(&slot.path);
+        let next = task("second");
+
+        let acquired = acquire(
+            repository.root(),
+            &store,
+            &next.id,
+            next.isolation().unwrap(),
+            &tip_of(repository.root(), TARGET),
+            Some(1),
+            &nobody(),
+        )
+        .expect("a slot that cannot move is no slot an agent can have");
+
+        assert!(acquired.created, "a checkout was made at the agent's path");
+        assert!(
+            slot.path.is_dir(),
+            "the daemon's directory stayed where it was"
+        );
+    }
+
+    #[test]
+    fn a_locked_slot_is_never_renamed() {
+        let repository = repository("own-locked");
+        let mut store = AgentStore::default();
+        let (_, slot) = freed(&repository, &mut store, "first");
+        repository.git(&["worktree", "lock", &slot.path.to_string_lossy()]);
+
+        let (_, acquired) = launch(&repository, &mut store, "second");
+
+        assert!(acquired.created);
+        assert!(slot.path.is_dir());
+    }
+
+    #[test]
+    fn the_slot_an_agent_would_come_back_to_is_handed_on_last() {
+        let repository = repository("own-preference");
+        let mut store = AgentStore::default();
+        let (delivered, delivered_slot) = launch(&repository, &mut store, "delivered");
+        let (shelved, shelved_slot) = launch(&repository, &mut store, "shelved");
+        set_state(&mut store, &delivered.id, WorkState::Integrated);
+        set_state(&mut store, &shelved.id, WorkState::Shelved);
+        for agent in [&delivered, &shelved] {
+            let isolation = store.get_mut(&agent.id).unwrap().isolation_mut().unwrap();
+            isolation.last_checkout = isolation.checkout.take();
+        }
+        // The shelved agent's slot is the warmer one: recency alone would
+        // hand it on first.
+        stamp(&shelved_slot.path);
+
+        let (_, taken) = launch(&repository, &mut store, "next");
+
+        assert_moved_from(&delivered_slot.path, &taken);
+        assert!(
+            shelved_slot.path.is_dir(),
+            "the shelved agent's slot waits for it"
+        );
+    }
+
+    #[test]
+    fn an_agent_whose_path_another_checkout_holds_is_placed_elsewhere_and_told() {
+        let repository = repository("own-displaced");
+        let mut store = AgentStore::default();
+        let (_, occupied) = launch(&repository, &mut store, "occupant");
+        let mut late = task("late");
+        isolation(&mut late).last_checkout = Some(occupied.id.clone());
+
+        let acquired = acquire(
+            repository.root(),
+            &store,
+            &late.id,
+            late.isolation().unwrap(),
+            &tip_of(repository.root(), TARGET),
+            None,
+            &nobody(),
+        )
+        .unwrap();
+
+        assert!(acquired.displaced);
+        assert!(acquired.created);
+        assert_ne!(acquired.path, occupied.path);
+        assert_eq!(
+            repository.branch_of(&occupied.path),
+            store
+                .get(&store.agents[0].id)
+                .unwrap()
+                .isolation()
+                .unwrap()
+                .branch,
+            "the occupant's checkout is untouched"
+        );
+    }
+
+    #[test]
+    fn a_released_slot_keeps_its_agents_name_and_resuming_it_moves_nothing() {
+        let repository = repository("own-release-keeps");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (agent, slot) = launch(&repository, &mut store, "first");
+        let target = TARGET.to_owned();
+        release(
+            primary,
+            store.get_mut(&agent.id).unwrap(),
+            &target,
+            &nobody(),
+        );
+        assert!(slot.path.is_dir(), "release renames nothing");
+
+        let ended = store.get(&agent.id).unwrap().clone();
+        let resumed = resume(
+            primary,
+            &store,
+            &agent.id,
+            ended.isolation().unwrap(),
+            None,
+            &nobody(),
+            Some(&tip_of(primary, TARGET)),
+        )
+        .unwrap();
+
+        assert_eq!(resumed.path, slot.path);
+        assert!(!resumed.created);
+        assert!(!resumed.displaced);
+    }
+
+    #[test]
+    fn an_agent_an_earlier_build_placed_resumes_in_its_generated_slot() {
+        let repository = repository("own-earlier-build");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let mut agent = task("earlier");
+        let base = tip_of(primary, TARGET);
+        isolation(&mut agent).base_commit = base.clone();
+        let generated = CheckoutId::generate();
+        isolation(&mut agent).checkout = Some(generated.clone());
+        let placed = acquire(
+            primary,
+            &store,
+            &agent.id.clone(),
+            agent.isolation().unwrap(),
+            &base,
+            None,
+            &nobody(),
+        )
+        .unwrap();
+        assert_eq!(placed.id, generated);
+        let isolation = isolation(&mut agent);
+        isolation.last_checkout = isolation.checkout.take();
+        agent.state = WorkState::Shelved;
+        store.upsert(agent.clone());
+
+        let resumed = resume(
+            primary,
+            &store,
+            &agent.id,
+            agent.isolation().unwrap(),
+            None,
+            &nobody(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(resumed.path, placed.path, "the directory it last held");
+        assert!(!resumed.created);
+    }
 }

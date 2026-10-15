@@ -106,12 +106,14 @@ impl Workspace<'_> {
             );
             child.label = topic.to_owned();
             child.parent = Some(caller.agent.clone());
+            let owner = child.id.clone();
             let isolation = child
                 .isolation_mut()
                 .expect("an agent built isolated carries its isolation");
             let acquired = checkout::acquire(
                 &caller.primary,
                 store,
+                &owner,
                 isolation,
                 &head,
                 policy.slots,

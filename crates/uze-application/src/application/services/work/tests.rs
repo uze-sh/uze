@@ -169,8 +169,8 @@ fn a_joined_child_leaves_its_commits_and_no_merge_commit_and_frees_its_checkout(
             .is_empty()
     );
     let (_, next, _) = world.agent();
-    assert_eq!(
-        next, child.path,
+    assert!(
+        next.exists() && !child.path.exists(),
         "the child's checkout went back to the pool"
     );
 }
@@ -323,8 +323,8 @@ fn a_child_lives_as_long_as_its_agent() {
     let directories: std::collections::BTreeSet<PathBuf> =
         [agent.1.clone(), clean.path.clone(), holding.path.clone()].into();
     let next: std::collections::BTreeSet<PathBuf> = (0..3).map(|_| world.agent().1).collect();
-    assert_eq!(
-        next, directories,
+    assert!(
+        next.len() == 3 && directories.iter().all(|directory| !directory.exists()),
         "the agent and both children gave their checkouts back"
     );
     assert!(

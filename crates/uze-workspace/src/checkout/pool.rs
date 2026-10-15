@@ -9,6 +9,11 @@ use crate::{approval::Consent, worktree::PolicyStep};
 pub const SETUP_AWAITS_APPROVAL: &str = "setup was not run: this project's commands await your \
      approval (`uze workspace allow` in the project, or Review in the workspace)";
 
+/// What a resumed agent is told when its own checkout's path was taken and
+/// it was placed somewhere else: what its harness kept there stays there.
+pub const CONVERSATION_NOT_CARRIED: &str = "another checkout stands where this agent worked, so it \
+     was placed in a new one and its conversation could not be carried";
+
 /// How long a free slot is kept. Decided from the slots as they stand,
 /// never from a history of how many were used: a rule with no memory has
 /// nothing to get wrong about the past. With no count to keep, the slots a
@@ -41,10 +46,12 @@ impl Pool {
     }
 }
 
-/// The generated, immutable name of a slot — the directory under the
-/// isolation directory. Never derived from a task or a label, so a slot
-/// outlives every task that runs in it. A legacy checkout keeps the name it
-/// already has.
+/// The name of a checkout — the directory under the isolation directory.
+/// It is the name of the agent that holds it: harnesses key their
+/// conversations by the directory, so an agent comes back to the same one,
+/// and a slot handed to another agent is renamed to that agent's
+/// ([`take`]). A name is generated only where an agent's own was taken, and
+/// a checkout made by an earlier build keeps the name it already has.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct CheckoutId(String);
@@ -135,6 +142,22 @@ pub struct Acquired {
     pub branch: String,
     /// `false` when a free slot was reused.
     pub created: bool,
+    /// Another checkout stood at the agent's own path, so it was placed at
+    /// a generated name: whatever a harness keeps by directory, the
+    /// conversation included, is not there.
+    pub displaced: bool,
+}
+
+/// The checkout an agent owns: the one it holds, else the one it last
+/// held, else one named after the agent. An agent placed by an earlier
+/// build keeps the generated name it last held, so an upgrade never moves
+/// a slot out from under an agent that would still find it there.
+pub fn own_checkout(agent: &AgentId, isolation: &Isolation) -> CheckoutId {
+    isolation
+        .checkout
+        .clone()
+        .or_else(|| isolation.last_checkout.clone())
+        .unwrap_or_else(|| CheckoutId::adopted(agent.as_str()))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -205,12 +228,14 @@ pub(super) enum Start<'a> {
     Existing,
 }
 
-/// Takes a slot for `task`, branching from `base_tip`: a free slot first,
-/// a new directory only when none is free and `cap` allows it. Runs as one
-/// critical section under the repository write lock.
+/// Takes a slot for `owner`, branching from `base_tip`: at the checkout it
+/// owns ([`own_checkout`]), reusing a free slot first and a new directory
+/// only when none can be taken and `cap` allows it. Runs as one critical
+/// section under the repository write lock.
 pub fn acquire(
     primary: &Path,
     store: &AgentStore,
+    owner: &AgentId,
     isolation: &Isolation,
     base_tip: &str,
     cap: Option<usize>,
@@ -223,15 +248,15 @@ pub fn acquire(
         Start::Branching { base_tip },
         cap,
         presence,
-        None,
+        &own_checkout(owner, isolation),
     )
 }
 
 /// Takes a slot for a task whose branch already exists and whose checkout
 /// is gone — removed outside UZE, or swept as idle — so an agent can pick
-/// the work up where the branch stands. Same choice of slot as
-/// [`acquire`]; the difference is that nothing is cut and nothing is
-/// reset past the branch's own tip.
+/// the work up where the branch stands, at the checkout it owns. Same
+/// choice of slot as [`acquire`]; the difference is that nothing is cut and
+/// nothing is reset past the branch's own tip.
 ///
 /// `fresh` is where a branch that held nothing comes back: an agent that
 /// ended with nothing to deliver had its empty branch removed, and
@@ -267,11 +292,16 @@ pub fn resume(
         Start::Existing,
         cap,
         presence,
-        isolation.last_checkout.as_ref(),
+        &own_checkout(task, isolation),
     )
 }
 
-#[tracing::instrument(name = "checkout.take", level = "debug", skip_all)]
+/// The checkout at `home`: kept when it is a free slot already there; a
+/// free slot moved to it otherwise, preferring one whose last agent will
+/// not come back to it; created there when no slot can be moved. When
+/// something else already stands at `home`, a checkout of a generated name
+/// is made instead and says so.
+#[tracing::instrument(name = "checkout.take", level = "debug", skip_all, fields(home = %home))]
 pub(super) fn take(
     primary: &Path,
     store: &AgentStore,
@@ -279,7 +309,7 @@ pub(super) fn take(
     start: Start<'_>,
     cap: Option<usize>,
     presence: &Presence,
-    prefer: Option<&CheckoutId>,
+    home: &CheckoutId,
 ) -> Result<Acquired, AcquireError> {
     // Reuse resets a slot's working tree to this commit, so a base nobody
     // could resolve is refused before a slot is chosen rather than handed
@@ -293,23 +323,113 @@ pub(super) fn take(
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         let existing = slots(primary, store, presence);
-        let free = || existing.iter().filter(|slot| slot.state == SlotState::Free);
-        if let Some(free) = free()
-            .find(|slot| Some(&slot.id) == prefer)
-            .or_else(|| free().max_by_key(|slot| modified_at(&slot.path)))
-        {
-            return reuse(primary, free, branch, start);
+        let target = home.directory(primary);
+        if fs::symlink_metadata(&target).is_ok() {
+            if let Some(slot) = existing
+                .iter()
+                .find(|slot| &slot.id == home && slot.state == SlotState::Free)
+            {
+                return reuse(primary, slot, branch, start);
+            }
+            let mut displaced = create(primary, branch, start, &CheckoutId::generate())?;
+            displaced.displaced = true;
+            return Ok(displaced);
         }
+        // Every process, not only the attended ones `presence` counts: a
+        // daemon standing in a slot would follow the rename into the next
+        // agent's checkout without a word.
+        let everyone = Presence::observe_everyone();
+        let mut candidates: Vec<&Slot> = existing
+            .iter()
+            .filter(|slot| slot.state == SlotState::Free)
+            .collect();
+        candidates.sort_by_key(|slot| {
+            (
+                comes_back(store, &slot.id),
+                std::cmp::Reverse(modified_at(&slot.path)),
+            )
+        });
+        let mut set_aside = 0;
+        // Git refuses a locked checkout and one with an initialized
+        // submodule before it renames anything, so a refusal is a slot set
+        // aside like one somebody works in.
+        for slot in candidates {
+            if everyone.inside(&slot.path) {
+                set_aside += 1;
+                continue;
+            }
+            match move_slot(primary, slot, home) {
+                Ok(moved) => return reuse(primary, &moved, branch, start),
+                Err(_) => set_aside += 1,
+            }
+        }
+        // A slot that could not move is no slot an agent can have, and
+        // counting it would tell the operator every one is in use.
         if let Some(cap) = cap
-            && existing.len() >= cap
+            && existing.len() - set_aside >= cap
         {
-            // Every slot counts against the cap here: the free ones were
-            // just ruled out, so what remains is in use or pinned.
             return Err(AcquireError::CapReached { cap });
         }
-        create(primary, branch, start)
+        create(primary, branch, start, home)
     })
     .map_err(|error| AcquireError::Git(error.to_string()))?
+}
+
+/// How likely the agent that last held `slot` is to come back to it, so the
+/// slot it would come back to is the last one handed on: nobody (a
+/// generated name, or an agent the store forgot), an agent whose work was
+/// delivered, an agent that ended with nothing, and anything else.
+fn comes_back(store: &AgentStore, slot: &CheckoutId) -> u8 {
+    let holder = store.agents.iter().find(|agent| {
+        agent.isolation().is_some_and(|isolation| {
+            isolation.checkout.as_ref() == Some(slot)
+                || isolation.last_checkout.as_ref() == Some(slot)
+        })
+    });
+    match holder.map(|agent| &agent.state) {
+        None | Some(WorkState::Integrated) => 0,
+        Some(WorkState::Closed) => 1,
+        Some(_) => 2,
+    }
+}
+
+/// Renames `slot` to `home` with Git's own worktree move, its record saying
+/// so first: the intent is written before Git renames the directory and
+/// cleared once the record names the new path, so a crash in between is
+/// completed by [`record::settle_moves`] rather than disowning the slot.
+fn move_slot(primary: &Path, slot: &Slot, home: &CheckoutId) -> Result<Slot, AcquireError> {
+    let target = home.directory(primary);
+    let Recorded::Ours(mut recorded) = record::read(primary, &slot.path) else {
+        return Err(AcquireError::Git(format!(
+            "{} carries no record of its own",
+            slot.path.display()
+        )));
+    };
+    recorded.moving_to = Some(target.clone());
+    record::write(primary, &slot.path, &recorded).map_err(AcquireError::Git)?;
+    let moved = git(
+        primary,
+        &[
+            "worktree",
+            "move",
+            &slot.path.to_string_lossy(),
+            &target.to_string_lossy(),
+        ],
+    );
+    if let Err(refused) = moved {
+        recorded.moving_to = None;
+        let _ = record::write(primary, &slot.path, &recorded);
+        return Err(refused);
+    }
+    recorded.path = target.clone();
+    recorded.moving_to = None;
+    record::write(primary, &target, &recorded).map_err(AcquireError::Git)?;
+    Ok(Slot {
+        id: home.clone(),
+        path: target,
+        branch: slot.branch.clone(),
+        state: SlotState::Free,
+    })
 }
 
 pub(super) fn reuse(
@@ -354,6 +474,7 @@ pub(super) fn reuse(
         path: root.clone(),
         branch: branch.to_owned(),
         created: false,
+        displaced: false,
     })
 }
 
@@ -361,13 +482,15 @@ pub(super) fn create(
     primary: &Path,
     branch: &str,
     start: Start<'_>,
+    id: &CheckoutId,
 ) -> Result<Acquired, AcquireError> {
     // A checkout removed outside UZE leaves its registry entry behind, and
     // `worktree add` then refuses the path. Adoption already looked at
     // every directory, so pruning here drops only entries with nothing
     // behind them.
+    record::settle_moves(primary);
     let _ = git(primary, &["worktree", "prune"]);
-    let id = CheckoutId::generate();
+    let id = id.clone();
     let path = id.directory(primary);
     isolation_directory_is_the_projects_own(primary, &path)?;
     let spelled = path.to_string_lossy();
@@ -399,6 +522,7 @@ pub(super) fn create(
         path,
         branch: branch.to_owned(),
         created: true,
+        displaced: false,
     })
 }
 

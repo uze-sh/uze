@@ -37,6 +37,13 @@ pub struct CheckoutRecord {
     /// its other facts, which still hold it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<String>,
+    /// Where the checkout is being moved, written before Git renames it and
+    /// cleared once the record names its new path. A crash in between leaves
+    /// a record naming the old path, and this is what lets the checkout be
+    /// recognised at the new one — never a copy, which nothing was moving
+    /// to. Additive, like `pinned`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moving_to: Option<PathBuf>,
 }
 
 impl CheckoutRecord {
@@ -46,6 +53,7 @@ impl CheckoutRecord {
             parent: None,
             split_at: None,
             pinned: None,
+            moving_to: None,
         }
     }
 }
@@ -77,7 +85,15 @@ pub fn read(primary: &Path, checkout: &Path) -> Recorded {
     };
     match uze_document::read::<CheckoutRecord>(&file) {
         Ok(carried) => match carried.record() {
-            Some(record) if same_place(&record.path, checkout) => Recorded::Ours(record),
+            Some(record)
+                if same_place(&record.path, checkout)
+                    || record
+                        .moving_to
+                        .as_deref()
+                        .is_some_and(|target| same_place(target, checkout)) =>
+            {
+                Recorded::Ours(record)
+            }
             Some(_) | None => Recorded::Absent,
         },
         Err(_) => Recorded::Unreadable,
@@ -96,6 +112,53 @@ pub fn write(primary: &Path, checkout: &Path, record: &CheckoutRecord) -> Result
     }
     let payload = serde_json::to_vec_pretty(record).expect("a checkout record serializes");
     crate::persistence::write_atomic(&file, &payload).map_err(|error| error.to_string())
+}
+
+/// Completes or undoes every move a crash interrupted, before anything may
+/// prune a worktree whose directory seems gone.
+///
+/// Git renames the directory before it rewrites the links between the
+/// directory and its administrative entry, so a crash can leave a checkout
+/// at its new path that the repository still registers at the old one; a
+/// prune then would delete the entry, and this record with it. A record
+/// whose intended path holds a directory inside the isolation directory is
+/// repaired there and made to name it; one whose move never happened has
+/// its intent cleared. Only a record UZE wrote names a move, so nothing
+/// this touches is a checkout UZE did not make.
+pub fn settle_moves(primary: &Path) {
+    let container = primary.join(crate::worktree::WORKTREES_DIRECTORY);
+    let Ok(entries) = std::fs::read_dir(primary.join(".git").join("worktrees")) else {
+        return;
+    };
+    for admin in entries.flatten().map(|entry| entry.path()) {
+        let file = admin.join(CHECKOUT_RECORD_FILE);
+        let Some(mut record) = uze_document::read::<CheckoutRecord>(&file)
+            .ok()
+            .and_then(|carried| carried.record())
+        else {
+            continue;
+        };
+        let Some(target) = record.moving_to.clone() else {
+            continue;
+        };
+        if target.parent() != Some(container.as_path()) {
+            continue;
+        }
+        if target.is_dir() {
+            if super::anchor::admin_dir(primary, &target).is_err() {
+                let _ = super::git(primary, &["worktree", "repair", &target.to_string_lossy()]);
+            }
+            let anchored_here = super::anchor::admin_dir(primary, &target)
+                .is_ok_and(|found| same_place(&found, &admin));
+            if !anchored_here {
+                continue;
+            }
+            record.path = target;
+        }
+        record.moving_to = None;
+        let payload = serde_json::to_vec_pretty(&record).expect("a checkout record serializes");
+        let _ = crate::persistence::write_atomic(&file, &payload);
+    }
 }
 
 /// The record's file in `checkout`'s administrative directory, found from
