@@ -454,8 +454,38 @@ fn the_manage_mark_opens_manage_in_one_click_while_recent_is_open() {
     let more = driven.hit(|hit| *hit == WorkspaceHit::OpenManage);
 
     driven.press(more.x, more.y);
-    assert!(!driven.attach.model.recent.open);
+    assert!(driven.attach.model.recent.open);
     assert!(driven.attach.model.manage.is_some());
+}
+
+/// Recent is opened and closed by its own control: a click in the pane
+/// reaches the pane and hands it the keyboard, recent stays drawn, and a
+/// click back in its column gives the keyboard back to it.
+#[test]
+fn a_click_elsewhere_keeps_recent_open_and_hands_the_keys_back() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-elsewhere"));
+    let mut driven = driven(
+        showing(
+            vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
+            Vec::new(),
+        ),
+        &home,
+    );
+    driven.frame();
+    press(&mut driven, Action::DiscardTask);
+    assert!(driven.attach.model.recent.asking);
+    let in_the_pane = 70;
+
+    driven.press(in_the_pane, 10);
+    assert!(driven.attach.model.recent.open, "recent stays open");
+    assert!(!driven.attach.model.recent.has_keys());
+    assert!(
+        !driven.attach.model.recent.asking,
+        "its question is withdrawn"
+    );
+
+    driven.press(2, 16);
+    assert!(driven.attach.model.recent.has_keys());
 }
 
 /// The question opens on its way out, so the enter that opened nothing

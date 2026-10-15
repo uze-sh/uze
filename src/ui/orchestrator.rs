@@ -910,6 +910,18 @@ impl WorkspaceHit {
             )
         )
     }
+
+    /// Whether this is one of recent's own targets, its way in and out
+    /// among them.
+    pub(super) fn is_recents(self) -> bool {
+        matches!(
+            self,
+            WorkspaceHit::RecentRow(_)
+                | WorkspaceHit::RecentScrollGrab
+                | WorkspaceHit::RecentAnswer(_)
+                | WorkspaceHit::ToggleRecent
+        )
+    }
 }
 
 /// Resolved entirely through the generic `IntegrationPort` contract
@@ -2070,7 +2082,7 @@ impl WorkspaceModel {
             && self.agent_picker.is_none()
             && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
-            && !self.recent.open
+            && !self.recent.has_keys()
             && self.context_menu.is_none()
             && self.approval.is_none()
             && self.action_index.is_none()

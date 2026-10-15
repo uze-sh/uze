@@ -143,6 +143,7 @@ impl Attach<'_> {
                 .model
                 .hit_at(mouse.column, mouse.row)
                 .is_some_and(WorkspaceHit::is_open_surfaces);
+        self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar);
         match mouse {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
@@ -260,7 +261,14 @@ impl Attach<'_> {
                 self.model.status_catalog = None;
                 self.model.dirty = true;
             }
-            _ if self.model.recent.open => {
+            // Only its own hits: a click anywhere else reaches what it
+            // was aimed at, and recent stays open beside it.
+            _ if self.model.recent.open
+                && self
+                    .model
+                    .hit_at(mouse.column, mouse.row)
+                    .is_some_and(WorkspaceHit::is_recents) =>
+            {
                 match self.model.hit_at(mouse.column, mouse.row) {
                     Some(WorkspaceHit::RecentRow(index)) => self.click_recent_row(index),
                     // Armed, not decided: which of the divider's two jobs
@@ -269,18 +277,8 @@ impl Attach<'_> {
                     Some(WorkspaceHit::RecentScrollGrab) => {
                         self.model.recent.grab = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
                     }
-                    // The divider still resizes the column under recent.
-                    Some(WorkspaceHit::ResizeSidebar) => self.model.dragging_sidebar = true,
-                    Some(WorkspaceHit::ToggleRecent) => self.close_recent(),
                     Some(WorkspaceHit::RecentAnswer(yes)) => self.answer_recent(yes),
-                    // Drawn beside recent's way out, so it is reached in
-                    // one click rather than one to leave and one to open.
-                    Some(WorkspaceHit::OpenManage) => {
-                        self.close_recent();
-                        self.open_manage();
-                    }
-                    // The way in is the way out, and a click anywhere else
-                    // leaves it the way it leaves the root picker.
+                    // The way in is the way out.
                     _ => self.close_recent(),
                 }
             }
@@ -973,9 +971,10 @@ impl Attach<'_> {
                 };
                 return self.action_index_action(action, viewport);
             }
-            // Recent has the column while it is open, so the wheel scrolls
-            // its list, and the selection stays where the keys left it.
-            _ if self.model.recent.open => {
+            // Recent has the column while it is open, so the wheel over it
+            // scrolls its list, and the selection stays where the keys
+            // left it.
+            _ if self.model.recent.open && mouse.column < layout.sidebar.right() => {
                 self.scroll_recent(if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
                 } else {

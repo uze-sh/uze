@@ -9,6 +9,7 @@ impl Attach<'_> {
     /// the new one is out.
     pub(in crate::ui::orchestrator) fn open_recent(&mut self) {
         self.model.recent.open = true;
+        self.model.recent.keys_elsewhere = false;
         self.model.recent.asking = false;
         self.sweep_preserved_work();
         for project in projects_to_read(&self.model) {
@@ -19,8 +20,36 @@ impl Attach<'_> {
 
     pub(super) fn close_recent(&mut self) {
         self.model.recent.open = false;
+        self.model.recent.keys_elsewhere = false;
         self.model.recent.asking = false;
         self.model.dirty = true;
+    }
+
+    /// A press while recent is open gives it the keyboard when it lands in
+    /// the column recent stands in, and hands the keyboard back anywhere
+    /// else, withdrawing any question it was asking. Something drawn over
+    /// the workspace answers the press first and moves nothing: the action
+    /// index opened from recent still acts on recent's row.
+    pub(super) fn hand_recent_the_keys_or_not(&mut self, column: u16, sidebar: Rect) {
+        let model = &self.model;
+        let drawn_over = model.approval.is_some()
+            || model.release_notes.is_some()
+            || model.action_index.is_some()
+            || model.renaming.is_some()
+            || model.root_picker.is_some()
+            || model.agent_picker.is_some()
+            || model.support_dropdown.is_some()
+            || model.commit_detail_open()
+            || model.status_catalog.is_some();
+        if !model.recent.open || drawn_over {
+            return;
+        }
+        let elsewhere = column >= sidebar.right();
+        if elsewhere != self.model.recent.keys_elsewhere {
+            self.model.recent.keys_elsewhere = elsewhere;
+            self.model.recent.asking &= !elsewhere;
+            self.model.dirty = true;
+        }
     }
 
     /// Everything asked of recent while it is open.

@@ -21,6 +21,10 @@ use uze_application::{CheckoutOwner, CheckoutView, CheckoutsView, JoinedWork, Pr
 #[derive(Default)]
 pub(super) struct Recent {
     pub(super) open: bool,
+    /// Whether a click elsewhere handed the keyboard back while recent
+    /// stays drawn: it is opened and closed by its own control, so using
+    /// the rest of the workspace never costs a click to leave it first.
+    pub(super) keys_elsewhere: bool,
     /// The selected row, by [`RecentRow::key`]: an index would land on a
     /// different agent once the list under it changed.
     pub(super) selected: Option<String>,
@@ -63,6 +67,11 @@ pub(super) struct ProjectRead {
 }
 
 impl Recent {
+    /// Whether recent is open and the keyboard is its.
+    pub(super) fn has_keys(&self) -> bool {
+        self.open && !self.keys_elsewhere
+    }
+
     fn view(&self, project: &Path) -> Option<&CheckoutsView> {
         self.reads.get(project)?.answer.as_ref()?.as_ref()
     }
