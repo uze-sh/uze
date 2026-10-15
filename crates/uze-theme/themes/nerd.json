@@ -33,7 +33,7 @@
     },
     "mark.failed": {"glyph": "\uf00d", "width": 1},
     "mark.dot": {
-      "glyph": "󰧟",
+      "glyph": "󰧞",
       "width": 1
     },
     "mark.done": {
@@ -61,11 +61,11 @@
       "width": 1
     },
     "status.selected": {
-      "glyph": "",
+      "glyph": "",
       "width": 1
     },
     "status.idle": {
-      "glyph": "",
+      "glyph": "",
       "width": 1
     },
     "arrow.up": {
