@@ -131,7 +131,7 @@ pub(crate) fn render_update_report(report: &uze_application::application::Update
                 plugin, revision, ..
             } => vec![
                 progress::title(plugin),
-                progress::label(format!("moved to {}", &revision[..revision.len().min(12)])),
+                progress::label(format!("moved to {}", abbreviated(revision, 12))),
             ],
             UpdateOutcome::FollowedLink {
                 plugin,
@@ -546,7 +546,18 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
 
 /// A commit as a person compares two of them.
 pub(crate) fn short_commit(commit: &str) -> &str {
-    &commit[..commit.len().min(7)]
+    abbreviated(commit, 7)
+}
+
+/// The first `length` digits of a hash, or the revision whole when it is
+/// not one: a moved plugin's revision is its source when that changed — a
+/// path or a URL — and a prefix of either names nothing.
+fn abbreviated(revision: &str, length: usize) -> &str {
+    if revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        &revision[..revision.len().min(length)]
+    } else {
+        revision
+    }
 }
 
 /// Each harness that did not receive a package whole, one line per thing
@@ -869,5 +880,41 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             }
             progress::change_report("install", &lines, &outcome.join(", "))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use uze_application::application::{UpdateOutcome, UpdateReport, UpdateScope};
+
+    use super::*;
+
+    fn moved_to(revision: &str) -> UpdateReport {
+        UpdateReport {
+            scope: UpdateScope::Project,
+            outcomes: vec![UpdateOutcome::Moved {
+                plugin: "lint".to_owned(),
+                revision: revision.to_owned(),
+                deliveries: Vec::new(),
+            }],
+            reconciled: false,
+        }
+    }
+
+    #[test]
+    fn a_hash_is_shortened_and_a_source_is_said_whole() {
+        assert_eq!(short_commit("0123456789abcdef"), "0123456");
+        assert_eq!(short_commit("/home/émilie/market"), "/home/émilie/market");
+        assert_eq!(
+            short_commit("https://example.com/m.git@0123456789"),
+            "https://example.com/m.git@0123456789"
+        );
+    }
+
+    #[test]
+    fn an_update_that_moved_a_plugin_to_a_non_ascii_path_reports_it() {
+        let report = moved_to("/home/émilie/market");
+        assert!(render_update_summary(&report).contains("/home/émilie/market"));
+        assert!(render_update_report(&report).contains("/home/émilie/market"));
     }
 }
