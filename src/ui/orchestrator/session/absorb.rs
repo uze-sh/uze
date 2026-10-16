@@ -151,12 +151,8 @@ impl Attach<'_> {
             // the labels and publication UZE had recorded left behind in
             // a document it could not read.
             if let Some(recovered) = evaluation.recovered {
-                self.model.raise_toast(
-                    ToastKind::Warned,
-                    "recovered what the record still had",
-                    recovered,
-                    None,
-                );
+                self.model
+                    .raise_toast(ToastKind::Warned, "agents recovered", recovered, None);
             }
             // Said once for each new set of reasons, not on every pass:
             // the manifest is read again each time, and an unchanged typo
@@ -237,12 +233,15 @@ impl Attach<'_> {
                     }
                     _ => ToastKind::Done,
                 };
-                self.model.raise_toast(
-                    kind,
-                    describe_delivery(report),
-                    report.task.label.clone(),
-                    None,
-                );
+                // A refusal's reason is what the reader needs, and too long
+                // for a title: it goes under one, where the label would.
+                let (title, detail) = match &report.outcome {
+                    DeliveryOutcome::Refused(reason) => {
+                        ("not delivered".to_owned(), reason.clone())
+                    }
+                    _ => (describe_delivery(report), report.task.label.clone()),
+                };
+                self.model.raise_toast(kind, title, detail, None);
                 // An operation of UZE's left the work in a new state, so
                 // the project's instruction for it goes to the agent.
                 if matches!(
@@ -264,14 +263,14 @@ impl Attach<'_> {
                 match &resolution.reserved {
                     Some(_) => self.model.raise_toast(
                         ToastKind::Failed,
-                        "the task could not be delivered",
-                        "its record is gone, or the document holding it could not be read",
+                        "not delivered",
+                        "its record is gone or unreadable",
                         None,
                     ),
                     None => self.model.raise_toast(
                         ToastKind::Told,
                         "nothing ready",
-                        "no task has commits the target lacks",
+                        "no task has commits to deliver",
                         None,
                     ),
                 }
@@ -431,6 +430,70 @@ impl Attach<'_> {
         }
     }
 
+    /// Pulls the target into the focused checkout, as an editor's sync
+    /// count does when clicked. One at a time: a second click while one
+    /// runs is the same pull.
+    pub(in crate::ui::orchestrator) fn pull_target(&mut self) {
+        if self.model.remembered.pull_pending {
+            return;
+        }
+        let Some(cwd) = self.model.focused_cwd() else {
+            return;
+        };
+        self.model.remembered.pull_pending = true;
+        let target = self
+            .model
+            .remembered
+            .targets
+            .get(&evaluation_key(&cwd))
+            .cloned()
+            .unwrap_or_else(|| "the target".to_owned());
+        self.model.set_busy_notice(format!("pulling {target}"));
+        spawn_pull(self.home, cwd, self.channels.pulls.sender.clone());
+        self.model.dirty = true;
+    }
+
+    /// A pull that ended, said as an outcome, and the checkout read again
+    /// so its counts follow.
+    pub(super) fn absorb_pulls(&mut self) {
+        while let Ok(resolution) = self.channels.pulls.receiver.try_recv() {
+            self.model.remembered.pull_pending = false;
+            self.model.clear_busy_notice();
+            match resolution.report {
+                Some(report) => match report.pulled {
+                    Ok(0) => self.model.raise_toast(
+                        ToastKind::Told,
+                        "already up to date",
+                        report.target,
+                        None,
+                    ),
+                    Ok(commits) => {
+                        let plural = if commits == 1 { "" } else { "s" };
+                        self.model.raise_toast(
+                            ToastKind::Done,
+                            format!("pulled {commits} commit{plural}"),
+                            report.target,
+                            None,
+                        );
+                    }
+                    Err(reason) => {
+                        self.model
+                            .raise_toast(ToastKind::Failed, "pull refused", reason, None)
+                    }
+                },
+                None => self.model.raise_toast(
+                    ToastKind::Failed,
+                    "pull refused",
+                    "no target to pull",
+                    None,
+                ),
+            }
+            self.model
+                .schedule_evaluation(self.home, resolution.cwd, &self.channels.tasks.sender);
+            self.model.dirty = true;
+        }
+    }
+
     /// Checkouts whose stamp moved since it was last read: Git recorded
     /// something there, so its repository is evaluated now rather than on
     /// the refresh clock. A checkout read for the first time only sets its
@@ -485,12 +548,8 @@ impl Attach<'_> {
             if !behind.insert(report.project) {
                 continue;
             }
-            self.model.raise_toast(
-                ToastKind::Warned,
-                "The local target is behind its remote",
-                concern,
-                None,
-            );
+            self.model
+                .raise_toast(ToastKind::Warned, "target diverged", concern, None);
         }
     }
 
@@ -523,22 +582,12 @@ impl Attach<'_> {
                 continue;
             }
             let (kind, title) = if resolution.drifted {
-                (
-                    ToastKind::Warned,
-                    "AGENTS.md's workspace section was edited by hand",
-                )
+                (ToastKind::Warned, "AGENTS.md edited by hand")
             } else {
-                (
-                    ToastKind::Failed,
-                    "AGENTS.md's workspace section could not be updated",
-                )
+                (ToastKind::Failed, "AGENTS.md not updated")
             };
-            self.model.raise_toast(
-                kind,
-                title,
-                format!("{}: {}", resolution.file.display(), resolution.problem),
-                None,
-            );
+            self.model
+                .raise_toast(kind, title, resolution.problem, None);
         }
     }
 
@@ -562,13 +611,8 @@ impl Attach<'_> {
                 .join(", ");
             self.model.raise_toast(
                 ToastKind::Warned,
-                "A gate cannot run on this machine",
-                format!(
-                    "{}: {gates} has no `{}` spelling in agents.yaml, so delivery from here is \
-                     refused",
-                    answer.project.display(),
-                    answer.platform
-                ),
+                "gate can't run here",
+                format!("no `{}` form of {gates}", answer.platform),
                 None,
             );
         }

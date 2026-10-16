@@ -491,6 +491,33 @@ pub(super) fn spawn_task_evaluation(
     });
 }
 
+/// What a pull the operator asked for did, and where.
+pub(super) struct PullResolution {
+    pub(super) cwd: PathBuf,
+    pub(super) report: Option<uze_application::PullReport>,
+}
+
+/// Pulls the target into the checkout `cwd` belongs to: a fetch and a
+/// fast-forward, seconds of network that no frame may wait on.
+pub(super) fn spawn_pull(home: &UzeHome, cwd: PathBuf, sender: mpsc::Sender<PullResolution>) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.pull", parent: &parent);
+        // Answers even when it could not ask: the pending flag is released
+        // on arrival, and a silent thread would leave the count unclickable.
+        let report = answered_or(
+            || {
+                tui_application(home)
+                    .ok()
+                    .and_then(|app| app.workspace().pull_target(&cwd))
+            },
+            None,
+        );
+        let _ = sender.send(PullResolution { cwd, report });
+    });
+}
+
 /// What each checkout's stamp read, `None` for one that is no longer a
 /// working tree.
 pub(super) struct StampResolution {

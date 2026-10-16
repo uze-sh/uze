@@ -2841,7 +2841,7 @@ mod workspace_tests {
 
         let toasts = &driven.attach.model.remembered.toasts;
         assert_eq!(toasts.len(), 1, "said once");
-        assert_eq!(toasts[0].text, "A gate cannot run on this machine");
+        assert_eq!(toasts[0].text, "gate can't run here");
         assert!(
             toasts[0].detail.contains("`make check`") && toasts[0].detail.contains("`windows`"),
             "{}",
@@ -2874,7 +2874,7 @@ mod workspace_tests {
 
         let toasts = &driven.attach.model.remembered.toasts;
         assert_eq!(toasts.len(), 2, "once per time it fell behind");
-        assert_eq!(toasts[0].text, "The local target is behind its remote");
+        assert_eq!(toasts[0].text, "target diverged");
         assert!(
             toasts[1].detail.contains("3 commits"),
             "{}",
@@ -3128,6 +3128,21 @@ mod workspace_tests {
             rows.join("\n").contains(&format!("deliver {chord}")),
             "{rows:?}"
         );
+    }
+
+    /// Work in review reads as the request's number alone: the number says
+    /// a request is open, and a mark beside it would only repeat it.
+    #[test]
+    fn work_in_review_shows_its_request_number_and_no_mark() {
+        let mut model = agent_with_task(WorkStateView::InReview, 3);
+        for task in model.remembered.tasks.values_mut().flatten() {
+            task.published_request = Some(259);
+        }
+        let (rows, _) = tab_strip(&model);
+        let strip = rows.join("\n");
+        let (mark, _) = task_mark(&WorkStateView::InReview).expect("in review is marked");
+        assert!(strip.contains("#259"), "{strip}");
+        assert!(!strip.contains(&format!("#259 {mark}")), "{strip}");
     }
 
     /// A report says under the pointer what its mark stands for, and only
@@ -7336,6 +7351,51 @@ mod workspace_tests {
             !row.contains('\u{2191}') && !row.contains('\u{2193}'),
             "in sync says nothing: {row:?}"
         );
+    }
+
+    /// What a pull would bring is the pull: the count is a target that
+    /// says so under the pointer and starts it on a click, once, with the
+    /// header saying it runs. What a push would send is only reported.
+    #[test]
+    fn clicking_what_a_pull_would_bring_pulls() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-pull-click"));
+        let mut model = agent_session_in("/repo");
+        model
+            .remembered
+            .upstream_syncs
+            .insert(PathBuf::from("/repo"), UpstreamSync { pull: 9, push: 2 });
+        model
+            .remembered
+            .targets
+            .insert(PathBuf::from("/repo"), "main".to_owned());
+        let mut driven = driven(model, &home);
+        driven.frame();
+        let pull = hit_rect(&driven.attach.model, WorkspaceHit::PullTarget);
+        assert_eq!(
+            pull.width, 2,
+            "the pull count alone is the target: {pull:?}"
+        );
+
+        driven.attach.model.hovered = Some(WorkspaceHit::PullTarget);
+        let (rows, _) = tab_strip(&driven.attach.model);
+        assert!(
+            rows.join("\n").contains("pull 9 · fast-forward"),
+            "{rows:?}"
+        );
+
+        driven.press(pull.x, pull.y);
+        assert!(
+            driven.attach.model.remembered.pull_pending,
+            "the pull started"
+        );
+        let said = driven
+            .attach
+            .model
+            .remembered
+            .notice
+            .as_ref()
+            .map(|notice| notice.text.clone());
+        assert_eq!(said.as_deref(), Some("pulling main"));
     }
 
     /// Inside a slot the remote is the target's business, not the task's:
@@ -11848,6 +11908,105 @@ mod workspace_tests {
             WorkStateView::InReview,
             "its own answer lands"
         );
+    }
+
+    /// Every toast's words fit the toast. A title over [`TOAST_TITLE`] or
+    /// a detail over [`TOAST_DETAIL`] columns is cut with an ellipsis in a
+    /// pane of ordinary width, and the cut half is usually the half that
+    /// said what to do. Checked on the literals every `raise_toast` call
+    /// writes, so a long one fails here rather than on somebody's screen;
+    /// what a call formats at run time is the caller's to keep short.
+    #[test]
+    fn every_toasts_literal_words_fit_the_toast() {
+        const TOAST_TITLE: usize = 24;
+        const TOAST_DETAIL: usize = 32;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/orchestrator");
+        let mut sources = vec![root.with_extension("rs")];
+        let mut pending = vec![root];
+        while let Some(directory) = pending.pop() {
+            for entry in std::fs::read_dir(&directory).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && !path.components().any(|part| part.as_os_str() == "tests")
+                    && path.file_name().is_some_and(|name| name != "tests.rs")
+                {
+                    sources.push(path);
+                }
+            }
+        }
+        let mut too_long = Vec::new();
+        for path in sources {
+            let text = std::fs::read_to_string(&path).unwrap();
+            for (at, _) in text.match_indices("raise_toast(") {
+                let arguments = call_arguments(&text[at + "raise_toast(".len()..]);
+                for (index, limit) in [(1, TOAST_TITLE), (2, TOAST_DETAIL)] {
+                    let Some(words) = arguments.get(index).and_then(|arg| literal(arg)) else {
+                        continue;
+                    };
+                    if words.chars().count() > limit {
+                        too_long.push(format!("{}: {words:?}", path.display()));
+                    }
+                }
+            }
+        }
+        assert!(
+            too_long.is_empty(),
+            "toast words over the limit:\n{}",
+            too_long.join("\n")
+        );
+    }
+
+    /// The top-level arguments of a call whose opening parenthesis was just
+    /// read, split at the commas between them.
+    fn call_arguments(after_paren: &str) -> Vec<String> {
+        let (mut depth, mut quoted, mut escaped) = (0usize, false, false);
+        let mut arguments = vec![String::new()];
+        for character in after_paren.chars() {
+            if quoted {
+                arguments.last_mut().unwrap().push(character);
+                match (escaped, character) {
+                    (true, _) => escaped = false,
+                    (false, '\\') => escaped = true,
+                    (false, '"') => quoted = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match character {
+                '"' => quoted = true,
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' if depth == 0 => break,
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => {
+                    arguments.push(String::new());
+                    continue;
+                }
+                _ => {}
+            }
+            arguments.last_mut().unwrap().push(character);
+        }
+        arguments
+    }
+
+    /// The words of an argument that is a plain string literal, with
+    /// `.to_owned()` or `.into()` allowed after it; `None` for anything
+    /// computed.
+    fn literal(argument: &str) -> Option<String> {
+        let argument = argument.trim();
+        let argument = argument
+            .strip_suffix(".to_owned()")
+            .or_else(|| argument.strip_suffix(".into()"))
+            .unwrap_or(argument);
+        let inner = argument.strip_prefix('"')?.strip_suffix('"')?;
+        (!inner.contains('"')).then(|| {
+            inner
+                .replace("\\\n", "")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
     }
 
     /// A checkout's stamp read for the first time is only remembered; one

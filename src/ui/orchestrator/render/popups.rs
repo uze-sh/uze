@@ -749,6 +749,11 @@ pub(super) fn status_notification(
         return None;
     }
     let (symbol, hue) = task_tone(state)?;
+    // In review, the request's own number is the whole of it: `#259` says
+    // a request is open, and a mark beside it only repeats that.
+    if *state == WorkStateView::InReview {
+        return Some((delivery_subject(task), hue));
+    }
     let standing = match state {
         // The one state `task_tone` cannot lend its glyph to. Its mark is
         // the vocabulary's "there is work to hand over", and the patched

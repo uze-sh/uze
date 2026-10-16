@@ -87,3 +87,23 @@
 - decided:  ready work is always an action; a click runs the deliver key's action; the hint stays `deliver <chord>`. Every bold status now does something on a click, and every muted one nothing.
 - rejected: keeping the click inert — a status drawn under a hint naming an action, that does not take it, is the unpredictable click this change set out to remove.
 - blast:    a stray click delivers; `push` writes only the agent's branch, `merge` only the local target, and "deliver all" stays on its key.
+
+## D10 — The target's pull count pulls
+
+- status:   accepted
+- task:     8.4
+- commit:
+- trigger:  by hand, the operator expected the `↓9` beside the change count to pull, as an editor's sync count does; it only reported.
+- decided:  a click runs `landing::pull_target`, the clock's own fast-forward without its one restraint (never moving a target the operator stands on), since the operator asked. Diverged, unpublished or blocked by uncommitted changes, it is refused with the reason in a toast. The push count stays a report: a push from the operator's checkout is theirs, outside what UZE delivers.
+- rejected: a merge or rebase pull — a click that can rewrite or merge the operator's own commits is not a click.
+- blast:    none beyond the operator's own target moving forward, which is what they asked for.
+
+## D10 — The target's pull count pulls
+
+- status:   accepted
+- task:     8.4
+- commit:
+- trigger:  by hand, the operator expected the `↓9` beside the change count to pull, as an editor's sync count does; it only reported.
+- decided:  a click runs `landing::pull_target`, the clock's own fast-forward without its one restraint (never moving a target the operator stands on), since the operator asked. Diverged, unpublished or blocked by uncommitted changes, it is refused with the reason in a toast. The push count stays a report.
+- rejected: a merge or rebase pull — a click that can merge or rewrite the operator's own commits is not a click.
+- blast:    the operator's own target moves forward when they ask.

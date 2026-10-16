@@ -10,8 +10,8 @@ pub use application::services::{
     AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView, CheckoutsView,
     CommandsAwaitingApproval, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
     DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork,
-    ProjectArtifacts, Reconciliation, ReleasedTask, RequestQuestion, ShownCommand, SplitWork,
-    SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
+    ProjectArtifacts, PullReport, Reconciliation, ReleasedTask, RequestQuestion, ShownCommand,
+    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
     project_artifacts,
 };
 

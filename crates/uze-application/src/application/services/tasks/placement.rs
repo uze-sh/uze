@@ -112,6 +112,35 @@ impl Workspace<'_> {
         })
     }
 
+    /// Pulls the project's target into the checkout `cwd` belongs to, as
+    /// the operator asked: fetched, then fast-forwarded and never anything
+    /// else, through Git's own merge where they stand on it, so an
+    /// uncommitted change in the way is refused rather than overwritten.
+    #[tracing::instrument(name = "workspace.pull_target", skip_all, fields(cwd = %cwd.display()))]
+    pub fn pull_target(&self, cwd: &Path) -> Option<PullReport> {
+        let (primary, policy) = self.repository_context(cwd).ok().flatten()?;
+        let target = declared_target(&primary, &policy)?;
+        let pulled = match landing::pull_target(&primary, &target) {
+            landing::TargetSync::FastForwarded { commits } => {
+                if let Ok(store) = task::load(&self.0.home, &primary) {
+                    checkout::slots(&primary, &store, &checkout::Presence::observe());
+                }
+                Ok(commits)
+            }
+            landing::TargetSync::Current => Ok(0),
+            landing::TargetSync::Unpublished => Err(format!("{target} is not on the remote")),
+            landing::TargetSync::Diverged { .. } => {
+                Err(format!("{target} has commits the remote lacks"))
+            }
+            landing::TargetSync::Stalled { reason, .. } => Err(in_the_way(&reason)),
+        };
+        Some(PullReport {
+            project: primary,
+            target,
+            pulled,
+        })
+    }
+
     pub(super) fn place_in_slot(
         &self,
         pane_cwd: &Path,
@@ -641,4 +670,23 @@ fn resume_children(
         child.state = WorkState::Running;
     }
     Ok(restored)
+}
+
+/// Git's refusal to fast-forward over uncommitted changes, said as the
+/// files in the way: its own message is a paragraph whose first line is
+/// all a toast has room for, and that line names none of them. Any other
+/// reason is passed on as it is.
+pub(super) fn in_the_way(reason: &str) -> String {
+    if !reason.contains("would be overwritten") {
+        return reason.to_owned();
+    }
+    let files: Vec<&str> = reason
+        .lines()
+        .filter(|line| line.starts_with('\t'))
+        .map(str::trim)
+        .collect();
+    if files.is_empty() {
+        return reason.to_owned();
+    }
+    format!("uncommitted: {}", files.join(", "))
 }

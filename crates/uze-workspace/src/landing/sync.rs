@@ -31,11 +31,7 @@ impl TargetSync {
     pub fn concern(&self, target: &str) -> Option<String> {
         match self {
             Self::Diverged { behind } => {
-                let plural = if *behind == 1 { "" } else { "s" };
-                Some(format!(
-                    "`{target}` carries commits `{REMOTE}` does not and is {behind} \
-                     commit{plural} behind it. New agents start from the local tip."
-                ))
+                Some(format!("{target} {behind} behind {REMOTE}, has its own"))
             }
             _ => None,
         }
@@ -61,6 +57,27 @@ impl TargetSync {
 /// primary checkout has local modifications in the way.
 #[tracing::instrument(name = "landing.sync_target", level = "debug", skip_all, fields(%target))]
 pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
+    sync_target_when(primary, target, Asked::ByTheClock)
+}
+
+/// [`sync_target`] asked for by the operator: the same fast-forward, and
+/// the one it moves a target the operator stands on, through Git's own
+/// merge, which refuses rather than overwrite anything uncommitted in the
+/// way. A pull is theirs to ask for; the clock never moves files under
+/// their editor.
+#[tracing::instrument(name = "landing.pull_target", level = "debug", skip_all, fields(%target))]
+pub fn pull_target(primary: &Path, target: &str) -> TargetSync {
+    sync_target_when(primary, target, Asked::ByTheOperator)
+}
+
+/// Who asked for a sync, which decides whether a checked-out target moves.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Asked {
+    ByTheClock,
+    ByTheOperator,
+}
+
+fn sync_target_when(primary: &Path, target: &str, asked: Asked) -> TargetSync {
     if !has_remote(primary) {
         return TargetSync::Unpublished;
     }
@@ -76,7 +93,7 @@ pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
         return TargetSync::Stalled { behind: 0, reason };
     }
     uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        sync_target_locked(primary, target, &fetched)
+        sync_target_locked(primary, target, &fetched, asked)
     })
     .unwrap_or_else(|error| TargetSync::Stalled {
         behind: 0,
@@ -84,7 +101,7 @@ pub fn sync_target(primary: &Path, target: &str) -> TargetSync {
     })
 }
 
-pub(super) fn sync_target_locked(primary: &Path, target: &str, fetched: &str) -> TargetSync {
+fn sync_target_locked(primary: &Path, target: &str, fetched: &str, asked: Asked) -> TargetSync {
     let tracking = format!("refs/remotes/{REMOTE}/{target}");
     let private = format!("{}{fetched}", uze_git::PRIVATE_REFS);
     if let Err(reason) = git(primary, &["update-ref", &tracking, &private]) {
@@ -114,7 +131,7 @@ pub(super) fn sync_target_locked(primary: &Path, target: &str, fetched: &str) ->
     // under their editor on a clock, with no gesture of theirs behind it.
     // Their checkout already says what a pull would bring; the sync only
     // moves a target nobody has checked out there.
-    if checkout::current_branch(primary).as_deref() == Some(target) {
+    if asked == Asked::ByTheClock && checkout::current_branch(primary).as_deref() == Some(target) {
         return TargetSync::Stalled {
             behind,
             reason: "it is checked out in the primary checkout, where a pull moves it".to_owned(),

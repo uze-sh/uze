@@ -2268,7 +2268,7 @@ mod synced_target {
             world
                 .last_sync_concern
                 .as_deref()
-                .is_some_and(|concern| concern.contains("`main`")),
+                .is_some_and(|concern| concern.contains("main")),
             "{:?}",
             world.last_sync_concern
         );

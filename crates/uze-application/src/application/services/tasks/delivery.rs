@@ -138,7 +138,7 @@ impl Workspace<'_> {
                     primary,
                     policy,
                     task_id,
-                    format!("the delivery could not start: {error}"),
+                    format!("could not start: {error}"),
                 );
             }
         };
@@ -200,12 +200,7 @@ impl Workspace<'_> {
                     .then_some(child.label.as_str())
             })
             .collect();
-        (!waiting.is_empty()).then(|| {
-            format!(
-                "its subagents hold work not joined yet ({}); join them first",
-                waiting.join(", ")
-            )
-        })
+        (!waiting.is_empty()).then(|| format!("unjoined subagents: {}", waiting.join(", ")))
     }
 
     /// The report for a delivery that never started: the task as the
@@ -244,7 +239,7 @@ impl Workspace<'_> {
 /// Why a project with no `delivery:` delivers nothing: there is nowhere it
 /// said the work should go.
 pub(super) fn undeclared_delivery() -> String {
-    "this project declares no delivery; set `workspace.delivery` to merge or push".to_owned()
+    "no `delivery:` in agents.yaml".to_owned()
 }
 
 /// What a delivery that landed but could not be written down leaves the

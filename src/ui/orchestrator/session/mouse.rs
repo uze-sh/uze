@@ -1388,6 +1388,7 @@ impl Attach<'_> {
                 }
             }
             WorkspaceHit::StatusReport(_) => {}
+            WorkspaceHit::PullTarget => self.pull_target(),
             WorkspaceHit::ToggleSpaceCollapsed(space) => {
                 toggle_space_collapsed(&mut self.model, space);
             }

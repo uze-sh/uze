@@ -58,11 +58,8 @@ impl WorkspaceModel {
             if self.remembered.bypass_reported.insert(pane) {
                 self.raise_toast(
                     ToastKind::Warned,
-                    format!("{harness} started without the workspace's launcher"),
-                    "something in this pane's shell put another copy first on PATH, so its \
-                     conversation will not resume after a restart and the project's own skills \
-                     may not reach it"
-                        .to_owned(),
+                    format!("{harness} skipped the launcher"),
+                    "another copy is first on PATH",
                     None,
                 );
             }

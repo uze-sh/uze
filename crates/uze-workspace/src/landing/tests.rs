@@ -641,6 +641,36 @@ fn a_target_the_operator_stands_on_is_left_for_their_pull() {
     );
 }
 
+/// The operator's pull moves the target they stand on, files and all,
+/// by fast-forward only, and refuses rather than overwrite an
+/// uncommitted change in the way.
+#[test]
+fn the_operators_pull_moves_the_target_they_stand_on() {
+    let (repository, other) = published("landing-pull");
+    let primary = repository.root();
+    let pushed = push_from(&repository, &other, "merged-by-someone-else.rs");
+    fs::write(primary.join("merged-by-someone-else.rs"), "mine, unsaved\n").unwrap();
+
+    let refused = pull_target(primary, TARGET);
+    assert!(
+        matches!(refused, TargetSync::Stalled { behind: 1, .. }),
+        "{refused:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(primary.join("merged-by-someone-else.rs")).unwrap(),
+        "mine, unsaved\n",
+        "an uncommitted file in the way is never overwritten"
+    );
+
+    fs::remove_file(primary.join("merged-by-someone-else.rs")).unwrap();
+    assert_eq!(
+        pull_target(primary, TARGET),
+        TargetSync::FastForwarded { commits: 1 }
+    );
+    assert_eq!(tip_of(primary, TARGET), pushed);
+    assert!(primary.join("merged-by-someone-else.rs").is_file());
+}
+
 /// Fast-forward only: an operator's unpushed commit is never rewound,
 /// reordered or merged into, and the placement says so instead.
 #[test]

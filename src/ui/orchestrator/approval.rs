@@ -50,17 +50,14 @@ impl WorkspaceModel {
             return;
         }
         let title = if changed {
-            "agents.yaml's commands changed"
+            "commands changed"
         } else {
-            "agents.yaml asks to run commands"
+            "commands to approve"
         };
         self.raise_toast(
             ToastKind::Warned,
             title,
-            format!(
-                "{}: its {steps} wait for your approval before they run",
-                project_name(&project)
-            ),
+            format!("{}: {steps}", project_name(&project)),
             Some(("Review".to_owned(), WorkspaceHit::ReviewCommands)),
         );
     }
@@ -101,12 +98,7 @@ impl WorkspaceModel {
         let project = project_name(&resolution.project);
         match resolution.outcome {
             Ok(warnings) => match warnings.first() {
-                None => self.raise_toast(
-                    ToastKind::Done,
-                    "commands approved",
-                    format!("{project}: its commands run from now on"),
-                    None,
-                ),
+                None => self.raise_toast(ToastKind::Done, "commands approved", project, None),
                 Some(warning) => self.raise_toast(
                     ToastKind::Warned,
                     "commands approved",
@@ -116,7 +108,7 @@ impl WorkspaceModel {
             },
             Err(reason) => self.raise_toast(
                 ToastKind::Failed,
-                "the approval could not be recorded",
+                "approval not recorded",
                 format!("{project}: {reason}"),
                 None,
             ),

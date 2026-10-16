@@ -346,7 +346,7 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
         } => format!("synced {} #{request}", theme::glyph(Symbol::ArrowTo)),
         DeliveryOutcome::Published { request: None, .. } => "published".to_owned(),
         DeliveryOutcome::Refused(reason) => reason.clone(),
-        DeliveryOutcome::AwaitingApproval(_) => "the gate waits for your approval".to_owned(),
+        DeliveryOutcome::AwaitingApproval(_) => "gate awaits approval".to_owned(),
         DeliveryOutcome::Conflicted { .. } => "conflict".to_owned(),
         DeliveryOutcome::Failed { .. } => "checks failed".to_owned(),
     }
@@ -560,7 +560,7 @@ pub(crate) fn attach_workspace(
     if let Some(replaced) = replaced {
         model.raise_toast(
             ToastKind::Told,
-            "terminal runtime replaced",
+            "runtime replaced",
             replaced_detail(replaced),
             None,
         );
@@ -846,6 +846,10 @@ pub(super) enum WorkspaceHit {
     /// — same pattern [`WorkspaceHit::PickAgent`] uses for the agent
     /// picker.
     PickSpaceRoot(usize),
+    /// The tab strip's count of what the focused checkout's upstream has
+    /// that it lacks: pulls the target, by fast-forward only. Drawn only
+    /// on the target, where the count is.
+    PullTarget,
     /// The tab strip's right-corner button — opens the Git extension's
     /// changes of the active tab's checkout — the code surface
     /// (`WorkspaceModel::code`), opened on its diff.
@@ -1403,6 +1407,8 @@ struct Channels {
     policy_regions: Answers<PolicyRegionResolution>,
     /// Bringing each project's target in line with its remote.
     target_syncs: Answers<TargetSyncReport>,
+    /// Pulling the target the operator asked for.
+    pulls: Answers<PullResolution>,
     /// What each checkout on screen last recorded, polled on
     /// [`CHECKOUT_WATCH`].
     checkout_stamps: Answers<StampResolution>,
@@ -1541,6 +1547,8 @@ struct Remembered {
     checkout_stamps: BTreeMap<PathBuf, u64>,
     last_checkout_watch: Option<Instant>,
     checkout_watch_pending: bool,
+    /// A pull the operator asked for is running.
+    pull_pending: bool,
     /// The count [`WorkspaceModel::schedule_evaluation`] numbers each
     /// evaluation with, and the newest absorbed per key: an evaluation's
     /// remote half is applied only when no later one has been.
@@ -2429,9 +2437,9 @@ fn runtime_error(error: uze_terminal::RuntimeError) -> UzeError {
 /// every agent in them was relaunched rather than kept.
 fn replaced_detail(replaced: Replaced) -> &'static str {
     match replaced {
-        Replaced::AnotherProtocol => "another release's server ended; agents restarted",
-        Replaced::Unreachable => "an unreachable server ended; agents restarted",
-        Replaced::Orphaned => "a server of a deleted workspace ended",
+        Replaced::AnotherProtocol => "older release; agents restarted",
+        Replaced::Unreachable => "it stopped; agents restarted",
+        Replaced::Orphaned => "its workspace was deleted",
     }
 }
 

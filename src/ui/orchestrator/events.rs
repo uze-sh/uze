@@ -41,8 +41,14 @@ impl WorkspaceModel {
                 // every space disappear with nothing said anywhere.
                 self.raise_toast(
                     ToastKind::Warned,
-                    format!("kept at {}", kept_at.display()),
-                    "the workspace could not be opened".to_owned(),
+                    "workspace set aside",
+                    format!(
+                        "kept as {}",
+                        kept_at.file_name().map_or_else(
+                            || kept_at.display().to_string(),
+                            |name| { name.to_string_lossy().into_owned() }
+                        )
+                    ),
                     None,
                 );
                 tracing::warn!(%reason, kept_at = %kept_at.display(), "the workspace was set aside");

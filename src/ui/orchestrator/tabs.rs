@@ -652,7 +652,7 @@ pub(super) fn deliver_selected_tab(
         model.raise_toast(
             ToastKind::Told,
             "no task on this tab",
-            "nothing here has work to deliver",
+            "nothing here to deliver",
             None,
         );
         return;
@@ -664,8 +664,8 @@ pub(super) fn deliver_selected_tab(
     if !task.isolated {
         model.raise_toast(
             ToastKind::Told,
-            "this branch is yours, not UZE's",
-            "move the agent to a worktree to have UZE deliver its work",
+            "your branch, not UZE's",
+            "move the agent to a worktree",
             None,
         );
         return;

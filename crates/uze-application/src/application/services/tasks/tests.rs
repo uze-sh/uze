@@ -2010,7 +2010,7 @@ mod task_service_tests {
 
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert!(
-            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no delivery")),
+            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no `delivery:`")),
             "{:?}",
             report.outcome
         );
@@ -2037,7 +2037,7 @@ mod task_service_tests {
         // go, so the press is refused and nothing moves.
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert!(
-            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no delivery")),
+            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no `delivery:`")),
             "{:?}",
             report.outcome
         );
@@ -3518,4 +3518,16 @@ mod derived_naming_tests {
                 .starts_with("agent/")
         );
     }
+}
+
+/// A pull Git refused over uncommitted changes names the files in the way
+/// rather than the first line of Git's paragraph, which names none.
+#[test]
+fn a_refused_pull_names_the_files_in_the_way() {
+    let git = "error: Your local changes to the following files would be overwritten by merge:\n\tAGENTS.md\n\tagents.yaml\nPlease commit your changes or stash them before you merge.\nAborting";
+    assert_eq!(
+        super::placement::in_the_way(git),
+        "uncommitted: AGENTS.md, agents.yaml"
+    );
+    assert_eq!(super::placement::in_the_way("no remote"), "no remote");
 }

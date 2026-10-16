@@ -191,8 +191,7 @@ impl<'de> Deserialize<'de> for DeclaredArtifacts {
 /// named, and the rest of the project still reads. Failing on it would
 /// empty every agent's row over a typo in what a click sends.
 pub fn actions(root: &Path) -> Result<DeclaredActions> {
-    let path = manifest::manifest_path_for(root);
-    Ok(read(root)?.actions(&path))
+    Ok(read(root)?.actions())
 }
 
 /// What is asked at each moment in `root`: see
@@ -247,35 +246,27 @@ impl WorkspaceSection {
             .map_err(|error| malformed(path, format!("workspace: {error}")))
     }
 
-    fn actions(&self, path: &Path) -> DeclaredActions {
+    fn actions(&self) -> DeclaredActions {
         let Some(value) = self.0.as_ref().and_then(|section| section.get(ACTIONS)) else {
             return DeclaredActions::default();
         };
         let mut declared = DeclaredActions::default();
         let Some(entries) = value.as_object() else {
-            declared.ignored.push(format!(
-                "`workspace.{ACTIONS}` in {} holds keys, not a value",
-                path.display()
-            ));
+            declared.ignored.push(format!("`{ACTIONS}` must hold keys"));
             return declared;
         };
         for (key, value) in entries {
             let Some(state) = ActionState::from_key(key) else {
-                let accepted: Vec<&str> =
-                    ActionState::ALL.iter().map(|state| state.key()).collect();
-                declared.ignored.push(format!(
-                    "`workspace.{ACTIONS}.{key}` is not a state; the states are {}",
-                    accepted.join(", ")
-                ));
+                declared.ignored.push(format!("unknown action `{key}`"));
                 continue;
             };
             match value.as_str().map(str::trim) {
                 Some(text) if !text.is_empty() => {
                     declared.instructions.insert(state, text.to_owned());
                 }
-                _ => declared.ignored.push(format!(
-                    "`workspace.{ACTIONS}.{key}` is not a line of text to send"
-                )),
+                _ => declared
+                    .ignored
+                    .push(format!("`{key}` is not one line of text")),
             }
         }
         declared
@@ -695,8 +686,8 @@ mod tests {
             declared
                 .ignored
                 .iter()
-                .any(|reason| reason.contains("on_redy") && reason.contains("on_change")),
-            "names the key and the states it could have been: {:?}",
+                .any(|reason| reason.contains("on_redy")),
+            "names the key: {:?}",
             declared.ignored
         );
         assert!(

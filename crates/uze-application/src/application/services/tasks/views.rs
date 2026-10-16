@@ -536,6 +536,15 @@ pub struct TargetSyncReport {
     pub concern: Option<String>,
 }
 
+/// What pulling a project's target did: how many commits it brought, or
+/// why it brought none.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PullReport {
+    pub project: PathBuf,
+    pub target: String,
+    pub pulled: std::result::Result<usize, String>,
+}
+
 /// Where an agent starts, and the record its launch carries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentPlacement {

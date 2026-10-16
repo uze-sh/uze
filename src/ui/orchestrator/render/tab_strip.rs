@@ -96,6 +96,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // belongs to the zone on its left and goes when that zone does, so
     // the strip never draws a divider with nothing on one side of it.
     let mut trailing_right = inner.right();
+    let mut surfaces_left: Option<u16> = None;
     // Outside every zone, on the strip's own edge: it is not about this
     // checkout the way the other three are, and the one thing at the end
     // of a row is the one thing nothing else can push around. No fill —
@@ -202,6 +203,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             hits.extend(group_hits);
             frame.render_widget(Paragraph::new(Line::from(spans)), rect);
             trailing_right = ZoneEdge::Filled.left_of(rect.x);
+            surfaces_left = Some(rect.x);
         }
     }
 
@@ -226,19 +228,24 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // mode switch away inside the surface `code` opens.
     //
     // What the checkout owes its upstream shares the zone, left of the
-    // counts: it is the same checkout's git state, and only a report —
-    // the pull and the push are the operator's to run.
+    // counts: it is the same checkout's git state. What a pull would bring
+    // is the pull itself, as an editor's sync count is; what a push would
+    // send is only reported.
     let summary = model
         .remembered
         .git_badge
         .as_ref()
         .and_then(|badge| badge.summary);
-    let sync = model
+    let upstream = model
         .focused_cwd()
-        .map(|cwd| sync_counts(model, &cwd))
-        .unwrap_or_default();
-    if summary.is_some() || !sync.is_empty() {
-        trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Bare);
+        .and_then(|cwd| upstream_sync(model, &cwd));
+    // No hairline against the surfaces: their group stands on a ground of
+    // its own, and a rule beside a filled edge says it again. The counts'
+    // own inset is the air between them.
+    if (summary.is_some() || upstream.is_some())
+        && let Some(edge) = surfaces_left
+    {
+        trailing_right = edge;
     }
     if let Some(summary) = summary {
         let hit = WorkspaceHit::OpenChanges;
@@ -272,19 +279,55 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             rect,
         );
         hits.push((rect, hit));
-        trailing_right = if sync.is_empty() {
+        trailing_right = if upstream.is_none() {
             ZoneEdge::Bare.left_of(rect.x)
         } else {
             rect.x
         };
     }
-    if !sync.is_empty() {
-        // The changes' own inset already stands between the two readings.
-        let trailing = if summary.is_some() { "" } else { " " };
-        let line = Line::from([vec![Span::raw(" ")], sync, vec![Span::raw(trailing)]].concat());
+    if let Some(upstream) = upstream {
+        let pulling = model.remembered.pull_pending;
+        let pull_hue = if model.hovered == Some(WorkspaceHit::PullTarget) && !pulling {
+            theme::lifted(Token::StateDanger)
+        } else {
+            theme::color(Token::StateDanger)
+        };
+        let count = |arrow: Symbol, count: usize, style: Style| {
+            (count > 0).then(|| Span::styled(format!("{}{count}", theme::glyph(arrow)), style))
+        };
+        let pull = count(
+            Symbol::SyncBehind,
+            upstream.pull,
+            Style::default().fg(pull_hue),
+        );
+        let push = count(
+            Symbol::SyncAhead,
+            upstream.push,
+            theme::fg(Token::StateSuccess),
+        );
+        let pull_width = pull.as_ref().map_or(0, |span| span.width() as u16);
+        let sync: Vec<Span> = pull.into_iter().chain(push).collect();
+        // Two readings of numbers side by side (`↓9 +17 -7`) read as one,
+        // so a separator stands between them; the changes' own inset is
+        // the space after it.
+        let trailing = if summary.is_some() {
+            Span::styled(
+                theme::glyph(Symbol::HintSeparator).trim_end().to_owned(),
+                theme::fg(Token::TextFaint),
+            )
+        } else {
+            Span::raw(" ")
+        };
+        let line = Line::from([vec![Span::raw(" ")], sync, vec![trailing]].concat());
         let width = line.width() as u16;
         let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
         frame.render_widget(Paragraph::new(line), rect);
+        if pull_width > 0 && !pulling {
+            hits.push((
+                Rect::new(rect.x + 1, rect.y, pull_width, 1),
+                WorkspaceHit::PullTarget,
+            ));
+        }
         trailing_right = ZoneEdge::Bare.left_of(rect.x);
     }
 
@@ -739,6 +782,13 @@ const STATUS_HINT_WIDTH: usize = 30;
 fn status_hint(model: &WorkspaceModel) -> Option<String> {
     let tab = match model.hovered? {
         WorkspaceHit::StatusAction(tab) | WorkspaceHit::StatusReport(tab) => tab,
+        WorkspaceHit::PullTarget => {
+            let pull = model
+                .focused_cwd()
+                .and_then(|cwd| model.remembered.upstream_syncs.get(&evaluation_key(&cwd)))?
+                .pull;
+            return Some(format!("pull {pull} · fast-forward"));
+        }
         _ => return None,
     };
     let task = model.tab_task(tab)?;
@@ -781,11 +831,12 @@ fn render_status_hint(
             text::elide(hint, STATUS_HINT_WIDTH),
             theme::fg(Token::TextSecondary),
         ),
+        // A dot, not the zones' hairline: the hint is about the status
+        // beside it, and a hairline would set it apart as a zone of its
+        // own, one more vertical rule in a row already divided by them.
         Span::raw(" "),
-        Span::styled(
-            theme::glyph(Symbol::TreeColumnDivider),
-            theme::fg(Token::TextFaint),
-        ),
+        Span::styled(theme::glyph(Symbol::MarkDot), theme::fg(Token::TextFaint)),
+        Span::raw(" "),
     ]);
     let width = line.width() as u16;
     let room = actions_left.saturating_sub(inner.x);

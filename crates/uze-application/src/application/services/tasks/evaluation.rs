@@ -109,10 +109,11 @@ impl Workspace<'_> {
             ignored_actions,
             unreadable: None,
             recovered: recovery.set_aside.map(|set_aside| {
-                format!(
-                    "the agents recorded here could not be read — set aside at {}",
-                    set_aside.path.display()
-                )
+                let kept = set_aside.path.file_name().map_or_else(
+                    || set_aside.path.display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                format!("unreadable record kept as {kept}")
             }),
             requests: RequestQuestion {
                 asked: ask_the_remote,

@@ -622,10 +622,7 @@ impl Attach<'_> {
 fn unfinished_detail(labels: &[&str]) -> Option<String> {
     match labels {
         [] => None,
-        [only] => Some(format!("{only} is unfinished — find it in recent, alt+p")),
-        many => Some(format!(
-            "{} agents are unfinished — find them in recent, alt+p",
-            many.len()
-        )),
+        [only] => Some(format!("{only} · in recent, alt+p")),
+        many => Some(format!("{} agents · in recent, alt+p", many.len())),
     }
 }

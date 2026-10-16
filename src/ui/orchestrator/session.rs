@@ -223,8 +223,8 @@ impl Attach<'_> {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.model.raise_toast(
                         ToastKind::Failed,
-                        "terminal runtime disconnected",
-                        "the client is leaving rather than waiting on a dead socket",
+                        "runtime disconnected",
+                        "leaving rather than waiting",
                         None,
                     );
                     self.model.dirty = true;
@@ -303,6 +303,7 @@ impl Attach<'_> {
         self.absorb_joins();
         self.absorb_labels();
         self.absorb_checkout_stamps();
+        self.absorb_pulls();
         self.absorb_task_evaluations();
         self.absorb_deliveries();
         self.absorb_task_mutations();
