@@ -90,12 +90,39 @@ fn resolve(base: &Path, written: &str) -> PathBuf {
 /// path outside every slot costs nothing; a slot with no `.git` at all is
 /// not refused, since Git walks up from it to the project's own.
 pub fn guard(root: &Path) -> Result<(), String> {
+    anchor_of(root).map(|_| ())
+}
+
+/// A slot and the administrative directory its repository registered for
+/// it, which Git is handed rather than left to find from the slot's own
+/// `.git`.
+pub(crate) struct Anchor {
+    pub(crate) work_tree: PathBuf,
+    pub(crate) git_dir: PathBuf,
+}
+
+impl Anchor {
+    pub(crate) fn pinned(&self) -> uze_git::Pinned<'_> {
+        uze_git::Pinned {
+            work_tree: &self.work_tree,
+            git_dir: &self.git_dir,
+        }
+    }
+}
+
+/// [`guard`], answering with the anchor Git is to run against: `None` where
+/// Git may find its repository on its own.
+pub(crate) fn anchor_of(root: &Path) -> Result<Option<Anchor>, String> {
     let Some(checkout) = crate::worktree::isolated_checkout(root) else {
-        return Ok(());
+        return Ok(None);
     };
     let directory = checkout.directory();
     if std::fs::symlink_metadata(directory.join(".git")).is_err() {
-        return Ok(());
+        return Ok(None);
     }
-    anchored(checkout.primary, &directory)
+    let git_dir = admin_dir(checkout.primary, &directory)?;
+    Ok(Some(Anchor {
+        work_tree: directory,
+        git_dir,
+    }))
 }
