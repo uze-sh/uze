@@ -48,6 +48,52 @@ impl fmt::Display for SessionId {
     }
 }
 
+/// What a harness's own records say a conversation was about, in terms no
+/// vendor owns: read by the integration that wrote the transcript, written
+/// into a briefing by the workspace. Every field is optional, and so is the
+/// whole: a transcript UZE cannot read is a briefing made from Git alone.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ConversationDigest {
+    /// The operator's first turn, which is what the work is for.
+    pub goal: Option<String>,
+    /// The harness's own latest compaction summary, when it wrote one.
+    /// Turns it already covers are not repeated in `turns`.
+    pub summary: Option<String>,
+    /// Operator turns and the agent's own text, oldest first, without tool
+    /// output, reasoning or subagent turns.
+    pub turns: Vec<Turn>,
+    /// The last command the agent ran.
+    pub last_command: Option<LastCommand>,
+    /// A usage limit the harness recorded hitting, still in force.
+    pub limit: Option<UsageLimit>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Turn {
+    pub speaker: Speaker,
+    pub text: String,
+    /// When it was said, where the transcript records it.
+    pub at_unix: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Speaker {
+    Operator,
+    Agent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LastCommand {
+    pub line: String,
+    /// `None` where the transcript does not say how it ended.
+    pub failed: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UsageLimit {
+    pub resets_at_unix: Option<u64>,
+}
+
 fn random_bytes() -> [u8; 16] {
     let mut bytes = [0u8; 16];
     if let Ok(mut source) = fs::File::open("/dev/urandom")

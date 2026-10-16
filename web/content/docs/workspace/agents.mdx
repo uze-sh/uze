@@ -60,6 +60,28 @@ agents it launches. To stop, remove the values again; the workspace takes
 the section back the next time it runs. The agents themselves carry the part
 no harness does for them with the `uze:worktree` skill.
 
+## Continuing in another harness
+
+When a harness stops being able to work, for example because it hit its
+usage limit, right-click the agent and pick **Continue in Codex** (or any
+other harness set up on this machine). The same agent carries on in the
+same directory, on the same branch, under the same name. A harness that
+stopped at its limit says so under the agent's name, with how long until it
+lifts, and its menu lists continuing elsewhere first. If the agent is in
+the middle of a turn, uze asks before interrupting it.
+
+The harness it leaves keeps its conversation. Switch back later and that
+harness picks up exactly where it was.
+
+The harness taking over cannot read another vendor's conversation, so uze
+writes it a briefing: what the agent was asked, what it said last, the last
+command it ran, its commits and its uncommitted files. Its first message
+points at that file, once; a restart does not repeat it. Switching back to
+a harness that ran before briefs it only on what happened since it left.
+The briefing stays out of your checkout and is readable by you alone.
+Claude Code and Codex conversations are read in full; from OpenCode and
+Antigravity CLI the briefing carries what Git says.
+
 ## Its work gets a name
 
 An agent in a worktree names its own branch as the first thing it does, like

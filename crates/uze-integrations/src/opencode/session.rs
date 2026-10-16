@@ -44,6 +44,12 @@ pub(super) fn new_id() -> SessionId {
     ))
 }
 
+/// The operator's first turn. Behind `--prompt`, which the TUI takes beside
+/// `--session <id>`.
+pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
+    vec![OsString::from("--prompt"), OsString::from(turn)]
+}
+
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
     vec![
         OsString::from(RESUME_FLAG),
@@ -214,5 +220,18 @@ mod tests {
     #[test]
     fn an_answer_that_is_not_a_listing_is_no_listing_at_all() {
         assert!(parse_listing(b"<!doctype html>").is_none());
+    }
+
+    #[test]
+    fn a_first_turn_rides_on_its_prompt_flag_beside_the_session() {
+        let session = SessionId::new("ses_1");
+        let line: Vec<OsString> = resume_args(&session)
+            .into_iter()
+            .chain(first_turn_args("carry on"))
+            .collect();
+        assert_eq!(
+            line,
+            ["--session", "ses_1", "--prompt", "carry on"].map(OsString::from)
+        );
     }
 }

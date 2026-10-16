@@ -9,6 +9,7 @@ use super::*;
 #[cfg(all(test, feature = "bench"))]
 mod perf;
 mod recent;
+mod switch;
 
 mod workspace_tests {
     use crate::ui::theme::{self, Token};
@@ -626,6 +627,14 @@ mod workspace_tests {
     /// The whole frame as text, row by row — for asserting not just that
     /// something was drawn, but where.
     fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
+        frame_rows_with(model, &identities_fixture())
+    }
+
+    /// [`frame_rows`] for a machine with `identities`' harnesses.
+    pub(super) fn frame_rows_with(
+        model: &mut WorkspaceModel,
+        identities: &[AgentIdentity],
+    ) -> Vec<String> {
         let area = Rect::new(0, 0, 80, 24);
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
         terminal
@@ -633,7 +642,7 @@ mod workspace_tests {
                 render::render(
                     frame,
                     model,
-                    &identities_fixture(),
+                    identities,
                     &mut Vec::new(),
                     &mut render::FrameMetrics::default(),
                 )
@@ -3294,7 +3303,7 @@ mod workspace_tests {
     /// A space with two agents in its root, one per harness: `agent 1` running
     /// `claude` (the space's context agent, selected) and `agent 2` running
     /// `codex`, both in the space's own root.
-    fn agents_in_the_root_session() -> WorkspaceModel {
+    pub(super) fn agents_in_the_root_session() -> WorkspaceModel {
         let mut session = session("/repo");
         let space = session.workspace.selected_space;
         let first = session.add_tab(space, "agent 1".into(), None, 80, 24, "/repo".into());

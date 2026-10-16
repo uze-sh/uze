@@ -2,7 +2,8 @@
 //!
 //! Where an agent works ([`checkout`], [`worktree`]), the record of it
 //! ([`task`]), the conversation it is in ([`conversation`]) and carrying that
-//! across a launch ([`continuity`]), how its finished work reaches the
+//! across a launch ([`continuity`]) or across a change of harness
+//! ([`briefing`]), how its finished work reaches the
 //! target ([`landing`]), what a project declares about all of that
 //! ([`declaration`]), and the workspace client's own state under `UzeHome`
 //! ([`client_layout`], [`prompt_history`], [`notifications`],
@@ -14,6 +15,7 @@
 //! and knows nothing of this one.
 
 pub mod approval;
+pub mod briefing;
 pub mod checkout;
 pub mod client_layout;
 pub mod continuity;

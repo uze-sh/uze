@@ -384,7 +384,9 @@ fn an_unfinished_agents_subagent_comes_back_with_it_and_is_joined() {
         "an unfinished agent keeps no checkout to join into"
     );
 
-    let resumed = workspace.resume_task(world.root(), &agent.0, &[]).unwrap();
+    let resumed = workspace
+        .resume_task(world.root(), &agent.0, "claude-code", &[])
+        .unwrap();
     let again = (
         agent.0.clone(),
         resumed.cwd.clone(),

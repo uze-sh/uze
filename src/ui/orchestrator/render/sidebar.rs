@@ -748,15 +748,20 @@ impl TreeCaption {
         // apart, and it cost a click to see. A row is only drawn for a
         // recognized harness (`agent_tabs_of`), so the pane's own process
         // is a fallback for a race, not a second answer.
+        //
+        // A harness that stopped at a usage limit says so beside its name,
+        // in the same warning hue as a lost checkout: it is the reason to
+        // continue the agent elsewhere, and its menu offers that first.
+        let limit = model.tab_usage_limit(tab);
+        let harness = agent.harness.unwrap_or(tab.pane.process.as_str());
         let detail = if lost {
             "checkout removed".to_owned()
+        } else if let Some(limit) = limit {
+            format!("{harness} · {}", limit_caption(limit))
         } else {
-            agent
-                .harness
-                .unwrap_or(tab.pane.process.as_str())
-                .to_owned()
+            harness.to_owned()
         };
-        let detail_color = if lost {
+        let detail_color = if lost || limit.is_some() {
             theme::color(Token::StateWarning)
         } else {
             caption_color(agent.is_current)
@@ -767,6 +772,22 @@ impl TreeCaption {
             detail,
             detail_color,
         }
+    }
+}
+
+/// `limit 3h`: how long until a usage limit lifts, in its largest whole
+/// unit, or only that there is one when the harness did not say. Short,
+/// because it shares the caption row with the harness's name.
+fn limit_caption(limit: uze_application::UsageLimit) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    match limit.resets_at_unix.map(|at| at.saturating_sub(now)) {
+        None => "limit".to_owned(),
+        Some(seconds) if seconds < 60 => "limit <1m".to_owned(),
+        Some(seconds) if seconds < 3_600 => format!("limit {}m", seconds / 60),
+        Some(seconds) if seconds < 86_400 => format!("limit {}h", seconds / 3_600),
+        Some(seconds) => format!("limit {}d", seconds / 86_400),
     }
 }
 

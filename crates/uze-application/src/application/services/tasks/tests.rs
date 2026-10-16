@@ -903,7 +903,10 @@ mod placement_tests {
         assert_eq!(task.checkout, None, "the directory is gone");
         assert_eq!(task.state, WorkStateView::Shelved);
 
-        let resumed = app.workspace().resume_task(&root, &task_id, &[]).unwrap();
+        let resumed = app
+            .workspace()
+            .resume_task(&root, &task_id, "claude-code", &[])
+            .unwrap();
         assert!(resumed.cwd.join("kept.rs").is_file(), "the commit is back");
         assert!(matches!(
             &resumed.placement,
@@ -1161,7 +1164,9 @@ mod task_service_tests {
             "and they say the project is gone, which is all forgetting it asks"
         );
 
-        let refusal = app.workspace().resume_task(&project, &id, &[]);
+        let refusal = app
+            .workspace()
+            .resume_task(&project, &id, "claude-code", &[]);
         assert!(
             refusal.is_err(),
             "a resume with nowhere to go opens nothing"
@@ -1266,7 +1271,10 @@ mod task_service_tests {
         })
         .unwrap();
 
-        let placed = app.workspace().resume_task(&project, &id, &[]).unwrap();
+        let placed = app
+            .workspace()
+            .resume_task(&project, &id, "claude-code", &[])
+            .unwrap();
 
         assert_eq!(placed.cwd, canonical(&project));
         assert!(
@@ -1277,6 +1285,25 @@ mod task_service_tests {
             store.agent(&id).unwrap().is_live(),
             "a resumed agent is live again"
         );
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// The picker can resume an agent on a harness other than the one it
+    /// last ran; from then on that is the harness it runs, so the next
+    /// resume, the sidebar and a subagent it splits all name it.
+    #[test]
+    fn resuming_on_another_harness_records_that_harness() {
+        let app = application("resume-other-harness-home");
+        let project = uze_testkit::temp::scratch("resume-other-harness");
+        std::fs::create_dir_all(&project).unwrap();
+        let id = record_in_the_root(&app, &project);
+
+        app.workspace()
+            .resume_task(&project, &id, "codex", &[])
+            .unwrap();
+
+        let store = task::load(&app.home, &canonical(&project)).unwrap();
+        assert_eq!(store.agent(&id).unwrap().harness, "codex");
         let _ = std::fs::remove_dir_all(project);
     }
 
@@ -3191,7 +3218,10 @@ mod derived_naming_tests {
             })
             .unwrap();
 
-            let resumed = app.workspace().resume_task(&root, &placed.id, &[]).unwrap();
+            let resumed = app
+                .workspace()
+                .resume_task(&root, &placed.id, "claude-code", &[])
+                .unwrap();
 
             assert!(resumed.cwd.is_dir(), "{state:?}: it has a checkout again");
             assert_eq!(

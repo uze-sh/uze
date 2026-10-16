@@ -522,6 +522,17 @@ impl UzeHome {
         self.runtime_projects_dir().join(project_id)
     }
 
+    /// The briefing an agent that continues on another harness is pointed
+    /// at: what it was doing, read from the harness it left and from Git.
+    /// Generated, because deleting it costs at most one briefing nobody has
+    /// read yet, and the harness that read it keeps what it read in its own
+    /// transcript. One per agent, replaced by the next switch.
+    pub fn briefing_path(&self, project_id: &str, agent: &str) -> PathBuf {
+        self.runtime_project_dir(project_id)
+            .join("briefings")
+            .join(format!("{agent}.md"))
+    }
+
     /// Where a project-scoped runtime projection lives for one integration:
     /// a derived, rebuildable cache meant to persist and be safely shared by
     /// concurrent sessions on the same project — never torn down at session

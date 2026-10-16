@@ -11,6 +11,7 @@ C4Component
     Component(landing, "landing", "Rust module", "How finished work reaches the target: rebase, gate, completion", $link="crates/uze-workspace/src/landing.rs")
     Component(conversation, "conversation", "Rust module", "The conversation each agent is in, remembered for it", $link="crates/uze-workspace/src/conversation.rs")
     Component(continuity, "continuity", "Rust module", "What a launch carries over: resume or start", $link="crates/uze-workspace/src/continuity.rs")
+    Component(briefing, "briefing", "Rust module", "What an agent continuing on another harness is told about its work", $link="crates/uze-workspace/src/briefing.rs")
     Component(declaration, "declaration", "Rust module", "agents.yaml's worktrees and artifacts sections, read by their owner", $link="crates/uze-workspace/src/declaration.rs")
   }
   System_Ext(git, "Git", "The project's own history")
@@ -22,5 +23,8 @@ C4Component
   Rel(continuity, conversation, "Reads and records")
   Rel(declaration, core, "Reads its sections of the manifest")
   Rel(continuity, core, "Asks the harness through IntegrationPort")
+  Rel(app, briefing, "Writes one on a switch")
+  Rel(continuity, briefing, "Points the incoming launch at, once")
+  Rel(briefing, git, "Reads the work's commits", "uze-git")
   Rel(checkout, git, "Worktrees and branches", "uze-git")
   Rel(landing, git, "Rebases and pushes", "uze-git")

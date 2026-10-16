@@ -126,19 +126,71 @@ pub(super) struct ContextMenu {
     /// The right-clicked row's own rect — the popup anchors just under it,
     /// same placement rule [`AgentPicker::anchor`] uses.
     pub(super) anchor: Rect,
+    /// The harness each [`Action::SwitchHarness`] entry continues the agent
+    /// in, beside `items`; `None` for every other entry. One action, many
+    /// entries: the harnesses a machine has are not something a keymap can
+    /// name.
+    pub(super) choices: Vec<Option<HarnessChoice>>,
+}
+
+/// A harness an agent can continue in, as a menu entry offers it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct HarnessChoice {
+    pub(super) integration: String,
+    pub(super) display_name: String,
+    pub(super) continuity_gap: Option<String>,
+    /// Asked again already: the agent was mid-turn, and the operator has
+    /// said that interrupting it is what they want.
+    pub(super) interrupting: bool,
 }
 
 impl ContextMenu {
     /// A menu whose entries read as their actions' own labels.
     pub(super) fn new(target: MenuTarget, items: Vec<Action>, anchor: Rect) -> Self {
         let labels = items.iter().map(|action| action.label()).collect();
+        let choices = vec![None; items.len()];
         Self {
             target,
             items,
             labels,
             selected: 0,
             anchor,
+            choices,
         }
+    }
+
+    /// Inserts one "Continue in" entry per harness at `index`.
+    pub(super) fn offering_switches(mut self, index: usize, harnesses: Vec<HarnessChoice>) -> Self {
+        for (offset, choice) in harnesses.into_iter().enumerate() {
+            let at = index + offset;
+            self.items.insert(at, Action::SwitchHarness);
+            self.labels.insert(at, switch_label(&choice));
+            self.choices.insert(at, Some(choice));
+        }
+        self
+    }
+
+    /// The menu that asks before interrupting an agent mid-turn: its one
+    /// entry says what taking it does, and dismissing it does nothing.
+    pub(super) fn interrupting(target: MenuTarget, choice: HarnessChoice, anchor: Rect) -> Self {
+        let choice = HarnessChoice {
+            interrupting: true,
+            ..choice
+        };
+        Self {
+            target,
+            items: vec![Action::SwitchHarness],
+            labels: vec![switch_label(&choice)],
+            selected: 0,
+            anchor,
+            choices: vec![Some(choice)],
+        }
+    }
+
+    /// What activating entry `index` does, and the harness it names.
+    pub(super) fn entry(&self, index: usize) -> Option<(Action, Option<HarnessChoice>)> {
+        let action = *self.items.get(index)?;
+        Some((action, self.choices.get(index).cloned().flatten()))
     }
 
     /// A menu whose entries read as the target calls each action, the way
@@ -160,10 +212,19 @@ impl ContextMenu {
             .collect();
         Self {
             target,
+            choices: vec![None; offers.len()],
             items: offers.into_iter().map(|(action, _)| action).collect(),
             labels,
             selected: 0,
             anchor,
         }
+    }
+}
+
+fn switch_label(choice: &HarnessChoice) -> String {
+    if choice.interrupting {
+        format!("Interrupt it, continue in {}", choice.display_name)
+    } else {
+        format!("{} {}", Action::SwitchHarness.label(), choice.display_name)
     }
 }

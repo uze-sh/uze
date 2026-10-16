@@ -260,12 +260,20 @@ pub fn prepare_projection(
     integration: &str,
     canonical_project_root: &Path,
 ) -> Result<PathBuf> {
+    let projection = prepare_project_dir(home, canonical_project_root)?.join(integration);
+    create_dir(&projection)?;
+    Ok(projection)
+}
+
+/// Creates (or refreshes) the project's own runtime directory with its
+/// marker, for anything generated per project that is not an integration's
+/// projection — a briefing — and must outlive the sweep exactly as long as
+/// the root it was made for.
+pub fn prepare_project_dir(home: &UzeHome, canonical_project_root: &Path) -> Result<PathBuf> {
     let project_dir = home.runtime_project_dir(&project_id_for(canonical_project_root));
     create_dir(&project_dir)?;
     write_marker(&project_dir, canonical_project_root)?;
-    let projection = project_dir.join(integration);
-    create_dir(&projection)?;
-    Ok(projection)
+    Ok(project_dir)
 }
 
 /// The canonical project root a project's runtime directory records, when

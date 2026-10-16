@@ -606,6 +606,9 @@ mod tests {
                 // the cursor.
                 "isolate-agent",
                 "isolate-agent-at-commit",
+                // The same, and the menu is also what names the harness
+                // the agent continues in.
+                "switch-harness",
                 // The list of areas is one step left of the list of
                 // artifacts, which has the key: `o`, then the arrow. A
                 // letter of its own would be one of the four nobody could

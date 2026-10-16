@@ -50,6 +50,13 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// The usage limit `tab`'s agent stopped at, as the last refresh pass
+    /// read it.
+    pub(in crate::ui) fn tab_usage_limit(&self, tab: &Tab) -> Option<uze_application::UsageLimit> {
+        let agent = launched_agent_id(tab)?;
+        self.remembered.usage_limits.get(agent).copied()
+    }
+
     /// The task a tab is for: the one the launch named, once an evaluation
     /// lists it. Nothing stands in for it before that — a slot's previous
     /// occupant is not this agent's task, whatever the directory says.

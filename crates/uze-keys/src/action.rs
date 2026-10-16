@@ -216,6 +216,10 @@ actions! {
         "To worktree, no changes",
         "Move this agent into a worktree cut from the last commit; the \
          uncommitted changes stay here";
+    SwitchHarness => "switch-harness", false,
+        "Continue in",
+        "Relaunch this agent on another harness in the same checkout, \
+         briefed on what it was doing";
     NewSpace => "new-space", false,
         "New space", "Open a space at a directory";
     RenameSelection => "rename-selection", false,

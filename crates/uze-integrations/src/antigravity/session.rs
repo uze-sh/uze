@@ -25,6 +25,12 @@ use uze_core::{integration::ObservationContext, session::SessionId};
 
 const RESUME_FLAG: &str = "--conversation";
 
+/// The operator's first turn. Behind `-i` (`--prompt-interactive`): the
+/// plain prompt flag runs once and exits, and an agent is a session.
+pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
+    vec![OsString::from("-i"), OsString::from(turn)]
+}
+
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
     vec![
         OsString::from(RESUME_FLAG),
@@ -159,5 +165,18 @@ mod tests {
 
         assert!(exists(&root, &SessionId::new("kept")));
         assert!(!exists(&root, &SessionId::new("deleted")));
+    }
+
+    #[test]
+    fn a_first_turn_is_an_interactive_prompt_beside_the_conversation() {
+        let session = SessionId::new("conv-1");
+        let line: Vec<OsString> = resume_args(&session)
+            .into_iter()
+            .chain(first_turn_args("carry on"))
+            .collect();
+        assert_eq!(
+            line,
+            ["--conversation", "conv-1", "-i", "carry on"].map(OsString::from)
+        );
     }
 }

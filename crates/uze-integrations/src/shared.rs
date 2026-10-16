@@ -27,4 +27,5 @@ pub(crate) mod skill;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub(crate) mod toml_config;
+pub(crate) mod transcript;
 pub(crate) mod tree;

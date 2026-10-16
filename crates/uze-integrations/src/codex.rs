@@ -34,6 +34,7 @@ use uze_core::{
     store::StoredPackage,
 };
 
+mod digest;
 mod generate;
 mod hooks;
 mod mcp;
@@ -250,6 +251,30 @@ impl IntegrationPort for CodexIntegration {
         session: &uze_core::session::SessionId,
     ) -> Vec<std::ffi::OsString> {
         session::resume_args(session)
+    }
+
+    fn first_turn_args(&self, turn: &str) -> Vec<std::ffi::OsString> {
+        session::first_turn_args(turn)
+    }
+
+    fn conversation_digest(
+        &self,
+        session: &uze_core::session::SessionId,
+        _cwd: &Path,
+        since_unix: Option<u64>,
+    ) -> Option<uze_core::session::ConversationDigest> {
+        digest::read(
+            &session::rollout_of(&self.sessions_dir(), session)?,
+            since_unix,
+        )
+    }
+
+    fn usage_limit(
+        &self,
+        session: &uze_core::session::SessionId,
+        _cwd: &Path,
+    ) -> Option<uze_core::session::UsageLimit> {
+        digest::limit(&session::rollout_of(&self.sessions_dir(), session)?)
     }
 
     fn observe_session(

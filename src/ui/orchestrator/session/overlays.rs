@@ -304,9 +304,9 @@ impl Attach<'_> {
             }
             Action::Activate => {
                 if let Some(menu) = self.model.context_menu.take()
-                    && let Some(action) = menu.items.get(menu.selected).copied()
+                    && let Some((action, choice)) = menu.entry(menu.selected)
                 {
-                    self.perform_menu_action(menu.target, action);
+                    self.perform_menu_entry(menu.target, action, choice, menu.anchor);
                 }
             }
             // Anything else, dismissal included, closes without acting —

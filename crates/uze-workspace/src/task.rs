@@ -149,8 +149,10 @@ pub enum WorkState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Agent {
     pub id: AgentId,
-    /// The harness this agent runs, recorded at launch. A fact rather
-    /// than an inference: the process a pane is running answers "what is
+    /// The harness of this agent's latest launch, recorded by the placement
+    /// that keyed it — an agent continued on another harness runs that one
+    /// from then on, and every harness it ran is a key of its conversation
+    /// record. A fact rather than an inference: the process a pane is running answers "what is
     /// alive there now", which is a different question and stops being
     /// answerable the moment the harness exits.
     pub harness: String,

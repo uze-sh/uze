@@ -331,6 +331,7 @@ impl Attach<'_> {
         }
         self.absorb_surface_answers();
         self.absorb_policy_regions();
+        self.absorb_limits();
         self.absorb_target_syncs();
         self.absorb_unspelled_gates();
         self.absorb_command_approvals();

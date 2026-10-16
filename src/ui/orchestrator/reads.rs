@@ -84,7 +84,15 @@ pub(super) fn spawn_support_refresh(
 /// cleared, forked or switched inside the process is a different identifier
 /// in the harness's records, and the launch that recorded the previous one
 /// is long over.
-pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
+///
+/// The same pass asks every agent that is not working whether it stopped
+/// at a usage limit — the one answer that does come back, since the tab
+/// shows it — reading only the end of its conversation.
+pub(super) fn spawn_conversation_refresh(
+    home: &UzeHome,
+    agents: Vec<LaunchedAgent>,
+    sender: mpsc::Sender<LimitResolution>,
+) {
     if agents.is_empty() {
         return;
     }
@@ -95,17 +103,30 @@ pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAge
         let Ok(app) = tui_application(home) else {
             return;
         };
+        let mut limits = Vec::new();
         for agent in agents {
-            app.workspace().refresh_conversation(
-                &agent.integration,
-                uze_application::Claim {
-                    id: &agent.id,
-                    key: &agent.key,
-                    cwd: &agent.cwd,
-                },
-            );
+            let claim = uze_application::Claim {
+                id: &agent.id,
+                key: &agent.key,
+                cwd: &agent.cwd,
+            };
+            app.workspace()
+                .refresh_conversation(&agent.integration, claim);
+            if !agent.working {
+                limits.push((
+                    agent.id.clone(),
+                    app.workspace().usage_limit(&agent.integration, claim),
+                ));
+            }
         }
+        let _ = sender.send(LimitResolution { limits });
     });
+}
+
+/// The usage limit each agent asked about stopped at, or `None` for one
+/// that is not limited — which clears whatever the previous pass said.
+pub(super) struct LimitResolution {
+    pub(super) limits: Vec<(String, Option<uze_application::UsageLimit>)>,
 }
 
 /// What keeping one project's `AGENTS.md` in step found that the operator
@@ -323,6 +344,8 @@ pub(super) struct LaunchedAgent {
     /// The key the tab's launch carries, as the server echoes it.
     pub(super) key: String,
     pub(super) cwd: PathBuf,
+    /// Mid-turn: an agent producing output has not stopped at a limit.
+    pub(super) working: bool,
 }
 
 /// What a background evaluation answered.
@@ -822,6 +845,14 @@ pub(super) enum PlacementRequest {
     Resume {
         primary: PathBuf,
         task: String,
+        harness: String,
+    },
+    /// The agent continuing on another harness, where it already stands.
+    Switch {
+        from: PathBuf,
+        agent: String,
+        was: String,
+        to: String,
     },
 }
 
@@ -832,6 +863,7 @@ impl PlacementRequest {
             Self::New { .. } => "new",
             Self::Isolate { .. } => "isolate",
             Self::Resume { .. } => "resume",
+            Self::Switch { .. } => "switch",
         }
     }
 
@@ -841,7 +873,7 @@ impl PlacementRequest {
     /// worth having written down.
     pub(super) fn from(&self) -> &Path {
         match self {
-            Self::New { from, .. } | Self::Isolate { from, .. } => from,
+            Self::New { from, .. } | Self::Isolate { from, .. } | Self::Switch { from, .. } => from,
             Self::Resume { primary, .. } => primary,
         }
     }
@@ -898,8 +930,23 @@ pub(super) fn spawn_agent_placement(
                 PlacementRequest::Isolate { from, agent, carry } => tui_application(home)
                     .and_then(|app| app.workspace().isolate(&from, &agent, carry, &occupied))
                     .map_err(|error| error.to_string()),
-                PlacementRequest::Resume { primary, task } => tui_application(home)
-                    .and_then(|app| app.workspace().resume_task(&primary, &task, &occupied))
+                PlacementRequest::Switch {
+                    from,
+                    agent,
+                    was,
+                    to,
+                } => tui_application(home)
+                    .and_then(|app| app.workspace().switch_harness(&from, &agent, &was, &to))
+                    .map_err(|error| error.to_string()),
+                PlacementRequest::Resume {
+                    primary,
+                    task,
+                    harness,
+                } => tui_application(home)
+                    .and_then(|app| {
+                        app.workspace()
+                            .resume_task(&primary, &task, &harness, &occupied)
+                    })
                     .map_err(|error| error.to_string()),
             },
             Err("placing the agent failed".to_owned()),

@@ -346,6 +346,10 @@ impl IntegrationPort for AntigravityIntegration {
         session::resume_args(session)
     }
 
+    fn first_turn_args(&self, turn: &str) -> Vec<std::ffi::OsString> {
+        session::first_turn_args(turn)
+    }
+
     fn session_recorded_for(&self, cwd: &Path) -> Option<uze_core::session::SessionId> {
         session::recorded_for(&self.cli_root, cwd)
     }

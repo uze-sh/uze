@@ -6,9 +6,11 @@
 //!
 //! The identifier is read back from Codex's own rollout files, whose first
 //! line is a `session_meta` record naming the conversation and the working
-//! directory it was started in. Only that first line is ever read: it is the
-//! index Codex publishes for its own picker, and the rest of the file is
-//! the conversation itself, which is none of UZE's business.
+//! directory it was started in. Only that first line is read here: it is the
+//! index Codex publishes for its own picker. The rest of the file is the
+//! conversation itself, which only `digest` reads: for the briefing of an
+//! agent continuing on another harness, and for whether it stopped at a
+//! usage limit.
 
 use std::{
     ffi::OsString,
@@ -24,6 +26,12 @@ const RESUME_SUBCOMMAND: &str = "resume";
 const ROLLOUT_EXTENSION: &str = "jsonl";
 /// Rollouts are filed under `sessions/<year>/<month>/<day>/`.
 const ROLLOUT_DEPTH: usize = 3;
+
+/// The operator's first turn. Positional: `codex [PROMPT]` on a fresh
+/// start, `codex resume <id> [PROMPT]` behind the resume subcommand.
+pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
+    vec![OsString::from(turn)]
+}
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
     vec![
@@ -57,8 +65,13 @@ pub(super) fn observe(sessions_root: &Path, ctx: &ObservationContext) -> Option<
 /// tail of the file's own name, so this reads directory entries and never
 /// opens one.
 pub(super) fn exists(sessions_root: &Path, session: &SessionId) -> bool {
+    rollout_of(sessions_root, session).is_some()
+}
+
+/// The rollout `session` is filed in.
+pub(super) fn rollout_of(sessions_root: &Path, session: &SessionId) -> Option<PathBuf> {
     let suffix = format!("-{}", session.as_str());
-    rollouts(sessions_root).any(|(path, _)| {
+    rollouts(sessions_root).map(|(path, _)| path).find(|path| {
         path.file_stem()
             .and_then(|stem| stem.to_str())
             .is_some_and(|stem| stem.ends_with(&suffix))
@@ -217,5 +230,19 @@ mod tests {
 
         assert!(exists(&root, &SessionId::new("kept")));
         assert!(!exists(&root, &SessionId::new("deleted")));
+    }
+
+    #[test]
+    fn a_first_turn_is_the_resume_subcommands_prompt() {
+        let session = SessionId::new("019a-thread");
+        let line: Vec<OsString> = resume_args(&session)
+            .into_iter()
+            .chain(first_turn_args("carry on"))
+            .collect();
+        assert_eq!(
+            line,
+            ["resume", "019a-thread", "carry on"].map(OsString::from)
+        );
+        assert_eq!(first_turn_args("carry on"), [OsString::from("carry on")]);
     }
 }

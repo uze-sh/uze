@@ -168,11 +168,13 @@ pub fn run(shim_name: &str) -> ! {
             eprintln!("uze: {}.", uze_core::authored::inert(note));
         }
         // Ahead of the contribution's own arguments: a harness whose resume
-        // is a subcommand needs it at the front of the line.
+        // is a subcommand needs it at the front of the line. A briefing's
+        // first turn goes last, where a positional prompt is read.
         contribution.extra_args = session
             .args
             .into_iter()
             .chain(contribution.extra_args)
+            .chain(session.trailing)
             .collect();
     }
 

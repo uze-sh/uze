@@ -137,6 +137,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("an agent row's actions, where the tree is dirty"),
     );
     put(
+        Action::SwitchHarness,
+        Control("an agent row's actions, one entry per other harness"),
+    );
+    put(
         Action::RenameSelection,
         Control("double-clicking the label, or the row's actions"),
     );

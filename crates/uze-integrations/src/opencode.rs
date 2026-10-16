@@ -251,6 +251,10 @@ impl IntegrationPort for OpenCodeIntegration {
         session::resume_args(session)
     }
 
+    fn first_turn_args(&self, turn: &str) -> Vec<std::ffi::OsString> {
+        session::first_turn_args(turn)
+    }
+
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,

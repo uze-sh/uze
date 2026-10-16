@@ -7,10 +7,12 @@
 //! exactly why the choice is made per launch rather than baked into a
 //! persisted command.
 //!
-//! Its transcripts are read for two things only, never for content: proving
+//! Here its transcripts are read for two things, never for content: proving
 //! a recorded conversation still exists before resuming into it, and
 //! noticing that the agent has since moved to another one (a cleared or
-//! forked conversation is a new identifier in the same directory).
+//! forked conversation is a new identifier in the same directory). What a
+//! conversation said, and whether it stopped at a usage limit, is
+//! `digest`'s.
 
 use std::{
     ffi::OsString,
@@ -27,6 +29,13 @@ const TRANSCRIPT_EXTENSION: &str = "jsonl";
 
 pub(super) fn start_args(session: &SessionId) -> Vec<OsString> {
     vec![OsString::from(START_FLAG), OsString::from(session.as_str())]
+}
+
+/// The operator's first turn. Positional: Claude reads its first prompt
+/// from the end of the line, behind `--resume <id>` or `--session-id <id>`
+/// alike.
+pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
+    vec![OsString::from(turn)]
 }
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
@@ -60,12 +69,15 @@ fn slug(cwd: &Path) -> String {
         .collect()
 }
 
+/// Where `session`'s transcript is.
+pub(super) fn transcript_path(projects_root: &Path, cwd: &Path, session: &SessionId) -> PathBuf {
+    transcripts_dir(projects_root, cwd).join(format!("{}.{TRANSCRIPT_EXTENSION}", session.as_str()))
+}
+
 /// Whether the transcript for `session` is still there. The identifier is
 /// the file's own name, so this is one `exists` call and no parsing.
 pub(super) fn exists(projects_root: &Path, cwd: &Path, session: &SessionId) -> bool {
-    transcripts_dir(projects_root, cwd)
-        .join(format!("{}.{TRANSCRIPT_EXTENSION}", session.as_str()))
-        .is_file()
+    transcript_path(projects_root, cwd, session).is_file()
 }
 
 /// The newest conversation started in `cwd` since the launch.
@@ -251,5 +263,23 @@ mod tests {
             },
         );
         assert_eq!(observed, Some(SessionId::new("cleared-to")));
+    }
+
+    #[test]
+    fn a_first_turn_follows_a_resume_as_its_positional_prompt() {
+        let session = SessionId::new("11111111-2222-4333-8444-555555555555");
+        let line: Vec<OsString> = resume_args(&session)
+            .into_iter()
+            .chain(first_turn_args("carry on"))
+            .collect();
+        assert_eq!(
+            line,
+            ["--resume", session.as_str(), "carry on"].map(OsString::from)
+        );
+        assert_eq!(
+            first_turn_args("carry on"),
+            [OsString::from("carry on")],
+            "and the same behind a start, which names the session by a flag"
+        );
     }
 }

@@ -14,6 +14,8 @@ flowchart TD
   setup --> launch[Started through its shim, by path<br/>every pane puts the shims first on PATH]
   launch --> name[uze agent work name type/subject<br/>or, still unnamed at the first commit,<br/>named from that commit's subject]
   name --> running[Running]
+  running -->|continued in another harness| brief[A briefing written outside the checkout<br/>pending for the incoming harness's first launch]
+  brief --> launch
   running --> evaluate{What Git says, each pass}
   evaluate -->|a dirty tree| uncommitted[Uncommitted]
   evaluate -->|agent gone, work left| shelved[Unfinished<br/>commits on its branch,<br/>the rest on refs/uze/shelf/id]

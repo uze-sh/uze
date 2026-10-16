@@ -81,6 +81,7 @@ impl Attach<'_> {
             Some(target) => PlacementRequest::Resume {
                 primary: target.primary,
                 task: target.task,
+                harness,
             },
             // Placed from where the space is now — its own shell's
             // directory, which a `cd` there moves (see `space_cwd`) —
@@ -186,6 +187,133 @@ impl Attach<'_> {
             ),
         }
         self.model.dirty = true;
+    }
+
+    /// A menu entry taken: the harness a "Continue in" entry names travels
+    /// beside its action, and `anchor` is where a follow-up question opens.
+    pub(in crate::ui::orchestrator) fn perform_menu_entry(
+        &mut self,
+        target: MenuTarget,
+        action: Action,
+        choice: Option<HarnessChoice>,
+        anchor: Rect,
+    ) {
+        match (action, choice) {
+            (Action::SwitchHarness, Some(choice)) => {
+                self.continue_in(target, choice, anchor);
+                self.model.dirty = true;
+            }
+            (action, _) => self.perform_menu_action(target, action),
+        }
+    }
+
+    /// The harnesses `tab`'s agent could continue in: every one set up for
+    /// the workspace except the one it runs. Offered only while that
+    /// harness is alive in the pane, since a tab whose agent exited is
+    /// resumed from recent, where a harness is picked anyway.
+    pub(super) fn switch_choices(&self, tab: TabId) -> Vec<HarnessChoice> {
+        let Some(found) = self.model.session.as_ref().and_then(|session| {
+            session
+                .workspace
+                .spaces
+                .iter()
+                .flat_map(|space| space.tabs.iter())
+                .find(|candidate| candidate.id == tab)
+        }) else {
+            return Vec::new();
+        };
+        if launched_agent_id(found).is_none() {
+            return Vec::new();
+        }
+        let Some(current) = agent_for_tab(&self.identities, found) else {
+            return Vec::new();
+        };
+        self.identities
+            .iter()
+            .filter(|identity| identity.configured && identity.integration != current.integration)
+            .map(|identity| HarnessChoice {
+                integration: identity.integration.to_owned(),
+                display_name: identity.display_name.to_owned(),
+                continuity_gap: identity.continuity_gap.clone(),
+                interrupting: false,
+            })
+            .collect()
+    }
+
+    /// Whether `tab`'s agent stopped at a usage limit.
+    pub(super) fn is_limited(&self, tab: TabId) -> bool {
+        self.model
+            .tabs()
+            .any(|candidate| candidate.id == tab && self.model.tab_usage_limit(candidate).is_some())
+    }
+
+    /// Relaunches `target`'s agent on `choice`'s harness, in the place it
+    /// stands, replacing its tab — or, when it is mid-turn and the operator
+    /// has not said otherwise, asks first, since the relaunch ends whatever
+    /// it is doing.
+    pub(super) fn continue_in(&mut self, target: MenuTarget, choice: HarnessChoice, anchor: Rect) {
+        let MenuTarget::Tab(tab) = target else {
+            return;
+        };
+        let Some((agent, label, from_harness, from, pane)) =
+            self.model.session.as_ref().and_then(|session| {
+                let space = session
+                    .workspace
+                    .spaces
+                    .iter()
+                    .find(|space| space.tabs.iter().any(|candidate| candidate.id == tab))?;
+                let found = space.tabs.iter().find(|candidate| candidate.id == tab)?;
+                Some((
+                    launched_agent_id(found)?.to_owned(),
+                    found.label.clone(),
+                    agent_for_tab(&self.identities, found)?
+                        .integration
+                        .to_owned(),
+                    space_cwd(space, &self.identities),
+                    found.pane.id,
+                ))
+            })
+        else {
+            return;
+        };
+        if !choice.interrupting
+            && self.model.agent_tab_status(pane, false) == AgentTabStatus::Working
+        {
+            self.model.context_menu = Some(ContextMenu::interrupting(target, choice, anchor));
+            return;
+        }
+        let Some(launch) = self
+            .identities
+            .iter()
+            .find(|identity| identity.integration == choice.integration)
+            .map(|identity| identity.launch.to_string_lossy().into_owned())
+        else {
+            return;
+        };
+        if self.model.placement_pending {
+            return;
+        }
+        if let Some(gap) = &choice.continuity_gap {
+            self.model
+                .raise_toast(ToastKind::Warned, gap, label.clone(), None);
+        }
+        self.model.placement_pending = true;
+        self.model
+            .set_busy_notice(format!("{label}: continuing in {}", choice.display_name));
+        spawn_agent_placement(
+            self.home,
+            PlacementRequest::Switch {
+                from,
+                agent,
+                was: from_harness,
+                to: choice.integration,
+            },
+            Vec::new(),
+            label,
+            vec![launch],
+            Some(tab),
+            self.channels.placements.sender.clone(),
+        );
     }
 
     pub(super) fn isolate_agent(&mut self, target: MenuTarget, carry: uze_application::Carry) {

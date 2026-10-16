@@ -298,12 +298,12 @@ impl Attach<'_> {
                 // intermittent — it depended on which row was
                 // right-clicked, not on timing).
                 let hit = hit_at(&self.model, mouse.column, mouse.row);
-                let action = match hit {
+                let entry = match hit {
                     Some(WorkspaceHit::ContextMenuAction(index)) => self
                         .model
                         .context_menu
                         .as_ref()
-                        .and_then(|menu| menu.items.get(index).copied()),
+                        .and_then(|menu| menu.entry(index)),
                     _ => None,
                 };
                 // Dismiss unconditionally (any click, on the popup or
@@ -312,9 +312,9 @@ impl Attach<'_> {
                 // the two used to be one `if let` that discarded the
                 // menu before checking the hit, so a miss silently
                 // dismissed without acting instead of visibly no-oping.
-                let target = self.model.context_menu.take().map(|menu| menu.target);
-                if let (Some(target), Some(action)) = (target, action) {
-                    self.perform_menu_action(target, action);
+                let menu = self.model.context_menu.take();
+                if let (Some(menu), Some((action, choice))) = (menu, entry) {
+                    self.perform_menu_entry(menu.target, action, choice, menu.anchor);
                 }
                 self.model.dirty = true;
             }
@@ -826,8 +826,14 @@ impl Attach<'_> {
                     if can_close_tab_from_menu(&self.model, &self.identities, tab) {
                         items.push(Action::CloseTab);
                     }
-                    self.model.context_menu =
-                        Some(ContextMenu::new(MenuTarget::Tab(tab), items, anchor));
+                    // Right after the name; first of all when the harness
+                    // stopped at a usage limit, which is when continuing
+                    // elsewhere is what the operator came for.
+                    let at = usize::from(!self.is_limited(tab));
+                    self.model.context_menu = Some(
+                        ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
+                            .offering_switches(at, self.switch_choices(tab)),
+                    );
                     self.model.dirty = true;
                 } else if let Some(WorkspaceHit::RecentRow(index)) = hit {
                     self.open_recent_menu(index, anchor);

@@ -180,7 +180,7 @@ impl World {
         let placement = self
             .app
             .workspace()
-            .resume_task(&self.root, &agent.id, &self.held())
+            .resume_task(&self.root, &agent.id, "claude-code", &self.held())
             .map_err(|error| error.to_string())?;
         let resumed = Agent {
             id: agent.id.clone(),
