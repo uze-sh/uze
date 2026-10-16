@@ -8,13 +8,11 @@
 
 use crate::path::Canonical as _;
 use std::{
-    fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use crate::{Result, UzeError, harness_runtime::project_id_for, home::UzeHome};
+use crate::{Result, harness_runtime::project_id_for, home::UzeHome, persistence::FileLock};
 
 /// The portable project-context resources, as they exist on disk right
 /// now. Purely observational: resolving never creates or moves anything.
@@ -107,36 +105,15 @@ const AGENTS_MD_RETRY: Duration = Duration::from_millis(10);
 /// read-modify-write: without this, two of them interleaving would each keep
 /// its own region and drop the other's until the next run.
 pub struct AgentsMdGuard {
-    _file: File,
+    _held: FileLock,
 }
 
 impl AgentsMdGuard {
     pub fn acquire(home: &UzeHome, project_root: &Path) -> Result<Self> {
         let path = home.agents_md_lock_path(&project_id_for(project_root));
-        let parent = path.parent().expect("UZE state paths have a parent");
-        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
-        // Readable or writable, not append-only: Windows refuses to lock a
-        // handle that may only append.
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(UzeError::write(&path))?;
-        let started = Instant::now();
-        while let Err(error) = crate::persistence::try_lock_exclusive(&file) {
-            if error.kind() != std::io::ErrorKind::WouldBlock {
-                return Err(UzeError::Write {
-                    path,
-                    source: error,
-                });
-            }
-            if started.elapsed() >= AGENTS_MD_WAIT {
-                return Err(UzeError::MutationInProgress { path, pid: None });
-            }
-            thread::sleep(AGENTS_MD_RETRY);
-        }
-        Ok(Self { _file: file })
+        Ok(Self {
+            _held: FileLock::acquire(&path, AGENTS_MD_WAIT, AGENTS_MD_RETRY)?,
+        })
     }
 }
 

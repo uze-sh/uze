@@ -28,19 +28,17 @@
 use std::{
     cell::RefCell,
     collections::BTreeSet,
-    fmt, fs,
-    fs::{File, OpenOptions},
+    fmt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use uze_core::path::Canonical as _;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Result, UzeError, checkout::CheckoutId, digest, harness_runtime::project_id_for, home::UzeHome,
+    Result, checkout::CheckoutId, digest, harness_runtime::project_id_for, home::UzeHome,
     persistence::write_atomic, worktree::BRANCH_PREFIX,
 };
 
@@ -805,7 +803,7 @@ thread_local! {
 /// dropping this.
 struct MutationGuard {
     /// `None` when this thread already held the lock.
-    owned: Option<(PathBuf, File)>,
+    owned: Option<(PathBuf, crate::persistence::FileLock)>,
 }
 
 impl MutationGuard {
@@ -819,31 +817,7 @@ impl MutationGuard {
             );
             return Ok(Self { owned: None });
         }
-        let parent = path.parent().expect("UZE state paths have a parent");
-        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
-        // Readable or writable, not append-only: Windows refuses to lock a
-        // handle that may only append.
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(UzeError::write(&path))?;
-        let started = Instant::now();
-        while let Err(error) = crate::persistence::try_lock_exclusive(&file) {
-            if error.kind() != std::io::ErrorKind::WouldBlock {
-                return Err(UzeError::Write {
-                    path,
-                    source: error,
-                });
-            }
-            if started.elapsed() >= MUTATION_TIMEOUT {
-                // `flock` names no holder, so the pid is genuinely unknown
-                // here rather than merely unread.
-                return Err(UzeError::MutationInProgress { path, pid: None });
-            }
-            thread::sleep(MUTATION_RETRY);
-        }
+        let file = crate::persistence::FileLock::acquire(&path, MUTATION_TIMEOUT, MUTATION_RETRY)?;
         HELD.with(|held| held.borrow_mut().push(path.clone()));
         Ok(Self {
             owned: Some((path, file)),
@@ -855,7 +829,7 @@ impl Drop for MutationGuard {
     fn drop(&mut self) {
         if let Some((path, _file)) = self.owned.take() {
             HELD.with(|held| held.borrow_mut().retain(|held| held != &path));
-            // Closing the file releases the `flock`.
+            // Dropping the lock releases the `flock`.
         }
     }
 }
@@ -863,8 +837,10 @@ impl Drop for MutationGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UzeError;
     use std::{
         collections::HashSet,
+        fs,
         process::{Command, Stdio},
         time::{Duration, Instant},
     };

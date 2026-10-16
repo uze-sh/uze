@@ -424,6 +424,51 @@ fn try_lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
     }
 }
 
+/// An exclusive lock on a file `UzeHome` names, held for one
+/// read-modify-write of something two processes rewrite. Releasing it is
+/// dropping this; a process that dies releases it with its descriptors.
+pub struct FileLock {
+    /// Closing this is what releases the lock.
+    _file: File,
+}
+
+impl FileLock {
+    /// Waits up to `patience` for the lock at `path`, asking again every
+    /// `retry`. Waiting longer is [`UzeError::MutationInProgress`], never a
+    /// write without it.
+    pub fn acquire(path: &Path, patience: Duration, retry: Duration) -> Result<Self> {
+        let parent = path.parent().expect("UZE state paths have a parent");
+        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
+        // Readable or writable, not append-only: Windows refuses to lock a
+        // handle that may only append.
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(path)
+            .map_err(UzeError::write(path))?;
+        let started = Instant::now();
+        while let Err(error) = try_lock_exclusive(&file) {
+            if error.kind() != std::io::ErrorKind::WouldBlock {
+                return Err(UzeError::Write {
+                    path: path.to_path_buf(),
+                    source: error,
+                });
+            }
+            if started.elapsed() >= patience {
+                // `flock` names no holder, so the pid is genuinely unknown
+                // here rather than merely unread.
+                return Err(UzeError::MutationInProgress {
+                    path: path.to_path_buf(),
+                    pid: None,
+                });
+            }
+            std::thread::sleep(retry);
+        }
+        Ok(Self { _file: file })
+    }
+}
+
 /// Takes an exclusive advisory lock on `file` without waiting: a held lock
 /// is `WouldBlock`, and the lock lasts as long as the file stays open.
 pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
