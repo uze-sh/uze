@@ -39,15 +39,9 @@ impl Workspace<'_> {
         to: &str,
     ) -> Result<AgentPlacement> {
         let refused = |reason: String| UzeError::AgentPlacement(reason);
-        let integration = |id: &str| {
-            self.0
-                .integrations
-                .iter()
-                .find(|candidate| candidate.id() == id)
-                .map(|found| found.as_ref())
-        };
-        let incoming =
-            integration(to).ok_or_else(|| refused(format!("`{to}` is not a harness UZE knows")))?;
+        let incoming = self
+            .integration(to)
+            .ok_or_else(|| refused(format!("`{to}` is not a harness UZE knows")))?;
         let root = conversation::project_of(&self.0.home, cwd)
             .map(|root| canonical(&root))
             .ok_or_else(|| refused("this agent is not one UZE launched here".to_owned()))?;
@@ -111,7 +105,7 @@ impl Workspace<'_> {
         })?
         .map_err(refused)?;
 
-        let briefing = self.brief(&root, &switched, integration(from), incoming);
+        let briefing = self.brief(&root, &switched, self.integration(from), incoming);
         let mut warnings = Vec::new();
         if let Some(path) = briefing
             && incoming.first_turn_args("").is_empty()
