@@ -2,9 +2,12 @@
 //! and the real Git, for the tests about what a surface *reads*. A fake is
 //! the right tool for testing a view; these test what it is handed.
 //!
-//! One for every extension, kept to what `src/ui/extension_host.rs`
-//! answers: two copies had already begun to drift from it, and a double
-//! that disagrees with production proves the wrong thing.
+//! One for every extension, answering what `src/ui/extension_host.rs`
+//! answers for an ordinary checkout: two copies had already begun to drift
+//! from it, and a double that disagrees with production proves the wrong
+//! thing. Its refusals are not here — no size cap on a file read, no
+//! refusal of a checkout Git does not anchor, no shared `status` — so a
+//! test that needs one of those belongs beside the production host.
 
 use std::path::{Path, PathBuf};
 
