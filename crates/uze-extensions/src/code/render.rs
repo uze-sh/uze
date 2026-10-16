@@ -487,6 +487,17 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
         };
     }
     let path = &code.changes.files[index].path;
+    if let Some(picture) = code
+        .changes
+        .diff_picture
+        .as_ref()
+        .filter(|_| code.changes.diff_binary)
+    {
+        return Content::Picture {
+            heading: path.display().to_string(),
+            picture: picture.clone(),
+        };
+    }
     if code.changes.diff_binary {
         return not_text(
             path,
@@ -571,6 +582,17 @@ fn readable_open_file<'a>(
         }));
     };
     match &open.error {
+        Some(Unreadable::NotText) if let Some(picture) = &open.picture => {
+            return Err(Box::new(Content::Picture {
+                heading: open
+                    .path
+                    .strip_prefix(&code.root)
+                    .unwrap_or(&open.path)
+                    .display()
+                    .to_string(),
+                picture: picture.clone(),
+            }));
+        }
         Some(Unreadable::NotText) => {
             return Err(Box::new(not_text(
                 &open.path,

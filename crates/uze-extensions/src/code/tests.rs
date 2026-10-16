@@ -971,6 +971,7 @@ fn a_refresh_from_before_the_selection_moved_keeps_the_new_diff() {
 struct FakeMachine {
     directories: RefCell<BTreeMap<PathBuf, Vec<DirEntry>>>,
     files: RefCell<BTreeMap<PathBuf, String>>,
+    bytes: RefCell<BTreeMap<PathBuf, Vec<u8>>>,
     restored: RefCell<Vec<PathBuf>>,
 }
 
@@ -1031,6 +1032,14 @@ impl Host for FakeMachine {
 
     fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
         self.files
+            .borrow()
+            .get(path)
+            .cloned()
+            .ok_or(crate::Unreadable::NotText)
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, crate::Unreadable> {
+        self.bytes
             .borrow()
             .get(path)
             .cloned()
@@ -1884,6 +1893,50 @@ fn a_file_that_is_not_text_is_an_empty_state_where_its_contents_would_be() {
     assert!(hint.is_some(), "and says why there is nothing to read");
 }
 
+/// An image is the one file that is not text and still has something to
+/// show: where its contents would be, the surface hands over its pixels.
+/// It stays a file that is not text, so nothing offers to edit it — a
+/// save from an empty buffer would write over the image.
+#[test]
+fn an_image_is_shown_where_its_contents_would_be_and_is_never_edited() {
+    let mut encoded = Vec::new();
+    let mut encoder = png::Encoder::new(&mut encoded, 2, 1);
+    encoder.set_color(png::ColorType::Rgb);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&[255, 0, 0, 0, 0, 255]).unwrap();
+    writer.finish().unwrap();
+
+    let mut machine = FakeMachine::default();
+    machine.directories.get_mut().insert(
+        PathBuf::from("/w"),
+        vec![DirEntry {
+            directory: false,
+            name: "logo.png".to_owned(),
+        }],
+    );
+    machine
+        .bytes
+        .get_mut()
+        .insert(PathBuf::from("/w/logo.png"), encoded);
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+
+    let Content::Picture { heading, picture } = super::view(&view, space()).content else {
+        panic!("the image is drawn");
+    };
+    assert_eq!(heading, "logo.png");
+    assert_eq!((picture.width, picture.height), (2, 1));
+    assert_eq!(*picture.pixels, [[255, 0, 0, 255], [0, 0, 255, 255]]);
+
+    press(&mut view, Command::Edit);
+    assert!(
+        !view.open.as_ref().is_some_and(|open| open.editing),
+        "an image is never opened for editing"
+    );
+}
+
 /// Git answers a binary change with a note rather than hunks. Drawn as
 /// lines, that is an empty pane under the file's name, which reads as
 /// "nothing changed" about a file the list says did.
@@ -1916,6 +1969,7 @@ fn a_diff_that_fails_keeps_the_list_navigable() {
         path,
         digest: 0,
         binary: false,
+        picture: None,
         outcome: Err("fatal: bad revision".to_owned()),
     }));
 

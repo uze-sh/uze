@@ -115,6 +115,10 @@ pub(super) struct OpenFile {
     pub(super) loading: bool,
     /// Why it could not be shown, when it could not be.
     pub(super) error: Option<crate::Unreadable>,
+    /// What a file that is not text looks like, when it is an image. Kept
+    /// beside [`Self::error`] rather than in place of it, so everything
+    /// that refuses to edit a file that is not text still refuses this.
+    pub(super) picture: Option<crate::view::Picture>,
     /// How many times the text has changed. The identity the rendered
     /// preview is kept against — a number rather than the text itself,
     /// because comparing a document to decide whether to re-render it
@@ -160,6 +164,7 @@ impl OpenFile {
             modified: false,
             loading: true,
             error: None,
+            picture: None,
             revision: 0,
             saving: VecDeque::new(),
             preview: RefCell::new(None),

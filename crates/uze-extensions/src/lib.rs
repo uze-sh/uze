@@ -179,6 +179,15 @@ pub trait Host {
     /// not read, and one too large to hold in memory all land here.
     fn read_file(&self, path: &std::path::Path) -> Result<String, Unreadable>;
 
+    /// A file's raw contents, for a format the extension decodes itself —
+    /// an image. Bounded the way [`Host::read_file`] is. A host that hands
+    /// out no bytes answers [`Unreadable::NotText`], which leaves the file
+    /// exactly as undrawable as it was before this was asked.
+    fn read_bytes(&self, path: &std::path::Path) -> Result<Vec<u8>, Unreadable> {
+        let _ = path;
+        Err(Unreadable::NotText)
+    }
+
     /// How many lines a file has, counted the way [`str::lines`] counts
     /// them. Separate from [`Host::read_file`] because the badge asks this
     /// of every untracked file on a timer, and holding each one in memory

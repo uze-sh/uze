@@ -623,6 +623,7 @@ pub(crate) fn attach_workspace(
     // An event read while draining a burst and put back for after the
     // frame (see the drain at the end of the loop).
     let mut held: Option<Event> = None;
+    let mut painter = crate::ui::graphics::Painter::default();
     let outcome: Result<WorkspaceExit> = (|| loop {
         if let Flow::Exit(exit) = attach.pump(&receiver) {
             return Ok(exit);
@@ -655,7 +656,18 @@ pub(crate) fn attach_workspace(
             let mut metrics = render::FrameMetrics::default();
             let model = &attach.model;
             let identities = &attach.identities;
-            terminal.draw(|frame| render(frame, model, identities, &mut hits, &mut metrics))?;
+            let mut uncovered = None;
+            terminal.draw(|frame| {
+                render(frame, model, identities, &mut hits, &mut metrics);
+                uncovered = metrics
+                    .code
+                    .as_ref()
+                    .and_then(|drawn| drawn.picture.clone())
+                    .filter(|placement| placement.uncovered_in(frame.buffer_mut()));
+            })?;
+            if let Some(pixels) = painter.after_frame(uncovered.as_ref()) {
+                terminal.emit(&pixels);
+            }
             attach.model.hits = hits;
             attach.model.marquee = metrics.marquee;
             attach.model.tree_overflow = metrics.tree_overflow;

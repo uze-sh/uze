@@ -473,6 +473,25 @@ pub enum Content {
         /// drawing whose cells are places to point at.
         medium: Medium,
     },
+    /// A raster image, fitted to the room there is by the host.
+    ///
+    /// Pixels rather than cells because how many of them become one cell
+    /// depends on the space and the glyphs the host draws with, and both
+    /// are the host's.
+    Picture { heading: String, picture: Picture },
+}
+
+/// An image as straight-alpha RGBA, row by row from the top-left.
+///
+/// Alpha is kept rather than flattened because only the host knows the
+/// ground a transparent pixel shows through to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Picture {
+    pub width: usize,
+    pub height: usize,
+    /// `width * height` pixels. Shared, because the view is built again
+    /// on every frame and an image is the one content that is megabytes.
+    pub pixels: std::sync::Arc<[[u8; 4]]>,
 }
 
 /// What [`Content::Lines`] are made of, which decides what a drag over

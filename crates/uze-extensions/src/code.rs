@@ -78,6 +78,7 @@ mod exclude;
 mod files;
 mod history;
 mod map;
+mod picture;
 mod render;
 mod request;
 mod row_menu;
@@ -585,6 +586,7 @@ impl CodeView {
             // — is left as it stands.
             changes.diff = std::mem::take(&mut self.changes.diff);
             changes.diff_binary = self.changes.diff_binary;
+            changes.diff_picture = self.changes.diff_picture.take();
             changes.diff_error = self.changes.diff_error.take();
             changes.diff_digest = self.changes.diff_digest;
             changes.diff_unchanged = false;
@@ -594,6 +596,7 @@ impl CodeView {
             // where it stays — the cells were never sent back.
             changes.diff = std::mem::take(&mut self.changes.diff);
             changes.diff_binary = self.changes.diff_binary;
+            changes.diff_picture = self.changes.diff_picture.take();
         }
         self.changes = changes;
         if self.selected.is_none() {
@@ -717,6 +720,14 @@ impl CodeView {
                     Err(message) => open.error = Some(message),
                 }
                 self.colour_the_rest();
+            }
+            FileAnswer::Pictured { path, picture } => {
+                let Some(open) = self.open.as_mut().filter(|open| open.path == path) else {
+                    return;
+                };
+                open.loading = false;
+                open.error = Some(crate::Unreadable::NotText);
+                open.picture = Some(picture);
             }
             // Nothing is said about a colouring that failed: the file it
             // was about is on screen and readable, and the only thing
@@ -909,6 +920,7 @@ impl CodeView {
         self.scroll = 0;
         self.changes.diff = Vec::new();
         self.changes.diff_binary = false;
+        self.changes.diff_picture = None;
         self.changes.diff_error = None;
         self.changes.diff_pending = true;
         self.read_selection_as_what_it_is();
@@ -1398,6 +1410,7 @@ impl DiffAnswer {
             path: request.path.clone(),
             digest: 0,
             binary: false,
+            picture: None,
             outcome: Err(reason),
         })
     }

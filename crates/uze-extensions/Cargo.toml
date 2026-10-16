@@ -25,6 +25,9 @@ syntect = { version = "5", default-features = false, features = ["default-fancy"
 # name never changed), mature and used by gitui; the fancy-regex feature
 # keeps it free of C, as syntect is here.
 two-face = { version = "0.5", default-features = false, features = ["syntect-default-fancy"] }
+# PNG, for showing an image in the code surface. image-rs org, pure Rust
+# with no C anywhere in its tree (fdeflate, miniz_oxide).
+png = "0.18"
 
 [dev-dependencies]
 uze-git = { path = "../uze-git" }

@@ -9572,7 +9572,7 @@ mod workspace_tests {
         );
         let caret = match code::view(driven.attach.model.code.as_ref().unwrap(), space).content {
             uze_extensions::view::Content::Lines { caret, .. } => caret,
-            uze_extensions::view::Content::Message { .. } => None,
+            _ => None,
         };
         assert_eq!(
             caret,

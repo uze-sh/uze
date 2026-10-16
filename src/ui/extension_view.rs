@@ -34,6 +34,7 @@ mod footer;
 mod geometry;
 mod lines;
 mod navigator;
+mod picture;
 mod prose;
 mod section;
 
@@ -66,6 +67,9 @@ const FOOTER_GAP: u16 = 2;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Rendered {
     pub(crate) navigator_scroll: NavigatorScroll,
+    /// The image drawn this frame, where the terminal can be sent it as
+    /// pixels.
+    pub(crate) picture: Option<crate::ui::graphics::Placement>,
     /// Whether a row's name was drawn sliding, which is what keeps the
     /// host's clock turning for the next frame of it.
     pub(crate) marquee: bool,
@@ -215,6 +219,11 @@ fn render_surface(
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, content_area, text, hint.as_deref(), color(*role))
+        }
+        Content::Picture { heading, picture } => {
+            rendered.heading = heading.clone();
+            rendered.picture =
+                picture::render_picture(frame, content_area, heading, picture, column_modes, hits);
         }
         Content::Lines {
             heading,
@@ -366,6 +375,10 @@ fn render_board(
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, board, text, hint.as_deref(), color(*role));
+        }
+        Content::Picture { heading, picture } => {
+            rendered.heading = heading.clone();
+            rendered.picture = picture::render_picture(frame, board, heading, picture, &[], hits);
         }
         Content::Lines {
             heading,

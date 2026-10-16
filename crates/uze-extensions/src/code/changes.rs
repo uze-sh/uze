@@ -17,7 +17,7 @@ use std::{
 use super::diff::{self, DiffCell};
 use crate::{
     Host,
-    view::{Role, ScrollDirection},
+    view::{Picture, Role, ScrollDirection},
 };
 
 /// What the checkout has that its last commit does not, and the diff of
@@ -36,6 +36,10 @@ pub(super) struct Changes {
     /// empty because there are no lines to compare, not because nothing
     /// changed.
     pub(super) diff_binary: bool,
+    /// What the binary file looks like now, when it is an image — what
+    /// stands where its lines would. Only the side in the working tree:
+    /// Git hands its other side over as text, which a picture is not.
+    pub(super) diff_picture: Option<Picture>,
     /// Set when the selection moved and cleared when a read catches up.
     ///
     /// Reading and highlighting a diff is the one thing here whose cost
@@ -143,6 +147,7 @@ impl Changes {
         else {
             self.diff = Vec::new();
             self.diff_binary = false;
+            self.diff_picture = None;
             return;
         };
         let read = read_diff(host, root, &file.path.clone(), file.status, shown);
@@ -155,6 +160,7 @@ impl Changes {
             Err(message) => {
                 self.diff = Vec::new();
                 self.diff_binary = false;
+                self.diff_picture = None;
                 self.diff_digest = 0;
                 self.diff_unchanged = false;
                 self.diff_error = Some(message);
@@ -170,6 +176,7 @@ impl Changes {
                 self.diff_error = None;
                 self.diff = cells;
                 self.diff_binary = read.binary;
+                self.diff_picture = read.picture;
             }
         }
     }
@@ -202,6 +209,8 @@ pub(super) struct DiffRead {
     pub(super) path: PathBuf,
     pub(super) digest: u64,
     pub(super) binary: bool,
+    /// The file as it stands now, when it is binary and an image.
+    pub(super) picture: Option<Picture>,
     /// `Ok(None)` when the read found the diff already on screen
     /// (`shown`), so nothing was coloured again.
     pub(super) outcome: Result<Option<Vec<DiffCell>>, String>,
@@ -239,6 +248,7 @@ pub(super) fn read_diff(
                 path: path.to_path_buf(),
                 digest: 0,
                 binary: false,
+                picture: None,
                 outcome: Err(message),
             };
         }
@@ -250,10 +260,15 @@ pub(super) fn read_diff(
         true => Ok(None),
         false => Ok(Some(diff::read(&output, path, &theme))),
     };
+    let binary = diff::is_binary(&output);
     DiffRead {
         path: path.to_path_buf(),
         digest,
-        binary: diff::is_binary(&output),
+        binary,
+        picture: (binary && super::picture::is_picture(path))
+            .then(|| host.read_bytes(&root.join(path)).ok())
+            .flatten()
+            .and_then(|bytes| super::picture::decode(&bytes)),
         outcome,
     }
 }

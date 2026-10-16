@@ -33,6 +33,11 @@ use uze_extensions::Unreadable;
 /// for what the bound is protecting against.
 const READABLE_FILE_LIMIT: u64 = 2 * 1024 * 1024;
 
+/// The same cap for a file read as bytes to be decoded. Larger, because
+/// an image is compressed and a screenshot is routinely past the text
+/// cap; what it decodes to is shrunk to what a screen can show.
+const READABLE_BYTES_LIMIT: u64 = 32 * 1024 * 1024;
+
 /// What a file that cannot be shown as text is called, wherever the
 /// reason is the filesystem's rather than ours. Said once so the surface
 /// and this grant cannot describe the same state differently.
@@ -135,6 +140,23 @@ impl uze_extensions::Host for WorkspaceHost {
             )));
         }
         Ok(text)
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, Unreadable> {
+        use std::io::Read;
+
+        let file = std::fs::File::open(path).map_err(|_| unreadable())?;
+        let mut bytes = Vec::new();
+        file.take(READABLE_BYTES_LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| unreadable())?;
+        if bytes.len() as u64 > READABLE_BYTES_LIMIT {
+            return Err(Unreadable::Failed(format!(
+                "too large to open here — over {} MiB",
+                READABLE_BYTES_LIMIT / (1024 * 1024)
+            )));
+        }
+        Ok(bytes)
     }
 
     /// Directories first, then files, each half by name — the order the

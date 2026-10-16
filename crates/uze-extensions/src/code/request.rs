@@ -9,7 +9,10 @@
 use std::path::{Path, PathBuf};
 
 use super::exclude::{Exclusions, SETTINGS_DIRECTORY, SETTINGS_FILE};
-use crate::{DirEntry, Host, Unreadable, view::Rgb};
+use crate::{
+    DirEntry, Host, Unreadable,
+    view::{Picture, Rgb},
+};
 
 /// How much of a file is coloured before it is shown.
 ///
@@ -93,6 +96,13 @@ pub enum FileAnswer {
     Read {
         path: PathBuf,
         file: Result<LoadedFile, Unreadable>,
+    },
+    /// A file [`FileRequest::Read`] found to be an image, decoded.
+    ///
+    /// Answers the same request, so it releases what a read does.
+    Pictured {
+        path: PathBuf,
+        picture: Picture,
     },
     /// The same file, coloured all the way through.
     ///
@@ -222,7 +232,17 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
                 false => GLANCE,
             };
             let file = read_and_colour(host, &path, glance);
-            FileAnswer::Read { path, file }
+            match (&file, super::picture::is_picture(&path)) {
+                (Err(Unreadable::NotText), true) => match host
+                    .read_bytes(&path)
+                    .ok()
+                    .and_then(|bytes| super::picture::decode(&bytes))
+                {
+                    Some(picture) => FileAnswer::Pictured { path, picture },
+                    None => FileAnswer::Read { path, file },
+                },
+                _ => FileAnswer::Read { path, file },
+            }
         }
         FileRequest::Colour(path) => {
             let file = read_and_colour(host, &path, usize::MAX);

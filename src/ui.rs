@@ -53,6 +53,7 @@ mod chime;
 pub mod extension_host;
 mod extension_switch;
 mod extension_view;
+mod graphics;
 mod hit;
 mod input;
 mod keys;
@@ -110,6 +111,7 @@ pub fn run(home: UzeHome) -> Result<()> {
     // Before the session starts reading input, which would take the
     // terminal's reply for keystrokes.
     crate::theme::observe_appearance(&home);
+    graphics::probe();
     crate::theme::follow_desktop(home.clone());
     // Before the screen is taken, so a directory that is gone is said on
     // a terminal that can show it. Sending `.` instead would have the
