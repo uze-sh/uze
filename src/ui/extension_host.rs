@@ -166,8 +166,10 @@ impl uze_extensions::Host for WorkspaceHost {
     /// fails partway leaves the file as it was instead of truncated.
     fn write_file(&self, root: &Path, path: &Path, contents: &str) -> Result<(), String> {
         let target = self.save_target(root, path)?;
+        let written =
+            replace_contents(&target, contents.as_bytes()).map_err(|error| error.to_string());
         forget_statuses_around(path);
-        replace_contents(&target, contents.as_bytes()).map_err(|error| error.to_string())
+        written
     }
 
     /// Files only. A recursive removal is a different act from the one
@@ -181,8 +183,9 @@ impl uze_extensions::Host for WorkspaceHost {
         if !path.is_file() {
             return Err(format!("{} is not a file", path.display()));
         }
+        let removed = std::fs::remove_file(resolved).map_err(|error| error.to_string());
         forget_statuses_around(path);
-        std::fs::remove_file(resolved).map_err(|error| error.to_string())
+        removed
     }
 
     fn delete_dir(&self, root: &Path, path: &Path) -> Result<(), String> {
@@ -192,8 +195,9 @@ impl uze_extensions::Host for WorkspaceHost {
         if !std::fs::symlink_metadata(&resolved).is_ok_and(|meta| meta.is_dir()) {
             return Err(format!("{} is not a directory", path.display()));
         }
+        let removed = std::fs::remove_dir_all(resolved).map_err(|error| error.to_string());
         forget_statuses_around(path);
-        std::fs::remove_dir_all(resolved).map_err(|error| error.to_string())
+        removed
     }
 
     /// Checked before the rename rather than left to it, because
@@ -210,8 +214,10 @@ impl uze_extensions::Host for WorkspaceHost {
         if std::fs::symlink_metadata(&to_resolved).is_ok() {
             return Err(format!("{} already exists", to.display()));
         }
+        let renamed =
+            std::fs::rename(from_resolved, to_resolved).map_err(|error| error.to_string());
         forget_statuses_around(from);
-        std::fs::rename(from_resolved, to_resolved).map_err(|error| error.to_string())
+        renamed
     }
 
     /// Through `uze-git`'s write path, under the repository lock, one path
@@ -500,7 +506,9 @@ fn shared_status(
 }
 
 /// Drops the shared answers about the checkout `path` is in: this host
-/// just changed it, and the next `status` there must see it.
+/// just changed it, and the next `status` there must see it. Called after
+/// the change, since a read that starts before it lands would otherwise
+/// be shared with the old answer.
 fn forget_statuses_around(path: &Path) {
     status_reads().retain(|(root, _), _| !path.starts_with(root));
 }
