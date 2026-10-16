@@ -377,3 +377,11 @@ html.dark .hero-frame {
     0 0 0 1px rgb(255 255 255 / 0.08),
     0 24px 56px -20px rgb(0 0 0 / 0.9);
 }
+
+/* The brand's hairline closes it off from the header's links; the docs'
+   sidebar has none beside it, only its collapse button. */
+#nd-sidebar .brand-title {
+  border-inline-end: 0;
+  padding-inline-end: 0;
+  margin-inline-end: 0;
+}

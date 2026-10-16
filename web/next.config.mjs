@@ -5,8 +5,8 @@ import { createMDX } from 'fumadocs-mdx/next';
 const withMDX = createMDX();
 
 // The one version source is `[workspace.package].version` in the root
-// Cargo.toml, which every crate inherits. Read at build time so the header
-// badge cannot drift from the binary it names.
+// Cargo.toml, which every crate inherits. Read at build time so the header's
+// release badge cannot drift from the binary it names.
 // `version.workspace = true` in [package] has a dot before the `=`, so the
 // first thing this matches is [workspace.package]'s literal value.
 // Missing entirely (a checkout of `web/` alone) just drops the badge.
