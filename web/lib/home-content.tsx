@@ -45,7 +45,7 @@ export const faq: { q: string; a: ReactNode }[] = [
   },
   {
     q: 'What does the workspace add to tmux and git worktree?',
-    a: 'Each agent gets a tab, a branch and a worktree of its own without you creating any of them. You see its diff a keystroke away, and when the work is ready one key rebases it, runs your checks, and leaves the branch for you, merges it or opens a pull request. Closing the terminal stops nothing.',
+    a: 'Each agent gets a tab, a branch and a worktree of its own without you creating any of them. You see its diff a keystroke away, and when the work is ready one key rebases it, runs your checks, and merges it or pushes the branch. An agent can carry on in another harness without losing its place, and work nobody finished is kept and listed in Recent, across every project. Closing the terminal stops nothing.',
   },
   {
     q: 'Can a plugin run code on my machine?',
