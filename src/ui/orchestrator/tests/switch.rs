@@ -4,7 +4,7 @@
 //! The two harnesses are whatever the shared fixture's agents run, read off
 //! their panes, so nothing here depends on which vendors those are.
 
-use super::workspace_tests::{agents_in_the_root_session, driven};
+use super::workspace_tests::{agents_in_the_root_session, driven, frame_rows};
 use super::*;
 use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -153,30 +153,56 @@ fn a_busy_agent_is_asked_before_it_is_interrupted() {
     let mut driven = driven(model, &home);
     driven.attach.identities = identities();
     menu_on(&mut driven, TabId(2));
-    let anchor = driven.attach.model.context_menu.as_ref().unwrap().anchor;
     let menu = driven.attach.model.context_menu.take().unwrap();
     let (action, choice) = menu.entry(1).unwrap();
 
     driven
         .attach
-        .perform_menu_entry(menu.target, action, choice, anchor);
+        .perform_menu_entry(menu.target, action, choice);
 
     let question = driven
         .attach
         .model
-        .context_menu
+        .interrupt
         .as_ref()
-        .expect("the switch asks first");
-    assert_eq!(
-        question.labels,
-        [format!(
-            "Interrupt it, continue in {}",
-            display_name(&harness_of(TabId(3)))
-        )]
-    );
+        .expect("the switch asks first, over the whole client");
+    assert_eq!(question.choice.integration, harness_of(TabId(3)));
+    assert!(!question.on_confirm, "the keyboard starts on the way out");
     assert!(
         !driven.attach.model.placement_pending,
         "nothing is placed until it is answered"
+    );
+
+    driven.attach.interrupt_action(uze_keys::Action::Dismiss);
+    assert!(driven.attach.model.interrupt.is_none());
+    assert!(
+        !driven.attach.model.placement_pending,
+        "declined, the agent keeps running"
+    );
+}
+
+#[test]
+fn a_confirmed_interruption_continues_the_agent() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-busy-yes"));
+    let mut model = agents_in_the_root_session();
+    let pane = pane_of(&model, TabId(2));
+    model.note_agent_prompt_submission(pane, &identities(), Some("keep going"));
+    let mut driven = driven(model, &home);
+    driven.attach.identities = identities();
+    menu_on(&mut driven, TabId(2));
+    let menu = driven.attach.model.context_menu.take().unwrap();
+    let (action, choice) = menu.entry(1).unwrap();
+    driven
+        .attach
+        .perform_menu_entry(menu.target, action, choice);
+
+    driven.attach.interrupt_action(uze_keys::Action::FocusNext);
+    driven.attach.interrupt_action(uze_keys::Action::Activate);
+
+    assert!(driven.attach.model.interrupt.is_none());
+    assert!(
+        driven.attach.model.placement_pending,
+        "the switch was placed"
     );
 }
 
@@ -191,11 +217,29 @@ fn an_idle_agent_is_switched_without_a_question() {
 
     driven
         .attach
-        .perform_menu_entry(menu.target, action, choice, menu.anchor);
+        .perform_menu_entry(menu.target, action, choice);
 
     assert!(driven.attach.model.context_menu.is_none());
     assert!(
         driven.attach.model.placement_pending,
         "the switch was placed"
     );
+}
+
+#[test]
+fn the_interruption_is_asked_over_the_whole_client() {
+    let mut model = agents_in_the_root_session();
+    model.interrupt = Some(InterruptDialog {
+        target: MenuTarget::Tab(TabId(2)),
+        label: "agent 1".into(),
+        choice: HarnessChoice {
+            integration: "other".into(),
+            display_name: "Other".into(),
+            continuity_gap: None,
+        },
+        on_confirm: false,
+    });
+    let rows = frame_rows(&mut model).join("\n");
+    assert!(rows.contains("Interrupt agent 1?"), "{rows}");
+    assert!(rows.contains("Continue in Other"), "{rows}");
 }

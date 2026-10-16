@@ -306,7 +306,7 @@ impl Attach<'_> {
                 if let Some(menu) = self.model.context_menu.take()
                     && let Some((action, choice)) = menu.entry(menu.selected)
                 {
-                    self.perform_menu_entry(menu.target, action, choice, menu.anchor);
+                    self.perform_menu_entry(menu.target, action, choice);
                 }
             }
             // Anything else, dismissal included, closes without acting —

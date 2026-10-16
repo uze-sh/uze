@@ -312,6 +312,9 @@ pub(super) fn render(
     if let Some(open) = &model.approval {
         render_approval(frame, frame.area(), open, hits);
     }
+    if let Some(open) = &model.interrupt {
+        render_interrupt(frame, frame.area(), open, hits);
+    }
     // Over everything, the management modal included. Drawn beneath the
     // popups, a toast was covered by the very dropdowns that hang off the
     // strip above its corner, and one raised while a dialog was open sat

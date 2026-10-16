@@ -150,6 +150,9 @@ impl Attach<'_> {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
             }
+            _ if self.model.interrupt.is_some() => {
+                self.interrupt_press(mouse.column, mouse.row);
+            }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
                     self.model.hit_at(mouse.column, mouse.row),
@@ -314,7 +317,7 @@ impl Attach<'_> {
                 // dismissed without acting instead of visibly no-oping.
                 let menu = self.model.context_menu.take();
                 if let (Some(menu), Some((action, choice))) = (menu, entry) {
-                    self.perform_menu_entry(menu.target, action, choice, menu.anchor);
+                    self.perform_menu_entry(menu.target, action, choice);
                 }
                 self.model.dirty = true;
             }
@@ -1352,7 +1355,10 @@ impl Attach<'_> {
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
             // Only reachable while the question is open, which the guarded
             // arm in `press` answers first.
-            WorkspaceHit::ApprovalAnswer(_) | WorkspaceHit::ApprovalBody => {}
+            WorkspaceHit::ApprovalAnswer(_)
+            | WorkspaceHit::ApprovalBody
+            | WorkspaceHit::InterruptAnswer(_)
+            | WorkspaceHit::InterruptBody => {}
             WorkspaceHit::ContextMenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already

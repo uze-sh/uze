@@ -186,17 +186,16 @@ impl Attach<'_> {
     }
 
     /// A menu entry taken: the harness a "Continue in" entry names travels
-    /// beside its action, and `anchor` is where a follow-up question opens.
+    /// beside its action.
     pub(in crate::ui::orchestrator) fn perform_menu_entry(
         &mut self,
         target: MenuTarget,
         action: Action,
         choice: Option<HarnessChoice>,
-        anchor: Rect,
     ) {
         match (action, choice) {
             (Action::SwitchHarness, Some(choice)) => {
-                self.continue_in(target, choice, anchor);
+                self.continue_in(target, choice, false);
                 self.model.dirty = true;
             }
             (action, _) => self.perform_menu_action(target, action),
@@ -224,16 +223,20 @@ impl Attach<'_> {
                 integration: identity.integration.to_owned(),
                 display_name: identity.display_name.to_owned(),
                 continuity_gap: identity.continuity_gap.clone(),
-                interrupting: false,
             })
             .collect()
     }
 
     /// Relaunches `target`'s agent on `choice`'s harness, in the place it
     /// stands, replacing its tab — or, when it is mid-turn and the operator
-    /// has not said otherwise, asks first, since the relaunch ends whatever
+    /// has not `confirmed` it, asks first, since the relaunch ends whatever
     /// it is doing.
-    pub(super) fn continue_in(&mut self, target: MenuTarget, choice: HarnessChoice, anchor: Rect) {
+    pub(in crate::ui::orchestrator) fn continue_in(
+        &mut self,
+        target: MenuTarget,
+        choice: HarnessChoice,
+        confirmed: bool,
+    ) {
         let MenuTarget::Tab(tab) = target else {
             return;
         };
@@ -252,10 +255,13 @@ impl Attach<'_> {
         else {
             return;
         };
-        if !choice.interrupting
-            && self.model.agent_tab_status(pane, false) == AgentTabStatus::Working
-        {
-            self.model.context_menu = Some(ContextMenu::interrupting(target, choice, anchor));
+        if !confirmed && self.model.agent_tab_status(pane, false) == AgentTabStatus::Working {
+            self.model.interrupt = Some(InterruptDialog {
+                target,
+                label,
+                choice,
+                on_confirm: false,
+            });
             return;
         }
         let Some(launch) = self

@@ -139,9 +139,6 @@ pub(super) struct HarnessChoice {
     pub(super) integration: String,
     pub(super) display_name: String,
     pub(super) continuity_gap: Option<String>,
-    /// Asked again already: the agent was mid-turn, and the operator has
-    /// said that interrupting it is what they want.
-    pub(super) interrupting: bool,
 }
 
 impl ContextMenu {
@@ -168,23 +165,6 @@ impl ContextMenu {
             self.choices.insert(at, Some(choice));
         }
         self
-    }
-
-    /// The menu that asks before interrupting an agent mid-turn: its one
-    /// entry says what taking it does, and dismissing it does nothing.
-    pub(super) fn interrupting(target: MenuTarget, choice: HarnessChoice, anchor: Rect) -> Self {
-        let choice = HarnessChoice {
-            interrupting: true,
-            ..choice
-        };
-        Self {
-            target,
-            items: vec![Action::SwitchHarness],
-            labels: vec![switch_label(&choice)],
-            selected: 0,
-            anchor,
-            choices: vec![Some(choice)],
-        }
     }
 
     /// What activating entry `index` does, and the harness it names.
@@ -222,9 +202,5 @@ impl ContextMenu {
 }
 
 fn switch_label(choice: &HarnessChoice) -> String {
-    if choice.interrupting {
-        format!("Interrupt it, continue in {}", choice.display_name)
-    } else {
-        format!("{} {}", Action::SwitchHarness.label(), choice.display_name)
-    }
+    format!("{} {}", Action::SwitchHarness.label(), choice.display_name)
 }

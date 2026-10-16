@@ -33,6 +33,7 @@ impl Attach<'_> {
     pub(super) fn hand_recent_the_keys_or_not(&mut self, column: u16, sidebar: Rect) {
         let model = &self.model;
         let drawn_over = model.approval.is_some()
+            || model.interrupt.is_some()
             || model.release_notes.is_some()
             || model.action_index.is_some()
             || model.renaming.is_some()

@@ -224,7 +224,8 @@ D1).
 It is offered only where `agent_for_tab` resolves, which means the
 harness process is alive. Choosing a harness without continuity shows the
 `continuity_gap` toast the picker already shows. If the tab is `Working`,
-the switch asks for confirmation inline, because relaunching ends the
+the switch asks first in a dialog over the whole client, the way the
+approval of a project's commands is asked, because relaunching ends the
 running turn.
 
 ### Diagram

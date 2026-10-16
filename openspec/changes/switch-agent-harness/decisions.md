@@ -10,7 +10,7 @@
 
 ## D2 — Ask before interrupting with a one-entry menu, not a modal
 
-- status:   pending
+- status:   overturned (operator: a global confirmation dialog; `interrupt.rs`, shaped like `approval.rs`)
 - task:     3.3
 - commit:
 - trigger:  the spec asks for confirmation on a working agent; the workspace has no generic confirm dialog for tab actions.

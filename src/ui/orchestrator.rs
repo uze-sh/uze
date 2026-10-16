@@ -68,6 +68,7 @@ mod agents;
 mod answers;
 mod approval;
 mod events;
+mod interrupt;
 mod notices;
 
 /// Input/redraw cadence. Unlike the pane content itself — which the server
@@ -212,6 +213,7 @@ const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
+use interrupt::*;
 mod input;
 mod recent;
 mod render;
@@ -828,6 +830,11 @@ pub(super) enum WorkspaceHit {
     ApprovalAnswer(bool),
     /// The question itself, which a click on answers nothing.
     ApprovalBody,
+    /// One of the answers to whether to interrupt an agent mid-turn to
+    /// continue it on another harness: `true` interrupts.
+    InterruptAnswer(bool),
+    /// That question itself, which a click on answers nothing.
+    InterruptBody,
     /// The sidebar's "+ space" control — opens the root picker
     /// ([`WorkspaceModel::root_picker`]), since a space is born from a
     /// directory and that directory is chosen, not typed blind.
@@ -1693,6 +1700,10 @@ struct WorkspaceModel {
     /// Seals the client while it is open: an answer only ever comes from
     /// the operator's own click or keystroke.
     approval: Option<ApprovalDialog>,
+    /// The open question about interrupting an agent mid-turn to continue
+    /// it on another harness (see `interrupt`). Seals the client like the
+    /// approval does.
+    interrupt: Option<InterruptDialog>,
     /// Open state of the code surface; `None` when closed. Drawn where the
     /// pane is, with the sidebar and the strip live around it — so unlike
     /// `renaming`/`agent_picker`/`context_menu` a click outside it is not a
@@ -2127,6 +2138,7 @@ impl WorkspaceModel {
             && !self.recent.has_keys()
             && self.context_menu.is_none()
             && self.approval.is_none()
+            && self.interrupt.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()
             && self.manage.is_none()

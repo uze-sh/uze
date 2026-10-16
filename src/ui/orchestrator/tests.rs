@@ -626,7 +626,7 @@ mod workspace_tests {
 
     /// The whole frame as text, row by row — for asserting not just that
     /// something was drawn, but where.
-    fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
+    pub(super) fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
         let area = Rect::new(0, 0, 80, 24);
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
         terminal
