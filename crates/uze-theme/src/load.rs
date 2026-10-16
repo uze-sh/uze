@@ -309,18 +309,11 @@ pub fn parse_file(path: &Path) -> Result<ThemeFile, LoadError> {
     parse_str(&path.to_string_lossy(), &contents)
 }
 
-pub fn parse_str(id: &str, contents: &str) -> Result<ThemeFile, LoadError> {
+pub(crate) fn parse_str(id: &str, contents: &str) -> Result<ThemeFile, LoadError> {
     serde_json::from_str(contents).map_err(|source| LoadError::Parse {
         path: PathBuf::from(id),
         source,
     })
-}
-
-/// A theme with no ancestry of its own, resolved over the built-in default.
-/// The common case, and what the bundled themes and the tests use.
-pub fn load_str(id: &str, contents: &str) -> Result<Loaded, LoadError> {
-    let file = parse_str(id, contents)?;
-    resolve_stack(&Identity::from_file(id, &file), &[default_file(), &file])
 }
 
 /// Who a resolved theme says it is.
@@ -735,6 +728,13 @@ fn missing_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A theme with no ancestry of its own, resolved over the built-in
+    /// default.
+    fn load_str(id: &str, contents: &str) -> Result<Loaded, LoadError> {
+        let file = parse_str(id, contents)?;
+        resolve_stack(&Identity::from_file(id, &file), &[default_file(), &file])
+    }
 
     #[test]
     fn command_groups_take_each_themes_own_accent_and_text() {

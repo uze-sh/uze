@@ -67,7 +67,7 @@ impl fmt::Display for Rgb {
 /// (black on white). Used to *report* an unreadable theme, never to correct
 /// one: a colour the author wrote is the author's decision, but a theme
 /// they cannot diagnose would be ours.
-pub fn contrast_ratio(a: Rgb, b: Rgb) -> f32 {
+pub(crate) fn contrast_ratio(a: Rgb, b: Rgb) -> f32 {
     let (lighter, darker) = {
         let (a, b) = (a.relative_luminance(), b.relative_luminance());
         if a >= b { (a, b) } else { (b, a) }

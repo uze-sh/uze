@@ -17,7 +17,7 @@ use crate::{Symbol, Token, file::CURRENT_VERSION};
 
 /// The schema's own identity. Versioned by path so a theme written against
 /// today's vocabulary keeps pointing at a schema that describes it.
-pub const SCHEMA_ID: &str = "https://uze.dev/schema/theme/v1.json";
+pub(crate) const SCHEMA_ID: &str = "https://uze.dev/schema/theme/v1.json";
 
 /// The JSON Schema describing a theme file.
 pub fn json_schema() -> Value {
