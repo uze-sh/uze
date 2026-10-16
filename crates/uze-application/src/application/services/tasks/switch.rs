@@ -165,37 +165,36 @@ impl Workspace<'_> {
             &git,
             digest.as_ref(),
         );
-        let written =
-            briefing::write(&self.0.home, root, switched.id.as_str(), &text).and_then(|path| {
-                conversation::update(&self.0.home, root, &switched.id, |stored| {
-                    stored.briefing = Some(PendingBriefing {
-                        integration: incoming.id().to_owned(),
-                        path: path.clone(),
-                    });
-                })
-                .map(|()| path)
-            });
-        written
+        let written = briefing::write(&self.0.home, root, switched.id.as_str(), &text)
             .inspect_err(|error| {
                 tracing::warn!(agent = %switched.id, %error, "the briefing could not be written");
             })
-            .ok()
+            .ok();
+        // Marked whether or not the briefing was written: the next time
+        // the outgoing harness comes back, this is where its delta starts.
+        let recorded = conversation::update(&self.0.home, root, &switched.id, |stored| {
+            if let Some(outgoing) = outgoing {
+                stored.left(outgoing.id());
+            }
+            stored.briefing = written.clone().map(|path| PendingBriefing {
+                integration: incoming.id().to_owned(),
+                path,
+            });
+        });
+        if let Err(error) = recorded {
+            tracing::warn!(agent = %switched.id, %error, "the switch could not be recorded");
+            return None;
+        }
+        written
     }
 }
 
-/// When `incoming` last stopped working on this agent — the launch of the
-/// first harness that ran after it — for a harness that resumes a
-/// conversation of its own and only needs what it missed.
+/// When the agent last moved on from `incoming`, for a harness that resumes
+/// a conversation of its own and only needs what it missed.
 fn returning_since(record: &ConversationRecord, incoming: &str) -> Option<u64> {
     let own = record.get(incoming)?;
     own.conversation.as_ref()?;
-    record
-        .harnesses
-        .iter()
-        .filter(|(id, _)| id.as_str() != incoming)
-        .map(|(_, entry)| entry.launched_at_unix)
-        .filter(|launched| *launched >= own.launched_at_unix)
-        .min()
+    own.left_at_unix
 }
 
 #[cfg(test)]
@@ -206,7 +205,7 @@ mod tests {
         capability::Resource,
         exposure::{ExposureMechanism, ExposurePlan},
         router::{CompatibilityRoute, HarnessCapabilities},
-        session::{ConversationDigest, SessionId},
+        session::{ConversationDigest, SessionId, Speaker, Turn},
     };
     use uze_workspace::conversation::ConversationOrigin;
 
@@ -240,6 +239,11 @@ mod tests {
         ) -> Option<ConversationDigest> {
             Some(ConversationDigest {
                 goal: Some(format!("the goal of {session}, since {since_unix:?}")),
+                turns: vec![Turn {
+                    speaker: Speaker::Operator,
+                    text: format!("said in {session} since {since_unix:?}"),
+                    at_unix: None,
+                }],
                 ..ConversationDigest::default()
             })
         }
@@ -333,16 +337,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(project);
     }
 
-    #[test]
-    fn switching_back_briefs_the_returning_harness_only_on_what_it_missed() {
-        let app = application("switch-back-home");
-        let project = project("switch-back");
-        let root = canonical(&project);
-        let id = agent_on_left(&app, &project);
-        app.workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
-            .unwrap();
-        conversation::update(&app.home, &root, &id, |record| {
+    /// What the launch `right`'s first switch causes would record.
+    fn right_launched(app: &UzeApplication, root: &Path, id: &AgentId) {
+        conversation::update(&app.home, root, id, |record| {
             record.briefing = None;
             record.launched(
                 "right",
@@ -352,25 +349,74 @@ mod tests {
             );
         })
         .unwrap();
-        let right_launched = conversation::load(&app.home, &root, &id)
-            .get("right")
-            .unwrap()
-            .launched_at_unix;
+    }
+
+    fn briefing_text(app: &UzeApplication, root: &Path, id: &AgentId) -> String {
+        let record = conversation::load(&app.home, root, id);
+        std::fs::read_to_string(record.briefing.unwrap().path).unwrap()
+    }
+
+    #[test]
+    fn switching_back_briefs_the_returning_harness_only_on_what_it_missed() {
+        let app = application("switch-back-home");
+        let project = project("switch-back");
+        let root = canonical(&project);
+        let id = agent_on_left(&app, &project);
+        app.workspace()
+            .switch_harness(&project, id.as_str(), "left", "right")
+            .unwrap();
+        right_launched(&app, &root, &id);
 
         app.workspace()
             .switch_harness(&project, id.as_str(), "right", "left")
             .unwrap();
 
         let record = conversation::load(&app.home, &root, &id);
-        let text = std::fs::read_to_string(record.briefing.unwrap().path).unwrap();
+        let left = record.get("left").unwrap().left_at_unix;
+        assert!(left.is_some(), "the first switch marked when it left");
+        let text = briefing_text(&app, &root, &id);
         assert!(text.contains("You worked on this agent before"), "{text}");
         assert!(
             !text.contains("the goal of c2"),
             "a returning harness is not told the goal again: {text}"
         );
-        assert_eq!(
-            returning_since(&conversation::load(&app.home, &root, &id), "left"),
-            Some(right_launched)
+        assert!(
+            text.contains(&format!("said in c2 since {left:?}")),
+            "{text}"
+        );
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// A resume records no launch, so a harness that comes back a second
+    /// time is told what it missed by when it left, not by when it was
+    /// first launched.
+    #[test]
+    fn a_harness_returning_a_second_time_is_still_briefed_on_what_it_missed() {
+        let app = application("switch-cycle-home");
+        let project = project("switch-cycle");
+        let root = canonical(&project);
+        let id = agent_on_left(&app, &project);
+        let workspace = app.workspace();
+        workspace
+            .switch_harness(&project, id.as_str(), "left", "right")
+            .unwrap();
+        right_launched(&app, &root, &id);
+        workspace
+            .switch_harness(&project, id.as_str(), "right", "left")
+            .unwrap();
+
+        workspace
+            .switch_harness(&project, id.as_str(), "left", "right")
+            .unwrap();
+
+        let record = conversation::load(&app.home, &root, &id);
+        let right_left = record.get("right").unwrap().left_at_unix;
+        assert_eq!(returning_since(&record, "right"), right_left);
+        let text = briefing_text(&app, &root, &id);
+        assert!(text.contains("You worked on this agent before"), "{text}");
+        assert!(
+            text.contains(&format!("said in c1 since {right_left:?}")),
+            "{text}"
         );
         let _ = std::fs::remove_dir_all(project);
     }

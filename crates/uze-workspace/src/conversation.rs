@@ -79,6 +79,11 @@ pub struct HarnessConversation {
     /// that same value means nothing new was started, so the previous
     /// occupant's conversation can never be adopted.
     pub preceded_by: Option<SessionId>,
+    /// When the agent last moved on from this harness to another one. A
+    /// resume records no launch, so this is the only mark of when a
+    /// harness that comes back stopped following the work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left_at_unix: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -143,8 +148,16 @@ impl ConversationRecord {
                 launched_at_unix: now_unix(),
                 observed_at_unix: None,
                 preceded_by,
+                left_at_unix: None,
             },
         );
+    }
+
+    /// Marks that the agent moved on from `integration` now.
+    pub fn left(&mut self, integration: &str) {
+        if let Some(entry) = self.harnesses.get_mut(integration) {
+            entry.left_at_unix = Some(now_unix());
+        }
     }
 
     /// Writes back what was observed for `launched_at_unix`'s launch.
