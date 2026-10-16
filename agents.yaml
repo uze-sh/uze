@@ -20,22 +20,10 @@ workspace:
   # the operator would type it. `on_change` asks about uncommitted work and is
   # sent only on a click; the other three also follow UZE's own operations.
   actions:
-    on_change: >-
-      Commit your work on this branch with the git:commit skill, then end your
-      turn. Do not push, rebase or merge: delivery is UZE's.
-    on_publish: >-
-      Your branch is pushed, rebased onto main and past the project's checks.
-      Open a pull request for it against main with the git:pr skill. The branch
-      already carries its review name and is already pushed: do not rename,
-      rebase or push it. Do not merge the request; open it and end your turn.
-    on_conflict: >-
-      Your branch no longer rebases onto main, and the rebase is paused in this
-      checkout. Resolve the conflicts preserving the intent of your change, run
-      git rebase --continue, run the project's checks, and end your turn.
-    on_fail: >-
-      The project's checks failed on your branch after it was rebased onto main.
-      Fix them on this branch, commit with the git:commit skill, and end your
-      turn. Do not push: UZE delivers again when asked.
+    on_change: Commit your work with the git:commit skill.
+    on_publish: Open a pull request for this branch with the git:pr skill.
+    on_conflict: Resolve the rebase conflicts, then run git rebase --continue and the checks.
+    on_fail: Fix the failing checks and commit with the git:commit skill.
 
   # An agent names its own work as its first action
   # (`uze agent work name <type>/<subject>`); work that reaches a commit
