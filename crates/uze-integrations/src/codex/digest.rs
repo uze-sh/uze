@@ -55,7 +55,7 @@ pub(super) fn read(rollout: &Path, since_unix: Option<u64>) -> Option<Conversati
             _ => {}
         }
     }
-    digest.limit = digest.limit.filter(still_in_force);
+    digest.limit = digest.limit.filter(transcript::still_in_force);
     Some(digest)
 }
 
@@ -109,7 +109,7 @@ pub(super) fn limit(rollout: &Path) -> Option<UsageLimit> {
             record.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
         })
         .and_then(reached)
-        .filter(still_in_force)
+        .filter(transcript::still_in_force)
 }
 
 /// The limit a `token_count` record reports reached: the window that is
@@ -136,12 +136,6 @@ fn reached(record: &Value) -> Option<UsageLimit> {
             .and_then(|window| window.get("resets_at"))
             .and_then(Value::as_u64),
     })
-}
-
-fn still_in_force(limit: &UsageLimit) -> bool {
-    limit
-        .resets_at_unix
-        .is_none_or(|resets| resets > transcript::now_unix())
 }
 
 /// The text parts of an item's `content`, joined.

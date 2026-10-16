@@ -120,7 +120,7 @@ pub(super) fn read(transcript: &Path, since_unix: Option<u64>) -> Option<Convers
             _ => {}
         }
     }
-    digest.limit = digest.limit.filter(still_in_force);
+    digest.limit = digest.limit.filter(transcript::still_in_force);
     Some(digest)
 }
 
@@ -141,13 +141,7 @@ pub(super) fn limit(transcript: &Path) -> Option<UsageLimit> {
             }
         });
     }
-    limit.filter(still_in_force)
-}
-
-fn still_in_force(limit: &UsageLimit) -> bool {
-    limit
-        .resets_at_unix
-        .is_none_or(|resets| resets > transcript::now_unix())
+    limit.filter(transcript::still_in_force)
 }
 
 fn turn(speaker: Speaker, text: &str, at_unix: Option<u64>) -> Turn {

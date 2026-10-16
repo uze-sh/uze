@@ -14,6 +14,7 @@ use std::{
 };
 
 use serde_json::Value;
+use uze_core::session::UsageLimit;
 
 /// Every record of the transcript at `path`, oldest first.
 pub(crate) fn records(path: &Path) -> Option<impl Iterator<Item = Value>> {
@@ -81,9 +82,11 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-/// Now, in Unix seconds, for a limit that has already reset.
-pub(crate) fn now_unix() -> u64 {
-    uze_platform::clock::since_epoch().as_secs()
+/// Whether a usage limit a transcript recorded has yet to lift. One with no
+/// reset time is taken at its word until a later record says otherwise.
+pub(crate) fn still_in_force(limit: &UsageLimit) -> bool {
+    let now = uze_platform::clock::since_epoch().as_secs();
+    limit.resets_at_unix.is_none_or(|resets| resets > now)
 }
 
 #[cfg(test)]
