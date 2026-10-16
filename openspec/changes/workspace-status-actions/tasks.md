@@ -67,6 +67,7 @@
 - [x] 7.3 Draw an `uncommitted` status beside the change count only when `on_change` is declared; the count keeps opening the changes
 - [x] 7.4 Tests, the reference page, journey `05-delivery/01` (the click moves to `on_change`), and this repository's `agents.yaml`
 - [x] 7.5 Name the hovered action by its key (`send <key>`) instead of the instruction's start
+- [x] 7.6 A click on ready work delivers it (the deliver key's action), drawn as an action with the `deliver <chord>` hint; any other state never delivers on a click
 
 ## 8. Status latency, after trying it by hand
 

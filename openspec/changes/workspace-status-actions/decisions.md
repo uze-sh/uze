@@ -77,3 +77,13 @@
 - decided:  the follow-the-target rebase never waits for the write lock; the remote's question is answered after the states are drawn; a `stat`-only stamp per checkout, polled each second, evaluates a repository the moment Git records something in it.
 - rejected: a file-system watcher crate (`notify`) — a new dependency for what a few `stat`s a second already answer; a shorter refresh clock — a full Git pass every few seconds for every repository, changed or not.
 - blast:    an edit not yet added to the index is still seen when the pane goes quiet or on the clock, as before.
+
+## D9 — A click on ready work delivers it
+
+- status:   accepted
+- task:     7.6
+- commit:
+- trigger:  by hand, the operator clicked `→ main ↑4` under its `deliver alt+i` hint and nothing happened. The click was taken from delivery so that ready could carry an instruction without the click meaning two things; D7 took `on_ready` away, and with it the ambiguity.
+- decided:  ready work is always an action; a click runs the deliver key's action; the hint stays `deliver <chord>`. Every bold status now does something on a click, and every muted one nothing.
+- rejected: keeping the click inert — a status drawn under a hint naming an action, that does not take it, is the unpredictable click this change set out to remove.
+- blast:    a stray click delivers; `push` writes only the agent's branch, `merge` only the local target, and "deliver all" stays on its key.

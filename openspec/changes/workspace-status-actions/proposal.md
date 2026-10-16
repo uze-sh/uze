@@ -50,8 +50,8 @@ Underneath that sits a blurrier interface.
   queued.
 - **Affordance by weight and hue.** A chip with an instruction is bold in its full hue and
   brightens under the pointer, and one without never reacts. No ground.
-- **BREAKING:** a click on the chip no longer delivers. Delivery stays on its key
-  (`deliver-task`) and in recent.
+- A click on ready work still delivers, and only there: ready takes no instruction, so the
+  click has one meaning, and its hint names the deliver key (`deliver-task`).
 
 ## Capabilities
 

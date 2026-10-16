@@ -290,9 +290,10 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
 
     // ── small notifications ────────────────────────────────────────────
     // Where the work stands, as a status on no ground: a report in its
-    // state's muted hue, or — when the project declares an instruction
-    // for the state — an action in the full hue, in bold. A click on an
-    // action sends that instruction to the agent; nothing here delivers.
+    // state's muted hue, or an action in the full hue, in bold. Ready work
+    // is always an action, and a click on it delivers, as the deliver key
+    // does; any other state is one when the project declares an
+    // instruction for it, and a click sends that instruction.
     //
     // Only what UZE cut. An agent in the project's own root is on the
     // operator's branch, and what happens to it is theirs to ask for. Its
@@ -305,7 +306,8 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         && let Some((text, hue)) = status_notification(task, &state, model.tick)
     {
         trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Bare);
-        let answered = task.action.is_some() && state != WorkStateView::Integrating;
+        let answered = (task.action.is_some() || state == WorkStateView::Ready)
+            && state != WorkStateView::Integrating;
         let hit = if answered {
             WorkspaceHit::StatusAction(tab)
         } else {
@@ -726,28 +728,24 @@ pub(super) fn render_zone_hairline(
 const STATUS_HINT_WIDTH: usize = 30;
 
 /// What the status under the pointer would do, said where the notice
-/// stands: which declared instruction a click sends, by its key, or — for
-/// ready work, which no instruction answers — the key that delivers it.
+/// stands: for ready work, the key that delivers it, which a click does
+/// too; otherwise which declared instruction a click sends, by its key.
 ///
 /// The key and not the text: an instruction is a sentence, and the start
 /// of one cut at a glance's width named nothing. Whoever declared it knows
 /// what `on_publish` asks; the hint has only to say a click sends it.
 fn status_hint(model: &WorkspaceModel) -> Option<String> {
-    match model.hovered? {
-        WorkspaceHit::StatusAction(tab) => {
-            let task = model.tab_task(tab)?;
-            let moment = model.drawn_state(task).answered_by()?;
-            Some(format!("send {}", moment.key()))
-        }
-        WorkspaceHit::StatusReport(tab) => {
-            let task = model.tab_task(tab)?;
-            (model.drawn_state(task) == WorkStateView::Ready).then_some(())?;
-            let chord = uze_keys::active()
-                .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])?;
-            Some(format!("deliver {chord}"))
-        }
-        _ => None,
+    let WorkspaceHit::StatusAction(tab) = model.hovered? else {
+        return None;
+    };
+    let task = model.tab_task(tab)?;
+    let state = model.drawn_state(task);
+    if state == WorkStateView::Ready {
+        let chord = uze_keys::active()
+            .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])?;
+        return Some(format!("deliver {chord}"));
     }
+    Some(format!("send {}", state.answered_by()?.key()))
 }
 
 /// The hint, in place of the notice while the pointer asks. Bounded, cut

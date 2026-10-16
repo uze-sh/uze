@@ -248,8 +248,9 @@ is sanitized (D8).
 - [A project that relied on `handoff` now has no delivery] → it loses only "rebase and gate
   without writing anything". The automatic rebase still follows the target, and the
   project's own checks remain runnable by the agent.
-- [An operator used to one-click delivery clicks and gets nothing] → the `ready` hint shows
-  the deliver key.
+- [A stray click on ready work starts a delivery] → the chip is drawn as an action and its
+  hint names the deliver key before the click; `push` writes only the agent's branch and
+  `merge` only the local target.
 - [`PromptBuffer` models the line and may be wrong] → untrusted refuses (`Unknown`). A false
   refusal costs a key, and a false send mixes with the operator's words.
 - [Two binaries on one machine] → the installed release rejects `push` in this repository's

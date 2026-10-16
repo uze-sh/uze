@@ -5,7 +5,7 @@ The workspace's tab strip shows where an isolated agent's work stands as feedbac
 ## ADDED Requirements
 
 ### Requirement: The work-state chip is feedback read from the checkout and the remote
-The tab strip SHALL show the selected isolated agent's work state as a chip read from its checkout and the remote, the same whoever brought the work there. The chip SHALL NOT be clickable unless the project declares an instruction for the state it shows.
+The tab strip SHALL show the selected isolated agent's work state as a chip read from its checkout and the remote, the same whoever brought the work there. The chip SHALL NOT be clickable unless the work is ready, or the project declares an instruction for the state it shows.
 
 #### Scenario: A state with no instruction is only reported
 - **WHEN** the selected agent's work is published and the project declares no `on_publish` instruction
@@ -135,17 +135,21 @@ Under the pointer, an actionable chip SHALL name the instruction a click sends, 
 - **WHEN** the strip has no room left for the hint
 - **THEN** no hint is drawn and every control stays where it was
 
-### Requirement: Delivery is not a chip click
-A click on the work-state chip SHALL NOT start a delivery. Delivery SHALL stay reachable by its own key and from recent.
+### Requirement: A click on ready work delivers it
+A click on the chip of ready work SHALL start its delivery, as the key bound to delivering the selected task does; a click on a chip in any other state SHALL NOT. Ready takes no instruction, so the click has one meaning. Delivery SHALL also stay reachable by its key and from recent.
 
 #### Scenario: The key still delivers
 - **WHEN** the operator presses the key bound to delivering the selected task and the work is ready
 - **THEN** the delivery runs as the project's completion behavior describes
 
-#### Scenario: Hovering ready work without an instruction names the key
+#### Scenario: Hovering ready work names the key that delivers it
 - **WHEN** the pointer rests on a ready chip
-- **THEN** the chip is drawn as at rest, and the message zone names the key bound to delivering
+- **THEN** the chip is drawn as an action, and the message zone names the key bound to delivering
 
-#### Scenario: The chip never delivers
+#### Scenario: A click on ready work delivers it
 - **WHEN** the operator clicks the chip of ready work
-- **THEN** no rebase, gate or fast-forward is started
+- **THEN** the delivery starts as the key would start it, and nothing is typed into the agent's pane
+
+#### Scenario: A click elsewhere never delivers
+- **WHEN** the operator clicks the chip of published, conflicted or failed work
+- **THEN** no rebase, gate, fast-forward or push is started

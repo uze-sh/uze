@@ -100,7 +100,8 @@ says:
 
 ## Bringing the work home
 
-When an agent in a worktree is **Ready**, press `Alt+I` to deliver it. The branch is
+When an agent in a worktree is **Ready**, press `Alt+I` or click its status
+(`→ main ↑3`) to deliver it. The branch is
 rebased onto your target branch, your checks run, and then the work goes where
 the project says:
 
@@ -119,7 +120,7 @@ workspace:
 
 What the agent is asked next is the project's own words, under `actions`: one
 line per state, sent into its pane when uze leaves the work in that state, and
-whenever you click the status in the header. With nothing declared, the
+whenever you click the status in the tab strip. With nothing declared, the
 status only reports. If the checks fail or the rebase conflicts, nothing
 reaches the target, and the agent is sent the line for that state if the
 project declares one. See [`actions`](/docs/reference/project-files#actions).

@@ -5,12 +5,11 @@ about: |
   The end of the loop. An agent commits in its own checkout; the project's
   branch does not move because of it. When the work is deliverable the
   workspace's status *names where it would go* — `→ main`, and how much it
-  would send — and only the deliver key moves anything.
+  would send — and a click on it delivers, as the deliver key does.
 
-  The status is not the delivery. While the work is uncommitted, clicking it
-  asks the agent what the project declared for that state, and moves
-  nothing; the journey reads the branch after each gesture to check which
-  one acted.
+  Before that, while the work is uncommitted, clicking the status asks the
+  agent what the project declared for that state, and moves nothing; the
+  journey reads the branch after each gesture to check which one acted.
 
 world:
   project: demo-app
@@ -74,7 +73,7 @@ scenes:
       - cmd:
           run: "git -C {project} log --oneline -1"
           stdout_contains: "chore: declare the worktree policy"
-        about: the target has not moved, because a click never delivers
+        about: the target has not moved, because asking the agent delivers nothing
       - tasks: { any_state: uncommitted }
         about: and the change is still the agent's, uncommitted in its checkout
 
@@ -102,10 +101,11 @@ scenes:
       - git: { in: "{project}", dirty: false }
         about: nor was the primary checkout used as a workbench
 
-  - scene: the deliver key does exactly what the status said
+  - scene: clicking the status delivers exactly what it said
     when:
-      - key: "M-i"
-        say: deliver
+      - click: "→ main"
+        in: strip
+        say: click the ready status, which delivers
         expect: "merged"
         expect_timeout: 60
         pause: 1.0

@@ -2452,14 +2452,8 @@ mod workspace_tests {
         assert!(rows.iter().any(|row| row.contains("→ main ↑3")), "{rows:?}");
         assert!(
             hits.iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusReport(_))),
-            "with no instruction declared it is a report"
-        );
-        assert!(
-            !hits
-                .iter()
                 .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
-            "and nothing answers a click on it"
+            "ready work is an action with no instruction declared: a click delivers it"
         );
     }
 
@@ -2533,15 +2527,15 @@ mod workspace_tests {
     #[test]
     fn a_status_a_click_answers_is_bold_and_lifts_and_a_report_never_reacts() {
         let mut action = answered(
-            agent_with_task(WorkStateView::Ready, 3),
-            "Review your diff.",
+            agent_with_task(WorkStateView::Published, 3),
+            "Open a pull request.",
         );
         let tab = action.selected_tab().expect("a selected tab");
         let rect = hit_rect(&action, WorkspaceHit::StatusAction(tab));
         let (fg, bg, bold) = status_cell(&action, rect);
         assert_eq!(
             fg,
-            theme::color(Token::StateSuccess),
+            theme::color(Token::StatePublished),
             "the state's full hue"
         );
         assert!(bold, "and the only bold status");
@@ -2555,14 +2549,14 @@ mod workspace_tests {
         action.hovered = Some(WorkspaceHit::StatusAction(tab));
         assert_eq!(
             status_cell(&action, rect).0,
-            theme::lifted(Token::StateSuccess),
+            theme::lifted(Token::StatePublished),
             "under the pointer it lifts, keeping its hue"
         );
 
-        let mut report = agent_with_task(WorkStateView::Ready, 3);
+        let mut report = agent_with_task(WorkStateView::Published, 3);
         let rect = hit_rect(&report, WorkspaceHit::StatusReport(tab));
         let at_rest = status_cell(&report, rect);
-        assert_eq!(at_rest.0, theme::color(Token::StateSuccessMuted));
+        assert_eq!(at_rest.0, theme::color(Token::StatePublishedMuted));
         assert!(!at_rest.2, "a report is not bold");
         report.hovered = Some(WorkspaceHit::StatusReport(tab));
         assert_eq!(
@@ -3125,7 +3119,7 @@ mod workspace_tests {
     fn hovering_ready_work_with_no_instruction_names_the_deliver_key() {
         let mut model = agent_with_task(WorkStateView::Ready, 3);
         let tab = model.selected_tab().expect("a selected tab");
-        model.hovered = Some(WorkspaceHit::StatusReport(tab));
+        model.hovered = Some(WorkspaceHit::StatusAction(tab));
         let chord = uze_keys::active()
             .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])
             .expect("delivery is bound");
@@ -3170,8 +3164,8 @@ mod workspace_tests {
     fn a_click_on_an_answered_status_sends_its_instruction_once() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-status-click"));
         let model = answered(
-            agent_with_task(WorkStateView::Ready, 3),
-            "Review your diff.",
+            agent_with_task(WorkStateView::Published, 3),
+            "Open a pull request.",
         );
         let tab = model.selected_tab().expect("a selected tab");
         let pane = model.tab(tab).expect("the tab").pane.id;
@@ -3187,11 +3181,11 @@ mod workspace_tests {
             1,
             "a second click is refused as busy: {typed:?}"
         );
-        assert!(typed[0].contains("Review your diff."), "{typed:?}");
+        assert!(typed[0].contains("Open a pull request."), "{typed:?}");
         assert!(typed[0].ends_with('\r'), "submitted, not staged: {typed:?}");
         assert!(
             driven.attach.model.remembered.delivery_pending.is_empty(),
-            "a click on the status never delivers"
+            "a click on an instruction delivers nothing"
         );
         let said = format!("{:?}", driven.attach.model.toast_stack());
         assert!(said.contains("sent to agent"), "{said}");
@@ -3332,12 +3326,32 @@ mod workspace_tests {
         assert!(said.contains("held back"), "{said}");
     }
 
+    /// A click on ready work delivers it, as the deliver key does, and
+    /// types nothing into the agent's pane.
+    #[test]
+    fn a_click_on_ready_work_delivers_it() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-ready-click"));
+        let model = agent_with_task(WorkStateView::Ready, 3);
+        let tab = model.selected_tab().expect("a selected tab");
+        let pane = model.tab(tab).expect("the tab").pane.id;
+        let mut driven = driven(model, &home);
+        let rect = hit_rect(&driven.attach.model, WorkspaceHit::StatusAction(tab));
+        driven.frame();
+        driven.press(rect.x, rect.y);
+
+        assert!(
+            !driven.attach.model.remembered.delivery_pending.is_empty(),
+            "the click started the delivery"
+        );
+        assert!(typed_into(&mut driven, pane).is_empty());
+    }
+
     /// A click on a status nothing answers sends nothing and delivers
     /// nothing.
     #[test]
     fn a_click_on_a_report_does_nothing() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-report-click"));
-        let model = agent_with_task(WorkStateView::Ready, 3);
+        let model = agent_with_task(WorkStateView::InReview, 3);
         let tab = model.selected_tab().expect("a selected tab");
         let pane = model.tab(tab).expect("the tab").pane.id;
         let mut driven = driven(model, &home);
@@ -3356,8 +3370,8 @@ mod workspace_tests {
     fn an_instruction_is_refused_over_text_the_operator_typed() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-status-typed"));
         let mut model = answered(
-            agent_with_task(WorkStateView::Ready, 3),
-            "Review your diff.",
+            agent_with_task(WorkStateView::Published, 3),
+            "Open a pull request.",
         );
         let tab = model.selected_tab().expect("a selected tab");
         let pane = model.tab(tab).expect("the tab").pane.id;
