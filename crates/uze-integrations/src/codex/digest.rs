@@ -9,9 +9,7 @@
 //! - `UserMessage` is the operator's turn, `AgentMessage` the agent's own
 //!   text, `CommandExecution` a command it ran with its `exit_code`;
 //! - a top-level `compacted` record is Codex's own summary of everything
-//!   before it;
-//! - `token_count` records carry the plan's `rate_limits`, which say when a
-//!   limit was reached and when each window resets.
+//!   before it.
 //!
 //! Reasoning, file changes and everything else are left out. Older Codex
 //! builds wrote `user_message`/`agent_message` events instead; those read
@@ -20,12 +18,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use uze_core::session::{ConversationDigest, LastCommand, Speaker, Turn, UsageLimit};
+use uze_core::session::{ConversationDigest, LastCommand, Speaker, Turn};
 
 use crate::shared::transcript;
-
-/// How much of a rollout's end is enough to find its latest `token_count`.
-const LIMIT_TAIL_BYTES: u64 = 64 * 1024;
 
 pub(super) fn read(rollout: &Path, since_unix: Option<u64>) -> Option<ConversationDigest> {
     let mut digest = ConversationDigest::default();
@@ -42,20 +37,17 @@ pub(super) fn read(rollout: &Path, since_unix: Option<u64>) -> Option<Conversati
                     digest.turns.clear();
                 }
             }
-            Some("event_msg") => match record.pointer("/payload/type").and_then(Value::as_str) {
-                Some("item_completed") => {
-                    let Some(item) = record.pointer("/payload/item") else {
-                        continue;
-                    };
+            Some("event_msg")
+                if record.pointer("/payload/type").and_then(Value::as_str)
+                    == Some("item_completed") =>
+            {
+                if let Some(item) = record.pointer("/payload/item") {
                     item_completed(&mut digest, item, at, recent);
                 }
-                Some("token_count") => digest.limit = reached(&record),
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
-    digest.limit = digest.limit.filter(transcript::still_in_force);
     Some(digest)
 }
 
@@ -98,44 +90,6 @@ fn item_completed(digest: &mut ConversationDigest, item: &Value, at: Option<u64>
         }
         _ => {}
     }
-}
-
-/// Whether the rollout ends at a usage limit that has not lifted yet.
-pub(super) fn limit(rollout: &Path) -> Option<UsageLimit> {
-    transcript::tail_records(rollout, LIMIT_TAIL_BYTES)
-        .iter()
-        .rev()
-        .find(|record| {
-            record.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
-        })
-        .and_then(reached)
-        .filter(transcript::still_in_force)
-}
-
-/// The limit a `token_count` record reports reached: the window that is
-/// spent, and when it resets.
-fn reached(record: &Value) -> Option<UsageLimit> {
-    let limits = record.pointer("/payload/rate_limits")?;
-    let spent = ["primary", "secondary"]
-        .iter()
-        .filter_map(|window| limits.get(*window))
-        .find(|window| {
-            window
-                .get("used_percent")
-                .and_then(Value::as_f64)
-                .is_some_and(|used| used >= 100.0)
-        });
-    let flagged = limits
-        .get("rate_limit_reached_type")
-        .is_some_and(|reached| !reached.is_null());
-    if spent.is_none() && !flagged {
-        return None;
-    }
-    Some(UsageLimit {
-        resets_at_unix: spent
-            .and_then(|window| window.get("resets_at"))
-            .and_then(Value::as_u64),
-    })
 }
 
 /// The text parts of an item's `content`, joined.
@@ -249,7 +203,6 @@ mod tests {
                 failed: Some(true),
             })
         );
-        assert_eq!(digest.limit, None);
     }
 
     #[test]
@@ -274,22 +227,5 @@ mod tests {
         let digest = read(&rollout("codex-digest-since", &conversation()), since).unwrap();
         assert_eq!(digest.turns.len(), 2);
         assert_eq!(digest.goal.as_deref(), Some("make branch names short"));
-    }
-
-    #[test]
-    fn a_spent_window_is_the_limit_and_when_it_resets() {
-        let mut records = conversation();
-        records.push(token_count("2026-10-06T00:00:07Z", 100.0, json!("primary")));
-        let path = rollout("codex-limit", &records);
-        let expected = Some(UsageLimit {
-            resets_at_unix: Some(4_102_444_800),
-        });
-        assert_eq!(limit(&path), expected);
-        assert_eq!(read(&path, None).unwrap().limit, expected);
-    }
-
-    #[test]
-    fn a_window_with_room_left_is_no_limit() {
-        assert_eq!(limit(&rollout("codex-no-limit", &conversation())), None);
     }
 }

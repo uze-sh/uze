@@ -1238,7 +1238,6 @@ fn agent_contexts(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<L
                     .unwrap_or_default()
                     .to_owned(),
                 cwd,
-                working: model.agent_is_working(tab.pane.id),
             })
         })
         .collect()
@@ -1399,8 +1398,6 @@ struct Channels {
     approvals: Answers<ApprovalResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
-    /// Which agents stopped at a usage limit, asked on the refresh clock.
-    limits: Answers<LimitResolution>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -1409,10 +1406,6 @@ struct Channels {
 /// transients like echo windows and hit rects.
 #[derive(Default)]
 struct Remembered {
-    /// The usage limit each agent stopped at, by agent identity, as the
-    /// last refresh pass read it from its harness. What marks its tab and
-    /// puts continuing elsewhere first in its menu.
-    usage_limits: BTreeMap<String, uze_application::UsageLimit>,
     /// Per-agent-pane repaint evidence and busy deadline. A pane starts
     /// working either because the user submitted a line into it or because
     /// it started animating on its own — an agent that resumes work with

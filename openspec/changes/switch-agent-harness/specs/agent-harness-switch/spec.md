@@ -107,16 +107,6 @@ the whole story again.
 - **WHEN** an agent returns to a harness it ran before, after work on another harness
 - **THEN** the briefing covers the other harness's turns and commits since the returning harness last ran
 
-### Requirement: A usage limit is shown and offers the switch
-Where an integration can read that its harness hit a usage limit, the
-system SHALL mark the agent's tab with the limit and its reset time when
-known, and SHALL list the switch first in that tab's menu. A harness that
-cannot report a limit SHALL show nothing.
-
-#### Scenario: Claude hits its limit
-- **WHEN** an agent's harness records that a usage limit was reached
-- **THEN** its tab shows the limit with the reset time and its menu lists the switch first
-
 ### Requirement: Switching a busy agent asks first
 The system SHALL ask the operator to confirm a switch of an agent that is
 mid-turn, saying that its current work in progress will be interrupted,

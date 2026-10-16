@@ -64,8 +64,6 @@ pub struct ConversationDigest {
     pub turns: Vec<Turn>,
     /// The last command the agent ran.
     pub last_command: Option<LastCommand>,
-    /// A usage limit the harness recorded hitting, still in force.
-    pub limit: Option<UsageLimit>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,11 +85,6 @@ pub struct LastCommand {
     pub line: String,
     /// `None` where the transcript does not say how it ended.
     pub failed: Option<bool>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UsageLimit {
-    pub resets_at_unix: Option<u64>,
 }
 
 fn random_bytes() -> [u8; 16] {

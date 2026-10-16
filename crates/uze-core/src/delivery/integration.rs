@@ -12,7 +12,7 @@ use crate::{
     project_context::AgentsDirectoryResource,
     provisioning::ProvisionStatus,
     router::HarnessCapabilities,
-    session::{ConversationDigest, SessionId, UsageLimit},
+    session::{ConversationDigest, SessionId},
     state,
     store::StoredPackage,
 };
@@ -376,14 +376,6 @@ pub trait IntegrationPort: Send + Sync {
         _cwd: &Path,
         _since_unix: Option<u64>,
     ) -> Option<ConversationDigest> {
-        None
-    }
-
-    /// Whether `session` stopped at a usage limit that has not lifted yet,
-    /// read from the end of its transcript only: it is asked on the
-    /// workspace's refresh pass, for every agent that is not working.
-    /// `None` is also what a harness that cannot tell says.
-    fn usage_limit(&self, _session: &SessionId, _cwd: &Path) -> Option<UsageLimit> {
         None
     }
 

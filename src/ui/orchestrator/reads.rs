@@ -84,15 +84,7 @@ pub(super) fn spawn_support_refresh(
 /// cleared, forked or switched inside the process is a different identifier
 /// in the harness's records, and the launch that recorded the previous one
 /// is long over.
-///
-/// The same pass asks every agent that is not working whether it stopped
-/// at a usage limit — the one answer that does come back, since the tab
-/// shows it — reading only the end of its conversation.
-pub(super) fn spawn_conversation_refresh(
-    home: &UzeHome,
-    agents: Vec<LaunchedAgent>,
-    sender: mpsc::Sender<LimitResolution>,
-) {
+pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
     if agents.is_empty() {
         return;
     }
@@ -103,30 +95,17 @@ pub(super) fn spawn_conversation_refresh(
         let Ok(app) = tui_application(home) else {
             return;
         };
-        let mut limits = Vec::new();
         for agent in agents {
-            let claim = uze_application::Claim {
-                id: &agent.id,
-                key: &agent.key,
-                cwd: &agent.cwd,
-            };
-            app.workspace()
-                .refresh_conversation(&agent.integration, claim);
-            if !agent.working {
-                limits.push((
-                    agent.id.clone(),
-                    app.workspace().usage_limit(&agent.integration, claim),
-                ));
-            }
+            app.workspace().refresh_conversation(
+                &agent.integration,
+                uze_application::Claim {
+                    id: &agent.id,
+                    key: &agent.key,
+                    cwd: &agent.cwd,
+                },
+            );
         }
-        let _ = sender.send(LimitResolution { limits });
     });
-}
-
-/// The usage limit each agent asked about stopped at, or `None` for one
-/// that is not limited — which clears whatever the previous pass said.
-pub(super) struct LimitResolution {
-    pub(super) limits: Vec<(String, Option<uze_application::UsageLimit>)>,
 }
 
 /// What keeping one project's `AGENTS.md` in step found that the operator
@@ -344,8 +323,6 @@ pub(super) struct LaunchedAgent {
     /// The key the tab's launch carries, as the server echoes it.
     pub(super) key: String,
     pub(super) cwd: PathBuf,
-    /// Mid-turn: an agent producing output has not stopped at a limit.
-    pub(super) working: bool,
 }
 
 /// What a background evaluation answered.

@@ -627,14 +627,6 @@ mod workspace_tests {
     /// The whole frame as text, row by row — for asserting not just that
     /// something was drawn, but where.
     fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
-        frame_rows_with(model, &identities_fixture())
-    }
-
-    /// [`frame_rows`] for a machine with `identities`' harnesses.
-    pub(super) fn frame_rows_with(
-        model: &mut WorkspaceModel,
-        identities: &[AgentIdentity],
-    ) -> Vec<String> {
         let area = Rect::new(0, 0, 80, 24);
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
         terminal
@@ -642,7 +634,7 @@ mod workspace_tests {
                 render::render(
                     frame,
                     model,
-                    identities,
+                    &identities_fixture(),
                     &mut Vec::new(),
                     &mut render::FrameMetrics::default(),
                 )

@@ -11,9 +11,7 @@ use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use uze_core::{
-    Result, UzeError, UzeHome, anchor, integration::IntegrationPort, manifest, session::UsageLimit,
-};
+use uze_core::{Result, UzeError, UzeHome, anchor, integration::IntegrationPort, manifest};
 
 use uze_workspace::{
     checkout, client_layout,
@@ -175,21 +173,6 @@ impl Workspace<'_> {
             .iter()
             .find(|candidate| candidate.id() == id)
             .map(|found| found.as_ref())
-    }
-
-    /// The usage limit the agent a claim names stopped at, when its harness
-    /// can tell and the limit has not lifted. Read from the end of the
-    /// conversation recorded for that harness; silent, like a refresh,
-    /// about every way of having nothing to say.
-    #[tracing::instrument(name = "workspace.usage_limit", skip_all, fields(integration = %integration, agent = %claim.id))]
-    pub fn usage_limit(&self, integration: &str, claim: Claim<'_>) -> Option<UsageLimit> {
-        let integration = self.integration(integration)?;
-        let owner = conversation::owner_of(&self.0.home, claim)?;
-        let session = conversation::load(&self.0.home, &owner.project_root, &owner.agent)
-            .get(integration.id())?
-            .conversation
-            .clone()?;
-        integration.usage_limit(&session, claim.cwd)
     }
 
     /// Recent prompts submitted into the agent tabs of `root`'s workspace.

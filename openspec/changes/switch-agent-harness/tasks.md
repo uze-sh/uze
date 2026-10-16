@@ -28,14 +28,13 @@
 
 At this point the switch is usable with a Git-only briefing.
 
-## 5. Transcript digest and limit (uze-core, uze-integrations, src/ui)
+## 5. Transcript digest (uze-core, uze-integrations)
 
-- [x] 5.1 Add `conversation_digest(session, cwd) -> Option<Digest>` with neutral `Digest { goal, summary, turns, last_command, limit }`, defaulting to `None`; the core names no vendor
-- [x] 5.2 Claude digest: string-content `user` turns, `text` assistant blocks, `isCompactSummary` summary, synthetic `rate_limit` record as the limit; skip `tool_result`, `isSidechain`, `isMeta`; tested on a recorded, scrubbed fixture
-- [x] 5.3 Codex digest: `item_completed` `UserMessage`/`AgentMessage`/`CommandExecution`, top-level `compacted` summary, `token_count.rate_limits` as the limit; never `response_item` messages; tested on a recorded, scrubbed fixture
+- [x] 5.1 Add `conversation_digest(session, cwd) -> Option<Digest>` with neutral `ConversationDigest { goal, summary, turns, last_command }`, defaulting to `None`; the core names no vendor
+- [x] 5.2 Claude digest: string-content `user` turns, `text` assistant blocks, `isCompactSummary` summary, skip `tool_result`, `isSidechain`, `isMeta` and API error records; tested on a recorded, scrubbed fixture
+- [x] 5.3 Codex digest: `item_completed` `UserMessage`/`AgentMessage`/`CommandExecution`, top-level `compacted` summary, never `response_item` messages; tested on a recorded, scrubbed fixture
 - [x] 5.4 Wire the digest into the briefing (2.3) and the delta into its time floor (2.4)
-- [x] 5.5 Limit read on the existing refresh pass, tail-only, skipped while `Working`; a `theme` symbol and token for the limit mark; the switch listed first on a limited tab
-- [ ] 5.6 Lab: replay each harness's recorded transcript fixture through its digest, and a seeded limit record reads as reached
+- [ ] 5.6 Lab: replay each harness's recorded transcript fixture through its digest
 
 ## 6. Diagrams, docs, proof
 

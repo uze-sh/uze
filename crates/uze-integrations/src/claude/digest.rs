@@ -9,23 +9,19 @@
 //!   `thinking` blocks are reasoning and are left out, and a `Bash`
 //!   `tool_use` is a command it ran;
 //! - a `user` record marked `isCompactSummary` is Claude's own summary of
-//!   everything before it;
-//! - a synthetic `assistant` record with `error: "rate_limit"` is the usage
-//!   limit, with `quotaLimits.resetsAt` when it lifts.
+//!   everything before it.
 //!
 //! Records marked `isSidechain` (a subagent's) or `isMeta` (Claude's own
-//! bookkeeping) are skipped, as is anything else it writes.
+//! bookkeeping) are skipped, as is an `assistant` record Claude writes for
+//! an API error (`isApiErrorMessage`), which nobody said, and anything else
+//! it writes.
 
 use std::path::Path;
 
 use serde_json::Value;
-use uze_core::session::{ConversationDigest, LastCommand, Speaker, Turn, UsageLimit};
+use uze_core::session::{ConversationDigest, LastCommand, Speaker, Turn};
 
 use crate::shared::transcript;
-
-/// How much of a transcript's end is enough to say whether it stopped at a
-/// usage limit.
-const LIMIT_TAIL_BYTES: u64 = 64 * 1024;
 
 /// Text Claude records as an operator turn but nobody typed as one: the
 /// echo of a slash command and of its output.
@@ -35,7 +31,10 @@ pub(super) fn read(transcript: &Path, since_unix: Option<u64>) -> Option<Convers
     let mut digest = ConversationDigest::default();
     let mut pending_command: Option<String> = None;
     for record in transcript::records(transcript)? {
-        if flag(&record, "isSidechain") || flag(&record, "isMeta") {
+        if flag(&record, "isSidechain")
+            || flag(&record, "isMeta")
+            || flag(&record, "isApiErrorMessage")
+        {
             continue;
         }
         let at = record
@@ -79,21 +78,10 @@ pub(super) fn read(transcript: &Path, since_unix: Option<u64>) -> Option<Convers
                 }
             }
             Some("assistant") => {
-                if record.get("error").and_then(Value::as_str) == Some("rate_limit") {
-                    digest.limit = Some(UsageLimit {
-                        resets_at_unix: record
-                            .pointer("/quotaLimits/resetsAt")
-                            .and_then(Value::as_u64),
-                    });
-                    continue;
-                }
                 let Some(blocks) = record.pointer("/message/content").and_then(Value::as_array)
                 else {
                     continue;
                 };
-                // The agent answered again, so whatever limit came before
-                // it has lifted.
-                digest.limit = None;
                 let said: Vec<&str> = blocks
                     .iter()
                     .filter(|block| kind(block) == Some("text"))
@@ -120,28 +108,7 @@ pub(super) fn read(transcript: &Path, since_unix: Option<u64>) -> Option<Convers
             _ => {}
         }
     }
-    digest.limit = digest.limit.filter(transcript::still_in_force);
     Some(digest)
-}
-
-/// Whether the transcript ends at a usage limit that has not lifted yet.
-pub(super) fn limit(transcript: &Path) -> Option<UsageLimit> {
-    let mut limit = None;
-    for record in transcript::tail_records(transcript, LIMIT_TAIL_BYTES) {
-        if record.get("type").and_then(Value::as_str) != Some("assistant")
-            || flag(&record, "isSidechain")
-        {
-            continue;
-        }
-        limit = (record.get("error").and_then(Value::as_str) == Some("rate_limit")).then(|| {
-            UsageLimit {
-                resets_at_unix: record
-                    .pointer("/quotaLimits/resetsAt")
-                    .and_then(Value::as_u64),
-            }
-        });
-    }
-    limit.filter(transcript::still_in_force)
 }
 
 fn turn(speaker: Speaker, text: &str, at_unix: Option<u64>) -> Turn {
@@ -237,7 +204,6 @@ mod tests {
                 failed: Some(true),
             })
         );
-        assert_eq!(digest.limit, None);
     }
 
     #[test]
@@ -267,47 +233,17 @@ mod tests {
     }
 
     #[test]
-    fn a_rate_limit_that_has_not_lifted_is_the_limit() {
+    fn an_api_error_is_not_something_the_agent_said() {
         let mut records = conversation();
-        records.push(json!({"type":"assistant","error":"rate_limit","apiErrorStatus":429,
-            "isApiErrorMessage":true,"timestamp":"2026-10-06T00:00:08Z",
-            "quotaLimits":{"resetsAt":4_102_444_800_u64,"status":"rejected"},
-            "message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"limit"}]}}));
-        let path = transcript("claude-digest-limit", &records);
-
-        let expected = Some(UsageLimit {
-            resets_at_unix: Some(4_102_444_800),
-        });
-        assert_eq!(read(&path, None).unwrap().limit, expected);
-        assert_eq!(limit(&path), expected);
-    }
-
-    #[test]
-    fn a_limit_answered_past_or_already_lifted_is_none() {
-        let mut lifted = conversation();
-        lifted.push(
-            json!({"type":"assistant","error":"rate_limit","timestamp":"2026-10-06T00:00:08Z",
-            "quotaLimits":{"resetsAt":1_u64}}),
-        );
-        assert_eq!(limit(&transcript("claude-limit-lifted", &lifted)), None);
-
-        let mut answered = conversation();
-        answered.insert(
-            3,
-            json!({"type":"assistant","error":"rate_limit","quotaLimits":{"resetsAt":4_102_444_800_u64}}),
-        );
-        assert_eq!(limit(&transcript("claude-limit-answered", &answered)), None);
-        assert_eq!(
-            read(&transcript("claude-digest-answered", &answered), None)
-                .unwrap()
-                .limit,
-            None
-        );
+        records.push(json!({"type":"assistant","error":"rate_limit","isApiErrorMessage":true,
+            "timestamp":"2026-10-06T00:00:08Z",
+            "message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error"}]}}));
+        let digest = read(&transcript("claude-digest-api-error", &records), None).unwrap();
+        assert!(digest.turns.iter().all(|turn| turn.text != "API Error"));
     }
 
     #[test]
     fn no_transcript_is_no_digest() {
         assert_eq!(read(Path::new("/nonexistent/session.jsonl"), None), None);
-        assert_eq!(limit(Path::new("/nonexistent/session.jsonl")), None);
     }
 }

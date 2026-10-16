@@ -826,13 +826,11 @@ impl Attach<'_> {
                     if can_close_tab_from_menu(&self.model, &self.identities, tab) {
                         items.push(Action::CloseTab);
                     }
-                    // Right after the name; first of all when the harness
-                    // stopped at a usage limit, which is when continuing
-                    // elsewhere is what the operator came for.
-                    let at = usize::from(!self.is_limited(tab));
+                    // Right after the name: continuing elsewhere is what a
+                    // person reaches for when this harness stopped working.
                     self.model.context_menu = Some(
                         ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
-                            .offering_switches(at, self.switch_choices(tab)),
+                            .offering_switches(1, self.switch_choices(tab)),
                     );
                     self.model.dirty = true;
                 } else if let Some(WorkspaceHit::RecentRow(index)) = hit {

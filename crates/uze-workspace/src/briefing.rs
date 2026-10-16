@@ -179,15 +179,6 @@ fn header(handover: &Handover<'_>, digest: Option<&ConversationDigest>) -> Strin
             handover.from, handover.to
         ),
     });
-    if let Some(limit) = digest.and_then(|digest| digest.limit) {
-        lines.push(match limit.resets_at_unix {
-            Some(at) => format!(
-                "{} stopped at a usage limit, which resets at unix time {at}.",
-                handover.from
-            ),
-            None => format!("{} stopped at a usage limit.", handover.from),
-        });
-    }
     if let Some(session) = handover.session {
         lines.push(format!(
             "The {} conversation is `{session}`; it is kept, not continued here.",
@@ -329,7 +320,7 @@ pub fn write(home: &UzeHome, project_root: &Path, agent: &str, text: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::{LastCommand, Turn, UsageLimit};
+    use crate::session::{LastCommand, Turn};
 
     fn handover() -> Handover<'static> {
         Handover {
@@ -381,9 +372,6 @@ mod tests {
                 line: "cargo test -p uze-workspace".into(),
                 failed: Some(true),
             }),
-            limit: Some(UsageLimit {
-                resets_at_unix: Some(1_800_000_000),
-            }),
         };
         let text = render(&handover(), &git(), Some(&digest));
         for expected in [
@@ -392,7 +380,6 @@ mod tests {
             "also cover the root case",
             "the root case now names the label",
             "`cargo test -p uze-workspace` (failed)",
-            "usage limit, which resets at unix time 1800000000",
         ] {
             assert!(text.contains(expected), "{expected} missing from:\n{text}");
         }
@@ -412,7 +399,6 @@ mod tests {
                 })
                 .collect(),
             last_command: None,
-            limit: None,
         };
         let text = render(&handover(), &git(), Some(&digest));
         assert!(text.len() <= BOUND, "{} bytes", text.len());
@@ -436,7 +422,6 @@ mod tests {
                 line: "c".repeat(COMMAND_BOUND),
                 failed: None,
             }),
-            limit: None,
         };
         let mut git = git();
         git.commits = (0..COMMITS_LISTED)

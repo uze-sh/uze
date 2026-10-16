@@ -229,12 +229,6 @@ impl Attach<'_> {
             .collect()
     }
 
-    /// Whether `tab`'s agent stopped at a usage limit.
-    pub(super) fn is_limited(&self, tab: TabId) -> bool {
-        self.space_and_tab(tab)
-            .is_some_and(|(_, found)| self.model.tab_usage_limit(found).is_some())
-    }
-
     /// Relaunches `target`'s agent on `choice`'s harness, in the place it
     /// stands, replacing its tab — or, when it is mid-turn and the operator
     /// has not said otherwise, asks first, since the relaunch ends whatever

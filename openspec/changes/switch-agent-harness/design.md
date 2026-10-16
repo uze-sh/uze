@@ -48,8 +48,8 @@ below follow them. The one point where they differed is noted in D8.
 **Non-Goals:**
 - Converting one vendor's transcript into another vendor's session
   format. Each harness keeps its own conversation; the briefing is text.
-- Switching automatically when a limit is hit. The limit offers the
-  switch, and the operator makes it.
+- Anything about usage limits: detecting one, showing it, offering the
+  switch because of it (D8).
 - Switching a tab whose agent has exited. Resuming from the recent list,
   with a harness picked, already covers that case, and it now records the
   harness it picks (D5).
@@ -162,14 +162,13 @@ which is not stored a second time.
 
 A new port verb `conversation_digest(session, cwd, since_unix) ->
 Option<ConversationDigest>` returns neutral data from `uze_core::session`,
-`ConversationDigest { goal, summary, turns: Vec<Turn>, last_command,
-limit }`, read in a single pass of the transcript. The
+`ConversationDigest { goal, summary, turns: Vec<Turn>, last_command }`, read in a single pass of the transcript. The
 default is `None`. The `uze-workspace` module that writes the briefing
 renders it, together with the Git facts, into at most about 12 KB. When
 cutting, it cuts the lowest priority first:
 
 1. **Header:** label, branch, base, the source harness and session id,
-   and why the switch happened (the limit and its reset time, if known).
+   and that the outgoing conversation is kept.
 2. **Goal:** the first operator turn, up to 1.5 KB.
 3. **Summary:** the vendor's latest compaction summary, up to 4 KB.
    Claude: a `user` record with `isCompactSummary`. Codex: the top-level
@@ -205,28 +204,15 @@ it; the header says "since you left". Neither `launched_at_unix` nor
 `observed_at_unix` can stand in: a resume records no launch, so after a
 full cycle both are older than the work the returning harness missed.
 
-### D8. The limit signal is part of the switch (the one point the reviewers split on)
+### D8. Usage limits are out of this change
 
-The architecture review put transcript reading in a second delivery. The
-mechanics review wanted limit detection first, because it is the
-motivating case. Both come from the same read, so the limit is in this
-change:
-
-- `ConversationDigest.limit: Option<UsageLimit { resets_at_unix }>`, and
-  the tail-only `IntegrationPort::usage_limit`, from Claude's synthetic
-  `assistant` record (`error: "rate_limit"`, `quotaLimits.resetsAt`) and
-  from Codex's `token_count.rate_limits` (`rate_limit_reached_type`,
-  `resets_at`).
-- The client asks for it off-frame, on the same refresh pass that already
-  reads conversations back, for agents that are not `Working`, never on
-  render.
-- The caption row reads `<harness> · limit 3h` in `Token::StateWarning`,
-  the treatment "checkout removed" already has, rather than a new symbol
-  and token that would mean the same thing (decisions.md D4); the menu
-  lists the switch first.
-
-Splitting delivery is kept in `tasks.md` instead: the Git-only switch
-lands and is usable before the transcript work.
+The mechanics review found both harnesses record a usage limit in their
+transcripts (Claude's synthetic `rate_limit` record with
+`quotaLimits.resetsAt`, Codex's `token_count.rate_limits`), and the first
+implementation showed it on the tab and listed the switch first. The
+operator took it out: limits are a subject of their own, with more to
+decide than this change should. The digest reads neither; Claude's
+`isApiErrorMessage` records are only skipped, since nobody said them.
 
 ### D9. The menu
 
@@ -270,6 +256,3 @@ relationships. No container is added.
   entry it would have written belongs to the harness being left.
 - **[A briefing the agent ignores]** The first turn asks the agent to
   read the file; nothing can make it. Git is in the checkout regardless.
-- **[Limit read cost]** Reading the transcript tail on each refresh pass
-  for every agent costs I/O. Mitigation: read only the file's tail, and
-  only while the tab is not `Working`.

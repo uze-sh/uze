@@ -37,7 +37,6 @@ pub use uze_core::{
         PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
     },
     router::{CompatibilityRoute, HarnessCapabilities},
-    session::UsageLimit,
     store::{parse_plugin_marketplace_spec, typed_name},
     trust::{
         AlwaysTrust, CodeIdentity, ExecutableCapability, ExecutionKind, NoTrustAuthority,

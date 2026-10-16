@@ -266,18 +266,6 @@ impl IntegrationPort for ClaudeIntegration {
         )
     }
 
-    fn usage_limit(
-        &self,
-        session: &uze_core::session::SessionId,
-        cwd: &Path,
-    ) -> Option<uze_core::session::UsageLimit> {
-        digest::limit(&session::transcript_path(
-            &self.transcripts_root,
-            cwd,
-            session,
-        ))
-    }
-
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,

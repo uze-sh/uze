@@ -30,7 +30,7 @@
 
 ## D4 — The limit mark is words in the warning hue, not a new symbol and token
 
-- status:   pending
+- status:   overturned (operator: usage limits are left for a change of their own; the feature was removed)
 - task:     5.5
 - commit:
 - trigger:  design D8 said "a new `theme` symbol and token"; AGENTS.md says to add one only when none says what yours means.
@@ -40,7 +40,7 @@
 
 ## D5 — A briefing's directory is marked like a projection's
 
-- status:   pending
+- status:   accepted
 - task:     1.5
 - commit:
 - trigger:  `prune_projections` removes any `runtime/projects/<id>/` without a `project.json` marker, and a project UZE never projected into has none, so a briefing could be swept before it was read.
@@ -50,7 +50,7 @@
 
 ## D6 — `resume_task` takes the harness it launches
 
-- status:   pending
+- status:   accepted
 - task:     2.1
 - commit:
 - trigger:  the existing drift (a resume on another harness kept the old one) has no harness to record without a parameter.
@@ -60,7 +60,7 @@
 
 ## D7 — The Lab checks and the journey wait for hand validation
 
-- status:   pending
+- status:   accepted
 - task:     4.2, 5.6, 6.3
 - commit:
 - trigger:  the operator's standing rule: journeys (and, by the same reasoning, real-harness Lab runs) come after the feature was validated by hand, not during iteration.

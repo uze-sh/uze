@@ -269,14 +269,6 @@ impl IntegrationPort for CodexIntegration {
         )
     }
 
-    fn usage_limit(
-        &self,
-        session: &uze_core::session::SessionId,
-        _cwd: &Path,
-    ) -> Option<uze_core::session::UsageLimit> {
-        digest::limit(&session::rollout_of(&self.sessions_dir(), session)?)
-    }
-
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,

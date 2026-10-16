@@ -4,7 +4,7 @@
 //! The two harnesses are whatever the shared fixture's agents run, read off
 //! their panes, so nothing here depends on which vendors those are.
 
-use super::workspace_tests::{agents_in_the_root_session, driven, frame_rows_with};
+use super::workspace_tests::{agents_in_the_root_session, driven};
 use super::*;
 use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -197,50 +197,5 @@ fn an_idle_agent_is_switched_without_a_question() {
     assert!(
         driven.attach.model.placement_pending,
         "the switch was placed"
-    );
-}
-
-fn limited(mut model: WorkspaceModel, agent: &str) -> WorkspaceModel {
-    model.remembered.usage_limits.insert(
-        agent.to_owned(),
-        uze_application::UsageLimit {
-            resets_at_unix: Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    + 3 * 3_600
-                    + 30,
-            ),
-        },
-    );
-    model
-}
-
-#[test]
-fn an_agent_at_its_limit_lists_continuing_elsewhere_first() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-limited"));
-    let mut driven = driven(limited(agents_in_the_root_session(), "a1"), &home);
-    driven.attach.identities = identities();
-
-    let labels = menu_on(&mut driven, TabId(2));
-    assert_eq!(labels[0], continue_in(TabId(3)), "{labels:?}");
-    assert_eq!(labels[1], "Rename");
-}
-
-#[test]
-fn an_agent_at_its_limit_says_so_and_when_it_resets() {
-    let mut model = limited(agents_in_the_root_session(), "a1");
-    let rows = frame_rows_with(&mut model, &identities());
-    assert!(
-        rows.iter()
-            .any(|row| row.contains(&format!("{} · limit 3h", harness_of(TabId(2))))),
-        "{rows:#?}"
-    );
-    assert!(
-        !rows
-            .iter()
-            .any(|row| row.contains(&format!("{} · limit", harness_of(TabId(3))))),
-        "only the agent that stopped at it"
     );
 }

@@ -307,11 +307,7 @@ impl Attach<'_> {
             // selected one: this is also where a launch left pending by a
             // client that was not running is finally resolved, well before
             // a relaunch needs the answer.
-            spawn_conversation_refresh(
-                self.home,
-                agent_contexts(&self.model, &self.identities),
-                self.channels.limits.sender.clone(),
-            );
+            spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
         }
         if self
             .model
@@ -367,19 +363,6 @@ impl Attach<'_> {
         while let Ok(names) = self.channels.launchers.receiver.try_recv() {
             self.model.remembered.launchers = Some(names);
             self.model.note_launcher_bypass();
-        }
-    }
-
-    pub(super) fn absorb_limits(&mut self) {
-        while let Ok(resolution) = self.channels.limits.receiver.try_recv() {
-            for (agent, limit) in resolution.limits {
-                let known = &mut self.model.remembered.usage_limits;
-                let changed = match limit {
-                    Some(limit) => known.insert(agent, limit) != Some(limit),
-                    None => known.remove(&agent).is_some(),
-                };
-                self.model.dirty |= changed;
-            }
         }
     }
 

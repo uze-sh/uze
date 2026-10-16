@@ -9,12 +9,11 @@
 
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufRead, BufReader},
     path::Path,
 };
 
 use serde_json::Value;
-use uze_core::session::UsageLimit;
 
 /// Every record of the transcript at `path`, oldest first.
 pub(crate) fn records(path: &Path) -> Option<impl Iterator<Item = Value>> {
@@ -25,31 +24,6 @@ pub(crate) fn records(path: &Path) -> Option<impl Iterator<Item = Value>> {
             .map_while(Result::ok)
             .filter_map(|line| serde_json::from_str(&line).ok()),
     )
-}
-
-/// The records in the last `bytes` of the transcript: what a question about
-/// how a conversation *stands* needs, read without paying for its history.
-/// The first line read is usually cut in half, and is skipped as any
-/// unparseable line is.
-pub(crate) fn tail_records(path: &Path, bytes: u64) -> Vec<Value> {
-    let Ok(mut file) = File::open(path) else {
-        return Vec::new();
-    };
-    let length = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
-    if file
-        .seek(SeekFrom::Start(length.saturating_sub(bytes)))
-        .is_err()
-    {
-        return Vec::new();
-    }
-    let mut tail = Vec::new();
-    if file.read_to_end(&mut tail).is_err() {
-        return Vec::new();
-    }
-    String::from_utf8_lossy(&tail)
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
 }
 
 /// An RFC 3339 UTC timestamp (`2026-10-06T00:15:51.744Z`) as Unix seconds.
@@ -80,13 +54,6 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let day_of_year = (153 * month_index + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     era * 146_097 + day_of_era - 719_468
-}
-
-/// Whether a usage limit a transcript recorded has yet to lift. One with no
-/// reset time is taken at its word until a later record says otherwise.
-pub(crate) fn still_in_force(limit: &UsageLimit) -> bool {
-    let now = uze_platform::clock::since_epoch().as_secs();
-    limit.resets_at_unix.is_none_or(|resets| resets > now)
 }
 
 #[cfg(test)]
@@ -120,6 +87,5 @@ mod tests {
             read,
             [serde_json::json!({"a":1}), serde_json::json!({"a":2})]
         );
-        assert_eq!(tail_records(&path, 15), [serde_json::json!({"a":2})]);
     }
 }
