@@ -136,9 +136,6 @@ pub fn refusal() -> Option<String> {
     imp::refusal()
 }
 
-/// The extension of a script file this shell reads, without the dot.
-pub const SCRIPT_EXTENSION: Option<&str> = imp::SCRIPT_EXTENSION;
-
 #[cfg(unix)]
 mod imp {
     pub(super) const KEY: &str = "posix";
@@ -164,7 +161,6 @@ mod imp {
         None
     }
     pub(super) const ARGV: &[&str] = &["sh", "-c"];
-    pub(super) const SCRIPT_EXTENSION: Option<&str> = None;
 
     pub(super) fn line(line: &str) -> String {
         line.to_owned()
@@ -337,7 +333,6 @@ mod imp {
         "Bypass",
         "-Command",
     ];
-    pub(super) const SCRIPT_EXTENSION: Option<&str> = Some("ps1");
 
     pub(super) fn line(line: &str) -> String {
         format!(
