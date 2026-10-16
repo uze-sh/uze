@@ -123,9 +123,11 @@ alone qualifies); an explicit envelope, even malformed, always wins.
 
 ## Runtime
 
-None. `runtime_contribution`/`supports_runtime_integration` are not
-overridden — Codex gets the shim/dispatch machinery for free (ADR-014) but
-does nothing with it, and nothing here anticipates that it should.
+`runtime_contribution` (`codex/runtime.rs`) adds a `-c agents={…}`
+configuration layer naming each of the project's `.agents/agents` as a role,
+whose `config_file` sits outside the repository, and only once the person
+trusted the project in Codex (`~/.codex/config.toml`); passthrough otherwise.
+`AGENTS.md` itself needs nothing: Codex reads it natively.
 
 ## Lifecycle
 
@@ -149,41 +151,18 @@ MCP inspection is fully structured (`--json`), unlike Claude's raw-file read
   that shape, coverage is exact (`codex_exact_coverage`, 11 tests).
 - `codex plugin marketplace add`/`codex plugin add` failures surface as a
   single `ExposureUnavailable` string; no structured retry/diagnosis.
-- No override of `exposure_name_candidates` (uses the fully-qualified-only
-  trait default), unlike Claude/OpenCode which both try the bare name first
-  for Skills. Not confirmed whether this is deliberate.
-- Codex caps how much of a project doc it reads (`project_doc_max_bytes`,
-  32 KiB when the vendor docs were last read for this, 2026-08-21) and skips
-  empty files. A contributed `AGENTS.md` region past that cap is truncated by
-  Codex, silently: UZE neither measures nor reports it, so the same project
-  context can be shorter here than on every other harness.
+- Codex reads at most `project_doc_max_bytes` of a project doc (32 KiB by
+  default) and drops the rest. UZE reads the limit from `~/.codex/config.toml`
+  and `uze status` warns when `AGENTS.md` exceeds it.
 
 ## Evidence
 
-- Tests: 28 (`codex::mcp::mcp_tests`: 1, `codex::plugin::plugin_tests`: 1,
-  `codex::plugin::codex_native_coverage_tests`: 11 — full declaration,
-  subset, Store-extra-skill, Store-extra-MCP, manifest-references-missing
-  file, malformed MCP file, unexpected field shape, `..` escape, absolute
-  path, empty declaration, partial-coverage-plus-fallback coexistence —
-  `codex::generate::generated_native_tests`: 15, mirroring Claude's
-  generated-native matrix), all passing.
-  `tests/plugin_first_vertical_slice.rs`/`tests/north_star_flow_fixture.rs`
-  re-confirmed green under the generated route.
+- Tests: `codex::{mcp::mcp_tests, plugin::plugin_tests, plugin::codex_native_coverage_tests, generate::generated_native_tests, runtime::tests}`.
 - Real harness version empirically validated live this milestone: Codex CLI
   **0.148.0**, isolated `HOME`/`UZE_HOME`, no credentials. A full generated
   -native lifecycle (attach → inspect Matched → detach Missing → reinstall
   Matched) was run against the real binary and caught a genuine receipt
   defect (`package_root` recorded as the Store path instead of the
-  installed generated directory — see ADR-013) before it shipped; the
-  explicit-native path's install/attach was separately confirmed live via
-  `tests/shared_agent_skill_root_naming.rs`'s original (now-faked-for-CI)
-  real-binary run.
+  installed generated directory — see ADR-013) before it shipped.
 - Sources: ADR-005, ADR-006, ADR-007, ADR-009, ADR-013, and
-  `web/content/docs/concepts/delivery.mdx` for the capability map.
-
-## Next
-
-1. Close Codex MCP behavioral verification (blocked today by
-   `codex exec`'s approval gate in non-interactive mode — ADR-007).
-2. Confirm or drop the fully-qualified-only `exposure_name_candidates`
-   choice deliberately, with a doc comment either way.
+  `web/content/docs/plugins/delivery.mdx` for the capability map.

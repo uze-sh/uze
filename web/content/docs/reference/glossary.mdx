@@ -26,8 +26,11 @@ agent or a hook. See [Plugin format](/docs/reference/plugin-format).
 **Invocation policy.** Who may run a skill: the model, the user, or both. The
 `invoke: {model, user}` block in `SKILL.md`.
 
-**Trust.** Your approval for anything a plugin can execute: MCP commands and
-hook handlers. You are asked before they are installed.
+**Trust.** Your approval for anything a plugin can execute: MCP commands, hook
+handlers, Skills and agents that run commands or grant themselves tools, and the
+programs uze asks for their version to check requirements. You are asked before
+they are installed, and again when a script they run changes. `--trust` answers
+yes, for CI.
 
 ## Delivery
 
@@ -66,8 +69,9 @@ marketplaces and configuration. `-m` makes a command act on it alone.
 **Project scope.** What lives in a project: `agents.yaml`, `agents.lock` and
 `AGENTS.md`. A command run inside a project maintains them.
 
-**`agents.yaml`.** What the project declares: marketplaces, plugins, the
-worktree policy. You write it. See [Project files](/docs/reference/project-files).
+**`agents.yaml`.** What the project declares: marketplaces and plugins and,
+under `workspace:`, how its agents work, what they are asked at each state, and
+where its artifacts live. You write it. See [Project files](/docs/reference/project-files).
 
 **`agents.lock`.** What resolving `agents.yaml` produced: a commit per
 marketplace and a digest per plugin. Written by uze; deleting it loses nothing.
@@ -102,7 +106,22 @@ for one of its subagents. Its work comes back to the agent with
 `uze agent work join`. See [Subagents](/docs/workspace/agents#subagents).
 
 **Delivery (of work).** Rebasing an agent's branch onto the target, running the
-project's checks, then merging or opening a pull request.
+project's `gate`, then fast-forwarding the local target (`merge`) or pushing the
+branch (`push`). uze opens no pull request: what the agent is asked next is the
+project's `actions`. See [Bringing the work home](/docs/workspace/agents#bringing-the-work-home).
+
+**Shelf.** Where an agent's unfinished work is kept once its checkout goes back
+to the pool: one commit per agent at `refs/uze/shelf/<task>`, in the
+repository's own Git directory, resumed from any checkout. See
+[Work nobody finished](/docs/workspace/agents#work-nobody-finished).
+
+**Recent.** The sidebar mode listing every agent no pane carries, across every
+project, and what waits on you. See [Recent](/docs/workspace/agents#recent).
+
+**Command approval.** Your yes to the exact `setup` and `gate` lines a
+project's `agents.yaml` runs, once per project on each machine, asked again
+when a line changes. Only a person at a terminal can give it. See
+[Approving the commands](/docs/reference/project-files#approving-the-commands).
 
 **Extension.** A surface built into the workspace: **Spec**, **Architect** and
 **Code**.

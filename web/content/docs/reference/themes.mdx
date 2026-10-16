@@ -21,6 +21,13 @@ lines:
 
 Every surface, border and diff tint is derived from the background you declare.
 
+Besides `colors` and `symbols`, a theme may carry a `description` and a
+`syntax` block naming the palette code is highlighted with, one of
+`InspiredGitHub`, `Solarized (dark)`, `Solarized (light)`,
+`base16-eighties.dark`, `base16-mocha.dark`, `base16-ocean.dark` or
+`base16-ocean.light`: `"syntax": { "theme": "base16-ocean.light" }`. Any
+other key is an error.
+
 ```bash
 uze config theme set dawn
 uze config theme show        # what resolved, from which layer, and any warnings
@@ -42,6 +49,13 @@ for completion over every token and symbol.
 
 What the parent derived from its background is recomputed against yours. A file
 named after a built-in theme, like `dracula.json`, replaces it.
+
+The built-in themes are `dark`, which every theme completes from, `light`,
+`dracula`, `catppuccin-mocha`, `tokyo-night` and `tokyo-night-light`. Until you
+choose one, uze draws in `adaptive`: `light` while your system is light and
+`dark` while it is dark (`uze config theme set adaptive --light <id> --dark <id>`
+picks the pair). `adaptive` is a selection, not a file, so a theme cannot take
+that name.
 
 ## Writing a colour
 

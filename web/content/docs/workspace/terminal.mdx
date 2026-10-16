@@ -9,6 +9,8 @@ That is why closing the workspace never stops an agent.
 ```bash
 uze workspace          # attach the workspace, starting its server when needed
 uze workspace stop     # stop this workspace's server and every process in it
+uze workspace allow    # approve the commands this project's agents.yaml runs
+uze workspace revoke   # take that approval back
 ```
 
 Running `uze workspace` inside one of the workspace's own panes does not nest a
@@ -42,14 +44,15 @@ and the project's own skills may not reach it.
 
 What you send to an agent is recorded per space. The agent context drawer,
 opened from the mark at the end of the tab strip, lists it under what the agent
-runs on: that agent's own prompts, or with `tab` the whole space's, to read.
+runs on: that agent's own prompts, or, on **space** (`←`/`→` or a click), the
+whole space's, to read.
 It is a convenience, not a transcript: uze forwards keystrokes without
 interpreting them, so entries can be missing. The file is readable only by
 you, and `x` twice in the drawer clears the space's.
 
 ## Notifications
 
-`uze config notification` takes three states:
+`uze config notification` takes three states, and `test`:
 
 | State | Rings for |
 | --- | --- |

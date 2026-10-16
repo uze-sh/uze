@@ -19,8 +19,8 @@ discovery directory, `agents/`, `plugins/` and the global `mcp` object in
 | Project `.agents/skills` | Native | OpenCode reads the project's `./.agents/skills` itself; UZE writes nothing into the repository | EMPIRICAL (OpenCode 2.0.18, Lab contract `context-project-skill-reaches-model`) |
 | Project `.agents/agents` | Unsupported | OpenCode does not read `./.agents/agents`; its project roots are `.opencode/agent(s)`, inside the checkout, where UZE never writes. No launch can hand them over from outside: `OPENCODE_CONFIG_DIR` replaces the user's configuration directory (the user's provider is lost), and the additive `OPENCODE_CONFIG`/`OPENCODE_CONFIG_CONTENT` are read by the process that starts the server. A default launch attaches to the shared background service, which keeps whichever environment started it: one project's agents are then offered in every other project it serves, and a launch finding it already running has its own ignored. Only `--standalone` holds them per launch, and that mode is the person's choice, not UZE's | EMPIRICAL (OpenCode 2.0.18, `experiments/opencode/project-agents`; the contract's `context-project-agent-reaches-model` declares it) |
 | Agents | Supported | Generated `~/.config/opencode/agents/<label>.md` (the file name is the agent id) with `description` and `mode: subagent`. A root field is not carried (a Claude-style `model`/`tools` makes OpenCode drop the agent silently) and is reported as Degraded. `harness.opencode` carries V2's own fields (`model`, `color` as `#rrggbb`, `mode`, `permissions` rules (only `ask`/`deny`: an `allow` would grant the agent what the operator did not, so it is left out and reported as Degraded), `steps`, `hidden`, `disabled`) and leaves out V1's (`tools`, `permission`, `temperature`, `top_p`) with the V2 field that says the same thing: one key V2 does not know sends the whole file down its legacy path, where V2 fields are lost and `temperature`/`top_p` go into a request body V2 does not send | EMPIRICAL (OpenCode 2.0.15/2.0.18, Lab probe); V2 dialect from source (`packages/schema/src/config/agent.ts`, `core/src/config/plugin/agent.ts`, `v2` at b78d10cd7) |
-| Hooks | Adapted, every portable event and effect but `transform` | One generated plugin at `<config root>/plugins/hooks-<package>.ts`, auto-discovered: the plugin *is* the wrapper (same `HOOK_*`/exit-code contract). Tool hooks observe and deny (`execute.before` renames a refused call to a tool that does not exist, so a tool that asks no permission is refused too); `permission.evaluate` asks, with the input `execute.before` kept by call id; `session.created` is `SessionStart` (`startup` only) and `session.execution.succeeded` is `Stop`, a denied stop continuing the session with synthetic input. The permission prompt does not show an `ask` reason | EMPIRICAL — the Lab's hooks contract (2.0.24); V2 plugin API read at anomalyco/opencode `v2` b78d10cd7 |
-| Runtime projection | None | `runtime_contribution`/`supports_runtime_integration` never overridden — inherits passthrough default | CODE_FACT |
+| Hooks | Adapted, every portable event and effect | One generated plugin at `<config root>/plugins/hooks-<package>.ts`, auto-discovered: the plugin *is* the wrapper (same `HOOK_*`/exit-code contract). Tool hooks observe and deny (`execute.before` renames a refused call to a tool that does not exist, so a tool that asks no permission is refused too); `permission.evaluate` asks, with the input `execute.before` kept by call id; `session.created` is `SessionStart` (`startup` only) and `session.execution.succeeded` is `Stop`, a denied stop continuing the session with synthetic input. The permission prompt does not show an `ask` reason | EMPIRICAL — the Lab's hooks contract (2.0.24); V2 plugin API read at anomalyco/opencode `v2` b78d10cd7 |
+| Runtime projection | None | `runtime_contribution` never overridden — a shim launch is pure passthrough | CODE_FACT |
 
 ## Delivery
 
@@ -54,11 +54,10 @@ are consumed. Package coverage
 
 ## Runtime
 
-None. `runtime_contribution` and `supports_runtime_integration` are never
-overridden on `OpenCodeIntegration`, so both fall through to the
-`IntegrationPort` trait defaults (pure passthrough, `false`). OpenCode gets
-the shim/dispatch/bypass machinery Claude uses for free but does nothing
-with it today (ADR-014 explicitly anticipates this).
+None. `runtime_contribution` is not overridden, so a launch through the shim
+is pure passthrough (`supports_runtime_integration` keeps its default,
+`true`, so OpenCode still gets the shim and dispatch). It does nothing more
+with them today (ADR-014 explicitly anticipates this).
 
 ## Lifecycle
 
@@ -114,9 +113,6 @@ UZE creates no alias for either name; its runtime shim is what keeps
 - MCP attachment writes the vendor config file directly instead of through
   an OpenCode CLI verb — collision-safe by construction, but the "no CLI
   exists" premise behind that choice is undocumented (see Lifecycle above).
-- The binary-alias mechanism (`ensure_opencode_alias`) is only exercised in
-  tests when `opencode`/`opencode2` genuinely exists on the test machine's
-  real `PATH` — see Evidence.
 - OpenCode also reads Codex's `~/.agents/skills`. A skill both harnesses
   receive therefore exists twice on disk, and OpenCode resolves the name
   by its own precedence, in which `~/.config/opencode` wins: the copy it
@@ -124,33 +120,18 @@ UZE creates no alias for either name; its runtime shim is what keeps
 
 ## Evidence
 
-- Tests: `cargo test -p uze-integrations --lib opencode` — 5 passed, 0
-  failed (`opencode::lifecycle_tests` ×2, `opencode::mcp::mcp_tests` ×1,
-  `opencode::provision::provision_tests` ×2).
-- Skills transparent attachment: EMPIRICAL, OpenCode 1.18.18, real
-  behavioral proof-token run via `opencode/deepseek-v4-flash-free`,
-  2026-08-20 (ADR-006). No later re-validation recorded against a `v2`
-  (`opencode2`-named) install — the alias mechanism this integration's
-  `provision.rs` exists for postdates that evidence.
-- MCP: no CONFIGURATION/DISCOVERY/BEHAVIORAL conformance run is recorded
-  for OpenCode anywhere in this repository's ADRs (unlike Claude/Codex,
-  which both have dated real-harness runs in ADR-007). MCP support here is
-  TESTED at the unit level only.
-- No `opencode`/`opencode2` binary is installed in the environment this
-  audit ran in — no live re-validation was possible this pass.
+- Tests: `opencode::{lifecycle_tests, mcp::mcp_tests, provision::provision_tests}`.
+- Real harness: the Conformance Lab's OpenCode vertical runs every shared
+  contract (skill, MCP, agent, hooks, context) against OpenCode V2 (latest
+  cited: 2.0.24); its declared limitations are in
+  `conformance/harnesses/opencode/bindings.py::unsupported`.
 
 ## Next
 
-1. Record a real OpenCode MCP conformance run (configuration/discovery
-   tier at minimum), matching what ADR-007 already did for Claude/Codex —
-   currently the only harness with zero dated MCP evidence.
-2. Confirm or refute whether OpenCode exposes any CLI verb for MCP
+1. Confirm or refute whether OpenCode exposes any CLI verb for MCP
    registration; if one exists, ADR-009 would call for using it instead of
    direct JSON writing.
-3. Re-verify Skills against an actual `opencode2`-named v2 install — the
-   existing EMPIRICAL evidence predates the binary-alias code this
-   integration now depends on.
-4. `provision_dispatches_install_or_update_consistently_with_detected_state`
+2. `provision_dispatches_install_or_update_consistently_with_detected_state`
    silently skips on a machine with neither `opencode` nor `opencode2` on
    `PATH` (true for CI) — it has never actually asserted `Verified` in that
    environment; a fully mocked alias-resolution seam would close this gap.

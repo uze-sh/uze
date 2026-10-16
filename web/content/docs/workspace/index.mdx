@@ -32,6 +32,11 @@ uze workspace
 A shell you open while an agent is selected belongs to that agent: it starts in
 the agent's checkout and closes with it.
 
+The right end of the tab strip counts the selected checkout's changes
+(`+12 -3`; click it to open [Code](/docs/workspace/code)). For an agent in your
+own checkout it also shows what a pull would bring (`↓2`) and a push would send
+(`↑1`). Click the pull count to fast-forward.
+
 ## Selecting text
 
 The workspace owns the mouse, so it does the selecting your terminal would
@@ -79,7 +84,9 @@ the tab strip, its keys go to the program in the pane, it leaves the action
 index (`F1`), and its sidebar section is gone with it (the timeline for
 Code, the tasks for Spec).
 
-The choice is kept in `~/.uze/config.toml`, so you can also write it by hand:
+The choice is kept in `~/.uze/config.toml`. From a terminal,
+`uze config extension architect off` does the same, and `uze config extension`
+lists them. You can also write it by hand:
 
 ```toml
 [extensions]
@@ -88,8 +95,11 @@ architect = false
 
 ## Management
 
-`Ctrl+O` switches to management and back: your plugins, marketplaces, agents'
-setup, appearance and shortcuts, all with the mouse.
+`Ctrl+O`, or the mark at the top right of the sidebar, opens management over
+the workspace and closes it again: your plugins and marketplaces
+(**Marketplace**), each agent's setup (**Integrations**), **Extensions**,
+**Shortcuts**, and appearance and notifications (**Settings**), all with the
+mouse.
 
 <Cards>
   <Card title="Running agents" href="/docs/workspace/agents" />

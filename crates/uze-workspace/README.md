@@ -9,8 +9,13 @@ workspace because nothing in it can name anything here.
 - `conversation`, `continuity`: the conversation an agent is in, and
   resuming it across a launch
 - `landing`: how finished work reaches the target branch
-- `declaration`: what a project declares about all of that (`agents.yaml`'s
-  `worktrees` and `artifacts` sections, which `uze-core` carries unread)
+- `declaration`: what a project declares about all of that: `agents.yaml`'s
+  `workspace:` section (the agents' policy, `artifacts` places and
+  `actions`), which `uze-core` carries unread
+- `approval`: the operator's consent to the `setup`/`gate` commands a project
+  declares, before UZE runs them (ADR-055)
+- `briefing`: what an agent continuing on another harness is told about its
+  own work
 - `client_layout`, `prompt_history`, `notifications`, `extensions`: the
   workspace client's own state under `UzeHome`
 

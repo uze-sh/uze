@@ -6,6 +6,10 @@ classified. Carries no domain.
 
 - `read` — a command whose output you want
 - `write` — a command that mutates the repository
+- `locked` — the repository write lock every write takes, so a sequence of
+  writes is one critical section
+- `repository` — the `rev-parse` answers that cannot change while the path
+  exists, remembered per path
 
 A non-zero exit is an answer for `diff`, `rebase` and `rev-parse --verify`,
 and a failure elsewhere; only the caller knows which. Never spawn `git`

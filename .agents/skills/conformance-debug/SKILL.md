@@ -67,8 +67,8 @@ is usually the vendor moving.
   (e.g. `tui-reached-prompt` / `tui-started`, with a near-empty first
   `.raw` capture) → the shared **setup script** died before any harness TUI
   ever launched. Do not touch TUI-driving/wait logic — the bug is in the
-  setup steps every vertical shares (`uze market add`, `uze plugin install
-  ...`), or in `uze` itself.
+  setup steps every vertical shares (`uze market add`, `uze install
+  <plugin>@uze-lab -m`), or in `uze` itself.
 - **Only one harness fails** → the bug is specific to that harness's
   `crates/uze-integrations/src/<vendor>/` module, its `bindings.py`, its
   `scenarios.py`, or its provider — or the vendor moved (Step 0).
@@ -103,7 +103,7 @@ Use it to poke at the exact step you suspect, e.g.:
 
 ```bash
 python3 conformance/lab.py --harness opencode --sandbox -- \
-  "uze market add /work/market >&2; uze plugin install mcp-plugin@uze-lab; uze doctor"
+  "uze market add /work/market >&2; uze install mcp-plugin@uze-lab -m; uze doctor"
 ```
 
 This isolates "did `uze` do the right thing here" from "did the TUI render

@@ -18,8 +18,10 @@ capability's meaning intact:
 1. **Native**: the agent's own supported mechanism.
 2. **Generated native**: a folder uze generates, delivered through that
    mechanism.
-3. **Adapted**: it works with a known difference, and uze says which.
-4. **Unsupported**: stated, with the reason.
+3. **Through uze**: an adapter uze owns and regenerates, where the agent has
+   no mechanism of its own (OpenCode's hooks).
+4. **Partial**: it works with a known difference, and uze says which.
+5. **Unsupported**: stated, with the reason.
 
 What each agent gets today is the [Harness support](/docs/reference/harnesses)
 table, generated from the code.
@@ -36,9 +38,13 @@ only rebuilds what it owns and can prove is safe to rebuild.
 
 ## Running code is your decision
 
-A plugin's MCP servers and hooks run commands on your machine. Before installing,
-uze lists every command a plugin can run and asks; an update that adds one asks
-again. Where there is nobody to ask, it refuses unless you pass `--trust`.
+A plugin can run commands on your machine: its MCP servers and hooks, a skill
+or agent whose text runs a command when it loads (`` !`…` ``) or grants itself
+tools, and the version check of a program it requires. Before installing, uze
+lists every one and asks; an update that adds one, or changes a script one of
+them runs, asks again. This holds for plugins a cloned project's `agents.yaml`
+declares too. Where there is nobody to ask, it refuses unless you pass
+`--trust`.
 
 Plugins are fetched as untrusted input: without your Git config or credentials
 leaking into the clone, never running a repository's own hooks, and never

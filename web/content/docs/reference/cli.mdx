@@ -24,7 +24,7 @@ makes it act on the machine alone.
 
 ```bash
 uze <plugin>@<market>         # add a plugin to this project
-uze install                   # install what agents.yaml and agents.lock declare (alias: i)
+uze install [dir]             # bring this project to what agents.yaml declares (alias: i)
 uze install <plugin>@<market> # the same as the shorthand
 uze update [plugin]           # move plugins to where agents.yaml points now
 uze remove <plugin>           # take it out of this project
@@ -35,12 +35,17 @@ uze status                    # this project: plugins, context, what is still ow
 uze status -m                 # this machine: every installed plugin
 ```
 
+`uze install` creates `agents.yaml` when the project has none, records what it
+resolved in `agents.lock`, drops from the lock what `agents.yaml` no longer
+declares, and leaves `AGENTS.md` reconciled. `install`, `update` and `status`
+take a project directory, and otherwise act on the project you are in.
+
 | Flag | On | Does |
 | --- | --- | --- |
-| `-m` | `install`, `update`, `remove`, `status` | Act on the machine only |
+| `-m` | `install`, `update`, `remove`, `status`, `<plugin>@<market>` | Act on the machine only |
 | `--trust` | `install`, `update`, `<plugin>@<market>` | Approve the commands a plugin runs, for CI |
-| `--alias <name>` | `install` | Install under another name when another marketplace's plugin has it |
-| `--replace` | `install` | Replace the other marketplace's plugin of the same name |
+| `--alias <name>` | `install`, `<plugin>@<market>` | Install under another name when another marketplace's plugin has it. Cannot be combined with `--replace` |
+| `--replace` | `install`, `<plugin>@<market>` | Replace the other marketplace's plugin of the same name |
 | `--harness <agent>` | `inspect` | Only this agent: each capability's name, route, where it lands and what it loses |
 
 ### Marketplaces
@@ -52,7 +57,10 @@ uze market inspect <name>
 uze market remove <name>           # the marketplace and everything it delivered
 uze market link <name> <checkout>  # read it from a checkout you are developing
 uze market unlink <name>
-uze market host [alias] [url]      # the hosts owner/repo resolves against
+uze market host                    # the hosts owner/repo and alias:owner/repo resolve against
+uze market host <alias>            # make one the default
+uze market host <alias> <https-url>  # define one
+uze market host <alias> --remove   # remove one you defined
 ```
 
 ## Workspace
@@ -64,6 +72,9 @@ uze workspace allow [dir]   # read this project's setup and gate commands, and a
 uze workspace revoke [dir]  # withdraw that approval
 ```
 
+Run inside one of the workspace's own panes, `uze workspace` opens a space for
+that directory in the workspace already running.
+
 `allow` needs a person at a terminal, and refuses inside an agent uze launched:
 the commands a project runs are yours to approve, never its agents'.
 
@@ -74,9 +85,18 @@ uze setup                   # choose the agents to set up
 uze setup <agent>...        # set up these (claude, codex, opencode, agy)
 uze setup list              # every agent and whether it is ready
 uze setup inspect <agent>
-uze doctor                  # diagnose, repair what is safe, and check each plugin reached every agent readable
-uze upgrade                 # install the latest uze
+uze setup --verbose         # stream each installer's output instead of keeping it in a log
+uze doctor                  # diagnose, repair what is safe, and check each plugin reached every agent
+uze upgrade                 # replace uze with the latest release now (not plugins)
 ```
+
+A uze placed by the install script keeps itself current. Commands check for a
+release at most once an hour, in the background, and install one a day after it
+is first seen; the next command says it was updated. `uze upgrade` does it now,
+without waiting. A uze installed any other way (cargo, a package manager) is
+left to that, and `uze upgrade` says so. `UZE_AUTOUPDATE=off` stops the check,
+`UZE_AUTOUPDATE=notify` only tells you, and in CI (`CI` set) it is off unless
+you set it.
 
 `uze doctor` also checks every program an installed plugin needs (see
 [Requirements](/docs/reference/plugin-format#requirements)) and names each
@@ -96,7 +116,11 @@ uze config extension [<id> [on | off]]               # workspace only
 
 ## Everywhere
 
-`--verbose` prints what happened in detail. `--format json` gives
-machine-readable output on every command that reports something.
+`--verbose` prints what happened in detail, `-q`/`--quiet` prints only
+warnings and errors, and `--color auto|always|never` decides colour
+(`NO_COLOR` is honoured). `--format json` gives machine-readable output on the
+commands that report: `install`, `update`, `remove`, `status`, `inspect`,
+`doctor`, `market list|inspect|remove|host`, and `config theme list|show`,
+`icons`, `extension`, `notification`.
 
 The commands agents call are in [The agent CLI](/docs/reference/agent-cli).

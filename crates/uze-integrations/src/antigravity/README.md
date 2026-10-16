@@ -1,12 +1,12 @@
 # Antigravity CLI Integration
 
-**Status: primary Google-family v0 harness** (validated against `agy`
-**1.1.21** in an isolated `$HOME`). Full audit/evidence:
+**Status: primary Google-family v0 harness** (validated by the Conformance
+Lab's Antigravity vertical; latest measurements cited below on agy 1.3.5). Full audit/evidence:
 `docs/architecture/antigravity-compatibility.md`; decision: ADR-027.
 
 | Surface | Status | Mechanism | Evidence |
 |---|---|---|---|
-| Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/generated/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
+| Plugin (explicit) | SUPPORTED, exact coverage | Superseded: every package is installed from a plugin UZE generates (`$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/`), because agy staged a Store tree with `${PLUGIN_ROOT}` unresolved and its agents under bare names; an earlier Store-tree receipt is retired | PROVEN — real-binary dogfood: attach → `agy plugin list` shows import → inspect MATCHED → remove → unregistered → reinstall MATCHED |
 | Plugin (generated) | SUPPORTED, exact coverage | canonical `mcp.json` → generated envelope (`mcp_config.json` translation: a remote server under `url`, `httpUrl` renamed to it) installed from `$UZE_HOME/runtime/attachments/antigravity/plugins/<id>/` | PROVEN — real-binary dogfood + `agy plugin validate` (skills + mcpServers processed) |
 | Skills | SUPPORTED, native (default policy) | via plugin (package-level) or a managed directory `~/.gemini/antigravity-cli/skills/<label>` (CLI-documented global skills root, which agy 1.2 moves to `~/.gemini/config/skills` and links back): SKILL.md and the supporting files, copied; receipt `GeneratedTree` | DOCUMENTED (root) + TESTED (lifecycle/drift) |
 | Skill invocation policy | NATIVE, both halves | `disable-slash-command: true` preserves `model=true,user=false`; `disable-model-invocation: true` (since 1.1.27) preserves `model=false,user=true` | PROVEN (`contract/skill.py::_assert_invocation`) + TESTED |
@@ -15,15 +15,15 @@
 ## Delivery
 
 ```
-Store canonical package (plugin.json + skills/ [+ mcp.json])
+Store canonical package (plugin.json + skills/ [+ mcp.json] [+ agents/] [+ hooks.json])
         │
-        ├─ no canonical MCP surface ──▶ agy plugin install <Store path>   [Explicit]
-        │                                → staged byte copy at
-        │                                  ~/.gemini/config/plugins/<name>/
-        │                                → import_manifest.json registration
-        │                                → 1 receipt (content fingerprint)
-        └─ canonical MCP surface ──────▶ generated envelope (mcp_config.json
-                                          translation) → agy plugin install   [Generated]
+        ├─ any Skill with a non-default invoke: policy ─▶ capability by capability
+        │      (managed skill dirs, agy mcp add, shared ~/.gemini/config/hooks.json)
+        └─ otherwise ─▶ generated plugin at
+                         $UZE_HOME/runtime/attachments/antigravity/plugins/<id>/
+                         (mcp_config.json, agents/ + agents.json, hooks.json)
+                         → agy plugin install → staged byte copy at
+                           ~/.gemini/config/plugins/<name>/ → 1 receipt (fingerprint)
 ```
 
 The staged tree is a **Derived Artifact** (ADR-013 §5): the Store stays the

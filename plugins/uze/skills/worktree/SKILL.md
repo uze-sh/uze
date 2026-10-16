@@ -65,8 +65,10 @@ The branch UZE placed you on is a generated identifier, and a reviewer
 meeting it learns nothing. The subject is one or two words naming the
 intention — `fix/branch-naming`, not a description of the task — and the
 types the project accepts are spelled out in the "Concurrent work
-isolation" section of `AGENTS.md`. A project that declares none refuses the
-command, which is that project saying it does not name work; carry on.
+isolation" section of `AGENTS.md`. A project that declares no vocabulary
+names its work with the Conventional Commits types; only one that opts out
+with `workspace.branch: agent` refuses the command, which is that project
+saying it does not name work; carry on.
 
 Do it now rather than later: the request you were given is where the
 intention comes from, so nothing you read afterwards makes the name easier
@@ -91,12 +93,15 @@ completion behavior, and it is not yours to perform.
 UZE rebases your branch onto the target before delivering it, and runs the
 project's checks on the result. Then it puts the work where the project's
 `delivery` says: into the target (`merge`) or onto the remote as your branch
-(`push`). It never opens a request.
+(`push`). It never opens a request. With no `delivery` declared there is no
+delivery: your branch is left for a person to integrate, so commit on it
+and stop.
 
-What reaches you afterwards is the project's own instruction for the state
-your work was left in, typed into your session as a message, and only when
-the project declares one under `workspace.actions` in `agents.yaml`. The
-states you can meet:
+What reaches you afterwards is an instruction for the state your work was
+left in, typed into your session as a message: the project's own, when it
+declares one under `workspace.actions` in `agents.yaml`, and otherwise, for a
+paused rebase or failed checks only, UZE's built-in one. The states you can
+meet:
 
 - **A paused rebase.** The target moved and your branch no longer applies
   cleanly. The rebase is paused in your checkout with the conflict markers
@@ -112,8 +117,9 @@ states you can meet:
   convention, do not merge it, and end your turn. UZE finds the request on
   the remote by itself afterwards.
 
-Follow the instruction as written; when none arrives, there is nothing more
-for you to do.
+Follow the instruction as written; when none arrives (a published branch
+under a project that declares no `on_publish`), there is nothing more for you
+to do.
 
 Do not try to deliver again yourself; UZE re-reads your checkout when your
 turn ends.

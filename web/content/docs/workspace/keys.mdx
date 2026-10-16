@@ -10,7 +10,7 @@ description: The default shortcuts, and how to change them
   caption="Ctrl+O → Shortcuts. Pick an action, press the new key."
 />
 
-Everything in uze is clickable; keys are the shortcut. `F1` shows the ones that
+Everything in uze is clickable, including every key hint on screen; keys are the shortcut. `F1` shows the ones that
 work where you are, along with the rarer actions that have no key of their own.
 
 When uze asks you something, the arrows move between the answers, `Enter`
@@ -27,13 +27,14 @@ takes the one you are on and `Esc` cancels.
 | `Ctrl+W` | Close the tab |
 | `F2` | Rename the selection |
 | `Alt+↑` / `Alt+↓` | Previous / next agent |
+| `Alt+1` … `Alt+9` | The nth tab on the strip: the agent, then the shells beside it |
 | `Ctrl+↑` / `Ctrl+↓` | Previous / next space |
 | `Alt+X` | What the checkout intends: its changes, designs and tasks ([Spec](/docs/workspace/spec)) |
 | `Alt+A` | The project's diagrams ([Architect](/docs/workspace/architect)) |
 | `Alt+G` | What the agent changed ([Code](/docs/workspace/code)) |
 | `Alt+E` | The agent's files ([Code](/docs/workspace/code)) |
 | `Alt+I` | [Deliver](/docs/workspace/agents#bringing-the-work-home) the agent's work |
-| `Alt+P` | [Recent](/docs/workspace/agents#recent): every agent no pane carries, and what waits on you |
+| `Alt+P` | [Recent](/docs/workspace/agents#recent): the agents no pane carries, and what waits on you. Inside it, `/` searches, `a` shows unnamed agents too, `i` delivers, `d` discards, `Alt+.` opens the row's actions |
 | `Ctrl+O` | Management, and back |
 | `F1` | The keys that work here |
 | `Ctrl+Q` | Quit |
@@ -59,7 +60,9 @@ defaults:
 }
 ```
 
-An empty list unbinds the action.
+An empty list unbinds the action. Each action sits under the surface it is live
+in: `workspace`, `code`, `spec`, `architect`, `preserved-work` (Recent) and so
+on. Rebinding from the Shortcuts screen writes the right names for you.
 
 <Callout type="info">
   On macOS, `Alt` shortcuts need your terminal to send Option as Meta

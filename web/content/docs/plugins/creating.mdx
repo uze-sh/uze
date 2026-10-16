@@ -27,6 +27,7 @@ agents with `uze update <plugin> -m`.
         <File name="SKILL.md" />
       </Folder>
     </Folder>
+    <File name="AGENTS.md" />
     <File name="hooks.json" />
     <File name="mcp.json" />
     <File name="plugin.json" />
@@ -54,11 +55,15 @@ The same steps the skill runs:
 
 ```bash
 uze agent market create my-market --at ~/my-market   # once
-uze agent plugin create my-plugin --market my-market  # --mcp, --hook, --agent
+uze agent plugin create my-plugin --market my-market  # --mcp, --hook, --agent, --instructions
 uze agent plugin check ~/my-market/plugins/my-plugin  # validate, offline
 uze install -m my-plugin@my-market                    # install it
 uze update my-plugin -m                               # after each change
 ```
+
+To keep the marketplace in the project itself, versioned with it, run
+`uze agent market create <name> --local` in the project instead: it writes
+`marketplace.json` at the root and the plugins under `plugins/`.
 
 To publish, push the marketplace repository. Anyone can then
 `uze market add` it.

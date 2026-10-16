@@ -10,8 +10,8 @@ pre-release. The alphas ran as `0.0.0-alpha.N`; the series now leading to
 ```
 
 `[workspace.package].version` in the root `Cargo.toml` is the sole version
-source for the installable `uze` binary, Core, integrations, Application and
-conformance workspace members. Do not version a member independently.
+source for the installable `uze` binary and every workspace crate
+(`crates/*`). Do not version a member independently.
 
 Before producing a binary intended for installation, increment that value:
 
@@ -31,8 +31,9 @@ target/release/uze --version
 
 ## Releasing a binary
 
-UZE's official Linux distribution channel is GitHub Releases, consumed by
-`install.sh` (`curl -fsSL https://uze.sh/i | sh`).
+UZE's official distribution channel is GitHub Releases, consumed by
+`install.sh` on Linux and macOS (`curl -fsSL https://uze.sh/i | sh`) and by
+`install.ps1` on Windows (`irm https://uze.sh/i | iex`).
 A release enters `main` through the same door as every other change: a pull
 request. No local cargo-release, no manual push, and nothing that a branch
 ruleset has to make an exception for.
@@ -42,8 +43,9 @@ workflow). The `bump` input defaults to `beta`; use `rc` for a release
 candidate and `patch`/`minor`/`major` for deliberate stable milestones. The workflow, on a branch of its own:
 
    - `cargo release … --execute --no-tag` runs the `make check`
-     pre-release-hook (fmt, clippy, cargo-deny, tests, ruff — the gate;
-     nothing is bumped if it fails) and bumps every workspace crate in
+     pre-release-hook (fmt, clippy, cargo-deny, tests with and without
+     `--features telemetry`, ruff, and `uze agent artifacts check` — the
+     gate; nothing is bumped if it fails) and bumps every workspace crate in
      lockstep (`shared-version`, see `release.toml`), producing the
      `chore(release): bump workspace version to <v>` commit;
    - `git-cliff -t <v>` regenerates `CHANGELOG.md` — `-t` names the new

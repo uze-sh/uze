@@ -9,6 +9,8 @@ vendor.
 - [OpenCode](src/opencode/README.md)
 - [Antigravity CLI](src/antigravity/README.md)
 - `shared/` — cross-vendor process and path helpers
+- `hooks/` — the hook projections every vertical shares: merged config
+  entries, the generated `hooks/exec` wrapper, the owned OpenCode bridge
 
 `registry::IntegrationRegistry` is the single composition root: `builtin` for
 the real environment, `isolated` for tooling and tests. No integration imports

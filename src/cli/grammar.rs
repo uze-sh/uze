@@ -209,7 +209,7 @@ pub(crate) enum AgentAction {
         #[command(subcommand)]
         action: AgentWorkAction,
     },
-    /// The diagrams this project declares under `artifacts:`
+    /// The diagrams this project declares under `workspace.artifacts`
     Artifacts {
         #[command(subcommand)]
         action: AgentArtifactsAction,

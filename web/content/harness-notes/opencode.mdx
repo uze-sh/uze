@@ -1,7 +1,8 @@
 Skills and agents go to OpenCode's own directories and MCP to its global config. Hooks run
 through a plugin UZE owns and regenerates, since OpenCode has no declarative hook surface; that
-plugin rides OpenCode's plugin API, so every event and effect reaches it, though its permission
-prompt shows the call but not a hook's reason for asking. A skill is invoked as a mention, not
+plugin rides OpenCode's plugin API, so every effect and every event but a resumed session's start
+reaches it, though its permission prompt shows the call but not a hook's reason for asking. UZE
+hands each launch its own session id, which is how the workspace resumes it. A skill is invoked as a mention, not
 a slash command, and since OpenCode has no control that hides a skill from the person, a
 model-only skill works with a stated limit. Its binary is detected as `opencode`, with the
 legacy `opencode2` alias still resolved.

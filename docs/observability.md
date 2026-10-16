@@ -3,8 +3,7 @@
 How to see what `uze` did, how long each part took, and where it failed.
 Canonical guide for tracing; owned by whoever changes `src/telemetry.rs`.
 The reasoning behind the design is in
-`openspec/changes/trace-every-action-to-its-end/design.md` until that
-change is archived, and in its ADR afterwards.
+`openspec/changes/archive/2026-09-08-trace-every-action-to-its-end/design.md`.
 
 ## What is traced
 
@@ -27,8 +26,7 @@ Under a root:
 - `integration.detect` / `attach` / `inspect` / `republish` / `provision`
   / `install` around each `IntegrationPort` call, with the integration id;
 - `acquisition.git` per clone step, `vendor.cli` per vendor CLI the
-  integrations run, `process.run` per provisioning process, `hook.handler`
-  per hook handler, `store.ingest`, `marketplace.clone`;
+  integrations run, `process.run` per provisioning process, `store.ingest`;
 - at debug level: `git` per Git invocation through `uze-git` (arguments,
   exit code), the TUI's timer-driven refreshes (`tui.git_read`,
   `tui.task_evaluation`, `tui.occupancy_reconcile`, `tui.support_refresh`,
@@ -213,6 +211,6 @@ request's span records which client asked.
 Nothing subscribed — every one-shot command, unless asked: a branch per
 span. Journal: formatting on the calling thread, and a move onto the
 writer's. OTLP: a clone of each span's fields onto the exporter's
-thread. The budget tests in `crates/uze-application/src/application/
-tests/performance.rs` run with no subscriber, which is the release
-configuration.
+thread. The budget tests in `crates/uze-application/tests/performance.rs` (and
+`crates/uze-core/tests/performance.rs`) run with no subscriber, which is
+the release configuration.

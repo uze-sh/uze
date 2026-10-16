@@ -9,7 +9,8 @@ CLI and does not need [the workspace](/docs/workspace). It serves the agents
 you start yourself, in a terminal, an editor or CI, and the ones the workspace
 starts.
 
-A plugin bundles skills, MCP servers, agents and hooks. You install it once;
+A plugin bundles skills, MCP servers, agents, hooks and instructions for your
+project's `AGENTS.md`. You install it once;
 uze delivers it to Claude Code, Codex, OpenCode and Antigravity, each through
 its own native mechanism. [How delivery works](/docs/plugins/delivery) explains
 the routes and what keeps them safe.
@@ -28,8 +29,8 @@ uze inspect <plugin>          # what it carries, and how each agent receives it
 uze remove <plugin>           # take it out of this project
 ```
 
-A plugin that runs commands on your machine (an MCP server, a hook) lists them
-and asks before installing.
+A plugin that runs commands on your machine (an MCP server, a hook, a skill
+that runs a command when it loads) lists them and asks before installing.
 
 ## Your project remembers
 

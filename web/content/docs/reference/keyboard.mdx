@@ -58,7 +58,10 @@ any Linux terminal sees. Every universal chord works, `Alt` works, and
 - **A key means one thing per keyboard.** uze has two: management, where it
   owns the whole keyboard, and the workspace, where every bare key belongs to
   the agent running in the pane. Within one of them, two actions may not share
-  a mnemonic. Structural keys (Enter, Esc, Tab, the arrows) are contextual by
+  a mnemonic. A surface that takes the keyboard while it is open (Code, Spec,
+  Architect, Recent, a menu or a question) counts as a keyboard of its own for
+  that time, so `d` can delete a file in Code and discard an agent in Recent.
+  Structural keys (Enter, Esc, Tab, the arrows) are contextual by
   nature and exempt: "go on" reads from the surface, and nobody is confused
   by it.
 - **A conflict is refused before it is written**, and the screen says what the

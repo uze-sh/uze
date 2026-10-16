@@ -47,11 +47,13 @@ hand is reported, not overwritten.
 
 ## Project skills and agents
 
-Skills and agents the project keeps in `.agents/skills` and `.agents/agents`
-reach Codex, OpenCode and Antigravity natively, wherever you start them. Claude
-Code does not read `.agents/`, and Codex does not read project agents there, so
-for those two they arrive through the workspace's shim: inside
-`uze workspace` only. `uze status` and `uze inspect` say which. Plugins you
+Skills the project keeps in `.agents/skills` reach Codex, OpenCode and
+Antigravity natively, wherever you start them. Agents in `.agents/agents` reach
+Antigravity natively. Claude Code reads neither, and Codex does not read project
+agents, so for those two they arrive through the workspace's shim: inside
+`uze workspace` only. OpenCode does not receive project agents at all, because
+nothing a launch hands it stays with one project. `uze status` and
+`uze inspect` say which. Plugins you
 install are not affected: they reach every agent everywhere.
 
 <Cards>

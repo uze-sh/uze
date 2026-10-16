@@ -22,10 +22,21 @@ The file you select stays selected when you switch between them. In the files,
 `e` edits a file and `Ctrl+S` saves.
 
 Right-click a changed file, or press `Alt+.`, for what you can do with the change:
-open the file, copy its path, or discard the change. Discarding asks once,
-then puts the file back the way the last commit has it. There is no stage or
+open the file, copy its path (absolute or relative), or discard the change.
+Discarding asks once, then puts the file back the way the last commit has it.
+In the files, the same gesture copies a path, renames, or deletes (`d`),
+asking first. There is no stage or
 commit here: the checkout belongs to the agent working in it, and the agent
 commits its own work.
+
+The files hide what the project told its editor to hide: the `files.exclude`
+patterns in `.vscode/settings.json`, read the way VS Code reads them.
+
+## Timeline in the sidebar
+
+While Code is on, a **timeline** section in the sidebar lists the recent
+commits of the selected checkout, marking the ones not yet in the target.
+Click one to read its whole message.
 
 <Cards>
   <Card title="Spec" href="/docs/workspace/spec" />

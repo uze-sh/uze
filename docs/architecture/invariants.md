@@ -234,7 +234,8 @@ verbatim `flow:review`).
 
 ### Acquisition owns source semantics
 
-Every source mechanism lives in `src/acquisition/`. Nothing else resolves,
+Every source mechanism lives in `uze_core::acquisition`
+(`crates/uze-core/src/package/acquisition/`). Nothing else resolves,
 fetches or interprets an origin.
 
 ### Store owns installed package bytes
@@ -300,7 +301,7 @@ No symlink the Store persists may resolve outside the package root. Every
 source is held to the same rule, and validation runs before any byte is
 written, so a rejected package leaves nothing behind.
 
-> `tests/package_containment.rs` — absolute escape, `..` escape, chained
+> `tests/packages/containment.rs` — absolute escape, `..` escape, chained
 > escape, escape through a symlinked directory, and a local package held to
 > the identical rule.
 
@@ -529,7 +530,7 @@ repository the caller cannot see exactly as it answers a missing one.
 ### One machine mutation at a time, and never two
 
 The machine mutation guard is an `flock` on a permanent `state/mutation.lock`,
-the same primitive `project::task` uses for its document. Nothing is unlinked
+the same primitive `uze_workspace::task::locked` uses for its document. Nothing is unlinked
 and no liveness is judged, so there is no window in which two acquirers both
 declare a holder dead and both take the lock — the failure that let two
 concurrent `uze install` runs rewrite the Store, the ledger and every harness
@@ -557,13 +558,15 @@ holding the pipe open is swept once before the reader is given up on.
 
 ### Cache is not required for correctness
 
-`~/.uze/cache` holds three caches, each reconstructable from a live read:
-harness detection (`harness_detection.json`), attachment inspection
-(`inspection.json`) and, for every marketplace registered by URL, a mirror
-of its repository (`marketplaces/<name>/repo`, which remembers in
+`~/.uze/cache` holds only what is observed again when it cannot be read:
+harness detection (`harness_detection.json`), requirement version probes
+(`requirements.json`), the shell's observed refusals (`shell.json`),
+attachment inspection (`inspection.json`), the last appearance seen
+(`appearance`), the installed release's notes (`release-notes.md`) and, for
+every marketplace registered by URL, a mirror of its repository (`marketplaces/<name>/repo`, which remembers in
 `transport.json` how it was last reached) with whatever plugins have
 been asked about written out beside it (`marketplaces/<name>/plugins`).
-Deleting the directory costs one probe, one inspection or one clone;
+Deleting the directory costs a probe, an inspection or a clone;
 nothing installed depends on it, and no mutating path trusts it — removal
 planning re-inspects live, and a mutation invalidates the entries it
 touched.
@@ -888,8 +891,8 @@ takes of it.
 
 A mutation that could not be written is never reported as having happened:
 a delivery carries the reason in `DeliveryReport::warnings`, and a placement
-whose task could not be recorded gives the slot back and answers
-`Unisolated`.
+whose task could not be recorded gives the slot back and answers with an
+error, starting nothing.
 
 > `crates/uze-workspace/src/task.rs::tests::overlapping_mutations_do_not_erase_each_other`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_evaluation_that_overlaps_a_delivery_does_not_erase_it`
@@ -919,9 +922,15 @@ reason, never with nothing: an empty answer is what the client renders as
 "nothing ready", which is the one thing a press on a visible, ready task
 does not mean.
 
+Following the target never waits for a delivery's write lock, and states
+are drawn before the remote is asked about requests, so a slow `pre-push`
+or `git ls-remote` never holds the status back.
+
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_gate_that_runs_long_does_not_hold_the_tasks_document`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_delivery_that_could_not_claim_its_task_says_why`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_task_a_delivery_claimed_and_never_answered_for_is_left_alone`
+> `crates/uze-workspace/src/landing/tests.rs::following_the_target_never_waits_for_a_write_in_progress`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::states_are_read_before_the_remote_is_asked_about_requests`
 
 ---
 
@@ -934,8 +943,7 @@ exist, and where" — the same contract a Git or local marketplace root would
 satisfy. `uze-core::acquisition::marketplace` reads that contract; it holds
 no opinion on how the directory reached local disk.
 
-> `crates/uze-core/src/acquisition/marketplace.rs` tests, notably
-> `two_distinct_plugins_resolve_independently_with_no_special_casing`
+> `crates/uze-core/src/package/acquisition/marketplace.rs::tests::two_distinct_plugins_resolve_independently_with_no_special_casing`
 
 ### Store, Engine, Router and every Integration stay marketplace-neutral
 
@@ -1441,7 +1449,7 @@ Whether a task's branch is on the remote, under which name, and how much of
 it the remote already carries are read from the repository's remote-tracking
 refs; the request number is asked of the remote itself. So a branch its own
 agent pushed, and a request its own agent opened, count exactly as much as
-ones a delivery made — the operator is a party to this, and the button has to
+ones a delivery made — the operator is a party to this, and the status has to
 report the remote's state rather than UZE's history. Read from UZE's record
 of its own pushes, the status went on offering to send commits the request
 already carried. A push is a fact whatever the project delivers by, so this
@@ -1495,10 +1503,10 @@ split point is a full object id handed to Git after `--end-of-options`.
 ### Every surface reads one state, and a delivery in flight is the client's
 
 What the branch holds and what the remote holds are folded into a single
-`TaskStateView` before any surface sees it, so the sidebar mark, the header
-button and the preserved list cannot disagree: a published branch level with
-its request reads as `Published` everywhere, not as `Ready` in one column and
-a sync in another. The exception is the delivery itself — `Integrating` is set
+`WorkStateView` before any surface sees it, so the sidebar mark, the tab
+strip's status and the recent list cannot disagree: a branch level with the
+remote reads as `Published` everywhere, and as `InReview` once a request is
+open for it, not as `Ready` in one place and a sync in another. The exception is the delivery itself — `Integrating` is set
 in memory and overwritten by the outcome before the store is saved, so no
 evaluation can read it back, and the client that started the delivery is the
 only party that knows one is running.
@@ -1506,6 +1514,7 @@ only party that knows one is running.
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_published_task_is_marked_as_gone_not_as_waiting_to_be_delivered`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_delivery_in_flight_is_drawn_from_the_client_that_started_it`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_branch_level_with_its_request_reports_the_sync_instead_of_a_count`
+> `src/ui/orchestrator/tests.rs::workspace_tests::work_in_review_shows_its_request_number_and_no_mark`
 
 ### Only a checkout UZE recorded making is ever reset, reused or removed (`account-for-every-checkout`)
 
@@ -1756,7 +1765,9 @@ fast-forward. A conflict or a failed gate leaves the target untouched, with
 the rebase paused in the task's checkout. `push` publishes the branch rebased
 against the remote's tip and never pulls the operator's local branch, and
 never opens a request; a project that declares no delivery has none, and
-nothing is rebased, run or written.
+nothing is rebased, run or written. `delivery:` takes `merge` or `push`:
+`handoff` and `pr` are refused naming the two it takes, never aliased, and
+`push` with no remote is refused before anything moves.
 
 What moves is the declared target, not whatever the primary checkout has
 checked out: `git merge` advances `HEAD`, so the branch is asked for first
@@ -1771,6 +1782,33 @@ target's new tip is read back before the task is recorded `Integrated`.
 > `crates/uze-workspace/src/landing/tests.rs::a_gate_failure_leaves_the_target_untouched`
 > `crates/uze-workspace/src/landing/tests.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
 > `crates/uze-workspace/src/landing/tests.rs::push_publishes_and_leaves_the_request_to_the_agent`
+> `crates/uze-workspace/src/declaration.rs::tests::a_retired_delivery_is_refused_naming_what_is_accepted`
+> `crates/uze-workspace/src/declaration.rs::tests::an_undeclared_delivery_is_no_delivery`
+> `crates/uze-workspace/src/landing/tests.rs::push_without_a_remote_is_refused_before_anything_moves`
+
+### A project says what its agent is told, and when (`workspace-status-actions`)
+
+`workspace.actions` maps a state the work is in (`on_change`, `on_publish`,
+`on_conflict`, `on_fail`) to the one line its agent is sent: on a click of
+the tab strip's status, and when a UZE operation leaves the work there (a
+push in `on_publish`, a conflict in `on_conflict`, a failed gate in
+`on_fail`). A conflict and a failed gate fall back to UZE's own line when
+the project declares none, and nothing else is said unasked. An unknown
+state or an empty line is left out and named, never a refusal of the
+manifest, and declaring actions alone declares no policy. A click on ready
+work delivers it; a status nothing answers is a report, and a click on it
+does nothing.
+
+> `crates/uze-workspace/src/declaration.rs::tests::declared_actions_read_by_the_moment_they_answer`
+> `crates/uze-workspace/src/declaration.rs::tests::a_conflict_and_a_failed_gate_are_asked_about_unless_the_project_says_otherwise`
+> `crates/uze-workspace/src/declaration.rs::tests::an_unknown_state_or_an_empty_instruction_is_left_out_and_named`
+> `crates/uze-workspace/src/declaration.rs::tests::actions_alone_declare_no_policy_and_none_declared_is_empty`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::the_view_carries_the_instruction_its_state_answers_to`
+> `src/ui/orchestrator/tests.rs::workspace_tests::a_delivery_sends_the_instruction_of_the_state_it_left`
+> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_an_answered_status_sends_its_instruction_once`
+> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_ready_work_delivers_it`
+> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_a_report_does_nothing`
+> `src/ui/orchestrator/tests.rs::workspace_tests::uncommitted_work_shows_a_status_only_when_the_project_asks_something_there`
 
 ### A delivery never collides with the operator's own edits
 
@@ -1794,7 +1832,7 @@ task's commits directly.
 ### A linked file is ignored by the repository
 
 A path in `workspace.link` must be relative, stay inside the repository and
-be ignored by it; a violation is a malformed lock at read time, not a
+be ignored by it; a violation is a malformed manifest at read time, not a
 surprise at launch. Linked or not, a failed `setup` warns and never blocks a
 launch.
 
@@ -1816,7 +1854,7 @@ placed the agent in.
 ### A declaration stays editable
 
 The region's identity carries the rendered content's digest, so changing the
-lock reads as one region going stale and another appearing — never as drift
+`workspace:` section of `agents.yaml` reads as one region going stale and another appearing — never as drift
 inside the region that already exists. Exactly one policy region exists at a
 time, and a hand edit still drifts and is refused.
 
@@ -1912,7 +1950,7 @@ Four facts about a process the runtime did not spawn — who is on the other
 end of a socket, what image a pid runs, where it is standing, what it
 inherited — come only from the kernel, and each platform exposes them
 differently (`/proc` on Linux, `libproc`/`sysctl` on macOS).
-`process_probe` holds every one of those readings; the decisions built on
+`uze_platform::probe` holds every one of those readings; the decisions built on
 them are written once and run unchanged everywhere.
 
 The rule this enforces is that `None` means *unknown*, never *no*. A probe
@@ -2209,6 +2247,30 @@ observed for the task, so what resumes is where the work was left.
 > `crates/uze-workspace/src/continuity.rs::a_conversation_the_agent_moved_to_replaces_the_one_it_started_in`
 > `crates/uze-workspace/src/conversation.rs::an_answer_to_a_replaced_launch_is_dropped`
 
+### An agent continues on another harness as itself, briefed from outside its checkout (`switch-agent-harness`)
+
+Continuing an agent in another harness relaunches the same agent (its
+identity, checkout, branch and label) on a harness this machine registered,
+and the harness recorded is the latest launch's. What it is told is a
+briefing UZE writes once per switch, bounded, owner-only and outside every
+checkout: Git's facts and a digest of the outgoing conversation, or Git
+alone where the harness keeps no transcript UZE reads; a harness coming
+back is told only what happened since it left. The briefing goes to the
+incoming harness's first launch and to no other, and a busy agent is asked
+about before its process is ended.
+
+> `crates/uze-application/src/application/services/tasks/switch.rs::tests::a_switched_agent_runs_the_new_harness_in_the_same_place_with_a_briefing_pending`
+> `crates/uze-application/src/application/services/tasks/switch.rs::tests::an_isolated_agent_continues_in_its_own_checkout_and_is_briefed_on_its_commits`
+> `crates/uze-application/src/application/services/tasks/switch.rs::tests::switching_back_briefs_the_returning_harness_only_on_what_it_missed`
+> `crates/uze-application/src/application/services/tasks/switch.rs::tests::a_harness_nobody_registered_is_refused`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::resuming_on_another_harness_records_that_harness`
+> `crates/uze-workspace/src/briefing.rs::tests::a_briefing_is_written_outside_the_checkout_for_its_owner_alone`
+> `crates/uze-workspace/src/briefing.rs::tests::a_conversation_far_larger_than_the_bound_keeps_the_goal_the_summary_and_the_latest_turns`
+> `crates/uze-workspace/src/continuity.rs::tests::a_pending_briefing_is_given_to_the_first_launch_and_to_no_other`
+> `crates/uze-workspace/src/conversation.rs::tests::a_briefing_is_taken_only_by_the_harness_it_was_written_for`
+> `src/ui/orchestrator/tests/switch.rs::a_busy_agent_is_asked_before_it_is_interrupted`
+> `conformance/contract/briefing.py` (all four harnesses)
+
 ### Continuity is declared per harness, and the matrix is derived from it
 
 A harness says whether UZE may name its conversation, must read the name
@@ -2374,12 +2436,14 @@ same terms, and rebuilt by the next launch that needs it.
 > `crates/uze-core/src/machine/harness_runtime.rs::tests::a_project_directory_that_names_no_root_is_swept`
 > `tests/integrations/runtime_projection.rs::a_swept_projection_is_rebuilt_by_the_next_launch`
 
-### The runtime tree has two tenants, and the sweep owns the rest
+### The runtime tree has three tenants, and the sweep owns the rest
 
 `runtime/projects/` holds derived projections that outlive every invocation
 and die with their project root. `runtime/attachments/` holds what UZE
-generates for a harness to read, whose lifetime is the attachment's rather
-than any project's — the receipt ledger is what answers for it. Anything
+generates for a harness to read, and `runtime/packages/` the delivered copy
+of each package every `${PLUGIN_ROOT}` names; both live as long as what was
+delivered rather than any project, and the receipt ledger is what answers
+for them. Anything
 else directly under `runtime/` is UZE's own output at a path nothing writes
 any more, so the sweep removes it, and nothing project-owned is reached
 through a projection it collects.
@@ -2757,18 +2821,15 @@ and set aside for a reason rather than forgotten.
 |---|---|
 | third-party marketplace hosting | UZE's own official marketplace (M3) is a discovery/acquisition contract over its own repository; hosting *other* publishers' marketplaces is a different product |
 | remote registry | nothing to serve until acquisition is dogfooded; M3's `marketplace.json` contract is shaped to allow a remote source later without touching Store/Engine/Integration |
-| cache | correctness first; a cache is an optimization with a second-source-of-truth risk |
 | content-addressable store | a Git commit is already a content identity, and a local path has no reproducibility to protect |
-| lockfile | meaningful only with dependencies between packages, which do not exist |
 | GitHub-specific source | a host is a URL; the mechanism is Git |
-| automatic update | requires update semantics to be exercised by hand first |
-| persistent trust database | one consent boundary, not a permission system |
+| persistent trust database | package consent is asked per install and never stored; only a project's exact command lines are approved and recorded (ADR-055) |
 | network-dependent gating test | local bare repositories prove the mechanism; a public repo would test that provider's availability |
-| remote marketplace search | only one marketplace (embedded, official) exists; nothing to search yet |
-| a registry-driven CLI grammar | a feature cannot contribute a command today: `Command` is a closed `clap` derive. Building it dynamically instead would rewrite a 2400-line dispatch and trade `clap`'s typed parsing for a builder — to serve an author who does not exist yet. What already holds is the part that mattered: the leaf list is derived from the real grammar, so a command added without a `PerformanceClass` fails by name, and a stale entry fails by name too. Revisit when something outside `main.rs` actually needs to register a command — an installable extension, or a second binary sharing the grammar |
+| remote marketplace search | marketplaces are Git repositories registered one by one; there is no index of them to search |
+| a registry-driven CLI grammar | a feature cannot contribute a command today: `Command` is a closed `clap` derive. Building it dynamically instead would rewrite the dispatch in `src/main.rs` and `src/cli/` and trade `clap`'s typed parsing for a builder — to serve an author who does not exist yet. What already holds is the part that mattered: the leaf list is derived from the real grammar, so a command added without a `PerformanceClass` fails by name, and a stale entry fails by name too. Revisit when something outside `src/cli/grammar.rs` actually needs to register a command — an installable extension, or a second binary sharing the grammar |
 | installable extensions | the TUI's Extensions screen catalogs bundled, compiled-in extensions (`ExtensionRegistry::builtin`); loading/enablement of user-installed extensions is not built |
 | plugin version resolver | `plugin.json` carries no version field yet; nothing depends on one |
-| marketplace federation | one official marketplace; combining several is unproven need |
+| marketplace federation | several registered marketplaces are read side by side; one marketplace re-exporting another's plugins is unproven need |
 | Git sparse checkout for marketplace sources | the `marketplace.json` contract is shaped to allow acquiring only a resolved plugin's subtree later; not implemented |
 | reverse/foreign harness-format import | the acquisition contract is canonical `plugin.json` only (M2); a foreign-format importer (`ClaudePluginImporter`) existed as dead, unreachable code and was removed (ADR-005) — foreign import staying structurally separate from harness delivery is still the intended shape if it returns, but nothing is retained in production speculatively |
 

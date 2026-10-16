@@ -33,7 +33,7 @@ yourself asserting on what the screen says, the claim belongs in
 Chapters are the order a person meets the product, not subsystems:
 
 ```
-01-first-run  02-packages  03-context  04-workspace  05-delivery  06-recovery
+01-first-run  02-packages  03-context  04-workspace  05-delivery  06-recovery  07-upgrade
 ```
 
 Numbers are reading order only — every journey builds its own world, so
@@ -80,7 +80,8 @@ more. Wait on a condition with `wait: screen|file|shell` + `until:`.
 
 ## Step 3 — assert the machine, in product terms
 
-`dir`, `file`, `git`, `tasks`, `process`, `cmd`, `capture`. Write the
+`dir`, `file`, `launcher`, `tree`, `json`, `git`, `tasks`, `agents`,
+`process`, `cmd`, `capture`. Write the
 `about:` as the outcome ("the slot survives its agent — a checkout is reused,
 not destroyed"), never the mechanism.
 
@@ -94,8 +95,9 @@ its agent" is expressible at all:
   same_as: slots
 ```
 
-Where UZE writes what a check reads: tasks in
-`$UZE_HOME/state/tasks/<project id>.json` (`id`, `state`, `checkout`,
+Where UZE writes what a check reads: agents in
+`$UZE_HOME/state/projects/<project id>/agents.json` (`id`, `harness`,
+`state`, and for an isolated one an `isolation` carrying `checkout` and
 `branch`); checkouts in `<project>/.worktrees/<slot id>` on branch
 `agent/<task id>`; terminal state under `$UZE_HOME/state/terminal`.
 
@@ -142,7 +144,7 @@ scene ended on, the world's tree, and the processes it was holding.
 ```bash
 python3 journeys/journey.py validate journeys/suites
 python3 journeys/journey.py run journeys/suites --tag gate
-make journey-docker          # the pinned terminal, which CI uses
+make journey-docker          # the same run in a container, kept away from your own tmux and HOME (CI runs natively)
 ruff format journeys/ && ruff check journeys/
 ```
 

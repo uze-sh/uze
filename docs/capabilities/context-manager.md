@@ -20,8 +20,8 @@ of this boundary later:
   hand-written `GEMINI.md` — are never compared, judged equivalent, or combined.
   The Context Manager observes and reports; it never decides that two pieces of
   text mean the same thing.
-- **No LLM.** No function in `text_region.rs`, `context.rs`, or
-  `UzeApplication::context_*` calls a model, and none ever will as part of this
+- **No LLM.** No function in `text_region.rs`, `context.rs`, or the
+  application's `Context` service calls a model, and none ever will as part of this
   boundary. Determinism and LLM-independence are the same property stated twice.
 - **`AGENTS.md` is the baseline.** The one file every recognized delivery path
   either reads natively or bridges into. It is an existing external convention,
@@ -35,7 +35,7 @@ of this boundary later:
 
 ## Why a separate boundary
 
-`uze install <name>@<market>`/`remove <plugin> -m`/`update -m` stay entirely machine-scoped. A second,
+`uze install -m <name>@<market>`, `uze remove <plugin> -m` and `uze update -m` stay entirely machine-scoped. A second,
 independent concern reads the installed package set and reconciles it into *one
 project's* shared context, taking `project_root` as ordinary function input —
 never as a persisted `Project` entity.
@@ -64,13 +64,13 @@ uze-core:
                    reconcile_agents_md (writes; built on inspect too)
   engine.rs        package_resources_at — package-side AGENTS.md discovery
 
-uze-application (the one layer where vendor names appear):
-  instruction_contributions()      reads the Store, pure
-  context_inspect(project_root)    read-only
-  context_plan(project_root)       read-only
-  context_reconcile(project_root)  writes
+uze-application (application/context.rs):
+  Context::instruction_contributions()  reads the Store, pure
+  Context::inspect(project_root)        read-only
+  Context::plan(project_root)           read-only
+  Context::reconcile(project_root)      writes
 
-src/main.rs:
+src/cli/agent.rs:
   uze agent context inspect | plan | reconcile [path] [--format json]
 ```
 
@@ -91,14 +91,15 @@ regions, per-harness delivery, a portability verdict, and warnings.
 and **managed** (the region identities present). That is the smallest split that
 answers "whose content is this?" without inventing a larger taxonomy.
 
-`HarnessContextDelivery` is three cases, not five: `Native` (reads `AGENTS.md`
-directly), `Bridge { needed, state }` — `state` is checked even when `needed` is
-false, so a stale-but-present bridge is visible rather than folded into "not
-needed" — and `NotDetected`, which is never counted as a gap.
+`HarnessContextDelivery` is four cases: `Native` (reads `AGENTS.md` directly),
+`Bridge { needed, state }` — `state` is checked even when `needed` is false, so a
+stale-but-present bridge is visible rather than folded into "not needed" —
+`Projected` (the runtime shim hands it over from outside the project), and
+`NotDetected`, which is never counted as a gap.
 
 **Proven zero-write** by filesystem-snapshot equality across every state a
 project can be in — absent, matched, drifted, orphaned, malformed
-(`tests/context_inspection.rs`, and the same property at the `uze-core` level in
+(`tests/memory/inspection.rs`, and the same property at the `uze-core` level in
 `inspect_agents_md_never_writes_in_any_state`).
 
 ## Portability
@@ -136,22 +137,22 @@ decision. Also proven zero-write.
 
 | Invariant | Where proven |
 |---|---|
-| User-owned content never overwritten | `tests/context_inspection.rs` scenarios A–F |
+| User-owned content never overwritten | `tests/memory/inspection.rs` scenarios A, C–F |
 | `DRIFTED` never silently corrected | `a_still_installed_packages_drifted_region_is_reported_and_never_rewritten` |
 | Other owners' regions stay intact | `multiple_regions_from_different_identities_coexist_and_detach_independently` |
 | Reconciling twice is idempotent | `reconciling_repeatedly_never_duplicates_regions_or_bridges` |
 | The bridge is derived state | the bridge loop recomputes `needed` every call, never reads a stored receipt |
 | No bridge without a matched contribution | same |
-| Native harnesses receive no extra artifact | `NATIVE_INSTRUCTION_INTEGRATIONS` never appears in `BRIDGE_INTEGRATIONS` |
+| Native harnesses receive no extra artifact | a harness declaring `ContextDelivery::Native` is never given a bridge (`detected_bridges` filters on `ContextDelivery::Bridge`) |
 | Claude receives only the minimal bridge | `INSTRUCTION_BRIDGE_CONTENT = "@AGENTS.md"`, one line |
 | The Store stays machine-scoped | `context_operations_never_alter_the_installed_package_set` |
 | No integration gains project lifecycle semantics | `IntegrationPort` is unmodified |
 
 ## What it does to a project that already had files
 
-Six scenarios pass end to end (`tests/context_inspection.rs::scenario_[a-f]_*`):
-only a hand-written `CLAUDE.md`; only `GEMINI.md`; both, divergent; a
-hand-written `AGENTS.md` with nothing installed; a hand-written `AGENTS.md`
+Five scenarios pass end to end (`tests/memory/inspection.rs::scenario_*`):
+only a hand-written `CLAUDE.md`; an unrecognized vendor file; a hand-written
+`AGENTS.md` with nothing installed; a hand-written `AGENTS.md`
 beside a uze region; a hand-written `CLAUDE.md` beside a uze bridge. In every
 case manual content survives byte-for-byte and no migration occurs.
 
@@ -161,10 +162,10 @@ an agentic layer and never to deterministic reconciliation.
 
 ## The agentic layer sits on top, not inside
 
-`uze:init` (see [uze-skill.md](uze-skill.md)) calls `context_inspect` to *see* a
+`uze:init` (see [uze-skill.md](uze-skill.md)) calls the context service's `inspect` to *see* a
 project's real state, decides with a model and the user's approval what a
 consolidated `AGENTS.md` should contain, writes that file the way a human
-editing it would, and calls `context_reconcile`/`context_inspect` again to check
+editing it would, and calls `reconcile`/`inspect` again to check
 that the deterministic layer agrees. Nothing in that flow requires `uze-core` or
 `uze-application` to grow LLM awareness: the agentic layer is purely a client of
 these three functions.
@@ -205,6 +206,7 @@ force:
 ## Vendor-neutrality
 
 `text_region.rs` and `context.rs` contain zero occurrences of any harness name,
-in code, doc comments and tests alike. In `uze-application`, three lines name
-one: `BRIDGE_INTEGRATIONS`, `NATIVE_INSTRUCTION_INTEGRATIONS`, and the list of
-recognized filenames `context_inspect` observes. One file, one layer.
+in code, doc comments and tests alike, and so does `uze-application`. Which file
+a harness reads, and whether it needs a bridge, is each integration's own
+`IntegrationPort::context_delivery()` declaration in `uze-integrations`; the
+observed sources are `AGENTS.md` plus whatever those declarations name.

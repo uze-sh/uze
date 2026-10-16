@@ -73,8 +73,8 @@ This is the "extract the portable core" flow — see **Flow B** below.
 
 ### `PARTIALLY_PORTABLE` (AGENTS.md exists, at least one bridge gap)
 
-Run `uze agent context plan --format json`. The gaps are almost always a bridge
-that's `Missing` (a harness just needs `uze agent context reconcile`, no semantic
+Run `uze agent context plan --format json`. A gap is a bridge a harness needs
+because AGENTS.md carries a package's managed region: one that's `Missing` (a harness just needs `uze agent context reconcile`, no semantic
 work needed) or `Blocked` (drifted/malformed — report it, ask the human how
 they want to resolve it; do not guess). If every gap is a plain `Missing`
 bridge, you can usually skip straight to Step 4 (confirm) — there is no
@@ -165,8 +165,8 @@ Proposed AGENTS.md content
   [the actual drafted content, or a clear summary of it]
 
 UZE plan (uze agent context plan)
-  AGENTS.md   pkg  ATTACH
-  CLAUDE.md   claude-code  ATTACH  (bridge: @AGENTS.md)
+  AGENTS.md   ATTACH
+  Claude Code native, no bridge needed (a CLAUDE.md bridge is attached only when AGENTS.md carries a package's region)
   Codex       native, no artifact
   OpenCode    native, no artifact
   Antigravity native, no artifact (reads AGENTS.md and GEMINI.md directly)
@@ -202,7 +202,7 @@ just did:
 Portable context created.
 
 AGENTS.md   healthy
-Claude      bridged
+Claude      native
 Codex       native
 OpenCode    native
 Antigravity native

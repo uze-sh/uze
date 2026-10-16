@@ -7,6 +7,7 @@ host's own columns) and never draws, computes geometry, or names a colour —
 
 - `code/` — the active checkout four ways: its changes, its files, its history, its map
 - `architect/` — what somebody *wrote down* about the project, nothing measured
+- `spec/` — what a checkout *intends*: a spec tool's units, and the project's decision records found in the declared places
 - `shared/` — what a second extension actually needed, and only then
 - `view.rs`, `Host` — the two contracts, one in each direction
 

@@ -1,6 +1,8 @@
-The Google-family harness. Its plugin carries the skills, with the plugin root resolved in each,
-and the MCP servers, translated; agents go to its global agents directory under their plugin
-label, which a plugin's agents would lose. The agent a person starts on is not given the tool
-that dispatches another, so delivered agents are reported degraded. Hooks merge into its shared
-`hooks.json`; its session-start hook is one its docs do not list, so the Conformance Lab checks
-it on every release.
+The Google-family harness. UZE generates one plugin from the package, carrying the skills with
+the plugin root resolved in each, the MCP servers translated into `mcp_config.json` (a remote
+server under `url`), the agents under their plugin label, and the hooks in the plugin's own
+`hooks.json`. Only a package delivered capability by capability puts its agents in the global
+agents directory and its hooks in the shared `hooks.json`. A plugin Antigravity already holds with
+the same bytes is adopted, and one that holds the name with other bytes is reported rather than
+overwritten. It needs Antigravity 1.3.4 or newer; `uze doctor` and `uze status` say so below it.
+It reads only the first 24,000 bytes of `AGENTS.md`, and `uze status` warns when yours is longer.

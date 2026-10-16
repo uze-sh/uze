@@ -24,7 +24,7 @@ which cell of the matrices below is covered by which test file.
 | Level | What it proves | Environment | Where |
 |---|---|---|---|
 | **L0 — Unit** | pure logic: parsing, normalization, identity, deterministic helpers | nothing real; trivial temp only | `#[cfg(test)]` inside `crates/*/src/**`, `src/**`; `tests/packages/*`, `tests/projection/*` helpers |
-| **L1 — Component/Contract** | a subsystem's contract on a real isolated filesystem, with a *fake* process boundary | isolated temp HOME/UZE_HOME, no developer state, fake harness CLIs only | `tests/{cli,memory,packages,workspace,lifecycle,projection}/**`, `tests/integrations/**` |
+| **L1 — Component/Contract** | a subsystem's contract on a real isolated filesystem, with a *fake* process boundary | isolated temp HOME/UZE_HOME, no developer state, fake harness CLIs only | `tests/{cli,memory,packages,project,lifecycle,projection}/**`, `tests/integrations/**` |
 | **L2 — Harness Conformance** | real vendor binary semantics, isolated HOME/UZE_HOME, no model calls | the real vendor binary in a disposable container: synthetic provider, zero Internet, zero tokens | the `conformance/` container lab (Tiers 1-2) — there is no in-repo L2 probe |
 | **L3 — Acceptance** | public user-level scenario end-to-end through the real `uze` binary | clean isolated `TestEnvironment` (real UZE binary, fake or controlled harness CLIs) | `tests/acceptance/**` |
 | **L3.5 — Journey** | a user's flow performed through the real CLI and the real TUI, checked against real machine state (files, Git, recorded task state, processes) — never against UZE's own report | disposable sandbox HOME/UZE_HOME/XDG_RUNTIME_DIR, generated harness stand-ins, offline; a pinned container in CI | `journeys/suites/*.yml` (see `journeys/README.md`) |
@@ -34,9 +34,9 @@ Rules:
 
 - **L3 exercises the public path**: `uze` binary → Application → Store/Engine
   → Integration. No test recreates the implementation.
-- **Never call a real vendor CLI from ordinary CI**: L2 probes are
-  skip-if-absent by design; the `conformance/` lab is the verdict where real vendor
-  behavior matters.
+- **Never call a real vendor CLI from ordinary CI**: there is no in-repo L2
+  probe; the `conformance/` lab is the verdict where real vendor behavior
+  matters.
 - The same invariant at multiple levels is *good* (L0 exact-coverage
   helper + L3 "nothing missing after install"). Duplicates at the *same*
   level are not.
@@ -53,8 +53,10 @@ tests/
 ├── projection/      exposure naming, invocation labels/policy, shared skill roots
 ├── integrations/    contract, capability+lifecycle conformance, runtime-shim boundary,
 │   ├── harness/     per-harness invocation-policy semantics (claude/codex/opencode/antigravity)
+├── architecture/    layering rules (facade, chrome, colour, Git, platform), invariant citations, instrumentation, workflows
 ├── acceptance/      L3 scenarios (see below)
-└── fixtures/        canonical / foreign / scenarios / golden (see tests/_fixtures/README.md)
+├── scripts/         installer tests (installer-test.sh, installer.Tests.ps1; `make test-installer`)
+└── _fixtures/       canonical / foreign / scenarios / golden / highlight / bin (see tests/_fixtures/README.md)
 ```
 
 Each `tests/<domain>/main.rs` is the Cargo test target (directory-`main.rs`
@@ -83,7 +85,7 @@ exemption is written down.
 This replaced 19 hand-copied per-harness tests. Do not add a
 `<vendor>_<scenario>` test to those two files: add the question to the loop
 and the vendor's spelling to `subjects.rs`. A vendor-named test there is only
-right when the *outcome* is about a named pair (`codex_opencode_agree_on_the_shared_skill_root`).
+right when the *outcome* is about a named pair of harnesses.
 
 ## Support crate
 
@@ -161,8 +163,7 @@ to be meaningful, it does not belong in `tests/`.
 | Marketplace | ✓ | ✓ | partial | ✓ |
 | Workspace (lock/root resolution) | ✓ | ✓ | — | ✓ |
 
-`✓*` = covered by the skip-if-absent real-Codex dogfood (L2 evidence when a
-binary exists) or the conformance lab (partial). `partial` = covered only at some
+`✓*` = covered by the conformance lab (L2). `partial` = covered only at some
 levels or through the conformance lab, not by an in-repo test at that exact tier.
 
 `--` = deliberately absent: the invariant is proven at a lower tier and no
@@ -194,12 +195,16 @@ the real binaries) — the honest place for vendor-semantics verdicts.
 | A8 | runtime shim never recurses | `runtime_shim::runtime_shim_active_internal_calls_resolve_real_executable_without_recursion` |
 | A9 | nested cwd → workspace root | `workspace_health::nested_cwd_resolves_workspace_root_and_installs` |
 | A10 | workspace overview readiness | `workspace_health::workspace_overview_tracks_environment_readiness` |
-| A11 | projection conflict honest failure | `multi_harness::projection_conflict_is_reported_honestly` |
+| A11 | a model-only Skill reaches OpenCode in its own encoding | `multi_harness::a_model_only_skill_reaches_opencode_in_its_own_encoding` |
 | A12 | golden environment health (release signal) | `fresh_project::golden_environment_is_healthy` |
 | A13 | only the package manager: no policy, no workspace region, no checkout, no shell edit | `package_only::the_package_manager_alone_never_meets_the_workspace` |
 | A14 | a workspace setting fails no package command | `package_only::a_workspace_section_the_workspace_rejects_fails_no_package_command` |
 | A15 | the package manager and the workspace: each owns its own region | `package_and_workspace::install_leaves_the_workspace_section_to_the_workspace` |
 | A16 | moving between the two profiles | `package_and_workspace::moving_from_the_package_manager_to_the_workspace_and_back` |
+| A17 | an agent names its work through the real binary | `agent_surface::an_agent_names_its_work_through_the_real_binary` |
+| A18 | an agent cannot approve its project's commands | `command_approval::an_agent_cannot_approve_its_projects_commands` |
+| A19 | a relaunched agent resumes its conversation | `session_continuity::a_relaunched_agent_resumes_the_conversation_its_task_was_left_in` |
+| A20 | one canonical package reaches every harness | `canonical_package::one_canonical_package_reaches_every_harness_through_its_most_native_safe_representation` |
 
 ### Usage profiles
 
@@ -213,7 +218,7 @@ caught):
 | package manager only | `package_only` | `02-packages/10-a-project-that-only-uses-the-package-manager` | the skill contract, every harness started as its own binary |
 | package manager + workspace | `package_and_workspace` | `04-workspace/10-the-workspace-on-a-project-with-plugins` | the context and continuity contracts, launched through the shim |
 
-A12 update-lifecycle is *not* an acceptance scenario yet: update semantics
+Update lifecycle is *not* an acceptance scenario yet: update semantics
 are L1 (`tests/packages/acquisition.rs` re-resolution tests) and the CLI
 `update -m` is untested at L3 — that is the first gap to close
 after this refactor.
@@ -230,5 +235,5 @@ after this refactor.
   (serialized on a per-binary mutex, restored on drop — no ad hoc
   `set_var` anywhere: `grep -rn "set_var" tests/` finds only the support
   crate).
-- L2 probes require the vendor binary and skip cleanly; nothing in the
-  ordinary suite depends on developer-installed harnesses.
+- Nothing in the ordinary suite spawns a vendor binary or depends on
+  developer-installed harnesses.

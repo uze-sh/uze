@@ -53,10 +53,10 @@ than inherited, and it is where anything you would object to will be.
   command in the directory, which is why `mise.toml` here lists only bun.
   The MSRV is checked past the file with an explicit `cargo +1.97`
   (`make msrv`); a `+toolchain` is the one thing that outranks it.
-- Building a musl artifact locally is rarely needed (CI builds all four),
-  but when it is: `sudo apt install musl-tools` and `rustup target add
-  x86_64-unknown-linux-musl`. Which C compiler cc-rs asks for is already
-  declared in `.cargo/config.toml`, so nothing else has to be exported.
+- Building a musl artifact locally is rarely needed (the release builds
+  both Linux musl targets on native runners), but when it is, `rustup
+  target add x86_64-unknown-linux-musl` is all it takes: no dependency
+  compiles C.
 - Python 3 with `ruff` for `conformance/`.
 - [`lefthook`](https://lefthook.dev) for the git hooks. Run
   `lefthook install` once after cloning; the hooks mirror the fast half
@@ -67,13 +67,14 @@ than inherited, and it is where anything you would object to will be.
 Nothing merges unless all of this is green, locally and in CI:
 
 ```bash
-make check                      # fmt + clippy (warnings denied) + cargo-deny + tests + ruff
+make check                      # fmt + clippy (warnings denied) + cargo-deny + tests (with and without telemetry) + ruff + diagram check
 openspec validate --all --strict
 ```
 
-`make check` needs two tools CI installs for itself:
-`cargo install cargo-deny cargo-about --locked`. They are dev tooling and
-never appear in `Cargo.toml`.
+`make check` needs one tool CI installs for itself,
+`cargo install cargo-deny --locked`; `make ci` and `make attributions`
+also need `cargo-about`. They are dev tooling and never appear in
+`Cargo.toml`.
 
 `ci.yml` is the source of truth for what gates a merge; `make check` is
 the local proxy. Specifically:
@@ -82,7 +83,8 @@ the local proxy. Specifically:
 - `cargo clippy --all-targets -- -D warnings` clean. Do not add
   `#[allow]` to silence a lint; fix the code or make the case in the
   pull request for a crate-wide configuration.
-- `cargo test --workspace --no-fail-fast` passes. A test that is flaky is
+- `cargo test --workspace --no-fail-fast` passes (CI runs the same suite
+  with `cargo nextest`). A test that is flaky is
   a bug in the test; fix it or delete it, never `#[ignore]` it to get
   green.
 - `cargo deny check` clean: licence policy, advisories, bans and sources
@@ -118,8 +120,10 @@ the local proxy. Specifically:
   its four questions (who publishes it, whether it compiles C, `cargo deny`,
   transitive weight). A dependency that becomes part of a public contract or a
   long-term boundary gets an ADR at archive time.
-- The project is pre-1.0 and ships **no compatibility layers**. Stale
-  state is fixed by cleaning data, not by permanent migration code.
+- The project ships **no scattered compatibility code**. A record another
+  build wrote is carried across by the one ladder in `uze-document`
+  (`Shaped`) and nowhere else; generated and remembered state is rebuilt,
+  never migrated, and no module carries a fallback for an old shape.
 - Vendor-specific knowledge lives in `uze-integrations` only. Naming a
   harness anywhere in `uze-core`, `uze-application` or `src/` fails a
   test.
@@ -180,7 +184,8 @@ Every commit follows [Conventional Commits](https://www.conventionalcommits.org/
   code needs a reason in its description, and will usually be asked to
   split.
 - **Branch names:** `<type>/<short-kebab-summary>` (`feat/portable-agent`,
-  `fix/drawer-loading`). Agents launched by UZE work on `agent/<id>`.
+  `fix/drawer-loading`). Agents launched by UZE start on `agent/<id>` and
+  rename it to `<type>/<subject>` when they name their work.
 - The title is the Conventional Commit line of the eventual merge. The
   description states the problem, the approach, what was considered and
   rejected, and how it was verified. Link the issue and, where one
@@ -208,22 +213,24 @@ Every commit follows [Conventional Commits](https://www.conventionalcommits.org/
 
 ## Versioning and releases
 
-UZE follows [Semantic Versioning 2.0.0](https://semver.org). Until 1.0
-every release is an explicit pre-release, `0.y.z-alpha.N`, and the public
-contract can change between them; `docs/versioning.md` says what each
-component means at this stage.
+UZE follows [Semantic Versioning 2.0.0](https://semver.org). Until 1.0.0
+every release is an explicit pre-release, `1.0.0-beta.N` today (the alphas
+ran as `0.0.0-alpha.N`), and the public contract can change between them;
+`docs/versioning.md` says what each component means at this stage.
 
 - The one version source is `[workspace.package].version` in the root
   `Cargo.toml`. Every crate inherits it; nothing else carries a version.
-- A pull request never touches the version. Releases are cut by a
-  maintainer through the **Release** workflow, which bumps the version,
-  regenerates the changelog, tags, and publishes the Linux binaries to
-  GitHub Releases (ADR-034). No binary is distributed from a build whose
-  version was not bumped.
-- The bump follows the Conventional Commits since the last release: a
-  `BREAKING CHANGE` bumps `y`, a `fix` bumps `z`, and an ordinary
-  development delivery bumps `alpha.N`. Choosing the bump is part of the
-  release, not of the pull request.
+- A pull request never touches the version. A maintainer proposes a
+  release by running the **Release** workflow, which bumps every crate in
+  lockstep and regenerates the changelog in a `chore(release): v<version>`
+  pull request. Merging it is what publishes: once `Gate` passes on that
+  commit, the workflow builds the Linux (gnu and musl), macOS and Windows
+  archives, signs them, tags the commit and creates the GitHub Release
+  (ADR-034, `docs/versioning.md`). No binary is distributed from a build
+  whose version was not bumped.
+- The bump is the workflow's `bump` input: `beta` by default, `rc` for a
+  release candidate, `patch`/`minor`/`major` for deliberate stable
+  milestones. Choosing it is part of the release, not of the pull request.
 
 ## Repository rules
 

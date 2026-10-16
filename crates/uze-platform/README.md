@@ -12,6 +12,10 @@ system. A platform that cannot answer says *unknown*, never *no*.
 - `probe`: what the kernel knows about a process this crate did not spawn
 - `endpoint`: a local socket or named pipe only this user reaches
 - `lock`: a lock across processes, released by the kernel when its holder dies
+- `secret`: unpredictable bytes from the operating system's generator, and a
+  comparison that leaks nothing about a guess
+- `terminal`: the controlling terminal a process is seated at, which tells a
+  person's process from a daemon's
 - `shell`: the shell an authored line runs in (`sh -c`, Windows PowerShell 5.1),
   its quoting, and a line that survives a host re-quoting it
 - `executable`, `path`, `home`, `fs`, `fs_name`: where programs are, how paths

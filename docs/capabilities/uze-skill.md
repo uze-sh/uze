@@ -1,13 +1,14 @@
 # UZE's own Skills
 
 `plugins/uze` is the one official plugin, and it is an ordinary Agent Plugins
-1.0 package: `plugin.json` plus a `skills/` directory. It carries three Skills.
+1.0 package: `plugin.json` plus a `skills/` directory. It carries four Skills.
 
 | Skill | What it reasons about |
 |---|---|
 | `uze:init` | Portable project context. Delegates every managed mutation to the deterministic Context Manager (`uze agent context inspect \| plan \| reconcile`) and never bypasses it — see [context-manager.md](context-manager.md). |
-| `uze:worktree` | Git workspace ownership: when to isolate concurrent writes, how a branch reaches the target, and when it is safe to integrate. It reads the project's `workspace:` policy from `agents.yaml` before creating anything, uses Git directly, and has no Context Manager mutation authority. |
+| `uze:worktree` | For an agent `uze workspace` launched: working in the checkout it was placed in, naming its work (`uze agent work name`), committing on its own branch, giving subagents checkouts of their own (`uze agent work split \| join \| list`), and leaving delivery to UZE. It has no Context Manager mutation authority. |
 | `uze:architect` | The diagrams a project keeps under `workspace.artifacts`: which view a change belongs in, what the architect surface lists it as, and `uze agent artifacts check` as the only authority on whether it draws — the Skill never restates the accepted syntax, because the parser moves and a remembered grammar diverges from it silently. |
+| `uze:author` | Creating a plugin end to end: choosing or creating a marketplace (`uze agent market create`), scaffolding (`uze agent plugin create`), checking offline (`uze agent plugin check`) before `uze install -m <plugin>@<market>`, and iterating on the linked marketplace's files. It mutates nothing itself; the `uze agent` verbs do. |
 
 **The Skill reasons; `uze` mutates.** That boundary lives in each SKILL.md's
 own "Hard boundaries" section, not in Rust: `uze-core` has no idea these
@@ -50,7 +51,7 @@ conversation. Neither needed new integration surface.
 
 ## No special treatment, proven structurally
 
-`tests/uze_skill.rs::the_package_receives_no_special_treatment_a_renamed_copy_behaves_identically`
+`tests/packages/canonical_model.rs::the_package_receives_no_special_treatment_a_renamed_copy_behaves_identically`
 installs a byte-identical copy of the SKILL.md under a *different* package id
 and asserts it is discovered exactly the same way. Nothing in the Store, the
 router, or any integration references `"uze"` as a package identity.
@@ -71,20 +72,18 @@ router, or any integration references `"uze"` as a package identity.
 Kept separate on purpose. `doctor` has no `project_root` and never will: it is
 a statement about *this machine's* uze installation — Store health, harness
 detection and provisioning, package-level attachment state. `status` is always
-project-scoped and composes `context_inspect` with the Store's package count,
+project-scoped and composes the context service's `inspect` with the Store's package count,
 introducing no health-detection logic of its own.
 
 ```
 $ uze status
-Project
-  Context       PORTABLE
-Harnesses
-  claude-code  bridged (Matched)
-  codex        native
-  opencode     native
-Packages
-  1 installed
-  1 contributing here
-Health
-  no issues
+my-project  ~/my-project
+✓ ready
+
+Context
+  AGENTS.md     ✓ present
+  Claude Code   ✓ reads AGENTS.md natively
+  Codex         ✓ native
+  OpenCode      ✓ native
+  Antigravity   ✓ native
 ```

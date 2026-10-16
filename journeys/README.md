@@ -11,21 +11,23 @@ reports an artifact it did not write fails here, and passes everywhere else.
 
 Where this sits: `tests/` proves the domain deterministically against fake
 harnesses; `conformance/` proves what a *vendor harness* does; a journey
-proves what **UZE** does, including the 28k lines of `src/ui/` no Rust test
-can click.
+proves what **UZE** does, including the more than 40k lines of `src/ui/` no Rust
+test can click.
 
 ```bash
 python3 journeys/journey.py list     journeys/suites                  # what is proven, in order
 python3 journeys/journey.py run      journeys/suites --tag gate       # everything the gate runs
 python3 journeys/journey.py run      journeys/suites/04-workspace     # one chapter
 python3 journeys/journey.py run      journeys/suites/04-workspace/01-agents-and-slots.yml
+python3 journeys/journey.py seed     <spec>                           # build the world only
 python3 journeys/journey.py probe    <spec>                           # leave it up to poke at
 python3 journeys/journey.py validate <spec|dir>
 ```
 
 A spec carries `tags:`. `--tag gate` is what a pull request runs; a nightly
 runs the directory with no tag at all. CI splits either across runners with
-`--shard I/N`, an interleaved slice each (five on Linux, four on macOS),
+`--shard I/N`, an interleaved slice each (five on Linux, four on macOS, four
+on Windows x64 and two on Windows Arm),
 which is only sound because no journey depends on another having run.
 
 `run` builds the world, performs every scene in order, and stops at the first
@@ -65,6 +67,7 @@ journeys/suites/
   04-workspace/     spaces, agents, checkouts, slots
   05-delivery/      handing the work back
   06-recovery/      drift, a lost checkout, a rebase that stopped
+  07-upgrade/       the previous release and this one, meeting on one disk
       NN-<the claim, in kebab>.yml
 ```
 
@@ -167,7 +170,7 @@ world:
   project: demo-app          # a Git fixture with a believable past
   harnesses: [claude, codex] # stand-in binaries on PATH
   manifest: |                # agents.yaml written into the fixture
-    worktrees: { target: main, slots: 4 }
+    workspace: { worktree: always, target: main, slots: 4 }
   first_run: true            # a machine where `uze setup` never ran
 scenes:
   - scene: <what this scene proves>
@@ -206,10 +209,12 @@ this, and the linter refuses it rather than the reviewer. Synchronization is
 | verb | reads |
 |---|---|
 | `dir` | directories matching a glob: `count`, `exists`, `same_as: <capture>` |
-| `file` | files matching a glob: `count`, `exists`, `contains` |
+| `file` | files matching a glob: `count`, `exists`, `contains`, `excludes` |
 | `launcher` | launchers matching a glob, each of which must run the `uze` under test (a link on Unix, a copy named `<name>.exe` on Windows): `exists: false` for none |
+| `json` | values in JSON files matching a glob, walked by `at:` (`*` for every key): `count`, `exists`, `equals` (every value), `includes` |
 | `git` | `worktrees:` count, `branches:` pattern + `count:`, `dirty:`, `in:` |
-| `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_is_its_own`, `one_task_per_checkout` |
+| `tasks` | the task store UZE writes: `count`, `states`, `checkouts`, `newest_state`, `any_state`, `newest_checkout_is_its_own`, `one_task_per_checkout`, `newest_branch`, `newest_label` |
+| `agents` | every agent UZE recorded for the world, isolated or not: `count`, `live` (not ended), `isolated` (holding a checkout of its own) |
 | `process` | `matching:` + `alive:`, scoped to this world's processes; `count:` where one thing is one process, `same_as:`/`more_than: <capture>` where it is not — a login shell forks a child on some hosts |
 | `cmd` | runs a command: `exit:`, `stdout_contains:` — the *subject*, asserted beside the filesystem checks |
 | `tree` | every path under the given roots, by content: `same_as: <capture>` for a "nothing moved" claim, `except:` to drop paths by glob (a lock every command takes and drops is about the command having run, not about what it left behind) |
@@ -234,7 +239,7 @@ the run for nothing — CI's cargo cache has already built it.
 world; on your own laptop the container is what keeps it away from your tmux
 server, your `HOME` and your terminal. CI has nothing to protect — a hosted
 runner is already disposable, and `journey.py` builds its own world with a
-guard that refuses one overlapping a real home — so both CI jobs run the
+guard that refuses one overlapping a real home — so every CI job runs the
 journeys natively.
 
 The pinning the image also gave is not lost. What it pins is the Ubuntu

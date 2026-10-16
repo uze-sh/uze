@@ -13,6 +13,15 @@ evidence with no headless probe possible; "UNKNOWN" is a genuine gap.
 > integration was **removed** from the codebase after parity was proven —
 > no legacy code path remains. The Gemini-side facts below are retained
 > only as the audit's record.
+>
+> **Superseded since the audit.** Hooks and Agents are delivered today (in
+> the generated plugin's own `hooks.json` and `agents/` since 1.3.3–1.3.4),
+> the global skills root `~/.gemini/antigravity-cli/skills/` is moved by
+> agy 1.2 to `~/.gemini/config/skills` (and linked back), both
+> invocation-policy halves are Native since 1.1.27
+> (`disable-slash-command`, `disable-model-invocation`), and the planned
+> `antigravity/commands.rs` was never written. The current state is
+> `crates/uze-integrations/src/antigravity/README.md`.
 
 Key baseline facts:
 

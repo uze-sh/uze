@@ -15,15 +15,29 @@ deliberately small and vendor-neutral.
 ```
 conformance/
 ├── lab.py                        # entry: python3 lab.py --harness <h>
+├── gate.py                       # adjudication against the declared-limitation registry
+├── legs.py                       # the contract | vendor legs of a vertical
+├── matrix.py                     # cross-harness compatibility matrix
+├── DECISIONS.md
 ├── _fixtures/
 │   └── marketplace/               # final isolated resources: Skills + MCP
+├── contract/                     # what every harness must prove, in outcome
+│                                 #   terms; names no vendor
 ├── shared/
-│   └── common.py                 # vendor-neutral: docker topology, per-run
-│                                 #   TLS certs, PTY screen/waiter, evidence
+│   ├── common.py                 # vendor-neutral: docker topology, per-run
+│   │                             #   TLS certs, PTY screen/waiter, evidence
+│   └── capture.py, markers.py, variation.py, vocabulary.py, websocket.py
+├── evidence/                     # expected.json (declared limitations),
+│                                 #   per-harness summaries, tools/ snapshots
+├── experiments/<vendor>/         # versioned hypotheses outside the canonical suite
+├── tests/                        # the Lab's own unit tests (no docker)
 ├── discovery/                    # observation-only tooling (mitmproxy
 │                                 #   addons, host scripts) — NEVER required
 │                                 #   for conformance execution
-├── harnesses/
+├── harnesses/                    # each vertical also carries bindings.py (how
+│   │                             #   the contract drives it; `unsupported`
+│   │                             #   declarations) and vocabulary.json (the
+│   │                             #   Lab's expectation of its tool names)
 │   ├── antigravity/              # Real AGY (latest channel) + synthetic Gemini
 │   │   ├── provider.py           #   fake_gemini (plain HTTP 9999)
 │   │   ├── scenarios.py          #   onboarding, /skills, /mcp, turn,
@@ -44,10 +58,10 @@ conformance/
 │   │   └── fixtures/             #   auth.json seed
 │   └── opencode/                 # Real OpenCode (latest channel) + synthetic
 │       ├── provider.py           #   OpenAI-compatible (plain HTTP 9999)
-│       ├── scenarios.py          #   /skills, /mcps, turn, model-facing,
-│       │                         #   MCP tool round-trip in the TUI,
-│       │                         #   hooks (deny/allow/order)
-│       └── fixtures/             #   (none — provider is config-driven)
+│       └── scenarios.py          #   /skills, /mcps, turn, model-facing,
+│                                 #   MCP tool round-trip in the TUI,
+│                                 #   hooks (deny/allow/order); no fixtures/:
+│                                 #   the provider is config-driven
 ```
 
 ## Golden signal: Real Harness + Synthetic World
@@ -277,30 +291,25 @@ make lab-run HARNESS=opencode   # run the vertical (records the session)
 make lab-replay                 # replay it, rendered correctly
 ```
 
-In CI, the same suite runs per harness (`ci.yml` → `conformance` job, matrix
-`antigravity | claude | codex | opencode`); each run's evidence lands as a
-build artifact.
+In CI, the suite runs in its own workflow, `conformance.yml`: called by
+`ci.yml` when a change reaches the Lab's paths, and nightly on its own, one
+leg per harness and part (`antigravity | claude | codex | opencode` ×
+`contract | vendor`); each run's evidence lands as a build artifact.
 
 ## Honest findings (documented, never a pass)
 
-- **Claude**: MCP tools are deferred behind ToolSearch (deferred-tool
-  protocol); a direct `mcp__` tool_use fails with "No such tool available".
-  Registration + connection are proven via `/mcp`; deep execution is not
-  asserted.
-- **Codex**: with the current UZE delivery the plugin skills are not listed
-  in codex's model catalog (only built-ins), and the UZE MCP config does not
-  reach the `/mcp` inventory. Codex hooks require the `[features].hooks`
-  feature flag in `~/.codex/config.toml` (the deprecated `codex_hooks` key
-  stops being honored — verified: codex-cli prints the deprecation warning
-  and hooks stay disabled without the new key).
-- **Hooks (ADR-033)**: the deny/allow/order phases assert semantic markers
-  — a deny is proven by the intercepted tool *never executing* (its output
-  never reaches the conversation), an allow by the tool's output arriving.
-  OpenCode V2 exposes no input-based block (the action-level deny lives in
-  the permission hook, which carries no tool input), so its deny/order
-  scenarios are recorded ADAPTED with the observed behavior; AGY 1.1.21's
-  `allow` decision did not produce an observable execution in the lab turn,
-  also recorded ADAPTED.
+What a harness cannot do is not written here: it is a declared limitation in
+`conformance/evidence/expected.json`, measured on every run and pinned to the
+versions it was observed on, with the reason in the harness's `bindings.py`
+(`unsupported`). Read that registry for the current list. Today it holds
+Codex's and OpenCode's lack of any way to keep a model-only Skill from the
+person (it is listed and invocable); Claude Code searching through Bash
+rather than `Grep`, and rendering every `PreToolUse` denial as a hook error;
+Codex delivering file writes and edits to hooks as `apply_patch` with no
+path, and letting a call through when a hook command cannot start;
+OpenCode's permission prompt not showing a hook's reason, and OpenCode
+reading no project agents; and Antigravity dropping an agent that carries
+`model`.
 
 ## Discovery
 
@@ -312,5 +321,5 @@ raw vendor captures never enter the repository.
 
 1. Use `discovery/` locally to learn the harness's synthetic-auth and
    provider-redirect hooks (observed, never assumed).
-2. Add `harnesses/<vendor>/` (provider.py, scenarios.py, fixtures/).
+2. Add `harnesses/<vendor>/` (bindings.py, provider.py, scenarios.py, vocabulary.json, fixtures/ when it needs seeds).
 3. Run 3x offline; the vertical is green when it passes 3 consecutive runs.

@@ -685,6 +685,9 @@ mod tests {
         // delivery on the next `doctor`.
         let generated = home.generated_attachments_dir("fake-harness");
         fs::create_dir_all(&generated).unwrap();
+        // So does the copy every `${PLUGIN_ROOT}` a harness was handed names.
+        let delivered = home.delivered_packages_dir().join("a-plugin");
+        fs::create_dir_all(&delivered).unwrap();
 
         let mut pruned = prune_projections(&home);
         pruned.sort();
@@ -694,6 +697,10 @@ mod tests {
         assert!(
             generated.is_dir(),
             "a delivery the ledger still owns must survive the sweep"
+        );
+        assert!(
+            delivered.is_dir(),
+            "a delivered package copy a harness reads must survive the sweep"
         );
         assert!(
             home.runtime_project_dir(&project_id_for(&project)).is_dir(),

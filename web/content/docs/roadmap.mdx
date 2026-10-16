@@ -17,8 +17,16 @@ too, installed by `irm https://uze.sh/i | iex` (see
 - **Harness management**: detection, provisioning through official routes, and
   a cached readiness report for Claude Code, Codex, OpenCode and Antigravity.
 - **Capability portability**: skills with invocation policy, MCP servers,
-  portable agents and portable hooks, each delivered
-  through the most native route the harness can preserve.
+  portable agents, a plugin's own `AGENTS.md` contribution, and portable hooks
+  (one script for every platform, with `allow`, `ask`, `deny` and `transform`),
+  each delivered through the most native route the harness can preserve.
+- **Plugin requirements**: a plugin names the programs its scripts need;
+  `uze install`, `uze status -m`, `uze inspect` and `uze doctor` say what is
+  missing, who needs it, and the command that installs it.
+- **Operator consent**: everything a plugin can run (MCP servers, hooks, a
+  skill's inline commands, requirement checks) is listed and approved before
+  install, including what a cloned project's `agents.yaml` declares, and the
+  commands a project's workspace runs wait for `uze workspace allow`.
 - **Native package delivery**: a preserved vendor envelope where one exists, a
   deterministically generated one where it doesn't.
 - **Project context**: `AGENTS.md` as the baseline, with the one bridge that
@@ -47,11 +55,9 @@ too, installed by `irm https://uze.sh/i | iex` (see
 
 ## In progress
 
-- **Requirements & dependencies**: what a plugin needs from its host, declared
-  and checked before install.
 - **Plugin versioning**: a plugin is pinned to a commit today. A version a
   project can ask for by range is not decided yet.
-- **Security & trust**: beyond today's executable-capability boundary.
+- **Security & trust**: beyond today's consent boundary.
 - **Runtime context projection**: the PATH shim that reaches a harness without
   writing into the project is still experimental.
 - **Signed Windows binaries**: Windows releases ship
@@ -85,5 +91,5 @@ supported when it lands.
 The plugin ecosystem grows through the official marketplace (`marketplace.json`
 at the repository root, embedded in the binary as `uze-official`) plus any
 community marketplace registered with `uze market add`. The one official plugin
-today is `plugins/uze`, carrying the `uze:init`, `uze:worktree` and
-`uze:architect` Skills.
+today is `plugins/uze`, carrying the `uze:init`, `uze:worktree`,
+`uze:architect` and `uze:author` Skills.

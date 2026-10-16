@@ -13,6 +13,7 @@ description: Every file a plugin can ship, and how each one reaches each agent
         <File name="SKILL.md" />
       </Folder>
     </Folder>
+    <File name="AGENTS.md" />
     <File name="hooks.json" />
     <File name="mcp.json" />
     <File name="plugin.json" />
@@ -180,6 +181,19 @@ and the instructions. The same block works in a skill's `SKILL.md`.
 The install names what each harness did not receive. Codex has no Markdown
 agent format, so uze generates its TOML file from yours.
 
+An agent never widens what the harness allows: a field that would grant itself
+permissions, hooks or servers (Claude Code's `permissionMode`, `hooks`,
+`mcpServers`, `initialPrompt`; OpenCode's `allow` rules) is left out, and the
+install names what was dropped.
+
+## `AGENTS.md`
+
+Plain prose a plugin adds to the `AGENTS.md` of every project that installs it:
+what an agent working there needs to know from this plugin's point of view.
+`uze install` writes it into a block uze owns in the project's `AGENTS.md`, and
+keeps it current as the plugin changes. `uze agent plugin create --instructions`
+scaffolds one.
+
 ## Files your plugin ships
 
 A skill, an agent, a hook or an MCP server can use any other file of the
@@ -218,8 +232,8 @@ what every harness shares.
 the plugin ships. A server without `type` or `$schema` still installs.
 `${PLUGIN_DATA}` is not provided yet; checking a plugin that uses it says so.
 
-Each agent receives it through its own mechanism (`claude mcp add`,
-`codex mcp add`, OpenCode's config, …).
+Claude Code, Codex and Antigravity receive the servers inside the plugin uze
+generates for them; OpenCode receives them as entries in its own config.
 
 ## Hooks
 
@@ -241,6 +255,9 @@ use a tool or has used one, or when it stops:
 ```
 
 - **Events:** `PreToolUse`, `PostToolUse`, `Stop`, `SessionStart`.
+- **`id`:** an optional name for the group, which `uze inspect`, the install
+  question and the agent's own hook list show. Without one, the group is named
+  by its position.
 - **Matcher:** tool aliases separated by `|`: `shell`, `file.read`,
   `file.write`, `file.edit`, `search.files`, `search.web`, `agent.spawn`,
   `agent.message`, or `native:<tool>`. Omitted, it matches every tool. On
@@ -269,8 +286,8 @@ On OpenCode a `.js`, `.mjs`, `.cjs` or `.ts` script runs in OpenCode's own
 runtime and needs nothing from the machine. `interpreter` (a list of words,
 such as `["uv", "run", "--script"]`) replaces the table for one handler.
 
-What the launcher needs from the machine, `python3` or `node`, becomes a
-requirement of the plugin: `uze install` and `uze doctor` say when it is
+What the launcher needs from the machine (`python3`, `node`, or `pwsh` for a
+`.ps1` on Linux and macOS) becomes a requirement of the plugin: `uze install` and `uze doctor` say when it is
 missing and how to install it. A guard whose interpreter is missing denies
 every call it matches until it is installed.
 
@@ -326,9 +343,15 @@ other hooks. The full contract, every variable included, is in
 
 ## Commands a plugin runs
 
-MCP servers and hooks run commands on the user's machine. Every one is listed
-before installing, with a question, and asks again when an update adds a new one. Where
-it cannot ask, in CI, it refuses unless `--trust` is passed.
+MCP servers and hooks run commands on the user's machine, and so does a skill
+or agent whose text a harness runs when it loads it: a `` !`…` `` span that
+opens a line or follows a space, a fenced block opened with ```` ```! ````, an
+`allowed-tools` list or a `hooks` block in its front matter. A `` `!` `` inside
+a sentence is text, not a command. The version check of each requirement runs
+a program too. Every one is listed before installing, with a question, and asks
+again when an update adds one or changes a script one of them runs. Plugins a
+project's `agents.yaml` declares ask the same way. Where it cannot ask, in CI,
+it refuses unless `--trust` is passed.
 
 ## `marketplace.json`
 

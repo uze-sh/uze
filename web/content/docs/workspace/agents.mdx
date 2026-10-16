@@ -13,6 +13,11 @@ Or it gets **a worktree of its own**: a separate checkout of the repository
 under `.worktrees/`, on a branch of its own. Two agents can then never touch
 each other's files, or yours.
 
+A new agent's worktree starts from your target branch as the remote last had
+it (`origin/main`), so it is not born behind work that already merged, even
+when your own `main` has not been pulled. When your local branch carries
+commits the remote does not, it starts from yours.
+
 - **One agent:** right-click it → **To worktree**. It moves to its own worktree
   and takes your uncommitted changes with it, as a copy. When the tree holds
   uncommitted work, **To worktree, no changes** cuts the worktree from the last
@@ -29,14 +34,18 @@ Checkouts are reused, so a second agent does not pay for a fresh
 checkout: whatever it left uncommitted is kept for it, its commits stay on
 its branch, and the checkout goes to the next agent. So a project keeps as
 many checkouts as it had agents working at once, and one nobody used for
-three days gives its disk back. The same age forgets an agent that ended
-leaving nothing behind: no checkout, no branch and no unfinished work. The
-age is yours to change:
+three days gives its disk back. A checkout only subagents used goes the next
+time uze tidies up, since it holds no build worth keeping warm. The age for
+free checkouts is yours to change:
 
 ```yaml
 workspace:
   idle_days: 3   # after this long unused, a free checkout goes
 ```
+
+An agent that ended leaving nothing behind (no checkout, no branch, no
+unfinished work) stays listed in [recent](#recent) for 30 days, so you can go
+back to its conversation, and is then forgotten along with that conversation.
 
 An agent always comes back to the same directory, `.worktrees/<agent>`,
 because every harness keeps its conversation by directory: resume an agent
@@ -54,11 +63,13 @@ shown, never touched.
 
 A project has no `workspace:` section until somebody chooses something: the
 `agents.yaml` uze creates says nothing about the workspace, and every key is in
-the [reference](/docs/reference/project-files#workspace). Once one is chosen, the workspace keeps a "Concurrent work
+the [reference](/docs/reference/project-files#workspace). Whatever is chosen,
+or the defaults when nothing is, the workspace keeps a "Concurrent work
 isolation" section in `AGENTS.md` in step with it, in your checkout, for the
-agents it launches. To stop, remove the values again; the workspace takes
-the section back the next time it runs. The agents themselves carry the part
-no harness does for them with the `uze:worktree` skill.
+agents it launches: how to name their work, where they stand and how their
+work is delivered. It never creates `AGENTS.md` for this; `uze install` does.
+The agents themselves carry the part no harness does for them with the
+`uze:worktree` skill.
 
 ## Continuing in another harness
 
@@ -82,9 +93,14 @@ Antigravity CLI the briefing carries what Git says.
 
 ## Its work gets a name
 
-An agent in a worktree names its own branch as the first thing it does, like
-`fix/login-timeout`. That name is what you read in the sidebar and what a
-reviewer sees on the pull request. You never have to name anything.
+Every agent names its work as the first thing it does, like
+`fix/login-timeout`. That name is what you read in the sidebar. In a worktree
+it is also the branch, so it is what a reviewer sees on the pull request; in
+your own checkout only the label changes, and your branch keeps its name.
+Work that reaches its first commit still unnamed is named from that commit's
+subject. You never have to name anything, and `workspace.branch` in
+`agents.yaml` sets the vocabulary names are judged against (by default the
+Conventional Commit types).
 
 ## Where it stands
 
@@ -93,14 +109,22 @@ says:
 
 | | |
 | --- | --- |
-| **Running** | Working, nothing committed yet |
-| **Ready** | Committed, nothing left uncommitted |
-| **Conflicted** | Needs the agent to settle a rebase |
-| **Integrated** | The work is in your target branch |
+| **uncommitted** | Changes in the checkout, not committed |
+| **ready** | Commits ahead on a clean tree, ready to deliver |
+| **published** | On the remote and level with it, no request yet |
+| **in review** | A request is open for it, shown by its number (`#41`) |
+| **delivering** | The rebase, the checks and the merge or push, in flight |
+| **conflict** | The rebase stopped; it is settled in the checkout |
+| **checks failed** | The checks failed on the rebased commits |
+| **delivered** | The work is in your target branch |
+| **unfinished** | No agent left; its work is kept for it |
+
+An agent working with nothing to report yet shows no mark. Click any mark in
+the sidebar for this legend.
 
 ## Bringing the work home
 
-When an agent in a worktree is **Ready**, press `Alt+I` or click its status
+When an agent in a worktree is **ready**, press `Alt+I` or click its status
 (`→ main ↑3`) to deliver it. The branch is
 rebased onto your target branch, your checks run, and then the work goes where
 the project says:
@@ -110,6 +134,7 @@ workspace:
   delivery: push     # merge | push; undeclared, nothing is delivered
   gate: npm test     # the checks that must pass first
   actions:
+    on_change: Commit what you have with a message that says why.
     on_publish: Open a pull request for this branch against main, then end your turn.
     on_conflict: The rebase is paused here. Resolve it, run git rebase --continue and the checks.
     on_fail: The checks failed after the rebase. Fix them and commit.
@@ -118,19 +143,27 @@ workspace:
 - **merge** fast-forwards your local target branch.
 - **push** pushes the branch to the remote. uze opens no pull request itself.
 
+Delivering again later brings a published branch up to date with the target,
+and `F1` also offers **Deliver all**, for every agent in the space that is
+ready.
+
 What the agent is asked next is the project's own words, under `actions`: one
-line per state, sent into its pane when uze leaves the work in that state, and
-whenever you click the status in the tab strip. With nothing declared, the
-status only reports. If the checks fail or the rebase conflicts, nothing
-reaches the target, and the agent is sent the line for that state if the
-project declares one. See [`actions`](/docs/reference/project-files#actions).
+line per state (`on_change` for uncommitted work, `on_publish`, `on_conflict`,
+`on_fail`), sent into its pane when uze leaves the work in that state, and
+whenever you click the status in the tab strip. A line is never sent while the
+agent is working or over something you typed: uze says so instead. `on_change`
+also makes uncommitted work show as a status you can click. If the checks fail
+or the rebase conflicts, nothing reaches the target, and the agent is sent the
+project's line for that state, or uze's own when the project declares none.
+See [`actions`](/docs/reference/project-files#actions).
 
 The checks, like `setup`, are commands from the repository, so uze runs them
 only after you approve them. The first time the workspace opens a project that
 declares any, it shows a **Review** button: read the exact lines, then approve
 them or not. Until you do, worktrees are prepared without `setup` and delivery
 waits. If someone changes the lines later, the workspace asks again. From a
-terminal, `uze workspace allow` does the same; see
+terminal, `uze workspace allow` does the same, and `uze workspace revoke`
+takes the approval back; see
 [Approving the commands](/docs/reference/project-files#approving-the-commands).
 
 ## Subagents
@@ -145,7 +178,8 @@ uze agent work join parser    # the subagent's commits land on the agent's branc
 
 The subagent's checkout comes from the same pool, so it starts warm. Joining
 replays its commits onto the agent's branch with no merge commit. The checkout
-stays until it is joined or the agent ends, and an agent is not delivered while
+stays until it is joined or the agent ends, and is then removed the next time
+uze tidies up (its branch stays). An agent is not delivered while
 a subagent still holds work.
 
 ## Work nobody finished
@@ -167,20 +201,22 @@ target is cleaned up without you asking.
 ### Recent
 
 `Alt+P`, or a click on **work** at the top of the sidebar, turns the sidebar
-into **recent**: every agent no pane carries, across every project uze has
-recorded, one line each with how long ago it last changed. Press `Alt+P` or
-`Esc` to go back to the tree. When agents are waiting on you, the sidebar header
-says how many beside **work**, so you know to look without opening it.
+into **recent**: the agents no pane carries, across every project uze has
+recorded, one line each with how long ago it last changed. It lists the agents
+that have a name; `a` shows the unnamed ones too, and `/` searches by name,
+branch, project or state. Press `Alt+P` or `Esc` to go back to the tree.
 
-Agents that wait on you come first:
+Agents that wait on you come first, under **needs you**:
 
 - a rebase paused on conflicts, or checks that failed,
 - uncommitted changes,
 - a subagent ready to be joined into its agent,
 - work ready to deliver.
 
-The rest follow: work being delivered, work with the reviewer, shelved work,
-and agents that never changed anything. Select a row and it says why it is
+The rest follow under **others**: work being delivered, published or with
+the reviewer, shelved work, delivered work, agents that worked in your own
+checkout, and agents that never changed anything. Each group is newest
+first. Select a row and it says why it is
 listed, which project it belongs to, its branch, how far it is ahead and how
 much disk its checkout takes. A checkout is never a row of its own: it is a
 fact about the agent that left it.
@@ -188,16 +224,20 @@ fact about the agent that left it.
 `Enter` does the one thing that moves the selected agent on. For a subagent it
 joins its commits into its agent's branch. For anything else it resumes the
 agent with a new tab: it goes back to the checkout it left when that one is
-free, or to any other, with its shelf put back as uncommitted changes and its
+free, or to any other (an agent that worked in your own checkout goes back
+there), with its shelf put back as uncommitted changes and its
 subagents beside it. If no space is open on its project, one is opened for it.
-Ready work also offers `i` to deliver it.
+Ready work also offers `i` to deliver it. Right-click a row, or press
+`Alt+.`, for the same actions as a menu.
 
 `d` discards the selected agent's work: its branch, its shelf, any checkout it
 still keeps and its conversation. It asks first, with the keyboard on
-**cancel**. Work whose project is no longer on disk can only be forgotten,
-which removes uze's record of it and touches nothing on disk.
+**cancel**. Where there is no work left to lose (work already delivered, an
+agent that worked in your own checkout, or a project no longer on disk), `d`
+forgets the agent instead: it removes uze's record and its conversation, and
+touches nothing else on disk.
 
 <Cards>
   <Card title="Extensions" href="/docs/workspace#extensions" />
-  <Card title="All worktrees options" href="/docs/reference/project-files#worktrees" />
+  <Card title="All worktrees options" href="/docs/reference/project-files#workspace" />
 </Cards>

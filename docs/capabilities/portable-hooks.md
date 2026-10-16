@@ -2,7 +2,7 @@
 
 The full contract, for plugin authors and contributors. The user-facing
 summary is the site's
-[Capabilities](../../web/content/docs/concepts/delivery.mdx) page; change
+[Delivery](../../web/content/docs/plugins/delivery.mdx) page; change
 both together.
 
 One authored declaration, one handler contract, four harnesses (ADR-033,
@@ -229,7 +229,7 @@ unsupported there and not delivered.
 |---|---|---|
 | Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
 | Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
-| Antigravity CLI | one named hook per group in the generated plugin's own root `hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path; the same entries go into the shared `~/.gemini/config/hooks.json` when the package is delivered capability by capability | native (in the plugin since 1.3.4, so enabling or disabling the plugin governs its hooks); execution needs a signed-in session — an API-key session runs no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
+| Antigravity CLI | one named hook per group in the generated plugin's own root `hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path; the same entries go into the shared `~/.gemini/config/hooks.json` when the package is delivered capability by capability | native (in the plugin since 1.3.4, so enabling or disabling the plugin governs its hooks); through 1.1.24 an API-key session ran no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
 | OpenCode | one generated plugin module (the definition as its default export, no import), `<config root>/plugins/hooks-<package>.ts`, auto-discovered — the plugin *is* the wrapper, with the package's groups as data | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
@@ -296,12 +296,12 @@ stated) · **—** = not expressible.
 | native entry in exec form (no shell parsing) | yes (`command` + `args`) | no (shell line) | no (shell line) | n/a |
 | matcher | native, regex on the tool name | native | native, regex (`"*"` matches all) | in-plugin |
 | a group's handlers | run **in parallel** natively → sequential inside `exec` | sequential inside `exec` | sequential inside `exec` | sequential inside the plugin |
-| `PreToolUse` observe/allow | native | native | native (signed-in session) | native (`execute.before`) |
-| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`, signed-in session) | adapted (`execute.before` renames the call to a tool that does not exist; also refused at `permission.evaluate` when the tool asks) |
-| `PreToolUse` ask | native (`permissionDecision: ask`; the prompt shows the reason) | — (0.160.1 rejects `permissionDecision: ask` in `PreToolUse`, and its `PermissionRequest` hook takes `allow`/`deny` only: codex-rs `hooks/src/engine/output_parser.rs`) | native (`decision: ask`, signed-in session) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
+| `PreToolUse` observe/allow | native | native | native | native (`execute.before`) |
+| `PreToolUse` deny | native (JSON + exit 2) | native (JSON + exit 2) | native (`decision: deny`) | adapted (`execute.before` renames the call to a tool that does not exist; also refused at `permission.evaluate` when the tool asks) |
+| `PreToolUse` ask | native (`permissionDecision: ask`; the prompt shows the reason) | — (0.160.1 rejects `permissionDecision: ask` in `PreToolUse`, and its `PermissionRequest` hook takes `allow`/`deny` only: codex-rs `hooks/src/engine/output_parser.rs`) | native (`decision: ask`) | native (`permission.evaluate` → `ask`; the prompt does not show the reason) |
 | `PreToolUse` transform | native (`allow` + `updatedInput`) | native (`allow` + `updatedInput`, `hookEventName` required; only `command` is read for a shell call) | native (`allow` + `overwrite`, a hook result field the docs do not list, measured every run) | native (`execute.before`'s input reassigned, as OpenCode's own input repair does; a failed rewrite is refused there like a denial) |
-| `PostToolUse` | native, observe only | native, observe only | native (`{}`), signed-in session | native (`execute.after`; a denial reaches the model as synthetic input) |
-| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native, signed-in session | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
+| `PostToolUse` | native, observe only | native, observe only | native (`{}`) | native (`execute.after`; a denial reaches the model as synthetic input) |
+| `Stop` | native (exit 2 prevents the stop) | native (must print `{}`) | native | native (`session.execution.succeeded`; a denial continues the session with synthetic input, as OpenCode's own plan plugin does) |
 | `SessionStart` (observe) | native, matcher on the source | native, matcher on the source (a hook is reviewed before it runs) | native through the undocumented `SessionStart` key (flat; once per new conversation, at its first model call; `startup` only — a `--continue` announces nothing), measured every run | native (`session.created` of a top-level session; `startup` only — a resumed session announces nothing) |
 | a denial's exit status | 2 (the documented block signal) | 2 | **0** — the decision is the stdout document, and any non-zero exit is logged as a *failed* hook | n/a |
 | fail-closed on handler failure | via `exec` (natively, exit ≠ 2 **runs the tool**) | via `exec` | via `exec` | via the plugin (`execute.before`) |
@@ -382,19 +382,19 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   vertical runs signed in (a synthetic identity against its own CloudCode
   plane) and proves the gate open there, and asserts the same control hook
   on the API-key mode every run, so a regression shows as a red check.
-- **Antigravity does not load a plugin's `hooks.json` (1.1.24)**, which is
-  why UZE delivers its hooks into the shared `~/.gemini/config/hooks.json`
-  instead. The harness reads `hooks.json` from its shared customization
-  roots but never from a plugin directory: `agy plugin validate` counts a
-  plugin's hooks, the plugin is listed with a `hooks` component and enabled
-  in `config.json`, and the session still reports `loaded 0 named hooks from
-  0 hooks.json file(s)` — the file is never opened. The vendor's own shipped
-  plugin guide documents the opposite ("Hooks defined in
-  `plugins/<name>/hooks.json` are registered and run during the agent's
-  lifecycle"). The Lab measures it live each run (`hooks > delivery`), so if
-  a later build starts reading plugin hooks the delivery can move back.
-- **OpenCode V2 cannot block.** Its tool hooks carry the input but no block
-  signal; `deny`/`ask` are diagnosed before attach.
+- **Antigravity read no plugin `hooks.json` through 1.1.24.** It read
+  `hooks.json` from its shared customization roots but never from a plugin
+  directory (`loaded 0 named hooks from 0 hooks.json file(s)`), so hooks then
+  went into the shared `~/.gemini/config/hooks.json`. Since 1.3.4 it does
+  (measured on 1.3.5, `experiments/antigravity/plugin-hooks`), and UZE
+  delivers them in the generated plugin again; the shared file still carries
+  a package's groups when the package is delivered capability by capability.
+  The Lab measures it live each run (`hooks > delivery`).
+- **OpenCode V2 has no refusal of its own.** The bridge refuses a denied
+  call by renaming it to a tool that does not exist, and an `ask` reaches the
+  person only on tools that ask for permission (`PROMPTING` in
+  `opencode/hooks.rs`); on the others (`read`) an `ask` group refuses the
+  call instead.
 - **Antigravity's two entry shapes are not interchangeable.** Its docs
   give the tool events a `matcher` and a `hooks` group, and `Stop` a flat
   list of handler objects. A `Stop` written in the grouped form is parsed
@@ -402,7 +402,8 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   nothing, and only `--log-file` names the reason
   ([antigravity-cli#925](https://github.com/google-antigravity/antigravity-cli/issues/925),
   1.1.24). UZE emits each event in its own shape.
-- **Codex requires the `[features].hooks` flag** in `~/.codex/config.toml`
-  (verified against codex-cli 0.150.0).
+- **Codex runs a hook only once its review trusted it** (see Delivery per
+  harness); hooks themselves are on by default since 0.160, with no
+  `[features]` flag.
 - **`tool.execute.before` does not cover subagent-issued tool calls** on
   OpenCode ([sst/opencode#5894](https://github.com/sst/opencode/issues/5894)).

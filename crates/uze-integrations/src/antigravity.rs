@@ -193,18 +193,16 @@ impl AntigravityIntegration {
     }
 
     /// The UZE-managed `hooks.json` at Antigravity's shared customization
-    /// root — the only place this harness actually reads hooks from
-    /// (`~/.gemini/config/hooks.json`). Its document root *is* the named-hook
-    /// map, and UZE owns exactly the keys it namespaces; every foreign named
-    /// hook in the same file is left untouched.
+    /// root (`~/.gemini/config/hooks.json`). Its document root *is* the
+    /// named-hook map, and UZE owns exactly the keys it namespaces; every
+    /// foreign named hook in the same file is left untouched.
     ///
-    /// Not the generated plugin's `hooks.json`: the vendor's plugin guide
-    /// says a plugin's hooks are "registered and run during the agent's
-    /// lifecycle", and on 1.1.24 they are not — `agy plugin validate` counts
-    /// them while the session reports `loaded 0 named hooks from 0
-    /// hooks.json file(s)` and never opens the file (measured in the
-    /// Conformance Lab, `hooks > delivery`). A file the vendor never reads
-    /// is not a delivery.
+    /// Used only for a package delivered capability by capability: inside a
+    /// generated plugin the same entries go to the plugin's own root
+    /// `hooks.json`, which Antigravity loads since 1.3.4 (experiment
+    /// `antigravity/plugin-hooks`, 1.3.5). Through 1.1.24 it read no plugin
+    /// `hooks.json` at all (`loaded 0 named hooks from 0 hooks.json
+    /// file(s)`), which is why this shared file was once the only route.
     fn hooks_config_path(&self) -> PathBuf {
         self.config_dir.join(HOOKS_FILE_NAME)
     }
@@ -325,7 +323,7 @@ impl IntegrationPort for AntigravityIntegration {
             ]
                 .into_iter()
                 .collect(),
-            evidence: "Antigravity CLI consumes UZE's native plugins: the canonical package itself is a valid plugin (plugin.json name/description; extra fields tolerated), so an envelope-less package is installed straight from the Store via `agy plugin install`; one with a canonical mcp.json gets a deterministically synthesized plugin carrying a translated mcp_config.json, installed from a UZE-owned derived directory (verified against real agy 1.1.19 dogfood: validate → install → list → uninstall). Portable Hooks are merged into the shared ~/.gemini/config/hooks.json as named entries running the generated `hooks/exec` wrapper — the harness never reads a plugin's hooks.json. A non-default Skill invocation policy is carried natively by the Skill's own disable-model-invocation / disable-slash-command front matter (agy 1.1.27), so a package holding one is delivered capability by capability rather than as an unchanged plugin tree. MCP falls back to `agy mcp add` (global ~/.gemini/config/mcp_config.json) for resources outside plugin coverage. AGENTS.md is read natively (official docs: identical workspace context rules), so context needs no bridge."
+            evidence: "Antigravity CLI consumes UZE's native plugins: a package whose plugin.json name is a valid plugin name is installed via `agy plugin install` from a plugin UZE generates into a UZE-owned derived directory, never the Store tree, carrying its skills, a translated mcp_config.json, its agents under `agents/` and its Portable Hooks in the plugin's own root hooks.json as named entries running the generated `hooks/exec` wrapper (Antigravity loads both from a plugin since 1.3.4). A non-default Skill invocation policy is carried natively by the Skill's own disable-model-invocation / disable-slash-command front matter (agy 1.1.27), so a package holding one is delivered capability by capability instead: managed skill directories, `agy mcp add` (global ~/.gemini/config/mcp_config.json) and named entries in the shared ~/.gemini/config/hooks.json. AGENTS.md is read natively (official docs: identical workspace context rules), so context needs no bridge."
                 .to_owned(),
             ..HarnessCapabilities::default()
         }

@@ -37,9 +37,15 @@ alone. See [Project context](/docs/plugins/context).
 
 ## Does uze send anything over the network?
 
-It fetches the marketplaces you registered, to install and update plugins. The
-workspace checks GitHub for a new release when it opens and every hour after.
-Release builds contain no telemetry.
+It fetches the marketplaces you registered, to install and update plugins. uze
+checks GitHub for a new release of itself at most once an hour, from the
+workspace and in the background after a command. A uze placed by the install
+script installs a release a day after it is first seen; `UZE_AUTOUPDATE=off`
+stops that, and `notify` only tells you. In the workspace, uze talks to your
+project's own Git remote: it fetches the target branch, looks for open pull
+requests on an agent's branch, and pushes when `delivery` is `push`.
+`uze setup` runs each agent's official installer. uze never talks to a model
+provider, and release builds contain no telemetry.
 
 ## What if a harness can't do something a plugin needs?
 
@@ -49,9 +55,12 @@ each harness, with the reason. It never drops a capability silently. See
 
 ## Can I delete `~/.uze/runtime` or `~/.uze/cache`?
 
-Yes. Both are rebuilt the next time they are needed. `~/.uze/store` holds the
-plugins you installed, which come back only by installing them again.
-`~/.uze/state` is the one to keep: it records what uze placed where.
+Yes, and `~/.uze/shims` too: all three are rebuilt the next time they are
+needed. `~/.uze/store` holds the plugins you installed, which come back only by
+installing them again. `~/.uze/state` is the one to keep: it records what uze
+placed where, the marketplaces you registered, the commands you approved and
+your agents' history. `config.toml`, `keys.json`, `theme-overrides.json` and
+`themes/` are files you wrote.
 
 ## Does it work on Windows?
 

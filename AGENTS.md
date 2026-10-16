@@ -14,8 +14,8 @@ maintains one project context file, `AGENTS.md`, and projects it into each
 harness's own bridge/config format instead of maintaining four separately.
 
 This repository is itself the official uze marketplace: `marketplace.json` +
-`plugins/**` at the root, with `plugins/uze` (the `/uze` Skill) as the one
-official plugin today.
+`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:worktree`,
+`uze:architect` and `uze:author` Skills) as the one official plugin today.
 
 ## Commands
 
@@ -25,12 +25,12 @@ cargo build --locked --release --bin uze                 # release build
 make install                                              # install into ~/.cargo/bin (force-rebuild, no version bump, --features telemetry)
 cargo run --quiet --bin uze -- --version
 
-cargo test --workspace --no-fail-fast                     # full workspace suite (default-members is the root crate only)
+cargo test --workspace --no-fail-fast                     # full workspace suite (default-members is the root crate only); CI runs the same set with cargo nextest
 cargo test -p uze-core some_test_name                      # single crate / targeted test during iteration
-cargo test --test package_containment                       # one top-level integration test file (tests/*.rs)
+cargo test --test packages containment                      # one domain suite (tests/<domain>/main.rs), filtered
 
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings                  # CI uses --all-targets; plain `clippy -- -D warnings` is the Makefile default
+cargo clippy --all-targets -- -D warnings                  # what CI and `make lint` both run
 cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-regions 69
 
 cargo deny check                                           # licences, advisories, bans, sources (deny.toml); part of `make check`
@@ -41,21 +41,23 @@ make observe                                               # local Jaeger (UI :1
 ```
 
 `Makefile` wraps all of the above (`make build`, `make test`, `make check`,
-etc. — run `make help` for the full list). `ci.yml` (the fast gate) and
-`conformance.yml` (the Lab, on Lab-affecting paths and nightly) are the
-source of truth for what actually gates a merge; treat `make check` as a
-close local proxy, not a guarantee of parity.
+etc. — run `make help` for the full list). `ci.yml` is the source of truth
+for what actually gates a merge: its `Gate` job is the one required check,
+and it calls `journeys.yml` and `conformance.yml` (the Lab) as reusable
+workflows when a change reaches their paths; both also run nightly. Treat
+`make check` as a close local proxy, not a guarantee of parity.
 
 ### Test execution on WSL (history of the "session dies mid-test" bug)
 
 Until 2026-09-01, running any suite that exercised a child-process timeout
 killed the whole WSL login session (`[process exited with code 9]`, the
 agent included). It was **not** OOM and not cargo parallelism:
-`kill_process_group` in `crates/uze-core/src/subprocess.rs` shelled out to
-`/bin/kill -KILL -<pid>`, and procps-ng `kill` parses a negative pid by its
-first digit only (`pid = '0' - optopt`), so any child pid starting with `1`
-(1000-1999, 10000-19999, ...) became `kill(-1, SIGKILL)`: every process the
-user owns. The helper now issues `kill(2)` directly. Never reintroduce a
+`kill_process_group`, then in `crates/uze-core/src/subprocess.rs`, shelled
+out to `/bin/kill -KILL -<pid>`, and procps-ng `kill` parses a negative pid
+by its first digit only (`pid = '0' - optopt`), so any child pid starting
+with `1` (1000-1999, 10000-19999, ...) became `kill(-1, SIGKILL)`: every
+process the user owns. A process group is now ended with `kill(2)` directly,
+by `Tree::end` in `crates/uze-platform/src/process/unix.rs`. Never reintroduce a
 shell-out to `kill` for negative pids anywhere in the workspace; use
 `libc::kill` (or `kill -- -<pid>` if a shell script truly needs it).
 
@@ -95,13 +97,15 @@ decided by **what deleting it costs** — never by which module wrote it:
 Three things live outside `$UZE_HOME`, inside the repository's own Git
 administrative directory, because what they describe lives there: the
 `/.worktrees/` line UZE adds to `.git/info/exclude` (the operator's file,
-of which UZE owns that one line); the record in
-`.git/worktrees/<admin>/` saying UZE made that checkout — a *record* by the
-test above, since nothing else knows it, and one Git deletes with the
-worktree it describes; and `refs/uze/shelf/<task>`, the unfinished work an
-agent left when it ended, a commit that describes itself by its trailers —
-a record too, and the only place that work is. All three are named in the
-workspace's worktree module.
+of which UZE owns that one line); the record
+`.git/worktrees/<admin>/uze-checkout.json` saying UZE made that checkout — a
+*record* by the test above, since nothing else knows it, and one Git deletes
+with the worktree it describes; and `refs/uze/shelf/<task>`, the unfinished
+work an agent left when it ended, a commit that describes itself by its
+trailers — a record too, and the only place that work is. All three are
+named in the workspace's worktree module. Beside them, `refs/uze/sync/<target>`
+is where UZE fetches the target to: *remembered* by the same test, fetched
+again when missing, and never meeting the shelf.
 
 A thing must not sit in a tier that claims a different cost than it has.
 Generated harness content lived at `state/attachments/` for exactly one
@@ -124,8 +128,10 @@ dependency reason above.
 
 ## Dependencies
 
-The dependency surface is small on purpose: ~22 direct external crates
-across the workspace. Every addition is a permanent maintenance liability
+The dependency surface is small on purpose: ~31 direct external crates
+across the workspace (seven of them the `tracing`/OpenTelemetry stack, the
+exporter half behind the `telemetry` feature, and `windows-sys` on Windows
+only). Every addition is a permanent maintenance liability
 and part of the binary's supply chain, so choose by **provenance**, not by
 whichever crate name matched the search.
 
@@ -161,10 +167,10 @@ Always check, and write the answer in the PR that adds it:
   field is set by the publisher — confirm the crate is genuinely published
   from the repository it names.
 - **Whether it compiles C.** A build script compiling C costs real money
-  here: `release.yml` cross-compiles four targets, two of them musl, and
-  already carries a workaround for one such dependency (`onig_sys`, see
-  the comment at `release.yml:206`). If a feature flag avoids the C path,
-  take it.
+  here: `release.yml` builds eight targets on native runners, two of them
+  musl and two Windows MSVC, and today no dependency compiles C on any of
+  them (`onig_sys` left when `syntect` moved to `fancy-regex`). If a
+  feature flag avoids the C path, take it.
 - **`cargo deny check` passes.** A new advisory ignore needs a reason *and*
   a way out — `deny.toml`'s existing ignores name the condition that
   removes them, and a new one must do the same. An ignore with no exit is
@@ -217,15 +223,19 @@ need to).
   module: `hook` is a *capability*, and that is a different question from
   where its file sits.
   - `package/` — where a package's bytes come from and where they live:
-    acquisition, trust, importers, bundle, naming, store.
-  - `capability/` — what a plugin declares, portably: skill, hook.
+    acquisition, authoring, trust, naming, hosts, requirement, store.
+  - `capability/` — what a plugin declares, portably: skill, hook, agent,
+    the `harness:` block.
   - `delivery/` — how a capability reaches a harness: integration,
-    router, exposure, engine, state, persistence, reconciliation.
+    router, exposure, engine, state, persistence, reconciliation,
+    delivered_root, leftovers, session.
   - `project/` — what a project declares and what UZE writes into it:
     manifest (the file, and the package manager's section), project_lock,
-    context, text_region, the `anchor` a project or marketplace roots at.
+    context, project_context, project_root, record, text_region, the
+    `anchor` a project or marketplace roots at.
   - `machine/` — the local environment outside UZE's own state: home,
-    detection cache, provisioning, subprocess, shell PATH, harness runtime.
+    detection cache, provisioning, subprocess, shell PATH, harness runtime,
+    launcher, requirement_check, process_cwd, features, path.
 
   Public paths stay flat (`uze_core::store`, not `uze_core::package::store`)
   via re-exports at the crate root, which is also where a reader sees which
@@ -238,7 +248,10 @@ need to).
   each is in and carrying it across a launch (`conversation`,
   `continuity`), how finished work lands (`landing`), what a project
   declares about all of that (`declaration`, reading `agents.yaml`'s
-  `workspace:` section, which `uze-core` carries unread),
+  `workspace:` section, its policy, `artifacts` and `actions`, which
+  `uze-core` carries unread), the operator's approval of the commands that
+  declaration runs (`approval`; `uze workspace allow|revoke`), what an agent
+  moved to another harness is told about its own work (`briefing`),
   and the workspace client's own state (`client_layout`, `prompt_history`,
   `notifications`, `extensions`). Built on `uze-core`; unrelated to
   `uze-terminal`, which owns the panes and knows nothing of agents.
@@ -246,7 +259,8 @@ need to).
   (`UzeApplication`) that orchestrates Core + Integrations into
   install/remove/update/context lifecycle operations. `src/application.rs`
   is the facade and its service accessors; `src/application/lifecycle/`
-  holds the per-operation modules (add/install/remove/update/attach), and
+  holds the per-operation modules (install/update/remove/attach, and
+  `effective`, what is effectively installed), and
   `src/application/services/` the workspace's services (tasks, checkouts,
   work), each a directory once it outgrows one file.
 - `crates/uze-git` — the one transport for speaking to the Git binary:
@@ -298,22 +312,32 @@ need to).
   partial theme from the built-in default. A leaf crate — it resolves no
   path, reads no environment, and names no rendering library, so every
   consumer adapts `uze_theme::Rgb` to what it draws with (`src/ui/theme.rs`
-  for ratatui, `src/progress.rs` for the CLI). **Nothing outside
-  `src/ui/theme.rs` may name a colour value or write a chrome glyph
-  inline** — two rules in `tests/architecture/layering.rs` fail the build
+  for ratatui, `src/progress.rs` for the CLI). **Nothing outside those two
+  adapters may name a colour value, and nothing outside `src/ui/theme.rs`
+  may write a chrome glyph inline** — two rules in `tests/architecture/layering.rs` fail the build
   over it. Name the meaning (`Token::TextMuted`, `Symbol::MarkOfficial`)
   and let the active theme decide what it looks like; add a token or a
   symbol when none of the existing ones says what yours means. Colour that
   genuinely comes from content rather than from the design system — a
   pane's own output, syntax highlighting an extension ships — goes through
   `theme::content`.
+- `crates/uze-keys` — the input vocabulary, to the keyboard what
+  `uze-theme` is to the palette: the `Action` a gesture means, the `Scope`
+  it is live in, and the `Chord` that reaches it, with `Keymap` the only
+  thing that answers either direction. A leaf crate naming no terminal
+  library; `src/ui/keys.rs` is the one adapter, and the only file in `src/`
+  that may name a `KeyCode` (`one module names a physical key` in
+  `tests/architecture/layering.rs`).
 - `src/ui/widget/` — the chrome vocabulary: `Surface` (a bordered box),
   `Rule` (an edge hairline), `Button`/`button_row`, `Chip` (a filled
   label standing where a control stands), `Status` (a work state on no
   ground: a muted report, or a bold action that lifts under the pointer), `Field` (a text input, and the
   caret that is the only thing saying an empty one can be typed into),
   `Toast` (an outcome, stacked top-right and gone on its own clock),
-  `row` (a list line's ground, its trailing caption, its title), `text`
+  `dialog` (a question the operator answers, or a notice they dismiss),
+  `modal` (a titled card over a frame the scrim pushed back) and its
+  `footer`, `menu` (a short list of actions, opened on the thing they act
+  on), `stat` (a row of summary figures), `row` (a list line's ground, its trailing caption, its title), `text`
   (fitting text to the room there is, and the small-caps forms), `mark`
   (the disclosure chevron), `hint` (the keys that act here),
   `screen_header`, `action_index`, `Scrollbar`, `scrim`, the `fill`/`root`
@@ -347,18 +371,22 @@ need to).
   with a `view::View` (a full-frame surface) or a `view::Section` (a
   collapsible block of one of the host's own columns) and never draws,
   computes geometry, or names a colour; `src/ui/extension_view.rs` renders
-  both. Presentation, one directory per extension (`code/` and
-  `architect/`) with the extension's own surface in the file beside it,
-  one `ExtensionRegistry::builtin` entry, one `ExtensionHit` variant per
-  surface it draws. What more than one extension needs lives under
-  `shared/`, and only once a second one actually needs it — today that is
-  `shared/canvas.rs`, which knows how to put a glyph somewhere and
-  nothing about what is being drawn, and `shared/places.rs`, the
-  directories `workspace.artifacts` declares, which the host resolves and
-  both `architect` and `spec` read from; `view.rs` and `Host` are the two
+  both. Presentation, one directory per extension (`code/`,
+  `architect/` and `spec/`) with the extension's own surface in the file
+  beside it, one `ExtensionRegistry::builtin` entry, one `ExtensionHit`
+  variant per surface it draws. What more than one extension needs lives
+  under `shared/`, and only once a second one actually needs it — today
+  that is `canvas` (how to put a glyph somewhere, and nothing about what is
+  being drawn), `checkout` (what a title says about a checkout), `nearest`
+  (which thing on a picture lies in a direction), `markdown` and
+  `highlight` (one reading of a document, one load of the syntax sets),
+  `front_matter`, and `places` (the directories `workspace.artifacts`
+  declares, which the host resolves and both `architect` and `spec` read
+  from); `shared.rs` says why each joined. `view.rs` and `Host` are the two
   contracts and sit at the crate root. `Host` is where every capability
-  is granted — including the two that write, which the code surface's
-  save and delete are the only callers of.
+  is granted — including the five that write (`write_file`, `delete_file`,
+  `delete_dir`, `rename_path`, `restore_to_head`), whose only caller is the
+  code surface's requests (`code/request.rs`).
   `code` is **one** extension covering the checkout's changes, its files,
   its history and its map, because the selection has to survive a switch
   between them and a selection cannot live above two extensions. Its
@@ -407,8 +435,9 @@ need to).
   reproduction loop, seconds not minutes) before iterating against the full
   gate run.
 - `tests/` — domain-organized integration suites (one `main.rs` per
-  domain: `cli/`, `memory/`, `packages/`, `workspace/`, `lifecycle/`,
-  `projection/`, `integrations/`, `acceptance/`), shared test
+  domain: `cli/`, `memory/`, `packages/`, `project/`, `lifecycle/`,
+  `projection/`, `integrations/`, `architecture/`, `acceptance/`; installer
+  tests in `tests/scripts/`), shared test
   infrastructure in `crates/uze-testkit` (isolated `TestEnvironment`,
   `FakeHarness`, canonical/scenario fixtures), and the taxonomy documented
   in `tests/README.md` (L0-L4).
@@ -417,8 +446,10 @@ need to).
   throwaway WSL distribution) and a
   default local plugin used for manual dogfooding.
 - `docs/adr/` — numbered architecture decision records (read before making
-  a structural change; recent ones cover generated native-package
-  projection, Skill invocation policy, and invocation labels).
+  a structural change; recent ones cover tiering what UZE persists (052),
+  isolation belonging to the agent (053), scope being reported rather than
+  positional (054), running a project's commands only once approved (055)
+  and the terminal runtime (056)).
 - `docs/architecture/*.mmd` — the architecture as Mermaid, drawn by the
   workspace's own architect surface (`agents.yaml`'s `workspace.artifacts`
   covers the directory) and by `uze-extensions`'s tests, so a diagram that stops
@@ -506,8 +537,9 @@ uze-core         (shared foundation + the package manager: Package, Store,
       ↑           Engine, Router, IntegrationPort, capability/exposure model)
 uze-integrations (Claude, Codex, Antigravity, OpenCode — implement IntegrationPort)
 
-uze-git          (transport, no domain — used by core and by extensions)
-uze-terminal     (local terminal runtime, depends on nothing here)
+uze-git          (transport, no domain — used by core, workspace, integrations, application)
+uze-terminal     (local terminal runtime — reaches only uze-platform and uze-document)
+leaves           uze-platform, uze-document, uze-theme, uze-keys (name no domain)
 ```
 
 **`src/` must not name `uze_core::` or `uze_integrations`.** Presentation
@@ -559,7 +591,12 @@ through `read`, writes through `write`. The one exception is
 `acquisition::git`, which clones *untrusted remote* repositories and
 therefore strips the environment rather than inheriting it — a different
 threat model, not a second convention. Both are sanctioned by name in the
-architecture suite; a third spawn fails it.
+architecture suite, beside the testkit's loopback forge
+(`uze-testkit/src/forge.rs`, which plays the *server*); any other spawn
+fails it. Inside `uze-workspace`, Git is reached only through `crate::git`,
+the slot guard that refuses a slot whose `.git` no longer names the
+project's repository; a direct `uze_git::read`/`write` there fails the
+suite too.
 
 `uze-core` production code never names a specific harness (Claude/Codex/
 OpenCode/Antigravity) — enforced by
@@ -593,24 +630,31 @@ properties):
   reason on stderr, anything else fails by the group's effect), bounded
   output and a per-handler timeout, first-deny-wins, fail-open for
   observational vs fail-closed for deny/ask/transform. The contract is
-  compiled at install time into the delivered artifact — a generated POSIX
-  `sh` wrapper for the command-hook harnesses, the owned OpenCode bridge —
+  compiled at install time into the delivered artifact — a generated
+  wrapper (POSIX `sh`, or PowerShell on Windows) for the command-hook
+  harnesses, the owned OpenCode bridge —
   with no `uze` on the execution path; a platform with no template is
   reported Unsupported, never adapted. Every projection (merged config
   entries, the generated Antigravity plugin, the OpenCode bridge) is
   receipt-owned, content-identity inspected, and never touches foreign
   hooks/plugins/order.
-- **Machine and project scope are independent**: `uze setup`, `uze doctor`,
-  `uze theme`, `uze market …` and `uze plugin …` are machine-scoped
-  (`~/.uze`); `uze <plugin>@<market>`, `uze install` (aliased `uze i`),
-  `uze remove`, `uze status` and `uze agent …` (`agent work name|split|join|list`,
-  `agent context inspect|plan|reconcile`) are project-scoped
-  (`agents.yaml`, `agents.lock`, `AGENTS.md`). Neither touches the other's state — see
-  `docs/adr/019-explicit-project-machine-boundary-in-cli-command-grammar.md`.
+- **Machine and project scope are independent, and always reported**:
+  `uze setup`, `uze doctor`, `uze config …`, `uze upgrade` and
+  `uze market …` act on the machine (`~/.uze`). `uze <plugin>@<market>`,
+  `uze install` (aliased `uze i`), `uze update`, `uze remove`, `uze status`
+  and `uze inspect` act where they run: in a project they act on the
+  machine and maintain `agents.yaml`, `agents.lock` and `AGENTS.md`,
+  outside one on the machine only, and `-m`/`--machine` states machine
+  scope on every verb that has two. `uze agent …` (`work name|split|join|list`,
+  `context inspect|plan|reconcile`, `artifacts check`,
+  `market|plugin create|check`) is project-scoped. Neither scope is
+  inferred from the other's state — see
+  `docs/adr/054-scope-is-reported-not-positional.md`, which supersedes part
+  of `docs/adr/019-explicit-project-machine-boundary-in-cli-command-grammar.md`.
   `uze install` converges the manifest in both directions — a plugin dropped
   from `agents.yaml` leaves `agents.lock`, while the Store and every harness
   keep it, because other projects share those and taking it off the machine
-  is `uze plugin remove` — and leaves the project context reconciled, so
+  is `uze remove <plugin> -m` — and leaves the project context reconciled, so
   declaring an environment and projecting it are one command rather than
   two.
 - **The header says what is happening; a toast says what happened.** The
@@ -637,8 +681,11 @@ properties):
   ready and `uze install` to make it so, so anything a person needs to
   know about the context belongs in `status`, never in a fourth verb of
   their own. `uze agent work name <type>/<subject>` is how work
-  acquires the branch a reviewer sees and the label an operator reads; the
-  vocabulary it is judged against is `workspace.branch` in `agents.yaml`.
+  acquires the label an operator reads and, in a checkout of its own, the
+  `<type>/<subject>` branch a reviewer sees (in the operator's checkout it
+  never renames their branch); the vocabulary it is judged against is
+  `workspace.branch` in `agents.yaml`, Conventional Commits when undeclared,
+  and `agent` opts out of naming altogether.
   Work that reaches its first commit still unnamed is named from that
   commit's subject, judged against the same vocabulary — a Git fact read on
   the evaluation pass, never a harness feature. That derivation fires once

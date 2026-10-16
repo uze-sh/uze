@@ -43,8 +43,11 @@ merely *reads* a project creates the file.
 
 Every key is optional; a project declaring only a workspace policy is as valid
 as one declaring only plugins. Unknown keys are an **error**, not silence: a
-typo in a file a person wrote should not be read as a decision. Writing
-`revision:` here is refused by name: that belongs to the lock.
+typo in a file a person wrote should not be read as a decision, and neither is
+a key written twice. Writing `revision:` or `integrity:` here is refused by
+name: those belong to the lock. So is a `version:`, at the root or on a plugin:
+the file has no schema version, and a plugin is pinned by its marketplace's
+`ref:`. A plugin may be declared under one marketplace only.
 
 This document is patched in place, so a comment you wrote beside an unrelated
 entry survives `uze <plugin>@<market>`.
@@ -107,7 +110,7 @@ reports it.
 | `worktree` | `manual` | When an agent launched here gets a worktree: `always`, at launch, or `manual`, only when you move it with **To worktree**. Until then it works in the primary checkout, on your branch |
 | `delivery` | none | Where finished work is put: `merge` (fast-forward the local target) or `push` (push the task's branch to the remote). Both rebase onto the target and run the `gate` first. Undeclared, there is no delivery |
 | `target` | the branch the primary checkout is on when the task is created | The branch finished work targets |
-| `branch` | `agent` | The vocabulary an agent's own name for its work is judged against: a preset (`conventional`, `gitflow`, `flat`, `agent`) or your own list of types. `agent` names no work |
+| `branch` | `conventional` | The vocabulary an agent's own name for its work is judged against: a preset (`conventional`, `gitflow`, `flat`, `agent`) or your own list of types. `flat` takes a subject with no type; `agent` names no work and keeps the generated `agent/<id>` |
 | `link` | none | Ignored files a fresh worktree links from the primary checkout, like `.env` |
 | `setup` | none | Prepares a worktree, run in it after linking every time an agent takes it, once you [approve it](#approving-the-commands). Where a cache that records its own path is repaired after a checkout changes hands. A failure warns; it never blocks a launch |
 | `gate` | none | Run in the task's worktree on the rebased commits, once you [approve it](#approving-the-commands). A non-zero exit refuses delivery |
@@ -116,8 +119,9 @@ reports it.
 | `actions` | none | What the agent is asked at each state its work reaches; see [below](#actions) |
 | `artifacts` | none | Where the project keeps what describes it; see [below](#artifacts) |
 
-Every key but `actions` and `artifacts` is about a worktree, so none of them does anything for
-an agent working in the primary checkout until it is moved into one.
+Every key but `branch`, `actions` and `artifacts` is about a worktree, so none of them does
+anything for an agent working in the primary checkout until it is moved into one. `branch`
+still judges such an agent's name, which sets its label and never your branch.
 
 `setup` and `gate` each take one command or a list run in order. Use the list
 when a failure should say *which* step failed:
@@ -322,7 +326,8 @@ moving between the two files does not learn the same vocabulary twice:
 version: 1
 marketplaces:
   ai:
-    git: git@github.com:you/ai.git
+    git: https://github.com/you/ai
+    ref: main
     revision: 02d2c9831eb619821c574622a78bbc5f6189485a
 plugins:
   git:

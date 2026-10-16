@@ -21,8 +21,7 @@ Coverage is enforced too:
 
 ```bash
 cargo llvm-cov --workspace --summary-only \
-  --fail-under-lines 68 --fail-under-regions 69 \
-  -- --skip foreground_status_reports
+  --fail-under-lines 68 --fail-under-regions 69
 ```
 
 ## Three tiers, three questions
@@ -89,7 +88,8 @@ release binaries. `docs/observability.md` is the full guide.
 ## OpenSpec
 
 Change proposals live under `openspec/`, a spec-driven work log, with archived
-changes kept:
+changes kept. `openspec validate --all --strict` gates CI, and a warning fails it
+as an error would:
 
 ```bash
 openspec validate --all --strict
@@ -107,6 +107,13 @@ python3 conformance/lab.py --harness claude      # or codex | opencode | antigra
 make lab-replay                                   # replay a recorded run
 ```
 
+In CI the Lab runs from `conformance.yml`, only when a change reaches what the
+Lab image reads, and every night. Each vertical runs as two legs
+(`--part contract` and `--part vendor`), and a leg that already passed against
+the same inputs is reused rather than run again. To reproduce one failure in
+seconds, `python3 conformance/lab.py --sandbox <harness>` opens the harness in
+the same world.
+
 `contract/` states what **every** harness must prove, in outcome terms, and names
 no vendor; `harnesses/<vendor>/bindings.py` says how that harness is driven and
 carries no assertion. A harness that cannot deliver part of a contract declares
@@ -116,9 +123,21 @@ check (ADR-043).
 The lab is vendor-specific by design; the deterministic suite (`cargo test`) runs
 everywhere.
 
+## Playground
+
+`playground/` holds disposable worlds to try this checkout by hand, and a plugin
+that declares every capability uze delivers (a skill, an agent, an MCP server,
+hooks and an `AGENTS.md` contribution):
+
+```bash
+make playground-plugin    # build its MCP server and link its marketplace to this checkout
+make playground-linux     # a throwaway WSL distribution with this build installed
+make playground-windows   # a fresh Windows Sandbox with this build installed (run from WSL)
+```
+
 ## Distribution
 
-`install.sh` at the repository root is the official Linux installer: it downloads
+`install.sh` at the repository root is the official Linux and macOS installer: it downloads
 the prebuilt binary for the machine from GitHub Releases, verifies the release
 key's signature over `SHASUMS256.txt` (with `ssh-keygen`) and the archive's
 SHA-256 against it, refuses when either fails, and installs into `$XDG_BIN_HOME`

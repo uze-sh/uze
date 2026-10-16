@@ -6,9 +6,9 @@ plugin — either the package's own explicit `.claude-plugin/plugin.json`
 covering the package's conventional `skills/`/`mcp.json` surface (Generated
 Native Package, ADR-013) — or, when neither surface is safely
 representable, decomposed into a managed Skill directory plus a registered
-MCP server. The only integration in this crate with a runtime-projection
-mechanism (`--add-dir` delivery of `AGENTS.md`, independent of package
-delivery).
+MCP server. The only integration in this crate that projects `AGENTS.md`
+at runtime (`--add-dir` delivery, independent of package delivery); Codex's
+runtime contribution carries project agents only.
 
 ## Support
 
@@ -120,9 +120,13 @@ is not proof the harness won't auto-invoke it, and UZE never rewrites
 explicit-envelope content. All of this is unit-tested
 (`claude::plugin::claude_native_coverage_tests`).
 
-The marketplace/install/list/uninstall CLI-shelling functions themselves
-(`ClaudeMarketplace::marketplace_exists`, `ClaudeMarketplace::add_marketplace`,
-`ClaudeMarketplace::install_plugin`, `attach_package`, `inspect_claude_plugin`,
+Inspection (`inspect_claude_plugin`, `ClaudeMarketplace::marketplace_exists`)
+reads Claude's own records first (`plugins/known_marketplaces.json`,
+`installed_plugins.json`, `settings.json`) and is unit-tested on that path
+(`claudes_records_answer_without_its_cli`,
+`an_installed_enabled_plugin_inspects_as_matched_from_the_records`). The
+mutating CLI-shelling functions (`ClaudeMarketplace::add_marketplace`,
+`ClaudeMarketplace::install_plugin`, `attach_package`,
 `ClaudeMarketplace::remove_plugin`) are **not** unit-tested — they shell out to the
 resolved `claude` executable directly (via `provisioning_executable()`,
 never a bare `Command::new("claude")` — see Runtime shim boundary below)
@@ -170,9 +174,10 @@ idempotent), and `runtime_contribution` turns that into `--add-dir <dir>` +
 `src/shim.rs`'s `argv[0]` dispatch, entirely outside this crate.
 Fail-open by construction (`HarnessRuntimeContribution` has no `Err` variant
 — a blocked runtime dir degrades to passthrough with a stderr note, verified
-by `unwritable_runtime_dir_falls_open_to_passthrough_with_a_note`). No other
-integration in this crate overrides `runtime_contribution` or
-`supports_runtime_integration` (both default to passthrough/`false`).
+by `unwritable_runtime_dir_falls_open_to_passthrough_with_a_note`). Every
+integration gets the shim (`supports_runtime_integration` defaults to `true`);
+besides Claude only Codex overrides `runtime_contribution`, for its project
+agents.
 
 This is independent of Native Projection (ADR-013): it delivers
 project-context, not package/capability content, and there is no higher-tier
@@ -186,7 +191,7 @@ long-term is explicitly undecided (ADR-014 Consequences).
 
 | Receipt | Inspect | Detach | Drift-safe |
 |---|---|---|---|
-| `IntegrationOwned{kind:"claude-plugin"}` (explicit) | `inspect_claude_plugin` — `claude plugin marketplace list --json` + `plugin list --json`, checks marketplace root + installed + enabled | `claude plugin uninstall <selector>` | Yes — MATCHED only when marketplace root, installed, and enabled all agree |
+| `IntegrationOwned{kind:"claude-plugin"}` (explicit) | `inspect_claude_plugin` — Claude's own records (`plugins/known_marketplaces.json`, `installed_plugins.json`, `settings.json`), falling back to `claude plugin marketplace list --json` + `plugin list --json` when they are absent; checks marketplace root + installed + enabled | `claude plugin uninstall <selector>` | Yes — MATCHED only when marketplace root, installed, and enabled all agree |
 | `IntegrationOwned{kind:"claude-plugin-generated"}` (generated) | Same `inspect_claude_plugin` (marketplace-root-agnostic) | Same `ClaudeMarketplace::remove_plugin`, plus `shared::marketplace::remove_generated_package` (Derived Artifact, safe to delete unconditionally) | Yes — identical inspection path to explicit |
 | `GeneratedTree` (Skill directory) | standard: the directory's `tree_sha256` against the receipt | standard detach, only while it still matches | Yes: an edited directory is Drifted and left in place |
 | `VendorConfigEntry` (MCP) | `inspect_claude_mcp` — read-only `~/.claude.json` parse, exact command+args match | `claude mcp remove <name>` | Yes — Blocked (not silently accepted) if the receipt requests cwd/env/enabled state this integration can't verify |
@@ -204,7 +209,7 @@ reasoning holds, not confirmed by a dedicated test.
 
 ## Limitations
 
-- Native-plugin CLI-shelling functions (install/list/uninstall/inspect) have
+- Native-plugin CLI-shelling functions (install/uninstall) have
   no unit test coverage — only reachable via a real `claude` binary.
 - MCP behavioral verification (an actual tool call) is not closed; a headless
   discovery quirk was characterized, not fixed (ADR-007).
@@ -214,11 +219,11 @@ reasoning holds, not confirmed by a dedicated test.
 
 ## Evidence
 
-- Tests: 50/50 passing in `claude::{lifecycle_tests, plugin::claude_native_coverage_tests, runtime::runtime_projection_tests, generate::generated_native_tests}`.
-- Real harness version last validated: Claude Code **2.1.241** — the exact
-  binary present in this environment (`claude --version` reconfirmed live
-  during the ADR-030 audit). The `disable-model-invocation` marker
-  technique was proven against a real model turn on this same binary, both
+- Tests: `claude::{lifecycle_tests, plugin::claude_native_coverage_tests, runtime::runtime_projection_tests, generate::generated_native_tests}`.
+- Real harness: the Conformance Lab's Claude vertical (latest evidence cited
+  above: Claude Code 2.1.290). The `disable-model-invocation` marker
+  technique was first proven against a real model turn on Claude Code
+  2.1.241 (ADR-030), both
   for a hand-built probe plugin and for the actual output of
   `materialize_generated_package` against a real UZE package; ADR-030 now
   applies the same technique to canonical user-only Skills.
@@ -226,7 +231,7 @@ reasoning holds, not confirmed by a dedicated test.
 
 ## Next
 
-1. Add unit coverage for the native-plugin CLI functions (`inspect_claude_plugin`, `attach_package`) via a fake/injectable process boundary, matching how `provision_cli` already uses `ProcessRunner`. (An `executable_override` escape hatch was added and then removed this milestone for the generated-native pass — it ended up with zero call sites once PATH-based test isolation solved the actual failing tests more directly; worth reconsidering if this item is picked up for real.)
+1. Add unit coverage for the mutating native-plugin CLI functions (`attach_package`, `ClaudeMarketplace::install_plugin`) via a fake/injectable process boundary, matching how `provision_cli` already uses `ProcessRunner`. (An `executable_override` escape hatch was added and then removed this milestone for the generated-native pass — it ended up with zero call sites once PATH-based test isolation solved the actual failing tests more directly; worth reconsidering if this item is picked up for real.)
 2. Close the MCP headless-discovery/behavioral gap from ADR-007's last entry.
 3. Verify or refute the `package_root`-not-compared observation above with a dedicated drift test.
 4. Resolve persistent-bridge vs. runtime-projection precedence for Claude context delivery (ADR-014 Future Work).
