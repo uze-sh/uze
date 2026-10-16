@@ -506,9 +506,7 @@ impl UzeApplication {
             return Ok(resource.clone());
         }
         let mut resolved = resource.clone();
-        let Ok(all_receipts) = state::receipts(&self.home, None) else {
-            return Ok(resolved);
-        };
+        let all_receipts = state::receipts(&self.home, None)?;
         let resource_id = resource.identity();
         // Existing receipt wins: a resource already attached keeps the
         // physical entry it was given, so re-running attach never renames

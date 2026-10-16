@@ -1126,6 +1126,35 @@ fn doctor_reports_corrupt_ledger_without_destructive_work() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// An unreadable ledger blocks a mutation rather than authorizing one: a
+/// name resolved as if nothing were recorded would be written to the
+/// harness with no receipt left to own it.
+#[test]
+fn an_unreadable_ledger_resolves_no_exposure_name() {
+    let root = uze_testkit::temp::scratch("resolve-unreadable-ledger");
+    let home = UzeHome::at(&root);
+    home.ensure_layout().unwrap();
+    fs::write(home.attachments_path(), "bad").unwrap();
+    let app = UzeApplication::new(home, vec![Box::new(SymlinkIntegration)]);
+    let id =
+        uze_core::PackageId::from_plugin_name("demo", std::path::Path::new("plugin.json")).unwrap();
+    let resource = Resource::from_package(
+        id,
+        root.join("demo"),
+        uze_core::capability::Capability {
+            kind: CapabilityKind::AgentSkill,
+            path: root.join("demo/skills/demo/SKILL.md"),
+            payload: Vec::new(),
+        },
+    );
+
+    assert!(
+        app.resolve_exposure_name(&resource, app.integrations[0].as_ref())
+            .is_err()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 struct NamedIntegration;
 impl IntegrationPort for NamedIntegration {
     fn id(&self) -> &'static str {
