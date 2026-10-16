@@ -468,6 +468,10 @@ fn shared_status(
         match reads.get(&key) {
             Some(read) if read.usable() => (Arc::clone(read), false),
             _ => {
+                // Pruned here, the one place the map grows: a checkout
+                // nobody asks about again is not held until the session
+                // ends, with the whole of its last `status` in it.
+                reads.retain(|_, read| read.usable());
                 let read = Arc::new(StatusRead::default());
                 reads.insert(key, Arc::clone(&read));
                 (read, true)
@@ -736,6 +740,27 @@ mod tests {
         super::forget_statuses_around(&root.join("src/main.rs"));
         let after = super::shared_status(&root, &["status"], || Ok("after".to_owned()));
         assert_eq!(after, Ok("after".to_owned()));
+    }
+
+    /// An answer too old to share is dropped when another read starts,
+    /// rather than kept for as long as the session runs.
+    #[test]
+    fn an_answer_too_old_to_share_is_not_kept() {
+        let stale = (
+            super::PathBuf::from("/shared-status/stale"),
+            vec!["status".to_owned()],
+        );
+        let read = super::Arc::new(super::StatusRead::default());
+        read.settle_unshared(Ok("long ago".to_owned()));
+        super::status_reads().insert(stale.clone(), read);
+
+        let _ = super::shared_status(
+            super::Path::new("/shared-status/another"),
+            &["status"],
+            || Ok("now".to_owned()),
+        );
+
+        assert!(!super::status_reads().contains_key(&stale));
     }
 
     /// The two methods that change the machine, and the two things they
