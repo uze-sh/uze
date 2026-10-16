@@ -5394,6 +5394,15 @@ mod workspace_tests {
         );
     }
 
+    /// A frame with no columns at all — a terminal being resized through
+    /// nothing — lays the popup out without arithmetic going below zero.
+    #[test]
+    fn a_frame_with_no_width_lays_the_commit_popup_out() {
+        let popup = commit_popup(Rect::new(0, 0, 0, 1));
+        let layout = render::commit_detail_layout(Rect::new(0, 0, 0, 10), &popup);
+        assert_eq!(layout.rect.x, 0);
+    }
+
     /// A frame with no room beside the sidebar puts the popup over the
     /// pane, inset, rather than clipping it against the edge.
     #[test]

@@ -155,7 +155,7 @@ pub(in crate::ui::orchestrator) fn commit_detail_layout(
         (beside, (area.right() - beside - 1).min(MAX_WIDTH))
     } else {
         let width = area.width.saturating_sub(4).clamp(1, MAX_WIDTH);
-        (area.x + (area.width - width) / 2, width)
+        (area.x + area.width.saturating_sub(width) / 2, width)
     };
     let inner_width = usize::from(width.saturating_sub(2 + 2 * POPUP_H_PAD).max(1));
 
