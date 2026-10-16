@@ -25,4 +25,4 @@
 ## 4. Evidence
 
 - [x] 4.1 Debug spans on `checkout.reconcile`, `checkout.slots`, `checkout.take`, `checkout.materialize`, `checkout.collect`, `checkout.empty_trash`, `landing.sync_target`.
-- [ ] 4.2 Confirm against the journal on this repository after the operator validates by hand.
+- [x] 4.2 Confirm against the journal on this repository after the operator validates by hand.

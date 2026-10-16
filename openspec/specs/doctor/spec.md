@@ -4,7 +4,9 @@
 Keeps `uze doctor` and the other reads that report attachment health fast in
 steady state by caching verified attachment verdicts, while every anomaly,
 removal and bootstrap decision stays on live evidence.
+
 ## Requirements
+
 ### Requirement: Attachment inspection verdicts are cached on read paths
 The system SHALL serve `Matched` per-receipt attachment verdicts from a
 two-tier cache (in-process + on-disk under the UZE cache directory) on
@@ -59,3 +61,9 @@ unconditionally.
 - **WHEN** a managed skill symlink is removed and the bootstrap runs
 - **THEN** the symlink is re-created cheaply (no vendor CLI)
 
+### Requirement: Doctor reports package requirements
+`uze doctor` SHALL re-verify every effective requirement of every installed package against the machine and SHALL report each unmet or drifted requirement with the package that needs it, its purpose, and the command that closes the gap, for the person to run.
+
+#### Scenario: Requirement removed after install
+- **WHEN** an executable an installed package requires is no longer on `PATH` or is below the declared minimum version
+- **THEN** `uze doctor` reports it under that package with the closing command

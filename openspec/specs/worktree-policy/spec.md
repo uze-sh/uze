@@ -2,7 +2,9 @@
 
 ## Purpose
 Keeps every agent the workspace launches in an isolated checkout of its own, reuses those checkouts as slots without ever discarding work on an automatic path, and lets work reach the target branch only through the system, as the project declares it.
+
 ## Requirements
+
 ### Requirement: Every agent is isolated and the primary checkout belongs to the operator
 The system SHALL start every agent it launches into a worktree space (see
 the `space-kinds` capability) in an isolated checkout of its own, created
@@ -42,13 +44,12 @@ the system SHALL NOT start the agent and SHALL state the reason.
 - **THEN** it starts in the space's root, by the operator's deliberate choice, and no checkout is created for it
 
 ### Requirement: Isolated checkouts are reusable slots
-The system SHALL keep isolated checkouts in the primary checkout's fixed
-isolation directory, under generated names that never change, and SHALL reuse a free
-one before creating another, reset to the task's base with no tracked or
-untracked file left and ignored files kept. One holding uncommitted changes
-beyond derived content (`checkout-accounting`), commits absent from its
-base, or a working process SHALL never be reused. Checkouts SHALL be bounded
-by peak concurrency; a project MAY cap them.
+The system SHALL keep isolated checkouts under the primary checkout's fixed
+isolation directory and SHALL reuse a free checkout before creating
+another, so their number is bounded by peak concurrency; a project MAY
+declare a cap. Reuse SHALL put the working tree at the task's base with no
+tracked or untracked file from the previous task, and SHALL preserve
+ignored files.
 
 #### Scenario: A free checkout is reused
 - **WHEN** a task ends with its checkout clean and a new agent is created
@@ -58,10 +59,6 @@ by peak concurrency; a project MAY cap them.
 #### Scenario: A previous task's edits never reach the next
 - **WHEN** a checkout whose last task was delivered is reused
 - **THEN** the working tree matches the base and carries none of the previous branch's edits
-
-#### Scenario: A checkout holding work is never reused
-- **WHEN** a task's agent is gone and its checkout has uncommitted changes or commits absent from its base
-- **THEN** the checkout is parked, listed to the operator, and not offered to a new agent
 
 #### Scenario: A slot whose work was squash-merged is free again
 - **WHEN** a task's work reached the target as a squash or a rebase merge, so none of the branch's own commits is reachable from it, and the agent is gone
@@ -84,6 +81,45 @@ by peak concurrency; a project MAY cap them.
 #### Scenario: A declared cap holds
 - **WHEN** a project declares a maximum number of checkouts and all are occupied
 - **THEN** no new agent is started until one is free, and the operator is told why
+
+### Requirement: A checkout holding work is never reused
+A checkout holding uncommitted changes, or commits absent from its base,
+SHALL never be reused; uncommitted changes confined to content the system
+derives are not work (`checkout-accounting`). A checkout in which any
+process is working SHALL never be reused.
+
+#### Scenario: A checkout holding work is never reused
+- **WHEN** a task's agent is gone and its checkout has uncommitted changes or commits absent from its base
+- **THEN** the checkout is parked, listed to the operator, and not offered to a new agent
+
+### Requirement: An agent's checkout stands at the agent's own path
+Each isolated checkout SHALL stand at the path its agent owns, so an agent
+finds it at the same path every time it is placed: the directory it last
+held, or its own identifier when it never held one. A reused checkout SHALL
+be renamed to that path with Git's own worktree move, preferring one whose
+last agent will not come back. A checkout Git refuses to move, or one any
+process works in, SHALL NOT be renamed nor stand in the way of creating one
+at the agent's path; nothing SHALL be copied.
+
+#### Scenario: A reused slot takes the agent's name
+- **WHEN** a new agent is placed in a free checkout an earlier agent left
+- **THEN** the checkout is renamed to the new agent's name, keeps its ignored files, and is recorded as the system's under that name
+
+#### Scenario: A slot that cannot move is not taken
+- **WHEN** the only free checkout holds an initialized submodule, is locked, or has a process working in it
+- **THEN** a checkout is created at the agent's path, the free one is left as it was, and it does not count against the declared cap for that creation
+
+#### Scenario: An agent comes back to the directory it last held
+- **WHEN** an agent placed under an earlier build in a slot of a generated name is resumed and that slot is still free
+- **THEN** it is placed in that slot, at that path, and nothing is moved
+
+#### Scenario: The agent's path is taken
+- **WHEN** an agent is resumed and another agent's checkout stands at its path
+- **THEN** it is placed at a generated name and the operator is told its conversation could not be carried
+
+#### Scenario: A slot whose agent may come back is the last to go
+- **WHEN** a new agent is placed and the free slots include one left by a shelved agent and one left by an agent whose work was delivered
+- **THEN** the slot left by the delivered agent is taken
 
 ### Requirement: Nothing that can hold work is removed automatically
 The system SHALL NOT remove a checkout where a process is working, nor, on
@@ -162,26 +198,78 @@ delivered, MAY trigger an evaluation but SHALL NOT be required.
 - **WHEN** a task was reported ready and its agent produces further changes
 - **THEN** the next evaluation reflects the checkout's current state
 
-### Requirement: An agent is placed on the target as the remote has it
-The system SHALL bring the local target in line with the remote's before
-cutting a new agent's branch from it, by fast-forward only. A target
-carrying commits the remote lacks, and one Git refuses to move because the
-primary checkout has work in the way, SHALL be left exactly as they stand,
-and the placement SHALL report how far behind the agent starts. A repository
-with no remote, or whose target the remote lacks, SHALL be placed from its
-local target with nothing to report.
+### Requirement: An agent is placed on the target as the last sync left it
+The system SHALL fast-forward an isolating project's local target onto
+the remote's on the workspace's clock, and SHALL NOT ask the remote while
+placing an agent: a new agent's branch SHALL be cut from
+the most advanced tip of the target the last sync left, the remote's
+tracking ref when it descends from the local target, else the local
+target. The agent's base SHALL name the declared target and its base commit
+the commit it was cut from. A delivery SHALL fetch the target itself.
+
+#### Scenario: A placement does not wait on the remote
+- **WHEN** the remote's target has moved since the last sync and an agent is created
+- **THEN** the agent's branch is cut from the tips the last sync left without contacting the remote
 
 #### Scenario: A new agent starts from what the remote has
-- **WHEN** the remote's target has moved since this machine last fetched and an agent is created
-- **THEN** the local target is fast-forwarded onto the remote's tip and the agent's branch is cut from there
-
-#### Scenario: The operator's own commits are never rewritten to sync
-- **WHEN** the local target carries commits the remote does not and the remote has moved
-- **THEN** the local target is left where it stands, the agent is placed from it, and the placement says how far behind the target is
+- **WHEN** a sync ran after the remote's target moved and the target is not checked out in the primary checkout
+- **THEN** the local target is fast-forwarded onto the remote's tip and the next agent's branch is cut from there
 
 #### Scenario: A repository with no remote is placed from its own target
 - **WHEN** an agent is created in a repository with no remote
 - **THEN** the agent is placed from the local target and nothing is reported
+
+### Requirement: The sync never rewrites a target it cannot fast-forward
+A target carrying commits the remote lacks, one Git refuses to move, and one
+checked out in the primary checkout SHALL be left exactly as they stand. The
+system SHALL say once, until the target catches up, only when a new agent
+would start behind the remote's tip, because the local target carries
+commits the remote lacks, and SHALL say nothing when the placement is cut
+from the remote's tip anyway.
+
+#### Scenario: A new agent starts from the remote while the operator stands on the target
+- **WHEN** the operator has the target checked out in the primary checkout, the remote has moved, and a sync ran
+- **THEN** the sync leaves the target and the working tree as they stand, says nothing, and the next agent's branch is cut from the remote's tip
+
+#### Scenario: The operator's own commits are never rewritten to sync
+- **WHEN** the local target carries commits the remote does not and the remote has moved
+- **THEN** the local target is left where it stands, the next agent's branch is cut from it, and the system says once how far behind the remote the local target is
+
+### Requirement: An agent moved out of the operator's checkout continues from its HEAD
+An agent moved into a checkout of its own from the primary checkout SHALL
+be cut from the primary checkout's `HEAD`, whatever the target's tips say.
+
+#### Scenario: An agent moved into a checkout of its own continues the operator's work
+- **WHEN** an agent in the primary checkout is moved into a checkout of its own while the remote's tip is ahead of the local target
+- **THEN** its branch is cut from the primary checkout's `HEAD`, not from the remote's tip
+
+### Requirement: An agent's work is judged against the target it was cut from
+Every judgement the system makes about an isolated agent's work SHALL be
+asked against the most advanced of the local target and the remote's
+tracking ref for it that this machine already has; when the two have
+diverged, against the one the agent's branch descends from, and the local
+target when it descends from neither. The same rule SHALL hold for every
+agent, however it was placed, and asking it SHALL NOT contact the remote.
+
+#### Scenario: Every judgement asks the same target
+- **WHEN** the system asks whether an agent's branch is in the target, whether its checkout, branch or shelf still holds work the target lacks, how many commits are its own, or what a refresh rebases it onto
+- **THEN** each question is asked against the same target ref, chosen by this rule
+
+#### Scenario: The remote's commits are not counted as the agent's
+- **WHEN** an agent was cut from the remote's tip, which is ahead of the local target, and has committed nothing
+- **THEN** its branch counts no commits of its own, holds no work, and its checkout is free to reuse
+
+#### Scenario: The agent's own commits are counted once
+- **WHEN** an agent cut from the remote's tip commits once
+- **THEN** it is ready with exactly one commit ahead, and refreshing it does not move its base back to the local target
+
+#### Scenario: Work merged on the remote is integrated before the operator pulls
+- **WHEN** an agent's work reached the remote's target and a sync fetched it, while the local target is still behind
+- **THEN** the agent's branch is judged integrated
+
+#### Scenario: An agent cut from the operator's HEAD is judged by its own commits
+- **WHEN** an agent moved into a checkout of its own from a local target behind the remote commits once
+- **THEN** exactly that commit is counted as its own
 
 ### Requirement: Delivery follows the declared completion and only the system writes the target
 The system SHALL deliver a ready task only on an explicit operator action,
@@ -476,4 +564,3 @@ left untouched, and never removed.
 #### Scenario: A hand-edited region is reported once
 - **WHEN** the workspace synchronizes the same hand-edited region again in one client session
 - **THEN** the drift is not reported a second time and the region is still not removed
-

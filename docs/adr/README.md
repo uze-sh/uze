@@ -126,6 +126,7 @@ naming them, and the absorbed records are listed under
 - [054 — Scope is reported, not positional](054-scope-is-reported-not-positional.md)
 - [055 — A project's commands run only once the operator approved them](055-a-projects-commands-run-only-once-the-operator-approved-them.md)
 - [056 — The terminal runtime serves the person, not the panes](056-the-terminal-runtime-serves-the-person-not-the-panes.md)
+- [057 — A harness has a version floor, and nothing is kept below it](057-a-harness-has-a-version-floor-and-nothing-is-kept-below-it.md)
 
 ## Consolidated records
 

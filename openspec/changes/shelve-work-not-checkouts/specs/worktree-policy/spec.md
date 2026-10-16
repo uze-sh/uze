@@ -1,27 +1,17 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: A checkout holding work is never reused`
+- TO: `### Requirement: A checkout holds no work once its agent ends`
+
 ## MODIFIED Requirements
 
 ### Requirement: Isolated checkouts are reusable slots
 The system SHALL keep isolated checkouts under the primary checkout's fixed
-isolation directory, each named by a generated identifier that never
-changes, and SHALL reuse a free checkout for a new agent before creating
-another. Reuse SHALL put the working tree at the task's base with no tracked
+isolation directory and SHALL reuse a free checkout before creating
+another, so their number is bounded by peak concurrency; a project MAY
+declare a cap, which SHALL count only checkouts held by a live agent or
+pinned. Reuse SHALL put the working tree at the task's base with no tracked
 or untracked file from the previous task, and SHALL preserve ignored files.
-A checkout SHALL hold no work of its own once its agent ends: uncommitted
-work is shelved (`work-shelf`) and commits are kept by the task's branch,
-and the checkout is then free. Uncommitted changes confined to content the
-system derives are not work (`checkout-accounting`). Only these SHALL pin a
-checkout so that it is neither reused nor removed: an operation Git has
-paused in it (a rebase, a merge, a cherry-pick, a revert or a bisect), any
-process working in it (`checkout-accounting`), and work in it that cannot be
-shelved or whose shelf could not be written (`work-shelf`); the operator
-SHALL be told which one holds each pinned checkout. A slot SHALL have
-exactly one holder, decided by which task was last placed in it and never
-by when tasks were created; where records left by an earlier build name
-one slot from several tasks, the one whose branch the checkout has is its
-holder, and when that does not decide it the checkout is pinned rather
-than freed. The number of checkouts SHALL be
-bounded by peak concurrency, and a project MAY declare a cap, which SHALL
-count only checkouts held by a live agent or pinned.
 
 #### Scenario: A free checkout is reused
 - **WHEN** a task ends with its checkout clean and a new agent is created
@@ -32,18 +22,6 @@ count only checkouts held by a live agent or pinned.
 - **WHEN** a checkout whose last task was delivered is reused
 - **THEN** the working tree matches the base and carries none of the previous branch's edits
 
-#### Scenario: A checkout whose agent left work is reused once the work is kept
-- **WHEN** a task's agent is gone and its checkout had uncommitted changes or commits absent from its base
-- **THEN** the changes are shelved, the commits stay on the task's branch, and the checkout is offered to the next agent
-
-#### Scenario: A checkout holding work is never reused
-- **WHEN** a checkout still holds uncommitted changes that are not shelved, because shelving them failed or an operation pins it
-- **THEN** it is not offered to a new agent, and the operator is told why
-
-#### Scenario: A paused operation pins a checkout
-- **WHEN** a task's agent is gone and a rebase or a merge is paused in its checkout
-- **THEN** nothing is shelved, the checkout is neither reused nor removed, and the operator is told it waits on that operation
-
 #### Scenario: A slot whose work was squash-merged is free again
 - **WHEN** a task's work reached the target as a squash or a rebase merge, so none of the branch's own commits is reachable from it, and the agent is gone
 - **THEN** the checkout is free and the next agent is placed in it rather than in a new one
@@ -52,14 +30,6 @@ count only checkouts held by a live agent or pinned.
 - **WHEN** a new agent is placed in a checkout that earlier tasks ran in, and the record of one of them still reads as live
 - **THEN** only the new task holds that checkout
 - **AND** each earlier task ends by what its own branch and shelf hold, and keeps them
-
-#### Scenario: Two records name one slot
-- **WHEN** records left by an earlier build name one checkout from two tasks, one of whose branches the checkout has
-- **THEN** that task holds the checkout and the other no longer names it
-
-#### Scenario: The clock going back does not move a slot
-- **WHEN** the system clock steps backwards between two placements, so a task placed later carries an earlier creation time
-- **THEN** the task placed later still holds its checkout, and the task running in it is not ended
 
 #### Scenario: A worktree the system did not create is not a slot
 - **WHEN** a harness, an agent or an operator creates a worktree without the system's record, anywhere — inside the isolation directory, or a harness's own isolation started from inside an agent's checkout
@@ -77,6 +47,26 @@ count only checkouts held by a live agent or pinned.
 #### Scenario: Shelved work does not count against the cap
 - **WHEN** a project declares a cap of two and two agents ended holding work
 - **THEN** a new agent is placed, in one of their checkouts
+
+### Requirement: A checkout holds no work once its agent ends
+A checkout SHALL hold no work of its own once its agent ends: uncommitted
+work is shelved (`work-shelf`), commits are kept by the task's branch, and
+the checkout is then free; changes confined to content the system derives
+are not work (`checkout-accounting`). Only a paused Git operation, a process
+working in it, or work that cannot be shelved SHALL pin a checkout so it is
+neither reused nor removed, and the operator SHALL be told which.
+
+#### Scenario: A checkout whose agent left work is reused once the work is kept
+- **WHEN** a task's agent is gone and its checkout had uncommitted changes or commits absent from its base
+- **THEN** the changes are shelved, the commits stay on the task's branch, and the checkout is offered to the next agent
+
+#### Scenario: A checkout holding work is never reused
+- **WHEN** a checkout still holds uncommitted changes that are not shelved, because shelving them failed or an operation pins it
+- **THEN** it is not offered to a new agent, and the operator is told why
+
+#### Scenario: A paused operation pins a checkout
+- **WHEN** a task's agent is gone and a rebase or a merge is paused in its checkout
+- **THEN** nothing is shelved, the checkout is neither reused nor removed, and the operator is told it waits on that operation
 
 ### Requirement: Nothing that can hold work is removed automatically
 The system SHALL NOT remove a working tree holding uncommitted changes, a
@@ -146,3 +136,20 @@ after reconciliation.
 #### Scenario: Prune never runs before adoption
 - **WHEN** startup finds a registry entry whose directory is gone
 - **THEN** the entry is pruned only after every remaining checkout has been adopted
+
+## ADDED Requirements
+
+### Requirement: A slot has exactly one holder
+A slot SHALL have exactly one holder, decided by which task was last placed
+in it and never by when tasks were created. Where records left by an
+earlier build name one slot from several tasks, the one whose branch the
+checkout has SHALL hold it, and when that does not decide it the checkout
+SHALL be pinned rather than freed.
+
+#### Scenario: Two records name one slot
+- **WHEN** records left by an earlier build name one checkout from two tasks, one of whose branches the checkout has
+- **THEN** that task holds the checkout and the other no longer names it
+
+#### Scenario: The clock going back does not move a slot
+- **WHEN** the system clock steps backwards between two placements, so a task placed later carries an earlier creation time
+- **THEN** the task placed later still holds its checkout, and the task running in it is not ended

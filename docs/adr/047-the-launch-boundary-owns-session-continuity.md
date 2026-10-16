@@ -74,3 +74,18 @@ The operator's own invocation is never rewritten — only a bare launch of
 an agent UZE created is touched.
 
 Source change: openspec/changes/archive/2026-09-08-add-agent-session-continuity/
+
+## More Information
+
+**2026-10-16 — OpenCode moves from `Observed` to `Assigned`**
+(`refresh-harness-deliveries`). Since about 2.0.19, `--session <id>`
+creates the session when it does not exist (measured on 2.0.29: a second
+run under one minted id adds no session). A harness that accepts the
+caller's identifier is now named by UZE, in the shape it requires (the
+port's `new_session_id`, OpenCode's `ses` prefix), and reading back is kept
+for harnesses that accept none. Naming at launch does not stop the record
+following an agent into a conversation it starts inside the harness, so
+OpenCode's newest-session observation stays; only the existence check
+changed, to a lookup by id.
+
+Source change: openspec/changes/archive/2026-10-16-refresh-harness-deliveries/

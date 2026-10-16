@@ -6,11 +6,8 @@ checkout's path, and, for a checkout made for a subagent, the agent it was
 split from and the commit it was split at. Which agent currently holds a
 checkout SHALL remain the task store's answer, never the record's. The
 record SHALL live with the checkout itself: it SHALL survive the loss of
-UZE's own state, and it SHALL cease to exist when the worktree is removed,
-by UZE or by Git. A record naming a path other than the checkout it is
-found in SHALL be ignored. A record this build cannot read — unreadable,
-or written by a newer build — SHALL make the checkout neither reused nor
-removed, and SHALL NOT be written over.
+UZE's own state, and cease to exist when the worktree is removed, by UZE or
+by Git.
 
 #### Scenario: A made checkout is recorded
 - **WHEN** the system makes a checkout
@@ -24,14 +21,6 @@ removed, and SHALL NOT be written over.
 #### Scenario: The record goes with the worktree
 - **WHEN** a recorded checkout's worktree is removed, by the system or with Git directly
 - **THEN** no record of it remains anywhere
-
-#### Scenario: A copied checkout does not inherit the record
-- **WHEN** a recorded checkout's directory is copied and the copy is registered with Git
-- **THEN** the copy is not taken for UZE's
-
-#### Scenario: A record from a newer build
-- **WHEN** a checkout carries a record this build cannot read
-- **THEN** it is neither offered to an agent nor removed, and the record is left as it was
 
 ### Requirement: Content UZE derives never parks a checkout
 When deciding whether a checkout holds work, the system SHALL NOT count as

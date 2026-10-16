@@ -6,15 +6,17 @@ someone else, so that no automatic path ever resets, reuses or removes a
 checkout it did not make, keeps the slot pool from growing on UZE's own
 writes, and gives an agent a verb for its subagents' checkouts instead of
 Git written by hand.
+
 ## Requirements
+
 ### Requirement: A checkout carries a record that UZE made it
-When it makes a checkout, the system SHALL record that it made it, its path
-and, for a subagent's, the agent and commit it was split from. Who holds a
-checkout SHALL stay the task store's answer, never the record's. The record
-SHALL live with the checkout, surviving the loss of UZE's state and gone
-once the worktree is removed, by UZE or Git. A record naming another path
-SHALL be ignored; one this build cannot read SHALL keep the checkout from
-reuse and removal and SHALL NOT be written over.
+The system SHALL record, when it makes a checkout, that it made it, the
+checkout's path, and, for a checkout made for a subagent, the agent it was
+split from and the commit it was split at. Which agent currently holds a
+checkout SHALL remain the task store's answer, never the record's. The
+record SHALL live with the checkout itself: it SHALL survive the loss of
+UZE's own state, and cease to exist when the worktree is removed, by UZE or
+by Git.
 
 #### Scenario: A made checkout is recorded
 - **WHEN** the system makes a checkout
@@ -29,9 +31,26 @@ reuse and removal and SHALL NOT be written over.
 - **WHEN** a recorded checkout's worktree is removed, by the system or with Git directly
 - **THEN** no record of it remains anywhere
 
+### Requirement: A record names the checkout it is found in
+A record naming a path other than the checkout it is found in SHALL be
+ignored, except where it says the system was moving the checkout to exactly
+that path. A move SHALL be recorded as intended before Git performs it, and
+SHALL be completed or undone on the next reconciliation, with Git's own
+repair run before anything is pruned, so a crash during a move never
+disowns a checkout the system made.
+
 #### Scenario: A copied checkout does not inherit the record
 - **WHEN** a recorded checkout's directory is copied and the copy is registered with Git
 - **THEN** the copy is not taken for UZE's
+
+#### Scenario: A move interrupted by a crash
+- **WHEN** the system crashes after a checkout was moved to an agent's path but before its record names that path
+- **THEN** the next reconciliation finds the record's intended path, takes the checkout as the system's at its new path, and prunes nothing of it
+
+### Requirement: A record this build cannot read is left alone
+A record this build cannot read, because it is unreadable or was written by
+a newer build, SHALL make the checkout neither reused nor removed, and SHALL
+NOT be written over.
 
 #### Scenario: A record from a newer build
 - **WHEN** a checkout carries a record this build cannot read
@@ -100,46 +119,61 @@ still require a working tree with no uncommitted change.
 - **THEN** the checkout holds work and is parked
 
 ### Requirement: The pool keeps a few spare slots and no more
-The system SHALL keep at most a declared number of free slots, two by
-default, choosing the most recently used, and SHALL remove on the next
-collection the directory of every other free slot and of one unused longer
-than a declared age, three days by default. Both rules SHALL apply to free
-slots only, keep each removed slot's branch, and be decided from the slots'
-present state alone, with no record of past use. A project MAY declare
-either number under its worktree policy.
+The system SHALL remove the directory of a free slot unused for longer than
+a declared age, three days by default, and SHALL keep every other free slot
+as a spare, so a project has the most slots it had in use at once within
+that age. The rule SHALL touch free slots only, keep each removed slot's
+branch, and be decided from the slots' present state alone. A free slot
+SHALL keep its last agent's name until another agent takes it, and SHALL
+count as a spare. A project MAY declare the age.
 
 #### Scenario: Closing agents leaves spares for the next ones
 - **WHEN** five agents are working and two of them end with nothing left in their checkouts
 - **THEN** both checkouts stay, and the next two agents created are placed in them rather than in new directories
 
 #### Scenario: Spares beyond the declared number are removed
-- **WHEN** five agents end with nothing left in their checkouts and the project declares no number
-- **THEN** the two most recently used checkouts stay and the other three directories are removed on the next collection
+- **WHEN** five agents end with nothing left in their checkouts and the project declares no age
+- **THEN** all five checkouts stay as spares, since no number of them is declared, and each directory is removed once it has gone unused for three days
 
 #### Scenario: An idle project gives its disk back
 - **WHEN** a free slot has not been used for more than three days and the project declares no age
 - **THEN** its directory is removed and its branch is kept
 
 #### Scenario: Work is never trimmed
-- **WHEN** the pool holds more checkouts than the declared number and some of them are parked or occupied
-- **THEN** none of the parked or occupied checkouts is removed
+- **WHEN** the pool holds free slots idle past the declared age beside parked or occupied checkouts
+- **THEN** the idle free slots are removed and none of the parked or occupied checkouts is
+
+#### Scenario: A slot keeps its last agent's name while it waits
+- **WHEN** an agent ends with nothing left in its checkout and no other agent takes the slot
+- **THEN** the slot stays at that agent's path, and resuming the agent places it there without moving anything
 
 ### Requirement: Every worktree of a project is accounted for
 The system SHALL account for every worktree the repository registers,
-wherever it is, by owner: an agent's checkout, a subagent's (with its
-agent), a harness's own isolation, recognised from where its integration
-declares it keeps worktrees relative to any checkout of the project, or the
-operator's, for one no integration claims and UZE did not record. For each
-it SHALL know its branch, whether it is dirty, whether its work is in the
-target, when it last changed, and whether it is in use.
+wherever it is on disk, and SHALL classify each by owner: an agent's
+checkout, a subagent's checkout (with the agent it belongs to), a harness's
+own isolation, or, when no integration claims it and UZE did not record it,
+the operator's. For each, the system SHALL know its branch, whether it holds
+uncommitted changes, whether its work is in the target, when it was last
+changed, and whether it is in use.
+
+#### Scenario: A worktree outside every known place
+- **WHEN** the operator adds a worktree anywhere with Git
+- **THEN** it is accounted for as the operator's, with its facts
+
+### Requirement: A harness's isolation is recognised where its integration keeps it
+A harness's own isolation SHALL be recognised from where the integration
+for that harness declares it keeps worktrees, either relative to any
+checkout of the project or under a directory of that harness's own outside
+the project, including worktrees a harness creates when the model calls a
+worktree tool the harness provides.
 
 #### Scenario: A harness's own isolation is named as such
 - **WHEN** a harness creates a worktree where its integration declares that harness keeps them, from the primary or from inside a slot
 - **THEN** it is accounted for as that harness's, not as the operator's and never as UZE's
 
-#### Scenario: A worktree outside every known place
-- **WHEN** the operator adds a worktree anywhere with Git
-- **THEN** it is accounted for as the operator's, with its facts
+#### Scenario: A worktree a harness keeps outside the project
+- **WHEN** an agent's model calls the harness's own worktree tool and the harness creates the worktree in a directory of its own outside the project
+- **THEN** it is accounted for as that harness's, shown, never driven and never removed
 
 ### Requirement: A checkout in use is occupied
 A checkout SHALL be occupied while any live process of the operator's has
@@ -314,28 +348,6 @@ child into its parked agent, or discard it.
 - **WHEN** an agent ends with nothing of its own while a child holds commits
 - **THEN** the child and the agent are both parked, both checkouts are kept, and the operator can join the child into the agent
 
-### Requirement: The operator sees every checkout and acts on it explicitly
-The workspace client SHALL show a subagent's checkout under its agent, and
-offer a view listing every worktree of the project by owner, with its facts,
-from which the operator SHALL be able to open a space in a checkout, adopt a
-foreign one under the isolation directory as UZE's, remove one, and in one
-action remove each of the operator's that is clean, unused and in the
-target. None of these SHALL happen unless the operator chooses it, and
-reading the facts SHALL never hold up drawing.
-
-#### Scenario: A foreign checkout is listed and left alone
-- **WHEN** the operator opens the checkouts view in a project with a harness's own worktree and one added by hand
-- **THEN** both are listed under their owners with their facts, and neither is changed by opening the view
-
-#### Scenario: Adopting a foreign checkout
-- **WHEN** the operator adopts a checkout under the isolation directory listed as theirs
-- **THEN** it is recorded as UZE's and from then on is treated as any slot is
-- **AND** the operator is told beforehand that a clean one becomes free at once
-
-#### Scenario: Cleaning up what is done
-- **WHEN** the operator asks to clean up and three of the operator's checkouts are clean, unused and in the target while a fourth holds work and a harness keeps one of its own
-- **THEN** the three are removed with their branches kept, the fourth is listed as kept, with why, and the harness's is left to its harness
-
 ### Requirement: Removing a checkout from the view keeps its work
 Removal SHALL keep the branch, and SHALL be refused while the checkout holds
 uncommitted changes, holds commits no branch reaches, or is in use, with the
@@ -362,3 +374,31 @@ directory for subagent checkouts.
 - **WHEN** a project's context is reconciled
 - **THEN** its worktree-policy region names the three verbs and contains no `git worktree add`
 
+### Requirement: The client shows a checkout only through the agent holding it
+The workspace client SHALL show a subagent's checkout under the agent it
+belongs to, and the checkout an agent holds only as an attribute of that
+agent, as `recent-work` describes. It SHALL NOT list checkouts no agent
+holds, and SHALL NOT offer to open a space in a checkout, to adopt one, to
+remove one, or to clean up the operator's checkouts. The only destructive
+action it offers on an agent's checkout is discarding that agent's work, on
+the operator's explicit confirmation.
+
+#### Scenario: A foreign checkout is left alone
+- **WHEN** a project holds a harness's own worktree and one the operator added by hand
+- **THEN** the client lists neither and changes neither
+
+#### Scenario: An agent's checkout is an attribute of the agent
+- **WHEN** an agent with no live pane holds a checkout
+- **THEN** the client shows that checkout only as the disk figure on the agent's selected row
+
+#### Scenario: Discarding is the only removal offered
+- **WHEN** the operator acts on an agent's kept work from the client
+- **THEN** discarding it is the only action that removes its checkout, and it happens only on confirmation
+
+### Requirement: Reading a checkout's facts never holds up drawing
+The workspace client SHALL read a checkout's facts off the drawing path, so
+reading them SHALL never hold up drawing.
+
+#### Scenario: A slow checkout does not stall the client
+- **WHEN** reading the facts of an agent's checkout takes a long time
+- **THEN** the client keeps drawing and shows those facts once they arrive

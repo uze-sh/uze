@@ -2176,7 +2176,7 @@ mod children {
 /// Where a new agent is cut from when the remote's target is ahead of the
 /// local one, and what its work is judged against afterwards. Scenario
 /// names follow
-/// `openspec/changes/place-new-agents-on-the-synced-target/specs/`.
+/// `openspec/specs/worktree-policy/spec.md`.
 mod synced_target {
     use super::*;
 

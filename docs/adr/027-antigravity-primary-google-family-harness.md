@@ -89,6 +89,26 @@ migration audit record).
 - `uze-core`: **zero changes**. `IntegrationPort`: **unchanged**.
 - Documentation ordering reads Claude, Codex, OpenCode, Antigravity.
 
+## More Information
+
+**2026-10-16 — measured on Antigravity 1.3.4–1.3.5**
+(`refresh-harness-deliveries`, floor 1.3.4 per ADR-057).
+
+- *MCP key.* The generated `mcp_config.json` now writes `url`, which the
+  vendor's 1.3.3+ docs make primary, instead of translating to
+  `serverUrl`. Measured with a Streamable HTTP server in the Lab: under
+  either key agy initialized it, listed its tools and returned a
+  `tools/call` result to the model. `httpUrl` is renamed to `url`.
+- *Registration census.* `import_manifest.json` knows only imports, not
+  marketplace plugins, which install into the same folder an import of
+  that name uses. Install preflight and detach read one census from
+  `agy plugin list --json`; a name held by another plugin refuses the
+  delivery aloud, and two plugins of one name make detach a no-op, since
+  `agy plugin uninstall` removes by name. The budgeted inspection path
+  keeps reading the manifest, so no subprocess returns to it.
+
+Source change: openspec/changes/archive/2026-10-16-refresh-harness-deliveries/
+
 ## References
 
 - `docs/architecture/antigravity-compatibility.md` (audit map + evidence log)

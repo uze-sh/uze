@@ -29,4 +29,4 @@
 
 - [x] 5.1 Fixture: a marketplace plugin declaring a requirement; one vertical proves the unmet report when the tool is absent and the hook wrapper's fail-closed behaviour in that state
 - [x] 5.2 Docs: `docs/capabilities/portable-hooks.md` `jq` note points to requirements; plugin authoring docs describe `requirements`; `uze doctor` docs list the new report
-- [ ] 5.3 Full gate: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --no-fail-fast`, `openspec validate --all --strict`
+- [x] 5.3 Full gate: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --no-fail-fast`, `openspec validate --all --strict`

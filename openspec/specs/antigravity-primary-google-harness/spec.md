@@ -5,7 +5,9 @@ How UZE supports Antigravity CLI as its Google-family harness: a peer
 integration that delivers packages through `agy`'s own plugin, MCP and
 commands-to-Skills mechanisms with receipt-proven ownership, reads `AGENTS.md`
 natively, and replaces Gemini CLI.
+
 ## Requirements
+
 ### Requirement: Antigravity CLI is a first-class peer integration
 
 UZE SHALL implement Antigravity CLI (`agy`) as an independent
@@ -38,7 +40,9 @@ UZE SHALL deliver a stored canonical package through `agy plugin install`
 using the canonical `plugin.json` as the vendor manifest, and SHALL compute
 `provided_resource_identities` as an exact intersection (`discovered ∩
 declared`) over the structural surfaces: `skills/`, `commands/` (converted
-to Skills by the CLI), and `mcp_config.json`-declared MCP servers.
+to Skills by the CLI), `mcp_config.json`-declared MCP servers, and every
+portable hook group the harness can run, delivered in the generated
+plugin's own root `hooks.json`.
 
 #### Scenario: Canonical package without MCP
 
@@ -55,10 +59,22 @@ to Skills by the CLI), and `mcp_config.json`-declared MCP servers.
 - **THEN** UZE materializes a deterministic generated plugin into a
   UZE-owned derived directory (never the Store) carrying
   `plugin.json`, symlinked `skills/`/`commands/`, and a translated
-  `mcp_config.json` (legacy `url`/`httpUrl` keys rewritten to `serverUrl`)
+  `mcp_config.json` whose remote servers carry the `url` key (an
+  `httpUrl` key rewritten to `url`, a `url` key kept as written)
 - **AND** installs that directory
 - **AND** exactly the canonical `mcp.json`-declared MCP resources plus the
   conventional Skill/Command resources are marked provided.
+
+#### Scenario: Canonical package with hooks
+
+- **WHEN** a canonical package declares portable hook groups Antigravity
+  can run
+- **THEN** the generated plugin carries them in its own `hooks.json`, one
+  named hook per group running the generated wrapper
+- **AND** they are marked provided, so no entry for them is written into
+  the shared `~/.gemini/config/hooks.json`
+- **AND** an entry an earlier build wrote there for one of them is retired
+  by the next install.
 
 #### Scenario: Partial coverage falls back, never disappears
 
@@ -68,10 +84,18 @@ to Skills by the CLI), and `mcp_config.json`-declared MCP servers.
 
 #### Scenario: Foreign same-name import is refused
 
-- **WHEN** `agy plugin list` already reports a plugin with the target name
-  that UZE has no receipt for
+- **WHEN** Antigravity already holds an installed plugin with the target
+  name that UZE has no receipt for, whether it was imported from a
+  directory or installed from the vendor's marketplace
 - **THEN** UZE refuses to install rather than overwriting the foreign
-  import.
+  plugin.
+
+#### Scenario: The census cannot be read
+
+- **WHEN** neither the import manifest nor `agy plugin list` can be read
+  in a shape UZE knows
+- **THEN** inspection reports the plugin's state as unknown and install
+  and detach are refused, never treated as a free name.
 
 ### Requirement: Staged plugins are derived artifacts with ownership proof
 
@@ -85,7 +109,7 @@ Conflict.
 
 - **WHEN** a package is attached
 - **THEN** inspection reports Matched while staged content equals the
-  receipt fingerprint and `agy plugin list` contains the registration
+  receipt fingerprint and Antigravity's census contains the registration
 - **AND** after detach the staged tree and registration are removed.
 
 #### Scenario: Drift blocks destructive removal
@@ -98,6 +122,21 @@ Conflict.
 
 - **WHEN** a package is attached or detached
 - **THEN** the Store package tree is never written to by the integration.
+
+### Requirement: Registration is read from one census of installed plugins
+
+Registration SHALL be read once per operation from one census of
+Antigravity's installed plugins, and the same census SHALL answer both
+whether the name is free and whether the registration is UZE's. Detach
+SHALL be refused when the census holds more than one plugin of the name,
+so the vendor's removal by name can never reach a plugin UZE did not
+install.
+
+#### Scenario: A foreign plugin of the same name beside UZE's
+
+- **WHEN** the census holds UZE's imported plugin and another plugin of
+  the same name installed from the vendor's marketplace
+- **THEN** inspection reports Conflict and detach removes nothing.
 
 ### Requirement: Antigravity context is native
 
@@ -161,4 +200,3 @@ the ADRs and the migration-audit document.
   references it
 - **AND** the remaining harness set is Claude Code, Codex, OpenCode and
   Antigravity CLI.
-

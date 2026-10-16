@@ -2,12 +2,12 @@
 
 ### Requirement: Relaunching an agent continues its task's conversation
 The system SHALL start an agent whose task already has a conversation for
-that harness by resuming that conversation, and SHALL start a fresh one
-only when the task has none. The task SHALL be resolved from the identity
-the launch carries (see the `agent-identity` capability), never from the
-directory the process stands in. This SHALL hold however the agent is
-relaunched — by the operator from the interface, or by the terminal
-runtime restoring a workspace after a restart, with no client present.
+that harness by resuming it, and a fresh one only when the task has none,
+however it is relaunched: by the operator, or by the terminal runtime
+restoring a workspace with no client present. The task SHALL be resolved
+from the identity the launch carries (`agent-identity`), never from the
+directory the process stands in. An agent whose checkout was collected or
+handed to another agent SHALL come back at its own path.
 
 #### Scenario: The workspace comes back after a restart
 - **WHEN** the terminal runtime restores an agent tab after its server was restarted
@@ -20,6 +20,14 @@ runtime restoring a workspace after a restart, with no client present.
 #### Scenario: A task with no conversation for that harness starts one
 - **WHEN** an agent is launched into a task the chosen harness has never worked in
 - **THEN** a fresh conversation starts and is recorded against the task
+
+#### Scenario: The checkout was collected while the agent was away
+- **WHEN** an agent's checkout was removed as idle and the agent is resumed
+- **THEN** a checkout is placed at the agent's own path again and the agent continues its conversation
+
+#### Scenario: The slot was handed to another agent meanwhile
+- **WHEN** the slot an agent left was given to a new agent, and the first agent is resumed
+- **THEN** the first agent is placed at its own path, not in the slot the new agent holds, and continues its conversation
 
 #### Scenario: Two agents in one directory keep their own conversations
 - **WHEN** two agents run in the same directory and each is relaunched

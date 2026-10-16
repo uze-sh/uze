@@ -84,4 +84,19 @@ answer).
 
 Source change: openspec/changes/archive/2026-09-27-add-portable-worktree-policy/
 
+**2026-10-16 — an agent owns the path of its checkout**
+(`agent-owned-checkouts`). Every harness keys an agent's conversation by
+the directory it runs in, so an agent resumed in a different checkout
+loses its conversation. The pool therefore reuses a slot's *contents* and
+never changes an agent's *directory*: an agent's path is the one it last
+held, a reused slot is renamed to the incoming agent's path with
+`git worktree move` (keeping its ignored files), and a resumed agent whose
+slot was collected or handed on gets a checkout at its own path again.
+Rejected: placing a resumed agent in whichever slot is free (it silently
+starts a fresh conversation) and copying a slot to the agent's path (it
+loses nothing Git knows but costs the build caches the pool exists to
+keep).
+
+Source change: openspec/changes/archive/2026-10-16-agent-owned-checkouts/
+
 Source change: openspec/changes/archive/2026-09-20-add-space-kinds/

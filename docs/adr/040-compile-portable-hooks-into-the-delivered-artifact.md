@@ -149,4 +149,17 @@ ADR-033's stdin JSON. The project is pre-1.0 and ships no compatibility
 layer: fixtures, examples and documentation are rewritten, and there is
 exactly one route, so there is exactly one contract.
 
+## More Information
+
+**2026-10-16 — Antigravity reads a plugin's own `hooks.json` again**
+(`refresh-harness-deliveries`). Measured on Antigravity 1.3.5: a plugin's
+root `hooks.json` is loaded (`loaded 1 named hooks from 1 hooks.json
+file(s)`, `/hooks` names the plugin as the source), and with hooks only in
+UZE's generated plugin the vertical passed every hooks check. Antigravity's
+entries therefore live in the generated plugin again, with the wrapper
+vendored beside them, and the merge into the shared
+`~/.gemini/config/hooks.json` is retired. The compiled artifact is
+unchanged; only where its entry is written moved, as this record allows.
+The floor that makes it safe is ADR-057.
+
 Source change: openspec/changes/native-first-hooks/

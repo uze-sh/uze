@@ -7,7 +7,9 @@ assesses each group against what every harness can preserve, and delivers it
 through that harness's own hook mechanism as a receipt-owned artifact
 (ADR-040), never touching the operator's own hooks or plugins. Created by
 syncing the archived change `add-portable-hooks`.
+
 ## Requirements
+
 ### Requirement: UZE discovers a canonical Hook manifest
 The system SHALL discover a package-root `hooks.json` as portable Hook
 resources without changing its bytes in the Store. The manifest SHALL accept
@@ -56,17 +58,39 @@ the target cannot preserve, SHALL be `unsupported`; any other loss SHALL be
 
 ### Requirement: Command hooks use one portable ABI
 The system SHALL hand a command handler the normalized hook context as
-`HOOK_*` environment and read its decision from its exit code: `0` allows,
-the canonical deny exit denies with the reason on stderr, any other status
-is a failure the group's effect resolves. The reason read back and each
-handler's run SHALL be bounded, the run by its declared timeout. It SHALL
-support observation, allow, deny and ask where the target has them, and
-report, not attach, a group whose effect it cannot preserve.
+`HOOK_*` environment and SHALL read its decision from its exit code: `0`
+allows, the canonical deny exit denies with the reason on stderr, and any
+other status is a handler failure resolved by the group's effect. The
+reason read back SHALL be bounded, and each handler SHALL be bounded by its
+declared timeout.
 
 #### Scenario: First deny wins in deterministic order
 - **WHEN** one group declares several pre-tool command handlers
 - **THEN** they run sequentially in manifest order
 - **AND** a deny stops the later handlers and the intercepted operation where the target supports blocking
+
+### Requirement: A group is attached only with the effect the target preserves
+Command hooks SHALL support observation, allow, deny, ask and input
+transformation where the target supports them, and the system SHALL report
+a group whose effect the target cannot preserve instead of attaching it.
+
+#### Scenario: A target that cannot preserve the group's effect
+- **WHEN** a group declares an effect the target has no way to honour
+- **THEN** the group is reported and not attached
+
+### Requirement: A deny group fails closed where the target can block on failure
+Where the target offers a native way to block a call whose hook cannot be
+started or exceeds the target's own timeout, a deny, ask or transform group
+SHALL be delivered with it, so the group fails closed even when the
+delivered handler itself never runs; an observational group SHALL NOT be.
+
+#### Scenario: A deny group whose delivered handler is gone
+- **WHEN** a deny group is delivered to a target that offers native block-on-failure and the delivered handler file is then deleted
+- **THEN** the intercepted call is blocked, not allowed
+
+#### Scenario: An observational group whose handler is gone
+- **WHEN** an observational group's delivered handler cannot be started
+- **THEN** the intercepted call proceeds
 
 ### Requirement: Managed Hook delivery preserves user configuration
 The system SHALL add only receipt-owned Hook artifacts and configuration
@@ -133,3 +157,48 @@ reason. The manifest SHALL NOT be refused for it.
 - **AND** the report lists `SessionStart` as Unsupported for Antigravity CLI
   with the reason
 
+### Requirement: A handler may name a program and its words instead of a shell line
+A command handler MAY give `args`, a list of words, beside `command`. With `args` present, `command` SHALL be the path of a script or executable inside the package, relative to its root, and each word of `args` SHALL reach the handler intact, whatever it contains.
+
+#### Scenario: Words with spaces and quotes arrive intact
+- **WHEN** the package root contains a space and an argument is `it's "$HOME"`
+- **THEN** the handler receives the script path and that argument as single, literal words
+
+### Requirement: The system chooses the program that runs an exec-form script on each platform
+The system SHALL choose the program that runs an exec-form script for the platform it delivers to: on POSIX a file with an execute bit runs itself; otherwise the file's extension selects an interpreter from a fixed table, and an `interpreter` list given by the author replaces the table. A handler the system cannot place on a platform SHALL be treated there like a handler with no spelling for it.
+
+#### Scenario: A Python guard written once runs on both platforms
+- **WHEN** a deny group's handler is `{"type": "command", "command": "hooks/guard.py", "args": ["--strict"]}`
+- **THEN** on Linux the wrapper runs `python3` with the script's absolute path and `--strict`
+- **AND** on Windows it runs the Python the machine answers with (`py -3`, `python` or `python3`) with the same words
+
+#### Scenario: A shebang decides on POSIX
+- **WHEN** `hooks/guard` is executable and starts with `#!/usr/bin/env -S uv run --script`
+- **THEN** the wrapper runs the file itself and no interpreter is added to the package's requirements
+
+#### Scenario: A script nothing can run is not delivered
+- **WHEN** a deny group's exec-form handler is `hooks/guard.sh` and the platform is Windows
+- **THEN** the package is refused there exactly as for a deny group with no `windows` spelling
+
+### Requirement: A Windows Python alias that only opens the Store is not a Python
+When choosing Python on Windows, the system SHALL run each candidate and SHALL treat a candidate that does not answer with a Python 3 version as absent.
+
+#### Scenario: Only the Store alias is present
+- **WHEN** `python3` on `PATH` is the App Execution Alias and no Python is installed
+- **THEN** the launcher reports Python missing as a requirement of the hook, with the command that installs it
+- **AND** the delivered line names `python`, so it runs once Python is installed
+
+### Requirement: The harness's own runtime runs JavaScript where it carries one
+On a harness that runs plugins in an embedded JavaScript runtime, the system SHALL run a `.js`, `.mjs`, `.cjs` or `.ts` exec-form handler in that runtime and SHALL NOT require `node` for it.
+
+#### Scenario: A JavaScript guard on OpenCode
+- **WHEN** a handler is `{"command": "hooks/guard.js", "args": []}` and the harness is OpenCode
+- **THEN** the handler runs in OpenCode's own runtime and the package's requirements gain no `node` for it
+
+### Requirement: An exec-form handler's interpreter is a requirement of the package
+The executable an exec-form handler's launcher needs SHALL join the package's effective requirements, attributed to the hook. An interpreter every supported machine of that platform carries SHALL add nothing. When the hook fails closed, the report SHALL state that the calls it matches are denied until the executable is present.
+
+#### Scenario: Missing Python under a deny group
+- **WHEN** a deny group matching `shell` uses `hooks/guard.py` and `python3` is absent
+- **THEN** the package installs, `python3` is reported unmet and attributed to that hook
+- **AND** the report states every matching call is denied until `python3` is installed
