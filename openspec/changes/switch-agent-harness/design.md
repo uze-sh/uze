@@ -125,24 +125,30 @@ reconciles and revives shelved agents. None of that is a switch. Instead,
 `Workspace::switch_harness(primary, agent, from, to)`:
 
 - It sets `Agent.harness = to` under `task::locked`, only if the harness
-  is still `from` (compare-and-set). Without that check, two clients both
-  switching would each mint a key; the second key would win, and the
-  first client's process would launch as an ordinary invocation with
-  nothing recorded.
-- It answers with the agent's current directory (`own_directory` or the
-  root), plus a fresh key from `keyed()`.
+  is still `from` (compare-and-set), and issues the launch key in the
+  same write. Without the check, two clients both switching would each
+  mint a key; the second key would win, and the first client's process
+  would launch as an ordinary invocation with nothing recorded. In a
+  separate write, a key that failed to issue would leave the record
+  naming a harness no launch was coming for.
+- It answers with the agent's current directory (its slot or the root).
 - It builds the briefing (D6) and records the pending entry, all on the
-  placement thread. Git goes through `uze-git`.
+  placement thread. Git goes through `uze-git`. The outgoing harness's
+  conversation is taken from `continuity::conversation_now`, which
+  observes one not read back yet the way `continuity::plan` does, so an
+  agent switched moments after it started is still briefed from its
+  transcript.
 
-The UI sends `PlacementRequest::Switch { primary, agent, harness }` with
+The UI sends `PlacementRequest::Switch { from, agent, was, to }` with
 `replacing: Some(tab)`. `absorb_placement` opens the new tab before
 closing the old one, so occupancy never sees the slot empty.
 
 ### D5. `Agent.harness` means "the harness of the latest launch"
 
 Same type, and old values are still valid, so there is no shape bump; the
-doc comment changes. Every placement sets it, including `Resume`, which
-fixes the existing drift. As a result:
+doc comment changes. Every placement that chose a harness sets it in the
+write that issues its key (`keyed(placed, Some(harness))`), including
+`Resume`, which fixes the existing drift. As a result:
 
 - The recent list resumes the current harness.
 - The sidebar names the current harness.
@@ -154,9 +160,10 @@ which is not stored a second time.
 
 ### D6. Briefing contents and bounds
 
-A new port verb `conversation_digest(session, cwd) -> Option<Digest>`
-returns neutral data, `Digest { goal, summary, turns: Vec<Turn>,
-last_command, limit }`, read in a single pass of the transcript. The
+A new port verb `conversation_digest(session, cwd, since_unix) ->
+Option<ConversationDigest>` returns neutral data from `uze_core::session`,
+`ConversationDigest { goal, summary, turns: Vec<Turn>, last_command,
+limit }`, read in a single pass of the transcript. The
 default is `None`. The `uze-workspace` module that writes the briefing
 renders it, together with the Git facts, into at most about 12 KB. When
 cutting, it cuts the lowest priority first:
@@ -168,7 +175,9 @@ cutting, it cuts the lowest priority first:
    Claude: a `user` record with `isCompactSummary`. Codex: the top-level
    `compacted` record.
 4. **Operator turns:** every turn after the summary, newest kept first,
-   each up to 400 B.
+   each up to 400 B. The one already shown as the goal is recognized by
+   its text, not its position: a digest floored at a time keeps only
+   later turns.
 5. **Assistant text:** the last three messages, up to 3 KB.
 6. **Last command:** the last command run and whether it failed (command
    line only).
@@ -189,10 +198,12 @@ facts alone.
 
 ### D7. Switching back sends a delta
 
-When the target harness already has an entry in the conversation record,
-the digest is limited to turns after that entry's `observed_at_unix` (or
-its `launched_at_unix`), and the commits to those after it. The header
-says "since you left".
+A switch marks the outgoing harness's entry with `left_at_unix`, an
+additive field. When the target harness has a conversation and that mark,
+the digest is limited to turns after it, and the commits to those after
+it; the header says "since you left". Neither `launched_at_unix` nor
+`observed_at_unix` can stand in: a resume records no launch, so after a
+full cycle both are older than the work the returning harness missed.
 
 ### D8. The limit signal is part of the switch (the one point the reviewers split on)
 
@@ -201,13 +212,17 @@ mechanics review wanted limit detection first, because it is the
 motivating case. Both come from the same read, so the limit is in this
 change:
 
-- `Digest.limit: Option<Limit { resets_at }>`, from Claude's synthetic
+- `ConversationDigest.limit: Option<UsageLimit { resets_at_unix }>`, and
+  the tail-only `IntegrationPort::usage_limit`, from Claude's synthetic
   `assistant` record (`error: "rate_limit"`, `quotaLimits.resetsAt`) and
   from Codex's `token_count.rate_limits` (`rate_limit_reached_type`,
   `resets_at`).
 - The client asks for it off-frame, on the same refresh pass that already
-  reads conversations back, never on render.
-- The tab shows a limit mark, a new `theme` symbol and token, and the menu
+  reads conversations back, for agents that are not `Working`, never on
+  render.
+- The caption row reads `<harness> · limit 3h` in `Token::StateWarning`,
+  the treatment "checkout removed" already has, rather than a new symbol
+  and token that would mean the same thing (decisions.md D4); the menu
   lists the switch first.
 
 Splitting delivery is kept in `tasks.md` instead: the Git-only switch
@@ -215,8 +230,11 @@ lands and is usable before the transcript work.
 
 ### D9. The menu
 
-The menu lists one item per detected harness other than the current one,
-"Continue in <display name>", with names taken from `agent_options()`.
+The menu lists one item per set-up harness other than the current one,
+"Continue in <display name>", from the client's `AgentIdentity` list (no
+detection on the input path). One `Action::SwitchHarness` stands behind
+every entry, and the menu carries the harness beside it (decisions.md
+D1).
 It is offered only where `agent_for_tab` resolves, which means the
 harness process is alive. Choosing a harness without continuity shows the
 `continuity_gap` toast the picker already shows. If the tab is `Working`,
@@ -225,11 +243,10 @@ running turn.
 
 ### Diagram
 
-`docs/architecture/agent-lifecycle.mmd` gains a `Running -> switched to
-another harness -> briefing written -> Started through its shim` edge. No
-container or component is added. `workspace-components.mmd` is checked
-for the shim and continuity relationship and updated if it names the
-launch plan.
+`docs/architecture/agent-lifecycle.mmd` gains a `Running -> continued in
+another harness -> briefing written -> Started through its shim` edge.
+`workspace-components.mmd` gains the `briefing` component and its three
+relationships. No container is added.
 
 ## Candidate ADRs
 
