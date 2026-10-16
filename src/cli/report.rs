@@ -22,12 +22,6 @@ pub(crate) fn freshness_label(freshness: &uze_application::application::Freshnes
     }
 }
 
-/// What `uze update` moved, and what it deliberately did not.
-///
-/// A plugin already at its ref's head is said out loud rather than left
-/// out: "nothing moved" and "this plugin was not considered" are different
-/// answers, and a report that shows only what changed cannot tell them
-/// apart.
 /// An update as a line per plugin that moved or could not, with the ones
 /// already current counted rather than listed.
 pub(crate) fn render_update_summary(report: &uze_application::application::UpdateReport) -> String {
@@ -110,6 +104,12 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
     progress::change_report("update", &lines, &outcome)
 }
 
+/// What `uze update` moved, and what it deliberately did not.
+///
+/// A plugin already at its ref's head is said out loud rather than left
+/// out: "nothing moved" and "this plugin was not considered" are different
+/// answers, and a report that shows only what changed cannot tell them
+/// apart.
 pub(crate) fn render_update_report(report: &uze_application::application::UpdateReport) -> String {
     use uze_application::application::{UpdateOutcome, UpdateScope};
     let (scope, nothing_considered) = match report.scope {
