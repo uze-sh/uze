@@ -617,24 +617,29 @@ enum Declaration {
     TintedAlias(String, u8),
 }
 
+/// A byte spelled as exactly two hex digits. `from_str_radix` alone also
+/// takes a sign, which would read `+f` as fifteen.
+fn hex_byte(digits: &str) -> Option<u8> {
+    (digits.len() == 2 && digits.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| u8::from_str_radix(digits, 16).ok())
+        .flatten()
+}
+
 fn parse_color(value: &str) -> Option<Declaration> {
     if let Some(target) = value.strip_prefix('@') {
         if let Some((target, alpha)) = target.split_once('/') {
-            return (!target.is_empty() && alpha.len() == 2)
-                .then(|| u8::from_str_radix(alpha, 16).ok())
+            return (!target.is_empty())
+                .then(|| hex_byte(alpha))
                 .flatten()
                 .map(|alpha| Declaration::TintedAlias(target.to_owned(), alpha));
         }
         return (!target.is_empty()).then(|| Declaration::Alias(target.to_owned()));
     }
     if let Some(alpha) = value.strip_prefix('~') {
-        return (alpha.len() == 2)
-            .then(|| u8::from_str_radix(alpha, 16).ok())
-            .flatten()
-            .map(Declaration::Contrast);
+        return hex_byte(alpha).map(Declaration::Contrast);
     }
     let digits = value.strip_prefix('#')?;
-    let byte = |index: usize| u8::from_str_radix(digits.get(index..index + 2)?, 16).ok();
+    let byte = |index: usize| hex_byte(digits.get(index..index + 2)?);
     let rgb = Rgb(byte(0)?, byte(2)?, byte(4)?);
     match digits.len() {
         6 => Some(Declaration::Opaque(rgb)),
@@ -1098,6 +1103,17 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("text.muted"), "{message}");
         assert!(message.contains("grey"), "{message}");
+    }
+
+    /// `from_str_radix` takes a leading sign, so `+f` once read as a
+    /// byte; a colour, a contrast and a tint are each digits only.
+    #[test]
+    fn a_signed_digit_pair_is_not_a_colour() {
+        for value in ["#+f+f+f", "#ffffff+f", "~+f", "@text.primary/+8"] {
+            let theme = format!(r#"{{ "colors": {{ "text.muted": "{value}" }} }}"#);
+            let error = load_str("test", &theme).expect_err(value);
+            assert!(error.to_string().contains(value), "{error}");
+        }
     }
 
     #[test]
