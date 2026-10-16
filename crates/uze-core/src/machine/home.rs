@@ -272,6 +272,13 @@ impl UzeHome {
         self.state_dir().join("mutation.lock")
     }
 
+    /// The guard every rewrite of `config.toml` takes: the workspace client
+    /// and a CLI command each change one key of the whole file, and without
+    /// it the later write drops the earlier one's key. A lock, not a record.
+    pub fn config_lock_path(&self) -> PathBuf {
+        self.state_dir().join("locks").join("config.lock")
+    }
+
     /// The guard both owners of a project's `AGENTS.md` take before they
     /// rewrite it (see [`crate::project_context::AgentsMdGuard`]). A lock,
     /// not a record, keyed on the project id so two projects never wait on

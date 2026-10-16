@@ -19,14 +19,20 @@
 //! writing over it would destroy the text the operator was in the middle of
 //! fixing.
 
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, time::Duration};
 
 use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::{
     error::{Result, UzeError},
     home::UzeHome,
+    persistence::FileLock,
 };
+
+/// How long a write waits for another writer of `config.toml`. Changing
+/// one key takes milliseconds; a holder past this is a stuck process.
+const WRITE_WAIT: Duration = Duration::from_secs(10);
+const WRITE_RETRY: Duration = Duration::from_millis(10);
 
 /// The string at `section.key`, or `None` when the operator never set it.
 pub fn get(home: &UzeHome, section: &str, key: &str) -> Result<Option<String>> {
@@ -65,6 +71,7 @@ pub fn set_bool(home: &UzeHome, section: &str, key: &str, setting: bool) -> Resu
 }
 
 fn set_value(home: &UzeHome, section: &str, key: &str, setting: Value) -> Result<()> {
+    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
     let mut document = read(home)?;
     let table = document
         .entry(section)
@@ -114,6 +121,33 @@ mod tests {
 
     fn home(label: &str) -> UzeHome {
         UzeHome::at(uze_testkit::temp::scratch(label))
+    }
+
+    /// Each writer changes one key of the whole file, so two at once would
+    /// each keep only their own: a write waits for the one in progress.
+    #[test]
+    fn a_write_waits_for_the_one_in_progress() {
+        let home = home("config-locked");
+        let held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY).unwrap();
+        let (done, finished) = std::sync::mpsc::channel();
+        let writer = {
+            let home = home.clone();
+            std::thread::spawn(move || {
+                set(&home, "appearance", "theme", "nocturne").expect("written");
+                done.send(()).unwrap();
+            })
+        };
+
+        assert!(
+            finished.recv_timeout(Duration::from_millis(200)).is_err(),
+            "the write went ahead while another held the file"
+        );
+        drop(held);
+        writer.join().unwrap();
+        assert_eq!(
+            get(&home, "appearance", "theme").unwrap().as_deref(),
+            Some("nocturne")
+        );
     }
 
     #[test]
