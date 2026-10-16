@@ -837,7 +837,9 @@ impl Server {
             _ => false,
         };
         if changed {
-            for pane in self.panes.lock().expect("panes poisoned").values() {
+            // Told outside the map's lock: the announcement is a PTY write,
+            // which blocks on a program that is not reading.
+            for pane in self.runtimes() {
                 pane.notify_scheme(palette.scheme);
             }
         }
