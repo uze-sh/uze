@@ -234,7 +234,7 @@ pub fn save(home: &UzeHome, project_root: &Path, record: &ConversationRecord) ->
 /// project's own agents, and an unreadable record holds nothing: at worst
 /// an agent may still adopt that conversation, which is today's behaviour
 /// rather than a new failure.
-pub fn claimed_by_others(
+pub(crate) fn claimed_by_others(
     home: &UzeHome,
     project_root: &Path,
     agent: &AgentId,

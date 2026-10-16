@@ -333,7 +333,7 @@ fn mark_if_truncated((mut bytes, dropped): (Vec<u8>, usize)) -> Vec<u8> {
 /// Runs a mutating vendor command quietly: captured output is discarded on
 /// success; on failure the error carries the vendor's own last words, so
 /// the cause stays actionable without the noise.
-pub fn run_quiet<S: AsRef<OsStr>>(
+pub(crate) fn run_quiet<S: AsRef<OsStr>>(
     program: &Path,
     home: &Path,
     label: &str,
@@ -350,7 +350,7 @@ pub fn run_quiet<S: AsRef<OsStr>>(
 /// Formats a vendor failure: `label` plus `ExitStatus`, and — when the
 /// vendor said anything — its own last words, capped so an unbounded error
 /// output still fits one diagnostic line.
-pub fn failed_message(label: &str, output: &Output) -> String {
+pub(crate) fn failed_message(label: &str, output: &Output) -> String {
     let message = format!("`{label}` exited with {}", output.status);
     match output_tail(output) {
         Some(tail) => format!("{message}: {tail}"),

@@ -99,7 +99,7 @@ pub(crate) fn skill_wrapper_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
 /// vendor's own `markers` as frontmatter lines, the fields `keys` are
 /// given under the canonical `harness:` block, then the canonical body
 /// verbatim.
-pub fn render_skill_wrapper(
+pub(crate) fn render_skill_wrapper(
     name: &str,
     canonical_bytes: &[u8],
     markers: &[&str],
@@ -138,7 +138,7 @@ pub fn render_skill_wrapper(
 ///   whitespace preserved exactly as shipped (no trim, no rewrite). Bytes
 ///   that are not UTF-8 are carried as replacement characters rather than
 ///   dropping the body.
-pub fn parse_skill_body(bytes: &[u8]) -> (Option<String>, String) {
+pub(crate) fn parse_skill_body(bytes: &[u8]) -> (Option<String>, String) {
     let text = String::from_utf8_lossy(bytes);
     let Some((head, body)) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(&text))
     else {
@@ -154,7 +154,7 @@ pub fn parse_skill_body(bytes: &[u8]) -> (Option<String>, String) {
 pub use uze_core::skill::split_frontmatter;
 
 /// The first value a top-level `key` holds in a frontmatter block, trimmed.
-pub fn head_value<'a>(head: &'a str, key: &str) -> Option<&'a str> {
+pub(crate) fn head_value<'a>(head: &'a str, key: &str) -> Option<&'a str> {
     head.lines().find_map(|line| key_value(line, key))
 }
 
@@ -223,7 +223,7 @@ fn yaml_scalar(value: &str) -> String {
 /// out of the quoted value or forge/duplicate a key. Only backslash, double
 /// quote, and control characters need escaping inside a double-quoted YAML
 /// scalar; everything else is passed through verbatim.
-pub fn escape_yaml_double_quoted(value: &str) -> String {
+pub(crate) fn escape_yaml_double_quoted(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for ch in value.chars() {
         match ch {
@@ -246,7 +246,7 @@ pub fn escape_yaml_double_quoted(value: &str) -> String {
 /// model-invocable. Recognized only when the trimmed value is exactly
 /// `true`. Malformed or absent frontmatter, or a non-UTF8 payload, is
 /// `false` — never a panic, never a guess.
-pub fn has_disable_model_invocation(bytes: &[u8]) -> bool {
+pub(crate) fn has_disable_model_invocation(bytes: &[u8]) -> bool {
     frontmatter_is_true(bytes, "disable-model-invocation")
 }
 
@@ -254,7 +254,7 @@ pub fn has_disable_model_invocation(bytes: &[u8]) -> bool {
 /// the Claude marker that hides a Skill from the `/` catalog while the
 /// model may still load it automatically. Same strictness as
 /// [`has_disable_model_invocation`].
-pub fn has_user_invocable_false(bytes: &[u8]) -> bool {
+pub(crate) fn has_user_invocable_false(bytes: &[u8]) -> bool {
     frontmatter_value(bytes, "user-invocable").is_some_and(|value| value == "false")
 }
 
@@ -266,7 +266,7 @@ fn frontmatter_is_true(bytes: &[u8], key: &str) -> bool {
 /// bytes, so a generated wrapper can preserve the canonically-declared
 /// identity instead of inventing one. `None` for absent/malformed
 /// frontmatter or non-UTF8 payload — never a guess.
-pub fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
+pub(crate) fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
     let text = is_utf8(bytes)?;
     let (head, _) = split_frontmatter(text.strip_prefix('\u{feff}').unwrap_or(text))?;
     head_value(head, key).map(str::to_owned)
@@ -274,13 +274,13 @@ pub fn frontmatter_value(bytes: &[u8], key: &str) -> Option<String> {
 
 /// [`frontmatter_value`] as the text it holds, its quotes undone: what a
 /// generated wrapper writes back as a scalar of its own.
-pub fn frontmatter_text(bytes: &[u8], key: &str) -> Option<String> {
+pub(crate) fn frontmatter_text(bytes: &[u8], key: &str) -> Option<String> {
     frontmatter_value(bytes, key).map(|value| unquoted(&value))
 }
 
 /// Whether `skill_dir` carries Codex's explicit-only policy sidecar:
 /// `agents/openai.yaml` declaring `allow_implicit_invocation: false`.
-pub fn has_explicit_only_sidecar(skill_dir: &Path) -> bool {
+pub(crate) fn has_explicit_only_sidecar(skill_dir: &Path) -> bool {
     fs::read_to_string(skill_dir.join("agents/openai.yaml")).is_ok_and(|policy| {
         policy
             .lines()

@@ -206,7 +206,7 @@ pub fn collect(
 /// grew made each pass slower with every agent the project ever ran, and a
 /// record of nothing is not history anyone can act on. Returns the tasks
 /// forgotten.
-pub fn forget_finished(
+pub(crate) fn forget_finished(
     refs: &Refs,
     pruned: &[String],
     store: &mut AgentStore,
@@ -386,7 +386,7 @@ fn prune_integrated_branches_among(
 /// Removes the directory of every free slot unused past the pool's idle
 /// age, or last held by a subagent, keeping each one's branch, and keeps
 /// the index of every other free slot fresh. Returns the slots removed.
-pub fn trim_free_slots(
+pub(crate) fn trim_free_slots(
     primary: &Path,
     store: &AgentStore,
     pool: Pool,
@@ -697,7 +697,7 @@ pub fn holds_work(primary: &Path, agent: &Agent, target: &str) -> bool {
 /// [`holds_work`] for a pass that asks it of many tasks: answered from
 /// `refs`, read once, instead of by a Git process per task per question —
 /// which grew every pass with every task the project ever recorded.
-pub fn holds_work_among(refs: &Refs, primary: &Path, agent: &Agent, target: &str) -> bool {
+pub(crate) fn holds_work_among(refs: &Refs, primary: &Path, agent: &Agent, target: &str) -> bool {
     let Some(isolation) = agent.isolation() else {
         return false;
     };
@@ -752,7 +752,7 @@ impl Refs {
 /// Records how a task that holds no checkout ended, from what its branch
 /// and its shelf hold: shelved while either holds work; integrated when it
 /// had work that is in the target now; closed when it never had any.
-pub fn settle_without_checkout(primary: &Path, target: &str, agent: &mut Agent) {
+pub(crate) fn settle_without_checkout(primary: &Path, target: &str, agent: &mut Agent) {
     let had_work = agent.state == WorkState::Shelved
         || agent.state == WorkState::Integrated
         || agent.isolation().is_some_and(|isolation| {

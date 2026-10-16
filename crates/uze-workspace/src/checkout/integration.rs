@@ -50,7 +50,12 @@ pub fn is_integrated(root: &Path, target: &str, branch: &str) -> bool {
 /// question — with the answer remembered, resolving was all a repeated
 /// question cost, and a collection asks it of every branch UZE ever cut.
 /// A name `tips` does not hold is resolved the way [`is_integrated`] would.
-pub fn is_integrated_among(tips: &BranchTips, root: &Path, target: &str, branch: &str) -> bool {
+pub(crate) fn is_integrated_among(
+    tips: &BranchTips,
+    root: &Path,
+    target: &str,
+    branch: &str,
+) -> bool {
     let branch_tip = tips.local(branch);
     match (tips.target_reach(root, target, branch_tip), branch_tip) {
         (Some(target), Some(branch)) => integrated_commits(root, target, branch.to_owned()),

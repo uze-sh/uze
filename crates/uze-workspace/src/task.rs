@@ -293,7 +293,7 @@ impl Agent {
     /// store is keyed by: its own slot, or the project's root. `None` for
     /// an isolated agent whose checkout is gone — nowhere is its own any
     /// more.
-    pub fn own_directory(&self, project_root: &Path) -> Option<PathBuf> {
+    pub(crate) fn own_directory(&self, project_root: &Path) -> Option<PathBuf> {
         match &self.isolation {
             Some(isolation) => isolation
                 .checkout
@@ -394,7 +394,7 @@ impl Agent {
     /// on a machine came back to a fresh conversation at every restart
     /// after the upgrade that introduced the key, and nothing recorded
     /// why.
-    pub fn admits_launch(&self, secret: &str) -> bool {
+    pub(crate) fn admits_launch(&self, secret: &str) -> bool {
         self.launch_key.as_deref().is_none_or(|recorded| {
             uze_platform::secret::matches(
                 uze_core::digest::secret_sha256(secret).as_bytes(),
@@ -449,7 +449,7 @@ impl Isolation {
 
     /// Drops the request unless it was found for `branch` — the name the
     /// work is published under now, or `None` while it is not published.
-    pub fn forget_request_unless_for(&mut self, branch: Option<&str>) {
+    pub(crate) fn forget_request_unless_for(&mut self, branch: Option<&str>) {
         if self.published_request.is_some() && self.request_branch.as_deref() != branch {
             self.forget_request();
         }
@@ -467,7 +467,7 @@ pub fn now_unix() -> u64 {
 /// The first non-empty line of `prompt`, lower-cased, non-alphanumerics
 /// collapsed to single hyphens, cut at a word boundary; the identifier when
 /// nothing usable remains.
-pub fn label_from_prompt(prompt: &str, fallback: &AgentId) -> String {
+pub(crate) fn label_from_prompt(prompt: &str, fallback: &AgentId) -> String {
     let Some(line) = prompt.lines().map(str::trim).find(|line| !line.is_empty()) else {
         return fallback.as_str().to_owned();
     };

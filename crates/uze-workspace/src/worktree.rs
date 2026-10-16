@@ -137,7 +137,7 @@ pub enum NameRefusal {
 }
 
 impl BranchVocabulary {
-    pub fn is_unset(&self) -> bool {
+    pub(crate) fn is_unset(&self) -> bool {
         matches!(self, Self::Unset)
     }
 
@@ -462,7 +462,7 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(
 impl WorktreePolicy {
     /// The links that are not relative paths staying inside the
     /// repository — each with the reason. Pure, so it runs at parse time.
-    pub fn misplaced_links(&self) -> Vec<(PathBuf, &'static str)> {
+    pub(crate) fn misplaced_links(&self) -> Vec<(PathBuf, &'static str)> {
         self.link
             .iter()
             .filter_map(|link| {
@@ -671,7 +671,7 @@ impl IsolatedCheckout<'_> {
 
 /// The directory of the slot named `name` under `primary`: the fixed
 /// `.worktrees/<name>` layout, spelled once.
-pub fn slot_directory(primary: &Path, name: &str) -> PathBuf {
+pub(crate) fn slot_directory(primary: &Path, name: &str) -> PathBuf {
     primary.join(WORKTREES_DIRECTORY).join(name)
 }
 

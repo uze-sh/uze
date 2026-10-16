@@ -192,7 +192,7 @@ pub(super) fn slot_state(
 
 /// The operation Git has paused in `root`, if any: a checkout in the middle
 /// of one holds a state no shelf can carry.
-pub fn paused_operation(root: &Path) -> Option<&'static str> {
+pub(crate) fn paused_operation(root: &Path) -> Option<&'static str> {
     let git_dir = uze_git::repository::git_dir(root).ok()?;
     [
         ("rebase-merge", "a rebase"),
@@ -214,7 +214,7 @@ pub fn paused_operation(root: &Path) -> Option<&'static str> {
 /// agent cut from the remote's tip left it holds only what the remote has.
 /// A question Git could not answer is taken as yes, as [`is_integrated`]
 /// takes it.
-pub fn holds_unbranched_commits(path: &Path) -> bool {
+pub(crate) fn holds_unbranched_commits(path: &Path) -> bool {
     crate::git::read(
         path,
         &[
@@ -239,7 +239,7 @@ pub fn holds_unbranched_commits(path: &Path) -> bool {
 /// change the target already had: nothing to keep, and read as work it was
 /// adopted, shelved and released again on every pass, forever. The same
 /// question integration asks of a branch, asked of the commit.
-pub fn holds_unkept_commits(primary: &Path, path: &Path, target: &str) -> bool {
+pub(crate) fn holds_unkept_commits(primary: &Path, path: &Path, target: &str) -> bool {
     if !holds_unbranched_commits(path) {
         return false;
     }
@@ -257,7 +257,7 @@ pub(super) fn modified_at(path: &Path) -> SystemTime {
 /// belongs to the local repository and never to the operator's tree: the
 /// primary's status stays exactly what the operator left, and `git add -A`
 /// there never sweeps a slot in as an embedded repository. Idempotent.
-pub fn exclude_isolation_directory(primary: &Path) -> Result<(), AcquireError> {
+pub(crate) fn exclude_isolation_directory(primary: &Path) -> Result<(), AcquireError> {
     let common = uze_git::repository::common_dir(primary).map_err(AcquireError::Git)?;
     let exclude = common.join("info").join("exclude");
     let entry = format!("/{WORKTREES_DIRECTORY}/");

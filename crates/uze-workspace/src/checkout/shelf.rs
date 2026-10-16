@@ -18,7 +18,7 @@ use super::*;
 use crate::worktree::{SHELF_REFS, SHELF_TRAILER_BRANCH, SHELF_TRAILER_LABEL, SHELF_TRAILER_TASK};
 
 /// The ref a task's shelf lives under.
-pub fn shelf_ref(task: &str) -> String {
+pub(crate) fn shelf_ref(task: &str) -> String {
     format!("{SHELF_REFS}{task}")
 }
 
@@ -44,7 +44,7 @@ pub struct Kept {
 impl Kept {
     /// Whether `slot` still holds exactly what was kept. Anything written
     /// since is somebody at work, and is not reset.
-    pub fn still_matches(&self, slot: &Path) -> Result<bool, String> {
+    pub(crate) fn still_matches(&self, slot: &Path) -> Result<bool, String> {
         work_tree_with(slot, &self.derived)
             .map(|tree| tree == self.tree)
             .map_err(|refusal| refusal.to_string())
@@ -53,7 +53,7 @@ impl Kept {
     /// Puts the task's shelf ref back where it stood before this shelf:
     /// at the earlier shelf, or absent. Compare-and-swap, like every move
     /// of the ref.
-    pub fn take_back(&self, root: &Path, task: &str) -> Result<(), String> {
+    pub(crate) fn take_back(&self, root: &Path, task: &str) -> Result<(), String> {
         match &self.earlier {
             Some(earlier) => swap_ref(root, &shelf_ref(task), earlier, &self.commit),
             None => drop_shelf(root, task, &self.commit),
@@ -289,7 +289,7 @@ pub fn shelf_of(primary: &Path, task: &str) -> Option<String> {
 /// them — deletions and renames each as the two paths they are, a mode as
 /// much as the bytes. Never by pathspec, so a file named like a pattern is
 /// only ever itself.
-pub fn is_in_target(primary: &Path, shelf: &str, target: &str) -> bool {
+pub(crate) fn is_in_target(primary: &Path, shelf: &str, target: &str) -> bool {
     let target = tip_of(primary, &format!("{target}^{{commit}}"));
     is_in_commit(primary, shelf, &target)
 }
@@ -300,7 +300,7 @@ pub fn is_in_target(primary: &Path, shelf: &str, target: &str) -> bool {
 /// Remembered per pair of commits for the life of the process: neither can
 /// change, so neither can the answer, and every collection and evaluation
 /// asks it again of every shelf the project keeps.
-pub fn is_in_commit(primary: &Path, shelf: &str, target: &str) -> bool {
+pub(crate) fn is_in_commit(primary: &Path, shelf: &str, target: &str) -> bool {
     if target.is_empty() {
         return false;
     }
@@ -356,7 +356,7 @@ fn carried_by(primary: &Path, shelf: &str, target: &str) -> Option<bool> {
 ///
 /// A status Git could not give is an error, never "nothing": this answer
 /// is what lets a checkout be reset.
-pub fn uncapturable_work(slot: &Path) -> Result<Option<String>, String> {
+pub(crate) fn uncapturable_work(slot: &Path) -> Result<Option<String>, String> {
     let status = read_untrimmed(
         slot,
         &[

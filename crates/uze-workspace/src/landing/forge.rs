@@ -57,7 +57,7 @@ impl Forge {
     /// The path is cut off before the user is, not after: an `@` is legal
     /// in a path, and taking the last one in the whole URL reads a tag
     /// as a host.
-    pub fn from_remote_url(url: &str) -> Self {
+    pub(crate) fn from_remote_url(url: &str) -> Self {
         let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
         let authority = after_scheme.split('/').next().unwrap_or_default();
         let authority = authority

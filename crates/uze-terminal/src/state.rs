@@ -270,7 +270,7 @@ impl Session {
     /// The space open at `seat`, its root compared as the filesystem sees
     /// it. One root names one space: a directory reached by two spellings
     /// is the same place, and there is nothing else for a space to be.
-    pub fn space_for(&self, seat: &SpaceSeat) -> Option<SpaceId> {
+    pub(crate) fn space_for(&self, seat: &SpaceSeat) -> Option<SpaceId> {
         let canonical = |root: &Path| {
             uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf())
         };
@@ -428,7 +428,7 @@ impl Session {
     /// Renames `space`, trimming the given label. Refuses a blank label and
     /// reports whether anything changed — same contract as
     /// [`Session::rename_tab`].
-    pub fn rename_space(&mut self, space: SpaceId, label: String) -> bool {
+    pub(crate) fn rename_space(&mut self, space: SpaceId, label: String) -> bool {
         let trimmed = label.trim();
         if trimmed.is_empty() {
             return false;
@@ -446,7 +446,7 @@ impl Session {
     /// Moves `space` to sit immediately before `before` in the sidebar's
     /// order (`before: None` moves it to the end), reporting whether the
     /// order changed — the same contract as [`Session::reorder_tab`].
-    pub fn reorder_space(&mut self, space: SpaceId, before: Option<SpaceId>) -> bool {
+    pub(crate) fn reorder_space(&mut self, space: SpaceId, before: Option<SpaceId>) -> bool {
         let spaces = &mut self.workspace.spaces;
         let Some(from) = spaces.iter().position(|candidate| candidate.id == space) else {
             return false;
@@ -476,7 +476,7 @@ impl Session {
 
     /// Selects `space` if it exists, reporting whether the selection
     /// actually moved.
-    pub fn select_space(&mut self, space: SpaceId) -> bool {
+    pub(crate) fn select_space(&mut self, space: SpaceId) -> bool {
         if self.workspace.selected_space == space {
             return false;
         }
@@ -659,7 +659,7 @@ impl Session {
     /// server is the only writer, at the moment it spawns, so what a tab
     /// reports is the server's own record of the launch it made and never
     /// something a pane's processes can rewrite.
-    pub fn record_launch(&mut self, pane: PaneId, env: crate::launch::Environment) -> bool {
+    pub(crate) fn record_launch(&mut self, pane: PaneId, env: crate::launch::Environment) -> bool {
         let Some(tab) = self.tab_of_pane_mut(pane) else {
             return false;
         };
@@ -676,7 +676,7 @@ impl Session {
     /// something new, not on every probe tick.
     /// Records whether the pane's foreground process came through a
     /// launcher, reporting whether that changed anything.
-    pub fn update_pane_launcher(&mut self, pane: PaneId, through_launcher: bool) -> bool {
+    pub(crate) fn update_pane_launcher(&mut self, pane: PaneId, through_launcher: bool) -> bool {
         let Some(tab) = self.tab_of_pane_mut(pane) else {
             return false;
         };

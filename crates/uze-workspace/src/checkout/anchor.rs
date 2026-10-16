@@ -19,7 +19,7 @@ use uze_core::path::Canonical as _;
 
 /// The administrative directory the primary repository keeps for
 /// `checkout`, when the checkout's own `.git` file still names it.
-pub fn admin_dir(primary: &Path, checkout: &Path) -> Result<PathBuf, String> {
+pub(crate) fn admin_dir(primary: &Path, checkout: &Path) -> Result<PathBuf, String> {
     let unanchored = |why: &str| {
         Err(format!(
             "{} is not a checkout of {}: {why}",

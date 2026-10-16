@@ -208,7 +208,7 @@ pub fn upstream_divergence(root: &Path) -> Option<UpstreamDivergence> {
 /// "nothing ahead". Every predicate that authorizes a removal asks this
 /// one, so a count that fell back to zero read as "this branch is fully in
 /// the target" for *every* branch in the repository.
-pub fn commits_ahead_checked(root: &Path, target: &str, branch: &str) -> Option<usize> {
+pub(crate) fn commits_ahead_checked(root: &Path, target: &str, branch: &str) -> Option<usize> {
     crate::git::read(
         root,
         &[

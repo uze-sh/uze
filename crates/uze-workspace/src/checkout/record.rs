@@ -125,7 +125,7 @@ pub fn write(primary: &Path, checkout: &Path, record: &CheckoutRecord) -> Result
 /// repaired there and made to name it; one whose move never happened has
 /// its intent cleared. Only a record UZE wrote names a move, so nothing
 /// this touches is a checkout UZE did not make.
-pub fn settle_moves(primary: &Path) {
+pub(crate) fn settle_moves(primary: &Path) {
     let container = primary.join(crate::worktree::WORKTREES_DIRECTORY);
     let Ok(entries) = std::fs::read_dir(primary.join(".git").join("worktrees")) else {
         return;

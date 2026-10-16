@@ -152,7 +152,7 @@ pub struct Acquired {
 /// held, else one named after the agent. An agent placed by an earlier
 /// build keeps the generated name it last held, so an upgrade never moves
 /// a slot out from under an agent that would still find it there.
-pub fn own_checkout(agent: &AgentId, isolation: &Isolation) -> CheckoutId {
+pub(crate) fn own_checkout(agent: &AgentId, isolation: &Isolation) -> CheckoutId {
     isolation
         .checkout
         .clone()

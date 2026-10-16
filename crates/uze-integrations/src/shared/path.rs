@@ -75,7 +75,7 @@ pub(crate) fn normalize_declared_relative_path(raw: &str) -> Option<PathBuf> {
 /// `remove_dir` is the guard as much as the action: it refuses a directory
 /// that still holds another of the package's capabilities, so no check for
 /// siblings is needed and none can go stale.
-pub fn prune_empty_package_dir(artifact: &Path, root: &Path) {
+pub(crate) fn prune_empty_package_dir(artifact: &Path, root: &Path) {
     let Some(parent) = artifact.parent() else {
         return;
     };
