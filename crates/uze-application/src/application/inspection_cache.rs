@@ -89,7 +89,7 @@ impl OnDiskCache {
     /// fail the command that triggered it.
     fn save(&self, path: &std::path::Path) {
         if let Ok(payload) = serde_json::to_vec_pretty(self) {
-            let _ = uze_core::persistence::write_atomic(path, &payload);
+            let _ = uze_core::persistence::write_atomic_unsynced(path, &payload);
         }
     }
 }

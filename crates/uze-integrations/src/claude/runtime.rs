@@ -91,7 +91,7 @@ fn project_instruction_projection(
         .map(|current| current == desired)
         .unwrap_or(false);
     if !already_current {
-        uze_core::persistence::write_atomic(&claude_md, desired.as_bytes())
+        uze_core::persistence::write_atomic_unsynced(&claude_md, desired.as_bytes())
             .map_err(|error| error.to_string())?;
     }
     Ok(())

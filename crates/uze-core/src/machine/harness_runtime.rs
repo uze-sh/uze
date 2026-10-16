@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{Result, UzeError},
     home::UzeHome,
-    persistence::write_atomic,
+    persistence::write_atomic_unsynced,
 };
 
 /// What a shim-mediated launch needs to decide, read-only. `cwd` is the
@@ -349,7 +349,7 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
     if fs::read(&path).is_ok_and(|current| current == desired) {
         return Ok(());
     }
-    write_atomic(&path, &desired)
+    write_atomic_unsynced(&path, &desired)
 }
 
 #[cfg(test)]

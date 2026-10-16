@@ -144,7 +144,7 @@ impl OnDiskCache {
     /// layered on top of a correct uncached path, not a new dependency.
     fn save(&self, path: &Path) {
         if let Ok(payload) = serde_json::to_vec_pretty(self) {
-            let _ = crate::persistence::write_atomic(path, &payload);
+            let _ = crate::persistence::write_atomic_unsynced(path, &payload);
         }
     }
 }

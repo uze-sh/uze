@@ -161,7 +161,7 @@ pub fn refusal(home: &crate::home::UzeHome) -> Option<String> {
         refusal: refusal.clone(),
         observed_at_unix_secs: now,
     }) {
-        let _ = crate::persistence::write_atomic(&path, &bytes);
+        let _ = crate::persistence::write_atomic_unsynced(&path, &bytes);
     }
     refusal
 }

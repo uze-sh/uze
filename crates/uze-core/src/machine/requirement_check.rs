@@ -251,7 +251,7 @@ impl Drop for RequirementChecker {
         if let Ok(probes) = self.probes.get_mut()
             && let Ok(payload) = serde_json::to_vec_pretty(probes)
         {
-            let _ = crate::persistence::write_atomic(&self.cache_path, &payload);
+            let _ = crate::persistence::write_atomic_unsynced(&self.cache_path, &payload);
         }
     }
 }

@@ -148,7 +148,8 @@ fn refresh(file: &Path, content: &str) -> std::result::Result<(), String> {
     if fs::read_to_string(file).is_ok_and(|current| current == content) {
         return Ok(());
     }
-    uze_core::persistence::write_atomic(file, content.as_bytes()).map_err(|error| error.to_string())
+    uze_core::persistence::write_atomic_unsynced(file, content.as_bytes())
+        .map_err(|error| error.to_string())
 }
 
 /// Removes the role files of agents the project no longer has. Best effort:

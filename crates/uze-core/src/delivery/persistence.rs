@@ -68,7 +68,24 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
 }
 
 pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
-    replace_atomically(path, payload, None)
+    replace_atomically(path, payload, None, Durability::Synced)
+}
+
+/// [`write_atomic`] for what UZE generates or remembers (`runtime/`,
+/// `cache/`): a reader still sees the old file or the new one, never half
+/// of either, but nothing waits for the disk. Losing such a file to a
+/// crash costs nothing — it is produced or observed again — while the two
+/// syncs are most of what the write costs on a slow filesystem.
+pub fn write_atomic_unsynced(path: &Path, payload: &[u8]) -> Result<()> {
+    replace_atomically(path, payload, None, Durability::Unsynced)
+}
+
+/// Whether a replacement waits for the disk before and after it is
+/// published.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Durability {
+    Synced,
+    Unsynced,
 }
 
 /// Replaces a file a person owns — an rc file, `AGENTS.md`, `agents.yaml` —
@@ -84,7 +101,7 @@ pub fn write_atomic_preserving(path: &Path, payload: &[u8]) -> Result<()> {
     let permissions = fs::metadata(&destination)
         .ok()
         .map(|metadata| metadata.permissions());
-    replace_atomically(&destination, payload, permissions)
+    replace_atomically(&destination, payload, permissions, Durability::Synced)
 }
 
 /// [`write_atomic_preserving`] for a file a project keeps, which may be a
@@ -102,7 +119,7 @@ pub fn write_atomic_within(root: &Path, path: &Path, payload: &[u8]) -> Result<(
     let permissions = fs::metadata(&destination)
         .ok()
         .map(|metadata| metadata.permissions());
-    replace_atomically(&destination, payload, permissions)
+    replace_atomically(&destination, payload, permissions, Durability::Synced)
 }
 
 /// Where a write to the project file `path` lands, refused when that is
@@ -250,6 +267,7 @@ fn replace_atomically(
     path: &Path,
     payload: &[u8],
     permissions: Option<fs::Permissions>,
+    durability: Durability,
 ) -> Result<()> {
     let _span =
         tracing::debug_span!("persistence.write", path = %path.display(), bytes = payload.len())
@@ -272,9 +290,13 @@ fn replace_atomically(
         }
         file.write_all(payload)
             .map_err(UzeError::write(&temporary))?;
-        file.sync_all().map_err(UzeError::write(&temporary))?;
+        if durability == Durability::Synced {
+            file.sync_all().map_err(UzeError::write(&temporary))?;
+        }
         uze_platform::fs::rename(&temporary, path).map_err(UzeError::write(path))?;
-        uze_platform::fs::sync_directory(parent);
+        if durability == Durability::Synced {
+            uze_platform::fs::sync_directory(parent);
+        }
         Ok(())
     })();
     if result.is_err() {
