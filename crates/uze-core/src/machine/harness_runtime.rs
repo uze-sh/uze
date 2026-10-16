@@ -234,19 +234,6 @@ pub fn project_id_for(canonical_project_root: &Path) -> String {
 /// and no vendor's own output is obliged to state it.
 pub const PROJECTION_MARKER: &str = "project.json";
 
-/// The tenants of `runtime/`. Anything else directly beneath it is unowned
-/// and swept — see `prune_projections`.
-///
-/// `projects` holds one directory per project UZE has projected into, each
-/// swept when its root goes. `attachments` holds what UZE generates for a
-/// harness to *read* — generated marketplaces, staged skill directories,
-/// the wrappers a bridge is made of — whose lifetime is the attachment's
-/// rather than any project's, and which the receipt ledger already answers
-/// for. Sweeping it here would delete a live delivery on the next `doctor`.
-/// `packages` holds each installed package as a harness is handed it, whose
-/// lifetime is the installation's, for the same reason.
-const RUNTIME_TENANTS: &[&str] = &["projects", "attachments", "packages"];
-
 #[derive(Debug, Deserialize, Serialize)]
 struct ProjectionMarker {
     root: PathBuf,
@@ -291,7 +278,7 @@ pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Removes every runtime projection whose project root is gone, plus
-/// anything under `runtime/` beside its [`RUNTIME_TENANTS`], and
+/// anything under `runtime/` beside its [`UzeHome::runtime_tenants`], and
 /// returns what it swept. Never fails: a tree it cannot read or delete is
 /// left for the next pass rather than turned into an error a caller would
 /// have to decide what to do about.
@@ -308,11 +295,12 @@ pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
 /// on the next launch in that project.
 pub fn prune_projections(home: &UzeHome) -> Vec<String> {
     let mut pruned = Vec::new();
+    let tenants = home.runtime_tenants();
     for entry in read_dir(&home.runtime_dir()) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if RUNTIME_TENANTS.contains(&name.as_str()) {
+        if tenants.contains(&entry.path()) {
             continue;
         }
+        let name = entry.file_name().to_string_lossy().into_owned();
         if remove(&entry.path()) {
             pruned.push(name);
         }

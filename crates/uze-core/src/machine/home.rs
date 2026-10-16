@@ -356,7 +356,12 @@ impl UzeHome {
     /// operator deciding what is safe to delete had no way to tell the two
     /// apart, and the answer is opposite for each.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
-        self.runtime_dir().join("attachments").join(vendor)
+        self.runtime_attachments_dir().join(vendor)
+    }
+
+    /// The parent of every [`Self::generated_attachments_dir`].
+    pub fn runtime_attachments_dir(&self) -> PathBuf {
+        self.runtime_dir().join("attachments")
     }
 
     /// One installed package, whole, as every harness is handed it: the
@@ -364,7 +369,12 @@ impl UzeHome {
     /// harness or a hook writing into its own package root never writes the
     /// Store, and deleting it costs one copy on the next delivery.
     pub fn delivered_package_dir(&self, id: &PackageId) -> PathBuf {
-        self.runtime_dir().join("packages").join(id.as_str())
+        self.delivered_packages_dir().join(id.as_str())
+    }
+
+    /// The parent of every [`Self::delivered_package_dir`].
+    pub fn delivered_packages_dir(&self) -> PathBuf {
+        self.runtime_dir().join("packages")
     }
 
     /// [`Self::delivered_package_dir`] of the package whose Store root is
@@ -458,6 +468,23 @@ impl UzeHome {
     /// which is also the whole input to `harness_runtime::prune_projections`.
     pub fn runtime_projects_dir(&self) -> PathBuf {
         self.runtime_dir().join("projects")
+    }
+
+    /// Everything that may live directly under [`Self::runtime_dir`]; what
+    /// is not one of these is unowned, and
+    /// `harness_runtime::prune_projections` sweeps it. Built from the same
+    /// builders, so a new tenant cannot be swept by being forgotten here.
+    ///
+    /// `projects` holds one directory per project UZE has projected into,
+    /// each swept when its root goes. `attachments` and `packages` live as
+    /// long as what was delivered, which the receipt ledger answers for:
+    /// sweeping either would delete a live delivery on the next `doctor`.
+    pub fn runtime_tenants(&self) -> [PathBuf; 3] {
+        [
+            self.runtime_projects_dir(),
+            self.runtime_attachments_dir(),
+            self.delivered_packages_dir(),
+        ]
     }
 
     /// Where the PATH shim (`claude`, `codex`, `opencode`, `antigravity`,
