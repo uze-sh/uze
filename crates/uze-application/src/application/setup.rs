@@ -175,14 +175,16 @@ impl UzeApplication {
         // Seed the default marketplace plugins before any provisioning, so a
         // fresh `UZE_HOME` gets the Skill without a manual `uze add` and so
         // an updated binary heals its attachment on next `setup`.
-        let _ = self.ensure_default_plugins_locked();
+        if let Err(error) = self.ensure_default_plugins_locked() {
+            tracing::warn!(%error, "the default plugins could not be seeded");
+        }
         let wanted = requested
             .map(|name| self.resolve_integration_id(name))
             .transpose()?;
         let mut results = self.provision_and_prepare_through(wanted, route);
         // `setup` is the documented way to repair a derived view that
         // failed to publish, so it always rebuilds them.
-        let _ = self.republish_all();
+        self.republish_all_reporting();
         for result in results.iter_mut().filter(|result| result.configured) {
             if let Some(integration) = self
                 .integrations
