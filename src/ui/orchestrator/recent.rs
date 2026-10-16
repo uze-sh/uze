@@ -105,7 +105,9 @@ pub(super) enum Reason {
     Delivering,
     WithReviewer,
     Shelved,
+    Delivered,
     NoChanges,
+    InTheRoot,
     ProjectGone,
 }
 
@@ -134,7 +136,9 @@ impl Reason {
             Self::Delivering => "delivering".to_owned(),
             Self::WithReviewer => "with reviewer".to_owned(),
             Self::Shelved => "shelved".to_owned(),
+            Self::Delivered => "delivered".to_owned(),
             Self::NoChanges => "no changes yet".to_owned(),
+            Self::InTheRoot => "in the project root".to_owned(),
             Self::ProjectGone => "project not found".to_owned(),
         }
     }
@@ -149,7 +153,9 @@ impl Reason {
             Self::Delivering
             | Self::WithReviewer
             | Self::Shelved
+            | Self::Delivered
             | Self::NoChanges
+            | Self::InTheRoot
             | Self::ProjectGone => Token::TextSecondary,
         }
     }
@@ -164,9 +170,8 @@ impl Reason {
             WorkStateView::Integrating => Self::Delivering,
             WorkStateView::Published => Self::WithReviewer,
             WorkStateView::Shelved => Self::Shelved,
-            WorkStateView::Running | WorkStateView::Integrated | WorkStateView::Closed => {
-                Self::NoChanges
-            }
+            WorkStateView::Integrated => Self::Delivered,
+            WorkStateView::Running | WorkStateView::Closed => Self::NoChanges,
         }
     }
 }
@@ -205,13 +210,12 @@ impl RecentRow {
         let active = SystemTime::UNIX_EPOCH + Duration::from_secs(task.last_active_unix);
         Self {
             key: task.id.clone(),
-            name: if task.label.is_empty() {
-                task.branch.clone()
-            } else {
-                task.label.clone()
+            name: match &task.branch {
+                Some(branch) if task.label.is_empty() => branch.clone(),
+                _ => task.label.clone(),
             },
             project: task.project.clone(),
-            branch: Some(task.branch.clone()),
+            branch: task.branch.clone(),
             reason,
             ahead: checkout.map(|checkout| checkout.ahead),
             bytes: checkout.map(|checkout| checkout.bytes),
@@ -268,14 +272,25 @@ impl RecentRow {
         self.reason == Reason::Ready && self.task.is_some()
     }
 
-    /// What `d` does to this row: forgetting where the project is gone,
-    /// discarding wherever there is a task to discard.
+    /// What `d` does to this row: discarding where there is work on a
+    /// branch to discard, forgetting where only the record and its
+    /// conversation are left.
     pub(super) fn taking_away(&self) -> Option<&'static str> {
-        match (&self.task, self.reason) {
-            (None, _) => None,
-            (Some(_), Reason::ProjectGone) => Some("forget"),
-            (Some(_), _) => Some("discard"),
+        match &self.task {
+            None => None,
+            Some(_) if self.holds_work() => Some("discard"),
+            Some(_) => Some("forget"),
         }
+    }
+
+    /// Whether taking the row away would take work with it: a branch and
+    /// what is on it, which a delivered agent, one in the project's root
+    /// and one whose project is gone no longer have here.
+    pub(super) fn holds_work(&self) -> bool {
+        !matches!(
+            self.reason,
+            Reason::Delivered | Reason::InTheRoot | Reason::ProjectGone
+        )
     }
 
     /// The keys this row offers and the word each goes by here: enter's
@@ -296,10 +311,10 @@ impl RecentRow {
 
     /// The question asked before taking the row away.
     pub(super) fn question(&self) -> &'static str {
-        if self.reason == Reason::ProjectGone {
-            "forget this record? nothing on disk changes"
-        } else {
-            "discard branch, commits and conversation?"
+        match self.reason {
+            Reason::ProjectGone => "forget this record? nothing on disk changes",
+            _ if self.holds_work() => "discard branch, commits and conversation?",
+            _ => "forget this agent and its conversation?",
         }
     }
 }
@@ -342,6 +357,8 @@ fn reason_of(
         Reason::Delivering
     } else if !task.project_present {
         Reason::ProjectGone
+    } else if task.branch.is_none() {
+        Reason::InTheRoot
     } else if checkout.and_then(join_of).is_some() {
         Reason::JoinReady
     } else {

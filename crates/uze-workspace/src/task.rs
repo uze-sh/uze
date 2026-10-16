@@ -48,6 +48,12 @@ pub const SCHEMA_VERSION: u32 = 5;
 
 /// Long enough to read, short enough for a sidebar.
 const LABEL_MAX_CHARS: usize = 40;
+
+/// How long the record of an agent that ended holding nothing is kept:
+/// what lets a conversation be found and continued weeks later, and the
+/// one place deciding when an agent stops being listed — a surface shows
+/// every record there is, and only the record's age takes one away.
+pub const RECORD_KEPT: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub(crate) const IDENTIFIER_CHARS: usize = 6;
 
 /// A generated, immutable identifier for an agent UZE launched — what a
@@ -275,6 +281,12 @@ impl Agent {
         if self.ended_at_unix.is_none() {
             self.ended_at_unix = Some(now_unix());
         }
+    }
+
+    /// Records that a pane carries the agent again, so the age its record
+    /// is kept for counts from its next ending rather than its first.
+    pub fn revive(&mut self) {
+        self.ended_at_unix = None;
     }
 
     /// The directory this agent may stand in, under the project root the

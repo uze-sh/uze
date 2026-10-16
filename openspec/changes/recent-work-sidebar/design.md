@@ -27,10 +27,11 @@ from `theme`.
   already does on its own.
 
 **Non-Goals:**
-- A history of integrated work. `PreservedWork` drops `Integrated` and
-  `Closed` today and nothing records them for display; a "done" section
-  would need a new record, and was dropped from the design rather than
-  invented.
+- A separate history of integrated work. Recent lists every recorded
+  agent, delivered or not, because the conversation and its reasoning are
+  what an operator comes back for; a "done" section beside it would split
+  one list in two. How long a record lives is the collection's question
+  (`task::RECORD_KEPT`), never the list's.
 - A filter by project. If scanning by project becomes a need, it is a
   filter, not a column.
 - Any change to placement, delivery, joining or collection themselves.

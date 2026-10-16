@@ -3,19 +3,14 @@
 ### Requirement: Preserved work is found without the space it was left in
 The preserved-work list SHALL answer from UZE's records of every project it
 has recorded an agent for, not from the projects the current session
-happens to have opened. Work held by an agent that no live pane carries
-SHALL be listed whether or not a space is open on its project, and SHALL
-remain listed until it is resumed, joined, discarded or forgotten, or its
-work lands in the target. An agent that ended with nothing to deliver
-SHALL be listed while the conversation it left began within the last
-thirty days, since what was discussed is worth coming back to, and
-resuming it SHALL cut its branch again from the target.
+happens to have opened. Every recorded agent no live pane carries SHALL be
+listed whether or not a space is open on its project, whatever became of
+its work, until it is resumed, joined, discarded or forgotten, or its
+record is collected.
 
 Because the list crosses projects, each entry SHALL name the project its
-work belongs to when it is selected. Two agents carrying the same branch
-name in two projects SHALL be distinguishable from the list alone. Work
-whose project directory no longer exists SHALL still be listed, and SHALL
-say that its project was not found.
+work belongs to when it is selected, and two agents carrying the same
+branch name in two projects SHALL be distinguishable from the list alone.
 
 #### Scenario: The space the work was left in was closed
 - **WHEN** an agent holding work has no live pane and no space is open on its project
@@ -26,16 +21,24 @@ say that its project was not found.
 - **THEN** that project's preserved work is listed, without the operator having opened it first
 
 #### Scenario: Work that is delivered or discarded
-- **WHEN** an agent's work has been integrated or discarded
-- **THEN** it is not listed
+- **WHEN** an agent's work has been integrated, however it was merged, or the agent was discarded
+- **THEN** the delivered one is still listed as delivered, resumed on its branch cut again from the target in the conversation it left, and the discarded one is not listed
 
 #### Scenario: An agent that ended with only a conversation
-- **WHEN** an agent ended with nothing to deliver and its last conversation began within the last thirty days
+- **WHEN** an agent ended with nothing to deliver
 - **THEN** it is listed, and resuming it places it on its branch cut again from the target, in that conversation
 
-#### Scenario: An old conversation
-- **WHEN** an agent ended with nothing to deliver and its last conversation began more than thirty days ago, or it never had one
-- **THEN** it is not listed
+#### Scenario: An agent that worked in the project's root
+- **WHEN** an agent that was not isolated has no live pane
+- **THEN** it is listed with no branch, and resuming it places it in the project's root, in the conversation it left
+
+#### Scenario: An agent forgotten
+- **WHEN** an agent that held no work was forgotten
+- **THEN** its record and its conversation are gone, and it is not listed
+
+#### Scenario: A record collected for its age
+- **WHEN** an agent ended more than thirty days ago holding no checkout, branch or shelf
+- **THEN** its record and its conversation are collected, and it is not listed
 
 #### Scenario: Two projects, one branch name
 - **WHEN** two projects each hold preserved work on a branch of the same name

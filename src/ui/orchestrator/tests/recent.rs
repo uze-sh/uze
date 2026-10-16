@@ -20,7 +20,7 @@ fn checkout_of(task: &PreservedWork) -> CheckoutView {
             live: false,
         },
         task: Some(task.id.clone()),
-        branch: Some(task.branch.clone()),
+        branch: task.branch.clone(),
         dirty: false,
         ahead: 3,
         last_changed: None,
@@ -175,6 +175,8 @@ fn every_state_lands_in_its_block_with_its_reason_and_its_move() {
         (WorkStateView::Running, Reason::NoChanges, Some("resume")),
         // Ended with nothing to deliver, listed for its conversation.
         (WorkStateView::Closed, Reason::NoChanges, Some("resume")),
+        // Delivered, listed for its conversation and resumed on the target.
+        (WorkStateView::Integrated, Reason::Delivered, Some("resume")),
     ];
     for (state, reason, primary) in cases {
         let model = showing(vec![preserved(PROJECT, "t1", "work", state)], Vec::new());
@@ -186,8 +188,30 @@ fn every_state_lands_in_its_block_with_its_reason_and_its_move() {
             reason == Reason::Ready,
             "only ready work offers delivery: {reason:?}"
         );
-        assert_eq!(rows[0].taking_away(), Some("discard"));
+        let taking_away = if reason == Reason::Delivered {
+            "forget"
+        } else {
+            "discard"
+        };
+        assert_eq!(rows[0].taking_away(), Some(taking_away), "{reason:?}");
     }
+}
+
+/// An agent that worked in the project's root has no branch to discard:
+/// it is resumed there, and taking it away forgets its record and its
+/// conversation.
+#[test]
+fn an_agent_that_worked_in_the_root_is_resumed_or_forgotten() {
+    let mut in_the_root = preserved(PROJECT, "t1", "asked", WorkStateView::Running);
+    in_the_root.branch = None;
+    in_the_root.checkout = None;
+    let model = showing(vec![in_the_root], Vec::new());
+    let row = &recent_rows(&model)[0];
+    assert_eq!(row.reason, Reason::InTheRoot);
+    assert_eq!(row.branch, None);
+    assert_eq!(row.primary(), Some("resume"));
+    assert_eq!(row.taking_away(), Some("forget"));
+    assert_eq!(row.question(), "forget this agent and its conversation?");
 }
 
 /// Uncommitted changes the checkout holds are what the row waits on,

@@ -2325,15 +2325,21 @@ The sidebar's recent mode lists every agent no pane carries, across every
 project UZE has recorded, one row per agent: what waits on the operator
 first, then the rest, each most recently changed first. Enter does the one
 thing that moves a row on — joining a subagent its agent left, resuming
-anything else — and only ready work offers delivery. Work whose project is
-gone can only be forgotten, which touches no repository; work the target
-already carries, however it was merged, leaves on its own.
+anything else — and only ready work offers delivery. Every recorded agent
+is listed, whatever became of its work: delivered, ended with nothing, or
+worked in the project's root, since what it said is worth coming back to.
+Taking a row away discards only where a branch holds work; elsewhere it
+forgets the record and its conversation, which touches no work. Only the
+record's age, decided where records are collected, ends a row on its own.
 
 > `src/ui/orchestrator/tests/recent.rs::every_state_lands_in_its_block_with_its_reason_and_its_move`
 > `src/ui/orchestrator/tests/recent.rs::what_waits_on_you_comes_first_and_each_block_by_recency`
 > `src/ui/orchestrator/tests/recent.rs::a_subagent_ready_to_join_is_one_row_whose_move_is_joining`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::work_whose_repository_is_gone_is_forgotten_by_its_record_alone`
-> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::handed_over_work_squashed_on_the_forge_leaves_on_its_own`
+> `src/ui/orchestrator/tests/recent.rs::an_agent_that_worked_in_the_root_is_resumed_or_forgotten`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::every_recorded_agent_is_listed_whatever_became_of_its_work`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agent_that_holds_no_work_is_forgotten_with_its_project_there`
+> `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::handed_over_work_squashed_on_the_forge_reads_as_delivered`
 
 ## Runtime projection lifecycle (ADR-014)
 

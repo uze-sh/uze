@@ -4583,7 +4583,7 @@ mod workspace_tests {
             project: PathBuf::from(project),
             id: id.to_owned(),
             label: label.to_owned(),
-            branch: format!("agent/{id}"),
+            branch: Some(format!("agent/{id}")),
             checkout: Some(PathBuf::from(project).join(".worktrees").join(id)),
             state,
             created_at_unix: 1,

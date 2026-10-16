@@ -269,10 +269,10 @@ impl Attach<'_> {
         let Some(task) = &row.task else {
             return;
         };
-        let mutation = if row.reason == Reason::ProjectGone {
-            WorkMutation::Forget
-        } else {
+        let mutation = if row.holds_work() {
             WorkMutation::Discard
+        } else {
+            WorkMutation::Forget
         };
         self.mutate_preserved(task, mutation);
     }

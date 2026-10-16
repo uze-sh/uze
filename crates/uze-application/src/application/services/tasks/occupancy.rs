@@ -278,6 +278,9 @@ impl Workspace<'_> {
         })
         .unwrap_or_default();
         checkout::empty_trash(primary);
+        for agent in &collected.forgotten {
+            conversation::forget(&self.0.home, primary, agent);
+        }
         let collected: Vec<String> = collected
             .branches
             .into_iter()
@@ -327,14 +330,51 @@ impl Workspace<'_> {
         })
     }
 
-    /// Lets go of a task whose project is no longer on disk: its record
-    /// and its conversations go, and no repository is asked anything,
-    /// since there is none left to ask. While the project is there,
-    /// discarding is the path, because a record dropped without its
-    /// branch and checkout would leave them owned by nobody.
+    /// Takes away the record of `task_id` when it is an agent that worked
+    /// in `root` itself, keyed by that directory rather than by a
+    /// repository, and answers whether it was one.
+    fn forget_in_the_root(&self, root: &Path, task_id: &str) -> Result<bool> {
+        let root = canonical(root);
+        if !task::store_path(&self.0.home, &root).exists() {
+            return Ok(false);
+        }
+        task::locked(&self.0.home, &root, |store| {
+            let Some(agent) = store
+                .agents
+                .iter()
+                .find(|agent| agent.id.as_str() == task_id && !agent.is_isolated())
+            else {
+                return Ok(false);
+            };
+            let agent_id = agent.id.clone();
+            store.agents.retain(|recorded| recorded.id != agent_id);
+            conversation::forget(&self.0.home, &root, &agent_id);
+            Ok(true)
+        })
+    }
+
+    /// Lets go of a task that holds no work any more: its record and its
+    /// conversations go. That is a task whose project is no longer on disk
+    /// — no repository is asked anything, since there is none left to ask
+    /// — one that worked in the project's root, and one whose work the
+    /// target already carries. Any other is discarded instead, because a
+    /// record dropped without its branch and checkout would leave them
+    /// owned by nobody.
     #[tracing::instrument(name = "workspace.forget_task", skip_all, fields(project = %project.display(), task_id = %task_id), err)]
     pub fn forget_task(&self, project: &Path, task_id: &str) -> Result<()> {
         if project.is_dir() {
+            if self.forget_in_the_root(project, task_id)? {
+                return Ok(());
+            }
+            let delivered = self
+                .repository_context(project)?
+                .and_then(|(primary, _)| task::load(&self.0.home, &primary).ok())
+                .and_then(|store| store.agent(task_id).map(|agent| agent.state.clone()))
+                == Some(WorkState::Integrated);
+            if delivered {
+                // What is left on its branch the target already has.
+                return self.discard_task(project, task_id);
+            }
             return Err(UzeError::Discard(format!(
                 "{} is still on disk; discard the work instead",
                 project.display()

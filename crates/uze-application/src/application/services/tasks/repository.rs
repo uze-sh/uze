@@ -138,16 +138,11 @@ impl Workspace<'_> {
                 let agents = task::load(&self.0.home, &project)
                     .map(|store| store.agents)
                     .unwrap_or_default();
-                agents.into_iter().filter_map({
+                agents.into_iter().map({
                     let project = project.clone();
                     let home = self.0.home.clone();
                     move |agent| {
-                        // Only an agent that ended with nothing is asked
-                        // about its conversation: every other one is
-                        // listed on its work alone.
-                        let conversed_at = (agent.state == WorkState::Closed)
-                            .then(|| last_conversation(&home, &project, &agent.id))
-                            .flatten();
+                        let conversed_at = last_conversation(&home, &project, &agent.id);
                         PreservedWork::from_agent(&project, &agent, conversed_at)
                     }
                 })

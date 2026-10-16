@@ -496,7 +496,8 @@ pub(super) fn spawn_delivery(
 pub(super) enum WorkMutation {
     /// Thrown away: the checkout removed, the branch deleted.
     Discard,
-    /// Its record let go of, its project being gone from disk.
+    /// Its record and its conversation let go of, there being no work
+    /// left to throw away.
     Forget,
 }
 

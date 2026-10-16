@@ -685,11 +685,11 @@ mod placement_tests {
         }
     }
 
-    /// Work handed over and squash-merged on the forge leaves the
-    /// preserved list on the next pass, with nobody marking it done: the
-    /// target carries its patch, and that is what delivered means.
+    /// Work handed over and squash-merged on the forge reads as delivered
+    /// on the next pass, with nobody marking it done: the target carries
+    /// its patch, and that is what delivered means.
     #[test]
-    fn handed_over_work_squashed_on_the_forge_leaves_on_its_own() {
+    fn handed_over_work_squashed_on_the_forge_reads_as_delivered() {
         let repository = repository("handed-over-squashed");
         let root = repository.root().to_path_buf();
         let app = application("handed-over-squashed-home");
@@ -703,11 +703,14 @@ mod placement_tests {
 
         app.workspace().evaluate_tasks(&root, &[]);
 
-        assert!(
-            app.workspace()
-                .preserved_work()
-                .iter()
-                .all(|work| work.id != id.as_str()),
+        let preserved = app.workspace().preserved_work();
+        let work = preserved
+            .iter()
+            .find(|work| work.id == id.as_str())
+            .unwrap();
+        assert_eq!(
+            work.state,
+            WorkStateView::Integrated,
             "the squash carries its patch, so it is delivered"
         );
     }
@@ -1120,7 +1123,9 @@ mod task_service_tests {
             preserved.iter().map(|work| work.project.clone()).collect();
         assert_eq!(preserved.len(), 2);
         assert!(
-            preserved.iter().all(|work| work.branch == "fix/login"),
+            preserved
+                .iter()
+                .all(|work| work.branch.as_deref() == Some("fix/login")),
             "the case is two agents carrying the same branch name"
         );
         assert_eq!(
@@ -1194,26 +1199,99 @@ mod task_service_tests {
         conversation::save(&app.home, project, &record).unwrap();
     }
 
-    /// An agent can be opened only to talk an idea through: it ends with
-    /// nothing to deliver, and what was said is still worth coming back
-    /// to. Listed while that conversation is recent, and not before it
-    /// had one or once it is old.
+    /// Recent is where an agent is found again to read what it said and
+    /// how it reasoned, which is as true of one whose work was delivered,
+    /// or that never wrote a line, as of one still holding work. Every
+    /// record is listed; only the record's own age takes one away, and that
+    /// is decided where records are collected.
     #[test]
-    fn an_agent_that_ended_with_only_a_conversation_is_listed_while_it_is_recent() {
-        let app = application("preserved-conversation-home");
-        let project = uze_testkit::temp::scratch("preserved-conversation");
+    fn every_recorded_agent_is_listed_whatever_became_of_its_work() {
+        let app = application("preserved-every-home");
+        let project = uze_testkit::temp::scratch("preserved-every");
         std::fs::create_dir_all(&project).unwrap();
+        let running = record_an_agent(&app, &project, WorkState::Running, None);
+        let delivered = record_an_agent(&app, &project, WorkState::Integrated, None);
+        let silent = record_an_agent(&app, &project, WorkState::Closed, None);
+        let talked_long_ago = record_an_agent(&app, &project, WorkState::Closed, None);
+        conversed(&app, &project, &talked_long_ago, 90 * 24 * 60 * 60);
         let talked = record_an_agent(&app, &project, WorkState::Closed, None);
         conversed(&app, &project, &talked, 3600);
-        let silent = record_an_agent(&app, &project, WorkState::Closed, None);
-        let forgotten = record_an_agent(&app, &project, WorkState::Closed, None);
-        conversed(&app, &project, &forgotten, CONVERSATION_KEPT_SECONDS + 3600);
 
         let preserved = app.workspace().preserved_work();
-        let listed: Vec<&str> = preserved.iter().map(|work| work.id.as_str()).collect();
-        assert_eq!(listed, [talked.as_str()], "not {silent} nor {forgotten}");
-        assert!(preserved[0].last_active_unix > preserved[0].created_at_unix.saturating_sub(1));
+        let listed: BTreeSet<&str> = preserved.iter().map(|work| work.id.as_str()).collect();
+        assert_eq!(
+            listed,
+            BTreeSet::from([
+                running.as_str(),
+                delivered.as_str(),
+                silent.as_str(),
+                talked_long_ago.as_str(),
+                talked.as_str(),
+            ])
+        );
+        let of = |id: &str| preserved.iter().find(|work| work.id == id).unwrap();
+        assert_eq!(of(&delivered).state, WorkStateView::Integrated);
+        assert!(of(&talked).last_active_unix > of(&talked).created_at_unix.saturating_sub(3600));
         let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// An agent that worked in the project's root has a conversation like
+    /// any other, and no branch of its own to say.
+    #[test]
+    fn an_agent_that_worked_in_the_root_is_listed_without_a_branch() {
+        let app = application("preserved-root-home");
+        let project = uze_testkit::temp::scratch("preserved-root");
+        std::fs::create_dir_all(&project).unwrap();
+        let id = record_in_the_root(&app, &project);
+
+        let preserved = app.workspace().preserved_work();
+        assert_eq!(preserved.len(), 1);
+        assert_eq!(preserved[0].id, id);
+        assert_eq!(preserved[0].branch, None);
+        assert_eq!(preserved[0].checkout, None);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// Resuming an agent that worked in the root places it there again,
+    /// as itself, so its launch continues the conversation it left.
+    #[test]
+    fn an_agent_that_worked_in_the_root_resumes_there() {
+        let app = application("resume-root-home");
+        let project = uze_testkit::temp::scratch("resume-root");
+        std::fs::create_dir_all(&project).unwrap();
+        let id = record_in_the_root(&app, &project);
+        task::locked(&app.home, &canonical(&project), |store| {
+            store.agent_mut(&id).unwrap().end();
+            Ok(())
+        })
+        .unwrap();
+
+        let placed = app.workspace().resume_task(&project, &id, &[]).unwrap();
+
+        assert_eq!(placed.cwd, canonical(&project));
+        assert!(
+            matches!(&placed.placement, Placement::InPlace { id: placed_id } if placed_id.as_str() == id)
+        );
+        let store = task::load(&app.home, &canonical(&project)).unwrap();
+        assert!(
+            store.agent(&id).unwrap().is_live(),
+            "a resumed agent is live again"
+        );
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// Records an agent launched into `project` itself.
+    fn record_in_the_root(app: &UzeApplication, project: &Path) -> String {
+        let root = canonical(project);
+        uze_core::record::ensure(&app.home, &root).unwrap();
+        let agent = Agent::in_the_root("claude");
+        let id = agent.id.as_str().to_owned();
+        task::locked(&app.home, &root, |store| {
+            store.upsert(agent);
+            Ok(())
+        })
+        .unwrap();
+        id
     }
 
     /// Recent lists named work by default, so the list says which agents
@@ -1249,25 +1327,29 @@ mod task_service_tests {
         let _ = std::fs::remove_dir_all(project);
     }
 
-    /// A record whose work the target already carries is not preserved
-    /// work — it is delivered — and neither is one that never had any.
+    /// What is left of an agent that holds no work is its record and its
+    /// conversation, and forgetting takes exactly those, with the project
+    /// still on disk: one that worked in the root, and one whose work the
+    /// target already carries.
     #[test]
-    fn delivered_and_closed_work_is_not_listed() {
-        let app = application("preserved-delivered-home");
-        let project = uze_testkit::temp::scratch("preserved-delivered");
-        std::fs::create_dir_all(&project).unwrap();
-        record_an_agent(&app, &project, WorkState::Running, None);
-        assert_eq!(app.workspace().preserved_work().len(), 1);
+    fn an_agent_that_holds_no_work_is_forgotten_with_its_project_there() {
+        let repository = repository("forget-held-nothing");
+        let app = application("forget-held-nothing-home");
+        let root = repository.root().to_path_buf();
+        let in_the_root = record_in_the_root(&app, &root);
+        let delivered = record_an_agent(&app, &canonical(&root), WorkState::Integrated, None);
+        conversed(&app, &canonical(&root), &delivered, 60);
 
-        record_an_agent(&app, &project, WorkState::Integrated, None);
-        record_an_agent(&app, &project, WorkState::Closed, None);
+        app.workspace().forget_task(&root, &in_the_root).unwrap();
+        app.workspace().forget_task(&root, &delivered).unwrap();
 
-        assert_eq!(
-            app.workspace().preserved_work().len(),
-            1,
-            "delivered work is not work waiting to be found again"
+        assert!(app.workspace().preserved_work().is_empty());
+        assert!(
+            conversation::load(&app.home, &canonical(&root), &AgentId::adopted(&delivered))
+                .harnesses
+                .is_empty(),
+            "the conversation goes with the record"
         );
-        let _ = std::fs::remove_dir_all(project);
     }
 
     use super::*;
@@ -3078,45 +3160,56 @@ mod derived_naming_tests {
         );
     }
 
-    /// An agent that ended with nothing to deliver lost its empty branch
-    /// and its slot, and keeps its conversation: resuming it cuts the
-    /// branch again on the target and places it, rather than refusing a
-    /// branch that is gone.
+    /// An agent whose branch is gone comes back on its branch cut again
+    /// from the target, rather than refusing a branch that is gone: one
+    /// that ended with nothing to deliver, and one whose work the target
+    /// already carries and whose branch was pruned for it.
     #[test]
-    fn an_agent_that_ended_with_nothing_is_resumed_on_its_branch_cut_again() {
-        let (app, repository) = project("resume-closed", "  branch: conventional\n");
-        let root = repository.root().to_path_buf();
-        let placed = placed(&app, &root);
-        let primary = root.canonical().unwrap();
-        let branch = format!("agent/{}", placed.id);
-        repository.git(&[
-            "worktree",
-            "remove",
-            "--force",
-            &placed.checkout.to_string_lossy(),
-        ]);
-        repository.git(&["branch", "-D", &branch]);
-        task::locked(&app.home, &primary, |store| {
-            let agent = store.get_mut(&AgentId::adopted(&placed.id)).unwrap();
-            agent.state = WorkState::Closed;
-            agent.isolation_mut().unwrap().checkout = None;
-            Ok(())
-        })
-        .unwrap();
+    fn an_agent_whose_branch_is_gone_is_resumed_on_its_branch_cut_again() {
+        for (label, state) in [
+            ("resume-closed", WorkState::Closed),
+            ("resume-delivered", WorkState::Integrated),
+        ] {
+            let (app, repository) = project(label, "  branch: conventional\n");
+            let root = repository.root().to_path_buf();
+            let placed = placed(&app, &root);
+            let primary = root.canonical().unwrap();
+            let branch = format!("agent/{}", placed.id);
+            repository.git(&[
+                "worktree",
+                "remove",
+                "--force",
+                &placed.checkout.to_string_lossy(),
+            ]);
+            repository.git(&["branch", "-D", &branch]);
+            task::locked(&app.home, &primary, |store| {
+                let agent = store.get_mut(&AgentId::adopted(&placed.id)).unwrap();
+                agent.state = state.clone();
+                agent.isolation_mut().unwrap().checkout = None;
+                agent.end();
+                Ok(())
+            })
+            .unwrap();
 
-        let resumed = app.workspace().resume_task(&root, &placed.id, &[]).unwrap();
+            let resumed = app.workspace().resume_task(&root, &placed.id, &[]).unwrap();
 
-        assert!(resumed.cwd.is_dir(), "it has a checkout again");
-        assert_eq!(
-            checkout::current_branch(&resumed.cwd).as_deref(),
-            Some(branch.as_str()),
-            "on its own branch, cut again"
-        );
-        assert_eq!(
-            repository.git(&["rev-parse", &branch]),
-            repository.git(&["rev-parse", "main"]),
-            "from the target, since it held nothing"
-        );
+            assert!(resumed.cwd.is_dir(), "{state:?}: it has a checkout again");
+            assert_eq!(
+                checkout::current_branch(&resumed.cwd).as_deref(),
+                Some(branch.as_str()),
+                "{state:?}: on its own branch, cut again"
+            );
+            assert_eq!(
+                repository.git(&["rev-parse", &branch]),
+                repository.git(&["rev-parse", "main"]),
+                "{state:?}: from the target, since it holds nothing"
+            );
+            let store = task::load(&app.home, &primary).unwrap();
+            assert!(
+                store.agent(&placed.id).unwrap().is_live(),
+                "{state:?}: and it is live again"
+            );
+        }
     }
 
     /// The agent's own name arrives earlier and therefore wins — the whole

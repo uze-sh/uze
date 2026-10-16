@@ -908,3 +908,17 @@ fn assert_moved_from(before: &Path, taken: &Acquired) {
         "and it carries its new agent's name"
     );
 }
+
+/// An ending is recorded where the checkout is released, since that is
+/// where the agent is found gone: what the age its record is kept for
+/// counts from.
+#[test]
+fn releasing_an_agent_records_when_it_ended() {
+    let repository = repository("release-ends");
+    let mut store = AgentStore::default();
+    let (agent, _) = launch(&repository, &mut store, "ends");
+
+    assert_eq!(end(&repository, &mut store, &agent), FREED);
+
+    assert!(!store.get(&agent.id).unwrap().is_live());
+}

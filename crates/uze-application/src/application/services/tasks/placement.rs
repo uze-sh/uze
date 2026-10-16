@@ -341,6 +341,8 @@ impl Workspace<'_> {
     /// where its branch stands. The task is live again in the slot this
     /// acquires; `occupied` is what [`Self::place_new_agent`] takes. A
     /// task that still has its checkout is answered with that checkout.
+    /// An agent that worked in the project's root comes back there, in the
+    /// conversation it left.
     #[tracing::instrument(name = "workspace.resume_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id), err)]
     pub fn resume_task(
         &self,
@@ -348,6 +350,9 @@ impl Workspace<'_> {
         task_id: &str,
         occupied: &[PathBuf],
     ) -> Result<AgentPlacement> {
+        if let Some(placed) = self.resume_in_the_root(cwd, task_id)? {
+            return self.keyed(placed);
+        }
         let (primary, policy) = self
             .repository_context(cwd)?
             .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
@@ -361,6 +366,7 @@ impl Workspace<'_> {
             let agent = task_mut(store, task_id)
                 .ok_or_else(|| UzeError::UnknownTask(task_id.to_owned()))?;
             let id = agent.id.clone();
+            agent.revive();
             let Agent {
                 state, isolation, ..
             } = agent;
@@ -395,11 +401,11 @@ impl Workspace<'_> {
                     launch_key: String::new(),
                 });
             }
-            // An agent that ended with nothing to deliver left a
-            // conversation and no branch: it comes back on the target as a
-            // new agent would, so nothing is measured against a base its
-            // branch never had.
-            let fresh = (*state == WorkState::Closed
+            // An agent that ended with nothing to deliver, or whose work
+            // the target already carries, left a conversation and no
+            // branch: it comes back on the target as a new agent would, so
+            // nothing is measured against a base its branch never had.
+            let fresh = (matches!(*state, WorkState::Closed | WorkState::Integrated)
                 && !checkout::branch_exists(&primary, &task.branch))
             .then(|| checkout::target_reach(&primary, &target, None))
             .flatten();
@@ -474,6 +480,42 @@ impl Workspace<'_> {
         }
         placement.view = self.placed_view(&primary, placement.placement.agent().as_str(), &policy);
         self.keyed(placement)
+    }
+
+    /// The placement of `task_id` back in `root` when it is an agent that
+    /// worked there, keyed by that directory; `None` for any other.
+    fn resume_in_the_root(&self, root: &Path, task_id: &str) -> Result<Option<AgentPlacement>> {
+        let root = canonical(root);
+        if !task::store_path(&self.0.home, &root).exists() {
+            return Ok(None);
+        }
+        let revived = task::locked(&self.0.home, &root, |store| {
+            let Some(agent) = store
+                .agent_mut(task_id)
+                .filter(|agent| !agent.is_isolated())
+            else {
+                return Ok(None);
+            };
+            agent.revive();
+            Ok(Some(agent.id.clone()))
+        })?;
+        let Some(id) = revived else {
+            return Ok(None);
+        };
+        let view = self
+            .repository_context(&root)
+            .ok()
+            .flatten()
+            .and_then(|(primary, policy)| self.placed_view(&primary, id.as_str(), &policy));
+        Ok(Some(AgentPlacement {
+            project: root.clone(),
+            cwd: root,
+            placement: Placement::InPlace { id },
+            warnings: Vec::new(),
+            awaiting_approval: None,
+            view,
+            launch_key: String::new(),
+        }))
     }
 
     /// Issues the placed agent's launch its secret: every placement is a

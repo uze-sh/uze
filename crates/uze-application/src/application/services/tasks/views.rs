@@ -51,11 +51,6 @@ pub struct UpstreamSync {
     pub push: usize,
 }
 
-/// How long the conversation of an agent that ended with nothing to deliver
-/// keeps it listed: long enough to come back to an idea days later, short
-/// enough that every quick question asked of an agent does not pile up.
-pub const CONVERSATION_KEPT_SECONDS: u64 = 30 * 24 * 60 * 60;
-
 /// One piece of preserved work, as the list that crosses projects sees it.
 ///
 /// Deliberately thinner than a [`AgentView`]. Readiness, publication and how
@@ -71,10 +66,11 @@ pub struct PreservedWork {
     pub project: PathBuf,
     pub id: String,
     pub label: String,
-    pub branch: String,
+    /// The branch cut for it; `None` for an agent that worked in the
+    /// project's root, which has no branch of its own.
+    pub branch: Option<String>,
     pub checkout: Option<PathBuf>,
-    /// The state the record itself carries — never `Integrated`, and
-    /// `Closed` only while the conversation it left is recent.
+    /// The state the record itself carries.
     pub state: WorkStateView,
     pub created_at_unix: u64,
     /// When the agent was last launched, as far as its record says.
@@ -144,45 +140,30 @@ pub struct AgentView {
 }
 
 impl PreservedWork {
-    /// `None` for an agent that has nothing preserved: one working in the
-    /// project's own root, which has no branch to hold work on, and one
-    /// whose work the target already carries or that never had any.
+    /// Every recorded agent is listed, whatever became of its work: what
+    /// was discussed and reasoned is worth coming back to after the work
+    /// was delivered as much as when none was written. How long a record
+    /// stays is decided where records are collected, never here.
     ///
     /// Read from the record alone — the state is the one the record
     /// carries, not the one a Git read would draw — because this is what
     /// lets the list answer for a machine without asking a repository
-    /// anything.
-    ///
-    /// An agent that ended with nothing to deliver is still preserved while
-    /// the conversation it left is recent: `conversed_at` is when the last
-    /// one was launched. What was discussed is worth coming back to even
-    /// when no line was written.
-    pub(super) fn from_agent(
-        project: &Path,
-        agent: &Agent,
-        conversed_at: Option<u64>,
-    ) -> Option<Self> {
-        let isolation = agent.isolation()?;
-        let recent_conversation =
-            conversed_at.is_some_and(|at| at + CONVERSATION_KEPT_SECONDS >= task::now_unix());
-        match agent.state {
-            WorkState::Integrated => return None,
-            WorkState::Closed if !recent_conversation => return None,
-            _ => {}
-        }
-        Some(Self {
+    /// anything. `conversed_at` is when its last conversation was launched.
+    pub(super) fn from_agent(project: &Path, agent: &Agent, conversed_at: Option<u64>) -> Self {
+        let isolation = agent.isolation();
+        Self {
             project: project.to_path_buf(),
             id: agent.id.as_str().to_owned(),
             label: agent.label.clone(),
-            branch: isolation.branch.clone(),
-            checkout: landing::slot_path(project, isolation),
+            branch: isolation.map(|isolation| isolation.branch.clone()),
+            checkout: isolation.and_then(|isolation| landing::slot_path(project, isolation)),
             state: WorkStateView::from(&agent.state),
             created_at_unix: agent.created_at_unix,
             last_active_unix: agent.created_at_unix.max(conversed_at.unwrap_or_default()),
             harness: agent.harness.clone(),
             project_present: project.is_dir(),
             named: agent.is_named() || agent.has_chosen_label(),
-        })
+        }
     }
 }
 

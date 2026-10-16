@@ -48,3 +48,10 @@
 - [x] 8.3 Record a name typed over an agent's tab on the agent (`label_agent`, `spawn_agent_label`), and keep it when the first commit names the branch
 - [x] 8.4 Resume with the harness the agent last ran with (`PreservedWork::harness`, `ResumeTarget::harness`), asking only when it is no longer set up
 - [x] 8.5 Scroll recent with the navigator's `NavigatorScroll`: `widget::Scrollbar` on the sidebar's divider, its handle driven by `EdgeDrag` (along scrolls, across resizes), the wheel scrolls, the keys pull the window to the selection
+
+## 9. Every agent is listed
+
+- [x] 9.1 List every recorded agent, delivered, closed or worked in the project's root, with no age cut in the view (`PreservedWork::from_agent`)
+- [x] 9.2 Resume a delivered agent whose branch was pruned on its branch cut again from the target, and an agent of the root in the root (`resume_task`, `resume_in_the_root`)
+- [x] 9.3 Forget, not discard, a row that holds no work: delivered, root, or project gone (`forget_task`, `RecentRow::holds_work`)
+- [x] 9.4 Record the ending where the checkout is released, revive it on resume, and collect records after `task::RECORD_KEPT` with their conversations

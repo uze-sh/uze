@@ -135,6 +135,8 @@ pub struct Collected {
     pub branches: Vec<String>,
     pub slots: Vec<CheckoutId>,
     pub shelves: Vec<String>,
+    /// The agents whose records went, whose conversations go with them.
+    pub forgotten: Vec<AgentId>,
 }
 
 /// The removals that cannot lose work, as one critical section: the
@@ -175,7 +177,13 @@ pub fn collect(
                 .map_or_else(|| target.to_owned(), |isolation| isolation.target.clone());
             settle_without_checkout(primary, &into, agent);
         }
-        let forgotten = forget_finished(&refs, &branches, store, pool.idle, SystemTime::now());
+        let forgotten = forget_finished(
+            &refs,
+            &branches,
+            store,
+            crate::task::RECORD_KEPT,
+            SystemTime::now(),
+        );
         if !forgotten.is_empty() {
             tracing::info!(
                 count = forgotten.len(),
@@ -186,6 +194,7 @@ pub fn collect(
             branches,
             slots,
             shelves,
+            forgotten,
         }
     })
     .unwrap_or_default()
@@ -514,6 +523,20 @@ pub enum Released {
 /// client launched, one still running its `setup`, a shell somebody left —
 /// leaves the checkout and the task exactly as they were.
 pub fn release(
+    primary: &Path,
+    agent: &mut Agent,
+    target: &str,
+    observe: &dyn Fn() -> Presence,
+) -> Released {
+    let outcome = release_checkout(primary, agent, target, observe);
+    if outcome != Released::InUse {
+        agent.end();
+    }
+    outcome
+}
+
+/// [`release`] short of recording the ending.
+fn release_checkout(
     primary: &Path,
     agent: &mut Agent,
     target: &str,
