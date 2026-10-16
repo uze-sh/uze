@@ -404,10 +404,13 @@ impl UzeApplication {
     ) -> Result<Option<BlockedDelivery>> {
         let named_by_candidates = resource.capability.kind.is_invoked_by_label()
             || resource.capability.kind == CapabilityKind::Mcp;
-        if !named_by_candidates || integration.exposure_name_candidates(resource).is_empty() {
+        if !named_by_candidates {
             return Ok(None);
         }
         let current = integration.exposure_name_candidates(resource);
+        if current.is_empty() {
+            return Ok(None);
+        }
         let planned_artifact = planned_artifact(integration, resource);
         let planned = planned_artifact.as_ref().map(std::mem::discriminant);
         let identity = resource.identity();
