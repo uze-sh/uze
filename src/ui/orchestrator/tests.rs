@@ -6,7 +6,7 @@
 
 use super::*;
 
-#[cfg(feature = "bench")]
+#[cfg(all(test, feature = "bench"))]
 mod perf;
 mod recent;
 
