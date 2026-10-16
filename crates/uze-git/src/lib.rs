@@ -159,8 +159,27 @@ pub fn native_path(printed: &str) -> std::path::PathBuf {
 /// therefore shows a file's own bytes even where the operator configured a
 /// conversion for it: the price of looking without running anything.
 pub fn read(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
+    read_at(root, None, args)
+}
+
+/// A work tree with the Git directory its caller already resolved for it.
+/// Git is handed both, so it never discovers a repository from the work
+/// tree's own `.git`: whoever works in that tree can repoint it between
+/// the caller's check of it and Git's start.
+#[derive(Clone, Copy, Debug)]
+pub struct Pinned<'a> {
+    pub work_tree: &'a Path,
+    pub git_dir: &'a Path,
+}
+
+/// [`read`] run in `root` against the repository `pinned` names.
+pub fn read_pinned(root: &Path, pinned: Pinned<'_>, args: &[&str]) -> Result<Output, SpawnError> {
+    read_at(root, Some(pinned), args)
+}
+
+fn read_at(root: &Path, pinned: Option<Pinned<'_>>, args: &[&str]) -> Result<Output, SpawnError> {
     let hardened = hardened_read(args);
-    let mut command = base_command_with(root, READ_SETTINGS, &hardened);
+    let mut command = base_command_with(root, pinned, READ_SETTINGS, &hardened);
     command.env("GIT_OPTIONAL_LOCKS", "0");
     run(command, &hardened)
 }
@@ -217,8 +236,22 @@ pub fn write(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
 /// wait that runs out is a [`SpawnError`] naming the lock, since Git never
 /// ran.
 pub fn write_within(root: &Path, args: &[&str], timeout: Duration) -> Result<Output, SpawnError> {
+    write_at(root, None, args, timeout)
+}
+
+/// [`write`] run in `root` against the repository `pinned` names.
+pub fn write_pinned(root: &Path, pinned: Pinned<'_>, args: &[&str]) -> Result<Output, SpawnError> {
+    write_at(root, Some(pinned), args, DEFAULT_WRITE_TIMEOUT)
+}
+
+fn write_at(
+    root: &Path,
+    pinned: Option<Pinned<'_>>,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Output, SpawnError> {
     let _held = lock::acquire(root, timeout)?;
-    run(base_command(root, args), args)
+    run(base_command(root, pinned, args), args)
 }
 
 /// [`write`] for a command that reads its input rather than its
@@ -230,10 +263,29 @@ pub fn write_within(root: &Path, args: &[&str], timeout: Duration) -> Result<Out
 /// exactly this, and closed the moment the input is written, so a Git
 /// that waits for more input meets the end of it rather than a terminal.
 pub fn write_with_stdin(root: &Path, args: &[&str], input: &str) -> Result<Output, SpawnError> {
+    write_with_stdin_at(root, None, args, input)
+}
+
+/// [`write_with_stdin`] run in `root` against the repository `pinned` names.
+pub fn write_pinned_with_stdin(
+    root: &Path,
+    pinned: Pinned<'_>,
+    args: &[&str],
+    input: &str,
+) -> Result<Output, SpawnError> {
+    write_with_stdin_at(root, Some(pinned), args, input)
+}
+
+fn write_with_stdin_at(
+    root: &Path,
+    pinned: Option<Pinned<'_>>,
+    args: &[&str],
+    input: &str,
+) -> Result<Output, SpawnError> {
     use std::io::Write;
 
     let _held = lock::acquire(root, DEFAULT_WRITE_TIMEOUT)?;
-    let mut command = base_command(root, args);
+    let mut command = base_command(root, pinned, args);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -266,8 +318,27 @@ pub fn write_with_env(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Result<Output, SpawnError> {
+    write_with_env_at(root, None, args, env)
+}
+
+/// [`write_with_env`] run in `root` against the repository `pinned` names.
+pub fn write_pinned_with_env(
+    root: &Path,
+    pinned: Pinned<'_>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<Output, SpawnError> {
+    write_with_env_at(root, Some(pinned), args, env)
+}
+
+fn write_with_env_at(
+    root: &Path,
+    pinned: Option<Pinned<'_>>,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Result<Output, SpawnError> {
     let _held = lock::acquire(root, DEFAULT_WRITE_TIMEOUT)?;
-    let mut command = base_command(root, args);
+    let mut command = base_command(root, pinned, args);
     command.envs(env.iter().copied());
     run(command, args)
 }
@@ -307,7 +378,7 @@ pub fn fetch_private(
         remote,
         &refspec,
     ];
-    run(base_command(root, &args), &args)
+    run(base_command(root, None, &args), &args)
 }
 
 /// Runs `body` with the repository write lock held throughout, so the
@@ -323,16 +394,28 @@ pub fn locked<R>(
     Ok(body())
 }
 
-fn base_command(root: &Path, args: &[&str]) -> Command {
-    base_command_with(root, &[], args)
+fn base_command(root: &Path, pinned: Option<Pinned<'_>>, args: &[&str]) -> Command {
+    base_command_with(root, pinned, &[], args)
 }
 
-fn base_command_with(root: &Path, settings: &[(&str, &str)], args: &[&str]) -> Command {
+fn base_command_with(
+    root: &Path,
+    pinned: Option<Pinned<'_>>,
+    settings: &[(&str, &str)],
+    args: &[&str],
+) -> Command {
     let mut command = Command::new("git");
     // Git for Windows cannot open a verbatim `\\?\C:\…` root.
     command
         .arg("-C")
         .arg(uze_platform::path::strip_verbatim(root));
+    if let Some(pinned) = pinned {
+        command
+            .arg("--git-dir")
+            .arg(uze_platform::path::strip_verbatim(pinned.git_dir))
+            .arg("--work-tree")
+            .arg(uze_platform::path::strip_verbatim(pinned.work_tree));
+    }
     // Every invocation, not only the one that made a checkout: a `-c`
     // lasts one command, and a long path read by `status` after `worktree
     // add` wrote it is the same long path.
@@ -507,7 +590,7 @@ mod tests {
     /// ahead of the subcommand, where `-c` is read.
     #[test]
     fn every_invocation_carries_the_platform_s_settings() {
-        let command = base_command(Path::new("."), &["status"]);
+        let command = base_command(Path::new("."), None, &["status"]);
         let arguments: Vec<String> = command
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
@@ -520,6 +603,51 @@ mod tests {
             assert!(setting.is_some() && setting < subcommand, "{arguments:?}");
         }
     }
+
+    /// A pinned call reads the repository it was handed, whatever the work
+    /// tree's own `.git` names by the time Git starts.
+    #[test]
+    fn a_pinned_call_never_reads_the_work_tree_s_own_git() {
+        let repository = uze_testkit::git::Repository::new("git-pinned");
+        repository.commit_file("f.txt", "one\n");
+        let linked = repository.root().join("linked");
+        repository.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "linked",
+            linked.to_str().unwrap(),
+        ]);
+        let admin = repository::git_dir(&linked).expect("the linked tree has a Git directory");
+        let decoy = repository.root().with_file_name("decoy");
+        std::fs::create_dir_all(&decoy).unwrap();
+        write(&decoy, &["init", "-q"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", decoy.join(".git").display()),
+        )
+        .unwrap();
+
+        let pinned = Pinned {
+            work_tree: &linked,
+            git_dir: &admin,
+        };
+        let answered = read_pinned(&linked, pinned, &["rev-parse", "--absolute-git-dir"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        assert_eq!(native_path(answered.trim()), admin);
+        let branch = write_pinned(&linked, pinned, &["symbolic-ref", "--short", "HEAD"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        assert_eq!(branch.trim(), "linked");
+    }
+
     use std::{path::PathBuf, time::Instant};
 
     /// A span's name and the `exit` it recorded.
