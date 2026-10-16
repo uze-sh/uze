@@ -24,6 +24,9 @@ pub struct Policy<'a> {
     /// has not approved it, which refuses delivery before anything moves:
     /// work its gate never checked must not land.
     pub gate: Option<crate::approval::Approved<'a>>,
+    /// The names the project accepts, which a name derived for publishing
+    /// is held to as much as one an agent asks for.
+    pub vocabulary: &'a crate::worktree::BranchVocabulary,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

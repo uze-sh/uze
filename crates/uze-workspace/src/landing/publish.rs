@@ -14,6 +14,7 @@ use super::*;
 pub(super) fn publish(
     primary: &Path,
     isolation: &mut Isolation,
+    vocabulary: &crate::worktree::BranchVocabulary,
 ) -> Result<Delivered, DeliveryFailure> {
     let published = publication(primary, isolation);
     let name = published
@@ -25,7 +26,7 @@ pub(super) fn publish(
             // a chosen name is never replaced by a derived one. A derived
             // name somebody already has on the remote is not taken either.
             if isolation.branch.starts_with(crate::worktree::BRANCH_PREFIX) {
-                let derived = readable_branch_name(primary, isolation);
+                let derived = readable_branch_name(primary, isolation, vocabulary);
                 if derived != isolation.branch && checkout::name_is_taken(primary, &derived) {
                     isolation.branch.clone()
                 } else {

@@ -3,6 +3,7 @@ use crate::{
     approval::Approved,
     checkout::{acquire, tip_of},
     task::{AgentId, AgentStore, Base},
+    worktree::BranchVocabulary,
 };
 use std::fs;
 use uze_testkit::git::Repository;
@@ -83,6 +84,7 @@ fn handoff() -> Policy<'static> {
     Policy {
         completion: CompletionBehavior::Handoff,
         gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
     }
 }
 
@@ -90,6 +92,7 @@ fn merge(gate: &[uze_core::shell::ShellCommand]) -> Policy<'_> {
     Policy {
         completion: CompletionBehavior::Merge,
         gate: Some(Approved::assumed(gate)),
+        vocabulary: &BranchVocabulary::Unset,
     }
 }
 
@@ -318,6 +321,7 @@ fn an_unapproved_gate_refuses_delivery_without_running() {
         &Policy {
             completion: CompletionBehavior::Merge,
             gate: None,
+            vocabulary: &BranchVocabulary::Unset,
         },
     )
     .unwrap_err();
@@ -828,7 +832,7 @@ fn a_named_task_publishes_under_its_own_name() {
     repository.git_in(&slot, &["branch", "--move", "fix/chosen-by-the-agent"]);
     isolation.take_name("fix/chosen-by-the-agent".to_owned());
     assert_eq!(
-        readable_branch_name(primary, work(&isolation)),
+        readable_branch_name(primary, work(&isolation), &BranchVocabulary::Unset),
         "fix/stop-the-redirect",
         "the derivation still has an answer of its own"
     );
@@ -837,6 +841,7 @@ fn a_named_task_publishes_under_its_own_name() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&gate)),
+        vocabulary: &BranchVocabulary::Unset,
     };
     let Delivered::AwaitingRequest { branch, .. } =
         deliver(primary, &mut isolation, &policy).unwrap()
@@ -882,6 +887,7 @@ fn a_colleagues_branch_of_the_same_name_is_never_overwritten() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
     };
 
     let refused = deliver(primary, &mut isolation, &policy);
@@ -909,6 +915,7 @@ fn a_republish_replaces_only_the_commit_uze_pushed() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
     };
     let Delivered::AwaitingRequest { branch, .. } =
         deliver(primary, &mut isolation, &policy).unwrap()
@@ -985,7 +992,7 @@ fn a_subject_cut_for_length_never_ends_on_a_connective() {
     );
 
     assert_eq!(
-        readable_branch_name(primary, work(&isolation)),
+        readable_branch_name(primary, work(&isolation), &BranchVocabulary::Unset),
         "refactor/split"
     );
 }
@@ -1006,8 +1013,30 @@ fn a_subject_without_a_type_keeps_the_prefix() {
     );
 
     assert_eq!(
-        readable_branch_name(primary, work(&isolation)),
+        readable_branch_name(primary, work(&isolation), &BranchVocabulary::Unset),
         "agent/make-the-thing"
+    );
+}
+
+/// A type the project does not accept is no more publishable than it
+/// would be nameable: the branch keeps the name UZE gave it.
+#[test]
+fn a_type_the_vocabulary_refuses_publishes_under_the_identifier() {
+    let repository = repository("landing-refused-type");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let isolation = launch(&repository, &mut store, "anything");
+    agent_commits_saying(
+        &repository,
+        work(&isolation),
+        "auth.rs",
+        "wip: half a thought",
+    );
+    let vocabulary = BranchVocabulary::Types(vec!["fix".to_owned()]);
+
+    assert_eq!(
+        readable_branch_name(primary, work(&isolation), &vocabulary),
+        work(&isolation).branch.clone()
     );
 }
 
@@ -1021,7 +1050,7 @@ fn a_branch_with_no_commits_falls_back_to_the_identifier() {
     let isolation = launch(&repository, &mut store, "anything");
 
     assert_eq!(
-        readable_branch_name(primary, work(&isolation)),
+        readable_branch_name(primary, work(&isolation), &BranchVocabulary::Unset),
         work(&isolation).branch.clone()
     );
 }
@@ -1066,6 +1095,7 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&gate)),
+        vocabulary: &BranchVocabulary::Unset,
     };
     let Delivered::AwaitingRequest {
         branch,
@@ -1213,6 +1243,7 @@ fn a_merge_request_is_discovered_the_same_way_a_pull_request_is() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
     };
     deliver(primary, &mut isolation, &policy).unwrap();
     let tip = tip_of(primary, &work(&isolation).branch);
@@ -1454,6 +1485,7 @@ fn pr_without_a_remote_is_refused_before_anything_moves() {
     let policy = Policy {
         completion: CompletionBehavior::Pr,
         gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
     };
     assert_eq!(
         deliver(primary, &mut isolation, &policy),

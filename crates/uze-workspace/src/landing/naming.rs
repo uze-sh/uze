@@ -14,8 +14,14 @@ use super::*;
 /// A Conventional Commits subject gives up its type as the branch's own
 /// (`feat(ui): one layout file` -> `feat/one-layout-file`); anything else
 /// keeps the project's prefix. This is the net under every other
-/// mechanism, not the mechanism: a named task never reaches it.
-pub(super) fn readable_branch_name(primary: &Path, isolation: &Isolation) -> String {
+/// mechanism, not the mechanism: a named task never reaches it. A typed
+/// name `vocabulary` refuses is not published either, for the reason
+/// [`derived_name`] gives.
+pub(super) fn readable_branch_name(
+    primary: &Path,
+    isolation: &Isolation,
+    vocabulary: &crate::worktree::BranchVocabulary,
+) -> String {
     // The branch it already has: generated, so it is the prefix and the
     // agent's own identifier, which is exactly what the fallback is.
     let fallback = || isolation.branch.clone();
@@ -23,7 +29,9 @@ pub(super) fn readable_branch_name(primary: &Path, isolation: &Isolation) -> Str
         return fallback();
     };
     match kind {
-        Some(kind) => format!("{kind}/{subject}"),
+        Some(kind) => vocabulary
+            .accept(&format!("{kind}/{subject}"))
+            .unwrap_or_else(|_| fallback()),
         None => format!("{}{subject}", crate::worktree::BRANCH_PREFIX),
     }
 }

@@ -94,7 +94,7 @@ pub(super) fn deliver_locked(
             })
         }
         CompletionBehavior::Pr => {
-            let published = publish(primary, isolation)?;
+            let published = publish(primary, isolation, policy.vocabulary)?;
             *state = WorkState::Ready;
             Ok(published)
         }

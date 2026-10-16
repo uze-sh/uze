@@ -285,6 +285,7 @@ pub(super) fn deliver_one(
     let policy = landing::Policy {
         completion: consent.policy().completion,
         gate: consent.gate(),
+        vocabulary: &consent.policy().branch,
     };
     // Kept for the messages below, which describe the branch rather than
     // the outcome; delivery itself writes through the agent.
