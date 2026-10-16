@@ -37,12 +37,7 @@
 //! calling the live `reconcile_package` — a stale `Matched` must never
 //! authorize destroying a vendor artifact that drifted.
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -197,10 +192,7 @@ fn fingerprint_matches(entry: &CachedInspection, current: Option<&str>) -> bool 
 
 /// The instant a remembered answer is stamped with and measured against.
 pub(super) fn now_unix_nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
+    uze_platform::clock::since_epoch().as_nanos()
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ use std::{
     fmt, fs,
     io::Read,
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -68,10 +67,7 @@ fn random_bytes() -> [u8; 16] {
         )
         .as_bytes(),
     );
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos() as u64)
-        .unwrap_or_default();
+    let nanos = uze_platform::clock::since_epoch().as_nanos() as u64;
     bytes[..8].copy_from_slice(&seed.to_le_bytes());
     bytes[8..].copy_from_slice(&nanos.to_le_bytes());
     bytes

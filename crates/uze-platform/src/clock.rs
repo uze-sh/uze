@@ -1,5 +1,17 @@
-//! The machine's local time, as far as UZE needs it: where the local day
-//! began.
+//! The machine's time, as far as UZE needs it: how long since the epoch,
+//! and where the local day began.
+
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// How long since the Unix epoch, by the system clock; zero for a clock set
+/// before it. A machine whose clock was reset is not a reason for a command
+/// to fail: everything stamped with this compares or names, and an early
+/// stamp only makes what it marks look older.
+pub fn since_epoch() -> Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+}
 
 /// How many seconds after local midnight the instant `unix_seconds` falls,
 /// read from the machine's own zone rules, DST included; `None` where the

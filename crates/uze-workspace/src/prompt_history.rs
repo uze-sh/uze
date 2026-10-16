@@ -30,7 +30,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -288,10 +288,7 @@ fn private_append_options() -> OpenOptions {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    uze_platform::clock::since_epoch().as_secs()
 }
 
 /// Local midnight preceding `now_secs`, following the machine's clock,

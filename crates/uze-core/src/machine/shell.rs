@@ -148,9 +148,7 @@ const OBSERVED_FOR_SECS: u64 = 24 * 60 * 60;
 /// answer is kept in the cache for a day.
 pub fn refusal(home: &crate::home::UzeHome) -> Option<String> {
     let path = home.shell_observation_cache_path();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
+    let now = uze_platform::clock::since_epoch().as_secs();
     let remembered = observed(home)
         .filter(|observed| now.saturating_sub(observed.observed_at_unix_secs) < OBSERVED_FOR_SECS);
     if let Some(observed) = remembered {

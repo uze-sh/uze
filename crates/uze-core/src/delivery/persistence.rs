@@ -47,7 +47,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use crate::{Result, UzeError, home::UzeHome};
@@ -324,9 +324,7 @@ pub fn temporary_path(path: &Path, parent: &Path) -> PathBuf {
 
     // A clock set before the epoch only costs the nonce: the pid and the
     // sequence already make the name unique.
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_nanos());
+    let nonce = uze_platform::clock::since_epoch().as_nanos();
     parent.join(format!(
         ".{}.{}.{}.{}.tmp",
         path.file_name()

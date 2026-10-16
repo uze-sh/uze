@@ -343,10 +343,7 @@ pub fn record_provisioning(
     home.ensure_layout()?;
     let path = home.provisioning_state_path();
     let mut registry: ProvisioningRegistry = read_json_or_default(&path)?;
-    let recorded_at_unix_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let recorded_at_unix_secs = uze_platform::clock::since_epoch().as_secs();
     registry.harnesses.insert(
         harness.into(),
         ProvisioningRecord {

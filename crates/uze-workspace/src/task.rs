@@ -33,7 +33,7 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 use uze_core::path::Canonical as _;
 
@@ -96,10 +96,7 @@ impl fmt::Display for AgentId {
 /// among the identifiers one machine generates, and readable in a path.
 pub(crate) fn generated_identifier(kind: &[u8]) -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or_default();
+    let nanos = uze_platform::clock::since_epoch().as_nanos();
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut material = Vec::with_capacity(48);
     material.extend_from_slice(kind);
@@ -458,10 +455,7 @@ impl Isolation {
 
 /// Seconds since the epoch — how every time this record keeps is written.
 pub fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or_default()
+    uze_platform::clock::since_epoch().as_secs()
 }
 
 /// The first non-empty line of `prompt`, lower-cased, non-alphanumerics
