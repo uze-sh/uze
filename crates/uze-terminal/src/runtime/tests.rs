@@ -4800,14 +4800,15 @@ fn a_server_still_starting_is_waited_on_past_the_running_one_s_budget() {
         .arg("30")
         .spawn()
         .unwrap();
-    let late = super::READY_WITHIN + Duration::from_secs(1);
+    let ready_within = Duration::from_millis(100);
+    let late = ready_within * 4;
     let binding = socket.clone();
     let listener = thread::spawn(move || {
         thread::sleep(late);
         super::transport::bind(&binding).unwrap()
     });
 
-    let connected = super::process::connect_starting(&socket, &mut starting);
+    let connected = super::process::connect_starting_within(&socket, &mut starting, ready_within);
 
     assert!(connected.is_ok(), "{:?}", connected.err());
     let _listener = listener.join().unwrap();
