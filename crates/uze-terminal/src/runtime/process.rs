@@ -229,7 +229,13 @@ pub(super) fn retire(pid: u32, started: Option<u64>, socket: &Path) -> bool {
     let started = started.or_else(|| uze_platform::probe::started_at(pid));
     let still_the_one =
         || runs_uze(pid) && (started.is_none() || uze_platform::probe::started_at(pid) == started);
-    let released = || listening_peer(socket) != Some(pid) && !workspace_is_claimed();
+    // Connecting last: each connection is a client the retiring server has
+    // to take in, and the claim and the process table answer without one.
+    let released = || {
+        !workspace_is_claimed()
+            && (uze_platform::process::alive(pid) == Some(false)
+                || listening_peer(socket) != Some(pid))
+    };
     let channel = stop_channel(socket);
     for ask_first in [true, false] {
         if !still_the_one() {
