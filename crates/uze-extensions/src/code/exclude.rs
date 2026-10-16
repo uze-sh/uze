@@ -84,8 +84,10 @@ impl Exclusions {
                     }
                     _ => return None,
                 };
+                let mut spellings = Vec::new();
+                expand_braces(normalised(pattern), &mut spellings).ok()?;
                 Some(Rule {
-                    alternatives: expand_braces(normalised(pattern))
+                    alternatives: spellings
                         .iter()
                         .map(|spelling| spelling.split('/').map(Segment::parse).collect())
                         .collect(),
@@ -199,11 +201,21 @@ fn strict_json(text: &str) -> String {
     out
 }
 
-/// Every spelling `{a,b}` stands for, nested braces included. An
-/// unclosed brace is literal, as it is to VS Code.
-fn expand_braces(pattern: &str) -> Vec<String> {
+/// The most spellings one pattern's braces may stand for. The settings
+/// come from the checkout, so a freshly cloned repository could otherwise
+/// ask for `2^n` of them with `n` pairs of braces; a pattern past this is
+/// ignored whole, since hiding some of what it names would be a guess.
+const MAX_SPELLINGS: usize = 256;
+
+/// A pattern whose braces stand for more than [`MAX_SPELLINGS`].
+#[derive(Debug)]
+struct TooManySpellings;
+
+/// Every spelling `{a,b}` stands for, nested braces included, appended to
+/// `spellings`. An unclosed brace is literal, as it is to VS Code.
+fn expand_braces(pattern: &str, spellings: &mut Vec<String>) -> Result<(), TooManySpellings> {
     let Some(open) = pattern.find('{') else {
-        return vec![pattern.to_owned()];
+        return push_spelling(pattern, spellings);
     };
     let mut depth = 0;
     let mut commas = Vec::new();
@@ -223,17 +235,27 @@ fn expand_braces(pattern: &str) -> Vec<String> {
         }
     }
     let Some(close) = close else {
-        return vec![pattern.to_owned()];
+        return push_spelling(pattern, spellings);
     };
     let (head, tail) = (&pattern[..open], &pattern[close + 1..]);
     let bounds: Vec<usize> = std::iter::once(open)
         .chain(commas)
         .chain(std::iter::once(close))
         .collect();
-    bounds
-        .windows(2)
-        .flat_map(|pair| expand_braces(&format!("{head}{}{tail}", &pattern[pair[0] + 1..pair[1]])))
-        .collect()
+    bounds.windows(2).try_for_each(|pair| {
+        expand_braces(
+            &format!("{head}{}{tail}", &pattern[pair[0] + 1..pair[1]]),
+            spellings,
+        )
+    })
+}
+
+fn push_spelling(spelling: &str, spellings: &mut Vec<String>) -> Result<(), TooManySpellings> {
+    if spellings.len() == MAX_SPELLINGS {
+        return Err(TooManySpellings);
+    }
+    spellings.push(spelling.to_owned());
+    Ok(())
 }
 
 fn matches_path(pattern: &[Segment], path: &[Vec<char>]) -> bool {
@@ -373,6 +395,24 @@ mod tests {
         let settings = r#"{ "files.exclude": { "**/*.js": { "when": "$(basename).ts" } } }"#;
         let listing = [("app.js", false), ("app.ts", false), ("tool.js", false)];
         assert_eq!(shown(settings, "src", &listing), ["app.ts", "tool.js"]);
+    }
+
+    /// Thirty pairs of braces stand for 2^30 spellings; the pattern is
+    /// ignored rather than expanded, and a sibling pattern still applies.
+    #[test]
+    fn a_pattern_whose_braces_stand_for_too_many_spellings_is_ignored() {
+        let explosive = "{a,b}".repeat(30);
+        let within = "{a,b}".repeat(8);
+        let settings = format!(
+            r#"{{ "files.exclude": {{ "{explosive}": true, "{within}": true, "dist": true }} }}"#
+        );
+        let named_by_the_explosive = "a".repeat(30);
+        let listing = [
+            (named_by_the_explosive.as_str(), false),
+            ("abababab", false),
+            ("dist", true),
+        ];
+        assert_eq!(shown(&settings, "", &listing), [named_by_the_explosive]);
     }
 
     /// What VS Code itself writes: comments, a trailing comma, and other
