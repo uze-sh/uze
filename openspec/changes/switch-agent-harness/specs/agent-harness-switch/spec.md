@@ -95,7 +95,7 @@ runtime restoring the workspace, SHALL carry no briefing turn.
 
 #### Scenario: A harness that takes no first turn
 - **WHEN** the incoming harness's integration declares no way to carry a first turn
-- **THEN** the agent starts without one, the briefing is still written, and the operator is told where it is
+- **THEN** the agent starts without one and the briefing is still written
 
 ### Requirement: Switching back hands off only what is new
 When the incoming harness resumes a conversation it had before, the

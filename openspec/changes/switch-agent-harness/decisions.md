@@ -20,7 +20,7 @@
 
 ## D3 — Say "no first turn" as a placement warning, not a client field
 
-- status:   pending
+- status:   overturned (operator: no notice at all; every built-in harness takes a first turn)
 - task:     3.4
 - commit:
 - trigger:  the client never learns the briefing's path; adding it to `AgentPlacement` touches every placement.

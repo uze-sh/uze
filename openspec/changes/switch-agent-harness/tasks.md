@@ -18,7 +18,6 @@
 - [x] 3.1 `Action::SwitchHarness` in `uze-keys`; one "Continue in <display name>" item per detected harness other than the current one, from `agent_options()`, offered only where `agent_for_tab` resolves
 - [x] 3.2 `PlacementRequest::Switch` answered in `spawn_agent_placement` with `replacing: Some(tab)`; busy notice "<label>: continuing in <harness>"; the `continuity_gap` toast for a target without continuity
 - [x] 3.3 Inline confirmation when the tab is `Working`; no confirmation when idle
-- [x] 3.4 A toast naming the briefing's path when the target declares no first-turn arguments
 - [x] 3.5 `TestBackend` tests: menu items per harness, current harness excluded, exited agent offers none, confirmation on a working tab
 
 ## 4. Integrations: first turn (uze-integrations)

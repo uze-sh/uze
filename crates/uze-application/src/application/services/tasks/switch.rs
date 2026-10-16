@@ -105,17 +105,7 @@ impl Workspace<'_> {
         })?
         .map_err(refused)?;
 
-        let briefing = self.brief(&root, &switched, self.integration(from), incoming);
-        let mut warnings = Vec::new();
-        if let Some(path) = briefing
-            && incoming.first_turn_args("").is_empty()
-        {
-            warnings.push(format!(
-                "{} cannot be pointed at its briefing; ask it to read {}",
-                incoming.display_name(),
-                path.display()
-            ));
-        }
+        self.brief(&root, &switched, self.integration(from), incoming);
 
         let view = self
             .repository_context(&root)
@@ -128,15 +118,15 @@ impl Workspace<'_> {
             project: root,
             cwd: switched.directory,
             placement: switched.placement,
-            warnings,
+            warnings: Vec::new(),
             awaiting_approval: None,
             view,
             launch_key: switched.launch_key,
         })
     }
 
-    /// Writes the agent's briefing and leaves it pending for `incoming`,
-    /// answering where it is. Best-effort: a briefing that cannot be written is an agent that
+    /// Writes the agent's briefing and leaves it pending for `incoming`.
+    /// Best-effort: a briefing that cannot be written is an agent that
     /// starts knowing only what its checkout says, never a switch refused.
     fn brief(
         &self,
@@ -144,7 +134,7 @@ impl Workspace<'_> {
         switched: &Switched,
         outgoing: Option<&dyn IntegrationPort>,
         incoming: &dyn IntegrationPort,
-    ) -> Option<PathBuf> {
+    ) {
         let owner = conversation::Owner {
             project_root: root.to_path_buf(),
             agent: switched.id.clone(),
@@ -187,16 +177,14 @@ impl Workspace<'_> {
             if let Some(outgoing) = outgoing {
                 stored.left(outgoing.id());
             }
-            stored.briefing = written.clone().map(|path| PendingBriefing {
+            stored.briefing = written.map(|path| PendingBriefing {
                 integration: incoming.id().to_owned(),
                 path,
             });
         });
         if let Err(error) = recorded {
             tracing::warn!(agent = %switched.id, %error, "the switch could not be recorded");
-            return None;
         }
-        written
     }
 }
 
@@ -318,11 +306,6 @@ mod tests {
         let root = canonical(&project);
         assert_eq!(placed.cwd, root);
         assert!(!placed.launch_key.is_empty());
-        assert!(
-            placed.warnings[0].contains("right cannot be pointed at its briefing; ask it to read"),
-            "a harness that takes no first turn is pointed at it by the operator: {:?}",
-            placed.warnings
-        );
         let store = task::load(&app.home, &root).unwrap();
         let agent = store.agent(id.as_str()).unwrap();
         assert_eq!(agent.harness, "right");

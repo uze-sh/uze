@@ -360,7 +360,7 @@ pub trait IntegrationPort: Send + Sync {
     /// a positional prompt has to come last, and behind a resume spelled as
     /// a subcommand. Asked only when an agent continues on this harness
     /// after another one. The default is none: the agent starts without the
-    /// turn, and the operator is told where the briefing it pointed at is.
+    /// turn, and its briefing is written all the same.
     fn first_turn_args(&self, _turn: &str) -> Vec<OsString> {
         Vec::new()
     }
