@@ -84,18 +84,10 @@ pub(crate) fn fill(spans: &mut Vec<Span<'_>>, width: u16, state: RowState) {
     pad_to(spans, width, theme::color(ground));
 }
 
-/// Appends `text` pinned to the row's right edge, `TRAILING_PAD` off the
-/// divider — the column the agent rows keep their alias in.
-///
-/// `text` is elided rather than allowed to overflow. It is the row's
-/// caption, and a caption that does not fit used to run past the edge and
-/// be cut there by the frame — which is how a long branch name on the Git
-/// section header became an unreadable fragment with no "…" to say it had
-/// been shortened.
-/// The same, with the text slid sideways by the clock (see [`marquee`])
-/// when it is too long for the room: a caption that cannot be shortened
-/// without losing the end of it — a branch name is read from both ends —
-/// passes through instead of stopping at an "…".
+/// [`push_trailing`], with the text slid sideways by the clock (see
+/// [`marquee`]) when it is too long for the room: a caption that cannot be
+/// shortened without losing the end of it — a branch name is read from
+/// both ends — passes through instead of stopping at an "…".
 ///
 /// Only while something is asking to read it, which is the caller's
 /// business: this draws the frame it is given the ticks for and says
@@ -200,6 +192,14 @@ pub(crate) fn marquee(
     Some(spans)
 }
 
+/// Appends `text` pinned to the row's right edge, `TRAILING_PAD` off the
+/// divider — the column the agent rows keep their alias in.
+///
+/// `text` is elided rather than allowed to overflow. It is the row's
+/// caption, and a caption that does not fit used to run past the edge and
+/// be cut there by the frame — which is how a long branch name on the Git
+/// section header became an unreadable fragment with no "…" to say it had
+/// been shortened.
 pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: String, hue: Color) {
     let leading: u16 = spans.iter().map(|span| span.width() as u16).sum();
     // One column of gap between the leading spans and the caption, so the
