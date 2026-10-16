@@ -167,19 +167,6 @@ pub fn load(root: &Path) -> Result<Option<ProjectManifest>> {
     parse(&text, &path).map(Some)
 }
 
-/// One of the sections this module carries unread, parsed as its owner's
-/// type; `None` when there is no manifest or it does not declare the
-/// section.
-pub fn load_section<T: DeserializeOwned + 'static>(
-    root: &Path,
-    section: Section,
-) -> Result<Option<T>> {
-    match load(root)? {
-        Some(manifest) => manifest.section(section, &manifest_path_for(root)),
-        None => Ok(None),
-    }
-}
-
 /// The file UZE writes when it creates the manifest itself: the package
 /// manager's key, with its vocabulary spelled out beside it, so the file
 /// teaches what it can hold by being opened.
