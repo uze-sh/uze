@@ -137,8 +137,8 @@ pub(super) fn load_persisted_workspace_at(path: &Path) -> LoadedWorkspace {
 /// [`load_persisted_workspace_at`] cannot parse and therefore reads as
 /// "nothing persisted yet" — every space, tab and agent the person had,
 /// gone, with no error anywhere. The temporary is a sibling so the rename
-/// stays inside one filesystem, and the bytes reach the disk before the
-/// name does.
+/// stays inside one filesystem, the bytes reach the disk before the name
+/// does, and the name reaches it before this returns.
 pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let temporary = path.with_extension(format!(
         "{}.tmp",
@@ -163,7 +163,11 @@ pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    uze_platform::fs::rename(&temporary, path)
+    uze_platform::fs::rename(&temporary, path)?;
+    if let Some(parent) = path.parent() {
+        uze_platform::fs::sync_directory(parent);
+    }
+    Ok(())
 }
 
 /// The widest and tallest a pane may be told it is.
