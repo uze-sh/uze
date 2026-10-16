@@ -124,13 +124,12 @@ impl Status {
     }
 }
 
-/// One header control, or one report wearing a control's shape.
+/// One header control.
 #[derive(Clone, Debug)]
 pub(crate) struct Chip {
     label: String,
     /// Resolved rather than a [`Token`]: a chip's hue is usually the
-    /// answer of a state machine the caller owns — a delivery's ending, a
-    /// slot's state — which has already resolved it.
+    /// answer of a state the caller owns, which has already resolved it.
     hue: Color,
     state: ChipState,
 }

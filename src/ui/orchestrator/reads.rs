@@ -336,13 +336,17 @@ pub(super) struct WorkResolution {
     /// directory reserved for the life of the session and its status
     /// frozen at whatever it last read.
     pub(super) key: PathBuf,
+    /// Which evaluation of this key answered, counted by the scheduler: a
+    /// remote half older than an evaluation already absorbed is dropped.
+    pub(super) generation: u64,
     /// What the directory's repository holds, or `None` when the
     /// directory turned out not to be a Git working tree.
     pub(super) answered: Option<EvaluationAnswer>,
     /// The remote's half of a pass whose own answer already arrived: the
-    /// views after the forge was asked about requests. It releases no
-    /// reservation, since the first half already did.
-    pub(super) remote_half: bool,
+    /// repository's views after the forge was asked about requests, and
+    /// nothing else — the branch, target and sync are the first half's to
+    /// say. It releases no reservation, since the first half already did.
+    pub(super) remote: Option<(PathBuf, Vec<AgentView>)>,
 }
 
 /// One evaluated directory: the repository its tasks hang off, the branch
@@ -361,26 +365,6 @@ pub(super) struct EvaluationAnswer {
     pub(super) target: Option<String>,
     pub(super) sync: Option<UpstreamSync>,
     pub(super) evaluation: Evaluation,
-}
-
-impl EvaluationAnswer {
-    /// This answer as the remote's half will carry it: the same
-    /// repository facts and question, and nothing the first half already
-    /// acted on — no arrivals to send instructions for, nothing recovered
-    /// to say again.
-    fn remote_half(&self) -> Self {
-        Self {
-            primary: self.primary.clone(),
-            branch: self.branch.clone(),
-            target: self.target.clone(),
-            sync: self.sync,
-            evaluation: Evaluation {
-                ignored_actions: self.evaluation.ignored_actions.clone(),
-                requests: self.evaluation.requests.clone(),
-                ..Evaluation::default()
-            },
-        }
-    }
 }
 
 /// What a background delivery answered.
@@ -434,6 +418,7 @@ pub(super) fn spawn_preserved_sweep(home: &UzeHome, sender: mpsc::Sender<Preserv
 pub(super) fn spawn_task_evaluation(
     home: &UzeHome,
     key: PathBuf,
+    generation: u64,
     cwd: PathBuf,
     occupied: Vec<PathBuf>,
     sender: mpsc::Sender<WorkResolution>,
@@ -475,31 +460,32 @@ pub(super) fn spawn_task_evaluation(
         // The states first, the remote after: a `git ls-remote` takes
         // seconds, and what the checkouts already say is not made to wait
         // for an answer about a request.
-        let remote = answered.as_ref().map(EvaluationAnswer::remote_half);
+        let question = answered
+            .as_ref()
+            .map(|answer| (answer.primary.clone(), answer.evaluation.requests.clone()));
         let _ = sender.send(WorkResolution {
             key: key.clone(),
+            generation,
             answered,
-            remote_half: false,
+            remote: None,
         });
-        let Some(remote) = remote else {
+        let Some((primary, question)) = question else {
             return;
         };
         let asked = answered_or(
             || {
-                tui_application(home).ok().and_then(|app| {
-                    app.workspace()
-                        .ask_about_requests(&remote.evaluation.requests)
-                })
+                tui_application(home)
+                    .ok()
+                    .and_then(|app| app.workspace().ask_about_requests(&question))
             },
             None,
         );
         if let Some(tasks) = asked {
-            let mut answer = remote;
-            answer.evaluation.tasks = tasks;
             let _ = sender.send(WorkResolution {
                 key,
-                answered: Some(answer),
-                remote_half: true,
+                generation,
+                answered: None,
+                remote: Some((primary, tasks)),
             });
         }
     });
@@ -513,10 +499,12 @@ pub(super) struct StampResolution {
 
 /// Reads the change stamp of every checkout on screen. Off the render
 /// path like every other read, cheap as it is: a directory on a slow mount
-/// still answers a `stat` at its own pace.
+/// still answers a `stat` at its own pace. Without a `background_pass!`:
+/// it runs every second, and a span each time would be most of the
+/// journal.
 pub(super) fn spawn_checkout_watch(
     home: &UzeHome,
-    checkouts: Vec<PathBuf>,
+    checkouts: Vec<(PathBuf, Option<String>)>,
     sender: mpsc::Sender<StampResolution>,
 ) {
     let home = home.clone();
@@ -528,8 +516,9 @@ pub(super) fn spawn_checkout_watch(
                         let workspace = app.workspace();
                         checkouts
                             .into_iter()
-                            .map(|checkout| {
-                                let stamp = workspace.checkout_stamp(&checkout);
+                            .map(|(checkout, published)| {
+                                let stamp =
+                                    workspace.checkout_stamp(&checkout, published.as_deref());
                                 (checkout, stamp)
                             })
                             .collect()

@@ -15,7 +15,15 @@ impl WorkspaceModel {
             return;
         }
         let occupied: Vec<PathBuf> = self.remembered.occupied_checkouts.iter().cloned().collect();
-        spawn_task_evaluation(home, key, cwd, occupied, sender.clone());
+        self.remembered.evaluation_generation += 1;
+        spawn_task_evaluation(
+            home,
+            key,
+            self.remembered.evaluation_generation,
+            cwd,
+            occupied,
+            sender.clone(),
+        );
     }
 
     /// The working directory the badge and the timeline are about: the

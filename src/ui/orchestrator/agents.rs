@@ -97,15 +97,27 @@ impl WorkspaceModel {
         task.state.clone()
     }
 
+    /// What a click on `task`'s status does, or `None` where it does
+    /// nothing: ready work is delivered, as the deliver key does, and any
+    /// other state sends the instruction the project declares for it. In
+    /// flight, nothing — the work is already being handed over. The one
+    /// place this is decided, so what the status looks like, what its
+    /// hint says and what the click does cannot come to disagree.
+    pub(in crate::ui) fn status_answer(&self, task: &AgentView) -> Option<StatusAnswer> {
+        match self.drawn_state(task) {
+            WorkStateView::Integrating => None,
+            WorkStateView::Ready => Some(StatusAnswer::Deliver),
+            state => {
+                task.action.as_ref()?;
+                state.answered_by().map(StatusAnswer::Send)
+            }
+        }
+    }
+
     pub(super) fn pane_cwd(&self, pane: PaneId) -> Option<PathBuf> {
         self.tab_of_pane(pane).map(|tab| tab.pane.cwd.clone())
     }
 
-    /// The pane of the tab launched for agent `id` — where a message for
-    /// that agent goes, and what makes its task "in front of someone".
-    /// By the launch's stamp, never by directory: a shell standing in the
-    /// agent's slot is not the agent, and a message typed into it runs as
-    /// a command.
     /// Whether `pane` may take a submission of UZE's now: never into an
     /// agent mid-turn, and never on top of something the operator typed,
     /// or may have typed — a line this client cannot vouch for counts as
@@ -121,6 +133,11 @@ impl WorkspaceModel {
         }
     }
 
+    /// The pane of the tab launched for agent `id` — where a message for
+    /// that agent goes, and what makes its task "in front of someone".
+    /// By the launch's stamp, never by directory: a shell standing in the
+    /// agent's slot is not the agent, and a message typed into it runs as
+    /// a command.
     pub(super) fn pane_for_agent(&self, id: &str) -> Option<PaneId> {
         self.tabs()
             .find(|tab| launched_agent_id(tab) == Some(id))
@@ -150,26 +167,34 @@ impl WorkspaceModel {
             .collect()
     }
 
-    /// The directory each space's header reads its branch and its sync
-    /// against, once per repository.
-    /// Every checkout whose state the workspace draws: each space's own
-    /// root, and the checkout of every live agent recorded in it.
-    pub(super) fn watched_checkouts(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
-        let mut checkouts: BTreeSet<PathBuf> =
-            self.space_directories(identities).into_iter().collect();
+    /// Every checkout whose state the workspace draws, with the name its
+    /// work was published under: each open space's own root, and the
+    /// checkout of every agent recorded in one of those repositories that
+    /// still has one. A repository no space is open on is not watched.
+    pub(super) fn watched_checkouts(
+        &self,
+        identities: &[AgentIdentity],
+    ) -> Vec<(PathBuf, Option<String>)> {
+        let roots = self.space_directories(identities);
+        let open: BTreeSet<PathBuf> = roots.iter().map(|root| evaluation_key(root)).collect();
+        let mut checkouts: BTreeMap<PathBuf, Option<String>> =
+            roots.into_iter().map(|root| (root, None)).collect();
         checkouts.extend(
             self.remembered
                 .tasks
-                .values()
-                .flatten()
+                .iter()
+                .filter(|(primary, _)| open.contains(*primary))
+                .flat_map(|(_, tasks)| tasks)
                 .filter(|task| {
                     !matches!(task.state, WorkStateView::Closed | WorkStateView::Shelved)
                 })
-                .filter_map(|task| task.checkout.clone()),
+                .filter_map(|task| Some((task.checkout.clone()?, task.published_as.clone()))),
         );
         checkouts.into_iter().collect()
     }
 
+    /// The directory each space's header reads its branch and its sync
+    /// against, once per repository.
     pub(super) fn space_directories(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
         let Some(session) = &self.session else {
             return Vec::new();
@@ -210,4 +235,12 @@ impl WorkspaceModel {
         unread.dedup();
         unread
     }
+}
+
+/// What a click on a work-state status does: see
+/// [`WorkspaceModel::status_answer`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum StatusAnswer {
+    Deliver,
+    Send(uze_application::ActionState),
 }

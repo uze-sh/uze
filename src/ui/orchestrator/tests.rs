@@ -3130,6 +3130,20 @@ mod workspace_tests {
         );
     }
 
+    /// A report says under the pointer what its mark stands for, and only
+    /// in the notice's place: the status itself does not react.
+    #[test]
+    fn hovering_a_report_says_what_its_mark_means() {
+        let mut model = agent_with_task(WorkStateView::InReview, 3);
+        let tab = model.selected_tab().expect("a selected tab");
+        let (_, before) = tab_strip(&model);
+        model.hovered = Some(WorkspaceHit::StatusReport(tab));
+        let (rows, after) = tab_strip(&model);
+        let strip = rows.join("\n");
+        assert!(strip.contains("in review · request open"), "{strip}");
+        assert_eq!(before, after, "no control moves for the hint");
+    }
+
     /// A strip with no room for the hint drops it whole: nothing is drawn
     /// in its place, and the controls stay where they were.
     #[test]
@@ -4691,8 +4705,9 @@ mod workspace_tests {
         // the reservation is released rather than left standing.
         let resolution = WorkResolution {
             key: evaluation_key(&nested),
+            generation: 1,
             answered: None,
-            remote_half: false,
+            remote: None,
         };
         let mut pending = std::collections::BTreeSet::new();
         pending.insert(evaluation_key(&nested));
@@ -11761,6 +11776,80 @@ mod workspace_tests {
     /// A message for an agent reaches the agent's own pane, never a shell
     /// that happens to stand in the same slot: typed into the shell, it
     /// would run as a command.
+    /// An evaluation's remote half lands only on the evaluation it
+    /// finishes: once a later evaluation's states are drawn, an earlier
+    /// remote answer would put back what they replaced.
+    #[test]
+    fn a_remote_answer_older_than_the_drawn_evaluation_is_dropped() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-remote-half"));
+        let mut driven = driven(agent_with_task(WorkStateView::Running, 0), &home);
+        let primary = PathBuf::from("/repo");
+        let view = |state: WorkStateView| vec![task_in("/repo/.worktrees/ai", "Agent", state, 0)];
+        let send = |driven: &mut Driven<'_>, resolution: WorkResolution| {
+            driven
+                .attach
+                .channels
+                .tasks
+                .sender
+                .send(resolution)
+                .unwrap();
+            driven.attach.absorb_task_evaluations();
+        };
+        let drawn = |driven: &Driven<'_>| {
+            driven.attach.model.remembered.tasks[&primary][0]
+                .state
+                .clone()
+        };
+
+        send(
+            &mut driven,
+            WorkResolution {
+                key: primary.clone(),
+                generation: 2,
+                answered: Some(super::EvaluationAnswer {
+                    primary: primary.clone(),
+                    branch: None,
+                    target: None,
+                    sync: None,
+                    evaluation: uze_application::Evaluation {
+                        tasks: view(WorkStateView::Ready),
+                        ..uze_application::Evaluation::default()
+                    },
+                }),
+                remote: None,
+            },
+        );
+        send(
+            &mut driven,
+            WorkResolution {
+                key: primary.clone(),
+                generation: 1,
+                answered: None,
+                remote: Some((primary.clone(), view(WorkStateView::InReview))),
+            },
+        );
+        assert_eq!(
+            drawn(&driven),
+            WorkStateView::Ready,
+            "the older answer is dropped"
+        );
+
+        send(
+            &mut driven,
+            WorkResolution {
+                key: primary.clone(),
+                generation: 2,
+                answered: None,
+                remote: Some((primary.clone(), view(WorkStateView::InReview))),
+            },
+        );
+        assert_eq!(
+            drawn(&driven),
+            WorkStateView::InReview,
+            "its own answer lands"
+        );
+    }
+
     /// A checkout's stamp read for the first time is only remembered; one
     /// that moved since is evaluated at once, without waiting for the
     /// refresh clock.
@@ -11840,7 +11929,8 @@ mod workspace_tests {
                         ..uze_application::Evaluation::default()
                     },
                 }),
-                remote_half: false,
+                generation: 1,
+                remote: None,
             })
             .unwrap();
         driven.pump();

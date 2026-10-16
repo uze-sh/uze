@@ -52,8 +52,12 @@ impl Attach<'_> {
                 );
             }
             Some((reason, _)) if automatic => {
-                self.model
-                    .raise_toast(ToastKind::Told, "held back", reason.to_owned(), None);
+                self.model.raise_toast(
+                    ToastKind::Told,
+                    "held back",
+                    format!("{}: {reason}", task.label),
+                    None,
+                );
             }
             Some((title, detail)) => {
                 self.model.raise_toast(ToastKind::Told, title, detail, None);
@@ -64,21 +68,35 @@ impl Attach<'_> {
     /// What the task evaluations answered: branches, targets, syncs and
     /// the tasks themselves, and any evaluation asked for again while
     /// one was out.
-    pub(super) fn absorb_task_evaluations(&mut self) {
+    pub(in crate::ui::orchestrator) fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
-            if !resolution.remote_half {
+            let absorbed = self
+                .model
+                .remembered
+                .absorbed_generation
+                .entry(resolution.key.clone())
+                .or_default();
+            if let Some((primary, tasks)) = resolution.remote {
+                // Only onto the evaluation it finishes: a later one
+                // already drew states this answer was asked before.
+                if *absorbed <= resolution.generation {
+                    self.model.remembered.tasks.insert(primary, tasks);
+                    self.model.dirty = true;
+                }
+                continue;
+            }
+            *absorbed = (*absorbed).max(resolution.generation);
+            self.model
+                .remembered
+                .task_eval_pending
+                .remove(&resolution.key);
+            asked_again.extend(
                 self.model
                     .remembered
-                    .task_eval_pending
-                    .remove(&resolution.key);
-                asked_again.extend(
-                    self.model
-                        .remembered
-                        .task_eval_again
-                        .remove(&resolution.key),
-                );
-            }
+                    .task_eval_again
+                    .remove(&resolution.key),
+            );
             self.model
                 .remembered
                 .evaluated
@@ -420,6 +438,17 @@ impl Attach<'_> {
     pub(in crate::ui::orchestrator) fn absorb_checkout_stamps(&mut self) {
         while let Ok(resolution) = self.channels.checkout_stamps.receiver.try_recv() {
             self.model.remembered.checkout_watch_pending = false;
+            // Each answer is every checkout watched now: one no longer
+            // asked about is forgotten, so coming back is a first read.
+            let watched: BTreeSet<&PathBuf> = resolution
+                .stamps
+                .iter()
+                .map(|(checkout, _)| checkout)
+                .collect();
+            self.model
+                .remembered
+                .checkout_stamps
+                .retain(|checkout, _| watched.contains(checkout));
             for (checkout, stamp) in resolution.stamps {
                 let Some(stamp) = stamp else {
                     self.model.remembered.checkout_stamps.remove(&checkout);

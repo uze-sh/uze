@@ -38,7 +38,7 @@ impl Workspace<'_> {
             &RootStanding::default(),
             store.agent(id)?,
             policy.completion,
-            &instructions_of(primary),
+            &declaration::instructions(primary),
             &target,
         ))
     }
@@ -75,7 +75,7 @@ impl Workspace<'_> {
         let policy = self.policy(&primary).map_err(|error| error.to_string())?;
         let store = task::load(&self.0.home, &primary).map_err(|error| error.to_string())?;
         Ok(Some(Repository {
-            instructions: instructions_of(&primary),
+            instructions: declaration::instructions(&primary),
             primary,
             policy,
             store,
@@ -117,14 +117,15 @@ impl Workspace<'_> {
     }
 
     /// A number that changes when Git records something in `checkout` —
-    /// a commit, an add, a rebase, a push — read from the file system
-    /// alone, so a client can poll it cheaply and evaluate only when it
-    /// moved. `None` outside a working tree. At `trace`: it is asked every
+    /// a commit, an add, a rebase, a push of its branch or of `published`,
+    /// the name its work went to the remote under — read from the file
+    /// system alone, so a client can poll it cheaply and evaluate only
+    /// when it moved. `None` outside a working tree. At `trace`: it is asked every
     /// second for every checkout on screen, and a span each time would be
     /// most of the journal.
     #[tracing::instrument(name = "workspace.checkout_stamp", level = "trace", skip_all, fields(checkout = %checkout.display()))]
-    pub fn checkout_stamp(&self, checkout: &Path) -> Option<u64> {
-        checkout::change_stamp(checkout)
+    pub fn checkout_stamp(&self, checkout: &Path, published: Option<&str>) -> Option<u64> {
+        checkout::change_stamp(checkout, published)
     }
 
     /// Every piece of work on this machine that no live agent is in front

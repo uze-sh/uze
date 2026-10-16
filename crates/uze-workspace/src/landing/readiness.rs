@@ -64,12 +64,9 @@ impl From<CompletionBehavior> for TargetSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeliveryFailure {
     NotReady(Readiness),
-    /// The rebase stopped on these files and stays paused in the checkout;
-    /// `target_moved` is how many commits the target gained since the task's
-    /// base.
+    /// The rebase stopped on these files and stays paused in the checkout.
     Conflict {
         files: Vec<PathBuf>,
-        target_moved: usize,
     },
     GateFailed {
         /// The step that failed — named, because a gate of several steps

@@ -24,6 +24,21 @@ impl Workspace<'_> {
             .map(|agent| (agent.created_at_unix, agent.id.as_str().to_owned()))
             .collect();
         ready.sort();
+        // One refusal says it: the project delivers nothing, whichever task.
+        if repository.policy.completion.is_none() {
+            return ready
+                .first()
+                .and_then(|(_, id)| {
+                    self.refused_delivery(
+                        &repository.primary,
+                        &repository.policy,
+                        id,
+                        undeclared_delivery(),
+                    )
+                })
+                .into_iter()
+                .collect();
+        }
         // One claim per task, in order, so the second is claimed against
         // what the first wrote: the listing is only a listing, and the
         // document decides under the lock each delivery takes for itself.
@@ -136,7 +151,7 @@ impl Workspace<'_> {
                 &RootStanding::default(),
                 &agent,
                 policy.completion,
-                &instructions_of(primary),
+                &declaration::instructions(primary),
                 &target_of(primary, policy),
             ),
             outcome,
@@ -217,7 +232,7 @@ impl Workspace<'_> {
                 &RootStanding::default(),
                 agent,
                 policy.completion,
-                &instructions_of(primary),
+                &declaration::instructions(primary),
                 &target_of(primary, policy),
             ),
             outcome: DeliveryOutcome::Refused(reason),

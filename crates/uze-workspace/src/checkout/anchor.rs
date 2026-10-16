@@ -70,7 +70,7 @@ fn registered_admin(common: &Path, pointer: &Path) -> Option<PathBuf> {
 /// The directory a `.git` *file* names. A `.git` directory, or a link in
 /// its place, names nothing: neither is what Git leaves in a checkout it
 /// adds.
-fn names(dot_git: &Path) -> Option<PathBuf> {
+pub(super) fn names(dot_git: &Path) -> Option<PathBuf> {
     if !std::fs::symlink_metadata(dot_git).ok()?.is_file() {
         return None;
     }
@@ -81,7 +81,7 @@ fn names(dot_git: &Path) -> Option<PathBuf> {
 
 /// `written` as Git means it: relative to `base` unless it is absolute,
 /// in this platform's spelling.
-fn resolve(base: &Path, written: &str) -> PathBuf {
+pub(super) fn resolve(base: &Path, written: &str) -> PathBuf {
     base.join(uze_git::native_path(written))
 }
 

@@ -244,10 +244,6 @@ fn answers(word: &str, on_confirm: bool) -> [(Button, WorkspaceHit); 2] {
     ]
 }
 
-/// What the foot offers for `row`: enter's move and the one that takes
-/// the row away, or, while it asks, what enter takes and how to reach the
-/// other answer. One line, so only those two: escape leaves every surface
-/// alike, and delivering is reached through the action index.
 /// A question's two answers, in the order they stand.
 fn answer_keys(row: Option<&RecentRow>, on_confirm: bool) -> Vec<(Action, String)> {
     let Some(word) = row.and_then(RecentRow::taking_away) else {

@@ -306,8 +306,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         && let Some((text, hue)) = status_notification(task, &state, model.tick)
     {
         trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Bare);
-        let answered = (task.action.is_some() || state == WorkStateView::Ready)
-            && state != WorkStateView::Integrating;
+        let answered = model.status_answer(task).is_some();
         let hit = if answered {
             WorkspaceHit::StatusAction(tab)
         } else {
@@ -319,7 +318,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             },
             false => StatusKind::Report,
         };
-        let status = Status::new(&text, hue, muted(hue), kind);
+        let status = Status::new(&text, hue, theme::muted(hue), kind);
         let rect = status.rect_ending_at(trailing_right, inner.y);
         status.render(frame, rect);
         hits.push((rect, hit));
@@ -727,25 +726,44 @@ pub(super) fn render_zone_hairline(
 /// How many columns the pointer's hint may take: a glance, never a line.
 const STATUS_HINT_WIDTH: usize = 30;
 
-/// What the status under the pointer would do, said where the notice
-/// stands: for ready work, the key that delivers it, which a click does
-/// too; otherwise which declared instruction a click sends, by its key.
+/// What the status under the pointer means, said where the notice
+/// stands. An action says what a click does: for ready work the key that
+/// delivers it, which a click does too; otherwise which declared
+/// instruction a click sends, by its key. A report says what its mark
+/// stands for, since a mark and a number alone (`#259` and a glyph) leave
+/// the reader to know the legend by heart.
 ///
 /// The key and not the text: an instruction is a sentence, and the start
 /// of one cut at a glance's width named nothing. Whoever declared it knows
 /// what `on_publish` asks; the hint has only to say a click sends it.
 fn status_hint(model: &WorkspaceModel) -> Option<String> {
-    let WorkspaceHit::StatusAction(tab) = model.hovered? else {
-        return None;
+    let tab = match model.hovered? {
+        WorkspaceHit::StatusAction(tab) | WorkspaceHit::StatusReport(tab) => tab,
+        _ => return None,
     };
     let task = model.tab_task(tab)?;
-    let state = model.drawn_state(task);
-    if state == WorkStateView::Ready {
-        let chord = uze_keys::active()
-            .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])?;
-        return Some(format!("deliver {chord}"));
+    match model.status_answer(task) {
+        Some(StatusAnswer::Deliver) => {
+            let chord = uze_keys::active()
+                .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])?;
+            Some(format!("deliver {chord}"))
+        }
+        Some(StatusAnswer::Send(moment)) => Some(format!("send {}", moment.key())),
+        None => report_hint(task, &model.drawn_state(task)),
     }
-    Some(format!("send {}", state.answered_by()?.key()))
+}
+
+/// What a status no click answers is reporting.
+fn report_hint(task: &AgentView, state: &WorkStateView) -> Option<String> {
+    Some(match state {
+        WorkStateView::Published => "published · no request yet".to_owned(),
+        WorkStateView::InReview => "in review · request open".to_owned(),
+        WorkStateView::Integrating => "delivering".to_owned(),
+        WorkStateView::Integrated => format!("delivered to {}", task.target),
+        WorkStateView::Conflicted { .. } => "rebase paused".to_owned(),
+        WorkStateView::GateFailed => "checks failed".to_owned(),
+        _ => return None,
+    })
 }
 
 /// The hint, in place of the notice while the pointer asks. Bounded, cut

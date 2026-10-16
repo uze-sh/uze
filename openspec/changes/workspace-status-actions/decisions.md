@@ -34,7 +34,7 @@
 - task:     2.3
 - commit:
 - trigger:  with the chip's subject `#<n>` or `→ <target>` whatever the behavior, nothing in the client used `AgentView::forge` any more, and the only toast that named the forge's word ("agent opening the PR") went with the fixed messages.
-- decided:  drop `AgentView::forge` and its per-listing `landing::forge` read, and the `Forge` re-export from `uze-application`; `uze-workspace` keeps `landing::forge` for its own tests.
+- decided:  drop `AgentView::forge` and its per-listing `landing::forge` read, the `Forge` re-export from `uze-application`, and the `landing::forge` module itself, which no production code reads any more.
 - rejected: keeping it unused — a field nobody reads is a Git read per listing for nothing.
 - blast:    a later surface wanting "PR"/"MR" re-adds one field and one read.
 

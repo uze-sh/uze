@@ -309,7 +309,8 @@ need to).
   `theme::content`.
 - `src/ui/widget/` — the chrome vocabulary: `Surface` (a bordered box),
   `Rule` (an edge hairline), `Button`/`button_row`, `Chip` (a filled
-  label standing where a control stands), `Field` (a text input, and the
+  label standing where a control stands), `Status` (a work state on no
+  ground: a muted report, or a bold action that lifts under the pointer), `Field` (a text input, and the
   caret that is the only thing saying an empty one can be typed into),
   `Toast` (an outcome, stacked top-right and gone on its own clock),
   `row` (a list line's ground, its trailing caption, its title), `text`

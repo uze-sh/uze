@@ -39,8 +39,7 @@ const ACTIONS: &str = "actions";
 /// then is the instruction's own text — and its own vocabulary rather than
 /// the view's, so a state added to what a surface draws is never accepted
 /// here silently.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ActionState {
     OnChange,
     OnPublish,
@@ -98,6 +97,19 @@ pub struct DeclaredActions {
     /// Each entry left out, said as the reason: an unknown key, or a value
     /// that is not a non-empty line of text.
     pub ignored: Vec<String>,
+}
+
+impl DeclaredActions {
+    /// What is asked at each moment: the project's instruction where it
+    /// declares one, the [`ActionState::fallback`] where it does not.
+    pub fn with_fallbacks(&self) -> BTreeMap<ActionState, String> {
+        let mut instructions: BTreeMap<ActionState, String> = ActionState::ALL
+            .into_iter()
+            .filter_map(|state| Some((state, state.fallback()?.to_owned())))
+            .collect();
+        instructions.extend(self.instructions.clone());
+        instructions
+    }
 }
 
 /// The isolation policy the project declares, or `None` when it declares
@@ -183,19 +195,11 @@ pub fn actions(root: &Path) -> Result<DeclaredActions> {
     Ok(read(root)?.actions(&path))
 }
 
-/// What is asked at each moment: the project's instruction where it
-/// declares one, the [`ActionState::fallback`] where it does not — also
-/// when the manifest cannot be read, since a paused rebase is no less
-/// paused for it.
+/// What is asked at each moment in `root`: see
+/// [`DeclaredActions::with_fallbacks`]. A manifest that cannot be read
+/// leaves the fallbacks, since a paused rebase is no less paused for it.
 pub fn instructions(root: &Path) -> BTreeMap<ActionState, String> {
-    let mut instructions: BTreeMap<ActionState, String> = ActionState::ALL
-        .into_iter()
-        .filter_map(|state| Some((state, state.fallback()?.to_owned())))
-        .collect();
-    if let Ok(declared) = actions(root) {
-        instructions.extend(declared.instructions);
-    }
-    instructions
+    actions(root).unwrap_or_default().with_fallbacks()
 }
 
 /// The artifact places the project declares, if any.

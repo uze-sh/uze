@@ -360,15 +360,10 @@ fn a_conflict_leaves_the_rebase_paused_and_the_target_untouched() {
     let before = tip_of(primary, TARGET);
 
     let failure = deliver(primary, &mut isolation, &merge(&[])).unwrap_err();
-    let DeliveryFailure::Conflict {
-        files,
-        target_moved,
-    } = &failure
-    else {
+    let DeliveryFailure::Conflict { files } = &failure else {
         panic!("{failure:?}");
     };
     assert_eq!(files, &[PathBuf::from("shared.rs")]);
-    assert_eq!(*target_moved, 1);
     assert_eq!(tip_of(primary, TARGET), before);
     assert!(matches!(isolation.state, WorkState::Conflicted { .. }));
     let slot = slot_path(primary, work(&isolation)).unwrap();
@@ -1126,43 +1121,6 @@ fn push_publishes_and_leaves_the_request_to_the_agent() {
         "what the request carries, so a surface can tell a sync that \
              would send something from one that would send nothing"
     );
-}
-
-/// The host is the whole of the evidence, in both spellings Git
-/// accepts and for a forge hosted somewhere else under its own name.
-/// Anything else is `Unknown`, which is what keeps a wrong word off
-/// the screen: an answer nobody can check is worse than none.
-#[test]
-fn the_forge_is_read_off_the_remote_host_and_nothing_else() {
-    for url in [
-        "https://github.com/uze-sh/uze.git",
-        "git@github.com:uze-sh/uze.git",
-        "ssh://git@github.acme.example/team/service",
-    ] {
-        assert_eq!(Forge::from_remote_url(url), Forge::GitHub, "{url}");
-    }
-    for url in [
-        "https://gitlab.com/uze-sh/uze.git",
-        "git@gitlab.acme.example:team/service.git",
-        "https://GitLab.com/uze-sh/uze.git",
-    ] {
-        assert_eq!(Forge::from_remote_url(url), Forge::GitLab, "{url}");
-    }
-    for url in [
-        "https://git.acme.example/team/service.git",
-        "/srv/bare/service.git",
-        "https://example.com/github/mirror.git",
-        // An `@` in the path is not a user, and what precedes it is
-        // not a host.
-        "https://git.acme.example/team/service@github.com",
-        "",
-    ] {
-        assert_eq!(
-            Forge::from_remote_url(url),
-            Forge::Unknown,
-            "a host naming neither claims neither: {url}"
-        );
-    }
 }
 
 /// The same discovery, in the namespace the other family of forges

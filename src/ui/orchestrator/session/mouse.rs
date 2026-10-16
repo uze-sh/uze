@@ -1376,14 +1376,15 @@ impl Attach<'_> {
             WorkspaceHit::OpenFiles => return self.act(Action::ToggleFiles, viewport),
             WorkspaceHit::OpenArchitect => return self.act(Action::ToggleArchitect, viewport),
             WorkspaceHit::OpenSpec => return self.act(Action::ToggleSpec, viewport),
-            // Ready work answers with its delivery, the deliver key's own;
-            // every other answered status sends its instruction.
             WorkspaceHit::StatusAction(tab) => {
                 if let Some(task) = self.model.tab_task(tab).cloned() {
-                    if self.model.drawn_state(&task) == WorkStateView::Ready {
-                        return self.act(Action::DeliverTask, viewport);
+                    match self.model.status_answer(&task) {
+                        Some(StatusAnswer::Deliver) => {
+                            return self.act(Action::DeliverTask, viewport);
+                        }
+                        Some(StatusAnswer::Send(_)) => self.send_instruction(&task, false),
+                        None => {}
                     }
-                    self.send_instruction(&task, false);
                 }
             }
             WorkspaceHit::StatusReport(_) => {}

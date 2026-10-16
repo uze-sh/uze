@@ -38,10 +38,9 @@ impl Workspace<'_> {
             }
         };
         let target = target_of(&primary, &policy);
-        let ignored_actions = declaration::actions(&primary)
-            .map(|declared| declared.ignored)
-            .unwrap_or_default();
-        let instructions = instructions_of(&primary);
+        let declared = declaration::actions(&primary).unwrap_or_default();
+        let instructions = declared.with_fallbacks();
+        let ignored_actions = declared.ignored;
         let mut arrived = Vec::new();
         let mut ask_the_remote: Vec<(AgentId, Isolation)> = Vec::new();
         let completion = policy.completion;
@@ -187,8 +186,7 @@ impl Workspace<'_> {
             Ok(recorded) => asked_the_remote.then_some(recorded),
             // The pass itself stands — its states were written, and the
             // views already say them. What is lost is a request number the
-            // next pass asks for again, which is not worth a notice in an
-            // agent's pane, the only channel an evaluation has.
+            // next pass asks for again.
             Err(error) => {
                 tracing::warn!(%error, "the remote's answer about open requests was not recorded");
                 None
@@ -198,8 +196,8 @@ impl Workspace<'_> {
 }
 
 /// What reading one task from its checkout came to: the task as the remote
-/// is to be asked about it, where completion opens a request, and the
-/// conflict its agent is told about when following the target produced one.
+/// is to be asked about it, when the remote has something to say, and the
+/// agent, when following the target moved it into a conflict.
 pub(super) struct Read {
     pub(super) ask_the_remote: Option<(AgentId, Isolation)>,
     /// The agent, when this pass's own rebase moved it into a conflict.
@@ -331,14 +329,15 @@ impl EvaluationPass<'_> {
         // the branch and opened a request for it, UZE's own records never
         // cover it, and a published branch reads as in review only once
         // the forge says it is. Whatever the project's delivery: a push is
-        // a push, and `observe_request` asks only for a published branch
-        // with no number yet, at most once a minute.
+        // a push. Only a task the remote has something to say about is
+        // carried to it (`request_due`).
         //
         // Asked after the pass, with the document unlocked: it is a `git
         // ls-remote` per task, and inside the lock one slow remote made
         // every delivery and every placement in the project wait behind the
         // whole pass.
-        let ask_the_remote = Some((id.clone(), task.clone()));
+        let ask_the_remote =
+            landing::request_due(&self.refs.tips, task).then(|| (id.clone(), task.clone()));
         // Following a moved target costs a clean task nothing and a dirty
         // one its work in progress, which `refresh` refuses. Whatever the
         // completion behaviour: a task that follows the target as it moves
@@ -420,7 +419,13 @@ impl EvaluationPass<'_> {
             && !agent.is_named()
             && let Some(derived) = landing::derived_name(primary, isolation, self.vocabulary)
             && !checkout::name_is_taken(primary, &derived)
-            && checkout::rename_branch(primary, &isolation.branch.clone(), &derived).is_ok()
+            && checkout::rename_branch_within(
+                primary,
+                &isolation.branch.clone(),
+                &derived,
+                std::time::Duration::ZERO,
+            )
+            .is_ok()
         {
             // A label the operator typed is a name somebody chose, and the
             // branch being named after the commit does not take it away.

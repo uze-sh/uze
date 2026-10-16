@@ -1823,7 +1823,7 @@ fn a_checkouts_change_stamp_moves_with_what_git_records_and_only_then() {
     let mut store = AgentStore::default();
     let (_, acquired) = launch(&repository, &mut store, "stamp");
     let slot = acquired.path;
-    let stamp = || change_stamp(&slot).expect("a working tree");
+    let stamp = || change_stamp(&slot, None).expect("a working tree");
 
     let at_rest = stamp();
     let _ = is_dirty(&slot);
@@ -1841,5 +1841,5 @@ fn a_checkouts_change_stamp_moves_with_what_git_records_and_only_then() {
     repository.git_in(&slot, &["push", "--quiet", "origin", "HEAD"]);
     assert_ne!(stamp(), committed, "a push moves the remote's ref");
 
-    assert_eq!(change_stamp(&slot.join("missing")), None);
+    assert_eq!(change_stamp(&slot.join("missing"), None), None);
 }

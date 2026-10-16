@@ -65,6 +65,7 @@ pub(super) use reads::*;
 
 mod activity;
 mod agents;
+use agents::StatusAnswer;
 mod answers;
 mod approval;
 mod events;
@@ -873,13 +874,13 @@ pub(super) enum WorkspaceHit {
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
     OpenStatusCatalog(Rect),
-    /// The tab strip's work-state status, when the project declares an
-    /// instruction for the state it shows: sends that instruction to the
-    /// selected tab's agent. Never a delivery.
+    /// The tab strip's work-state status when a click answers it (see
+    /// `WorkspaceModel::status_answer`): delivers ready work, or sends the
+    /// instruction declared for the state to the selected tab's agent.
     StatusAction(TabId),
-    /// The same status when no instruction answers it. A click does
-    /// nothing; it is a target only so the pointer resting on it can be
-    /// told what does deliver.
+    /// The same status when nothing answers it. A click does nothing; it
+    /// is a target only so the pointer resting on it is told what the
+    /// state means.
     StatusReport(TabId),
     /// A hit the open extension's own render pass produced (a file row, a
     /// worktree header, its tree/diff resize handle, its close button —
@@ -1540,6 +1541,11 @@ struct Remembered {
     checkout_stamps: BTreeMap<PathBuf, u64>,
     last_checkout_watch: Option<Instant>,
     checkout_watch_pending: bool,
+    /// The count [`WorkspaceModel::schedule_evaluation`] numbers each
+    /// evaluation with, and the newest absorbed per key: an evaluation's
+    /// remote half is applied only when no later one has been.
+    evaluation_generation: u64,
+    absorbed_generation: BTreeMap<PathBuf, u64>,
     /// Projects whose target sync last said new agents start behind, so
     /// it is said once rather than on every pass.
     target_sync_behind: BTreeSet<PathBuf>,

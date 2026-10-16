@@ -104,8 +104,8 @@ pub(super) fn deliver_locked(
 /// Never a fetch, whatever the completion behaviour: this runs whenever a
 /// pane goes quiet, and a fetch on that cadence would be paid for on every
 /// tick of every task. It follows the furthest tip the target sync already
-/// fetched, and `pr` reaches the remote's own tip at delivery, which is the
-/// one that decides.
+/// fetched, and `push` reaches the remote's own tip at delivery, which is
+/// the one that decides.
 /// Takes the state beside the branch rather than the whole agent: this
 /// runs inside a pass that is already holding one, and two disjoint
 /// fields borrowed apart is what lets it.
@@ -196,7 +196,6 @@ pub(super) fn rebase_in_slot(
         isolation.base_commit = tip.to_owned();
         return Ok(false);
     }
-    let moved = commits_ahead(primary, &isolation.base_commit, tip);
     // Work delivered by a squash or rebase merge sits below `base_commit`
     // on the branch, and in the target only under commits of its own:
     // replayed, it conflicts with itself. Only what came after it is this
@@ -220,10 +219,7 @@ pub(super) fn rebase_in_slot(
                 *state = WorkState::Conflicted {
                     files: files.clone(),
                 };
-                Err(DeliveryFailure::Conflict {
-                    files,
-                    target_moved: moved,
-                })
+                Err(DeliveryFailure::Conflict { files })
             } else {
                 *state = WorkState::Ready;
                 Err(DeliveryFailure::Git(output.stderr.trim().to_owned()))
@@ -324,8 +320,12 @@ pub fn mark_delivered(primary: &Path, state: &mut WorkState, isolation: &mut Iso
     }
 }
 
+/// Abandons the rebase paused in `slot`, without waiting for the write
+/// lock: only an evaluation pass asks, and it holds the tasks document a
+/// delivery holding the lock needs (see [`refresh`]). A busy lock leaves
+/// the rebase for the next pass.
 pub(super) fn abort_rebase(primary: &Path, slot: &Path) -> bool {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+    uze_git::locked(primary, Duration::ZERO, || {
         crate::git::write(slot, &["rebase", "--abort"]).is_ok_and(|output| output.is_success())
     })
     .unwrap_or(false)

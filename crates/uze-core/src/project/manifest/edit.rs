@@ -253,7 +253,7 @@ impl ManifestDocument {
     /// last entry, the mapping's own key goes with it: `marketplaces:` left
     /// holding `{}` reads as a declaration that was made and emptied,
     /// which is not what happened.
-    pub fn remove(&mut self, mapping_path: &str, key: &str) -> Result<()> {
+    pub(super) fn remove(&mut self, mapping_path: &str, key: &str) -> Result<()> {
         let full = format!("{mapping_path}.{key}");
         if self.document.get(&full).is_none() {
             return Ok(());

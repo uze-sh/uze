@@ -176,6 +176,21 @@ pub(crate) fn softened(token: Token, into: Token) -> Color {
     )
 }
 
+/// The held-back form of a state's hue: what a status no click answers
+/// wears, so the full hue is only ever worn by one a click answers. A
+/// token with no held-back form is its own.
+pub(crate) fn muted(token: Token) -> Token {
+    match token {
+        Token::StateSuccess => Token::StateSuccessMuted,
+        Token::StateWarning => Token::StateWarningMuted,
+        Token::StateDanger => Token::StateDangerMuted,
+        Token::StatePublished => Token::StatePublishedMuted,
+        Token::StateLanded => Token::StateLandedMuted,
+        Token::StateInFlight => Token::StateInFlightMuted,
+        other => other,
+    }
+}
+
 /// A token's colour lifted toward the brightest text: the same meaning,
 /// asked for. What a status that answers a click wears under the pointer,
 /// so the hue that says the state stays and only its strength moves.

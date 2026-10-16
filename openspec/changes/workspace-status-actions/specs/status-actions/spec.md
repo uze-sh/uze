@@ -125,11 +125,15 @@ A chip with an instruction and a chip without one SHALL be told apart without th
 - **THEN** the chip is drawn exactly as at rest
 
 ### Requirement: Hovering an action says what it will send
-Under the pointer, an actionable chip SHALL name the instruction a click sends, by its key (`send on_publish`), in the strip's message zone, never a cut or moving copy of the instruction's text. The hint SHALL NOT move any control, and SHALL be dropped when the zone has no room for it.
+Under the pointer, an actionable chip SHALL name the instruction a click sends, by its key (`send on_publish`), in the strip's message zone, never a cut or moving copy of the instruction's text. A report chip SHALL say there what its state means, in the status legend's words. The hint SHALL NOT move any control, and SHALL be dropped when the zone has no room for it.
 
 #### Scenario: The hint names the key, whatever the instruction's length
 - **WHEN** the operator hovers a published chip whose `on_publish` instruction is a long sentence
 - **THEN** the message zone reads `send on_publish`, and no control in the strip moves
+
+#### Scenario: A report says what its mark means
+- **WHEN** the operator hovers the chip of work in review (`#259` and its mark)
+- **THEN** the message zone reads `in review · request open`, and the chip itself is drawn as at rest
 
 #### Scenario: A narrow strip drops the hint
 - **WHEN** the strip has no room left for the hint

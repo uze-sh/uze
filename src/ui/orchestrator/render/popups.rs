@@ -716,7 +716,7 @@ pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState
 /// standing is [`task_tone`]'s own mark, so the strip, the sidebar row and
 /// the status legend cannot come to say different things about one state.
 /// Whether a click answers it is not this function's question: that is
-/// whether the project declared an instruction for the state.
+/// [`WorkspaceModel::status_answer`]'s.
 ///
 /// `Uncommitted` is the exception that asks it. The diff count beside
 /// this zone already reports uncommitted changes, and is the shortcut to
@@ -772,20 +772,6 @@ pub(super) fn status_notification(
         _ => theme::glyph(symbol),
     };
     Some((format!("{} {standing}", delivery_subject(task)), hue))
-}
-
-/// The hue a status says what no click answers in: its state's own, held
-/// back, so the full hue is only ever worn by a status a click answers.
-pub(super) fn muted(hue: Token) -> Token {
-    match hue {
-        Token::StateSuccess => Token::StateSuccessMuted,
-        Token::StateWarning => Token::StateWarningMuted,
-        Token::StateDanger => Token::StateDangerMuted,
-        Token::StatePublished => Token::StatePublishedMuted,
-        Token::StateLanded => Token::StateLandedMuted,
-        Token::StateInFlight => Token::StateInFlightMuted,
-        other => other,
-    }
 }
 
 /// What a delivery is *about*, in the fewest characters that name it: the

@@ -139,6 +139,23 @@ pub fn observe_request(primary: &Path, isolation: &Isolation) -> RequestObservat
     }
 }
 
+/// Whether [`observe_request`] has anything to do for this task, read from
+/// `tips` and the record alone: a number for a branch the remote no longer
+/// publishes (to forget), or a published branch with no number yet, not
+/// asked about within [`REQUEST_INTERVAL`]. A pass asks only these, so a
+/// task whose request is known, or that is not on the remote, costs it no
+/// process and no write.
+pub fn request_due(tips: &checkout::BranchTips, isolation: &Isolation) -> bool {
+    let branch = publication_among(tips, isolation).map(|found| found.branch);
+    if isolation.published_request.is_some() {
+        return isolation.request_branch != branch;
+    }
+    branch.is_some()
+        && !isolation.request_asked_at_unix.is_some_and(|asked| {
+            crate::task::now_unix().saturating_sub(asked) < REQUEST_INTERVAL.as_secs()
+        })
+}
+
 /// Writes down what [`observe_request`] learned. The caller holds the
 /// tasks document for this and for nothing else the question needed.
 pub fn adopt_request(isolation: &mut Isolation, observed: &RequestObservation) {
