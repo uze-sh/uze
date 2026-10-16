@@ -506,9 +506,12 @@ pub(crate) fn attach_workspace(
         let home = home.clone();
         move || {
             let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
+            let app = writer_application(home);
             while let Ok((root, origin, prompt)) = recorded_prompts.recv() {
-                let _ = tui_application(home.clone())
-                    .and_then(|app| app.workspace().record_prompt(&root, &origin, &prompt));
+                // Its failure is traced by the service itself.
+                if let Some(app) = &app {
+                    let _ = app.workspace().record_prompt(&root, &origin, &prompt);
+                }
             }
         }
     });
@@ -524,10 +527,13 @@ pub(crate) fn attach_workspace(
         let mut layout = layout.clone();
         move || {
             let _span = tracing::info_span!(parent: &parent, "tui.attach_workspace").entered();
+            let app = writer_application(home);
             while let Ok(shape) = remembered_layouts.recv() {
                 shape.apply_to(&mut layout);
-                let _ = tui_application(home.clone())
-                    .and_then(|app| app.workspace().save_client_layout(&layout));
+                // Its failure is traced by the service itself.
+                if let Some(app) = &app {
+                    let _ = app.workspace().save_client_layout(&layout);
+                }
             }
         }
     });
@@ -946,6 +952,16 @@ fn agent_identities(home: &UzeHome) -> Vec<AgentIdentity> {
     tui_application(home.clone())
         .map(|app| app.workspace().agent_identities())
         .unwrap_or_default()
+}
+
+/// The application a writer thread keeps for as long as it runs, built
+/// once rather than per message: composing the integrations is the
+/// expensive half of a write that is otherwise one small file. A thread
+/// that could not build it writes nothing, and says so once.
+fn writer_application(home: UzeHome) -> Option<uze_application::UzeApplication> {
+    tui_application(home)
+        .inspect_err(|error| tracing::warn!(%error, "the client's writes are off this attach"))
+        .ok()
 }
 
 /// The harnesses the agent picker offers — one row per configured
