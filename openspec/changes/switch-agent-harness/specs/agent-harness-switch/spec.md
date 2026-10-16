@@ -7,23 +7,36 @@ incoming harness what happened so it does not start blind.
 ## ADDED Requirements
 
 ### Requirement: An agent can be continued on another harness
-The system SHALL offer, on the tab of a running agent UZE launched, one
-action per detected harness other than the one the agent runs now. Taking
-it SHALL relaunch the same agent on that harness in the same checkout, on
-the same branch and under the same label, replacing the tab. Harnesses that
-are not detected SHALL NOT be offered.
+The system SHALL offer, in the menu of a running agent UZE launched, one
+"Continue in" entry opening the detected harnesses other than the one the
+agent runs now. Taking one SHALL relaunch the same agent on that harness in
+the same checkout, on the same branch and under the same label, replacing
+the tab. Harnesses that are not detected SHALL NOT be offered.
 
 #### Scenario: Continuing a Claude agent in Codex
 - **WHEN** the operator chooses to continue an agent running on one harness in another detected harness
 - **THEN** a tab running the chosen harness replaces the agent's tab, standing in the same checkout on the same branch with the same label
 
 #### Scenario: Only detected harnesses are offered
-- **WHEN** the operator opens the menu of an agent's tab
+- **WHEN** the operator opens the "Continue in" entry of an agent's menu
 - **THEN** it lists every detected harness except the agent's current one, and no harness that is not detected
 
 #### Scenario: An exited agent offers no switch
 - **WHEN** the agent in a tab has exited
 - **THEN** the tab's menu offers no switch
+
+### Requirement: An agent's menu opens from the keyboard
+The system SHALL open the selected agent's menu, the one its row opens with
+the pointer, from a key, and SHALL let every entry and every entry of a
+group it opens be reached and taken from the keyboard alone.
+
+#### Scenario: Continuing an agent without the pointer
+- **WHEN** the operator presses the menu key on a selected agent, moves to "Continue in", opens it and takes a harness
+- **THEN** the agent continues on that harness exactly as if the entries had been clicked
+
+#### Scenario: Backing out of a group
+- **WHEN** the operator opens the "Continue in" group and then goes back or presses Escape
+- **THEN** the group closes and the menu stays open on the entry that opened it
 
 ### Requirement: The agent's harness is the one it runs now
 The system SHALL record, on every launch of an agent, the harness that

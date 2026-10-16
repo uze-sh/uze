@@ -1,6 +1,6 @@
 ## D1 — One action, many entries: the menu carries the harness beside the action
 
-- status:   pending
+- status:   accepted, reshaped (operator: one "Continue in…" entry opening a submenu, and `Alt+.` to open the agent's menu from the keyboard, so groups of actions replace keys of their own)
 - task:     3.1
 - commit:
 - trigger:  `uze_keys::Action` is a fixed enum (a keymap ABI), and the harnesses a machine has are not something it can name.

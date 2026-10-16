@@ -291,28 +291,48 @@ impl Attach<'_> {
 
     /// The tab/space context menu.
     pub(super) fn context_menu_action(&mut self, action: Action) {
-        match action {
-            Action::SelectPrevious => {
-                if let Some(menu) = self.model.context_menu.as_mut() {
-                    menu.selected = menu.selected.saturating_sub(1);
-                }
+        let Some(menu) = self.model.context_menu.as_mut() else {
+            return;
+        };
+        self.model.dirty = true;
+        match (action, menu.submenu) {
+            (Action::SelectPrevious, Some(sub)) => menu.submenu = Some(sub.saturating_sub(1)),
+            (Action::SelectNext, Some(sub)) => {
+                let last = menu.group(menu.selected).map_or(0, |group| group.len() - 1);
+                menu.submenu = Some((sub + 1).min(last));
             }
-            Action::SelectNext => {
-                if let Some(menu) = self.model.context_menu.as_mut() {
-                    menu.selected = (menu.selected + 1).min(menu.items.len().saturating_sub(1));
-                }
+            (Action::SelectPrevious, None) => menu.selected = menu.selected.saturating_sub(1),
+            (Action::SelectNext, None) => {
+                menu.selected = (menu.selected + 1).min(menu.items.len().saturating_sub(1));
             }
-            Action::Activate => {
+            // A group opens to the right and closes to the left, the way a
+            // nested menu does everywhere; Esc inside one goes back a level
+            // before it closes anything.
+            (Action::FocusNext, None) => {
+                let selected = menu.selected;
+                menu.open_submenu(selected);
+            }
+            (Action::FocusPrevious | Action::Dismiss, Some(_)) => menu.submenu = None,
+            (Action::Activate, Some(_)) => {
                 if let Some(menu) = self.model.context_menu.take()
-                    && let Some((action, choice)) = menu.entry(menu.selected)
+                    && let Some(choice) = menu.submenu_choice()
                 {
-                    self.perform_menu_entry(menu.target, action, choice);
+                    self.continue_in(menu.target, choice, false);
                 }
             }
+            (Action::Activate, None) => {
+                let selected = menu.selected;
+                if !menu.open_submenu(selected)
+                    && let Some(menu) = self.model.context_menu.take()
+                    && let Some(action) = menu.items.get(menu.selected).copied()
+                {
+                    self.perform_menu_action(menu.target, action);
+                }
+            }
+            (Action::FocusNext | Action::FocusPrevious, _) => {}
             // Anything else, dismissal included, closes without acting —
             // the same rule the agent picker follows.
             _ => self.model.context_menu = None,
         }
-        self.model.dirty = true;
     }
 }

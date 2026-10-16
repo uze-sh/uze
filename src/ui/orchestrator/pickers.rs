@@ -126,11 +126,15 @@ pub(super) struct ContextMenu {
     /// The right-clicked row's own rect — the popup anchors just under it,
     /// same placement rule [`AgentPicker::anchor`] uses.
     pub(super) anchor: Rect,
-    /// The harness each [`Action::SwitchHarness`] entry continues the agent
-    /// in, beside `items`; `None` for every other entry. One action, many
-    /// entries: the harnesses a machine has are not something a keymap can
-    /// name.
-    pub(super) choices: Vec<Option<HarnessChoice>>,
+    /// The harnesses behind the [`Action::SwitchHarness`] entry, beside
+    /// `items`; `None` for every other entry. One entry opens them as a
+    /// submenu rather than one entry standing for each: the harnesses a
+    /// machine has are not something a keymap can name, and a group keeps
+    /// the menu the same length however many there are.
+    pub(super) groups: Vec<Option<Vec<HarnessChoice>>>,
+    /// The open group's highlighted harness, when the highlighted entry's
+    /// submenu is open.
+    pub(super) submenu: Option<usize>,
 }
 
 /// A harness an agent can continue in, as a menu entry offers it.
@@ -145,32 +149,61 @@ impl ContextMenu {
     /// A menu whose entries read as their actions' own labels.
     pub(super) fn new(target: MenuTarget, items: Vec<Action>, anchor: Rect) -> Self {
         let labels = items.iter().map(|action| action.label()).collect();
-        let choices = vec![None; items.len()];
+        let groups = vec![None; items.len()];
         Self {
             target,
             items,
             labels,
             selected: 0,
             anchor,
-            choices,
+            groups,
+            submenu: None,
         }
     }
 
-    /// Inserts one "Continue in" entry per harness at `index`.
+    /// Inserts the "Continue in…" entry at `index`, opening `harnesses`;
+    /// nothing when there are none to continue in.
     pub(super) fn offering_switches(mut self, index: usize, harnesses: Vec<HarnessChoice>) -> Self {
-        for (offset, choice) in harnesses.into_iter().enumerate() {
-            let at = index + offset;
-            self.items.insert(at, Action::SwitchHarness);
-            self.labels.insert(at, switch_label(&choice));
-            self.choices.insert(at, Some(choice));
+        if !harnesses.is_empty() {
+            self.items.insert(index, Action::SwitchHarness);
+            self.labels
+                .insert(index, format!("{}…", Action::SwitchHarness.label()));
+            self.groups.insert(index, Some(harnesses));
         }
         self
     }
 
-    /// What activating entry `index` does, and the harness it names.
-    pub(super) fn entry(&self, index: usize) -> Option<(Action, Option<HarnessChoice>)> {
-        let action = *self.items.get(index)?;
-        Some((action, self.choices.get(index).cloned().flatten()))
+    /// The group entry `index` opens, if it opens one.
+    pub(super) fn group(&self, index: usize) -> Option<&[HarnessChoice]> {
+        self.groups.get(index)?.as_deref()
+    }
+
+    /// The open submenu's harnesses, as they read.
+    pub(super) fn submenu_labels(&self) -> Option<Vec<&str>> {
+        self.submenu?;
+        let group = self.group(self.selected)?;
+        Some(
+            group
+                .iter()
+                .map(|choice| choice.display_name.as_str())
+                .collect(),
+        )
+    }
+
+    /// The harness highlighted in the open submenu.
+    pub(super) fn submenu_choice(&self) -> Option<HarnessChoice> {
+        self.group(self.selected)?.get(self.submenu?).cloned()
+    }
+
+    /// Opens entry `index`'s submenu on its first harness; `false` for an
+    /// entry that opens none.
+    pub(super) fn open_submenu(&mut self, index: usize) -> bool {
+        if self.group(index).is_none() {
+            return false;
+        }
+        self.selected = index;
+        self.submenu = Some(0);
+        true
     }
 
     /// A menu whose entries read as the target calls each action, the way
@@ -192,15 +225,12 @@ impl ContextMenu {
             .collect();
         Self {
             target,
-            choices: vec![None; offers.len()],
+            groups: vec![None; offers.len()],
             items: offers.into_iter().map(|(action, _)| action).collect(),
             labels,
             selected: 0,
             anchor,
+            submenu: None,
         }
     }
-}
-
-fn switch_label(choice: &HarnessChoice) -> String {
-    format!("{} {}", Action::SwitchHarness.label(), choice.display_name)
 }

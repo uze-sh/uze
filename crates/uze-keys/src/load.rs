@@ -331,6 +331,9 @@ fn default_bindings() -> Vec<Binding> {
         // before the pane ever sees it.
         bind(Scope::Surfaces, "alt+x", Action::ToggleSpec),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
+        // The same key the code surface opens a row's actions with, under
+        // the modifier the pane leaves free: the selected agent's menu.
+        bind(Scope::Workspace, "alt+.", Action::OpenMenu),
         // The container of agents, beside the agent's own chord: `s` for
         // space, on the same modifier.
         bind(Scope::Workspace, "alt+s", Action::NewSpace),
@@ -455,6 +458,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),
+        bind(Scope::ContextMenu, "right", Action::FocusNext),
+        bind(Scope::ContextMenu, "left", Action::FocusPrevious),
         bind(Scope::ContextMenu, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "down", Action::SelectNext),
         bind(Scope::RootPicker, "up", Action::SelectPrevious),

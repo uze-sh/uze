@@ -15,10 +15,10 @@
 
 ## 3. Workspace client (src/ui, uze-keys)
 
-- [x] 3.1 `Action::SwitchHarness` in `uze-keys`; one "Continue in <display name>" item per detected harness other than the current one, from `agent_options()`, offered only where `agent_for_tab` resolves
+- [x] 3.1 `Action::SwitchHarness` in `uze-keys`; one "Continue in…" entry opening a submenu of the set-up harnesses other than the current one, offered only where `agent_for_tab` resolves; `Alt+.` (`Action::OpenMenu`) opens the selected agent's menu, Right/Left open and close a group
 - [x] 3.2 `PlacementRequest::Switch` answered in `spawn_agent_placement` with `replacing: Some(tab)`; busy notice "<label>: continuing in <harness>"; the `continuity_gap` toast for a target without continuity
 - [x] 3.3 Inline confirmation when the tab is `Working`; no confirmation when idle
-- [x] 3.5 `TestBackend` tests: menu items per harness, current harness excluded, exited agent offers none, confirmation on a working tab
+- [x] 3.5 `TestBackend` tests: the group's harnesses, current harness excluded, exited agent offers none, keyboard and pointer paths into the group, confirmation on a working tab
 
 ## 4. Integrations: first turn (uze-integrations)
 

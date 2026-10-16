@@ -111,8 +111,20 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
 ) {
     let labels: Vec<&str> = menu.labels.iter().map(String::as_str).collect();
     let rows = widget::menu::render(frame, area, menu.anchor, &labels, menu.selected);
+    // The open group, beside the row that opened it: anchored one row up
+    // so its first entry sits level with that row.
+    let opened = rows.get(menu.selected).copied();
     for (index, row) in rows.into_iter().enumerate() {
         hits.push((row, WorkspaceHit::ContextMenuAction(index)));
+    }
+    if let (Some(row), Some(labels), Some(highlighted)) =
+        (opened, menu.submenu_labels(), menu.submenu)
+    {
+        let anchor = Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1);
+        let rows = widget::menu::render(frame, area, anchor, &labels, highlighted);
+        for (index, row) in rows.into_iter().enumerate() {
+            hits.push((row, WorkspaceHit::ContextSubmenuAction(index)));
+        }
     }
 }
 

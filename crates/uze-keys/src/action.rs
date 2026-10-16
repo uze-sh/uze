@@ -281,7 +281,7 @@ actions! {
     SaveFile => "save-file", false,
         "Save", "Write what was typed back to the file";
     OpenMenu => "open-menu", false,
-        "Actions", "Open what can be done to the selected change: open it, copy its path, discard it";
+        "Actions", "Open what can be done to what is selected: an agent, or a change in the code surface";
     DeleteFile => "delete-file", true,
         "Delete", "Delete the selected file, having been asked once";
     CaretLeft => "caret-left", false,

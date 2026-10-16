@@ -185,21 +185,64 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// A menu entry taken: the harness a "Continue in" entry names travels
-    /// beside its action.
-    pub(in crate::ui::orchestrator) fn perform_menu_entry(
-        &mut self,
-        target: MenuTarget,
-        action: Action,
-        choice: Option<HarnessChoice>,
-    ) {
-        match (action, choice) {
-            (Action::SwitchHarness, Some(choice)) => {
-                self.continue_in(target, choice, false);
-                self.model.dirty = true;
+    /// Opens the selected tab's menu where its row is, the menu a right-click
+    /// on that row opens: one key for every action of an agent, and Up,
+    /// Down, Right and Enter to reach any of them.
+    pub(super) fn open_tab_menu_from_the_keyboard(&mut self) {
+        let Some(tab) = self.model.selected_tab() else {
+            return;
+        };
+        let row = self.model.hits.iter().find_map(|(rect, hit)| match hit {
+            WorkspaceHit::SelectTab(found) if *found == tab => Some(*rect),
+            _ => None,
+        });
+        // Under the row's label, as a pointer on it would have put it; the
+        // pane's corner when the row is not drawn (a folded space).
+        let anchor = row.map_or_else(
+            || Rect::new(0, 0, 1, 1),
+            |row| Rect::new(row.x + 2, row.y, 1, 1),
+        );
+        self.model.context_menu = Some(self.tab_menu(tab, anchor));
+        self.model.dirty = true;
+    }
+
+    /// The menu a tab's row opens, by the pointer or by `Alt+.`.
+    pub(super) fn tab_menu(&self, tab: TabId, anchor: Rect) -> ContextMenu {
+        let mut items = vec![Action::RenameSelection];
+        // Offered only where it can be honoured: an agent
+        // already in a checkout of its own has nothing to be
+        // given, and a directory that is no repository has
+        // nothing to cut one from.
+        if self.can_isolate(tab) {
+            // Isolating takes the work with it: at the moment
+            // an agent is moved, what the tree holds is
+            // usually what that agent was doing, and a
+            // checkout without it is one where the file it
+            // was mid-edit on went back to its last commit.
+            items.push(Action::IsolateAgent);
+            // Starting from the commit instead is the
+            // exception, and it is offered only where it is
+            // one: a tree the last evaluation found dirty.
+            // Gated this way round on purpose — the answer
+            // can be up to a refresh old, and a stale *clean*
+            // reading costs the operator nothing, where a
+            // stale reading on the carrying row would take
+            // away the very thing they had just edited.
+            if self
+                .model
+                .tab_task(tab)
+                .is_some_and(|task| task.state == WorkStateView::Uncommitted)
+            {
+                items.push(Action::IsolateAgentAtCommit);
             }
-            (action, _) => self.perform_menu_action(target, action),
         }
+        if can_close_tab_from_menu(&self.model, &self.identities, tab) {
+            items.push(Action::CloseTab);
+        }
+        // Right after the name: continuing elsewhere is what a
+        // person reaches for when this harness stopped working.
+        ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
+            .offering_switches(1, self.switch_choices(tab))
     }
 
     /// The harnesses `tab`'s agent could continue in: every one set up for

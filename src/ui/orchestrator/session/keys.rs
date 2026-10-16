@@ -325,6 +325,7 @@ impl Attach<'_> {
                 let anchor = self.new_agent_anchor();
                 self.offer_agents(anchor, None);
             }
+            Action::OpenMenu => self.open_tab_menu_from_the_keyboard(),
             Action::NewSpace => self.open_root_picker(),
             Action::RenameSelection => {
                 if let Some(tab) = self.model.selected_tab() {

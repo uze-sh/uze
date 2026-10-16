@@ -49,8 +49,73 @@ fn identities() -> Vec<AgentIdentity> {
     ]
 }
 
-fn continue_in(tab: TabId) -> String {
-    format!("Continue in {}", display_name(&harness_of(tab)))
+/// What the menu's group entry reads as.
+const CONTINUE_IN: &str = "Continue in…";
+
+/// The harnesses the open menu's group entry offers, as they read.
+fn offered(driven: &workspace_tests::Driven<'_>) -> Vec<String> {
+    let menu = driven
+        .attach
+        .model
+        .context_menu
+        .as_ref()
+        .expect("a menu is open");
+    let index = menu
+        .labels
+        .iter()
+        .position(|label| label == CONTINUE_IN)
+        .expect("the menu offers continuing elsewhere");
+    menu.group(index)
+        .unwrap()
+        .iter()
+        .map(|choice| choice.display_name.clone())
+        .collect()
+}
+
+/// One key, by the chord the active keymap gives `action` in `scope`.
+fn press(
+    driven: &mut workspace_tests::Driven<'_>,
+    action: uze_keys::Action,
+    scope: uze_keys::Scope,
+) {
+    let chord = uze_keys::active()
+        .chord_for(
+            action,
+            &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
+        )
+        .expect("the action has a key");
+    driven.press_key(workspace_tests::key_event(chord));
+}
+
+/// Opens the selected agent's menu from the keyboard and takes its
+/// "Continue in…" group to the first harness.
+fn continue_from_the_keyboard(driven: &mut workspace_tests::Driven<'_>) {
+    driven.frame();
+    press(driven, uze_keys::Action::OpenMenu, uze_keys::Scope::Pane);
+    assert!(
+        driven.attach.model.context_menu.is_some(),
+        "Alt+. opened the menu"
+    );
+    press(
+        driven,
+        uze_keys::Action::SelectNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    press(
+        driven,
+        uze_keys::Action::FocusNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    assert_eq!(
+        driven.attach.model.context_menu.as_ref().unwrap().submenu,
+        Some(0),
+        "Right opened the group"
+    );
+    press(
+        driven,
+        uze_keys::Action::Activate,
+        uze_keys::Scope::ContextMenu,
+    );
 }
 
 /// The menu a right-click on `wanted`'s row opens, as its entries read.
@@ -107,20 +172,17 @@ fn an_agent_is_offered_every_set_up_harness_but_its_own() {
 
     assert_eq!(
         menu_on(&mut driven, TabId(2)),
-        [
-            "Rename".to_owned(),
-            continue_in(TabId(3)),
-            "To worktree".to_owned(),
-            "Close tab".to_owned()
-        ],
+        ["Rename", CONTINUE_IN, "To worktree", "Close tab"],
+        "one entry, whatever the number of harnesses"
+    );
+    assert_eq!(
+        offered(&driven),
+        [display_name(&harness_of(TabId(3)))],
         "the other harness, never its own nor one not set up"
     );
     driven.attach.model.context_menu = None;
-    assert_eq!(
-        menu_on(&mut driven, TabId(3))[1],
-        continue_in(TabId(2)),
-        "and the other agent the other way round"
-    );
+    menu_on(&mut driven, TabId(3));
+    assert_eq!(offered(&driven), [display_name(&harness_of(TabId(2)))]);
 }
 
 #[test]
@@ -138,8 +200,87 @@ fn an_agent_whose_harness_exited_offers_no_switch() {
 
     let labels = menu_on(&mut driven, TabId(2));
     assert!(
-        !labels.iter().any(|label| label.starts_with("Continue in")),
+        !labels.iter().any(|label| label == CONTINUE_IN),
         "{labels:?}"
+    );
+}
+
+#[test]
+fn the_group_opens_beside_its_row_and_closes_back_to_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-group"));
+    let mut driven = driven(agents_in_the_root_session(), &home);
+    driven.attach.identities = identities();
+    menu_on(&mut driven, TabId(2));
+    press(
+        &mut driven,
+        uze_keys::Action::SelectNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    press(
+        &mut driven,
+        uze_keys::Action::Activate,
+        uze_keys::Scope::ContextMenu,
+    );
+    assert_eq!(
+        driven.attach.model.context_menu.as_ref().unwrap().submenu,
+        Some(0),
+        "Enter on a group opens it rather than acting"
+    );
+    driven.frame();
+    assert!(
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .any(|(_, hit)| matches!(hit, WorkspaceHit::ContextSubmenuAction(0))),
+        "the group is drawn"
+    );
+
+    press(
+        &mut driven,
+        uze_keys::Action::FocusPrevious,
+        uze_keys::Scope::ContextMenu,
+    );
+    let menu = driven
+        .attach
+        .model
+        .context_menu
+        .as_ref()
+        .expect("Left keeps the menu");
+    assert_eq!(menu.submenu, None);
+    assert_eq!(menu.selected, 1);
+    press(
+        &mut driven,
+        uze_keys::Action::FocusNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    press(
+        &mut driven,
+        uze_keys::Action::Dismiss,
+        uze_keys::Scope::ContextMenu,
+    );
+    assert!(
+        driven.attach.model.context_menu.is_some(),
+        "Esc in a group goes back a level first"
+    );
+}
+
+#[test]
+fn an_idle_agent_is_switched_from_the_keyboard_without_a_question() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-idle"));
+    let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
+    let mut driven = driven(model, &home);
+    driven.attach.identities = identities();
+
+    continue_from_the_keyboard(&mut driven);
+
+    assert!(driven.attach.model.context_menu.is_none());
+    assert!(driven.attach.model.interrupt.is_none());
+    assert!(
+        driven.attach.model.placement_pending,
+        "the switch was placed"
     );
 }
 
@@ -147,18 +288,14 @@ fn an_agent_whose_harness_exited_offers_no_switch() {
 fn a_busy_agent_is_asked_before_it_is_interrupted() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-busy"));
     let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
     let pane = pane_of(&model, TabId(2));
     model.note_agent_prompt_submission(pane, &identities(), Some("keep going"));
     assert_eq!(model.agent_tab_status(pane, false), AgentTabStatus::Working);
     let mut driven = driven(model, &home);
     driven.attach.identities = identities();
-    menu_on(&mut driven, TabId(2));
-    let menu = driven.attach.model.context_menu.take().unwrap();
-    let (action, choice) = menu.entry(1).unwrap();
 
-    driven
-        .attach
-        .perform_menu_entry(menu.target, action, choice);
+    continue_from_the_keyboard(&mut driven);
 
     let question = driven
         .attach
@@ -185,41 +322,17 @@ fn a_busy_agent_is_asked_before_it_is_interrupted() {
 fn a_confirmed_interruption_continues_the_agent() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-busy-yes"));
     let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
     let pane = pane_of(&model, TabId(2));
     model.note_agent_prompt_submission(pane, &identities(), Some("keep going"));
     let mut driven = driven(model, &home);
     driven.attach.identities = identities();
-    menu_on(&mut driven, TabId(2));
-    let menu = driven.attach.model.context_menu.take().unwrap();
-    let (action, choice) = menu.entry(1).unwrap();
-    driven
-        .attach
-        .perform_menu_entry(menu.target, action, choice);
+    continue_from_the_keyboard(&mut driven);
 
     driven.attach.interrupt_action(uze_keys::Action::FocusNext);
     driven.attach.interrupt_action(uze_keys::Action::Activate);
 
     assert!(driven.attach.model.interrupt.is_none());
-    assert!(
-        driven.attach.model.placement_pending,
-        "the switch was placed"
-    );
-}
-
-#[test]
-fn an_idle_agent_is_switched_without_a_question() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-idle"));
-    let mut driven = driven(agents_in_the_root_session(), &home);
-    driven.attach.identities = identities();
-    menu_on(&mut driven, TabId(2));
-    let menu = driven.attach.model.context_menu.take().unwrap();
-    let (action, choice) = menu.entry(1).unwrap();
-
-    driven
-        .attach
-        .perform_menu_entry(menu.target, action, choice);
-
-    assert!(driven.attach.model.context_menu.is_none());
     assert!(
         driven.attach.model.placement_pending,
         "the switch was placed"
@@ -242,4 +355,44 @@ fn the_interruption_is_asked_over_the_whole_client() {
     let rows = frame_rows(&mut model).join("\n");
     assert!(rows.contains("Interrupt agent 1?"), "{rows}");
     assert!(rows.contains("Continue in Other"), "{rows}");
+}
+
+#[test]
+fn a_click_opens_the_group_and_a_click_on_a_harness_switches() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-switch-click"));
+    let mut driven = driven(agents_in_the_root_session(), &home);
+    driven.attach.identities = identities();
+    menu_on(&mut driven, TabId(2));
+    driven.frame();
+    let rect_of = |driven: &workspace_tests::Driven<'_>, wanted: WorkspaceHit| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == wanted).then_some(*rect))
+            .expect("drawn")
+    };
+
+    let group = rect_of(&driven, WorkspaceHit::ContextMenuAction(1));
+    driven.press(group.x + 1, group.y);
+    assert_eq!(
+        driven
+            .attach
+            .model
+            .context_menu
+            .as_ref()
+            .map(|menu| menu.submenu),
+        Some(Some(0)),
+        "the group's row opens it and keeps the menu"
+    );
+    driven.frame();
+    let harness = rect_of(&driven, WorkspaceHit::ContextSubmenuAction(0));
+    driven.press(harness.x + 1, harness.y);
+
+    assert!(driven.attach.model.context_menu.is_none());
+    assert!(
+        driven.attach.model.placement_pending,
+        "the switch was placed"
+    );
 }

@@ -823,6 +823,8 @@ pub(super) enum WorkspaceHit {
     /// generic over whatever action that row is, same pattern
     /// [`WorkspaceHit::PickAgent`] uses for the agent picker.
     ContextMenuAction(usize),
+    /// One row of the open menu's submenu, by index into its group.
+    ContextSubmenuAction(usize),
     /// A toast's offer to read a project's commands that wait for the
     /// operator's approval: opens the question about them.
     ReviewCommands,

@@ -301,25 +301,38 @@ impl Attach<'_> {
                 // intermittent — it depended on which row was
                 // right-clicked, not on timing).
                 let hit = hit_at(&self.model, mouse.column, mouse.row);
-                let entry = match hit {
-                    Some(WorkspaceHit::ContextMenuAction(index)) => self
-                        .model
-                        .context_menu
-                        .as_ref()
-                        .and_then(|menu| menu.entry(index)),
-                    _ => None,
-                };
+                self.model.dirty = true;
+                // A group's own row opens it and keeps the menu: it is a
+                // way into choices, not a choice.
+                if let Some(WorkspaceHit::ContextMenuAction(index)) = hit
+                    && let Some(menu) = self.model.context_menu.as_mut()
+                    && menu.open_submenu(index)
+                {
+                    return Flow::Continue;
+                }
                 // Dismiss unconditionally (any click, on the popup or
                 // outside it, closes the menu) but only dispatch when
                 // the click actually resolved to one of its own rows —
                 // the two used to be one `if let` that discarded the
                 // menu before checking the hit, so a miss silently
                 // dismissed without acting instead of visibly no-oping.
-                let menu = self.model.context_menu.take();
-                if let (Some(menu), Some((action, choice))) = (menu, entry) {
-                    self.perform_menu_entry(menu.target, action, choice);
+                let Some(mut menu) = self.model.context_menu.take() else {
+                    return Flow::Continue;
+                };
+                match hit {
+                    Some(WorkspaceHit::ContextMenuAction(index)) => {
+                        if let Some(action) = menu.items.get(index).copied() {
+                            self.perform_menu_action(menu.target, action);
+                        }
+                    }
+                    Some(WorkspaceHit::ContextSubmenuAction(index)) => {
+                        menu.submenu = Some(index);
+                        if let Some(choice) = menu.submenu_choice() {
+                            self.continue_in(menu.target, choice, false);
+                        }
+                    }
+                    _ => {}
                 }
-                self.model.dirty = true;
             }
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
@@ -798,43 +811,7 @@ impl Attach<'_> {
                         Some(ContextMenu::new(MenuTarget::Space(space), items, anchor));
                     self.model.dirty = true;
                 } else if let Some(WorkspaceHit::SelectTab(tab)) = hit {
-                    let mut items = vec![Action::RenameSelection];
-                    // Offered only where it can be honoured: an agent
-                    // already in a checkout of its own has nothing to be
-                    // given, and a directory that is no repository has
-                    // nothing to cut one from.
-                    if self.can_isolate(tab) {
-                        // Isolating takes the work with it: at the moment
-                        // an agent is moved, what the tree holds is
-                        // usually what that agent was doing, and a
-                        // checkout without it is one where the file it
-                        // was mid-edit on went back to its last commit.
-                        items.push(Action::IsolateAgent);
-                        // Starting from the commit instead is the
-                        // exception, and it is offered only where it is
-                        // one: a tree the last evaluation found dirty.
-                        // Gated this way round on purpose — the answer
-                        // can be up to a refresh old, and a stale *clean*
-                        // reading costs the operator nothing, where a
-                        // stale reading on the carrying row would take
-                        // away the very thing they had just edited.
-                        if self
-                            .model
-                            .tab_task(tab)
-                            .is_some_and(|task| task.state == WorkStateView::Uncommitted)
-                        {
-                            items.push(Action::IsolateAgentAtCommit);
-                        }
-                    }
-                    if can_close_tab_from_menu(&self.model, &self.identities, tab) {
-                        items.push(Action::CloseTab);
-                    }
-                    // Right after the name: continuing elsewhere is what a
-                    // person reaches for when this harness stopped working.
-                    self.model.context_menu = Some(
-                        ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
-                            .offering_switches(1, self.switch_choices(tab)),
-                    );
+                    self.model.context_menu = Some(self.tab_menu(tab, anchor));
                     self.model.dirty = true;
                 } else if let Some(WorkspaceHit::RecentRow(index)) = hit {
                     self.open_recent_menu(index, anchor);
@@ -882,13 +859,26 @@ impl Attach<'_> {
                 // marks the frame dirty when the hover actually moved
                 // onto a different row, so waving the mouse across the
                 // rest of the screen doesn't force a redraw every tick.
+                //
+                // A group opens under the pointer and closes when it moves
+                // to another row of the menu; inside it, the highlight
+                // follows the pointer the same way.
                 let hit = hit_at(&self.model, mouse.column, mouse.row);
-                if let Some(WorkspaceHit::ContextMenuAction(index)) = hit
-                    && let Some(menu) = self.model.context_menu.as_mut()
-                    && menu.selected != index
-                {
-                    menu.selected = index;
-                    self.model.dirty = true;
+                if let Some(menu) = self.model.context_menu.as_mut() {
+                    let before = (menu.selected, menu.submenu);
+                    match hit {
+                        Some(WorkspaceHit::ContextMenuAction(index)) => {
+                            if !menu.open_submenu(index) {
+                                menu.selected = index;
+                                menu.submenu = None;
+                            }
+                        }
+                        Some(WorkspaceHit::ContextSubmenuAction(index)) => {
+                            menu.submenu = Some(index);
+                        }
+                        _ => {}
+                    }
+                    self.model.dirty |= (menu.selected, menu.submenu) != before;
                 }
             }
             // The chrome itself: every button under the pointer reads its
@@ -1359,7 +1349,7 @@ impl Attach<'_> {
             | WorkspaceHit::ApprovalBody
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody => {}
-            WorkspaceHit::ContextMenuAction(_) => {
+            WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already
                 // handles — same as `PickAgent` above for the

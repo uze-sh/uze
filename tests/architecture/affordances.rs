@@ -224,7 +224,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::DeleteFile, Index);
     put(
         Action::OpenMenu,
-        Control("the secondary button on a changed file's row in the code surface"),
+        Control(
+            "the secondary button on a changed file's row in the code surface, and a \
+             right-click on an agent's row",
+        ),
     );
     put(
         Action::TogglePreview,

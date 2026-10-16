@@ -216,11 +216,16 @@ decide than this change should. The digest reads neither; Claude's
 
 ### D9. The menu
 
-The menu lists one item per set-up harness other than the current one,
-"Continue in <display name>", from the client's `AgentIdentity` list (no
-detection on the input path). One `Action::SwitchHarness` stands behind
-every entry, and the menu carries the harness beside it (decisions.md
-D1).
+The menu has one "Continue in…" entry, `Action::SwitchHarness`, that
+opens a submenu of the set-up harnesses other than the current one, from
+the client's `AgentIdentity` list (no detection on the input path). A group
+rather than an entry per harness keeps the menu one length however many
+harnesses a machine has, and is the first of the action groups the menu
+can grow (decisions.md D1). `Alt+.` (`Action::OpenMenu`, the key the code
+surface opens a row's actions with, under the modifier the pane leaves
+free) opens the selected agent's menu; Up and Down move, Right or Enter
+open a group, Left or Escape close it, Enter takes an entry. The pointer
+opens a group by hovering or clicking its row.
 It is offered only where `agent_for_tab` resolves, which means the
 harness process is alive. Choosing a harness without continuity shows the
 `continuity_gap` toast the picker already shows. If the tab is `Working`,
