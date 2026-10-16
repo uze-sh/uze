@@ -728,8 +728,7 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
     // inside a client is never what that means. Open a space for this
     // directory in the uze already running, and leave.
     if std::env::var_os("UZE_PANE").is_some() {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let root = uze_application::space_root(&cwd);
+        let root = uze_application::space_root(&cwd()?);
         let label = uze_terminal::open_space(uze_terminal::SpaceSeat { root: root.clone() })
             .map_err(terminal_error)?;
         println!(

@@ -111,6 +111,17 @@ pub fn run(home: UzeHome) -> Result<()> {
     // terminal's reply for keystrokes.
     crate::theme::observe_appearance(&home);
     crate::theme::follow_desktop(home.clone());
+    // Before the screen is taken, so a directory that is gone is said on
+    // a terminal that can show it. Sending `.` instead would have the
+    // terminal runtime resolve it against its own directory.
+    let launch = uze_terminal::SpaceSeat {
+        root: uze_application::space_root(&std::env::current_dir().map_err(|source| {
+            uze_application::UzeError::Read {
+                path: PathBuf::from("."),
+                source,
+            }
+        })?),
+    };
     let mut terminal = TerminalSession::start()?;
     // Immediately after the screen is entered and before anything draws
     // into it: from here on, a panic on this thread leaves a terminal a
@@ -142,10 +153,6 @@ pub fn run(home: UzeHome) -> Result<()> {
     // the session as it stands (see `orchestrator::Landing`).
     let mut landing = orchestrator::Landing::AtLaunchDirectory;
     let outcome = loop {
-        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let launch = uze_terminal::SpaceSeat {
-            root: uze_application::space_root(&root),
-        };
         match orchestrator::attach_workspace(
             &mut terminal,
             &launch,

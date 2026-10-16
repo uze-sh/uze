@@ -136,6 +136,40 @@ fn no_subcommand_prints_help_even_inside_a_workspace_pane() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// `uze workspace` from a pane whose directory was removed — a shell left
+/// in a trimmed checkout — says so. Sending `.` instead had the terminal
+/// runtime open a space for whatever its own directory was.
+// The directory is removed from under the shell, which Windows refuses.
+#[cfg(unix)]
+#[test]
+fn opening_a_space_from_a_removed_directory_is_refused() {
+    let home = temporary_home("cli-removed-cwd");
+    let removed = home.join("trimmed-slot");
+    std::fs::create_dir_all(&removed).unwrap();
+    let runtime = uze_testkit::temp::socket_scratch("removed-cwd");
+    let output = Command::new("/bin/sh")
+        .args([
+            "-c",
+            r#"cd "$1" && rmdir "$1" && exec "$2" workspace"#,
+            "sh",
+        ])
+        .arg(&removed)
+        .arg(env!("CARGO_BIN_EXE_uze"))
+        .isolated_home(&home)
+        .env("UZE_HOME", home.join(".uze"))
+        .env("XDG_RUNTIME_DIR", &runtime)
+        .env("UZE_PANE", "1")
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("failed to read ."),
+        "the directory is what is reported, not the runtime: {output:?}"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+    let _ = std::fs::remove_dir_all(&runtime);
+}
+
 /// Writes a fake `claude`/`codex` executable that understands `--version`
 /// and just enough of `mcp get`/`mcp add`/`mcp remove` (tracked via a
 /// sibling state directory of touched files, one per registered entry
