@@ -447,6 +447,7 @@ mod plugin_tests {
 
 #[cfg(test)]
 mod codex_native_coverage_tests {
+    use crate::shared::test_support::temp_root;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
@@ -458,10 +459,6 @@ mod codex_native_coverage_tests {
 
     use super::codex_exact_coverage;
     use crate::codex::CodexIntegration;
-
-    fn temp_root(label: &str) -> PathBuf {
-        uze_testkit::temp::scratch(label)
-    }
 
     /// `skills_field` and `mcp_field` are written into `.codex-plugin/plugin.json`
     /// verbatim (as raw JSON snippets, so a test can supply a non-string

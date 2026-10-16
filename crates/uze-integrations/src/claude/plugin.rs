@@ -644,6 +644,7 @@ fn inspect_claude_plugin(
 
 #[cfg(test)]
 mod claude_native_coverage_tests {
+    use crate::shared::test_support::temp_root;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
@@ -661,10 +662,6 @@ mod claude_native_coverage_tests {
         catalogue_document::<ClaudeMarketplace>(packages, Origin::Explicit)
     }
     use super::claude_exact_coverage;
-
-    fn temp_root(label: &str) -> PathBuf {
-        uze_testkit::temp::scratch(label)
-    }
 
     fn make_package_with_plugin(
         label: &str,

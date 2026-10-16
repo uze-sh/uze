@@ -447,6 +447,7 @@ fn fnv1a64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod plugin_tests {
+    use crate::shared::test_support::temp_root;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -459,10 +460,6 @@ mod plugin_tests {
 
     use super::*;
     use crate::antigravity::AntigravityIntegration;
-
-    fn temp_root(label: &str) -> PathBuf {
-        uze_testkit::temp::scratch(label)
-    }
 
     fn make_package(label: &str, manifest: &str) -> (PathBuf, StoredPackage) {
         let root = temp_root(label);

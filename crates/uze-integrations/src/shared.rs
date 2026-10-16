@@ -24,5 +24,7 @@ pub(crate) mod preference;
 pub(crate) mod process;
 pub(crate) mod provision;
 pub(crate) mod skill;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub(crate) mod toml_config;
 pub(crate) mod tree;

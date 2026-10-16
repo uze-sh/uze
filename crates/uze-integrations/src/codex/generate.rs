@@ -163,6 +163,7 @@ fn materialize_user_only_skill_dir(
 
 #[cfg(test)]
 mod generated_native_tests {
+    use crate::shared::test_support::{mcp_resource, skill_resource, temp_root, walk};
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
@@ -207,10 +208,6 @@ mod generated_native_tests {
         marketplace::remove_generated_package::<CodexMarketplace>(uze_home, package_id)
     }
 
-    fn temp_root(label: &str) -> PathBuf {
-        uze_testkit::temp::scratch(label)
-    }
-
     /// Builds a canonical package with NO vendor envelope of any kind —
     /// exactly the North Star `flow` fixture shape.
     fn make_plain_package(label: &str, with_mcp: bool) -> (PathBuf, StoredPackage) {
@@ -252,33 +249,6 @@ mod generated_native_tests {
             },
         };
         (root, pkg)
-    }
-
-    fn skill_resource(pkg: &StoredPackage) -> Resource {
-        let path = pkg.root.join("skills/commit/SKILL.md");
-        Resource::from_package(
-            pkg.id.clone(),
-            pkg.root.clone(),
-            Capability {
-                kind: CapabilityKind::AgentSkill,
-                path,
-                payload: Vec::new(),
-            },
-        )
-    }
-
-    fn mcp_resource(pkg: &StoredPackage, name: &str) -> Resource {
-        let path = pkg.root.join("mcp.json");
-        Resource::from_package_named(
-            pkg.id.clone(),
-            pkg.root.clone(),
-            Capability {
-                kind: CapabilityKind::Mcp,
-                path,
-                payload: Vec::new(),
-            },
-            name.to_owned(),
-        )
     }
 
     #[test]
@@ -730,24 +700,6 @@ mod generated_native_tests {
             uze_core::exposure::ExposureMechanism::Unsupported { .. }
         ));
         let _ = fs::remove_dir_all(_root);
-    }
-
-    fn walk(root: &std::path::Path) -> BTreeSet<PathBuf> {
-        let mut out = BTreeSet::new();
-        let mut stack = vec![root.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            let Ok(entries) = fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    stack.push(path.clone());
-                }
-                out.insert(path);
-            }
-        }
-        out
     }
 
     #[test]
