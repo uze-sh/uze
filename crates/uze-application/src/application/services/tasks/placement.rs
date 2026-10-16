@@ -77,7 +77,7 @@ impl Workspace<'_> {
                 })
             }
         };
-        self.keyed(placed?)
+        self.keyed(placed?, None)
     }
 
     /// Brings the local target of the project at `cwd` in line with its
@@ -320,20 +320,23 @@ impl Workspace<'_> {
             warnings.push(reason);
         }
         let view = self.placed_view(&primary, id.as_str(), &policy);
-        self.keyed(AgentPlacement {
-            project: primary.clone(),
-            cwd: acquired.path,
-            placement: Placement::Isolated {
-                task: id,
-                checkout: acquired.id,
-                branch,
-                reused: !acquired.created,
+        self.keyed(
+            AgentPlacement {
+                project: primary.clone(),
+                cwd: acquired.path,
+                placement: Placement::Isolated {
+                    task: id,
+                    checkout: acquired.id,
+                    branch,
+                    reused: !acquired.created,
+                },
+                warnings,
+                awaiting_approval,
+                view,
+                launch_key: String::new(),
             },
-            warnings,
-            awaiting_approval,
-            view,
-            launch_key: String::new(),
-        })
+            None,
+        )
     }
 
     /// Puts a checkout back under a task that lost its own — removed
@@ -353,7 +356,7 @@ impl Workspace<'_> {
         occupied: &[PathBuf],
     ) -> Result<AgentPlacement> {
         if let Some(placed) = self.resume_in_the_root(cwd, task_id)? {
-            return self.keyed_on(placed, harness);
+            return self.keyed(placed, Some(harness));
         }
         let (primary, policy) = self
             .repository_context(cwd)?
@@ -481,7 +484,7 @@ impl Workspace<'_> {
             placement.awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         }
         placement.view = self.placed_view(&primary, placement.placement.agent().as_str(), &policy);
-        self.keyed_on(placement, harness)
+        self.keyed(placement, Some(harness))
     }
 
     /// The placement of `task_id` back in `root` when it is an agent that
@@ -524,23 +527,10 @@ impl Workspace<'_> {
     /// launch, and each one makes the secret before it the agent's no
     /// longer. Refused, and nothing launched, when the record cannot take
     /// it — an agent nobody can prove to be could not name or deliver its
-    /// work.
-    pub(super) fn keyed(&self, placed: AgentPlacement) -> Result<AgentPlacement> {
-        self.keyed_as(placed, None)
-    }
-
-    /// [`Self::keyed`] for a launch on `harness`, which the record takes as
-    /// the agent's in the same write: the harness an agent runs is the one
-    /// its latest launch was keyed for.
-    fn keyed_on(&self, placed: AgentPlacement, harness: &str) -> Result<AgentPlacement> {
-        self.keyed_as(placed, Some(harness))
-    }
-
-    fn keyed_as(
-        &self,
-        mut placed: AgentPlacement,
-        harness: Option<&str>,
-    ) -> Result<AgentPlacement> {
+    /// work. `harness`, for a launch that chose one, becomes the agent's in
+    /// the same write: the harness an agent runs is the one its latest
+    /// launch was keyed for.
+    fn keyed(&self, mut placed: AgentPlacement, harness: Option<&str>) -> Result<AgentPlacement> {
         let agent = placed.placement.agent().as_str().to_owned();
         placed.launch_key = task::locked(&self.0.home, &placed.project, |store| {
             let record = store
