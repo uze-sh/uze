@@ -309,6 +309,18 @@ pub fn may_be_set_aside(reason: &DocumentError) -> bool {
     }
 }
 
+/// The mark a set-aside record's name carries. Chosen so that what is set
+/// aside stops being a `.json`: it must not read as a second record to
+/// anything listing the directory.
+pub const SET_ASIDE_MARK: &str = ".unreadable-";
+
+/// When the record named `file_name` was set aside, in seconds since the
+/// epoch, or `None` when the name is not one [`set_aside`] gives.
+pub fn set_aside_stamp(file_name: &str) -> Option<u64> {
+    let (_, stamp) = file_name.rsplit_once(SET_ASIDE_MARK)?;
+    Some(stamp.parse().unwrap_or_default())
+}
+
 /// Moves the record aside so it can be recorded again, and says what was
 /// moved.
 ///
@@ -320,7 +332,7 @@ pub fn set_aside(path: &Path, kind: &str, reason: &DocumentError) -> Result<SetA
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(kind);
-    let moved = unused_name(path, &format!("{name}.unreadable-{}", now_unix()));
+    let moved = unused_name(path, &format!("{name}{SET_ASIDE_MARK}{}", now_unix()));
     fs::rename(path, &moved).map_err(|source| DocumentError::Write {
         path: moved.clone(),
         source,

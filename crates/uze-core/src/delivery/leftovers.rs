@@ -15,11 +15,6 @@ use std::{fs, path::Path, path::PathBuf};
 
 use crate::home::UzeHome;
 
-/// The mark a set-aside record's name carries. Chosen so that what is set
-/// aside stops being a `.json`: it must not read as a second record to
-/// anything listing the directory.
-pub const SET_ASIDE_MARK: &str = ".unreadable-";
-
 /// How many set-aside records are reported before the rest are counted.
 ///
 /// A record per event, kept forever, is its own leak — and a report that
@@ -70,9 +65,9 @@ fn collect(directory: &Path, found: &mut Vec<Leftover>) {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if let Some((_, stamp)) = name.rsplit_once(SET_ASIDE_MARK) {
+        if let Some(set_aside_at_unix) = uze_document::set_aside_stamp(name) {
             found.push(Leftover {
-                set_aside_at_unix: stamp.parse().unwrap_or_default(),
+                set_aside_at_unix,
                 path,
             });
         }
