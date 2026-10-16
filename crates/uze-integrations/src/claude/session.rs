@@ -31,11 +31,13 @@ pub(super) fn start_args(session: &SessionId) -> Vec<OsString> {
     vec![OsString::from(START_FLAG), OsString::from(session.as_str())]
 }
 
-/// The operator's first turn. Positional: Claude reads its first prompt
-/// from the end of the line, behind `--resume <id>` or `--session-id <id>`
-/// alike.
+/// The operator's first turn, positional, after `--`. The launch carries
+/// `--add-dir <dir>` from the runtime projection, and that option takes any
+/// number of values: a prompt right behind it is read as one more directory
+/// and never reaches the model. `--` ends the options, so the prompt is the
+/// prompt behind `--resume <id>` and `--session-id <id>` alike.
 pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
-    vec![OsString::from(turn)]
+    vec![OsString::from("--"), OsString::from(turn)]
 }
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {
@@ -274,11 +276,11 @@ mod tests {
             .collect();
         assert_eq!(
             line,
-            ["--resume", session.as_str(), "carry on"].map(OsString::from)
+            ["--resume", session.as_str(), "--", "carry on"].map(OsString::from)
         );
         assert_eq!(
             first_turn_args("carry on"),
-            [OsString::from("carry on")],
+            ["--", "carry on"].map(OsString::from),
             "and the same behind a start, which names the session by a flag"
         );
     }
