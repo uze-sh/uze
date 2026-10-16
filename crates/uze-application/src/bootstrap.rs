@@ -64,13 +64,25 @@ pub fn materialize(plugin_name: &str) -> Result<MaterializedPackage> {
 /// Generic over plugin content — compares the resolved directory tree
 /// file-for-file, not a fixed list of known filenames — so it needs no
 /// per-plugin knowledge either.
+///
+/// Runs on every maintenance pass, so a file is read only when its length
+/// already matches, and the first difference is the answer.
 pub fn has_update(plugin_name: &str, stored_root: &Path) -> Result<bool> {
     let current = embedded_plugin_files(plugin_name)?;
-    let stored = collect_files(stored_root)?;
-    Ok(current.len() != stored.len()
-        || current
-            .iter()
-            .any(|(relative, bytes)| stored.get(relative).map(Vec::as_slice) != Some(*bytes)))
+    let stored = stored_files(stored_root)?;
+    if current.len() != stored.len() {
+        return Ok(true);
+    }
+    for (relative, path) in &stored {
+        let Some(bytes) = current.get(relative) else {
+            return Ok(true);
+        };
+        let length = fs::metadata(path).map_err(UzeError::read(path))?.len();
+        if length != bytes.len() as u64 || fs::read(path).map_err(UzeError::read(path))? != *bytes {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The snapshot's files under `plugin_name`'s manifest entry, keyed by
@@ -197,7 +209,8 @@ fn extract_embedded_snapshot() -> Result<PathBuf> {
     Ok(scratch)
 }
 
-fn collect_files(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
+/// Every file under `root`, keyed by its path relative to it.
+fn stored_files(root: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
     let mut out = BTreeMap::new();
     collect_files_into(root, root, &mut out)?;
     Ok(out)
@@ -206,21 +219,22 @@ fn collect_files(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
 fn collect_files_into(
     root: &Path,
     current: &Path,
-    out: &mut BTreeMap<PathBuf, Vec<u8>>,
+    out: &mut BTreeMap<PathBuf, PathBuf>,
 ) -> Result<()> {
     let entries = fs::read_dir(current).map_err(UzeError::read(current))?;
     for entry in entries {
         let entry = entry.map_err(UzeError::read(current))?;
         let path = entry.path();
-        if path.is_dir() {
+        // The entry's own type, never what a link leads to: a link back up
+        // the tree would otherwise be walked until the path gives out.
+        if entry.file_type().map_err(UzeError::read(&path))?.is_dir() {
             collect_files_into(root, &path, out)?;
         } else {
             let relative = path
                 .strip_prefix(root)
                 .expect("walked path is under root")
                 .to_path_buf();
-            let bytes = fs::read(&path).map_err(UzeError::read(&path))?;
-            out.insert(relative, bytes);
+            out.insert(relative, path);
         }
     }
     Ok(())
