@@ -14,23 +14,25 @@
 
 video:
   title: uze
-  # The page embeds a video, not a GIF: text stays sharp and the file is a
-  # fraction of the size. The GIF is the renderer's output and the source the
-  # mp4/webm are encoded from (`make landing-video`), so only those and the
-  # poster are published.
+  # The page plays the cut cast itself as text (web/public/uze-landing.cast,
+  # copied from {root}/uze-landing.cast after a run), so the GIF is only for
+  # checking a take and nothing is published from here. HeroRecording's
+  # chapter times are read off the new cut.
   out: .demo/landing/uze-landing.gif
   poster: .demo/landing/uze-landing-poster.png
-  publish:
-    - from: poster
-      to: web/public/uze-landing-poster.png
+  # The marketplace on camera is the operator's own public one, and its
+  # owner's name is also this machine's user and host: the scan's username
+  # and hostname patterns match it, and nothing else does.
+  allow:
+    - hiukky/ai
   forbid:
     - Upstream request limit
     - Retry attempt
     - weekly limit
     - America/
   cast: '{root}/uze-landing.cast'
-  # The page frames it at ~1370px: 140 columns keeps the text near the
-  # page's own body size there, and still fits the four install lanes.
+  # 140 columns keeps the text near the page's own body size at the width
+  # the page frames it, and still fits inspect's four harness columns.
   cols: 140
   rows: 36
   speed: 1.2
@@ -63,7 +65,6 @@ sandbox:
     - /bin
   env:
     TZ: UTC
-    PS1: '\[\e[38;5;245m\]~/demo-api\[\e[0m\] \[\e[38;5;252m\]❯\[\e[0m\] '
   binaries:
     - claude
     - agy
@@ -75,16 +76,31 @@ sandbox:
     - from: ~/.claude/.credentials.json
       to: '{home}/.claude/.credentials.json'
       optional: true
-    - from: ~/.local/share/opencode/auth.json
-      to: '{home}/.local/share/opencode/auth.json'
-      optional: true
+    # OpenCode's grant is not a link: v2 keeps its providers outside
+    # auth.json, and `opencode auth login` replaces the file it writes, so a
+    # link here is overwritten by the login and then deletes it on the next
+    # seed. The operator logs in once, inside the sandbox:
+    #   HOME=~/.uzedemo/home ~/.opencode/bin/opencode auth login
+    # and deleting ~/.uzedemo/home/.local/share/opencode ends it.
     # Granted for this video by the operator (2026-10-16): the third harness.
     - from: ~/.codex/auth.json
       to: '{home}/.codex/auth.json'
       optional: true
+    # The two plugins that change what typing looks like, linked out of the
+    # operator's zinit rather than loading zinit or their .zshrc, which
+    # carries far more than a prompt. Their caches land in the sandbox HOME.
+    - from: ~/.local/share/zinit/plugins/zdharma-continuum---fast-syntax-highlighting
+      to: '{home}/.zsh/zdharma-continuum---fast-syntax-highlighting'
+    - from: ~/.local/share/zinit/plugins/zsh-users---zsh-autosuggestions
+      to: '{home}/.zsh/zsh-users---zsh-autosuggestions'
   copy:
     - from: ~/.config/opencode/opencode.json
       to: '{home}/.config/opencode/opencode.json'
+    # The operator's own prompt, so the shell on camera looks like theirs.
+    # Starship shows neither user nor host outside SSH, and the leak scan
+    # stands behind that if a module ever does.
+    - from: ~/.config/starship.toml
+      to: '{home}/.config/starship.toml'
   provision:
     - test -x {home}/.local/bin/codex || curl -fsSL https://chatgpt.com/codex/install.sh | sh
     - rm -rf {home}/.uze
@@ -108,6 +124,15 @@ sandbox:
     # Codex asks whether to trust a folder on its first launch there, and
     # its answer lives in its own config, which `uze setup` also writes to.
     - grep -qs '/tmp/demos/demo-api' {home}/.codex/config.toml || printf '\n[projects."/tmp/demos/demo-api"]\ntrust_level = "trusted"\n' >> {home}/.codex/config.toml
+    # The rewind resets the tree, not the refs: every attempt's agents leave
+    # a branch and a shelf (refs/uze/shelf/*) behind, and the workspace
+    # restores a shelved agent, so the next take would open with them all.
+    - |
+      repo={fixtures}/demo-api
+      git -C $repo worktree prune 2>/dev/null
+      git -C $repo for-each-ref --format='%(refname)' refs/uze refs/heads | while read ref; do
+        [ "$ref" = refs/heads/main ] || git -C $repo update-ref -d "$ref"
+      done
     - git -C {fixtures}/demo-api clean -qfd -e .worktrees 2>/dev/null || true
     - |
       cat > {home}/.uze/state/layout.json <<'LAYOUT'
@@ -130,7 +155,19 @@ sandbox:
       executable: true
       text: |
         #!/bin/sh
-        exec /bin/bash --norc --noprofile
+        exec /usr/bin/zsh
+    # Written here, never copied: the prompt, the two plugins, and no history,
+    # so an autosuggestion never offers what an earlier take typed.
+    - path: '{home}/.zshrc'
+      text: |
+        HISTFILE=/dev/null
+        SAVEHIST=0
+        autoload -Uz compinit && compinit -d /tmp/demos/.zcompdump
+        source ~/.zsh/zsh-users---zsh-autosuggestions/zsh-autosuggestions.zsh
+        source ~/.zsh/zdharma-continuum---fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
+        eval "$(starship init zsh)"
+    - path: '{home}/.zshenv'
+      text: ''
     - path: '{home}/.gitconfig'
       text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
     - path: '{home}/.claude.json'
@@ -150,9 +187,9 @@ sandbox:
   patch_json:
     - path: '{home}/.claude/settings.json'
       merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash"]}}'
-    # Left to itself, OpenCode in a fresh home picks a free model that
-    # refuses to run outside OpenCode's own app. The one the operator's
-    # granted subscription (auth.json, above) serves.
+    # The model the operator's OpenCode Go login serves. Without that login
+    # OpenCode falls back to a free model that refuses to run when the
+    # workspace launches it, whatever this says.
     - path: '{home}/.config/opencode/opencode.json'
       merge: '{"model": "opencode-go/glm-5.3-flash"}'
 # Its own fixture rather than demo-app: demo-app's remembered HEAD is shared
@@ -210,6 +247,9 @@ fixtures:
             pub fn port() -> u16 {
                 settings().app.port
             }
+      # With the workspace's own section in it, committed the way a project
+      # that uses the workspace has it: a worktree is cut from a commit, so
+      # a section only the primary checkout holds never reaches an agent.
       - message: 'docs: add AGENTS.md'
         days_ago: 3
         files:
@@ -221,6 +261,18 @@ fixtures:
 
             - Keep handlers total: every route returns a `Response`.
             - Conventional Commits for commit subjects.
+            <!-- uze:begin project:worktree-policy/4a95691426ef9fb0 -->
+            ## Concurrent work isolation
+
+            This section is for an agent `uze workspace` launched. An agent started any other way can ignore it: nothing below applies to it, and the `uze agent work` commands it names refuse outside the workspace.
+
+            - As soon as a user message gives the conversation a clear topic — normally the first message — make naming your work your first command, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is ideally one or two words, never more than three, naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The command always updates your label. In a checkout of your own it also renames your branch; in the operator's checkout only your label changes. Work that reaches a commit still unnamed is named by UZE from that commit's subject. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands. Invoke the command directly; do not merely say you will name the work.
+            - An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are already isolated; do not switch branches.
+            - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch keeps the name it has. Naming your work still applies here, first: it names your label, never their branch.
+            - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks, and fast-forwards the target itself; commit on your branch and stop.
+            - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
+            - Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
+            <!-- uze:end project:worktree-policy/4a95691426ef9fb0 -->
       # Only the workspace: the marketplace and the plugin are what the
       # video adds, and `cat agents.yaml` then shows both halves.
       - message: 'chore: declare the project in agents.yaml'
@@ -341,9 +393,9 @@ beats:
     pause: 0.6
   # No commit asked for here: committing is what the plugin's skill does,
   # once the change is there.
-  - type: add a /ping route to src/router.rs that answers pong
+  - type: add a /ping route to src/router.rs that answers pong, then commit it with the git:commit skill
     expect: 'esc to interrupt|for \d+s · done'
-    expect_timeout: 60
+    expect_timeout: 120
     pause: 0.6
   - say: a second, on Codex
     click: new
@@ -371,21 +423,18 @@ beats:
     expect: ctrl\+p commands
     expect_timeout: 25
     pause: 0.6
-  - type: add a Routes section to README.md listing every route in src/router.rs
+  - type: add a Routes section to README.md listing every route in src/router.rs, without committing
     pause: 0.8
   # ── 4. review and deliver ───────────────────────────────────────────────
-  - say: wait for Claude's edit, the only stretch the cut squeezes
+  # OpenCode's change is left uncommitted, so it is the one the code surface
+  # has something to show for; Claude's is committed and is what gets
+  # delivered, which ends the story where the work lands.
+  - say: wait for OpenCode's edit, the only stretch the cut squeezes
     wait: shell
-    until: grep -qs pong /tmp/demos/demo-api/.worktrees/*/src/router.rs
+    until: grep -qs Routes /tmp/demos/demo-api/.worktrees/*/README.md
     timeout: 300
-    settle: 3.0
-    pause: 0.2
-  - say: back to the first agent
-    click: claude
-    in: sidebar
-    expect: Claude Code v
-    expect_timeout: 8
-    pause: 0.8
+    settle: 2.0
+    pause: 0.4
   - say: what the project plans
     click: spec
     in: strip
@@ -399,7 +448,7 @@ beats:
     expect: system-context\.mmd
     expect_timeout: 10
     pause: 2.2
-  - say: and what the agent changed, in its own worktree
+  - say: and what this agent changed, in its own worktree
     key: M-g
     expect: 'DIFF ·'
     expect_timeout: 10
@@ -407,24 +456,33 @@ beats:
     pause: 3.0
   - click: code
     in: strip
-    expect: Claude Code v
+    expect: ctrl\+p commands
     expect_timeout: 6
-    pause: 0.6
-  # The plugin installed in chapter 2, used: the skill is in Claude's own
-  # slash menu, and the commit it makes is what makes the work ready.
-  - say: the plugin's skill, invoked inside the harness
-    type: /git:commit
     pause: 0.4
   - wait: shell
     until: for w in /tmp/demos/demo-api/.worktrees/*; do git -C "$w" log -1 --format=%s 2>/dev/null; done | grep -qi ping
-    timeout: 180
-    settle: 2.0
-    pause: 1.2
+    timeout: 240
+    settle: 1.5
+    pause: 0.2
+  # The commit is already proven above; this only selects the agent, and
+  # Claude's footer is the one thing its pane always draws.
+  - say: Claude committed through the plugin's own skill
+    click: claude
+    in: sidebar
+    expect: shift\+tab to cycle
+    expect_in: pane
+    expect_timeout: 8
+    pause: 2.4
+  # Ready work is drawn as where it goes and how far ahead (`→ main ↑1`),
+  # in glyphs, so it is delivered by its documented chord rather than aimed
+  # at; the proof is the target itself carrying the commit.
   - say: ready work is delivered, rebased, checked and merged
-    click: ready
-    in: strip
-    expect: delivered
-    expect_timeout: 60
+    key: M-i
+    pause: 0.4
+  - wait: shell
+    until: git -C /tmp/demos/demo-api log -1 --format=%s main | grep -qi ping
+    timeout: 60
+    settle: 1.5
     pause: 2.8
   - say: and out, the cut stops here, before the screen blanks
     end: C-q
