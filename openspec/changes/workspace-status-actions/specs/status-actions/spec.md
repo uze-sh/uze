@@ -124,12 +124,12 @@ A chip with an instruction and a chip without one SHALL be told apart without th
 - **WHEN** the pointer rests on a chip with no instruction
 - **THEN** the chip is drawn exactly as at rest
 
-### Requirement: Hovering an action says what it will ask
-Under the pointer, an actionable chip SHALL show the start of its instruction in the strip's message zone, bounded and cut with an ellipsis when longer. The hint SHALL NOT move any control, and SHALL be dropped when the zone has no room for it.
+### Requirement: Hovering an action says what it will send
+Under the pointer, an actionable chip SHALL name the instruction a click sends, by its key (`send on_publish`), in the strip's message zone, never a cut or moving copy of the instruction's text. The hint SHALL NOT move any control, and SHALL be dropped when the zone has no room for it.
 
-#### Scenario: A long instruction is cut, not wrapped
-- **WHEN** the operator hovers a chip whose instruction is longer than the hint's bound
-- **THEN** the message zone shows its start ending in an ellipsis, and no control in the strip moves
+#### Scenario: The hint names the key, whatever the instruction's length
+- **WHEN** the operator hovers a published chip whose `on_publish` instruction is a long sentence
+- **THEN** the message zone reads `send on_publish`, and no control in the strip moves
 
 #### Scenario: A narrow strip drops the hint
 - **WHEN** the strip has no room left for the hint

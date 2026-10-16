@@ -66,3 +66,4 @@
 - [x] 7.2 Add `ActionState::fallback` for `on_conflict` and `on_fail`, and `declaration::instructions(root)` (declared over fallbacks), read by `instructions_of`
 - [x] 7.3 Draw an `uncommitted` status beside the change count only when `on_change` is declared; the count keeps opening the changes
 - [x] 7.4 Tests, the reference page, journey `05-delivery/01` (the click moves to `on_change`), and this repository's `agents.yaml`
+- [x] 7.5 Name the hovered action by its key (`send <key>`) instead of the instruction's start

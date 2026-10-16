@@ -726,11 +726,19 @@ pub(super) fn render_zone_hairline(
 const STATUS_HINT_WIDTH: usize = 30;
 
 /// What the status under the pointer would do, said where the notice
-/// stands: the start of the instruction a click sends, or — for ready work
-/// no instruction answers — the key that delivers it.
+/// stands: which declared instruction a click sends, by its key, or — for
+/// ready work, which no instruction answers — the key that delivers it.
+///
+/// The key and not the text: an instruction is a sentence, and the start
+/// of one cut at a glance's width named nothing. Whoever declared it knows
+/// what `on_publish` asks; the hint has only to say a click sends it.
 fn status_hint(model: &WorkspaceModel) -> Option<String> {
     match model.hovered? {
-        WorkspaceHit::StatusAction(tab) => model.tab_task(tab)?.action.clone(),
+        WorkspaceHit::StatusAction(tab) => {
+            let task = model.tab_task(tab)?;
+            let moment = model.drawn_state(task).answered_by()?;
+            Some(format!("send {}", moment.key()))
+        }
         WorkspaceHit::StatusReport(tab) => {
             let task = model.tab_task(tab)?;
             (model.drawn_state(task) == WorkStateView::Ready).then_some(())?;

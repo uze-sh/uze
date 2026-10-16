@@ -3102,21 +3102,20 @@ mod workspace_tests {
         (rows, hits)
     }
 
-    /// Under the pointer an answered status says what it will send — the
-    /// start of it, cut with an ellipsis — where the notice stands, and
-    /// nothing the operator can press moves to make room.
+    /// Under the pointer an answered status names the instruction a click
+    /// sends, by its key — never a sentence cut short — where the notice
+    /// stands, and nothing the operator can press moves to make room.
     #[test]
-    fn hovering_an_answered_status_says_the_start_of_what_it_sends() {
+    fn hovering_an_answered_status_names_the_instruction_it_sends() {
         let instruction = "Open a pull request for this branch against main, then end your turn.";
-        let mut model = answered(agent_with_task(WorkStateView::Ready, 3), instruction);
+        let mut model = answered(agent_with_task(WorkStateView::Published, 3), instruction);
         let tab = model.selected_tab().expect("a selected tab");
         let (_, before) = tab_strip(&model);
         model.hovered = Some(WorkspaceHit::StatusAction(tab));
         let (rows, after) = tab_strip(&model);
         let strip = rows.join("\n");
-        assert!(strip.contains("Open a pull request"), "{strip}");
-        assert!(strip.contains('…'), "cut, not wrapped: {strip}");
-        assert!(!strip.contains("end your turn"), "{strip}");
+        assert!(strip.contains("send on_publish"), "{strip}");
+        assert!(!strip.contains("Open a pull request"), "{strip}");
         assert_eq!(before, after, "no control moves for the hint");
     }
 
@@ -3142,12 +3141,12 @@ mod workspace_tests {
     #[test]
     fn a_narrow_strip_drops_the_hint() {
         let instruction = "Open a pull request for this branch against main.";
-        let mut model = answered(agent_with_task(WorkStateView::Ready, 3), instruction);
+        let mut model = answered(agent_with_task(WorkStateView::Published, 3), instruction);
         let tab = model.selected_tab().expect("a selected tab");
         let (_, before) = tab_strip_at(&model, 44);
         model.hovered = Some(WorkspaceHit::StatusAction(tab));
         let (rows, after) = tab_strip_at(&model, 44);
-        assert!(!rows.join("\n").contains("Open a"), "{rows:?}");
+        assert!(!rows.join("\n").contains("send on_"), "{rows:?}");
         assert_eq!(before, after, "no control moves");
     }
 

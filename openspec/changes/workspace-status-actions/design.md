@@ -211,7 +211,11 @@ The bullet "if UZE tells you a rebase is paused" stays, since it is already cond
 
 **D11. The hint and the toasts are bounded.**
 - The hint lives in the message zone, as that zone already works: over the tab side's tail,
-  never over a control. It is at most 30 columns, cut with `…`, and dropped without room.
+  never over a control. It names the key a click sends (`send on_publish`), and is dropped
+  without room.
+- Rejected after trying it: the start of the instruction cut at 30 columns, which named
+  nothing since an instruction is a sentence; and a marquee, which takes ~20 s to show one
+  and is the only thing in the strip that would move without work in flight.
 - A `ready` chip, which never has an instruction, shows the deliver key, from
   `chord_for(Action::DeliverTask)`.
 - Toasts: title at most 24 columns, detail at most 32.
