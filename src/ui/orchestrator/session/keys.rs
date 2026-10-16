@@ -34,12 +34,12 @@ impl Attach<'_> {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
             Scope::AgentPicker
+        } else if self.model.context_menu.is_some() {
+            Scope::ContextMenu
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
             Scope::RecentFilter
         } else if self.model.recent.has_keys() {
             Scope::Recent
-        } else if self.model.context_menu.is_some() {
-            Scope::ContextMenu
         } else if self.model.code.as_ref().is_some_and(code::CodeView::typing) {
             // A file or a new name taking text seals everything behind
             // it, the same way the action index does: nothing else may
@@ -277,12 +277,12 @@ impl Attach<'_> {
             self.agent_picker_action(action);
             return Flow::Continue;
         }
-        if self.model.recent.has_keys() {
-            self.recent_action(action);
-            return Flow::Continue;
-        }
         if self.model.context_menu.is_some() {
             self.context_menu_action(action);
+            return Flow::Continue;
+        }
+        if self.model.recent.has_keys() {
+            self.recent_action(action);
             return Flow::Continue;
         }
         if self.model.architect.is_some() {

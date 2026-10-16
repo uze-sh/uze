@@ -1017,3 +1017,95 @@ fn a_click_on_the_selected_row_only_selects_it() {
     assert!(!driven.attach.model.placement_pending);
     assert!(driven.attach.model.recent.open);
 }
+
+fn recent_row_rect(model: &WorkspaceModel, index: usize) -> Rect {
+    model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::RecentRow(index)).then_some(*rect))
+        .expect("the row is drawn")
+}
+
+/// A right-click selects the row it lands on and offers what that row's
+/// keys would, in the words its foot uses; taking work away still asks.
+#[test]
+fn a_right_click_offers_the_rows_own_actions_and_discarding_still_asks() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-menu"));
+    let mut driven = driven(
+        showing(
+            vec![
+                preserved(PROJECT, "a", "one", WorkStateView::Ready),
+                preserved(PROJECT, "b", "two", WorkStateView::Shelved),
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+    driven.frame();
+    let row = recent_row_rect(&driven.attach.model, 0);
+    driven.mouse(row.x + 2, row.y, MouseEventKind::Down(MouseButton::Right));
+
+    assert_eq!(driven.attach.model.recent.selected.as_deref(), Some("a"));
+    let menu = driven
+        .attach
+        .model
+        .context_menu
+        .as_ref()
+        .expect("a menu opened on the row");
+    assert_eq!(menu.labels, vec!["Resume", "Deliver", "Discard…"]);
+
+    driven.frame();
+    let discard = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::ContextMenuAction(2)).then_some(*rect))
+        .expect("the entry is drawn");
+    driven.press(discard.x + 1, discard.y);
+
+    assert!(driven.attach.model.context_menu.is_none());
+    assert!(driven.attach.model.recent.asking, "discarding asks first");
+    assert!(
+        driven
+            .attach
+            .model
+            .remembered
+            .task_mutation_pending
+            .is_empty()
+    );
+}
+
+/// The keys walk the menu while it is open, rather than recent's rows.
+#[test]
+fn the_keys_belong_to_a_rows_menu_while_it_is_open() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-menu-keys"));
+    let mut driven = driven(
+        showing(
+            vec![
+                preserved(PROJECT, "a", "one", WorkStateView::Shelved),
+                preserved(PROJECT, "b", "two", WorkStateView::Shelved),
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+    driven.frame();
+    let row = recent_row_rect(&driven.attach.model, 0);
+    driven.mouse(row.x + 2, row.y, MouseEventKind::Down(MouseButton::Right));
+    let selected = driven.attach.model.recent.selected.clone();
+
+    press(&mut driven, Action::SelectNext);
+    assert_eq!(driven.attach.model.recent.selected, selected);
+    assert_eq!(
+        driven
+            .attach
+            .model
+            .context_menu
+            .as_ref()
+            .map(|menu| menu.selected),
+        Some(1)
+    );
+    press(&mut driven, Action::Activate);
+    assert!(driven.attach.model.recent.asking);
+}

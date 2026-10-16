@@ -109,8 +109,7 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
     menu: &ContextMenu,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let labels: Vec<String> = menu.items.iter().map(|action| action.label()).collect();
-    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let labels: Vec<&str> = menu.labels.iter().map(String::as_str).collect();
     let rows = widget::menu::render(frame, area, menu.anchor, &labels, menu.selected);
     for (index, row) in rows.into_iter().enumerate() {
         hits.push((row, WorkspaceHit::ContextMenuAction(index)));

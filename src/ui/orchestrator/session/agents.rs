@@ -166,6 +166,10 @@ impl Attach<'_> {
         target: MenuTarget,
         action: Action,
     ) {
+        if target == MenuTarget::Recent {
+            self.recent_action(action);
+            return;
+        }
         match action {
             Action::IsolateAgent => {
                 self.isolate_agent(target, uze_application::Carry::CopyOfChanges)

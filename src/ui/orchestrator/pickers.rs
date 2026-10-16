@@ -95,12 +95,16 @@ impl AgentSupportDropdown {
     }
 }
 
-/// What a right-click-opened [`ContextMenu`] targets — the space or tab its
-/// the menu's actions act on.
+/// What a right-click-opened [`ContextMenu`] targets — the space or tab
+/// the menu's actions act on, or recent's selected row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum MenuTarget {
     Space(SpaceId),
     Tab(TabId),
+    /// The row recent has selected: a right-click selects it first, and
+    /// the menu offers what its keys would, so each action is the key's
+    /// own, taking away included with its question.
+    Recent,
 }
 
 /// Open state of the right-click action menu a space header or agent tab
@@ -114,10 +118,52 @@ pub(super) enum MenuTarget {
 pub(super) struct ContextMenu {
     pub(super) target: MenuTarget,
     pub(super) items: Vec<Action>,
+    /// What each of `items` reads as, in order.
+    pub(super) labels: Vec<String>,
     /// Index into `items` the keyboard's Up/Down currently highlights —
     /// same role [`AgentPicker::selected`] plays.
     pub(super) selected: usize,
     /// The right-clicked row's own rect — the popup anchors just under it,
     /// same placement rule [`AgentPicker::anchor`] uses.
     pub(super) anchor: Rect,
+}
+
+impl ContextMenu {
+    /// A menu whose entries read as their actions' own labels.
+    pub(super) fn new(target: MenuTarget, items: Vec<Action>, anchor: Rect) -> Self {
+        let labels = items.iter().map(|action| action.label()).collect();
+        Self {
+            target,
+            items,
+            labels,
+            selected: 0,
+            anchor,
+        }
+    }
+
+    /// A menu whose entries read as the target calls each action, the way
+    /// recent's foot does: a row resumes or joins, discards or forgets.
+    /// An entry that asks before acting says so with an ellipsis.
+    pub(super) fn worded(target: MenuTarget, offers: Vec<(Action, &str)>, anchor: Rect) -> Self {
+        let labels = offers
+            .iter()
+            .map(|(action, word)| {
+                let mut letters = word.chars();
+                let first = letters.next().map(|c| c.to_uppercase().to_string());
+                let ellipsis = if action.destructive() { "…" } else { "" };
+                format!(
+                    "{}{}{ellipsis}",
+                    first.unwrap_or_default(),
+                    letters.as_str()
+                )
+            })
+            .collect();
+        Self {
+            target,
+            items: offers.into_iter().map(|(action, _)| action).collect(),
+            labels,
+            selected: 0,
+            anchor,
+        }
+    }
 }

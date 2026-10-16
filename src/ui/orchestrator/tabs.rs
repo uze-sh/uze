@@ -480,6 +480,7 @@ pub(super) fn dispatch_menu_action<W: io::Write>(
                 );
             }
             MenuTarget::Tab(tab) => close_tab_keeping_a_shell(stream, model, identities, tab),
+            MenuTarget::Recent => {}
         },
         // Every other action is one no menu offers here — the target
         // vocabulary is the product's whole one now, and this menu uses
@@ -632,6 +633,7 @@ pub(super) fn begin_rename(model: &mut WorkspaceModel, target: MenuTarget) {
                 .unwrap_or_default();
             (RenameTarget::Space(space), label)
         }
+        MenuTarget::Recent => return,
     };
     model.renaming = Some((rename_target, RenameBuffer::new(label)));
 }

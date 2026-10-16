@@ -38,6 +38,7 @@ impl Attach<'_> {
             || model.renaming.is_some()
             || model.root_picker.is_some()
             || model.agent_picker.is_some()
+            || model.context_menu.is_some()
             || model.support_dropdown.is_some()
             || model.commit_detail_open()
             || model.status_catalog.is_some();
@@ -198,6 +199,22 @@ impl Attach<'_> {
         self.model.recent.asking = false;
         self.model.recent.selected = Some(row.key.clone());
         self.model.dirty = true;
+    }
+
+    /// Right-click on a row: selects it, takes the keyboard back for
+    /// recent, and opens a menu of what the row offers. A row that offers
+    /// nothing opens no menu.
+    pub(in crate::ui::orchestrator) fn open_recent_menu(&mut self, index: usize, anchor: Rect) {
+        self.click_recent_row(index);
+        self.model.recent.keys_elsewhere = false;
+        self.model.recent.filtering = false;
+        let offers = recent_rows(&self.model)
+            .get(index)
+            .map(RecentRow::offers)
+            .unwrap_or_default();
+        if !offers.is_empty() {
+            self.model.context_menu = Some(ContextMenu::worded(MenuTarget::Recent, offers, anchor));
+        }
     }
 
     fn step_recent(&mut self, rows: &[RecentRow], index: Option<usize>, step: isize) {

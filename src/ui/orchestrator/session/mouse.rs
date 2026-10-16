@@ -267,6 +267,7 @@ impl Attach<'_> {
             // Only its own hits: a click anywhere else reaches what it
             // was aimed at, and recent stays open beside it.
             _ if self.model.recent.open
+                && self.model.context_menu.is_none()
                 && self
                     .model
                     .hit_at(mouse.column, mouse.row)
@@ -790,12 +791,8 @@ impl Attach<'_> {
                 ) = hit
                 {
                     let items = vec![Action::RenameSelection, Action::CloseTab];
-                    self.model.context_menu = Some(ContextMenu {
-                        target: MenuTarget::Space(space),
-                        items,
-                        selected: 0,
-                        anchor,
-                    });
+                    self.model.context_menu =
+                        Some(ContextMenu::new(MenuTarget::Space(space), items, anchor));
                     self.model.dirty = true;
                 } else if let Some(WorkspaceHit::SelectTab(tab)) = hit {
                     let mut items = vec![Action::RenameSelection];
@@ -829,13 +826,11 @@ impl Attach<'_> {
                     if can_close_tab_from_menu(&self.model, &self.identities, tab) {
                         items.push(Action::CloseTab);
                     }
-                    self.model.context_menu = Some(ContextMenu {
-                        target: MenuTarget::Tab(tab),
-                        items,
-                        selected: 0,
-                        anchor,
-                    });
+                    self.model.context_menu =
+                        Some(ContextMenu::new(MenuTarget::Tab(tab), items, anchor));
                     self.model.dirty = true;
+                } else if let Some(WorkspaceHit::RecentRow(index)) = hit {
+                    self.open_recent_menu(index, anchor);
                 }
             }
             _ => {}
