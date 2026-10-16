@@ -99,6 +99,12 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
         )));
     }
 
+    for key in file.unknown.keys() {
+        problems.push(Problem::warning(format!(
+            "`{key}` is not a setting this build knows; it is ignored"
+        )));
+    }
+
     for (scope_name, actions) in &file.bindings {
         let Some(scope) = Scope::parse(scope_name) else {
             problems.push(Problem::warning(format!(
@@ -160,6 +166,7 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
 pub fn saved_over(written: &KeymapFile, keymap: &Keymap) -> KeymapFile {
     let mut file = difference_from_default(keymap);
     file.version = written.version;
+    file.unknown = written.unknown.clone();
     for (scope_name, actions) in &written.bindings {
         let known_scope = Scope::parse(scope_name).is_some();
         for (action_name, chords) in actions {
@@ -818,6 +825,33 @@ mod tests {
                 .keymap
                 .chord_for(Action::ToggleRecent, &[Scope::Workspace]),
             Chord::parse("f7").ok()
+        );
+    }
+
+    /// A top-level key this build does not know is said and ignored, as
+    /// an unknown action is, rather than taking every binding with it.
+    #[test]
+    fn a_keymap_with_a_setting_this_build_does_not_know_still_loads() {
+        let file: KeymapFile = serde_json::from_str(
+            r#"{ "chord-timeout": 400, "bindings": { "workspace": { "new-shell-tab": ["f4"] } } }"#,
+        )
+        .expect("an unknown top-level key still parses");
+
+        let loaded = resolve(&file).expect("the rest of the file still applies");
+        assert_eq!(loaded.problems.len(), 1, "{:?}", loaded.problems);
+        assert_eq!(loaded.problems[0].severity, Severity::Warning);
+        assert!(loaded.problems[0].message.contains("chord-timeout"));
+        assert_eq!(
+            loaded
+                .keymap
+                .chord_for(Action::NewShellTab, &[Scope::Workspace]),
+            Chord::parse("f4").ok()
+        );
+
+        let saved = serde_json::to_value(saved_over(&file, &loaded.keymap)).expect("serializes");
+        assert_eq!(
+            saved["chord-timeout"], 400,
+            "saving a rebind keeps what a newer build wrote"
         );
     }
 

@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 pub const CURRENT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct KeymapFile {
     /// The schema this file was written against. Absent means
     /// [`CURRENT_VERSION`].
@@ -34,11 +33,16 @@ pub struct KeymapFile {
     /// just has no key. That is a finished design, so it needs a spelling.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    /// Top-level keys this build does not know — written by a newer one,
+    /// or misspelled. Each is reported, and kept, so saving a rebind does
+    /// not drop what a newer build said.
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
 impl KeymapFile {
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
+        self.bindings.is_empty() && self.unknown.is_empty()
     }
 
     /// Records `chords` for `action` in `scope`, replacing whatever the
