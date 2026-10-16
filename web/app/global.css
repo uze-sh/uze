@@ -331,3 +331,49 @@ figure.shiki {
 .dark figure.shiki {
   background: var(--color-surface);
 }
+
+/*
+  The home page's recording, played as text. Its font is FiraCode Nerd Font
+  Mono cut down to the glyphs the cast prints (the workspace draws Nerd Font
+  icons), so it costs a few kilobytes; OFL-1.1, beside it. The theme is the
+  TUI's own ground and ink: the cast carries every other colour itself.
+*/
+@font-face {
+  font-family: 'Uze Terminal';
+  src: url('/fonts/FiraCodeNerdMono-Regular.subset.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Uze Terminal';
+  src: url('/fonts/FiraCodeNerdMono-Bold.subset.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+.hero-recording .asciinema-player-theme-uze {
+  --term-color-foreground: #e6e4de;
+  --term-color-background: #0a0c0d;
+}
+.hero-recording .ap-wrapper,
+.hero-recording .ap-player,
+.hero-recording .ap-term {
+  background: #0a0c0d;
+}
+
+/*
+  The recording's bezel. The pinned stage clips at its edges, so the shadow
+  stays short enough to fade inside it: a long one is cut straight there and
+  shows as square corners. On paper it is a soft lift and a hairline rim; on
+  the dark ground it can be deeper, since black on black barely reads.
+*/
+.hero-frame {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.35),
+    0 6px 14px -8px rgb(0 0 0 / 0.2);
+}
+html.dark .hero-frame {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 24px 56px -20px rgb(0 0 0 / 0.9);
+}

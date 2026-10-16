@@ -74,40 +74,13 @@ export default function HomePage() {
                   does not exist. `.dark` on the block re-points the tokens for
                   it alone. Framed as a window: at the full width of the page a
                   bare black panel read as a hole in it, not as a terminal. */}
-              <figure className="dark hidden overflow-hidden rounded-lg bg-paper text-ink shadow-[0_24px_60px_-20px_rgb(0_0_0/0.45)] ring-1 ring-black/10 md:block dark:ring-white/10">
-                <div className="relative flex h-9 items-center bg-surface px-4">
-                  <div className="flex gap-2" aria-hidden>
-                    <span className="size-3 rounded-full bg-line" />
-                    <span className="size-3 rounded-full bg-line" />
-                    <span className="size-3 rounded-full bg-line" />
-                  </div>
-                  <figcaption className="absolute inset-x-0 text-center font-mono text-xs text-muted">
-                    ~/demo-api · uze
-                  </figcaption>
-                </div>
-                <div className="px-5 pb-2 [&>div]:border-b-0">
-                  <HeroRecording />
-                </div>
-              </figure>
+              <div className="hidden md:block">
+                <HeroRecording />
+              </div>
               <div className="md:hidden">
                 <SessionSummary />
               </div>
 
-              {/* Under the recording, the way to the detail it summarizes.
-                  Only beside the full recording: the stacked summary links the
-                  matrix itself. */}
-              <div className="mt-8 hidden md:block">
-                <p className="px-5 text-center text-sm leading-relaxed text-balance text-muted">
-                  What each agent receives is read from the integration that delivers it.{' '}
-                  <Link
-                    href="/docs/reference/harnesses"
-                    className="text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-ink"
-                  >
-                    The full matrix, per capability
-                  </Link>
-                  .
-                </p>
-              </div>
             </div>
           }
         />

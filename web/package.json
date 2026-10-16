@@ -10,6 +10,7 @@
     "types:check": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "asciinema-player": "3.17.0",
     "cnfast": "^0.1.0",
     "fumadocs-core": "^16.15.4",
     "fumadocs-mdx": "^15.4.0",

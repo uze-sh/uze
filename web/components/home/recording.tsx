@@ -1,50 +1,125 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import 'asciinema-player/dist/bundle/asciinema-player.css';
 
 // The hero, recorded rather than drawn: the real binary, in a sandbox, from
-// .demo/landing/demo.yml. A drawing of a terminal read as a promise; this is
-// the thing itself. Each chapter starts where the take reaches that beat, in
-// seconds of the rendered video, so re-recording means re-reading these off
-// the new cut (`tui-record run` prints where each beat landed).
+// .demo/landing/demo.yml. The take's own cast is played here as text, so it
+// is as sharp as the page around it at any size and any zoom, where a video
+// of it carried the GIF's palette and blur. Each chapter starts where the
+// take reaches that beat, in seconds of the cast: a new take means reading
+// these off the new cut.
+const CAST = '/uze-landing.cast';
 const CHAPTERS: { label: string; at: number }[] = [
   { label: 'open the workspace', at: 0 },
-  { label: 'add a plugin', at: 0 },
-  { label: 'agents side by side', at: 0 },
-  { label: 'review and deliver', at: 0 },
+  { label: 'add a plugin', at: 4 },
+  { label: 'agents side by side', at: 18.6 },
+  { label: 'review and deliver', at: 42.4 },
 ];
+// What the spec records at: the pace that reads as a person typing.
+const SPEED = 1.2;
+// The frame shown before it plays, and to reduced motion instead of it:
+// three agents named, each in its own worktree, and Claude's commit.
+const POSTER_AT = 39.7;
+const FRAME_WIDTH = 'min(calc((100svh - 16rem) * 1.89), calc(100vw - 4rem), 1600px)';
+
+type Player = {
+  play: () => Promise<void>;
+  seek: (to: number) => Promise<void>;
+  getCurrentTime: () => number;
+  dispose: () => void;
+};
 
 export function HeroRecording() {
-  const video = useRef<HTMLVideoElement>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const player = useRef<Player | null>(null);
   const [current, setCurrent] = useState(0);
-  const [still, setStill] = useState(false);
 
-  // Reduced motion gets the poster and nothing that moves on its own; a
-  // chapter picked there plays from it, because that is a reader asking.
   useEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setStill(reduced);
-    if (!reduced) void video.current?.play().catch(() => {});
+    const el = host.current;
+    if (!el) return;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let follow: ReturnType<typeof setInterval> | undefined;
+    let disposed = false;
+    // Loaded on the client only: the player measures the box it draws in,
+    // and it measures a cell in the font it is given, so the font is loaded
+    // first or every row is laid out at the fallback's width and overflows.
+    void Promise.all([
+      import('asciinema-player'),
+      document.fonts.load("16px 'Uze Terminal'"),
+      document.fonts.load("bold 16px 'Uze Terminal'"),
+    ]).then(([{ create }]) => {
+      if (disposed) return;
+      player.current = create(CAST, el, {
+        autoPlay: !still,
+        loop: true,
+        speed: SPEED,
+        fit: 'width',
+        controls: false,
+        poster: `npt:${POSTER_AT}`,
+        theme: 'uze',
+        terminalFontFamily: "'Uze Terminal', 'JetBrains Mono', monospace",
+        terminalLineHeight: 1.22,
+      }) as Player;
+      follow = setInterval(() => {
+        const t = player.current?.getCurrentTime() ?? 0;
+        setCurrent(CHAPTERS.reduce((found, chapter, index) => (t >= chapter.at ? index : found), 0));
+      }, 250);
+    });
+    return () => {
+      disposed = true;
+      if (follow) clearInterval(follow);
+      player.current?.dispose();
+      player.current = null;
+    };
   }, []);
 
-  const follow = () => {
-    const t = video.current?.currentTime ?? 0;
-    setCurrent(CHAPTERS.reduce((found, chapter, index) => (t >= chapter.at ? index : found), 0));
-  };
-
   const jump = (index: number) => {
-    const el = video.current;
-    if (!el) return;
-    el.currentTime = CHAPTERS[index].at;
+    const p = player.current;
+    if (!p) return;
     setCurrent(index);
-    void el.play().catch(() => {});
+    void p.seek(CHAPTERS[index].at).then(() => p.play());
   };
 
   return (
-    <div className="border-y border-line">
-      {/* The chapters, where a console keeps its tabs: the one playing is
-          filled, and any of them can be picked. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-2 font-mono text-xs sm:justify-between">
+    <div>
+      {/* Wider than the page's column, in a bezel: the recording is the
+          proof, so it gets the room a screenshot of an app would. Its width
+          follows the screen's height, so the pinned stage never cuts it: the
+          terminal is about 1.89:1, and 16rem is the banner, the header,
+          the stage's margin, the bezel, the title bar and the chapters
+          under it, with room for the frame's shadow inside the stage. Centred on the column it breaks out of. */}
+      <figure
+        className="hero-frame dark relative left-1/2 -translate-x-1/2 rounded-[22px] bg-[#16181a] p-2 text-ink"
+        style={{ width: FRAME_WIDTH }}
+      >
+        <div className="overflow-hidden rounded-[14px] bg-[#0a0c0d] ring-1 ring-white/[0.06]">
+          <div className="relative flex h-9 items-center border-b border-white/[0.06] px-4">
+            <div className="flex gap-2" aria-hidden>
+              <span className="size-3 rounded-full bg-[#ff5f57]" />
+              <span className="size-3 rounded-full bg-[#febc2e]" />
+              <span className="size-3 rounded-full bg-[#28c840]" />
+            </div>
+            <figcaption className="absolute inset-x-0 text-center font-mono text-xs text-muted">
+              ~/demo-api · uze
+            </figcaption>
+          </div>
+          <div
+            ref={host}
+            className="hero-recording"
+            role="img"
+            aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on one, while Claude commits through the plugin skill and is delivered to main."
+          />
+        </div>
+      </figure>
+
+      {/* The chapters, under the window rather than in it, where nobody
+          reads them as part of the app: the one playing is filled, and any
+          can be picked. As wide as the window, so it sits framed by it. */}
+      <div
+        className="relative left-1/2 mt-6 flex -translate-x-1/2 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 font-mono text-xs"
+        style={{ width: FRAME_WIDTH }}
+      >
         {CHAPTERS.map((chapter, index) => {
           const active = index === current;
           return (
@@ -53,7 +128,7 @@ export function HeroRecording() {
               type="button"
               onClick={() => jump(index)}
               aria-current={active ? 'step' : undefined}
-              className={`inline-flex items-center gap-2 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              className={`inline-flex items-center gap-2 py-1 whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                 active ? 'text-ink' : 'text-muted hover:text-ink'
               }`}
             >
@@ -71,25 +146,6 @@ export function HeroRecording() {
             </button>
           );
         })}
-      </div>
-
-      {/* The recording's own ground is the TUI's, a shade off the frame's
-          black: the frame is painted in it too, so the edge never shows. */}
-      <div className="py-3" style={{ background: '#0a0c0d' }}>
-        <video
-          ref={video}
-          muted
-          loop
-          playsInline
-          preload={still ? 'none' : 'auto'}
-          poster="/uze-landing-poster.png"
-          onTimeUpdate={follow}
-          aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on the first, which commits through the plugin skill and is delivered."
-          className="block h-auto w-full"
-        >
-          <source src="/uze-landing.webm" type="video/webm" />
-          <source src="/uze-landing.mp4" type="video/mp4" />
-        </video>
       </div>
     </div>
   );
