@@ -214,7 +214,7 @@ pub(crate) fn multi_mcp_fixture() -> PathBuf {
 }
 
 #[test]
-pub(crate) fn list_and_inspect_are_package_centric() {
+fn list_and_inspect_are_package_centric() {
     let root = uze_testkit::temp::scratch("inspect");
     let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(SymlinkIntegration)]);
     app.plugins()
@@ -233,7 +233,7 @@ pub(crate) fn list_and_inspect_are_package_centric() {
 }
 
 #[test]
-pub(crate) fn add_installs_portable_package_without_invoking_absent_harnesses() {
+fn add_installs_portable_package_without_invoking_absent_harnesses() {
     let root = uze_testkit::temp::scratch("absent-harness");
     let absent = AbsentIntegration {
         attach_attempted: std::sync::atomic::AtomicBool::new(false),
@@ -253,7 +253,7 @@ pub(crate) fn add_installs_portable_package_without_invoking_absent_harnesses() 
 /// the gap is carried on the listing with nothing run to close it; a
 /// malformed declaration is refused before the Store holds a byte.
 #[test]
-pub(crate) fn a_missing_requirement_installs_with_the_gap_reported() {
+fn a_missing_requirement_installs_with_the_gap_reported() {
     let root = uze_testkit::temp::scratch("requirement-gap");
     let package = root.join("pkg");
     fs::create_dir_all(package.join("skills/hello")).unwrap();
@@ -322,7 +322,7 @@ pub(crate) fn a_missing_requirement_installs_with_the_gap_reported() {
 /// whole, before the Store holds a byte of it: delivered without its guard
 /// it would let through every operation the guard checks.
 #[test]
-pub(crate) fn a_package_whose_guard_cannot_run_here_is_not_installed() {
+fn a_package_whose_guard_cannot_run_here_is_not_installed() {
     let root = uze_testkit::temp::scratch("guard-unspelled");
     let package = root.join("guarded");
     fs::create_dir_all(&package).unwrap();
@@ -363,7 +363,7 @@ pub(crate) fn a_package_whose_guard_cannot_run_here_is_not_installed() {
 // A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
-pub(crate) fn removal_uses_reconciliation_and_preserves_drift() {
+fn removal_uses_reconciliation_and_preserves_drift() {
     use std::os::unix::fs::symlink;
     let root = uze_testkit::temp::scratch("remove");
     let home = UzeHome::at(&root);
@@ -439,7 +439,7 @@ pub(crate) fn removal_uses_reconciliation_and_preserves_drift() {
 /// the new install claims the bare name it freed — the happy path with
 /// no receipts to make removal unsafe.
 #[test]
-pub(crate) fn replace_resolution_removes_the_existing_active_plugin_and_installs_the_new_one() {
+fn replace_resolution_removes_the_existing_active_plugin_and_installs_the_new_one() {
     let root = uze_testkit::temp::scratch("replace-happy");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home.clone(), vec![Box::new(SymlinkIntegration)]);
@@ -501,8 +501,7 @@ pub(crate) fn replace_resolution_removes_the_existing_active_plugin_and_installs
 /// aborts with the structured collision error, and the existing plugin
 /// is left exactly as it was (never partially detached, never removed).
 #[test]
-pub(crate) fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_removal_is_blocked()
-{
+fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_removal_is_blocked() {
     use uze_platform::fs::symlink;
     let root = uze_testkit::temp::scratch("replace-blocked");
     let home = UzeHome::at(&root);
@@ -601,7 +600,7 @@ pub(crate) fn replace_resolution_aborts_and_preserves_the_existing_plugin_when_r
 /// aliased plugin back to its bare plugin name — the alias is a fact
 /// about *this* installation, not something an update should erase.
 #[test]
-pub(crate) fn update_preserves_an_aliased_plugins_active_name() {
+fn update_preserves_an_aliased_plugins_active_name() {
     let root = uze_testkit::temp::scratch("update-alias");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home.clone(), vec![Box::new(SymlinkIntegration)]);
@@ -732,7 +731,7 @@ fn install_conformance_fixture(app: &UzeApplication, marketplace: &str) {
 /// read-only vendor configuration took a Git-sourced plugin off the
 /// machine with nothing left that could heal it.
 #[test]
-pub(crate) fn an_update_a_harness_refuses_removes_nothing() {
+fn an_update_a_harness_refuses_removes_nothing() {
     let root = uze_testkit::temp::scratch("update-refused-early");
     let calls = Arc::new(AtomicUsize::new(0));
     let refuse_at = Arc::new(AtomicUsize::new(usize::MAX));
@@ -771,7 +770,7 @@ pub(crate) fn an_update_a_harness_refuses_removes_nothing() {
 /// fails the previous revision goes back: its bytes, its registration and
 /// its attachments, reported as blocked rather than as an update.
 #[test]
-pub(crate) fn an_update_that_fails_after_the_removal_puts_the_revision_back() {
+fn an_update_that_fails_after_the_removal_puts_the_revision_back() {
     let root = uze_testkit::temp::scratch("update-restored");
     let calls = Arc::new(AtomicUsize::new(0));
     let refuse_at = Arc::new(AtomicUsize::new(usize::MAX));
@@ -854,7 +853,7 @@ impl IntegrationPort for DeliveryRefusedOnce {
 /// ingesting the old bytes handed the new revision back and called it put
 /// back, then deleted the only copy of the old one.
 #[test]
-pub(crate) fn an_update_whose_delivery_fails_puts_the_previous_bytes_back() {
+fn an_update_whose_delivery_fails_puts_the_previous_bytes_back() {
     let root = uze_testkit::temp::scratch("update-delivery-restored");
     let source = root.join("source");
     uze_testkit::fixtures::copy_tree(&fixture(), &source);
@@ -905,7 +904,7 @@ pub(crate) fn an_update_whose_delivery_fails_puts_the_previous_bytes_back() {
 /// fails, and the operator is told so. Another package's update must not
 /// be what sweeps it away.
 #[test]
-pub(crate) fn an_update_leaves_another_packages_superseded_copy_alone() {
+fn an_update_leaves_another_packages_superseded_copy_alone() {
     let root = uze_testkit::temp::scratch("update-superseded-per-package");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     install_conformance_fixture(&app, "alpha");
@@ -961,7 +960,7 @@ impl IntegrationPort for RecordingPublication {
 /// an empty catalogue in every harness. `setup` republishes everything, so
 /// it emptied them all.
 #[test]
-pub(crate) fn an_unreadable_registry_publishes_nothing_over_the_views() {
+fn an_unreadable_registry_publishes_nothing_over_the_views() {
     let root = uze_testkit::temp::scratch("republish-unreadable-registry");
     let home = UzeHome::at(&root);
     home.ensure_layout().unwrap();
@@ -990,7 +989,7 @@ pub(crate) fn an_unreadable_registry_publishes_nothing_over_the_views() {
 /// One harness refusing to be prepared is that harness's failure, reported
 /// in its own entry — never the end of every other harness's setup.
 #[test]
-pub(crate) fn a_harness_that_fails_to_prepare_does_not_stop_the_others() {
+fn a_harness_that_fails_to_prepare_does_not_stop_the_others() {
     let root = uze_testkit::temp::scratch("setup-per-harness");
     let app = UzeApplication::new(
         UzeHome::at(&root),
@@ -1058,7 +1057,7 @@ fn preparing_detected_harnesses_tries_every_one_and_answers_the_refusal() {
 /// Bootstrap runs ahead of every command. Another UZE mid-mutation is not
 /// its to race: it skips, and the next command seeds.
 #[test]
-pub(crate) fn bootstrap_skips_while_another_mutation_holds_the_lock() {
+fn bootstrap_skips_while_another_mutation_holds_the_lock() {
     let root = uze_testkit::temp::scratch("bootstrap-lock-held");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home.clone(), Vec::new());
@@ -1082,7 +1081,7 @@ pub(crate) fn bootstrap_skips_while_another_mutation_holds_the_lock() {
 /// refuse before a byte is written, and the answer was then an install
 /// that never happened.
 #[test]
-pub(crate) fn a_default_plugin_that_was_not_installed_is_not_reported_as_installed() {
+fn a_default_plugin_that_was_not_installed_is_not_reported_as_installed() {
     let root = uze_testkit::temp::scratch("bootstrap-refused");
     let app = UzeApplication::new(
         UzeHome::at(&root),
@@ -1105,7 +1104,7 @@ pub(crate) fn a_default_plugin_that_was_not_installed_is_not_reported_as_install
 }
 
 #[test]
-pub(crate) fn doctor_reports_corrupt_ledger_without_destructive_work() {
+fn doctor_reports_corrupt_ledger_without_destructive_work() {
     let root = uze_testkit::temp::scratch("doctor");
     let home = UzeHome::at(&root);
     home.ensure_layout().unwrap();
@@ -1153,7 +1152,7 @@ impl IntegrationPort for NamedIntegration {
 }
 
 #[test]
-pub(crate) fn harness_inspect_finds_by_id_or_display_name_and_errors_on_unknown() {
+fn harness_inspect_finds_by_id_or_display_name_and_errors_on_unknown() {
     let root = uze_testkit::temp::scratch("harness-inspect");
     // `SymlinkIntegration::id()` is "test"; it declares no `display_name`
     // override, so both default to the same string here — the point is
@@ -1180,7 +1179,7 @@ pub(crate) fn harness_inspect_finds_by_id_or_display_name_and_errors_on_unknown(
 }
 
 #[test]
-pub(crate) fn market_inspect_errors_on_an_unregistered_marketplace() {
+fn market_inspect_errors_on_an_unregistered_marketplace() {
     let root = uze_testkit::temp::scratch("market-inspect-unknown");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     assert!(app.marketplace().inspect("does-not-exist").is_err());
@@ -1194,7 +1193,7 @@ pub(crate) fn market_inspect_errors_on_an_unregistered_marketplace() {
 // A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
-pub(crate) fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
+fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
     let root = uze_testkit::temp::scratch("partial-add");
     let home = UzeHome::at(&root);
     let integration = PartialIntegration {
@@ -1238,7 +1237,7 @@ pub(crate) fn an_install_its_only_harness_refuses_leaves_nothing_behind() {
 // A symbolic link, which Windows lets an ordinary account make only in developer mode.
 #[cfg(unix)]
 #[test]
-pub(crate) fn an_install_one_of_two_harnesses_refuses_is_recorded_as_partial() {
+fn an_install_one_of_two_harnesses_refuses_is_recorded_as_partial() {
     let root = uze_testkit::temp::scratch("partial-two-harnesses");
     let home = UzeHome::at(root.join("home"));
     let whole = root.join("whole");
@@ -1340,7 +1339,7 @@ pub(crate) fn an_install_one_of_two_harnesses_refuses_is_recorded_as_partial() {
 /// reinstall that fails did not create it — and must never be what takes
 /// away a package the operator already had.
 #[test]
-pub(crate) fn a_failed_reinstall_keeps_the_package_that_was_there() {
+fn a_failed_reinstall_keeps_the_package_that_was_there() {
     let root = uze_testkit::temp::scratch("reinstall-refused");
     let home = UzeHome::at(&root);
     let refuse_next = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1480,7 +1479,7 @@ impl IntegrationPort for EnvelopingIntegration {
 // Uses the linking stand-in integration above, Unix only.
 #[cfg(unix)]
 #[test]
-pub(crate) fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
+fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
     let root = uze_testkit::temp::scratch("report-every-attachment");
     let attached = root.join("attached");
     fs::create_dir_all(&attached).unwrap();
@@ -1521,7 +1520,7 @@ pub(crate) fn the_install_report_names_the_envelope_and_every_attachment_beside_
 }
 
 #[test]
-pub(crate) fn remove_is_idempotent_without_claiming_history_for_absent_state() {
+fn remove_is_idempotent_without_claiming_history_for_absent_state() {
     let root = uze_testkit::temp::scratch("remove-twice");
     let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(SymlinkIntegration)]);
     let package = app
@@ -1553,7 +1552,7 @@ pub(crate) fn remove_is_idempotent_without_claiming_history_for_absent_state() {
 // Uses the linking stand-in integration above, Unix only.
 #[cfg(unix)]
 #[test]
-pub(crate) fn multi_mcp_package_has_independent_receipts_through_safe_removal() {
+fn multi_mcp_package_has_independent_receipts_through_safe_removal() {
     let root = uze_testkit::temp::scratch("multi-mcp-lifecycle");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(
@@ -1590,7 +1589,7 @@ pub(crate) fn mcp_fixture() -> PathBuf {
 // --- Marketplace bootstrap: install-only, never silent-update --------
 
 #[test]
-pub(crate) fn bootstrap_installs_exactly_the_default_policy_and_is_idempotent() {
+fn bootstrap_installs_exactly_the_default_policy_and_is_idempotent() {
     let root = uze_testkit::temp::scratch("bootstrap-default");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
 
@@ -1616,7 +1615,7 @@ pub(crate) fn bootstrap_installs_exactly_the_default_policy_and_is_idempotent() 
 }
 
 #[test]
-pub(crate) fn bootstrap_never_mutates_an_already_installed_default_plugin() {
+fn bootstrap_never_mutates_an_already_installed_default_plugin() {
     let root = uze_testkit::temp::scratch("bootstrap-no-silent-update");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.ensure_default_plugins().unwrap();
@@ -1645,7 +1644,7 @@ pub(crate) fn bootstrap_never_mutates_an_already_installed_default_plugin() {
 }
 
 #[test]
-pub(crate) fn read_only_bootstrap_leaves_store_state_byte_identical_on_repeat() {
+fn read_only_bootstrap_leaves_store_state_byte_identical_on_repeat() {
     let root = uze_testkit::temp::scratch("bootstrap-snapshot");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home.clone(), Vec::new());
@@ -1665,7 +1664,7 @@ pub(crate) fn read_only_bootstrap_leaves_store_state_byte_identical_on_repeat() 
 }
 
 #[test]
-pub(crate) fn existing_receipts_survive_repeated_bootstrap_unchanged() {
+fn existing_receipts_survive_repeated_bootstrap_unchanged() {
     let root = uze_testkit::temp::scratch("bootstrap-receipts");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(
@@ -1685,7 +1684,7 @@ pub(crate) fn existing_receipts_survive_repeated_bootstrap_unchanged() {
 }
 
 #[test]
-pub(crate) fn a_default_plugin_that_would_cross_the_trust_boundary_is_not_installed_silently() {
+fn a_default_plugin_that_would_cross_the_trust_boundary_is_not_installed_silently() {
     let root = uze_testkit::temp::scratch("bootstrap-trust");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
 
@@ -1725,7 +1724,7 @@ pub(crate) fn a_default_plugin_that_would_cross_the_trust_boundary_is_not_instal
 }
 
 #[test]
-pub(crate) fn a_corrupted_stored_copy_reports_unknown_update_status_without_panicking() {
+fn a_corrupted_stored_copy_reports_unknown_update_status_without_panicking() {
     let root = uze_testkit::temp::scratch("bootstrap-corrupt");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.ensure_default_plugins().unwrap();
@@ -1751,7 +1750,7 @@ pub(crate) fn a_corrupted_stored_copy_reports_unknown_update_status_without_pani
 }
 
 #[test]
-pub(crate) fn auto_update_applies_a_pending_official_snapshot_update() {
+fn auto_update_applies_a_pending_official_snapshot_update() {
     let root = uze_testkit::temp::scratch("auto-update-applies");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.ensure_default_plugins().unwrap();
@@ -1797,7 +1796,7 @@ pub(crate) fn auto_update_applies_a_pending_official_snapshot_update() {
 /// What changed: the restriction is now about *what is known* rather than
 /// about the kind of source. The client opening is an explicit interactive
 /// act, and a plugin known to be behind is updated there.
-pub(crate) fn auto_update_never_fetches_to_find_out_whether_there_is_an_update() {
+fn auto_update_never_fetches_to_find_out_whether_there_is_an_update() {
     let root = uze_testkit::temp::scratch("auto-update-local-only");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.plugins()
@@ -1818,7 +1817,7 @@ pub(crate) fn auto_update_never_fetches_to_find_out_whether_there_is_an_update()
 }
 
 #[test]
-pub(crate) fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
+fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
     let root = uze_testkit::temp::scratch("protected-update");
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home, Vec::new());
@@ -1846,7 +1845,7 @@ pub(crate) fn official_embedded_plugin_is_protected_from_remove_but_allows_updat
 }
 
 #[test]
-pub(crate) fn local_spoof_named_uze_is_not_protected() {
+fn local_spoof_named_uze_is_not_protected() {
     let root = uze_testkit::temp::scratch("spoof-not-protected");
     let spoof_src = uze_testkit::temp::scratch("spoof-src-uze");
     fs::create_dir_all(spoof_src.join("skills/spoof")).unwrap();
