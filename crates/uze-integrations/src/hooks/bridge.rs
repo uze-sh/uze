@@ -508,7 +508,12 @@ export default {{
           call.refused = `${{asked.reason}} (OpenCode offers no permission prompt for \`${{call.tool}}\`, so the call is refused rather than run unasked)`;
         }}
       }}
-      if (call.refused) refuse(event, call.refused);
+      // A refused call never reaches `execute.after`; only a tool that asks
+      // still needs it, for its permission check to deny.
+      if (call.refused) {{
+        refuse(event, call.refused);
+        if (!PROMPTING.includes(call.tool)) CALLS.delete(event.id);
+      }}
     }});
     // Where a tool asks for permission, this is where an `ask` group asks,
     // and a call `execute.before` refused stays refused should it run all
@@ -519,6 +524,7 @@ export default {{
       if (!call || call.decided) return;
       call.decided = true;
       if (call.refused) {{
+        CALLS.delete(event.source.id);
         event.effect = "deny";
         event.message = call.refused;
         return;
