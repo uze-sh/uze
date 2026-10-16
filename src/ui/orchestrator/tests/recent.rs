@@ -843,21 +843,36 @@ fn a_read_of_a_directory_below_the_root_is_kept_under_the_primary() {
     assert!(driven.attach.model.recent.covers(&below));
 }
 
-/// The foot is one line with the two keys that matter on the row:
-/// escape leaves every surface alike and delivering is in the action
-/// index, so neither takes the room the two need.
+/// The foot holds the two keys every row shares, one at each end: the
+/// row's menu at the left, which carries whatever the row offers, and
+/// leaving at the right. What a row offers is in its menu, not spelled
+/// out here.
 #[test]
-fn the_foot_offers_resume_and_discard_on_one_line() {
+fn the_foot_offers_the_rows_menu_at_the_left_and_close_at_the_right() {
     let mut model = showing(
         vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
         Vec::new(),
     );
     model.recent.selected = Some("a".to_owned());
     let lines = drawn(&model);
-    let foot = &lines[row_of(&lines, "enter resume")];
-    assert!(foot.contains("d discard"), "{foot:?}");
+    let foot = &lines[row_of(&lines, "esc close")];
+    let menu = foot.find("alt+. actions").expect("the row's menu");
+    let close = foot.find("esc close").unwrap();
+    assert!(menu < close, "{foot:?}");
     assert!(
-        !foot.contains("deliver") && !foot.contains("close"),
+        foot[..menu].trim_start_matches(' ').len() <= 1,
+        "the menu starts at the left end: {foot:?}"
+    );
+    assert!(
+        foot[close + "esc close".len()..]
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .count()
+            <= 1,
+        "close ends at the right, only the column's edge after it: {foot:?}"
+    );
+    assert!(
+        !foot.contains("resume") && !foot.contains("discard"),
         "{foot:?}"
     );
 }
@@ -1049,6 +1064,29 @@ fn recent_row_rect(model: &WorkspaceModel, index: usize) -> Rect {
         .iter()
         .find_map(|(rect, hit)| (*hit == WorkspaceHit::RecentRow(index)).then_some(*rect))
         .expect("the row is drawn")
+}
+
+/// `Alt+.` opens the selected row's menu, the one a right-click on it
+/// opens, which is what the foot's left end names.
+#[test]
+fn alt_period_opens_the_selected_rows_menu() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-menu-key"));
+    let mut model = showing(
+        vec![preserved(PROJECT, "a", "one", WorkStateView::Ready)],
+        Vec::new(),
+    );
+    model.recent.selected = Some("a".to_owned());
+    let mut driven = driven(model, &home);
+    driven.frame();
+    driven.press_key(key_event(uze_keys::Chord::parse("alt+.").unwrap()));
+
+    let menu = driven
+        .attach
+        .model
+        .context_menu
+        .as_ref()
+        .expect("the selected row's menu opened");
+    assert_eq!(menu.labels, vec!["Resume", "Deliver", "Discard…"]);
 }
 
 /// A right-click selects the row it lands on and offers what that row's

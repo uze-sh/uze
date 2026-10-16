@@ -102,6 +102,11 @@ impl Attach<'_> {
                     self.act_on_recent_row(&row, index);
                 }
             }
+            Action::OpenMenu => {
+                if let Some(index) = index {
+                    self.open_recent_menu_from_the_keyboard(index);
+                }
+            }
             Action::DeliverTask => {
                 if let Some(task) = row.filter(RecentRow::delivers).and_then(|row| row.task) {
                     self.deliver_kept(&task);
@@ -200,6 +205,20 @@ impl Attach<'_> {
         self.model.recent.asking = false;
         self.model.recent.selected = Some(row.key.clone());
         self.model.dirty = true;
+    }
+
+    /// `Alt+.` on the selected row: its menu, under the row's label as a
+    /// pointer on it would have put it.
+    fn open_recent_menu_from_the_keyboard(&mut self, index: usize) {
+        let row = self.model.hits.iter().find_map(|(rect, hit)| match hit {
+            WorkspaceHit::RecentRow(found) if *found == index => Some(*rect),
+            _ => None,
+        });
+        let anchor = row.map_or_else(
+            || Rect::new(0, 0, 1, 1),
+            |row| Rect::new(row.x + 2, row.y, 1, 1),
+        );
+        self.open_recent_menu(index, anchor);
     }
 
     /// Right-click on a row: selects it, takes the keyboard back for

@@ -429,6 +429,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Recent, "down", Action::SelectNext),
         bind(Scope::Recent, "up", Action::SelectPrevious),
         bind(Scope::Recent, "enter", Action::Activate),
+        // The selected row's menu, by the key that opens a tab's.
+        bind(Scope::Recent, "alt+.", Action::OpenMenu),
         // A question's two answers, walked the way every question's are.
         bind(Scope::Recent, "left", Action::FocusPrevious),
         bind(Scope::Recent, "right", Action::FocusNext),

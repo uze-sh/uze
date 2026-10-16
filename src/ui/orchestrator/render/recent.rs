@@ -115,16 +115,42 @@ pub(super) fn render_recent(
             uze_keys::Scope::Workspace,
             uze_keys::Scope::Recent,
         ];
-        let keys = keys_for(row, model.recent.asking, model.recent.on_confirm)
-            .into_iter()
-            .fold(Hints::new(&scopes), |hints, (action, word)| {
-                hints.named(action, word)
-            })
-            .hovered(model.hovered_hint());
+        let hints = |keys: Vec<(Action, String)>| {
+            keys.into_iter()
+                .fold(Hints::new(&scopes), |hints, (action, word)| {
+                    hints.named(action, word)
+                })
+                .hovered(model.hovered_hint())
+        };
         let room = width.saturating_sub(2 * TRAILING_PAD);
-        let drawn = keys.width().min(room);
-        let centred = Rect::new(rect.x + (rect.width - drawn) / 2, rect.y, drawn, 1);
-        hits.extend(hint_targets(keys.render(frame, centred)));
+        // A question's answers stand together in the middle; otherwise the
+        // row's menu is at the left end and leaving at the right, the two
+        // keys every row shares, whatever the row offers.
+        if model.recent.asking && row.and_then(RecentRow::taking_away).is_some() {
+            let keys = hints(answer_keys(row, model.recent.on_confirm));
+            let drawn = keys.width().min(room);
+            let centred = Rect::new(rect.x + (rect.width - drawn) / 2, rect.y, drawn, 1);
+            hits.extend(hint_targets(keys.render(frame, centred)));
+        } else {
+            let close = hints(vec![(Action::Dismiss, "close".to_owned())]);
+            let close_width = close.width().min(room);
+            let right = Rect::new(
+                rect.right()
+                    .saturating_sub(TRAILING_PAD)
+                    .saturating_sub(close_width),
+                rect.y,
+                close_width,
+                1,
+            );
+            hits.extend(hint_targets(close.render(frame, right)));
+            if row.is_some_and(|row| !row.offers().is_empty()) {
+                let actions = hints(vec![(Action::OpenMenu, "actions".to_owned())]);
+                let left_room = right.x.saturating_sub(rect.x + TRAILING_PAD + 1);
+                let drawn = actions.width().min(left_room);
+                let left = Rect::new(rect.x + TRAILING_PAD, rect.y, drawn, 1);
+                hits.extend(hint_targets(actions.render(frame, left)));
+            }
+        }
     }
 }
 
@@ -222,25 +248,22 @@ fn answers(word: &str, on_confirm: bool) -> [(Button, WorkspaceHit); 2] {
 /// the row away, or, while it asks, what enter takes and how to reach the
 /// other answer. One line, so only those two: escape leaves every surface
 /// alike, and delivering is reached through the action index.
-fn keys_for(row: Option<&RecentRow>, asking: bool, on_confirm: bool) -> Vec<(Action, String)> {
-    let mut keys = Vec::new();
-    if let Some(word) = row.and_then(RecentRow::taking_away).filter(|_| asking) {
-        if on_confirm {
-            keys.push((Action::Activate, word.to_owned()));
-            keys.push((Action::Dismiss, "cancel".to_owned()));
-        } else {
-            keys.push((Action::Activate, "cancel".to_owned()));
-            keys.push((Action::FocusNext, word.to_owned()));
-        }
-        return keys;
+/// A question's two answers, in the order they stand.
+fn answer_keys(row: Option<&RecentRow>, on_confirm: bool) -> Vec<(Action, String)> {
+    let Some(word) = row.and_then(RecentRow::taking_away) else {
+        return Vec::new();
+    };
+    if on_confirm {
+        vec![
+            (Action::Activate, word.to_owned()),
+            (Action::Dismiss, "cancel".to_owned()),
+        ]
+    } else {
+        vec![
+            (Action::Activate, "cancel".to_owned()),
+            (Action::FocusNext, word.to_owned()),
+        ]
     }
-    keys.extend(
-        row.into_iter()
-            .flat_map(RecentRow::offers)
-            .filter(|(action, _)| matches!(action, Action::Activate | Action::DiscardTask))
-            .map(|(action, word)| (action, word.to_owned())),
-    );
-    keys
 }
 
 fn lead() -> Span<'static> {
