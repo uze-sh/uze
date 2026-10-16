@@ -163,6 +163,12 @@ pub(crate) enum Pattern {
     Prefix(String),
     /// The joined argv holds this anywhere.
     Containing(String),
+    /// An invocation whose first argument that is not an option is none of
+    /// these verbs: the harness's interactive session, bare or opened on a
+    /// prompt (`codex [OPTIONS] [PROMPT]`). An option's value counts as
+    /// that first argument, which is right for `-c key=value` as much as
+    /// for a prompt: neither is a verb.
+    Session(Vec<String>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -221,6 +227,17 @@ impl FakeHarnessBuilder {
     pub fn on_containing(mut self, token: &str, action: Action) -> Self {
         self.rules.push(Rule {
             pattern: Pattern::Containing(token.to_owned()),
+            action,
+        });
+        self
+    }
+
+    /// `on` for the interactive session: any invocation naming none of
+    /// `verbs` as its command, which a harness whose CLI takes a prompt
+    /// positionally starts its session for.
+    pub fn on_session(mut self, verbs: &[&str], action: Action) -> Self {
+        self.rules.push(Rule {
+            pattern: Pattern::Session(verbs.iter().map(|verb| (*verb).to_owned()).collect()),
             action,
         });
         self
@@ -453,6 +470,37 @@ pub struct Standard<'a> {
     pub opencode_binary: &'a str,
 }
 
+/// The commands `codex --help` lists (codex-cli 0.162): anything else first
+/// on its line is the prompt its interactive session opens on.
+const CODEX_VERBS: &[&str] = &[
+    "agents",
+    "exec",
+    "review",
+    "login",
+    "logout",
+    "mcp",
+    "plugin",
+    "app-server",
+    "remote-control",
+    "completion",
+    "update",
+    "doctor",
+    "sandbox",
+    "debug",
+    "apply",
+    "resume",
+    "queue",
+    "archive",
+    "delete",
+    "migrate-rollouts",
+    "unarchive",
+    "fork",
+    "cloud",
+    "exec-server",
+    "features",
+    "help",
+];
+
 impl Standard<'_> {
     /// Writes every stand-in and returns them in registration order.
     pub fn install(&self) -> Vec<FakeHarness> {
@@ -479,17 +527,21 @@ impl Standard<'_> {
                 session("Claude Code", "v9.9.9 (fake)"),
             )
             .build(),
-            self.interactive(
-                FakeHarness::new(self.bin_dir, "codex")
-                    .version_line("codex-cli 9.9.9")
-                    .on(["update"], Action::AsksOnTheTerminal)
-                    .on_prefix(
-                        ["plugin"],
-                        Action::VendorMarketplace {
-                            state_dir: self.state_root.join("codex"),
-                            vendor: MarketplaceVendor::Codex,
-                        },
-                    ),
+            self.prompted(
+                self.interactive(
+                    FakeHarness::new(self.bin_dir, "codex")
+                        .version_line("codex-cli 9.9.9")
+                        .on(["update"], Action::AsksOnTheTerminal)
+                        .on_prefix(
+                            ["plugin"],
+                            Action::VendorMarketplace {
+                                state_dir: self.state_root.join("codex"),
+                                vendor: MarketplaceVendor::Codex,
+                            },
+                        ),
+                    session("Codex", "v9.9.9 (fake)"),
+                ),
+                CODEX_VERBS,
                 session("Codex", "v9.9.9 (fake)"),
             )
             .build(),
@@ -552,6 +604,23 @@ impl Standard<'_> {
     fn interactive(&self, builder: FakeHarnessBuilder, action: Action) -> FakeHarnessBuilder {
         if self.interactive {
             builder.on([""], action)
+        } else {
+            builder
+        }
+    }
+
+    /// Attaches the session a harness opens on a prompt given positionally,
+    /// when this set is interactive: any invocation that names none of
+    /// `verbs` as its command. Last of all, so every verb above it still
+    /// answers for itself.
+    fn prompted(
+        &self,
+        builder: FakeHarnessBuilder,
+        verbs: &[&str],
+        action: Action,
+    ) -> FakeHarnessBuilder {
+        if self.interactive {
+            builder.on_session(verbs, action)
         } else {
             builder
         }

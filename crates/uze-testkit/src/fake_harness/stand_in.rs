@@ -55,7 +55,7 @@ pub fn run(executable: &Path, arguments: &[String]) -> ExitCode {
             };
             match std::iter::once(&version)
                 .chain(&rules)
-                .find(|rule| matches(&rule.pattern, &joined))
+                .find(|rule| matches(&rule.pattern, &joined, arguments))
             {
                 Some(rule) => perform(&rule.action, arguments),
                 None => ExitCode::SUCCESS,
@@ -70,11 +70,15 @@ pub fn run(executable: &Path, arguments: &[String]) -> ExitCode {
 
 /// `--version` is answered first, as a vendor CLI answers it whatever else
 /// it does; then the rules a test wrote, in order.
-fn matches(pattern: &Pattern, joined: &str) -> bool {
+fn matches(pattern: &Pattern, joined: &str, arguments: &[String]) -> bool {
     match pattern {
         Pattern::Exact(expected) => joined == expected,
         Pattern::Prefix(prefix) => joined.starts_with(prefix.as_str()),
         Pattern::Containing(token) => joined.contains(token.as_str()),
+        Pattern::Session(verbs) => arguments
+            .iter()
+            .find(|argument| !argument.starts_with('-'))
+            .is_none_or(|command| !verbs.contains(command)),
     }
 }
 
@@ -657,6 +661,27 @@ mod tests {
             ),
         ] {
             assert_eq!(slug(Path::new(cwd)), named);
+        }
+    }
+
+    #[test]
+    fn a_session_is_any_invocation_that_names_no_verb() {
+        let session = Pattern::Session(vec!["mcp".to_owned(), "resume".to_owned()]);
+        let args = |line: &str| -> Vec<String> {
+            line.split(' ')
+                .filter(|part| !part.is_empty())
+                .map(str::to_owned)
+                .collect()
+        };
+        for (line, is_session) in [
+            ("", true),
+            ("carry on", true),
+            ("-c key=value carry on", true),
+            ("mcp add name", false),
+            ("resume 019a carry on", false),
+            ("--json mcp list", false),
+        ] {
+            assert_eq!(matches(&session, line, &args(line)), is_session, "{line:?}");
         }
     }
 }

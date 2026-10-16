@@ -1,0 +1,159 @@
+journey: an agent continues in another harness and comes back to the conversation it left
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/agents.mdx
+about: |
+  When the harness an agent runs on stops being able to work, the operator
+  continues the same agent on another one: same identity, same directory,
+  same name. The harness taking over cannot read the other vendor's
+  conversation, so UZE writes it a briefing outside every checkout and the
+  new process opens on one line pointing at it, once. The harness left
+  behind keeps its conversation, and switching back resumes it.
+
+  Read off the machine: the agent record names the harness it runs now;
+  the briefing is a file only its owner can read, outside the project; the
+  incoming harness's argv ends with the line that points at it, and a
+  restart's argv does not; and the harness switched back to is told to
+  resume the conversation its first launch created.
+
+world:
+  project: demo-app
+  manifest: |
+    workspace:
+      target: main
+      delivery: handoff
+
+scenes:
+  - scene: an agent starts on one harness
+    when:
+      - shell: "{uze} setup"
+        say: the operator provisions their harnesses, which installs the launchers
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent picker
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: place a Claude agent
+        row_offset: 1
+        offset: 3
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
+    then:
+      - agents: { count: 1, live: 1, isolated: 0 }
+        about: one agent, in the project directory
+      - file: "{world}/bin/.invocations/claude.log"
+        contains: "--session-id"
+        about: the harness was told which conversation to open
+
+  - scene: the agent continues in another harness, from the keyboard alone
+    when:
+      - key: "M-."
+        say: open the selected agent's actions
+        expect: "Continue in…"
+      - key: "Down"
+        say: move onto continuing elsewhere
+        expect: "Continue in…"
+        pause: 0.3
+      - key: "Right"
+        say: open the harnesses it can continue in
+        expect: "Codex"
+      - key: "Enter"
+        say: continue it in Codex
+        expect: Codex v
+        expect_timeout: 45
+        pause: 2.0
+    then:
+      - agents: { count: 1, live: 1, isolated: 0 }
+        about: still the one agent, standing where it stood
+      - file: "{uze_home}/state/projects/*/agents.json"
+        contains: '"harness": "codex"'
+        about: and its record names the harness it runs now
+      - file: "{uze_home}/runtime/projects/*/briefings/*.md"
+        count: 1
+        about: a briefing was written for the harness taking over
+      - cmd:
+          run: >
+            case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exit 0 ;; esac;
+            test "$(ls -l {uze_home}/runtime/projects/*/briefings/*.md | cut -c1-10)" = "-rw-------"
+        about: |
+          readable by its owner alone — a mode where there are modes; on
+          Windows it is an ACL, which uze-platform's own tests hold
+      - cmd:
+          run: test -z "$(find {project} -path '*briefings*')"
+        about: and nothing of it was written into the project
+      - cmd:
+          run: >
+            line=$(tail -1 {world}/bin/.invocations/codex.log);
+            case "$line" in *"briefings"*".md first"*"carry on.") ;; *) exit 1 ;; esac
+        about: |
+          the incoming harness's argv ends with the one line pointing at
+          the briefing, where a positional prompt is read
+
+  - scene: a restart relaunches the agent without pointing it at the briefing again
+    when:
+      - kill: "{uze}"
+        say: kill everything holding this workspace, the way a reboot does it
+      - open: ["{uze}", "workspace"]
+        say: open the workspace again, which restores what it held
+        expect: demo-app
+        expect_timeout: 25
+        pause: 3.0
+      - click: agent 1
+        say: walk into the agent that came back
+        in: sidebar
+        expect: Codex v
+        expect_timeout: 30
+        pause: 1.5
+    then:
+      - agents: { count: 1, live: 1, isolated: 0 }
+        about: the agent came back as itself
+      - cmd:
+          run: test "$(wc -l < {world}/bin/.invocations/codex.log)" -ge 2
+        about: the restart launched the agent's harness again
+      - cmd:
+          run: >
+            test "$(grep -c 'carry on.' {world}/bin/.invocations/codex.log)" = 1
+        about: and the briefing's line was given to the first launch only
+
+  - scene: switching back resumes the conversation the first harness left
+    when:
+      - key: "M-."
+        say: open the agent's actions again
+        expect: "Continue in…"
+      - key: "Down"
+        say: move onto continuing elsewhere
+        expect: "Continue in…"
+        pause: 0.3
+      - key: "Right"
+        say: open the harnesses it can continue in
+        expect: "Claude Code"
+      - key: "Enter"
+        say: continue it back in Claude
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
+    then:
+      - agents: { count: 1, live: 1, isolated: 0 }
+        about: still the one agent
+      - file: "{uze_home}/state/projects/*/agents.json"
+        contains: '"harness": "claude-code"'
+        about: and its record names Claude again
+      - cmd:
+          run: >
+            log={world}/bin/.invocations/claude.log;
+            started=$(sed -n 's/^--session-id \([^ ]*\).*/\1/p' "$log" | head -1);
+            resumed=$(sed -n 's/^--resume \([^ ]*\).*/\1/p' "$log" | tail -1);
+            test -n "$started" && test "$started" = "$resumed"
+        about: |
+          Claude was told to resume the conversation its first launch
+          created, not to open a second one
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        count: 1
+        about: one Claude conversation, the same one
+      - file: "{uze_home}/runtime/projects/*/briefings/*.md"
+        contains: "You worked on this agent before"
+        about: and it was briefed only on what happened while it was away
