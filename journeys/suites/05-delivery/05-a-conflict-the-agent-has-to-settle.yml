@@ -11,11 +11,10 @@ about: |
   the owning agent is told — not the moment somebody presses deliver and
   finds out. What it must not do is decide: it cannot know which of the two
   versions was meant, so it leaves the rebase paused exactly where Git left
-  it and hands the agent the only things that let it act — which files, how
-  far the target moved, and what to run.
+  it, and the agent is sent the project's own instruction for a conflict.
 
   A refusal with no way forward is a dead end with better manners, so this
-  journey goes on to do what the message asks. The same button, once the
+  journey goes on to do what the message asks. The deliver key, once the
   conflict is settled, lands the work it was holding back — carrying the
   resolution the agent wrote rather than either side's original.
 
@@ -27,6 +26,8 @@ world:
       target: main
       delivery: merge
       slots: 3
+      actions:
+        on_conflict: Your branch no longer rebases onto main. Resolve it, run git rebase --continue and the checks.
 
 scenes:
   - scene: the target moves under an agent, and UZE says so without being asked
@@ -97,7 +98,7 @@ scenes:
       - git: { in: "{project}", dirty: false }
         about: with the project's own checkout never used as the workbench
 
-  - scene: the agent does what it was told, and the same button lands the work
+  - scene: the agent does what it was told, and the deliver key lands the work
     when:
       - shell: |
           set -e
@@ -114,12 +115,11 @@ scenes:
         say: |
           the next evaluation reads the settled branch as deliverable again,
           with nobody having told UZE that the conflict was resolved
-      - click: "→ main"
+      - key: "M-i"
         say: deliver, now that there is nothing in the way
-        in: strip
-        expect: "→ main ↑"
+        expect: "merged"
         expect_timeout: 90
-        pause: 2.0
+        pause: 1.0
     then:
       - cmd:
           run: "git -C {project} log --oneline -1"

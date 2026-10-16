@@ -115,14 +115,25 @@ vocabulary! {
         /// Work in flight. Its own hue because every state a slot can be in
         /// needs one, and a delivery under way is not a warning.
         StateInFlight = "state.in-flight",
+        /// [`StateInFlight`](Self::StateInFlight) as a report rather than a
+        /// control: the status chip says what nothing answers a click on in
+        /// its state's muted hue, so a hue at full strength is always one a
+        /// click answers.
+        StateInFlightMuted = "state.in-flight-muted",
         /// Work that landed. Its own hue for the same reason: delivered work
         /// is not a badge.
         StateLanded = "state.landed",
+        /// [`StateLanded`](Self::StateLanded) as a report, for the reason
+        /// [`StateInFlightMuted`](Self::StateInFlightMuted) gives.
+        StateLandedMuted = "state.landed-muted",
         /// Work that has left the machine and is with whoever reviews it.
         /// Its own hue for the same reason as the two above — and a
         /// deliberately quiet one, because unlike every other state a slot
         /// can be in, this one asks nothing of the person reading it.
         StatePublished = "state.published",
+        /// [`StatePublished`](Self::StatePublished) as a report, for the
+        /// reason [`StateInFlightMuted`](Self::StateInFlightMuted) gives.
+        StatePublishedMuted = "state.published-muted",
         /// The wash behind an added line in a diff.
         StateDiffAdded = "state.diff-added",
         /// The wash behind a removed line in a diff.

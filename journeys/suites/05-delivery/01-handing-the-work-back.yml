@@ -4,14 +4,12 @@ proves: web/content/docs/workspace/agents.mdx
 about: |
   The end of the loop. An agent commits in its own checkout; the project's
   branch does not move because of it. When the work is deliverable the
-  workspace offers a button that *names the ending it will reach* — `→ main`,
-  and how much it would send — and only pressing it moves anything.
+  workspace's status *names where it would go* — `→ main`, and how much it
+  would send — and only the deliver key moves anything.
 
-  The naming is the point. A button that says "deliver" leaves the person
-  guessing whether their commit is about to land on a shared branch, be
-  pushed, or sit on a branch for review. This one says which, before it is
-  pressed, and the journey reads the branch afterwards to check it told the
-  truth.
+  The status is not the delivery. Clicking it asks the agent what the
+  project declared for the state the work is in, and moves nothing; the
+  journey reads the branch after each gesture to check which one acted.
 
 world:
   project: demo-app
@@ -21,6 +19,8 @@ world:
       target: main
       delivery: merge
       slots: 3
+      actions:
+        on_ready: Review your diff, then end your turn.
 
 scenes:
   - scene: an agent, working in a checkout of its own
@@ -71,14 +71,33 @@ scenes:
       - git: { in: "{project}", dirty: false }
         about: nor was the primary checkout used as a workbench
 
-  - scene: pressing the button does exactly what the button said
+  - scene: clicking the status asks the agent what the project declared, and moves nothing
     when:
       - click: "→ main"
-        say: deliver
+        say: click the status, which the project answers with an instruction
         in: strip
-        expect: "→ main ↑"
+        expect: "Review your diff"
+        expect_timeout: 20
+      - wait: screen
+        until: "Review your diff, then end your turn."
+        in: pane
+        timeout: 20
+        say: the instruction is typed into the agent's own pane
+    then:
+      - cmd:
+          run: "git -C {project} log --oneline -1"
+          stdout_contains: "chore: declare the worktree policy"
+        about: the target has not moved, because a click never delivers
+      - tasks: { any_state: ready }
+        about: and the work is still waiting to be delivered
+
+  - scene: the deliver key does exactly what the status said
+    when:
+      - key: "M-i"
+        say: deliver
+        expect: "merged"
         expect_timeout: 60
-        pause: 2.0
+        pause: 1.0
     then:
       - cmd:
           run: "git -C {project} log --oneline -1"

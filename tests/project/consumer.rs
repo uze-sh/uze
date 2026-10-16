@@ -1277,7 +1277,7 @@ mod drift {
     fn a_package_region_gone_from_agents_md_reads_as_stale_until_install_clears_it() {
         let fx = Fixture::new("drift-projection");
         let manifest = fx.project_root.join("agents.yaml");
-        fs::write(&manifest, "workspace:\n  delivery: handoff\n").unwrap();
+        fs::write(&manifest, "workspace:\n  delivery: merge\n").unwrap();
         let app = fx.app();
         app.context().reconcile(&fx.project_root).unwrap();
         assert!(

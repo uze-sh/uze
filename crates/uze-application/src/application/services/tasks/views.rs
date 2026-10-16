@@ -110,10 +110,15 @@ pub struct AgentView {
     /// target.
     pub parent: Option<String>,
     pub state: WorkStateView,
-    /// What delivering this task does — the project's own say, carried on
-    /// the task so a surface offering the delivery can name its ending
-    /// instead of showing one verb for three different outcomes.
-    pub completion: CompletionBehavior,
+    /// What the project asks this agent while its work is in `state`, sent
+    /// on a click and when an operation of UZE's left it there. `None`
+    /// where the project declares nothing for the state, or for an agent
+    /// in the project's own root, whose branch is the operator's.
+    pub action: Option<String>,
+    /// Where delivering this task puts it — the project's own say, carried
+    /// on the task so a surface offering the delivery can name where the
+    /// work goes. `None` where the project declares no delivery.
+    pub completion: Option<CompletionBehavior>,
     /// Commits the branch has beyond its base — what a delivery would land.
     pub ahead: usize,
     /// The name the branch is published under on the remote, once it is
@@ -122,14 +127,8 @@ pub struct AgentView {
     /// UZE pushed.
     pub published_as: Option<String>,
     /// The request open on the forge for the published branch, once there
-    /// is one: what turns the delivery button from an errand into a sync.
+    /// is one: what makes published work read as in review.
     pub published_request: Option<u32>,
-    /// Which forge `origin` points at, so a surface reporting the request
-    /// can use that forge's own word for it — a pull request and a merge
-    /// request are one thing under two names, and the remote is what says
-    /// which name this project's reader reads. [`Forge::Unknown`] where
-    /// it did not say, and then nothing is claimed.
-    pub forge: Forge,
     /// Commits the published branch does not carry yet — what a sync would
     /// send. `None` until the branch has been published at all, and
     /// `Some(0)` once the request is level with the branch: work already
@@ -196,35 +195,38 @@ impl AgentView {
         tips: &checkout::BranchTips,
         root: &RootStanding,
         agent: &Agent,
-        completion: CompletionBehavior,
+        completion: Option<CompletionBehavior>,
+        instructions: &Instructions,
         target: &str,
-        forge: Forge,
     ) -> Self {
         let Some(task) = agent.isolation() else {
-            return Self::in_the_root(primary, root, agent, completion, target, forge);
+            return Self::in_the_root(primary, root, agent, completion, target);
         };
         // What the remote holds, not what UZE remembers having sent: a
-        // push the agent made is a push, and a view built from UZE's own
-        // record of its own deliveries goes on offering to send commits
-        // the request already carries.
-        //
-        // Only where the completion publishes. A branch on the remote is
-        // no part of what a merge or a handoff would do, and counting a
-        // merge's commits against the remote would report a task as
-        // delivered the moment its agent pushed it.
-        let published = (completion == CompletionBehavior::Pr)
-            .then(|| landing::publication_among(tips, task))
-            .flatten();
+        // push the agent made is a push, whatever the project's delivery
+        // is, and a view built from UZE's own record of its own deliveries
+        // goes on offering to send commits the request already carries.
+        let published = landing::publication_among(tips, task);
         let unsynced = published.as_ref().map(|published| {
             checkout::commits_ahead_among(tips, primary, &published.tip, &task.branch)
         });
+        let state = drawn_state(
+            primary,
+            &agent.state,
+            task,
+            unsynced,
+            task.published_request,
+        );
         Self {
             id: agent.id.as_str().to_owned(),
             label: agent.label.clone(),
             branch: task.branch.clone(),
             target: task.target.clone(),
             checkout: landing::slot_path(primary, task),
-            state: drawn_state(primary, &agent.state, task, unsynced),
+            action: state
+                .answered_by()
+                .and_then(|key| instructions.get(&key).cloned()),
+            state,
             completion,
             isolated: true,
             parent: agent
@@ -234,7 +236,6 @@ impl AgentView {
             ahead: checkout::commits_ahead_among(tips, primary, &task.base_commit, &task.branch),
             published_as: published.map(|published| published.branch),
             published_request: task.published_request,
-            forge,
             unsynced,
             created_at_unix: agent.created_at_unix,
         }
@@ -253,9 +254,8 @@ impl AgentView {
         primary: &Path,
         root: &RootStanding,
         agent: &Agent,
-        completion: CompletionBehavior,
+        completion: Option<CompletionBehavior>,
         target: &str,
-        forge: Forge,
     ) -> Self {
         let (branch, ahead) = root.read(primary, target).clone();
         Self {
@@ -266,12 +266,12 @@ impl AgentView {
             target: target.to_owned(),
             checkout: Some(primary.to_path_buf()),
             state: WorkStateView::from(&agent.state),
+            action: None,
             completion,
             isolated: false,
             parent: None,
             published_as: None,
             published_request: None,
-            forge,
             unsynced: None,
             created_at_unix: agent.created_at_unix,
         }
@@ -283,14 +283,15 @@ impl AgentView {
 /// `Ready` alone answers "the branch holds commits its base lacks", which
 /// stops being the interesting question the moment the branch is on the
 /// remote: from then on what every surface needs to say is whether
-/// anything is still waiting to be handed over. Only where the completion
-/// publishes — `published` is `None` everywhere else, and the record's own
-/// state stands.
+/// anything is still waiting to be handed over, and whether a request is
+/// open for what was. Where the branch is not on the remote, `unsynced` is
+/// `None` and the record's own state stands.
 pub(super) fn drawn_state(
     primary: &Path,
     state: &WorkState,
     task: &Isolation,
     unsynced: Option<usize>,
+    request: Option<u32>,
 ) -> WorkStateView {
     // Parked says only that nobody is there. A rebase paused in the
     // checkout is what the operator will find, and "uncommitted changes"
@@ -301,15 +302,25 @@ pub(super) fn drawn_state(
     {
         return WorkStateView::Conflicted { files };
     }
-    publication_state(state, unsynced)
+    publication_state(state, unsynced, request)
 }
 
-pub(super) fn publication_state(state: &WorkState, unsynced: Option<usize>) -> WorkStateView {
+/// `Ready` work with nothing left to push reads as published, and as in
+/// review once a request is open for it. A commit not yet on the remote
+/// is still work to hand over, so it reads `Ready` whatever came before.
+pub(super) fn publication_state(
+    state: &WorkState,
+    unsynced: Option<usize>,
+    request: Option<u32>,
+) -> WorkStateView {
     let view = WorkStateView::from(state);
-    if view == WorkStateView::Ready && unsynced == Some(0) {
-        return WorkStateView::Published;
+    if view != WorkStateView::Ready || unsynced != Some(0) {
+        return view;
     }
-    view
+    match request {
+        Some(_) => WorkStateView::InReview,
+        None => WorkStateView::Published,
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -317,8 +328,8 @@ pub enum WorkStateView {
     Running,
     Uncommitted,
     Ready,
-    /// The branch is on the remote and carries nothing the remote lacks:
-    /// the work is with whoever reviews it, not with the operator.
+    /// The branch is on the remote and carries nothing the remote lacks,
+    /// and no request is open for it yet.
     ///
     /// A view of `Ready`, not a record of its own — `Ready` is still what
     /// the branch holds, and pressing deliver still syncs it as the target
@@ -328,6 +339,10 @@ pub enum WorkStateView {
     /// sidebar went on marking a task deliverable for the whole life of an
     /// open request.
     Published,
+    /// Published, and the forge has a request open for it: the work is
+    /// with whoever reviews it, not with the operator. A view of `Ready`
+    /// too, for the same reason `Published` is.
+    InReview,
     Integrating,
     Conflicted {
         files: Vec<PathBuf>,
@@ -340,22 +355,41 @@ pub enum WorkStateView {
 }
 
 impl WorkStateView {
+    /// The moment whose instruction answers work in this state, for the
+    /// states the workspace shows a chip for. In flight there is none:
+    /// nothing is asked of an agent while its work is being delivered.
+    pub fn answered_by(&self) -> Option<ActionState> {
+        match self {
+            Self::Ready => Some(ActionState::OnReady),
+            Self::Published => Some(ActionState::OnPublish),
+            Self::InReview => Some(ActionState::OnReview),
+            Self::Integrated => Some(ActionState::OnDeliver),
+            Self::Conflicted { .. } => Some(ActionState::OnConflict),
+            Self::GateFailed => Some(ActionState::OnFail),
+            Self::Running
+            | Self::Uncommitted
+            | Self::Integrating
+            | Self::Shelved
+            | Self::Closed => None,
+        }
+    }
+
     /// Why delivery is refused, for a state where it is — `None` for the
-    /// states delivery may be offered for. `Published` is one: the request
-    /// is level with the branch, but the target moves, and a re-sync is how
-    /// the branch follows it.
+    /// states delivery may be offered for. `Published` and `InReview` are:
+    /// the remote is level with the branch, but the target moves, and a
+    /// re-sync is how the branch follows it.
     ///
     /// Beside the predicate rather than beside whoever shows the answer:
     /// "not yet" and "already done" are the same refusal to a caller that
     /// only sees a boolean, and a second surface asking the same question
     /// would otherwise write its own second version of these words.
     ///
-    /// A few words each: these are read in the header's own row, beside
-    /// the button that was just pressed, where the state's mark and the
-    /// tab already carry everything the sentence would repeat.
+    /// A few words each: these are read in a toast beside the header,
+    /// where the state's mark and the tab already carry everything the
+    /// sentence would repeat.
     pub fn undeliverable_reason(&self) -> Option<&'static str> {
         match self {
-            Self::Ready | Self::Published | Self::GateFailed => None,
+            Self::Ready | Self::Published | Self::InReview | Self::GateFailed => None,
             Self::Running => Some("nothing committed"),
             Self::Uncommitted => Some("uncommitted changes"),
             Self::Conflicted { .. } => Some("rebase paused"),
@@ -385,25 +419,23 @@ impl From<&WorkState> for WorkStateView {
     }
 }
 
-/// A message for the pane of the agent that owns `task`, running in
-/// `checkout`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentNotice {
-    pub task: String,
-    pub checkout: PathBuf,
-    pub message: String,
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Evaluation {
     pub tasks: Vec<AgentView>,
-    pub notices: Vec<AgentNotice>,
+    /// Agents an operation of UZE's moved into a new state on this pass —
+    /// today, a rebase following the target that stopped on a conflict.
+    /// Their state's instruction is what the client sends; this names
+    /// who, never what to say.
+    pub arrived: Vec<String>,
+    /// What the project wrote under `workspace.actions` that asks nothing,
+    /// each said as the reason it was left out.
+    pub ignored_actions: Vec<String>,
     /// Why the repository's recorded tasks could not be read, when they
     /// could not be.
     ///
     /// An empty `tasks` says "this repository has no tasks", and a store
     /// that failed to open says something entirely different — every agent
-    /// loses its branch, its mark and its delivery button, and the surface
+    /// loses its branch, its mark and its status, and the surface
     /// that swallowed the error has no way to say why. `place_new_agent`
     /// already reported this and was the only thing that did, so the
     /// condition surfaced as a single truncated line the one time somebody
@@ -422,26 +454,31 @@ pub struct Evaluation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DeliveryOutcome {
-    Handoff,
     Merged,
-    /// The branch was pushed and the forge already has this request
-    /// open for it: from here delivery is a sync, and Git alone.
+    /// The branch was pushed, and `request` is the one the forge already
+    /// has open for it, when it has one. What the agent is asked next is
+    /// the project's instruction for a published branch, never this
+    /// outcome's.
     Published {
         branch: String,
-        request: u32,
+        request: Option<u32>,
     },
-    /// The branch was pushed and has no request yet, so the owning agent
-    /// was handed the words to open one. Carries an [`AgentNotice`] like
-    /// the two failures do, because it reaches the agent the same way: a
-    /// submission into its pane.
-    AwaitingRequest(AgentNotice),
     /// Nothing was written; the reason names why.
     Refused(String),
     /// Nothing was written: the project's gate waits for the operator's
     /// approval, and these are the commands to approve.
     AwaitingApproval(crate::application::services::CommandsAwaitingApproval),
-    /// The target is untouched and the owning agent has been told what to do.
-    ReturnedToAgent(AgentNotice),
+    /// The rebase stopped on these files and stays paused in the checkout;
+    /// the target is untouched.
+    Conflicted {
+        files: Vec<PathBuf>,
+    },
+    /// The gate refused the rebased commits at `command`; the target is
+    /// untouched, and `log` holds what it printed when that could be kept.
+    Failed {
+        command: String,
+        log: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -468,7 +505,9 @@ pub struct PolicyWriteConsequence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeliveryPolicyView {
-    pub completion: &'static str,
+    /// Where delivery puts the work, or `None` where the project declares
+    /// no delivery.
+    pub completion: Option<&'static str>,
     pub target: Option<String>,
     pub gate: Vec<String>,
 }

@@ -304,45 +304,47 @@ impl AgentPlacementDefault {
     }
 }
 
-/// What happens to an isolated agent's work once it is done. The only axis
-/// a project declares, because it is the only one that is a team decision
-/// rather than infrastructure.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+/// Where a delivery puts an isolated agent's work. Rebasing onto the target
+/// and running the gate is how either one gets it there, never a behavior
+/// of its own; what the agent is asked afterwards is the project's
+/// `actions`, not this.
+///
+/// Undeclared, a project has no delivery at all: nothing reaches the
+/// target or the remote without the project saying where it goes.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompletionBehavior {
-    /// Leave the branch for a human to integrate. The default: nothing ever
-    /// reaches the primary branch without someone deciding it should.
-    #[default]
-    Handoff,
-    /// Integrate into the target branch once checks pass.
+    /// Into the local target, by fast-forward.
     Merge,
-    /// Publish the branch and open a pull request against the target.
-    Pr,
+    /// Onto the remote, as the task's own branch. Opening a request for it
+    /// is the agent's, never UZE's.
+    Push,
 }
 
 impl CompletionBehavior {
     pub const fn abi_name(self) -> &'static str {
         match self {
-            Self::Handoff => "handoff",
             Self::Merge => "merge",
-            Self::Pr => "pr",
+            Self::Push => "push",
         }
     }
 
-    /// The imperative clause this behavior contributes to the projected
-    /// text. Kept beside `abi_name` so a behavior can never be added to the
-    /// vocabulary without also being explainable to a model reading it.
-    pub const fn instruction_clause(self) -> &'static str {
-        match self {
-            Self::Handoff => "your branch is left for a person to integrate; commit on it and stop",
-            Self::Merge => {
-                "UZE rebases your branch onto the target, runs the project's checks, and \
-                 fast-forwards the target itself; commit on your branch and stop"
+    /// The clause a declared behavior, or its absence, contributes to the
+    /// projected text. Kept beside `abi_name` so a behavior can never be
+    /// added to the vocabulary without also being explainable to a model
+    /// reading it.
+    pub const fn instruction_clause(behavior: Option<Self>) -> &'static str {
+        match behavior {
+            None => "your branch is left for a person to integrate; commit on it and stop",
+            Some(Self::Merge) => {
+                "delivery is UZE's — UZE rebases your branch onto the target, runs the \
+                 project's checks, and fast-forwards the target itself; commit on your branch \
+                 and stop"
             }
-            Self::Pr => {
-                "UZE rebases your branch onto the target, runs the project's checks and \
-                 publishes it, then asks you to open the request for it; commit on your branch \
-                 and stop until it does"
+            Some(Self::Push) => {
+                "delivery is UZE's — UZE rebases your branch onto the target, runs the \
+                 project's checks and pushes it; open a request only when the project's \
+                 instruction asks you to, and otherwise commit on your branch and stop"
             }
         }
     }
@@ -374,9 +376,10 @@ pub struct WorktreePolicy {
     /// primary checkout is on when a task is created.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
-    /// Declared as `delivery`: what happens to finished work.
-    #[serde(default, rename = "delivery")]
-    pub completion: CompletionBehavior,
+    /// Declared as `delivery`: where finished work is put. Undeclared,
+    /// nowhere — the project has no delivery.
+    #[serde(default, rename = "delivery", skip_serializing_if = "Option::is_none")]
+    pub completion: Option<CompletionBehavior>,
     /// The branch vocabulary an agent's own name is judged against.
     /// Undeclared, work is not named and the branch stays the generated
     /// identifier — every project's behaviour before this existed.
@@ -597,8 +600,7 @@ impl WorktreePolicy {
              Nothing below about delivery applies to you; the branch keeps the name it has.\
              {naming_in_place}\n\
              - Commit your work on your own branch, as you go. Never commit to, merge into, \
-             rebase, or reset the target branch{target}: delivery is UZE's — \
-             {completion}.\n\
+             rebase, or reset the target branch{target}: {completion}.\n\
              - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
              preserving the intent of your change, run `git rebase --continue`, run the \
              project's checks, and end your turn.\n\
@@ -625,7 +627,7 @@ impl WorktreePolicy {
                 .as_deref()
                 .map(|target| format!(" (`{target}`)"))
                 .unwrap_or_default(),
-            completion = self.completion.instruction_clause()
+            completion = CompletionBehavior::instruction_clause(self.completion)
         )
     }
 }
@@ -744,7 +746,11 @@ mod tests {
         let text = WorktreePolicy::default().instructions();
         assert!(text.contains(WORKTREES_DIRECTORY));
         assert!(text.contains(BRANCH_PREFIX));
-        assert!(text.contains(CompletionBehavior::Handoff.instruction_clause()));
+        assert!(text.contains(CompletionBehavior::instruction_clause(None)));
+        assert!(
+            !text.contains("delivery is UZE's"),
+            "a project with no delivery claims none: {text}"
+        );
         for verb in ["split", "join", "list"] {
             assert!(
                 text.contains(&format!("uze agent work {verb}")),
@@ -758,12 +764,14 @@ mod tests {
 
         let merging = WorktreePolicy {
             default: Default::default(),
-            completion: CompletionBehavior::Merge,
+            completion: Some(CompletionBehavior::Merge),
             ..WorktreePolicy::default()
         };
         let text = merging.instructions();
-        assert!(text.contains(CompletionBehavior::Merge.instruction_clause()));
-        assert!(!text.contains(CompletionBehavior::Handoff.instruction_clause()));
+        assert!(text.contains(CompletionBehavior::instruction_clause(Some(
+            CompletionBehavior::Merge
+        ))));
+        assert!(!text.contains(CompletionBehavior::instruction_clause(None)));
     }
 
     #[test]
@@ -778,14 +786,14 @@ mod tests {
     /// one is never an overwrite of content UZE did not write.
     #[test]
     fn a_changed_policy_claims_a_different_region() {
-        let handoff = WorktreePolicy::default();
+        let undeclared = WorktreePolicy::default();
         let merge = WorktreePolicy {
             default: Default::default(),
-            completion: CompletionBehavior::Merge,
+            completion: Some(CompletionBehavior::Merge),
             ..WorktreePolicy::default()
         };
-        assert_ne!(handoff.region_identity(), merge.region_identity());
-        assert!(WorktreePolicy::owns_region(&handoff.region_identity()));
+        assert_ne!(undeclared.region_identity(), merge.region_identity());
+        assert!(WorktreePolicy::owns_region(&undeclared.region_identity()));
         assert!(WorktreePolicy::owns_region(&merge.region_identity()));
     }
 

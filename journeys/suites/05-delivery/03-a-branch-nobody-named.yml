@@ -20,9 +20,11 @@ world:
     workspace:
       worktree: always
       target: main
-      delivery: pr
+      delivery: push
       branch: conventional
       slots: 2
+      actions:
+        on_publish: Open a pull request for this branch.
 
 scenes:
   - scene: an agent commits without ever naming its work
@@ -51,11 +53,11 @@ scenes:
           git -C "$slot" commit -qm 'feat(api): answer ping with pong'
         say: the agent commits, and names nothing
       - wait: screen
-        until: "# ↑"
+        until: "→ main ↑"
         in: strip
         timeout: 40
         settle: 1.0
-        say: the workspace offers the ending this project declared
+        say: the workspace says where the work would go
     then:
       - tasks: { newest_branch: "feat/answer-ping" }
         about: |
@@ -66,14 +68,20 @@ scenes:
       - tasks: { any_state: ready }
         about: with the work still deliverable
 
-  - scene: publishing gives it a name the reviewer can read
+  - scene: publishing gives it a name the reviewer can read, and asks for the request
     when:
-      - click: "# ↑"
-        say: publish the branch
-        in: strip
-        expect: "pushed"
+      - key: "M-i"
+        say: deliver, which in this project pushes the branch
+        expect: "published"
         expect_timeout: 60
-        pause: 2.0
+        pause: 1.0
+      - wait: screen
+        until: "Open a pull request for this branch."
+        in: pane
+        timeout: 30
+        say: |
+          the project's on_publish instruction reaches the agent's pane on
+          its own, because the push is what left the work published
     then:
       - cmd:
           run: "git -C {project} ls-remote --heads origin"

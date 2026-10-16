@@ -22,7 +22,8 @@ impl Workspace<'_> {
             }
         };
         let target = target_of(&primary, &policy);
-        let mut notices = Vec::new();
+        let declared = declaration::actions(&primary).unwrap_or_default();
+        let mut arrived = Vec::new();
         let mut ask_the_remote: Vec<(AgentId, Isolation)> = Vec::new();
         let completion = policy.completion;
         let evaluated = task::locked_reporting(&self.0.home, &primary, |store| {
@@ -43,7 +44,6 @@ impl Workspace<'_> {
                     .filter_map(|agent| agent.parent.clone())
                     .collect(),
                 vocabulary: &policy.branch,
-                completion,
             };
             // Every agent, not only the isolated ones: where the work
             // stands is a fact about the checkout an agent sits in, and
@@ -58,7 +58,7 @@ impl Workspace<'_> {
                 let was = (agent.state.clone(), agent.label.clone());
                 if let Some(read) = pass.evaluate(agent) {
                     ask_the_remote.extend(read.ask_the_remote);
-                    notices.extend(read.notice);
+                    arrived.extend(read.arrived);
                 }
                 if was != (agent.state.clone(), agent.label.clone()) {
                     tracing::info!(
@@ -89,8 +89,15 @@ impl Workspace<'_> {
             .adopt_observed_requests(&primary, &ask_the_remote)
             .unwrap_or(recorded);
         Evaluation {
-            tasks: task_views(&primary, &recorded, completion, &target),
-            notices,
+            tasks: task_views(
+                &primary,
+                &recorded,
+                completion,
+                &declared.instructions,
+                &target,
+            ),
+            arrived,
+            ignored_actions: declared.ignored,
             unreadable: None,
             recovered: recovery.set_aside.map(|set_aside| {
                 format!(
@@ -155,7 +162,8 @@ impl Workspace<'_> {
 /// conflict its agent is told about when following the target produced one.
 pub(super) struct Read {
     pub(super) ask_the_remote: Option<(AgentId, Isolation)>,
-    pub(super) notice: Option<AgentNotice>,
+    /// The agent, when this pass's own rebase moved it into a conflict.
+    pub(super) arrived: Option<String>,
 }
 
 /// What every task of one evaluation pass is read against.
@@ -180,7 +188,6 @@ pub(super) struct EvaluationPass<'a> {
     /// children is unfinished for their work, however level its own branch is.
     pub(super) holding_children: BTreeSet<AgentId>,
     pub(super) vocabulary: &'a BranchVocabulary,
-    pub(super) completion: CompletionBehavior,
 }
 
 impl EvaluationPass<'_> {
@@ -280,46 +287,36 @@ impl EvaluationPass<'_> {
             return None;
         }
         self.read_readiness(state, task, ended_owner);
-        // The other half of what a delivery would do, learned the same way
-        // readiness is: an agent told to push and open the request itself
-        // is the one case UZE's own records can never cover, and until this
-        // ran the button went on offering to publish a branch the forge
-        // already had a request open for. Only where a request is what
-        // completion means — a project that merges or hands off never asks
-        // the remote anything.
+        // The request, learned the same way readiness is: whoever pushed
+        // the branch and opened a request for it, UZE's own records never
+        // cover it, and a published branch reads as in review only once
+        // the forge says it is. Whatever the project's delivery: a push is
+        // a push, and `observe_request` asks only for a published branch
+        // with no number yet, at most once a minute.
         //
         // Asked after the pass, with the document unlocked: it is a `git
         // ls-remote` per task, and inside the lock one slow remote made
         // every delivery and every placement in the project wait behind the
         // whole pass.
-        let ask_the_remote =
-            (self.completion == CompletionBehavior::Pr).then(|| (id.clone(), task.clone()));
+        let ask_the_remote = Some((id.clone(), task.clone()));
         // Following a moved target costs a clean task nothing and a dirty
         // one its work in progress, which `refresh` refuses. Whatever the
         // completion behaviour: a task that follows the target as it moves
         // meets a conflict while its agent is still holding the change,
         // rather than in a request already opened.
-        let notice = if matches!(*state, WorkState::Running | WorkState::Ready)
-            && let Err(DeliveryFailure::Conflict {
-                files,
-                target_moved,
-            }) = landing::refresh(primary, state, task)
-            && let Some(slot) = slot
-        {
-            Some(AgentNotice {
-                task: id.as_str().to_owned(),
-                checkout: slot,
-                message: landing::conflict_message(task, &files, target_moved),
-            })
-        } else {
-            None
-        };
+        let arrived = (matches!(*state, WorkState::Running | WorkState::Ready)
+            && slot.is_some()
+            && matches!(
+                landing::refresh(primary, state, task),
+                Err(DeliveryFailure::Conflict { .. })
+            ))
+        .then(|| id.as_str().to_owned());
         // The automatic half of naming is the agent's label as much as its
         // branch, so it runs with the isolation's borrow released.
         self.name_from_the_work(agent);
         Some(Read {
             ask_the_remote,
-            notice,
+            arrived,
         })
     }
 

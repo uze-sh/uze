@@ -1443,17 +1443,18 @@ refs; the request number is asked of the remote itself. So a branch its own
 agent pushed, and a request its own agent opened, count exactly as much as
 ones a delivery made — the operator is a party to this, and the button has to
 report the remote's state rather than UZE's history. Read from UZE's record
-of its own pushes, the delivery button went on offering to send commits the
-request already carried. Reading is not overwriting, though: what the remote
-holds is replaced only where UZE pushed it (below). The one network question — is a request open — is
-asked only where the completion publishes, only for a branch that is on the
+of its own pushes, the status went on offering to send commits the request
+already carried. A push is a fact whatever the project delivers by, so this
+holds for a `merge` project too. Reading is not overwriting, though: what the
+remote holds is replaced only where UZE pushed it (below). The one network
+question — is a request open — is asked only for a branch that is on the
 remote, at most once a minute, and never again once answered.
 
 > `crates/uze-workspace/src/landing/tests.rs::a_branch_its_own_agent_pushed_is_published_and_in_sync`
 > `crates/uze-workspace/src/landing/tests.rs::a_request_the_agent_opened_is_discovered_on_the_evaluation_pass`
 > `crates/uze-workspace/src/landing/tests.rs::the_remote_is_asked_about_a_missing_request_at_most_once_a_minute`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_own_push_and_request_are_what_the_delivery_view_reports`
-> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_merge_project_never_measures_its_work_against_the_remote`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::an_agents_push_reads_as_published_whatever_the_delivery`
 
 ### A remote branch is overwritten only where UZE put what is there
 
@@ -1751,24 +1752,25 @@ that.
 
 Delivery rebases the task's branch inside its own checkout, runs the declared
 gate on the rebased commits, and only then advances the target by
-fast-forward. A conflict or a failed gate leaves the target untouched and
-returns the task to the agent that owns it, with the rebase paused in its
-checkout. `handoff` never touches the target; `pr` publishes against the
-remote's tip and never pulls the operator's local branch.
+fast-forward. A conflict or a failed gate leaves the target untouched, with
+the rebase paused in the task's checkout. `push` publishes the branch rebased
+against the remote's tip and never pulls the operator's local branch, and
+never opens a request; a project that declares no delivery has none, and
+nothing is rebased, run or written.
 
 What moves is the declared target, not whatever the primary checkout has
 checked out: `git merge` advances `HEAD`, so the branch is asked for first
 and the ref moved directly when the operator is standing elsewhere, and the
 target's new tip is read back before the task is recorded `Integrated`.
 
-> `crates/uze-workspace/src/landing/tests.rs::handoff_never_touches_the_target`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_project_with_no_delivery_refuses_and_writes_nothing`
 > `crates/uze-workspace/src/landing/tests.rs::merge_advances_the_target_linearly_after_the_gate`
 > `crates/uze-workspace/src/landing/tests.rs::merge_moves_the_target_while_the_primary_stands_on_a_detached_head`
 > `crates/uze-workspace/src/landing/tests.rs::merge_never_moves_the_branch_the_primary_happens_to_be_on`
 > `crates/uze-workspace/src/landing/tests.rs::the_gate_runs_after_the_rebase_not_before`
-> `crates/uze-workspace/src/landing/tests.rs::a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner`
+> `crates/uze-workspace/src/landing/tests.rs::a_gate_failure_leaves_the_target_untouched`
 > `crates/uze-workspace/src/landing/tests.rs::a_conflict_leaves_the_rebase_paused_and_the_target_untouched`
-> `crates/uze-workspace/src/landing/tests.rs::pr_publishes_and_leaves_the_request_to_the_agent`
+> `crates/uze-workspace/src/landing/tests.rs::push_publishes_and_leaves_the_request_to_the_agent`
 
 ### A delivery never collides with the operator's own edits
 
@@ -2088,13 +2090,14 @@ says; a server that stops cleanly erases the record.
 
 ### What reaches a pane on UZE's behalf is text
 
-A notice UZE submits into an agent's pane (a conflict, a refusing gate, a
-request to open) carries no control character, is bounded, is framed as a
-paste where the pane asked for one, and points at the gate's log rather
-than quoting it.
+An instruction UZE submits into an agent's pane — the project's own line
+for the state the work is in — carries no control character, is bounded, is
+framed as a paste where the pane asked for one, and is never sent into an
+agent mid-turn or on top of text the operator typed.
 
 > `src/ui/orchestrator/input.rs::tests::a_notice_reaches_a_pane_as_text_and_one_submission`
-> `crates/uze-workspace/src/landing/tests.rs::a_gate_message_carries_no_keys_and_points_at_the_log`
+> `src/ui/orchestrator/tests.rs::workspace_tests::an_instruction_is_refused_over_text_the_operator_typed`
+> `src/ui/orchestrator/tests.rs::workspace_tests::an_automatic_send_into_a_busy_agent_is_held_back`
 
 ### An agent is its launch, not its identifier
 

@@ -1,10 +1,10 @@
-//! A chip: a short filled label that stands where a control stands.
+//! A chip: a short filled label that stands where a control stands, and
+//! the status beside the header's controls, which wears no ground at all.
 //!
-//! The header's controls are chips — a key hint, a request number, a
-//! delivery button — and so are the reports drawn beside them. Both wear
-//! the same shape, and [`ChipState::Static`] is what keeps that honest:
-//! a chip that cannot be pressed sits on a recessed ground, so the shape
-//! alone never promises a press.
+//! A ground is what a control is drawn on, so a report never gets one:
+//! told apart by the shade of a fill, a status a click answers and one it
+//! does not read alike in a terminal that barely renders the difference.
+//! [`Status`] says it with weight and hue instead.
 //!
 //! It lived in the workspace's own renderer, which meant the management
 //! screens could not draw one — the second header that needed a control
@@ -26,18 +26,12 @@ use crate::ui::theme;
 /// the rect is measured from it rather than around it.
 pub(crate) const PAD: u16 = 1;
 
-/// What the pointer is doing to a chip — or that it is not a control at
-/// all.
+/// What the pointer is doing to a chip.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ChipState {
     Resting,
     Hovered,
     Pressed,
-    /// Not a control: drawn in a control's shape because it stands where
-    /// one stands, and recessed rather than raised so the shape alone
-    /// never promises a press ("⣾ delivering" is a report; "⇧6 #20" is a
-    /// button).
-    Static,
 }
 
 impl ChipState {
@@ -52,8 +46,81 @@ impl ChipState {
             Self::Resting => (hue, theme::color(Token::SurfaceRaised)),
             Self::Hovered => (hue, theme::color(Token::SurfaceHover)),
             Self::Pressed => (theme::color(Token::SurfaceBackground), hue),
-            Self::Static => (hue, theme::color(Token::SurfaceRecessed)),
         }
+    }
+}
+
+/// Whether a click answers a status, and what the pointer is doing to it
+/// when one does.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StatusKind {
+    /// Said and nothing more: no click answers it, so nothing about it
+    /// moves under the pointer either.
+    Report,
+    Action {
+        hovered: bool,
+    },
+}
+
+/// A work state said in the header: its words in its hue, on no ground.
+///
+/// At rest a report wears the state's muted hue at regular weight and an
+/// action the full hue in bold, so the two read apart before the pointer
+/// is anywhere near them. Under the pointer an action lifts toward the
+/// brightest text. A press paints nothing of its own: what answers it is
+/// the toast that says what was sent, and the state the work moves to.
+#[derive(Clone, Debug)]
+pub(crate) struct Status {
+    label: String,
+    hue: Token,
+    muted: Token,
+    kind: StatusKind,
+}
+
+impl Status {
+    pub(crate) fn new(
+        label: impl Into<String>,
+        hue: Token,
+        muted: Token,
+        kind: StatusKind,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            hue,
+            muted,
+            kind,
+        }
+    }
+
+    /// The columns this status occupies, label plus its padding.
+    pub(crate) fn width(&self) -> u16 {
+        Span::raw(&self.label).width() as u16 + 2 * PAD
+    }
+
+    /// Where this status sits when its right edge is `right`.
+    pub(crate) fn rect_ending_at(&self, right: u16, row: u16) -> Rect {
+        let width = self.width();
+        Rect::new(right.saturating_sub(width), row, width, 1)
+    }
+
+    pub(crate) fn style(&self) -> Style {
+        match self.kind {
+            StatusKind::Report => theme::fg(self.muted),
+            StatusKind::Action { hovered: true } => Style::default()
+                .fg(theme::lifted(self.hue))
+                .add_modifier(Modifier::BOLD),
+            StatusKind::Action { hovered: false } => theme::fg_bold(self.hue),
+        }
+    }
+
+    pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, rect: Rect) {
+        let pad = " ".repeat(PAD as usize);
+        let spans = vec![
+            Span::raw(pad.clone()),
+            Span::styled(self.label.clone(), self.style()),
+            Span::raw(pad),
+        ];
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
 }
 

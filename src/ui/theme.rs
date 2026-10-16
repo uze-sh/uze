@@ -176,6 +176,25 @@ pub(crate) fn softened(token: Token, into: Token) -> Color {
     )
 }
 
+/// A token's colour lifted toward the brightest text: the same meaning,
+/// asked for. What a status that answers a click wears under the pointer,
+/// so the hue that says the state stays and only its strength moves.
+pub(crate) fn lifted(token: Token) -> Color {
+    /// How far the hue travels toward the brightest text, in percent.
+    const TOWARD_BRIGHT: u16 = 40;
+
+    let hue = uze_theme::active().color(token);
+    let bright = uze_theme::active().color(Token::TextBright);
+    let mix = |from: u8, to: u8| {
+        ((u16::from(from) * (100 - TOWARD_BRIGHT) + u16::from(to) * TOWARD_BRIGHT) / 100) as u8
+    };
+    Color::Rgb(
+        mix(hue.0, bright.0),
+        mix(hue.1, bright.1),
+        mix(hue.2, bright.2),
+    )
+}
+
 /// A surface that carries a hue without becoming one.
 ///
 /// What the row the keyboard is on wears: the same panel every other row

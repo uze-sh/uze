@@ -9,8 +9,8 @@ use super::*;
 use crate::ui::Rows;
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{
-    self, Chip, ChipState, Edge, POPUP_H_PAD, POPUP_V_PAD, Rule, Surface, TRAILING_PAD,
-    action_index, chip, mark, row, text,
+    self, ChipState, Edge, POPUP_H_PAD, POPUP_V_PAD, Rule, Status, StatusKind, Surface,
+    TRAILING_PAD, action_index, chip, mark, row, text,
 };
 
 mod pane;
@@ -510,9 +510,9 @@ fn push_trailing_controls(
     // (`caption_color`), because this is where the next one lands —
     // held back until the pointer asks for it, so the row's one
     // coloured word does not outshout the name beside it.
-    let hue = match chip_state(model, Some(WorkspaceHit::NewAgentMenu)) {
+    let hue = match chip_state(model, WorkspaceHit::NewAgentMenu) {
         ChipState::Hovered | ChipState::Pressed => Token::StateWarning,
-        ChipState::Resting | ChipState::Static => Token::StateWarningMuted,
+        ChipState::Resting => Token::StateWarningMuted,
     };
     // Ahead of the row's own `SelectSpace`, so it wins the click.
     hits.push((

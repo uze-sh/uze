@@ -257,7 +257,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::DeliverTask,
-        Control("the tab strip's deliver button"),
+        Control("the deliver key in a ready row's hint in recent"),
     );
     // A deliberate bulk gesture: no button stands one misclick from it,
     // and the index lists it only where there is a space to deliver.

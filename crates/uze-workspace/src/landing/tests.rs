@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     approval::Approved,
     checkout::{acquire, tip_of},
-    task::{AgentId, AgentStore, Base},
+    task::{AgentStore, Base},
     worktree::BranchVocabulary,
 };
 use std::fs;
@@ -80,14 +80,6 @@ fn agent_commits(repository: &Repository, isolation: &Isolation, file: &str, con
     repository.git_in(&slot, &["commit", "-qm", file]);
 }
 
-fn handoff() -> Policy<'static> {
-    Policy {
-        completion: CompletionBehavior::Handoff,
-        gate: Some(Approved::assumed(&[])),
-        vocabulary: &BranchVocabulary::Unset,
-    }
-}
-
 fn merge(gate: &[uze_core::shell::ShellCommand]) -> Policy<'_> {
     Policy {
         completion: CompletionBehavior::Merge,
@@ -142,23 +134,6 @@ fn readiness_is_read_from_the_checkout() {
         readiness(primary, work(&isolation)),
         Readiness::Ready { ahead: 1, .. }
     ));
-}
-
-#[test]
-fn handoff_never_touches_the_target() {
-    let repository = repository("landing-handoff");
-    let primary = repository.root();
-    let mut store = AgentStore::default();
-    let mut isolation = launch(&repository, &mut store, "handoff");
-    agent_commits(&repository, work(&isolation), "a.rs", "");
-    let before = tip_of(primary, TARGET);
-
-    assert_eq!(
-        deliver(primary, &mut isolation, &handoff()),
-        Ok(Delivered::Handoff)
-    );
-    assert_eq!(tip_of(primary, TARGET), before);
-    assert_eq!(isolation.state, WorkState::Ready);
 }
 
 #[test]
@@ -277,7 +252,7 @@ fn the_gate_runs_after_the_rebase_not_before() {
 }
 
 #[test]
-fn a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner() {
+fn a_gate_failure_leaves_the_target_untouched() {
     let repository = repository("landing-gate-fails");
     let primary = repository.root();
     let mut store = AgentStore::default();
@@ -297,10 +272,6 @@ fn a_gate_failure_leaves_the_target_untouched_and_returns_to_the_owner() {
     );
     assert_eq!(tip_of(primary, TARGET), before);
     assert_eq!(isolation.state, WorkState::GateFailed);
-    assert!(
-        gate_failure_message(work(&isolation), "cargo test", "assertion failed: x", None)
-            .contains("assertion failed")
-    );
 }
 
 /// A gate nobody approved is never run, and refuses the delivery before
@@ -333,47 +304,6 @@ fn an_unapproved_gate_refuses_delivery_without_running() {
     );
     assert_eq!(tip_of(primary, TARGET), before, "the target is untouched");
     assert_eq!(isolation.state, state_before, "the work is where it was");
-}
-
-/// What a gate printed reaches an agent's pane as if typed there, so a
-/// message never carries a control character from it, and points at the
-/// log holding the output wherever there is one rather than quoting it.
-#[test]
-fn a_gate_message_carries_no_keys_and_points_at_the_log() {
-    let agent = crate::task::Agent::isolated(
-        "claude",
-        None,
-        crate::task::Base::Ref("main".into()),
-        String::new(),
-        "main".into(),
-    );
-    let isolation = work(&agent);
-    let output = "fine\n\x1b[201~\x1b]0;owned\x07\rrm -rf ~\r\x03\u{9b}31m";
-    let quoted = gate_failure_message(isolation, "make\rcheck", output, None);
-    assert!(
-        !quoted.chars().any(char::is_control),
-        "no control character survives: {quoted:?}"
-    );
-    assert!(
-        quoted.contains("rm -rf ~"),
-        "the words themselves are kept as text"
-    );
-
-    let log = Path::new("/somewhere/gate-abc.log");
-    let pointed = gate_failure_message(isolation, "make check", output, Some(log));
-    assert!(pointed.contains("/somewhere/gate-abc.log"));
-    assert!(
-        !pointed.contains("rm -rf"),
-        "the output is pointed at, not quoted"
-    );
-
-    let flood = "x".repeat(100_000);
-    assert!(
-        gate_failure_message(isolation, "make", &flood, None)
-            .chars()
-            .count()
-            < 2_000
-    );
 }
 
 /// A gate of several steps must say which one refused the delivery:
@@ -445,12 +375,6 @@ fn a_conflict_leaves_the_rebase_paused_and_the_target_untouched() {
     assert!(
         paused_rebase(&slot).is_some(),
         "the rebase waits for the owner"
-    );
-    let message = conflict_message(work(&isolation), files, *target_moved);
-    assert!(message.contains("shared.rs") && message.contains("rebase --continue"));
-    assert!(
-        !message.contains('\n'),
-        "one submission for a harness prompt"
     );
     assert_eq!(
         readiness(primary, work(&isolation)),
@@ -839,12 +763,14 @@ fn a_named_task_publishes_under_its_own_name() {
 
     let gate = steps(&[]);
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&gate)),
         vocabulary: &BranchVocabulary::Unset,
     };
-    let Delivered::AwaitingRequest { branch, .. } =
-        deliver(primary, &mut isolation, &policy).unwrap()
+    let Delivered::Published {
+        branch,
+        request: None,
+    } = deliver(primary, &mut isolation, &policy).unwrap()
     else {
         panic!("no request exists yet, so opening one is the agent's");
     };
@@ -885,7 +811,7 @@ fn a_colleagues_branch_of_the_same_name_is_never_overwritten() {
     repository.git_in(&slot, &["branch", "--move", "fix/shared-name"]);
     isolation.take_name("fix/shared-name".to_owned());
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&[])),
         vocabulary: &BranchVocabulary::Unset,
     };
@@ -913,12 +839,14 @@ fn a_republish_replaces_only_the_commit_uze_pushed() {
     let mut isolation = launch(&repository, &mut store, "anything");
     agent_commits_saying(&repository, work(&isolation), "a.rs", "fix(a): first");
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&[])),
         vocabulary: &BranchVocabulary::Unset,
     };
-    let Delivered::AwaitingRequest { branch, .. } =
-        deliver(primary, &mut isolation, &policy).unwrap()
+    let Delivered::Published {
+        branch,
+        request: None,
+    } = deliver(primary, &mut isolation, &policy).unwrap()
     else {
         panic!("published, awaiting its request");
     };
@@ -1059,7 +987,7 @@ fn a_branch_with_no_commits_falls_back_to_the_identifier() {
 /// is UZE's, the request is the agent's, and the branch is rebased
 /// onto the *remote's* target rather than the operator's local one.
 #[test]
-fn pr_publishes_and_leaves_the_request_to_the_agent() {
+fn push_publishes_and_leaves_the_request_to_the_agent() {
     let repository = repository("landing-pr");
     let origin = repository.with_origin(TARGET);
 
@@ -1093,22 +1021,18 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
 
     let gate = steps(&[exists("remote-only.txt")]);
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&gate)),
         vocabulary: &BranchVocabulary::Unset,
     };
-    let Delivered::AwaitingRequest {
+    let Delivered::Published {
         branch,
-        instruction,
+        request: None,
     } = deliver(primary, &mut isolation, &policy).unwrap()
     else {
         panic!("no request exists yet, so opening one is the agent's");
     };
     assert_eq!(branch, "fix/stop-the-redirect");
-    assert!(
-        instruction.contains("fix/stop-the-redirect") && instruction.contains(TARGET),
-        "the agent is told which branch and which target: {instruction}"
-    );
     assert_eq!(
         publication(primary, work(&isolation)).map(|published| published.branch),
         Some("fix/stop-the-redirect".to_owned()),
@@ -1148,7 +1072,7 @@ fn pr_publishes_and_leaves_the_request_to_the_agent() {
         deliver(primary, &mut isolation, &policy).unwrap(),
         Delivered::Published {
             branch: "fix/stop-the-redirect".into(),
-            request: 11,
+            request: Some(11),
         },
         "a published branch with a request open for it is a sync"
     );
@@ -1198,32 +1122,6 @@ fn the_forge_is_read_off_the_remote_host_and_nothing_else() {
     }
 }
 
-/// Each forge's own word for the request, and both of them where the
-/// remote did not say — the agent reading it is in the repository and
-/// knows which one this is.
-#[test]
-fn the_agent_is_told_to_open_the_request_its_forge_calls_it() {
-    let isolation = Isolation::cut(
-        &AgentId::generate(),
-        Base::Ref(TARGET.into()),
-        "abc123".into(),
-        TARGET.into(),
-    );
-    assert!(
-        open_request_message(Forge::GitHub, &isolation, "fix/redirect")
-            .contains("Open a pull request from")
-    );
-    assert!(
-        open_request_message(Forge::GitLab, &isolation, "fix/redirect")
-            .contains("Open a merge request from")
-    );
-    let unknown = open_request_message(Forge::Unknown, &isolation, "fix/redirect");
-    assert!(
-        unknown.contains("pull request") && unknown.contains("merge request"),
-        "{unknown}"
-    );
-}
-
 /// The same discovery, in the namespace the other family of forges
 /// serves. Nothing but the ref name differs, which is the point.
 #[test]
@@ -1241,7 +1139,7 @@ fn a_merge_request_is_discovered_the_same_way_a_pull_request_is() {
         "fix(auth): stop the redirect loop",
     );
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&[])),
         vocabulary: &BranchVocabulary::Unset,
     };
@@ -1257,7 +1155,7 @@ fn a_merge_request_is_discovered_the_same_way_a_pull_request_is() {
         deliver(primary, &mut isolation, &policy).unwrap(),
         Delivered::Published {
             branch: "fix/stop-the-redirect".into(),
-            request: 4,
+            request: Some(4),
         }
     );
 }
@@ -1476,14 +1374,14 @@ fn a_request_recorded_without_its_branch_is_asked_again() {
 }
 
 #[test]
-fn pr_without_a_remote_is_refused_before_anything_moves() {
+fn push_without_a_remote_is_refused_before_anything_moves() {
     let repository = repository("landing-pr-no-remote");
     let primary = repository.root();
     let mut store = AgentStore::default();
     let mut isolation = launch(&repository, &mut store, "no remote");
     agent_commits(&repository, work(&isolation), "a.rs", "");
     let policy = Policy {
-        completion: CompletionBehavior::Pr,
+        completion: CompletionBehavior::Push,
         gate: Some(Approved::assumed(&[])),
         vocabulary: &BranchVocabulary::Unset,
     };

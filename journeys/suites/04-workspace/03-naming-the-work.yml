@@ -25,7 +25,6 @@ world:
     workspace:
       worktree: always
       target: main
-      delivery: handoff
       branch: conventional
       slots: 3
 

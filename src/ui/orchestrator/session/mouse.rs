@@ -1376,9 +1376,12 @@ impl Attach<'_> {
             WorkspaceHit::OpenFiles => return self.act(Action::ToggleFiles, viewport),
             WorkspaceHit::OpenArchitect => return self.act(Action::ToggleArchitect, viewport),
             WorkspaceHit::OpenSpec => return self.act(Action::ToggleSpec, viewport),
-            WorkspaceHit::Deliver(_) => {
-                deliver_selected_tab(&mut self.model, self.home, &self.channels.deliveries.sender);
+            WorkspaceHit::StatusAction(tab) => {
+                if let Some(task) = self.model.tab_task(tab).cloned() {
+                    self.send_instruction(&task, false);
+                }
             }
+            WorkspaceHit::StatusReport(_) => {}
             WorkspaceHit::ToggleSpaceCollapsed(space) => {
                 toggle_space_collapsed(&mut self.model, space);
             }

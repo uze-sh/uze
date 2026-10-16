@@ -118,7 +118,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         let width = Span::raw(&sparkle).width() as u16 + chip::PAD;
         let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
         let hit = WorkspaceHit::OpenAgentSupport(rect);
-        let hue = match chip_state(model, Some(hit)) {
+        let hue = match chip_state(model, hit) {
             ChipState::Resting => theme::color(Token::TextBright),
             _ => super::sidebar::caption_color(true),
         };
@@ -242,8 +242,8 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     }
     if let Some(summary) = summary {
         let hit = WorkspaceHit::OpenChanges;
-        let (additions, deletions) = match chip_state(model, Some(hit)) {
-            ChipState::Resting | ChipState::Static => (
+        let (additions, deletions) = match chip_state(model, hit) {
+            ChipState::Resting => (
                 theme::color(Token::StateSuccessMuted),
                 theme::color(Token::StateDangerMuted),
             ),
@@ -289,31 +289,39 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     }
 
     // ── small notifications ────────────────────────────────────────────
-    // Where the delivery stands, as a chip: this one keeps a control's
-    // filled shape because in most of its states it *is* one, and a
-    // report wearing the same shape sits on the recessed ground that says
-    // it is not (see [`ChipState::Static`]).
+    // Where the work stands, as a status on no ground: a report in its
+    // state's muted hue, or — when the project declares an instruction
+    // for the state — an action in the full hue, in bold. A click on an
+    // action sends that instruction to the agent; nothing here delivers.
     //
     // Only what UZE cut. An agent in the project's own root is on the
-    // operator's branch, and rebasing it onto the target, running the
-    // gate over it and pushing it is theirs to ask for. Its state is
-    // still drawn in the sidebar — where the work stands is a fact either
-    // way — but this zone is about a delivery UZE performs.
+    // operator's branch, and what happens to it is theirs to ask for. Its
+    // state is still drawn in the sidebar — where the work stands is a
+    // fact either way — but this zone is about work UZE isolated.
     if let Some(tab) = model.selected_tab()
         && let Some(task) = model.tab_task(tab)
         && task.isolated
-        && let Some((text, hue, pressable)) =
-            delivery_notification(task, &model.drawn_state(task), model.tick)
+        && let state = model.drawn_state(task)
+        && let Some((text, hue)) = status_notification(task, &state, model.tick)
     {
-        trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Filled);
-        let hit = pressable.then_some(WorkspaceHit::Deliver(tab));
-        let chip = Chip::new(&text, hue, chip_state(model, hit));
-        let rect = chip.rect_ending_at(trailing_right, inner.y);
-        chip.render(frame, rect);
-        if let Some(hit) = hit {
-            hits.push((rect, hit));
-        }
-        trailing_right = ZoneEdge::Filled.left_of(rect.x);
+        trailing_right = render_zone_hairline(frame, inner, trailing_right, ZoneEdge::Bare);
+        let answered = task.action.is_some() && state != WorkStateView::Integrating;
+        let hit = if answered {
+            WorkspaceHit::StatusAction(tab)
+        } else {
+            WorkspaceHit::StatusReport(tab)
+        };
+        let kind = match answered {
+            true => StatusKind::Action {
+                hovered: model.hovered == Some(hit),
+            },
+            false => StatusKind::Report,
+        };
+        let status = Status::new(&text, hue, muted(hue), kind);
+        let rect = status.rect_ending_at(trailing_right, inner.y);
+        status.render(frame, rect);
+        hits.push((rect, hit));
+        trailing_right = ZoneEdge::Bare.left_of(rect.x);
     }
 
     // Where the tab side must stop. The controls at the right end are
@@ -632,7 +640,7 @@ pub(super) fn button_group(
     let mut spans = Vec::new();
     let mut hits = Vec::new();
     for button in buttons {
-        let (hue, ground) = match chip_state(model, Some(button.hit)) {
+        let (hue, ground) = match chip_state(model, button.hit) {
             // Filled with the brightest ink and written in the backdrop,
             // the way a strong button is: a lit member is the one thing
             // on the strip that must be found at a glance, and a shade
@@ -714,6 +722,57 @@ pub(super) fn render_zone_hairline(
     next.left_of(rect.x)
 }
 
+/// How many columns the pointer's hint may take: a glance, never a line.
+const STATUS_HINT_WIDTH: usize = 30;
+
+/// What the status under the pointer would do, said where the notice
+/// stands: the start of the instruction a click sends, or — for ready work
+/// no instruction answers — the key that delivers it.
+fn status_hint(model: &WorkspaceModel) -> Option<String> {
+    match model.hovered? {
+        WorkspaceHit::StatusAction(tab) => model.tab_task(tab)?.action.clone(),
+        WorkspaceHit::StatusReport(tab) => {
+            let task = model.tab_task(tab)?;
+            (model.drawn_state(task) == WorkStateView::Ready).then_some(())?;
+            let chord = uze_keys::active()
+                .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])?;
+            Some(format!("deliver {chord}"))
+        }
+        _ => None,
+    }
+}
+
+/// The hint, in place of the notice while the pointer asks. Bounded, cut
+/// with an ellipsis, and dropped rather than squeezed: with no room for it
+/// whole nothing is drawn, and no control moves either way.
+fn render_status_hint(
+    frame: &mut ratatui::Frame<'_>,
+    inner: Rect,
+    actions_left: u16,
+    hint: &str,
+) -> u16 {
+    let line = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(
+            text::elide(hint, STATUS_HINT_WIDTH),
+            theme::fg(Token::TextSecondary),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            theme::glyph(Symbol::TreeColumnDivider),
+            theme::fg(Token::TextFaint),
+        ),
+    ]);
+    let width = line.width() as u16;
+    let room = actions_left.saturating_sub(inner.x);
+    if width > room {
+        return actions_left;
+    }
+    let rect = Rect::new(actions_left - width, inner.y, width, 1);
+    frame.render_widget(Paragraph::new(line), rect);
+    rect.x
+}
+
 /// Everything the workspace has to say, in the one place it says it: the
 /// header's own row, left of the actions and divided from them, where the
 /// operator's eye already is. Nothing here is clickable and nothing here
@@ -727,6 +786,9 @@ pub(super) fn render_notice_chip(
     inner: Rect,
     actions_left: u16,
 ) -> u16 {
+    if let Some(hint) = status_hint(model) {
+        return render_status_hint(frame, inner, actions_left, &hint);
+    }
     let Some(chip) = model.notice_chip() else {
         return actions_left;
     };

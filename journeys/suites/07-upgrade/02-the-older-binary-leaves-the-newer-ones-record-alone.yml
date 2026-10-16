@@ -27,7 +27,6 @@ world:
   manifest: |
     workspace:
       target: main
-      delivery: handoff
       slots: 2
 
 scenes:

@@ -43,7 +43,7 @@ pub(super) fn deliver_locked(
         .ok_or(DeliveryFailure::GateAwaitingApproval)?
         .commands();
     *state = WorkState::Integrating;
-    let tip = target_tip(primary, isolation, policy.completion)?;
+    let tip = target_tip(primary, isolation, policy.completion.into())?;
     // Merged elsewhere — squashed on the forge before the local target
     // heard of it — the work is in the tip under commits of its own, and
     // rebasing would replay it onto itself.
@@ -74,10 +74,6 @@ pub(super) fn deliver_locked(
         }
     }
     match policy.completion {
-        CompletionBehavior::Handoff => {
-            *state = WorkState::Ready;
-            Ok(Delivered::Handoff)
-        }
         CompletionBehavior::Merge => {
             let overlap = overlapping_files(primary, &tip, &isolation.branch);
             if !overlap.is_empty() {
@@ -93,7 +89,7 @@ pub(super) fn deliver_locked(
                 target_tip: checkout::tip_of(primary, &isolation.target),
             })
         }
-        CompletionBehavior::Pr => {
+        CompletionBehavior::Push => {
             let published = publish(primary, isolation, policy.vocabulary)?;
             *state = WorkState::Ready;
             Ok(published)
@@ -129,7 +125,7 @@ pub fn refresh(
             Readiness::Running => {}
             other => return Err(DeliveryFailure::NotReady(other)),
         }
-        let tip = target_tip(primary, isolation, CompletionBehavior::Handoff)?;
+        let tip = target_tip(primary, isolation, TargetSource::Local)?;
         // The target already holds this work under commits of its own — a
         // squash or rebase merge. Replaying it there conflicts with itself.
         if checkout::is_integrated(primary, &tip, &isolation.branch) {
@@ -151,7 +147,7 @@ pub(super) fn fetch_target(primary: &Path, target: &str) -> Result<String, Strin
 }
 
 /// The target's tip where the target lives: the remote's after a fetch when
-/// delivery publishes a pull request, and otherwise the furthest tip this
+/// delivery pushes the branch, and otherwise the furthest tip this
 /// machine already has ([`checkout::target_reach`]) — the local branch, or
 /// the remote's as the last sync fetched it when that is ahead. An agent
 /// cut from the remote's tip and rebased onto the local one would record
@@ -160,9 +156,9 @@ pub(super) fn fetch_target(primary: &Path, target: &str) -> Result<String, Strin
 pub(super) fn target_tip(
     primary: &Path,
     isolation: &Isolation,
-    completion: CompletionBehavior,
+    source: TargetSource,
 ) -> Result<String, DeliveryFailure> {
-    if completion == CompletionBehavior::Pr {
+    if source == TargetSource::Remote {
         if !has_remote(primary) {
             return Err(DeliveryFailure::NoRemote);
         }
@@ -326,79 +322,4 @@ pub(super) fn abort_rebase(primary: &Path, slot: &Path) -> bool {
         crate::git::write(slot, &["rebase", "--abort"]).is_ok_and(|output| output.is_success())
     })
     .unwrap_or(false)
-}
-
-/// The message written into the owning agent's pane when its task cannot be
-/// rebased. One line, so a harness's prompt takes it as one submission.
-pub fn conflict_message(isolation: &Isolation, files: &[PathBuf], target_moved: usize) -> String {
-    format!(
-        "Your branch no longer rebases onto {target}: conflicts in {files}. {target} gained \
-         {moved} commit{plural} since you started. The rebase is paused in this checkout — \
-         resolve the conflicts preserving the intent of your change, run `git rebase \
-         --continue`, run the project's checks, and end your turn.",
-        target = isolation.target,
-        files = join_paths(files),
-        moved = target_moved,
-        plural = if target_moved == 1 { "" } else { "s" },
-    )
-}
-
-/// The message written into the owning agent's pane when the gate refused
-/// its rebased commits.
-///
-/// What the gate printed is the project's, and reaches the pane as if the
-/// operator had typed it, so it is pointed at rather than quoted: `log`
-/// holds the whole of it. Only where that could not be written is a tail
-/// quoted, as plain text — no control character survives, so nothing in
-/// it can act as a key.
-pub fn gate_failure_message(
-    isolation: &Isolation,
-    command: &str,
-    output: &str,
-    log: Option<&Path>,
-) -> String {
-    let evidence = match log {
-        Some(log) => format!("The full output is in {}.", log.display()),
-        None => {
-            let tail: String = output
-                .lines()
-                .rev()
-                .take(12)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join(" | ");
-            format!("Last lines: {}", plain_text(&tail, GATE_TAIL_CHARS))
-        }
-    };
-    format!(
-        "The project's checks failed on your branch after it was rebased onto {target}: \
-         `{command}`. Fix them on this branch, commit, and end your turn. {evidence}",
-        target = isolation.target,
-        command = plain_text(command, GATE_TAIL_CHARS),
-    )
-}
-
-/// How much of the gate's own words a message quotes.
-const GATE_TAIL_CHARS: usize = 1_000;
-
-/// `text` with every control character a terminal acts on replaced by a
-/// space, and cut to `limit` characters.
-fn plain_text(text: &str, limit: usize) -> String {
-    let mut plain: String = text
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .take(limit)
-        .collect();
-    if text.chars().count() > limit {
-        plain.push('…');
-    }
-    plain
 }

@@ -9,10 +9,11 @@
 //! says. The target is written here, in the fast-forward step of `merge`,
 //! and nowhere else.
 //!
-//! A conflict or a failed gate leaves the target untouched and returns the
-//! task to the agent that owns it: the rebase stays paused in its checkout
-//! with the markers in place, because that agent is the only party holding
-//! the intent behind the change.
+//! A conflict or a failed gate leaves the target untouched, and the rebase
+//! stays paused in the task's checkout with the markers in place, because
+//! the agent that owns it is the only party holding the intent behind the
+//! change. What that agent is told about it is the project's instruction
+//! for the state, never a message of this module's.
 
 use std::{
     fmt,

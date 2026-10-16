@@ -760,16 +760,15 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
     let target_before = engine.git(&project, &["rev-parse", "main"]);
 
     let evaluation = engine.evaluate();
-    assert_eq!(evaluation.notices.len(), 1, "{evaluation:?}");
-    let notice = evaluation.notices[0].clone();
-    assert_eq!(notice.checkout, slot);
+    assert_eq!(evaluation.arrived, vec![id.clone()], "{evaluation:?}");
     assert!(matches!(
         engine.state_of(&id),
         WorkStateView::Conflicted { .. }
     ));
     assert_eq!(engine.git(&project, &["rev-parse", "main"]), target_before);
 
-    // What the agent does with the message: resolve, continue, end the turn.
+    // What the agent does with the project's conflict instruction:
+    // resolve, continue, end the turn.
     let name = slot.file_name().unwrap().to_string_lossy().into_owned();
     Steps::new()
         .write("shared.rs", "both\n")
@@ -777,7 +776,10 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
         .git_with(&["rebase", "--continue"], &[("GIT_EDITOR", "true")])
         .write_for(&engine.scripts, &name, "conflict");
     let pane = engine.pane_in(&slot);
-    engine.tell(pane, &notice.message);
+    engine.tell(
+        pane,
+        "Resolve the conflicts, run git rebase --continue and end your turn.",
+    );
     let resolved = engine.scripts.join(format!("{name}.resolved"));
     wait_until("the agent resolved the rebase", || resolved.exists());
 
@@ -796,7 +798,7 @@ fn a_conflict_goes_to_the_agents_pane_and_comes_back_resolved() {
 
 #[test]
 fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_kept() {
-    let mut engine = Engine::start("  delivery: handoff\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
     let (id, slot) = engine.launch(commit("kept.rs", "kept\n"));
     wait_for_states(&engine, &[&id], &WorkStateView::Ready);
@@ -852,12 +854,12 @@ fn a_server_restart_loses_no_task_and_a_dirty_orphan_is_kept() {
     );
 }
 
-/// `pr` end to end, with no forge CLI on `PATH` at all: UZE publishes and
-/// hands the request to the agent, the agent opens it, and the next
-/// delivery is a sync that names it.
+/// `push` end to end, with no forge CLI on `PATH` at all: UZE publishes,
+/// the agent asked opens the request, and the next delivery is a sync that
+/// names it.
 #[test]
-fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
-    let mut engine = Engine::start("  delivery: pr\n");
+fn push_publishes_then_the_agent_opens_the_request_and_it_syncs_after() {
+    let mut engine = Engine::start("  delivery: push\n");
     let project = engine.project().to_path_buf();
     uze_testkit::git::publish_to_origin(&project, "main");
 
@@ -870,11 +872,14 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
         .workspace()
         .deliver_task(&project, &id)
         .unwrap();
-    let DeliveryOutcome::AwaitingRequest(notice) = &report.outcome else {
+    let DeliveryOutcome::Published {
+        branch,
+        request: None,
+    } = report.outcome.clone()
+    else {
         panic!("nothing has opened a request yet: {report:?}");
     };
-    assert_eq!(notice.checkout, slot);
-    let branch = report.task.published_as.clone().unwrap();
+    assert_eq!(report.task.published_as.as_ref(), Some(&branch));
     let remote = engine.git(&project, &["ls-remote", "--heads", "origin"]);
     assert!(remote.contains(&format!("refs/heads/{branch}")), "{remote}");
     assert_eq!(report.task.published_request, None);
@@ -884,7 +889,7 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
         "never pulled"
     );
 
-    // The agent takes the message and opens the request; the forge
+    // The agent is asked to open the request and does; the forge
     // publishes its head, which is all UZE reads to learn the number.
     let name = slot.file_name().unwrap().to_string_lossy().into_owned();
     let tip = engine.git(&project, &["rev-parse", &format!("agent/{id}")]);
@@ -897,7 +902,7 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
         ])
         .write_for(&engine.scripts, &name, "request");
     let pane = engine.pane_in(&slot);
-    engine.tell(pane, &notice.message);
+    engine.tell(pane, "Open a pull request for this branch.");
     let opened = engine.scripts.join(format!("{name}.opened"));
     wait_until("the agent opened the request", || opened.exists());
 
@@ -908,13 +913,16 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
         .unwrap();
     assert_eq!(
         report.outcome,
-        DeliveryOutcome::Published { branch, request: 7 },
+        DeliveryOutcome::Published {
+            branch,
+            request: Some(7)
+        },
         "{report:?}"
     );
     assert_eq!(
         report.task.published_request,
         Some(7),
-        "the task carries it, so the button can name it without asking the remote again"
+        "the task carries it, so the status can name it without asking the remote again"
     );
     assert_eq!(
         engine.git(&project, &["rev-parse", "main"]),
@@ -928,7 +936,7 @@ fn pr_publishes_then_hands_the_request_to_its_agent_and_syncs_it_after() {
 /// inside a client.
 #[test]
 fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
-    let mut engine = Engine::start("  delivery: handoff\n");
+    let mut engine = Engine::start("  delivery: merge\n");
     let project = engine.project().to_path_buf();
     let first_space = engine.session.as_ref().unwrap().workspace.selected_space;
     assert_eq!(

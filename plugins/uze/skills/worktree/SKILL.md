@@ -89,8 +89,14 @@ completion behavior, and it is not yours to perform.
 ## When UZE hands work back to you
 
 UZE rebases your branch onto the target before delivering it, and runs the
-project's checks on the result. Three things come back to you, as a message
-in your own session:
+project's checks on the result. Then it puts the work where the project's
+`delivery` says: into the target (`merge`) or onto the remote as your branch
+(`push`). It never opens a request.
+
+What reaches you afterwards is the project's own instruction for the state
+your work was left in, typed into your session as a message, and only when
+the project declares one under `workspace.actions` in `agents.yaml`. The
+states you can meet:
 
 - **A paused rebase.** The target moved and your branch no longer applies
   cleanly. The rebase is paused in your checkout with the conflict markers
@@ -98,14 +104,16 @@ in your own session:
   `git rebase --continue`, run the project's checks, and end your turn.
   Never abort the rebase to make the message go away.
 - **Failed checks.** Fix them on your branch, commit, and end your turn.
-- **A published branch with no request open for it**, under the `pr`
-  completion. UZE has pushed the branch; opening the pull request — the
-  merge request, on a forge that calls it that — is yours, because the
-  title and the description are the change's argument and you are the one
-  holding it. Name and describe it by this project's convention, do not
-  merge it, and end your turn. UZE finds the request on the remote by
-  itself afterwards, and from then on delivering the task only pushes new
-  commits onto it.
+- **A published branch with no request open for it**, under a `push`
+  delivery. UZE has pushed the branch. When the instruction asks you to
+  open the pull request — the merge request, on a forge that calls it
+  that — the title and the description are the change's argument and you
+  are the one holding it: name and describe it by this project's
+  convention, do not merge it, and end your turn. UZE finds the request on
+  the remote by itself afterwards.
+
+Follow the instruction as written; when none arrives, there is nothing more
+for you to do.
 
 Do not try to deliver again yourself; UZE re-reads your checkout when your
 turn ends.

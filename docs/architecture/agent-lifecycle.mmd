@@ -27,19 +27,22 @@ flowchart TD
   evaluate -->|commits ahead, clean tree| ready[Ready]
   ready -->|the pane went quiet| refresh[refresh<br/>rebase onto the target's furthest tip]
   ready --> deliver([The operator delivers one task])
-  deliver --> integrating[Integrating<br/>under the repository write lock]
+  deliver --> declared{A delivery declared?}
+  declared -->|no| refused[Refused<br/>nothing written, still Ready]
+  declared -->|yes| integrating[Integrating<br/>under the repository write lock]
   integrating --> already{Already in the target's tip?}
   already -->|squashed on the forge| integrated[Integrated]
   already -->|no| rebase{Rebase onto the tip}
   rebase -->|conflict, target untouched| conflicted[Conflicted<br/>the rebase stays paused in the checkout]
   rebase -->|clean| gate{The declared gate, on the rebased commits}
   gate -->|fails| failed[GateFailed]
-  conflicted --> back[Back to the agent that owns it:<br/>only it holds the intent]
-  failed --> back
-  gate -->|passes| completion{The project's completion behaviour}
-  completion -->|handoff| human[Ready<br/>a human integrates the branch]
-  completion -->|pr| published[Ready<br/>branch pushed, request open]
+  conflicted --> told[The agent is sent the project's instruction<br/>for the state it was left in, if one is declared]
+  failed --> told
+  gate -->|passes| completion{Where the project puts the work}
+  completion -->|push| published[Published<br/>the branch pushed, no request yet]
+  published --> told
   completion -->|merge| overlap{Files the target moved too?}
-  overlap -->|yes| human
+  overlap -->|yes| refused
   overlap -->|no| forward[Fast-forward the target]
   forward --> integrated
+  integrated --> told

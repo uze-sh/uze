@@ -31,18 +31,34 @@ pub struct Policy<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Delivered {
-    /// The branch is left for the operator.
-    Handoff,
     /// The target now points at the branch's tip.
     Merged { target_tip: String },
-    /// The branch was pushed under its readable name and the forge
-    /// already has `request` open for it: a sync, which is Git alone.
-    Published { branch: String, request: u32 },
-    /// The branch was pushed and no request is open for it yet. Opening
-    /// one is the owning agent's, which is why this carries the words to
-    /// hand it: only that agent knows what the change is for, and only it
-    /// can reach whichever forge this remote is.
-    AwaitingRequest { branch: String, instruction: String },
+    /// The branch was pushed under its readable name, and `request` is the
+    /// one the forge already has open for it, when it has one. Opening one
+    /// is never UZE's: what the agent is asked next is the project's
+    /// instruction for a published branch.
+    Published {
+        branch: String,
+        request: Option<u32>,
+    },
+}
+
+/// Which tip of the target a rebase moves onto.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetSource {
+    /// The furthest tip this machine already has, with no fetch.
+    Local,
+    /// The remote's, fetched now: what a pushed branch is reviewed against.
+    Remote,
+}
+
+impl From<CompletionBehavior> for TargetSource {
+    fn from(behavior: CompletionBehavior) -> Self {
+        match behavior {
+            CompletionBehavior::Merge => Self::Local,
+            CompletionBehavior::Push => Self::Remote,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

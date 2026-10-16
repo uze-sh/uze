@@ -115,14 +115,14 @@ fn declaring_the_policy_from_the_client_creates_the_manifest_and_states_it_first
     assert!(
         application
             .workspace()
-            .set_completion(&root, CompletionBehavior::Pr)
+            .set_completion(&root, Some(CompletionBehavior::Push))
             .unwrap()
     );
     assert_eq!(
         uze_workspace::declaration::policy(&root)
             .unwrap()
             .completion,
-        CompletionBehavior::Pr
+        Some(CompletionBehavior::Push)
     );
     assert!(
         !application
@@ -138,7 +138,7 @@ fn declaring_the_policy_from_the_client_creates_the_manifest_and_states_it_first
 fn install_never_rewrites_a_manifest_somebody_authored() {
     let (application, repository) = project("manifest-install-preserves");
     let root = repository.root().to_path_buf();
-    let authored = "# ours\nworkspace:\n  delivery: pr   # decided in the RFC\n";
+    let authored = "# ours\nworkspace:\n  delivery: push   # decided in the RFC\n";
     fs::write(manifest::manifest_path_for(&root), authored).unwrap();
 
     application.project().install(&root, &AlwaysTrust).unwrap();
@@ -155,7 +155,7 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
     let root = repository.root().to_path_buf();
     fs::write(
         manifest::manifest_path_for(&root),
-        "workspace:\n  delivery: pr\n",
+        "workspace:\n  delivery: push\n",
     )
     .unwrap();
     // The workspace keeps its section in an AGENTS.md the project has; it
@@ -166,7 +166,11 @@ fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection()
 
     let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
     assert!(
-        agents_md.contains(uze_workspace::worktree::CompletionBehavior::Pr.instruction_clause()),
+        agents_md.contains(
+            uze_workspace::worktree::CompletionBehavior::instruction_clause(Some(
+                uze_workspace::worktree::CompletionBehavior::Push
+            ))
+        ),
         "the declared behavior must be the one an agent reads: {agents_md}"
     );
 }
@@ -355,7 +359,7 @@ mod policy_scope {
         let root = repository.root().to_path_buf();
         fs::write(
             manifest::manifest_path_for(&root),
-            "workspace:\n  delivery: pr\n",
+            "workspace:\n  delivery: push\n",
         )
         .unwrap();
 
@@ -377,7 +381,8 @@ mod policy_scope {
 
         let policy = application.workspace().delivery_policy(&checkout).unwrap();
         assert_eq!(
-            policy.completion, "pr",
+            policy.completion,
+            Some("push"),
             "the primary checkout owns the policy; a worktree inherits it"
         );
     }
@@ -391,7 +396,7 @@ mod policy_scope {
         let root = repository.root().to_path_buf();
         fs::write(manifest::manifest_path_for(&root), "workspace: {}\n").unwrap();
 
-        let policies: Vec<String> = ["home-a", "home-b"]
+        let policies: Vec<Option<&str>> = ["home-a", "home-b"]
             .into_iter()
             .map(|label| {
                 let application =
@@ -401,14 +406,13 @@ mod policy_scope {
                     .delivery_policy(&root)
                     .unwrap()
                     .completion
-                    .to_owned()
             })
             .collect();
 
         assert_eq!(policies[0], policies[1]);
         assert_eq!(
-            policies[0], "handoff",
-            "the built-in default, not a machine's taste"
+            policies[0], None,
+            "the built-in default — no delivery — not a machine's taste"
         );
     }
 }

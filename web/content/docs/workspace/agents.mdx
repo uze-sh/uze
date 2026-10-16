@@ -101,21 +101,28 @@ says:
 ## Bringing the work home
 
 When an agent in a worktree is **Ready**, press `Alt+I` to deliver it. The branch is
-rebased onto your target branch, your checks run, and then comes what the
-project chose:
+rebased onto your target branch, your checks run, and then the work goes where
+the project says:
 
 ```yaml
 workspace:
-  delivery: pr       # handoff (default) | merge | pr
+  delivery: push     # merge | push; undeclared, nothing is delivered
   gate: npm test     # the checks that must pass first
+  actions:
+    on_publish: Open a pull request for this branch against main, then end your turn.
+    on_conflict: The rebase is paused here. Resolve it, run git rebase --continue and the checks.
+    on_fail: The checks failed after the rebase. Fix them and commit.
 ```
 
-- **handoff** leaves the branch for you to merge.
-- **merge** fast-forwards the target branch.
-- **pr** pushes the branch and opens a pull request with `gh` or `glab`.
+- **merge** fast-forwards your local target branch.
+- **push** pushes the branch to the remote. uze opens no pull request itself.
 
-If the checks fail or the rebase conflicts, nothing reaches the target and the
-agent gets the problem back.
+What the agent is asked next is the project's own words, under `actions`: one
+line per state, sent into its pane when uze leaves the work in that state, and
+whenever you click the status in the header. With nothing declared, the
+status only reports. If the checks fail or the rebase conflicts, nothing
+reaches the target, and the agent is sent the line for that state if the
+project declares one. See [`actions`](/docs/reference/project-files#actions).
 
 The checks, like `setup`, are commands from the repository, so uze runs them
 only after you approve them. The first time the workspace opens a project that

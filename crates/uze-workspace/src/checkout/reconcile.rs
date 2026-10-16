@@ -38,8 +38,8 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
                     // An agent that keeps working after a delivery is working
                     // again, and its slot is not free while it does: `Integrated`
                     // is only ever reached with the branch's commits already in
-                    // the target (the one outcome `merge` completion produces;
-                    // handoff and pr leave a task `Ready`), so a commit the target
+                    // the target (the one outcome a `merge` delivery produces;
+                    // a `push` leaves a task `Ready`), so a commit the target
                     // does not have, in a checkout Git still registers, is new
                     // work. Reading it here is what a slot is acquired against —
                     // `declared_done` otherwise hands the directory to the next

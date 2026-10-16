@@ -29,7 +29,6 @@ world:
     workspace:
       worktree: always
       target: main
-      delivery: handoff
       slots: 3
 
 scenes:

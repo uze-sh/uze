@@ -342,6 +342,11 @@ fn a_child_lives_as_long_as_its_agent() {
 #[test]
 fn an_agent_is_not_delivered_while_a_child_holds_unjoined_work() {
     let world = World::new("work-delivery");
+    std::fs::write(
+        world.root().join("agents.yaml"),
+        "workspace:\n  delivery: merge\n",
+    )
+    .unwrap();
     let agent = world.agent();
     world.commit(&agent.1, "feature.rs", "fn feature() {}\n");
     let child = world.split(&agent, "tests").unwrap();

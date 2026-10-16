@@ -12,7 +12,7 @@ world:
   project: demo-app
   manifest: |
     workspace:
-      delivery: pr
+      delivery: push
   files:
     market/marketplace.json: |
       {

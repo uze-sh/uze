@@ -597,7 +597,7 @@ mod placement_tests {
         let task = evaluation.tasks.iter().find(|task| task.id == id).unwrap();
         assert_eq!(task.state, WorkStateView::Integrated);
         assert!(
-            evaluation.notices.is_empty(),
+            evaluation.arrived.is_empty(),
             "nothing goes back to the agent"
         );
         assert_eq!(
@@ -721,6 +721,11 @@ mod placement_tests {
     #[test]
     fn delivering_work_the_target_already_has_rebases_nothing() {
         let repository = repository("deliver-squashed");
+        std::fs::write(
+            repository.root().join("agents.yaml"),
+            "workspace:\n  delivery: merge\n",
+        )
+        .unwrap();
         let root = repository.root().to_path_buf();
         let app = application("deliver-squashed-home");
         let placed = app
@@ -812,8 +817,10 @@ mod placement_tests {
         };
 
         let delivered = view(app.workspace().evaluate_tasks(&root, occupied));
+        // The pass asks the remote about every task, and a branch the
+        // remote no longer holds keeps no number: the request answered for
+        // a branch that is gone.
         assert_eq!(delivered.state, WorkStateView::Integrated);
-        assert_eq!(delivered.published_request, Some(51));
 
         std::fs::write(placed.cwd.join("more.rs"), b"fn more() {}").unwrap();
         repository.git_in(&placed.cwd, &["add", "."]);
@@ -1547,7 +1554,7 @@ mod task_service_tests {
         let root = repository.root().to_path_buf();
         let app = application("svc-launch-sync-home");
         repository.commit_file("AGENTS.md", "# Project\n");
-        std::fs::write(root.join("agents.yaml"), "workspace:\n  delivery: pr\n").unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  delivery: push\n").unwrap();
 
         app.workspace()
             .place_new_agent(&root, Some(PlacementKind::InPlace), "claude-code", &[])
@@ -1710,7 +1717,7 @@ mod task_service_tests {
         agent_commits(&repository, &slot, "draft.rs", "fn done() {}");
         let evaluation = app.workspace().evaluate_tasks(&root, &[]);
         assert_eq!(evaluation.tasks[0].state, WorkStateView::Ready);
-        assert!(evaluation.notices.is_empty());
+        assert!(evaluation.arrived.is_empty());
 
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert_eq!(report.outcome, DeliveryOutcome::Merged);
@@ -1790,7 +1797,7 @@ mod task_service_tests {
     }
 
     #[test]
-    fn a_conflict_returns_a_notice_addressed_to_the_slot() {
+    fn a_conflict_found_following_the_target_names_the_agent_it_reached() {
         let repository = repository("svc-conflict");
         declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
@@ -1803,10 +1810,8 @@ mod task_service_tests {
         // conflict that produces is already the agent's to resolve; a
         // delivery asked for meanwhile is refused, never forced.
         let evaluation = app.workspace().evaluate_tasks(&root, &[]);
-        assert_eq!(evaluation.notices.len(), 1, "{evaluation:?}");
-        let notice = &evaluation.notices[0];
-        assert_eq!(notice.checkout, slot);
-        assert!(notice.message.contains("shared.rs"));
+        assert_eq!(evaluation.arrived, vec![id.clone()], "{evaluation:?}");
+        assert!(slot.is_dir());
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert!(
             matches!(report.outcome, DeliveryOutcome::Refused(_)),
@@ -1820,7 +1825,7 @@ mod task_service_tests {
     }
 
     /// A clean live task follows the target on evaluation; a conflict there
-    /// is also a notice.
+    /// names the agent it reached.
     #[test]
     fn evaluation_lets_a_clean_task_follow_the_target() {
         let repository = repository("svc-follow");
@@ -1831,7 +1836,7 @@ mod task_service_tests {
         agent_commits(&repository, &slot, "mine.rs", "agent's mine\n");
         repository.commit_file("theirs.rs", "");
         let evaluation = app.workspace().evaluate_tasks(&root, &[]);
-        assert!(evaluation.notices.is_empty());
+        assert!(evaluation.arrived.is_empty());
         assert!(
             slot.join("theirs.rs").is_file(),
             "rebased onto the moved target"
@@ -1839,8 +1844,7 @@ mod task_service_tests {
 
         repository.commit_file("mine.rs", "operator's mine\n");
         let evaluation = app.workspace().evaluate_tasks(&root, &[]);
-        assert_eq!(evaluation.notices.len(), 1);
-        assert_eq!(evaluation.notices[0].checkout, slot);
+        assert_eq!(evaluation.arrived.len(), 1);
     }
 
     #[test]
@@ -1860,7 +1864,7 @@ mod task_service_tests {
 
         let report = app.workspace().deliver_task(&root, &id).unwrap();
         assert!(
-            matches!(report.outcome, DeliveryOutcome::ReturnedToAgent(_)),
+            matches!(report.outcome, DeliveryOutcome::Failed { .. }),
             "{:?}",
             report.outcome
         );
@@ -1991,16 +1995,52 @@ mod task_service_tests {
         assert!(root.join("first.rs").is_file() && root.join("second.rs").is_file());
     }
 
+    /// No `delivery:` declared is no delivery: every way of asking for one
+    /// is refused before anything is rebased, run or written.
     #[test]
-    fn a_handed_off_task_is_deleted_only_by_discarding_it() {
+    fn a_project_with_no_delivery_refuses_and_writes_nothing() {
+        let repository = repository("svc-no-delivery");
+        let root = repository.root().to_path_buf();
+        let app = application("svc-no-delivery-home");
+        let (id, slot) = launched(&app, &root);
+        agent_commits(&repository, &slot, "a.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
+        let target = repository.git(&["rev-parse", "HEAD"]);
+        let branch = repository.git_in(&slot, &["rev-parse", "HEAD"]);
+
+        let report = app.workspace().deliver_task(&root, &id).unwrap();
+        assert!(
+            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no delivery")),
+            "{:?}",
+            report.outcome
+        );
+        let all = app.workspace().deliver_ready(&root);
+        assert!(
+            all.iter()
+                .all(|report| matches!(report.outcome, DeliveryOutcome::Refused(_))),
+            "{all:?}"
+        );
+        assert_eq!(repository.git(&["rev-parse", "HEAD"]), target);
+        assert_eq!(repository.git_in(&slot, &["rev-parse", "HEAD"]), branch);
+        assert_eq!(state_of(&app, &root, &id), WorkStateView::Ready);
+    }
+
+    #[test]
+    fn an_undelivered_task_is_deleted_only_by_discarding_it() {
         let repository = repository("svc-finish-discard");
         let root = repository.root().to_path_buf();
         let app = application("svc-finish-discard-home");
         let (id, slot) = launched(&app, &root);
         agent_commits(&repository, &slot, "a.rs", "");
         app.workspace().evaluate_tasks(&root, &[]);
+        // No `delivery:` declared: there is nowhere the work was said to
+        // go, so the press is refused and nothing moves.
         let report = app.workspace().deliver_task(&root, &id).unwrap();
-        assert_eq!(report.outcome, DeliveryOutcome::Handoff);
+        assert!(
+            matches!(&report.outcome, DeliveryOutcome::Refused(reason) if reason.contains("no delivery")),
+            "{:?}",
+            report.outcome
+        );
         assert_eq!(state_of(&app, &root, &id), WorkStateView::Ready);
         let branch = report.task.branch.clone();
         assert!(
@@ -2008,7 +2048,7 @@ mod task_service_tests {
                 && repository
                     .git(&["branch", "--list", &branch])
                     .contains(&branch),
-            "a handoff keeps both until the operator says otherwise"
+            "an undelivered task keeps both until the operator says otherwise"
         );
 
         app.workspace().discard_task(&root, &id).unwrap();
@@ -2062,7 +2102,7 @@ mod task_service_tests {
         let repository = repository("svc-agent-publish");
         declare(
             &repository,
-            "  delivery: pr
+            "  delivery: push
 ",
         );
         let root = repository.root().to_path_buf();
@@ -2102,7 +2142,7 @@ mod task_service_tests {
         assert_eq!(synced.unsynced, Some(0), "nothing left to send");
         assert_eq!(
             synced.state,
-            WorkStateView::Published,
+            WorkStateView::InReview,
             "the work is with its reviewer, not waiting to be handed over"
         );
         assert_eq!(
@@ -2131,12 +2171,69 @@ mod task_service_tests {
         );
     }
 
-    /// A merge lands on the target, and a branch sitting on the remote is
-    /// no part of that. Reading publication for it would have called the
-    /// task synced the moment its agent pushed — before the one thing the
-    /// completion actually does had happened at all.
+    /// What the agent is asked follows the state its work is drawn in, and
+    /// an agent in the project's own root is asked nothing: its branch is
+    /// the operator's.
     #[test]
-    fn a_merge_project_never_measures_its_work_against_the_remote() {
+    fn the_view_carries_the_instruction_its_state_answers_to() {
+        let repository = repository("svc-actions-view");
+        declare(
+            &repository,
+            "  delivery: push\n  actions:\n    on_ready: Review your diff.\n    \
+             on_publish: Open a pull request.\n    on_review: Answer the review.\n    \
+             on_redy: typo\n",
+        );
+        let root = repository.root().to_path_buf();
+        repository.with_origin(&repository.branch());
+        let app = application("svc-actions-view-home");
+        let (id, slot) = launched(&app, &root);
+        let in_root = launched_in_the_root(&app, &root);
+        agent_commits(&repository, &slot, "a.rs", "");
+
+        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
+        assert_eq!(evaluation.ignored_actions.len(), 1, "{evaluation:?}");
+        let ready = view_of(&app, &root, &id);
+        assert_eq!(ready.state, WorkStateView::Ready);
+        assert_eq!(ready.action.as_deref(), Some("Review your diff."));
+        assert_eq!(view_of(&app, &root, &in_root).action, None);
+
+        repository.git_in(&slot, &["push", "--quiet", "origin", "HEAD"]);
+        app.workspace().evaluate_tasks(&root, &[]);
+        let published = view_of(&app, &root, &id);
+        assert_eq!(published.state, WorkStateView::Published);
+        assert_eq!(published.action.as_deref(), Some("Open a pull request."));
+
+        // Another agent pushes and opens its request before the remote is
+        // ever asked about it: the remote is asked at most once a minute
+        // per task, so the first answer is the one that counts.
+        let (reviewed, reviewed_slot) = launched(&app, &root);
+        agent_commits(&repository, &reviewed_slot, "c.rs", "");
+        repository.git_in(&reviewed_slot, &["push", "--quiet", "origin", "HEAD"]);
+        let tip = repository.git_in(&reviewed_slot, &["rev-parse", "HEAD"]);
+        repository.git(&[
+            "push",
+            "--quiet",
+            "origin",
+            &format!("{}:refs/pull/3/head", tip.trim()),
+        ]);
+        app.workspace().evaluate_tasks(&root, &[]);
+        let in_review = view_of(&app, &root, &reviewed);
+        assert_eq!(in_review.state, WorkStateView::InReview);
+        assert_eq!(in_review.action.as_deref(), Some("Answer the review."));
+
+        // A commit not yet on the remote is work to hand over again.
+        agent_commits(&repository, &slot, "b.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
+        let again = view_of(&app, &root, &id);
+        assert_eq!(again.state, WorkStateView::Ready);
+        assert_eq!(again.unsynced, Some(1));
+    }
+
+    /// A push is a fact whoever made it and whatever the project delivers
+    /// by: a `merge` project's agent that pushed its branch has it on the
+    /// remote, and the view says so rather than pretending it did not.
+    #[test]
+    fn an_agents_push_reads_as_published_whatever_the_delivery() {
         let repository = repository("svc-merge-remote");
         declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
@@ -2149,10 +2246,15 @@ mod task_service_tests {
         app.workspace().evaluate_tasks(&root, &[]);
 
         let view = view_of(&app, &root, &id);
-        assert_eq!(view.published_as, None);
-        assert_eq!(view.unsynced, None, "the merge has not happened");
-        assert_eq!(view.state, WorkStateView::Ready, "so it is still to do");
-        assert_eq!(view.ahead, 1, "and that is what it would land");
+        assert_eq!(view.published_as.as_deref(), Some(view.branch.as_str()));
+        assert_eq!(view.unsynced, Some(0), "the remote has all of it");
+        assert_eq!(view.state, WorkStateView::Published);
+        assert_eq!(view.ahead, 1, "and the merge would still land one commit");
+        assert_eq!(
+            view.state.undeliverable_reason(),
+            None,
+            "a published branch is still the merge's to land"
+        );
     }
 
     /// "This repository has no tasks" and "this repository's tasks could
@@ -3313,7 +3415,7 @@ mod derived_naming_tests {
     /// gives an otherwise unnamed worktree a readable branch.
     #[test]
     fn a_project_without_a_manifest_derives_a_conventional_name() {
-        let (app, repository) = project("derive-undeclared", "  delivery: handoff\n");
+        let (app, repository) = project("derive-undeclared", "  delivery: merge\n");
         let root = repository.root().to_path_buf();
         let checkout = placed(&app, &root).checkout;
         commits(&repository, &checkout, "feat(api): answer ping now");

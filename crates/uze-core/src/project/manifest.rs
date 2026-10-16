@@ -249,6 +249,21 @@ pub fn set_scalar(root: &Path, section: Section, key: &str, value: &str) -> Resu
     Ok(created)
 }
 
+/// Removes one scalar from one of the sections this module carries. A
+/// manifest that does not exist, or never held the key, is left as it is:
+/// taking back a declaration nobody made is not an edit.
+pub fn unset_scalar(root: &Path, section: Section, key: &str) -> Result<()> {
+    let path = manifest_path_for(root);
+    if !path.exists() {
+        return Ok(());
+    }
+    let mut document = edit::ManifestDocument::open(&path)?;
+    document.remove(section.key(), key)?;
+    document.save()?;
+    load(root)?;
+    Ok(())
+}
+
 /// Declares a plugin under the marketplace it comes from, declared as
 /// `source`, creating the manifest when the project has none. The document
 /// is patched in place, so a comment a person wrote beside an unrelated

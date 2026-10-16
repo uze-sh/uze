@@ -29,7 +29,7 @@ fn application(env: &TestEnvironment) -> UzeApplication {
 fn install_leaves_the_workspace_section_to_the_workspace() {
     let env = TestEnvironment::isolated();
     let _harnesses = install_fake_harnesses(&env);
-    let world = PackageAndWorkspace::prepare(&env, "pr");
+    let world = PackageAndWorkspace::prepare(&env, "push");
 
     env.run_ok(uze_bin(), &["install"]);
     let written = agents_md(&world.project);
@@ -84,7 +84,7 @@ fn install_leaves_the_workspace_section_to_the_workspace() {
 fn work_verbs_refuse_an_agent_started_by_hand_and_authoring_answers_it() {
     let env = TestEnvironment::isolated();
     let _harnesses = install_fake_harnesses(&env);
-    let _world = PackageAndWorkspace::prepare(&env, "handoff");
+    let _world = PackageAndWorkspace::prepare(&env, "merge");
 
     let refused = env.run(uze_bin(), &["agent", "work", "name", "feat/demo"]);
     assert!(!refused.status.success());
@@ -114,7 +114,7 @@ fn moving_from_the_package_manager_to_the_workspace_and_back() {
     app.workspace()
         .set_completion(
             &world.project,
-            uze_workspace::worktree::CompletionBehavior::Pr,
+            Some(uze_workspace::worktree::CompletionBehavior::Push),
         )
         .unwrap();
     app.workspace().sync_policy_region(&world.project).unwrap();
@@ -130,7 +130,7 @@ fn moving_from_the_package_manager_to_the_workspace_and_back() {
     let manifest = world.project.join("agents.yaml");
     let commented = std::fs::read_to_string(&manifest)
         .unwrap()
-        .replace("  delivery: pr", "  # delivery: pr");
+        .replace("  delivery: push", "  # delivery: push");
     std::fs::write(&manifest, commented).unwrap();
     env.run_ok(uze_bin(), &["install"]);
     assert!(

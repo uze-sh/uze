@@ -166,8 +166,9 @@ fn every_state_lands_in_its_block_with_its_reason_and_its_move() {
             Reason::Delivering,
             Some("resume"),
         ),
+        (WorkStateView::Published, Reason::Published, Some("resume")),
         (
-            WorkStateView::Published,
+            WorkStateView::InReview,
             Reason::WithReviewer,
             Some("resume"),
         ),

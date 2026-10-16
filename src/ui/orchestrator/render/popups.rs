@@ -419,12 +419,17 @@ pub(in crate::ui::orchestrator) fn render_status_catalog(
         (
             WorkStateView::Published,
             "published",
-            "on the remote, level with it — with its reviewer",
+            "on the remote, level with it, no request yet",
+        ),
+        (
+            WorkStateView::InReview,
+            "in review",
+            "a request is open for it — with its reviewer",
         ),
         (
             WorkStateView::Integrating,
             "delivering",
-            "the rebase, the gate and the push, in flight",
+            "the rebase, the gate, and the merge or push, in flight",
         ),
         (
             WorkStateView::Conflicted { files: Vec::new() },
@@ -693,10 +698,7 @@ pub(super) fn render_query_row(
     );
 }
 
-pub(super) fn chip_state(model: &WorkspaceModel, hit: Option<WorkspaceHit>) -> ChipState {
-    let Some(hit) = hit else {
-        return ChipState::Static;
-    };
+pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState {
     if model.pressed_hit() == Some(hit) {
         ChipState::Pressed
     } else if model.hovered == Some(hit) {
@@ -706,97 +708,89 @@ pub(super) fn chip_state(model: &WorkspaceModel, hit: Option<WorkspaceHit>) -> C
     }
 }
 
-/// The small notification for a task: what the delivery is about, and
-/// where it stands.
+/// The work-state status for a task: what the delivery is about, where it
+/// stands, and the hue that says so.
 ///
 /// Two parts and no forge's word for either. The subject is the request's
-/// own number, or the ending for a completion that is not a request at
-/// all (see [`delivery_subject`]); the standing is [`task_mark`]'s own
-/// mark, so the strip, the sidebar row and the status legend cannot come
-/// to say different things about one state.
-///
-/// One verb over three completions read the same whether it was about to
-/// fast-forward the target under you, open a request against it, or touch
-/// nothing outside the branch — which is why the subject is the half that
-/// is always there, and the count rides the mark rather than standing
-/// alone in front of it.
-pub(super) fn delivery_notification(
+/// own number, or where the work is going (see [`delivery_subject`]); the
+/// standing is [`task_tone`]'s own mark, so the strip, the sidebar row and
+/// the status legend cannot come to say different things about one state.
+/// Whether a click answers it is not this function's question: that is
+/// whether the project declared an instruction for the state.
+pub(super) fn status_notification(
     task: &AgentView,
     state: &WorkStateView,
     tick: usize,
-) -> Option<(String, Color, bool)> {
-    // Which states put a notification in this zone: the ones handing work
-    // over passes through. `Uncommitted` and `Shelved` carry marks of
-    // their own in the sidebar, but they are facts about a checkout
-    // rather than steps of a delivery, and this zone is the second.
-    // Conditioned, not disabled: a state that cannot be delivered is
-    // still reported, and the report simply is not a button.
-    let pressable = match state {
-        WorkStateView::Ready | WorkStateView::Published | WorkStateView::GateFailed => true,
-        WorkStateView::Conflicted { .. }
-        | WorkStateView::Integrating
-        | WorkStateView::Integrated => false,
-        _ => return None,
-    };
-    let (mark, hue) = task_mark(state)?;
+) -> Option<(String, Token)> {
+    // Which states put a status in this zone: the ones handing work over
+    // passes through. `Uncommitted` and `Shelved` carry marks of their own
+    // in the sidebar, but they are facts about a checkout rather than
+    // steps of a delivery, and this zone is the second.
+    if !matches!(
+        state,
+        WorkStateView::Ready
+            | WorkStateView::Published
+            | WorkStateView::InReview
+            | WorkStateView::GateFailed
+            | WorkStateView::Conflicted { .. }
+            | WorkStateView::Integrating
+            | WorkStateView::Integrated
+    ) {
+        return None;
+    }
+    let (symbol, hue) = task_tone(state)?;
     let standing = match state {
-        // The one state `task_mark` cannot lend its glyph to. Its mark is
+        // The one state `task_tone` cannot lend its glyph to. Its mark is
         // the vocabulary's "there is work to hand over", and the patched
-        // set draws that as a create-a-request icon — true for the
-        // completion that opens one, a lie in front of a button about to
-        // fast-forward the target or to touch nothing outside the branch.
-        // What a press sends is commits, whatever the ending, so the
-        // count wears the arrow that means exactly that and nothing about
-        // a forge.
+        // set draws that as a create-a-request icon, which is a claim about
+        // a forge this status does not make. What is waiting is commits,
+        // so the count wears the arrow that means exactly that.
         //
-        // The count is what a press would send, which is not how far the
-        // branch is from the target: that distance is the merge's
-        // question and stays open until the request lands.
+        // The count is what is not on the remote yet once the branch is
+        // there, and what the branch has beyond its base before that.
         WorkStateView::Ready => format!(
             "{}{}",
             theme::glyph(Symbol::SyncAhead),
             task.unsynced.unwrap_or(task.ahead)
         ),
-        // The one report in this row that is also work in progress, so it
+        // The one status in this row that is also work in progress, so it
         // is the one that moves: a rebase, a gate and a push take as long
         // as the project's checks do, and a still mark for that many
         // seconds reads as a screen that has stopped. The sidebar's mark
         // keeps `Symbol::Ellipsis` — a single cell has no room to turn.
         WorkStateView::Integrating => agent_activity_frame(tick),
-        _ => mark,
+        _ => theme::glyph(symbol),
     };
-    Some((
-        format!("{} {standing}", delivery_subject(task)),
-        hue,
-        pressable,
-    ))
+    Some((format!("{} {standing}", delivery_subject(task)), hue))
+}
+
+/// The hue a status says what no click answers in: its state's own, held
+/// back, so the full hue is only ever worn by a status a click answers.
+pub(super) fn muted(hue: Token) -> Token {
+    match hue {
+        Token::StateSuccess => Token::StateSuccessMuted,
+        Token::StateWarning => Token::StateWarningMuted,
+        Token::StateDanger => Token::StateDangerMuted,
+        Token::StatePublished => Token::StatePublishedMuted,
+        Token::StateLanded => Token::StateLandedMuted,
+        Token::StateInFlight => Token::StateInFlightMuted,
+        other => other,
+    }
 }
 
 /// What a delivery is *about*, in the fewest characters that name it: the
-/// request's own number once the forge has one, the forge's word for a
-/// request before that, and — for the two completions that are not a
-/// request at all — where the work is going instead.
+/// request's own number once the forge has one, and where the work is
+/// going until then. The same whatever the project's delivery, since a
+/// request is a fact of the remote, whoever opened it.
 ///
-/// A number needs no word in front of it: `#41` is already unambiguous,
-/// and "PR" there would be length spent on nothing. The word earns its
-/// place only in the one case that used to leave a bare `#` standing
-/// alone — a request that does not exist yet — and only where `origin`
-/// said which forge this is. Picking one of the two names blind would
-/// take a side the reader may not be on, so an unrecognized remote keeps
-/// the `#` both forges write. The branch's published name is not here
-/// either: it is the one part of this that has no bound on its length,
-/// and a zone that changes width with a branch name moves every button
-/// left of it.
+/// A number needs no word in front of it: `#41` is already unambiguous.
+/// The branch's published name is not here either: it is the one part of
+/// this that has no bound on its length, and a zone that changes width
+/// with a branch name moves every button left of it.
 pub(super) fn delivery_subject(task: &AgentView) -> String {
-    match task.completion {
-        CompletionBehavior::Pr => match task.published_request {
-            Some(request) => format!("#{request}"),
-            None => task.forge.request_abbreviation().unwrap_or("#").to_owned(),
-        },
-        CompletionBehavior::Merge => {
-            format!("{} {}", theme::glyph(Symbol::ArrowTo), task.target)
-        }
-        CompletionBehavior::Handoff => "hand off".to_owned(),
+    match task.published_request {
+        Some(request) => format!("#{request}"),
+        None => format!("{} {}", theme::glyph(Symbol::ArrowTo), task.target),
     }
 }
 

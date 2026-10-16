@@ -18,7 +18,6 @@ world:
   manifest: |
     workspace:
       target: main
-      delivery: handoff
 
 scenes:
   - scene: install gives the project its AGENTS.md and leaves the policy to the workspace

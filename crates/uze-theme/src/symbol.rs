@@ -190,6 +190,10 @@ vocabulary! {
         /// is not a direction, and a theme repainting the arrows must not
         /// silently repaint it too.
         TaskReady = "task.ready",
+        /// Work on the remote with a request open for it: in somebody
+        /// else's hands now. Its own symbol for the same reason
+        /// `TaskReady` is.
+        TaskInReview = "task.review",
 
         // ── an agent's standing in the sidebar ─────────────────────────
         /// Producing output right now. The one animated symbol.

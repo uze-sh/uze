@@ -106,6 +106,21 @@ impl WorkspaceModel {
     /// By the launch's stamp, never by directory: a shell standing in the
     /// agent's slot is not the agent, and a message typed into it runs as
     /// a command.
+    /// Whether `pane` may take a submission of UZE's now: never into an
+    /// agent mid-turn, and never on top of something the operator typed,
+    /// or may have typed — a line this client cannot vouch for counts as
+    /// typed, since sending into it would carry their words with ours.
+    pub(super) fn may_submit(&self, pane: PaneId) -> Submission {
+        if self.agent_is_working(pane) {
+            return Submission::Busy;
+        }
+        match self.remembered.prompt_buffers.get(&pane) {
+            Some(buffer) if !buffer.trusted => Submission::Unknown,
+            Some(buffer) if !buffer.characters.is_empty() => Submission::Typed,
+            _ => Submission::Ok,
+        }
+    }
+
     pub(super) fn pane_for_agent(&self, id: &str) -> Option<PaneId> {
         self.tabs()
             .find(|tab| launched_agent_id(tab) == Some(id))

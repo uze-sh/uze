@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn a_project_that_declares_nothing_is_not_an_error() {
-        let project = project("workspace:\n  delivery: handoff\n");
+        let project = project("workspace:\n  delivery: merge\n");
         assert_eq!(
             project_artifacts(project.path()),
             ProjectArtifacts::Undeclared

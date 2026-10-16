@@ -18,10 +18,10 @@ pub(super) fn is_unisolated(cwd: &Path) -> bool {
 /// way the header's other controls do, brighter under it and brightest
 /// while pressed.
 pub(super) fn sidebar_title(model: &WorkspaceModel) -> (Vec<Span<'static>>, (u16, u16)) {
-    let name_hue = match chip_state(model, Some(WorkspaceHit::ToggleRecent)) {
+    let name_hue = match chip_state(model, WorkspaceHit::ToggleRecent) {
         ChipState::Pressed => Token::TextBright,
         ChipState::Hovered => Token::TextPrimary,
-        ChipState::Resting | ChipState::Static => Token::TextMuted,
+        ChipState::Resting => Token::TextMuted,
     };
     let mut title = vec![
         Span::raw(" ".repeat(TRAILING_PAD as usize)),
@@ -148,9 +148,9 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         let new_hue = if model.root_picker.is_some() {
             Token::TextMuted
         } else {
-            match chip_state(model, Some(WorkspaceHit::NewSpace)) {
+            match chip_state(model, WorkspaceHit::NewSpace) {
                 ChipState::Hovered | ChipState::Pressed => Token::Accent,
-                ChipState::Resting | ChipState::Static => Token::AccentMuted,
+                ChipState::Resting => Token::AccentMuted,
             }
         };
         let new_width = Span::raw(new).width() as u16;
@@ -180,10 +180,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         // Never a button: only the mark's own colour answers the pointer
         // — muted at rest, beside a label of the same weight, brighter
         // under the hover and brightest while pressed.
-        let more_hue = match chip_state(model, Some(WorkspaceHit::OpenManage)) {
+        let more_hue = match chip_state(model, WorkspaceHit::OpenManage) {
             ChipState::Pressed => Token::TextBright,
             ChipState::Hovered => Token::TextPrimary,
-            ChipState::Resting | ChipState::Static => Token::TextMuted,
+            ChipState::Resting => Token::TextMuted,
         };
         frame.render_widget(
             Paragraph::new(Span::styled(more, theme::fg_bold(more_hue))),
@@ -1541,32 +1541,37 @@ pub(super) fn header_is_current(
 /// different things is what made the second column read as an echo of the
 /// first. It wears a mark of its own, `task.ready`, instead.
 /// [`render_status_catalog`] is this table's legend and must move with it.
-pub(in crate::ui::orchestrator) fn task_mark(state: &WorkStateView) -> Option<(String, Color)> {
+pub(in crate::ui::orchestrator) fn task_tone(state: &WorkStateView) -> Option<(Symbol, Token)> {
     let (symbol, hue) = match state {
         // Nothing to report, and for the same reason: a task that has not
         // committed yet and one whose agent left with nothing both hold
         // no work. `Closed` in particular must not wear `Integrated`'s
         // arrow — that arrow claims a delivery.
         WorkStateView::Running | WorkStateView::Closed => return None,
-        WorkStateView::Uncommitted => (Symbol::PlusMinus, theme::color(Token::StateInfo)),
-        WorkStateView::Ready => (Symbol::TaskReady, theme::color(Token::StateSuccess)),
+        WorkStateView::Uncommitted => (Symbol::PlusMinus, Token::StateInfo),
+        WorkStateView::Ready => (Symbol::TaskReady, Token::StateSuccess),
         // The one mark that points away from UZE, because the work does:
         // it is on the forge, and what happens to it next happens there.
-        // Muted for the same reason the button is — nothing is being asked
-        // of the operator — and deliberately not `Integrated`'s arrow,
+        // A quiet hue, because nothing is being asked of the operator, and
+        // deliberately not `Integrated`'s arrow,
         // which claims the work is in the target.
-        WorkStateView::Published => (Symbol::ArrowExternal, theme::color(Token::StatePublished)),
-        WorkStateView::Integrating => (Symbol::Ellipsis, theme::color(Token::StateInFlight)),
+        WorkStateView::Published => (Symbol::ArrowExternal, Token::StatePublished),
+        // In somebody else's hands: a request is open for it.
+        WorkStateView::InReview => (Symbol::TaskInReview, Token::StatePublished),
+        WorkStateView::Integrating => (Symbol::Ellipsis, Token::StateInFlight),
         // Split, where one warning mark used to cover both: a paused rebase
         // wants your hands in the slot, a failed gate wants the code fixed —
         // different work, and the sidebar was the one surface that never
         // said which (the strip's own button already did).
-        WorkStateView::Conflicted { .. } => {
-            (Symbol::MarkAttention, theme::color(Token::StateWarning))
-        }
-        WorkStateView::GateFailed => (Symbol::MarkCross, theme::color(Token::StateDanger)),
-        WorkStateView::Integrated => (Symbol::ArrowUp, theme::color(Token::StateLanded)),
-        WorkStateView::Shelved => (Symbol::Menu, theme::color(Token::TextMuted)),
+        WorkStateView::Conflicted { .. } => (Symbol::MarkAttention, Token::StateWarning),
+        WorkStateView::GateFailed => (Symbol::MarkCross, Token::StateDanger),
+        WorkStateView::Integrated => (Symbol::ArrowUp, Token::StateLanded),
+        WorkStateView::Shelved => (Symbol::Menu, Token::TextMuted),
     };
-    Some((theme::glyph(symbol), hue))
+    Some((symbol, hue))
+}
+
+/// [`task_tone`] as it is drawn: the glyph and its colour.
+pub(in crate::ui::orchestrator) fn task_mark(state: &WorkStateView) -> Option<(String, Color)> {
+    task_tone(state).map(|(symbol, hue)| (theme::glyph(symbol), theme::color(hue)))
 }

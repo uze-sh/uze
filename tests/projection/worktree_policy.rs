@@ -158,8 +158,12 @@ fn the_declared_completion_behavior_is_what_reaches_the_baseline() {
         .unwrap();
     let written = agents_md(&project);
 
-    assert!(written.contains(CompletionBehavior::Merge.instruction_clause()));
-    assert!(!written.contains(CompletionBehavior::Handoff.instruction_clause()));
+    assert!(
+        written.contains(CompletionBehavior::instruction_clause(Some(
+            CompletionBehavior::Merge
+        )))
+    );
+    assert!(!written.contains(CompletionBehavior::instruction_clause(None)));
     assert_eq!(
         application
             .workspace()
@@ -263,9 +267,13 @@ fn editing_the_declaration_replaces_its_region_rather_than_drifting() {
     assert!(region.blocked_superseded.is_empty());
 
     let written = agents_md(&project);
-    assert!(written.contains(CompletionBehavior::Merge.instruction_clause()));
     assert!(
-        !written.contains(CompletionBehavior::Handoff.instruction_clause()),
+        written.contains(CompletionBehavior::instruction_clause(Some(
+            CompletionBehavior::Merge
+        )))
+    );
+    assert!(
+        !written.contains(CompletionBehavior::instruction_clause(None)),
         "the superseded statement must not survive beside the new one"
     );
     assert_eq!(

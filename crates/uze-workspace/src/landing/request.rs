@@ -87,10 +87,10 @@ pub struct RequestObservation {
 /// branch, writing nothing.
 ///
 /// Called on the evaluation pass rather than only from [`publish`],
-/// because the request is not always UZE's doing: an agent told to push
-/// and open the request itself leaves a forge that UZE would otherwise
-/// never learn about, and the button would go on offering to publish a
-/// branch that already has a request open. Gated three ways so the round
+/// because the request is never UZE's doing: whoever opens it, UZE learns
+/// about it only from the forge, and published work would go on reading
+/// as published, not in review, for the whole life of the request. Gated
+/// three ways so the round
 /// trip stays rare — a published branch, no number yet, and at most one
 /// question per [`REQUEST_INTERVAL`] — and it stops for good the moment
 /// it is answered.

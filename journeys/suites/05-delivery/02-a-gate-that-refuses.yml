@@ -23,6 +23,8 @@ world:
       gate:
         - posix: test ! -f src/ping.rs
           windows: if (Test-Path src/ping.rs) { exit 1 }
+      actions:
+        on_fail: The checks failed on your branch after it was rebased onto main. Fix them and commit.
 
 scenes:
   - scene: an agent whose work the project's checks will reject
@@ -74,12 +76,11 @@ scenes:
 
   - scene: delivery runs the checks, they refuse, and nothing lands
     when:
-      - click: "→ main"
-        say: press deliver
-        in: strip
-        # The gate carries weight because it is exact: the failure is
-        # reported back into the agent's own pane, naming the command that
-        # refused. A looser pattern here would pass on any `✕` anywhere.
+      - key: "M-i"
+        say: press the deliver key
+        # The gate carries weight because it is exact: the project's
+        # `on_fail` instruction is typed into the agent's own pane when the
+        # checks refuse. A looser pattern would pass on any `✕` anywhere.
         expect: "checks failed on your branch after it was rebased onto main"
         expect_timeout: 90
         pause: 3.0
@@ -88,8 +89,8 @@ scenes:
         in: strip
         timeout: 30
         say: |
-          and the button is still the next thing to do, wearing the mark
-          of what the checks said rather than becoming a dead end
+          and the status wears the mark of what the checks said, with the
+          work still on the agent's branch to fix
     then:
       - cmd:
           run: "git -C {project} log --oneline -1"

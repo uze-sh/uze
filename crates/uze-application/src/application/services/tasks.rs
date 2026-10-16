@@ -8,7 +8,7 @@
 //! became a file.
 
 use std::cell::OnceCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use uze_core::{Result, UzeError, UzeHome, anchor, integration::IntegrationPort, manifest};
@@ -16,7 +16,8 @@ use uze_core::{Result, UzeError, UzeHome, anchor, integration::IntegrationPort, 
 use uze_workspace::{
     checkout, client_layout,
     conversation::{self, Claim},
-    landing::{self, Delivered, DeliveryFailure, Forge, Readiness},
+    declaration::{self, ActionState},
+    landing::{self, Delivered, DeliveryFailure, Readiness},
     prompt_history,
     task::{self, Agent, AgentId, AgentStore, Base, Isolation, WorkState},
     worktree::{self, BranchVocabulary, CompletionBehavior, NameRefusal, WorktreePolicy},
@@ -231,7 +232,19 @@ impl Workspace<'_> {
 struct Repository {
     primary: PathBuf,
     policy: WorktreePolicy,
+    instructions: Instructions,
     store: AgentStore,
+}
+
+/// What the project asks an agent at each state it declares one for.
+pub(super) type Instructions = BTreeMap<ActionState, String>;
+
+/// The instructions `primary` declares. A manifest that cannot be read
+/// declares none here: the policy beside them is what reports it.
+pub(super) fn instructions_of(primary: &Path) -> Instructions {
+    declaration::actions(primary)
+        .map(|declared| declared.instructions)
+        .unwrap_or_default()
 }
 
 impl Repository {
@@ -244,6 +257,7 @@ impl Repository {
             &self.primary,
             &self.store,
             self.policy.completion,
+            &self.instructions,
             &self.target(),
         )
     }
@@ -356,19 +370,10 @@ fn task_mut<'a>(store: &'a mut AgentStore, id: &str) -> Option<&'a mut Agent> {
 fn task_views(
     primary: &Path,
     store: &AgentStore,
-    completion: CompletionBehavior,
+    completion: Option<CompletionBehavior>,
+    instructions: &Instructions,
     target: &str,
 ) -> Vec<AgentView> {
-    // A property of the repository, not of a row: asked once here rather
-    // than once per agent, since every task of one project reaches the
-    // same remote. Only where the completion publishes — the word this
-    // buys is a word for a request, and a project that opens none has no
-    // use for it.
-    let forge = if completion == CompletionBehavior::Pr {
-        landing::forge(primary)
-    } else {
-        Forge::default()
-    };
     // Every recorded agent is drawn, closed ones included, on every pass:
     // one read of the refs answers what each would have asked Git apart.
     let tips = checkout::BranchTips::read(primary);
@@ -376,7 +381,17 @@ fn task_views(
     store
         .agents
         .iter()
-        .map(|agent| AgentView::from_agent(primary, &tips, &root, agent, completion, target, forge))
+        .map(|agent| {
+            AgentView::from_agent(
+                primary,
+                &tips,
+                &root,
+                agent,
+                completion,
+                instructions,
+                target,
+            )
+        })
         .collect()
 }
 

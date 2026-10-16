@@ -7,12 +7,11 @@ pub mod bootstrap;
 
 pub use application::UzeApplication;
 pub use application::services::{
-    AgentIdentity, AgentNotice, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
-    CheckoutsView, CommandsAwaitingApproval, DeclaredDirectory, DeliveryOutcome,
-    DeliveryPolicyView, DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement,
-    PlacementKind, PreservedWork, ProjectArtifacts, Reconciliation, ReleasedTask, ShownCommand,
-    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
-    project_artifacts,
+    AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView, CheckoutsView,
+    CommandsAwaitingApproval, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
+    DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork,
+    ProjectArtifacts, Reconciliation, ReleasedTask, ShownCommand, SplitWork, SubagentCheckout,
+    TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these
@@ -83,7 +82,7 @@ pub use uze_workspace::{
         ClientLayout, FirstStepsLayout, ManagementLayout, SidebarLayout, WorkspaceLayout,
     },
     conversation::Claim,
-    landing::Forge,
+    declaration::ActionState,
     notifications::{Chime, WrittenChime},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},

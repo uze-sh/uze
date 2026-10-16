@@ -38,8 +38,8 @@ impl Workspace<'_> {
             &RootStanding::default(),
             store.agent(id)?,
             policy.completion,
+            &instructions_of(primary),
             &target,
-            landing::forge(primary),
         ))
     }
 
@@ -75,6 +75,7 @@ impl Workspace<'_> {
         let policy = self.policy(&primary).map_err(|error| error.to_string())?;
         let store = task::load(&self.0.home, &primary).map_err(|error| error.to_string())?;
         Ok(Some(Repository {
+            instructions: instructions_of(&primary),
             primary,
             policy,
             store,
@@ -180,7 +181,8 @@ impl Workspace<'_> {
     }
 
     /// Declares the completion behavior for the repository `cwd` belongs
-    /// to, creating `agents.yaml` when the project has none. Reports
+    /// to, or takes it back with `None`, creating `agents.yaml` when the
+    /// project has none. Reports
     /// whether it created it, so the caller can say which of the two
     /// things just happened.
     ///
@@ -188,7 +190,7 @@ impl Workspace<'_> {
     /// declaring one of its own would be a per-worktree policy, which
     /// there is deliberately none of.
     #[tracing::instrument(name = "workspace.set_completion", skip_all, fields(cwd = %cwd.display()), err)]
-    pub fn set_completion(&self, cwd: &Path, behavior: CompletionBehavior) -> Result<bool> {
+    pub fn set_completion(&self, cwd: &Path, behavior: Option<CompletionBehavior>) -> Result<bool> {
         // `MissingPath` is what resolving a project root already answers
         // with when there is nothing to resolve; a policy is a repository's,
         // and outside one there is no primary checkout to declare it in.
@@ -203,7 +205,10 @@ impl Workspace<'_> {
     pub fn delivery_policy(&self, cwd: &Path) -> Option<DeliveryPolicyView> {
         let repository = self.repository(cwd)?;
         Some(DeliveryPolicyView {
-            completion: repository.policy.completion.abi_name(),
+            completion: repository
+                .policy
+                .completion
+                .map(CompletionBehavior::abi_name),
             target: declared_target(&repository.primary, &repository.policy),
             gate: repository
                 .policy

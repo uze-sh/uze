@@ -15,6 +15,52 @@ impl Attach<'_> {
         let _ = send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
     }
 
+    /// Sends the instruction the project declares for the state `task` is
+    /// in to its agent, as one submission — on a click when `automatic` is
+    /// false, and when an operation of UZE's left the work there when it is
+    /// true. Never queued: a pane that may not take it now refuses with
+    /// the reason, and the status's click is how to send it later.
+    pub(super) fn send_instruction(&mut self, task: &AgentView, automatic: bool) {
+        /// How much of the instruction a toast quotes back.
+        const QUOTED: usize = 32;
+
+        let Some(instruction) = task.action.clone() else {
+            return;
+        };
+        let Some(pane) = self.model.pane_for_agent(&task.id) else {
+            if !automatic {
+                self.model.raise_toast(
+                    ToastKind::Told,
+                    "agent is not open",
+                    task.label.clone(),
+                    None,
+                );
+            }
+            return;
+        };
+        let submission = self.model.may_submit(pane);
+        match submission.refusal(&task.label) {
+            None => {
+                self.submit_notice(pane, &instruction);
+                self.model
+                    .note_agent_prompt_submission(pane, &self.identities, None);
+                self.model.raise_toast(
+                    ToastKind::Done,
+                    "sent to agent",
+                    crate::ui::widget::text::elide(&instruction, QUOTED),
+                    None,
+                );
+            }
+            Some((reason, _)) if automatic => {
+                self.model
+                    .raise_toast(ToastKind::Told, "held back", reason.to_owned(), None);
+            }
+            Some((title, detail)) => {
+                self.model.raise_toast(ToastKind::Told, title, detail, None);
+            }
+        }
+    }
+
     /// What the task evaluations answered: branches, targets, syncs and
     /// the tasks themselves, and any evaluation asked for again while
     /// one was out.
@@ -72,7 +118,7 @@ impl Attach<'_> {
             // A store that could not be read is not a repository without
             // tasks, and must never be drawn as one: replacing what the
             // client already knew with an empty list takes every agent's
-            // branch, mark and delivery button away and puts nothing in
+            // branch, mark and status away and puts nothing in
             // their place. The last good answer stands, and the reason is
             // said instead.
             if let Some(reason) = evaluation.unreadable {
@@ -92,17 +138,41 @@ impl Attach<'_> {
                     None,
                 );
             }
+            // Said once for each new set of reasons, not on every pass:
+            // the manifest is read again each time, and an unchanged typo
+            // is not news.
+            if evaluation.ignored_actions.is_empty() {
+                self.model.remembered.ignored_actions.remove(&primary);
+            } else if self.model.remembered.ignored_actions.get(&primary)
+                != Some(&evaluation.ignored_actions)
+            {
+                if let Some(first) = evaluation.ignored_actions.first() {
+                    self.model.raise_toast(
+                        ToastKind::Warned,
+                        "actions left out",
+                        first.clone(),
+                        None,
+                    );
+                }
+                self.model
+                    .remembered
+                    .ignored_actions
+                    .insert(primary.clone(), evaluation.ignored_actions);
+            }
+            let arrived: Vec<AgentView> = evaluation
+                .tasks
+                .iter()
+                .filter(|task| evaluation.arrived.contains(&task.id))
+                .cloned()
+                .collect();
             self.model
                 .remembered
                 .tasks
                 .insert(primary, evaluation.tasks);
-            // A conflict found while a clean task followed the target is
-            // the agent's to resolve: the message goes into its pane, as
-            // one submission.
-            for notice in evaluation.notices {
-                if let Some(pane) = self.model.pane_for_agent(&notice.task) {
-                    self.submit_notice(pane, &notice.message);
-                }
+            // A rebase this pass ran stopped on a conflict: the project's
+            // instruction for it goes to the agent.
+            for task in &arrived {
+                self.send_instruction(task, true);
             }
             self.model.dirty = true;
         }
@@ -138,11 +208,13 @@ impl Attach<'_> {
                     continue;
                 }
                 let kind = match &report.outcome {
-                    // Refused is the gate saying no, and returned is the
-                    // work coming back for the agent to answer: neither is
-                    // a delivery, and both need the reader.
+                    // Refused is the gate saying no, and a conflict or a
+                    // failed check is work that came back: neither is a
+                    // delivery, and both need the reader.
                     DeliveryOutcome::Refused { .. } => ToastKind::Failed,
-                    DeliveryOutcome::ReturnedToAgent(_) => ToastKind::Warned,
+                    DeliveryOutcome::Conflicted { .. } | DeliveryOutcome::Failed { .. } => {
+                        ToastKind::Warned
+                    }
                     _ => ToastKind::Done,
                 };
                 self.model.raise_toast(
@@ -151,15 +223,16 @@ impl Attach<'_> {
                     report.task.label.clone(),
                     None,
                 );
-                // Two endings are the owning agent's to act on — a
-                // delivery that came back to it, and a published branch
-                // whose request is still unopened — and both reach it the
-                // same way: one submission into its pane.
-                if let DeliveryOutcome::ReturnedToAgent(notice)
-                | DeliveryOutcome::AwaitingRequest(notice) = &report.outcome
-                    && let Some(pane) = self.model.pane_for_agent(&notice.task)
-                {
-                    self.submit_notice(pane, &notice.message);
+                // An operation of UZE's left the work in a new state, so
+                // the project's instruction for it goes to the agent.
+                if matches!(
+                    report.outcome,
+                    DeliveryOutcome::Merged
+                        | DeliveryOutcome::Published { .. }
+                        | DeliveryOutcome::Conflicted { .. }
+                        | DeliveryOutcome::Failed { .. }
+                ) {
+                    self.send_instruction(&report.task, true);
                 }
             }
             if resolution.reports.is_empty() {

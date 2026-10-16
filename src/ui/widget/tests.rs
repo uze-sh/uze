@@ -261,11 +261,40 @@ fn a_pressed_chip_inverts_and_the_others_keep_their_hue() {
         ChipState::Pressed.skin(hue),
         (theme::color(Token::SurfaceBackground), hue)
     );
-    assert_eq!(
-        ChipState::Static.skin(hue).1,
-        theme::color(Token::SurfaceRecessed),
-        "not a control: recessed, so the shape never promises a press"
-    );
+}
+
+/// A status wears no ground in any state, and only an action answers the
+/// pointer: a report is the state's muted hue at regular weight, an action
+/// its full hue in bold, lifted under the pointer.
+#[test]
+fn a_status_says_by_weight_and_hue_whether_a_click_answers_it() {
+    use super::{Status, StatusKind};
+    use ratatui::style::Modifier;
+    let style = |kind| {
+        Status::new(
+            "#41 ◉",
+            Token::StatePublished,
+            Token::StatePublishedMuted,
+            kind,
+        )
+        .style()
+    };
+
+    let report = style(StatusKind::Report);
+    assert_eq!(report.fg, Some(theme::color(Token::StatePublishedMuted)));
+    assert!(!report.add_modifier.contains(Modifier::BOLD));
+
+    let resting = style(StatusKind::Action { hovered: false });
+    assert_eq!(resting.fg, Some(theme::color(Token::StatePublished)));
+    assert!(resting.add_modifier.contains(Modifier::BOLD));
+
+    let hovered = style(StatusKind::Action { hovered: true });
+    assert_eq!(hovered.fg, Some(theme::lifted(Token::StatePublished)));
+    assert!(hovered.add_modifier.contains(Modifier::BOLD));
+
+    for style in [report, resting, hovered] {
+        assert_eq!(style.bg, None, "no ground of its own");
+    }
 }
 
 /// A chip's padding is part of the control — filled, hovered and clicked

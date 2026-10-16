@@ -6,11 +6,10 @@ use super::*;
 /// open for it.
 ///
 /// The push is all UZE does here. Opening the request is deliberately not
-/// automated: a title and a description are the change's argument, and
-/// the agent that wrote the change is the only party holding it — a
-/// generated one-liner is a worse request than none. It is also the only
-/// half that is not portable, since every forge opens a request its own
-/// way, while a push is a push.
+/// UZE's: a title and a description are the change's argument, and the
+/// agent that wrote the change is the only party holding it — a generated
+/// one-liner is a worse request than none. Whether the agent is asked to
+/// open one at all is the project's instruction for a published branch.
 pub(super) fn publish(
     primary: &Path,
     isolation: &mut Isolation,
@@ -72,16 +71,10 @@ pub(super) fn publish(
             discover_request(primary, &checkout::tip_of(primary, &isolation.branch));
         isolation.request_branch = isolation.published_request.map(|_| name.clone());
     }
-    match isolation.published_request {
-        Some(request) => Ok(Delivered::Published {
-            branch: name,
-            request,
-        }),
-        None => Ok(Delivered::AwaitingRequest {
-            instruction: open_request_message(forge(primary), isolation, &name),
-            branch: name,
-        }),
-    }
+    Ok(Delivered::Published {
+        branch: name,
+        request: isolation.published_request,
+    })
 }
 
 /// The number of the request open for the published branch, asked of the
@@ -129,28 +122,6 @@ pub(super) fn discover_request(primary: &Path, tip: &str) -> Option<u32> {
         // the one being worked on; taking the smaller would pin the task
         // to a request somebody already superseded.
         .max()
-}
-
-/// The message written into the owning agent's pane when its branch is
-/// published and the request is still its to open.
-///
-/// Names the forge's own word once the remote has said which forge this
-/// is, and names both when it has not — the projects that reach a forge
-/// this cannot recognize are the reason the second half still exists.
-/// Names no tool either way: the agent is in the repository and knows
-/// which one this is.
-pub(super) fn open_request_message(forge: Forge, isolation: &Isolation, branch: &str) -> String {
-    let request = match forge.request_term() {
-        Some(term) => format!("a {term}"),
-        None => "a pull request — a merge request, on a forge that calls it that —".to_owned(),
-    };
-    format!(
-        "Your branch is published as `{branch}` on `{REMOTE}`, rebased onto `{target}` and past \
-         the project's checks. Open {request} from `{branch}` against `{target}`, naming and \
-         describing it by this project's own convention. Do not merge it and do not integrate \
-         the branch yourself: open the request and end your turn.",
-        target = isolation.target,
-    )
 }
 
 /// Files changed on `branch` since `tip` that the primary checkout has

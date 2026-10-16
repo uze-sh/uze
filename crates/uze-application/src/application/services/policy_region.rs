@@ -32,7 +32,7 @@ pub struct PolicyRegionView {
     /// The primary checkout whose `AGENTS.md` carries the region.
     pub primary: PathBuf,
     /// The declared completion behavior, or `None` when the project
-    /// declares no policy.
+    /// declares no policy or no delivery in it.
     pub completion: Option<CompletionBehavior>,
     /// Whether the file carries exactly what the declaration renders.
     pub in_step: bool,
@@ -122,7 +122,7 @@ impl Workspace<'_> {
     pub fn policy_region(&self, cwd: &Path) -> Option<PolicyRegionView> {
         let primary = worktree::primary_checkout(cwd)?;
         let declared = declaration::declared(&primary).ok()?;
-        let completion = declared.as_ref().map(|policy| policy.completion);
+        let completion = declared.as_ref().and_then(|policy| policy.completion);
         let policy = declared.unwrap_or_default();
         let desired = Some((policy.region_identity(), policy.instructions()));
         let agents_md = primary.join(AGENTS_MD_FILE_NAME);

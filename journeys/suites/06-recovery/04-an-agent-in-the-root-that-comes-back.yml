@@ -21,7 +21,6 @@ world:
   manifest: |
     workspace:
       target: main
-      delivery: handoff
 
 scenes:
   - scene: an agent placed through UZE's own launcher names the conversation it starts

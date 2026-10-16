@@ -34,8 +34,11 @@
     "state.danger-muted": "@state.danger/c0",
     "state.info": "#7d97c9",
     "state.in-flight": "#7dbec2",
+    "state.in-flight-muted": "@state.in-flight/c0",
     "state.landed": "#a38fc9",
+    "state.landed-muted": "@state.landed/c0",
     "state.published": "#8a94a6",
+    "state.published-muted": "@state.published/c0",
     "state.diff-added": "@state.success/1a",
     "state.diff-removed": "@state.danger/1a",
 
@@ -91,6 +94,7 @@
     "file.legal": "",
 
     "task.ready": "⇧",
+    "task.review": "◉",
 
     "status.working": ["·", "∙", "+", "∗", "+", "∙"],
     "status.completed": "✓",

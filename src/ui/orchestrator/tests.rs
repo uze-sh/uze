@@ -41,14 +41,14 @@ mod workspace_tests {
         AGENT_BEAT_SPAN, AGENT_BEATS, AGENT_ECHO_GRACE, AGENT_PASTE_GRACE, AGENT_QUIET_AFTER,
         AgentGroup, AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach,
         CHIME_COOLDOWN, CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution,
-        CompletionBehavior, DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer,
-        GitBadge, GitResolution, PendingDrop, PlacementResolution, PromptScope, RootPicker,
-        ScrollDirection, SpecResolution, SpecSummaryState, SupportResolution, TabDragGroup,
-        UnspelledGates, UpstreamSync, Viewport, WorkResolution, WorkStateView, WorkspaceModel,
-        adopt_agent_labels, agent_activity_frame, agent_identity_for_tab, answered_or, blank_pane,
-        can_close_tab_from_menu, checkout_lost, encode_mouse, evaluation_key, forward_paste,
-        forward_scroll, next_agent_label, next_shell_label, open_architect, open_code,
-        open_commit_detail, open_spec, pane_relative, pending_tab_drop,
+        DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
+        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
+        SpecSummaryState, SupportResolution, TabDragGroup, UnspelledGates, UpstreamSync, Viewport,
+        WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
+        agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
+        encode_mouse, evaluation_key, forward_paste, forward_scroll, next_agent_label,
+        next_shell_label, open_architect, open_code, open_commit_detail, open_spec, pane_relative,
+        pending_tab_drop,
         render::{
             self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
@@ -65,7 +65,7 @@ mod workspace_tests {
     use ratatui::{Terminal, backend::TestBackend};
     use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
-    use uze_application::Forge;
+    use uze_application::CompletionBehavior;
     use uze_core::UzeHome;
     use uze_extensions::view::ViewHit;
     use uze_terminal::{
@@ -227,13 +227,13 @@ mod workspace_tests {
             target: "main".into(),
             checkout: Some(PathBuf::from(checkout)),
             state,
-            completion: CompletionBehavior::Merge,
+            action: None,
+            completion: Some(CompletionBehavior::Merge),
             isolated: true,
             parent: None,
             ahead,
             published_as: None,
             published_request: None,
-            forge: Forge::Unknown,
             unsynced: None,
             created_at_unix: 1,
         }
@@ -2431,7 +2431,7 @@ mod workspace_tests {
     }
 
     #[test]
-    fn a_ready_task_names_its_row_marks_it_and_offers_delivery() {
+    fn a_ready_task_names_its_row_and_marks_it() {
         let model = agent_with_task(WorkStateView::Ready, 3);
         let rows = sidebar(&model, &identities_fixture()).rows;
         let name_row = rows
@@ -2452,53 +2452,91 @@ mod workspace_tests {
         assert!(rows.iter().any(|row| row.contains("→ main ↑3")), "{rows:?}");
         assert!(
             hits.iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
-            "the button is a hit"
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusReport(_))),
+            "with no instruction declared it is a report"
+        );
+        assert!(
+            !hits
+                .iter()
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "and nothing answers a click on it"
         );
     }
 
-    /// A control that looks identical idle, pointed at and pressed is one
-    /// the operator presses twice. Every header button is drawn as a
-    /// filled chip that lifts under the pointer and inverts while the
-    /// press flash lasts — the press's own answer, given where the finger
-    /// is rather than wherever the work will show up.
+    /// The work's own model, with `instruction` declared for every state.
+    fn answered(mut model: WorkspaceModel, instruction: &str) -> WorkspaceModel {
+        for task in model.remembered.tasks.values_mut().flatten() {
+            task.action = Some(instruction.to_owned());
+        }
+        model
+    }
+
+    /// The label cell's foreground, its background, and whether it is bold.
+    fn status_cell(model: &WorkspaceModel, rect: Rect) -> (Color, Color, bool) {
+        let mut terminal = Terminal::new(TestBackend::new(80, 3)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_tab_strip(
+                    frame,
+                    frame.area(),
+                    model,
+                    &identities_fixture(),
+                    LeadingSlot::AgentTabs,
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let cell = &buffer[(rect.x + 1, rect.y)];
+        (
+            cell.fg,
+            cell.bg,
+            cell.modifier.contains(ratatui::style::Modifier::BOLD),
+        )
+    }
+
+    /// What a click answers and what it does not read apart at rest, by
+    /// weight and hue, and neither stands on a ground of its own: told
+    /// apart by the shade of a fill, the two read alike in a terminal.
     #[test]
-    fn a_header_button_answers_the_pointer_and_the_press() {
-        let mut model = agent_with_task(WorkStateView::Ready, 3);
-        let deliver = WorkspaceHit::Deliver(model.selected_tab().expect("a selected tab"));
-        let rect = hit_rect(&model, deliver);
-        assert!(
-            rect.width > 4,
-            "the chip is padded around its label: {rect:?}"
+    fn a_status_a_click_answers_is_bold_and_lifts_and_a_report_never_reacts() {
+        let mut action = answered(
+            agent_with_task(WorkStateView::Ready, 3),
+            "Review your diff.",
+        );
+        let tab = action.selected_tab().expect("a selected tab");
+        let rect = hit_rect(&action, WorkspaceHit::StatusAction(tab));
+        let (fg, bg, bold) = status_cell(&action, rect);
+        assert_eq!(
+            fg,
+            theme::color(Token::StateSuccess),
+            "the state's full hue"
+        );
+        assert!(bold, "and the only bold status");
+        for ground in [
+            Token::SurfaceRaised,
+            Token::SurfaceHover,
+            Token::SurfaceRecessed,
+        ] {
+            assert_ne!(bg, theme::color(ground), "no ground of its own");
+        }
+        action.hovered = Some(WorkspaceHit::StatusAction(tab));
+        assert_eq!(
+            status_cell(&action, rect).0,
+            theme::lifted(Token::StateSuccess),
+            "under the pointer it lifts, keeping its hue"
         );
 
+        let mut report = agent_with_task(WorkStateView::Ready, 3);
+        let rect = hit_rect(&report, WorkspaceHit::StatusReport(tab));
+        let at_rest = status_cell(&report, rect);
+        assert_eq!(at_rest.0, theme::color(Token::StateSuccessMuted));
+        assert!(!at_rest.2, "a report is not bold");
+        report.hovered = Some(WorkspaceHit::StatusReport(tab));
         assert_eq!(
-            chip_colors(&model, rect),
-            (
-                theme::color(Token::StateSuccess),
-                theme::color(Token::SurfaceRaised)
-            ),
-            "at rest: the ready state's hue, raised off the strip"
-        );
-
-        model.hovered = Some(deliver);
-        assert_eq!(
-            chip_colors(&model, rect),
-            (
-                theme::color(Token::StateSuccess),
-                theme::color(Token::SurfaceHover)
-            ),
-            "under the pointer: one step brighter, and only this control"
-        );
-
-        model.pressed = Some((deliver, Instant::now()));
-        assert_eq!(
-            chip_colors(&model, rect),
-            (
-                theme::color(Token::SurfaceBackground),
-                theme::color(Token::StateSuccess)
-            ),
-            "pressed: the hue becomes the button"
+            status_cell(&report, rect),
+            at_rest,
+            "and nothing about it moves under the pointer"
         );
     }
 
@@ -2518,8 +2556,8 @@ mod workspace_tests {
         assert!(
             !hits
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
-            "a delivery in flight is not pressed again"
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "a delivery in flight answers no click"
         );
 
         let spinner = agent_activity_frame(model.tick);
@@ -2540,83 +2578,39 @@ mod workspace_tests {
                 );
             })
             .unwrap();
-        assert_eq!(
-            terminal.backend().buffer()[(column, 0)].bg,
+        let cell = &terminal.backend().buffer()[(column, 0)];
+        assert_eq!(cell.fg, theme::color(Token::StateInFlightMuted));
+        assert_ne!(
+            cell.bg,
             theme::color(Token::SurfaceRecessed),
-            "recessed, not raised"
+            "a report wears no ground of its own"
         );
     }
 
-    /// The button says what pressing it does. One verb over three
-    /// completions read the same whether it was about to fast-forward the
-    /// target under you, open a pull request against it, or touch nothing
-    /// outside the branch.
+    /// Where the work goes is the subject, whatever the project's
+    /// delivery: a request is a fact of the remote, and until there is
+    /// one the work is headed for the target.
     #[test]
-    fn the_delivery_button_names_the_ending_the_project_asked_for() {
-        let ending = |completion| {
+    fn the_chip_names_where_the_work_goes_whatever_the_delivery() {
+        let strip = |completion, request| {
             let mut model = agent_with_task(WorkStateView::Ready, 3);
             for task in model.remembered.tasks.values_mut().flatten() {
                 task.completion = completion;
-            }
-            let (rows, _) = tab_strip(&model);
-            rows.join("\n")
-        };
-
-        assert!(
-            ending(CompletionBehavior::Merge).contains("→ main ↑3"),
-            "{}",
-            ending(CompletionBehavior::Merge)
-        );
-        // A remote that did not say which forge it is leaves "#", the
-        // idiom both of them write — naming one would be picking a
-        // vendor's word for the other's thing.
-        assert!(
-            ending(CompletionBehavior::Pr).contains("# ↑3"),
-            "{}",
-            ending(CompletionBehavior::Pr)
-        );
-        assert!(
-            ending(CompletionBehavior::Handoff).contains("hand off ↑3"),
-            "a completion that writes to nothing names no target: {}",
-            ending(CompletionBehavior::Handoff)
-        );
-    }
-
-    /// The forge's word stands in for the number until there is one, and
-    /// steps aside the moment there is: `#41` says what it is about
-    /// without help, and a word in front of it would be length spent on
-    /// nothing.
-    #[test]
-    fn a_known_forge_names_a_request_that_has_no_number_yet() {
-        let strip = |forge, request| {
-            let mut model = agent_with_task(WorkStateView::Ready, 3);
-            for task in model.remembered.tasks.values_mut().flatten() {
-                task.completion = CompletionBehavior::Pr;
-                task.forge = forge;
                 task.published_request = request;
             }
             let (rows, _) = tab_strip(&model);
             rows.join("\n")
         };
 
-        assert!(
-            strip(Forge::GitHub, None).contains("PR ↑3"),
-            "{}",
-            strip(Forge::GitHub, None)
-        );
-        assert!(
-            strip(Forge::GitLab, None).contains("MR ↑3"),
-            "{}",
-            strip(Forge::GitLab, None)
-        );
-        assert!(
-            strip(Forge::Unknown, None).contains("# ↑3"),
-            "an unrecognized remote claims neither name: {}",
-            strip(Forge::Unknown, None)
-        );
-        for forge in [Forge::GitHub, Forge::GitLab, Forge::Unknown] {
-            let drawn = strip(forge, Some(41));
-            assert!(drawn.contains("#41"), "{drawn}");
+        for completion in [
+            None,
+            Some(CompletionBehavior::Merge),
+            Some(CompletionBehavior::Push),
+        ] {
+            let drawn = strip(completion, None);
+            assert!(drawn.contains("→ main ↑3"), "{completion:?}: {drawn}");
+            let drawn = strip(completion, Some(41));
+            assert!(drawn.contains("#41"), "{completion:?}: {drawn}");
             assert!(
                 !drawn.contains("PR") && !drawn.contains("MR"),
                 "a number needs no word in front of it: {drawn}"
@@ -2657,11 +2651,11 @@ mod workspace_tests {
     fn a_published_request_turns_the_delivery_button_into_a_sync() {
         let mut model = agent_with_task(WorkStateView::Ready, 4);
         for task in model.remembered.tasks.values_mut().flatten() {
-            task.completion = CompletionBehavior::Pr;
+            task.completion = Some(CompletionBehavior::Push);
         }
         let (before, _) = tab_strip(&model);
         let before = before.join("\n");
-        assert!(before.contains("# ↑4"), "{before}");
+        assert!(before.contains("→ main ↑4"), "{before}");
         assert!(
             !before.contains(&crate::ui::theme::glyph(
                 crate::ui::theme::Symbol::TaskReady
@@ -2676,8 +2670,8 @@ mod workspace_tests {
         let after = after.join("\n");
         assert!(after.contains("#11 ↑4"), "{after}");
         assert!(
-            !after.contains("# ↑4"),
-            "a request that exists is named by its number, not by the placeholder: {after}"
+            !after.contains("→ main ↑4"),
+            "a request that exists is named by its number, not by the target: {after}"
         );
     }
 
@@ -2689,7 +2683,7 @@ mod workspace_tests {
     fn a_branch_level_with_its_request_reports_the_sync_instead_of_a_count() {
         let mut model = agent_with_task(WorkStateView::Published, 6);
         for task in model.remembered.tasks.values_mut().flatten() {
-            task.completion = CompletionBehavior::Pr;
+            task.completion = Some(CompletionBehavior::Push);
             task.published_as = Some("fix-auth-redirect".into());
             task.published_request = Some(20);
             task.unsynced = Some(0);
@@ -2702,9 +2696,10 @@ mod workspace_tests {
             "the target is still six commits away, and that is not this button's question: {synced}"
         );
         assert!(
-            hits.iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
-            "a synced branch still follows a target that moves"
+            !hits
+                .iter()
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "with no instruction declared, nothing answers a click"
         );
 
         // Two commits later the button counts those two, not the six the
@@ -2727,7 +2722,7 @@ mod workspace_tests {
     fn a_published_task_is_marked_as_gone_not_as_waiting_to_be_delivered() {
         let mut model = agent_with_task(WorkStateView::Published, 6);
         for task in model.remembered.tasks.values_mut().flatten() {
-            task.completion = CompletionBehavior::Pr;
+            task.completion = Some(CompletionBehavior::Push);
             task.published_request = Some(20);
             task.unsynced = Some(0);
         }
@@ -2781,8 +2776,8 @@ mod workspace_tests {
         assert!(
             !hits
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
-            "and it cannot be pressed again while it runs"
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "and nothing answers a click while it runs"
         );
     }
 
@@ -3045,38 +3040,308 @@ mod workspace_tests {
         assert!(said.contains("disconnected"), "it says why it left: {said}");
     }
 
-    /// The press is answered where the state lives, and nowhere else. The
-    /// button and the mark read `delivery_pending`, so a notice announcing
-    /// the same delivery put the word on the header twice — once beside
-    /// the button, once *as* the button — which is the two-sources shape
-    /// this state was folded into `drawn_state` to remove.
+    /// The strip at `width` columns, as rows and hits.
+    fn tab_strip_at(
+        model: &WorkspaceModel,
+        width: u16,
+    ) -> (Vec<String>, Vec<(Rect, WorkspaceHit)>) {
+        let mut terminal = Terminal::new(TestBackend::new(width, 3)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render_tab_strip(
+                    frame,
+                    frame.area(),
+                    model,
+                    &identities_fixture(),
+                    LeadingSlot::AgentTabs,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let rows = (0..buffer.area.height)
+            .map(|row| {
+                (0..buffer.area.width)
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect()
+            })
+            .collect();
+        (rows, hits)
+    }
+
+    /// Under the pointer an answered status says what it will send — the
+    /// start of it, cut with an ellipsis — where the notice stands, and
+    /// nothing the operator can press moves to make room.
     #[test]
-    fn pressing_deliver_says_it_once_and_leaves_no_message_behind() {
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-deliver-once"));
-        let mut driven = driven(agent_with_task(WorkStateView::Ready, 3), &home);
-        let deliver =
-            WorkspaceHit::Deliver(driven.attach.model.selected_tab().expect("a selected tab"));
-        let rect = hit_rect(&driven.attach.model, deliver);
+    fn hovering_an_answered_status_says_the_start_of_what_it_sends() {
+        let instruction = "Open a pull request for this branch against main, then end your turn.";
+        let mut model = answered(agent_with_task(WorkStateView::Ready, 3), instruction);
+        let tab = model.selected_tab().expect("a selected tab");
+        let (_, before) = tab_strip(&model);
+        model.hovered = Some(WorkspaceHit::StatusAction(tab));
+        let (rows, after) = tab_strip(&model);
+        let strip = rows.join("\n");
+        assert!(strip.contains("Open a pull request"), "{strip}");
+        assert!(strip.contains('…'), "cut, not wrapped: {strip}");
+        assert!(!strip.contains("end your turn"), "{strip}");
+        assert_eq!(before, after, "no control moves for the hint");
+    }
+
+    /// Ready work no instruction answers is a report, and the one thing
+    /// the pointer resting on it is told is the key that delivers it.
+    #[test]
+    fn hovering_ready_work_with_no_instruction_names_the_deliver_key() {
+        let mut model = agent_with_task(WorkStateView::Ready, 3);
+        let tab = model.selected_tab().expect("a selected tab");
+        model.hovered = Some(WorkspaceHit::StatusReport(tab));
+        let chord = uze_keys::active()
+            .chord_for(uze_keys::Action::DeliverTask, &[uze_keys::Scope::Workspace])
+            .expect("delivery is bound");
+        let (rows, _) = tab_strip(&model);
+        assert!(
+            rows.join("\n").contains(&format!("deliver {chord}")),
+            "{rows:?}"
+        );
+    }
+
+    /// A strip with no room for the hint drops it whole: nothing is drawn
+    /// in its place, and the controls stay where they were.
+    #[test]
+    fn a_narrow_strip_drops_the_hint() {
+        let instruction = "Open a pull request for this branch against main.";
+        let mut model = answered(agent_with_task(WorkStateView::Ready, 3), instruction);
+        let tab = model.selected_tab().expect("a selected tab");
+        let (_, before) = tab_strip_at(&model, 44);
+        model.hovered = Some(WorkspaceHit::StatusAction(tab));
+        let (rows, after) = tab_strip_at(&model, 44);
+        assert!(!rows.join("\n").contains("Open a"), "{rows:?}");
+        assert_eq!(before, after, "no control moves");
+    }
+
+    /// The bytes the client sent into `pane`, every submission of them.
+    fn typed_into(driven: &mut Driven<'_>, pane: PaneId) -> Vec<String> {
+        driven
+            .sent()
+            .into_iter()
+            .filter_map(|request| match request {
+                ClientRequest::Input { pane: into, bytes } if into == pane => {
+                    Some(String::from_utf8_lossy(&bytes).into_owned())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A click on a status the project answers sends its instruction into
+    /// the agent's pane once, ended with Enter, and delivers nothing.
+    #[test]
+    fn a_click_on_an_answered_status_sends_its_instruction_once() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-status-click"));
+        let model = answered(
+            agent_with_task(WorkStateView::Ready, 3),
+            "Review your diff.",
+        );
+        let tab = model.selected_tab().expect("a selected tab");
+        let pane = model.tab(tab).expect("the tab").pane.id;
+        let mut driven = driven(model, &home);
+        let rect = hit_rect(&driven.attach.model, WorkspaceHit::StatusAction(tab));
+        driven.frame();
+        driven.press(rect.x, rect.y);
+        driven.press(rect.x, rect.y);
+
+        let typed = typed_into(&mut driven, pane);
+        assert_eq!(
+            typed.len(),
+            1,
+            "a second click is refused as busy: {typed:?}"
+        );
+        assert!(typed[0].contains("Review your diff."), "{typed:?}");
+        assert!(typed[0].ends_with('\r'), "submitted, not staged: {typed:?}");
+        assert!(
+            driven.attach.model.remembered.delivery_pending.is_empty(),
+            "a click on the status never delivers"
+        );
+        let said = format!("{:?}", driven.attach.model.toast_stack());
+        assert!(said.contains("sent to agent"), "{said}");
+        assert!(said.contains("agent is busy"), "{said}");
+    }
+
+    /// Ends a delivery of the fixture's task with `outcome`, the task's
+    /// view in `state` carrying `action`, and answers what was typed into
+    /// its agent's pane.
+    fn delivered_with(
+        label: &str,
+        outcome: uze_application::DeliveryOutcome,
+        state: WorkStateView,
+        action: Option<&str>,
+        busy: bool,
+    ) -> (Vec<String>, String) {
+        let home = UzeHome::at(uze_testkit::temp::scratch(label));
+        let mut model = agent_with_task(WorkStateView::Ready, 3);
+        let tab = model.selected_tab().expect("a selected tab");
+        let pane = model.tab(tab).expect("the tab").pane.id;
+        if busy {
+            model
+                .remembered
+                .agent_activity
+                .entry(pane)
+                .or_default()
+                .working_until = Some(Instant::now() + std::time::Duration::from_secs(60));
+        }
+        let mut task = task_in("/repo/.worktrees/ai", "Agent", state, 3);
+        task.action = action.map(str::to_owned);
+        let mut driven = driven(model, &home);
+        driven
+            .attach
+            .channels
+            .deliveries
+            .sender
+            .send(DeliveryResolution {
+                cwd: PathBuf::from("/repo/.worktrees/ai"),
+                reserved: Some(task.id.clone()),
+                reports: vec![uze_application::DeliveryReport {
+                    task,
+                    outcome,
+                    warnings: Vec::new(),
+                }],
+            })
+            .unwrap();
+        driven.pump();
+        let said = format!("{:?}", driven.attach.model.toast_stack());
+        (typed_into(&mut driven, pane), said)
+    }
+
+    /// An operation of UZE's that leaves the work in a state sends that
+    /// state's instruction once, and nothing when the project declares
+    /// none for it.
+    #[test]
+    fn a_delivery_sends_the_instruction_of_the_state_it_left() {
+        use uze_application::DeliveryOutcome;
+        let (typed, _) = delivered_with(
+            "orchestrator-left-failed",
+            DeliveryOutcome::Failed {
+                command: "cargo test".into(),
+                log: None,
+            },
+            WorkStateView::GateFailed,
+            Some("Fix the checks."),
+            false,
+        );
+        assert_eq!(typed.len(), 1, "{typed:?}");
+        assert!(typed[0].contains("Fix the checks."), "{typed:?}");
+
+        let (typed, _) = delivered_with(
+            "orchestrator-left-published",
+            DeliveryOutcome::Published {
+                branch: "feat/x".into(),
+                request: None,
+            },
+            WorkStateView::Published,
+            Some("Open a pull request."),
+            false,
+        );
+        assert_eq!(typed.len(), 1, "{typed:?}");
+
+        let (typed, _) = delivered_with(
+            "orchestrator-left-undeclared",
+            DeliveryOutcome::Conflicted { files: Vec::new() },
+            WorkStateView::Conflicted { files: Vec::new() },
+            None,
+            false,
+        );
+        assert!(
+            typed.is_empty(),
+            "nothing declared, nothing typed: {typed:?}"
+        );
+
+        let (typed, _) = delivered_with(
+            "orchestrator-left-refused",
+            DeliveryOutcome::Refused("no delivery".into()),
+            WorkStateView::Ready,
+            Some("Review your diff."),
+            false,
+        );
+        assert!(
+            typed.is_empty(),
+            "a refusal left the work where it was, so nothing is sent: {typed:?}"
+        );
+    }
+
+    /// An automatic send into an agent mid-turn is held back rather than
+    /// queued, and says so.
+    #[test]
+    fn an_automatic_send_into_a_busy_agent_is_held_back() {
+        let (typed, said) = delivered_with(
+            "orchestrator-left-busy",
+            uze_application::DeliveryOutcome::Merged,
+            WorkStateView::Integrated,
+            Some("Summarize what changed."),
+            true,
+        );
+        assert!(typed.is_empty(), "{typed:?}");
+        assert!(said.contains("held back"), "{said}");
+    }
+
+    /// A click on a status nothing answers sends nothing and delivers
+    /// nothing.
+    #[test]
+    fn a_click_on_a_report_does_nothing() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-report-click"));
+        let model = agent_with_task(WorkStateView::Ready, 3);
+        let tab = model.selected_tab().expect("a selected tab");
+        let pane = model.tab(tab).expect("the tab").pane.id;
+        let mut driven = driven(model, &home);
+        let rect = hit_rect(&driven.attach.model, WorkspaceHit::StatusReport(tab));
         driven.frame();
         driven.press(rect.x, rect.y);
 
-        assert!(
-            driven.attach.model.remembered.notice.is_none(),
-            "the button already says it: {:?}",
-            driven
-                .attach
-                .model
-                .remembered
-                .notice
-                .as_ref()
-                .map(|notice| &notice.text)
+        assert!(typed_into(&mut driven, pane).is_empty());
+        assert!(driven.attach.model.remembered.delivery_pending.is_empty());
+    }
+
+    /// Text the operator typed and has not sent is theirs: an instruction
+    /// is refused rather than sent on top of it, and the buffer is left as
+    /// it was.
+    #[test]
+    fn an_instruction_is_refused_over_text_the_operator_typed() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-status-typed"));
+        let mut model = answered(
+            agent_with_task(WorkStateView::Ready, 3),
+            "Review your diff.",
         );
-        let (rows, _) = tab_strip(&driven.attach.model);
+        let tab = model.selected_tab().expect("a selected tab");
+        let pane = model.tab(tab).expect("the tab").pane.id;
+        let mut buffer = super::PromptBuffer::default();
+        buffer.paste("half a thought");
+        model.remembered.prompt_buffers.insert(pane, buffer);
+        let mut driven = driven(model, &home);
+        let rect = hit_rect(&driven.attach.model, WorkspaceHit::StatusAction(tab));
+        driven.frame();
+        driven.press(rect.x, rect.y);
+
+        assert!(typed_into(&mut driven, pane).is_empty());
+        let said = format!("{:?}", driven.attach.model.toast_stack());
+        assert!(said.contains("you have text typed"), "{said}");
         assert_eq!(
-            rows.join("\n").matches("→ main").count(),
-            1,
-            "one delivery, one place saying so: {rows:?}"
+            driven.attach.model.remembered.prompt_buffers[&pane]
+                .characters
+                .iter()
+                .collect::<String>(),
+            "half a thought"
         );
+
+        driven.attach.model.remembered.prompt_buffers.insert(
+            pane,
+            super::PromptBuffer {
+                trusted: false,
+                ..Default::default()
+            },
+        );
+        driven.press(rect.x, rect.y);
+        assert!(typed_into(&mut driven, pane).is_empty());
+        let said = format!("{:?}", driven.attach.model.toast_stack());
+        assert!(said.contains("can't tell what's typed"), "{said}");
     }
 
     fn label_every_tab(model: &mut WorkspaceModel, label: &str) {
@@ -3524,8 +3789,8 @@ mod workspace_tests {
         assert!(
             !hits
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_))),
-            "no deliver button: {rows:?}"
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "nothing to send: {rows:?}"
         );
         let marks = [
             theme::Symbol::PlusMinus,
@@ -4544,7 +4809,7 @@ mod workspace_tests {
         assert!(
             !hits
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_)))
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_)))
         );
     }
 
@@ -4570,7 +4835,7 @@ mod workspace_tests {
         assert!(
             !hits
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::Deliver(_)))
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_)))
         );
     }
 
@@ -11460,11 +11725,17 @@ mod workspace_tests {
                     target: None,
                     sync: None,
                     evaluation: uze_application::Evaluation {
-                        notices: vec![uze_application::AgentNotice {
-                            task: "t1".into(),
-                            checkout: PathBuf::from("/repo/.worktrees/ai"),
-                            message: "resolve the conflict".into(),
+                        tasks: vec![{
+                            let mut task = task_in(
+                                "/repo/.worktrees/ai",
+                                "Agent",
+                                WorkStateView::Conflicted { files: Vec::new() },
+                                0,
+                            );
+                            task.action = Some("Resolve the conflict.".into());
+                            task
                         }],
+                        arrived: vec!["t1".into()],
                         ..uze_application::Evaluation::default()
                     },
                 }),

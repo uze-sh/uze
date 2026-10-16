@@ -34,8 +34,8 @@ use std::{
 use uze_application::AgentIdentity;
 use uze_application::path::Canonical as _;
 use uze_application::{
-    AgentView, CompletionBehavior, DeliveryOutcome, DeliveryReport, Evaluation, TargetSyncReport,
-    UpstreamSync, WorkStateView,
+    AgentView, DeliveryOutcome, DeliveryReport, Evaluation, TargetSyncReport, UpstreamSync,
+    WorkStateView,
 };
 use uze_application::{Result, UzeError, UzeHome};
 use uze_extensions::{
@@ -328,26 +328,20 @@ fn describe_delivery(report: &DeliveryReport) -> String {
 
 fn describe_delivery_outcome(report: &DeliveryReport) -> String {
     match &report.outcome {
-        DeliveryOutcome::Handoff => format!("ready on {}", report.task.branch),
         DeliveryOutcome::Merged => format!(
             "merged {} {}",
             theme::glyph(Symbol::ArrowTo),
             report.task.target
         ),
-        DeliveryOutcome::Published { request, .. } => {
-            format!("synced {} #{request}", theme::glyph(Symbol::ArrowTo))
-        }
-        // The one line with room for the whole word, and the one place
-        // there is no number to say it instead: the forge's own word
-        // where `origin` said which forge this is, and the neutral one
-        // where it did not — which is the word the agent was handed too.
-        DeliveryOutcome::AwaitingRequest(_) => format!(
-            "pushed · agent opening the {}",
-            report.task.forge.request_term().unwrap_or("request")
-        ),
+        DeliveryOutcome::Published {
+            request: Some(request),
+            ..
+        } => format!("synced {} #{request}", theme::glyph(Symbol::ArrowTo)),
+        DeliveryOutcome::Published { request: None, .. } => "published".to_owned(),
         DeliveryOutcome::Refused(reason) => reason.clone(),
         DeliveryOutcome::AwaitingApproval(_) => "the gate waits for your approval".to_owned(),
-        DeliveryOutcome::ReturnedToAgent(_) => "back to its agent".to_owned(),
+        DeliveryOutcome::Conflicted { .. } => "conflict".to_owned(),
+        DeliveryOutcome::Failed { .. } => "checks failed".to_owned(),
     }
 }
 
@@ -873,10 +867,14 @@ pub(super) enum WorkspaceHit {
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
     OpenStatusCatalog(Rect),
-    /// The tab strip's delivery button — delivers the selected tab's task
-    /// the way the project's completion says. Present only when the task
-    /// is deliverable.
-    Deliver(TabId),
+    /// The tab strip's work-state status, when the project declares an
+    /// instruction for the state it shows: sends that instruction to the
+    /// selected tab's agent. Never a delivery.
+    StatusAction(TabId),
+    /// The same status when no instruction answers it. A click does
+    /// nothing; it is a target only so the pointer resting on it can be
+    /// told what does deliver.
+    StatusReport(TabId),
     /// A hit the open extension's own render pass produced (a file row, a
     /// worktree header, its tree/diff resize handle, its close button —
     /// see `uze_extensions::ExtensionHit`), wrapped instead of given its
@@ -1489,6 +1487,9 @@ struct Remembered {
     /// Every repository's tasks as last evaluated, keyed by its primary
     /// checkout. Display state: the truth is Git and the task store.
     tasks: BTreeMap<PathBuf, Vec<AgentView>>,
+    /// What each project's `workspace.actions` left out, as last said, so
+    /// an unchanged set is not said again on every evaluation.
+    ignored_actions: BTreeMap<PathBuf, Vec<String>>,
     /// The branch checked out at each evaluation key (see
     /// [`evaluation_key`]) — the primary's for every slot of a repository,
     /// a directory's own outside any slot. Read for an agent outside any
@@ -2015,6 +2016,36 @@ impl PromptBuffer {
         flushed
             .trusted
             .then(|| flushed.characters.into_iter().collect())
+    }
+}
+
+/// Whether a pane may take a submission of UZE's now, and why not when it
+/// may not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Submission {
+    Ok,
+    /// The agent is mid-turn.
+    Busy,
+    /// The operator has text in the agent's input, unsent.
+    Typed,
+    /// Something was typed this client cannot reconstruct — a history
+    /// recall, a chord — so what is on the line is unknown until the
+    /// operator's next Enter or Ctrl-C.
+    Unknown,
+}
+
+impl Submission {
+    /// The toast a refusal says, as its title and detail.
+    fn refusal(self, label: &str) -> Option<(&'static str, String)> {
+        match self {
+            Self::Ok => None,
+            Self::Busy => Some(("agent is busy", label.to_owned())),
+            Self::Typed => Some(("you have text typed", label.to_owned())),
+            Self::Unknown => Some((
+                "can't tell what's typed",
+                "press enter or ctrl-c".to_owned(),
+            )),
+        }
     }
 }
 

@@ -103,6 +103,7 @@ pub(super) enum Reason {
     JoinReady,
     Ready,
     Delivering,
+    Published,
     WithReviewer,
     Shelved,
     Delivered,
@@ -134,6 +135,7 @@ impl Reason {
             Self::JoinReady => "subagent ready to join".to_owned(),
             Self::Ready => "ready to deliver".to_owned(),
             Self::Delivering => "delivering".to_owned(),
+            Self::Published => "published".to_owned(),
             Self::WithReviewer => "with reviewer".to_owned(),
             Self::Shelved => "shelved".to_owned(),
             Self::Delivered => "delivered".to_owned(),
@@ -151,6 +153,7 @@ impl Reason {
             Self::Uncommitted => Token::StateInfo,
             Self::Ready => Token::StateSuccess,
             Self::Delivering
+            | Self::Published
             | Self::WithReviewer
             | Self::Shelved
             | Self::Delivered
@@ -168,7 +171,8 @@ impl Reason {
             _ if dirty => Self::Uncommitted,
             WorkStateView::Ready => Self::Ready,
             WorkStateView::Integrating => Self::Delivering,
-            WorkStateView::Published => Self::WithReviewer,
+            WorkStateView::Published => Self::Published,
+            WorkStateView::InReview => Self::WithReviewer,
             WorkStateView::Shelved => Self::Shelved,
             WorkStateView::Integrated => Self::Delivered,
             WorkStateView::Running | WorkStateView::Closed => Self::NoChanges,
