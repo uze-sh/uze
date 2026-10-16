@@ -123,18 +123,7 @@ impl Attach<'_> {
     /// it is an agent UZE launched, it has no checkout yet, and the
     /// space it stands in is a repository with a commit to branch from.
     pub(super) fn can_isolate(&self, tab: TabId) -> bool {
-        let Some(session) = self.model.session.as_ref() else {
-            return false;
-        };
-        let Some(space) = session
-            .workspace
-            .spaces
-            .iter()
-            .find(|space| space.tabs.iter().any(|candidate| candidate.id == tab))
-        else {
-            return false;
-        };
-        let Some(found) = space.tabs.iter().find(|candidate| candidate.id == tab) else {
+        let Some((space, found)) = self.space_and_tab(tab) else {
             return false;
         };
         if launched_agent_id(found).is_none() {
@@ -155,13 +144,20 @@ impl Attach<'_> {
             .contains_key(&evaluation_key(&space_cwd(space, &self.identities)))
     }
 
-    /// Gives one agent a checkout of its own and relaunches it there,
-    /// continuing the conversation it is in.
-    ///
-    /// The same three steps a resume takes — place, open the tab, close
-    /// the one it took over from — because that is what moving an agent
-    /// between directories is: a process cannot be told to stand
-    /// somewhere else.
+    /// The space `tab` stands in, and the tab.
+    fn space_and_tab(&self, tab: TabId) -> Option<(&Space, &Tab)> {
+        self.model
+            .session
+            .as_ref()?
+            .workspace
+            .spaces
+            .iter()
+            .find_map(|space| {
+                let found = space.tabs.iter().find(|candidate| candidate.id == tab)?;
+                Some((space, found))
+            })
+    }
+
     pub(in crate::ui::orchestrator) fn perform_menu_action(
         &mut self,
         target: MenuTarget,
@@ -212,14 +208,7 @@ impl Attach<'_> {
     /// harness is alive in the pane, since a tab whose agent exited is
     /// resumed from recent, where a harness is picked anyway.
     pub(super) fn switch_choices(&self, tab: TabId) -> Vec<HarnessChoice> {
-        let Some(found) = self.model.session.as_ref().and_then(|session| {
-            session
-                .workspace
-                .spaces
-                .iter()
-                .flat_map(|space| space.tabs.iter())
-                .find(|candidate| candidate.id == tab)
-        }) else {
+        let Some((_, found)) = self.space_and_tab(tab) else {
             return Vec::new();
         };
         if launched_agent_id(found).is_none() {
@@ -242,9 +231,8 @@ impl Attach<'_> {
 
     /// Whether `tab`'s agent stopped at a usage limit.
     pub(super) fn is_limited(&self, tab: TabId) -> bool {
-        self.model
-            .tabs()
-            .any(|candidate| candidate.id == tab && self.model.tab_usage_limit(candidate).is_some())
+        self.space_and_tab(tab)
+            .is_some_and(|(_, found)| self.model.tab_usage_limit(found).is_some())
     }
 
     /// Relaunches `target`'s agent on `choice`'s harness, in the place it
@@ -256,13 +244,7 @@ impl Attach<'_> {
             return;
         };
         let Some((agent, label, from_harness, from, pane)) =
-            self.model.session.as_ref().and_then(|session| {
-                let space = session
-                    .workspace
-                    .spaces
-                    .iter()
-                    .find(|space| space.tabs.iter().any(|candidate| candidate.id == tab))?;
-                let found = space.tabs.iter().find(|candidate| candidate.id == tab)?;
+            self.space_and_tab(tab).and_then(|(space, found)| {
                 Some((
                     launched_agent_id(found)?.to_owned(),
                     found.label.clone(),
@@ -316,27 +298,30 @@ impl Attach<'_> {
         );
     }
 
+    /// Gives one agent a checkout of its own and relaunches it there,
+    /// continuing the conversation it is in.
+    ///
+    /// The same three steps a resume takes — place, open the tab, close
+    /// the one it took over from — because that is what moving an agent
+    /// between directories is: a process cannot be told to stand
+    /// somewhere else.
     pub(super) fn isolate_agent(&mut self, target: MenuTarget, carry: uze_application::Carry) {
         let MenuTarget::Tab(tab) = target else {
             return;
         };
-        let Some((agent, label, harness, from)) = self.model.session.as_ref().and_then(|session| {
-            let space = session
-                .workspace
-                .spaces
-                .iter()
-                .find(|space| space.tabs.iter().any(|candidate| candidate.id == tab))?;
-            let found = space.tabs.iter().find(|candidate| candidate.id == tab)?;
-            Some((
-                // The identity the launch stamped: the one thing that
-                // survives the agent moving, and what the isolation is
-                // recorded against.
-                launched_agent_id(found)?.to_owned(),
-                found.label.clone(),
-                agent_for_tab(&self.identities, found)?.launch.clone(),
-                space_cwd(space, &self.identities),
-            ))
-        }) else {
+        let Some((agent, label, harness, from)) =
+            self.space_and_tab(tab).and_then(|(space, found)| {
+                Some((
+                    // The identity the launch stamped: the one thing that
+                    // survives the agent moving, and what the isolation is
+                    // recorded against.
+                    launched_agent_id(found)?.to_owned(),
+                    found.label.clone(),
+                    agent_for_tab(&self.identities, found)?.launch.clone(),
+                    space_cwd(space, &self.identities),
+                ))
+            })
+        else {
             return;
         };
         let command = vec![harness.to_string_lossy().into_owned()];
