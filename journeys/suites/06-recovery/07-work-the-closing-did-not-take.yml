@@ -56,6 +56,13 @@ scenes:
           git -C "$slot" add -A
           git -C "$slot" commit -qm 'feat(api): work worth keeping'
         say: the agent commits work
+      # A first commit names unnamed work from its subject, and the
+      # workspace sees the commit within a second: the branch the record
+      # is read for below is the named one, not a name about to change.
+      - wait: shell
+        until: test -z "$(git -C {project} branch --list 'agent/*')"
+        timeout: 30
+        say: the work is named from its first commit
     then:
       - agents: { count: 1, live: 1, isolated: 1 }
         about: one agent, isolated, with a checkout of its own
@@ -95,7 +102,7 @@ scenes:
         about: the records still name the repository they belong to
       - cmd:
           run: git -C {project} branch --list "$(cat {world}/branch)"
-          stdout_contains: agent/
+          stdout_contains: feat/
         about: and the branch the work is on is still in the repository
       - cmd:
           run: git -C {project} show "$(cat {world}/branch):src/kept.rs"
@@ -109,9 +116,8 @@ scenes:
         expect: "a all"
         expect_timeout: 20
         pause: 1.0
-      # Recent lists named agents by default, and this one ended before
-      # anything named it: it is the generated id's, listed once recent is
-      # asked for every agent.
+      # Every agent, not only the named ones: what this scene claims is
+      # that the list finds the work, whatever it was called.
       - key: "a"
         say: list every agent, not only the named ones
         # A block's heading is drawn only over a row in it, so either one

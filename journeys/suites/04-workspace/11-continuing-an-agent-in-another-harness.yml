@@ -20,7 +20,6 @@ world:
   manifest: |
     workspace:
       target: main
-      delivery: handoff
 
 scenes:
   - scene: an agent starts on one harness
