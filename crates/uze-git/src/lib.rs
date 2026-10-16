@@ -191,7 +191,6 @@ fn read_at(root: &Path, pinned: Option<Pinned<'_>>, args: &[&str]) -> Result<Out
 /// repository committed as a gitlink carries its own `.git`, whose
 /// configuration is whoever made it, and Git would run its filters there.
 const READ_SETTINGS: &[(&str, &str)] = &[
-    ("core.fsmonitor", "false"),
     ("core.hooksPath", uze_platform::fs::NULL_DEVICE),
     ("safe.bareRepository", "explicit"),
     ("diff.ignoreSubmodules", "dirty"),
