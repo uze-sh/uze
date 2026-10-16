@@ -186,12 +186,7 @@ pub(in crate::ui::orchestrator) fn commit_detail_layout(
     ];
     if !detail.body.is_empty() {
         lines.push(Line::default());
-        lines.extend(detail.body.lines().map(|line| {
-            Line::from(Span::styled(
-                line.to_owned(),
-                theme::fg(Token::TextSecondary),
-            ))
-        }));
+        lines.extend(rendered_commit_body(&detail.body, inner_width));
     }
     lines.push(Line::default());
     lines.push(Line::from(vec![
@@ -274,6 +269,49 @@ pub(in crate::ui::orchestrator) fn commit_detail_layout(
         lines,
         content_rows,
     }
+}
+
+thread_local! {
+    static RENDERED_COMMIT_BODY: std::cell::RefCell<Option<RenderedCommitBody>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+struct RenderedCommitBody {
+    body: String,
+    theme: String,
+    width: usize,
+    rows: Vec<Line<'static>>,
+}
+
+/// The message body read as the Markdown it is written in, and folded at
+/// word boundaries to the popup's width. Git hard-wraps a body near 72
+/// columns; drawn line by line in a narrower card, every one of those
+/// lines wrapped again and left a word stranded on a row of its own.
+/// Rendered once per body, theme and width: the layout is asked on every
+/// draw and every scroll.
+fn rendered_commit_body(body: &str, width: usize) -> Vec<Line<'static>> {
+    let theme = uze_theme::active().syntax_theme().to_owned();
+    RENDERED_COMMIT_BODY.with_borrow_mut(|cached| {
+        let current = cached.as_ref().is_some_and(|cached| {
+            cached.body == body && cached.theme == theme && cached.width == width
+        });
+        if !current {
+            let rows = uze_extensions::code::markdown(body, &theme, width)
+                .iter()
+                .flat_map(|line| crate::ui::extension_view::prose_rows(line, width))
+                .collect();
+            *cached = Some(RenderedCommitBody {
+                body: body.to_owned(),
+                theme,
+                width,
+                rows,
+            });
+        }
+        cached
+            .as_ref()
+            .map(|cached| cached.rows.clone())
+            .unwrap_or_default()
+    })
 }
 
 pub(super) fn commit_detail_block() -> Block<'static> {

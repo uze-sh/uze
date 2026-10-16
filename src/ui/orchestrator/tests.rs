@@ -5333,6 +5333,32 @@ mod workspace_tests {
         assert_eq!(bg_of("origin/main"), theme::color(Token::StateWarning));
     }
 
+    /// A body Git hard-wrapped near 72 columns is reflowed to the popup's
+    /// own width, not wrapped a second time with a word stranded on each
+    /// row, and what it quotes in backticks loses its backticks.
+    #[test]
+    fn a_commit_body_is_reflowed_and_read_as_markdown() {
+        let mut popup = commit_popup(Rect::new(1, 2, 38, 1));
+        popup.detail.body = "A hint's target covered only its key, one column for an arrow, so a\n\
+                             click on the words beside it did nothing. A run (`1-5 section`) is\n\
+                             no target at all."
+            .to_owned();
+        let rows = popup_rows(120, 30, &popup);
+        let body: Vec<&str> = rows
+            .iter()
+            .map(|row| row.trim_matches(|c: char| c == ' ' || c == '│'))
+            .skip_while(|row| !row.starts_with("A hint's"))
+            .take_while(|row| !row.is_empty())
+            .collect();
+        assert!(
+            body.iter().all(|row| row.split_whitespace().count() > 1),
+            "no word stranded on a row of its own: {body:?}"
+        );
+        let text = body.join(" ");
+        assert!(text.contains("A run (1-5 section) is no target"), "{text}");
+        assert!(!text.contains('`'), "{text}");
+    }
+
     /// A long message scrolls inside the popup rather than growing it
     /// over the pane, and the wheel stops where the text does.
     #[test]
