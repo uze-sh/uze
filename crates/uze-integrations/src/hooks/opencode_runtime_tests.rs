@@ -240,6 +240,31 @@ console.error(`decision ${check.effect}: ${check.message}`);"#,
     let _ = fs::remove_dir_all(root);
 }
 
+/// A transform group rewrites; it is not also an observer, so its handler
+/// runs once per call and its side effects happen once.
+#[test]
+fn a_transform_handler_runs_once_per_call() {
+    if !bun_available() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-transform-once");
+    fs::create_dir_all(&root).unwrap();
+    let hook = PortableHook {
+        effect: HookEffect::Transform,
+        ..observing(
+            r#"echo ran >> "$PLUGIN_ROOT/runs.log"; printf '{"command":"echo rewritten"}'"#,
+            10,
+        )
+    };
+    drive(
+        &root,
+        &hook,
+        r#"await hooks["execute.before"]({ id: "call-1", tool: "shell", input: { command: "ls" } });"#,
+    );
+    assert_eq!(fs::read_to_string(root.join("runs.log")).unwrap(), "ran\n");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// The exec form on OpenCode: a JavaScript guard runs in the harness's
 /// own runtime, and a Python one is spawned from its words with no shell
 /// between; both receive their words intact.
