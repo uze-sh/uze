@@ -2102,10 +2102,10 @@ mod children {
         assert_eq!(child_record.state, "Shelved");
         assert_eq!(world.record(&agent).state, "Shelved");
         assert!(
-            world.status(&child.path).is_empty(),
-            "its work left the slot"
+            !child.path.exists(),
+            "a subagent's freed checkout does not wait out the idle age"
         );
-        assert_eq!(world.shelves(), 1, "and is on the child's shelf");
+        assert_eq!(world.shelves(), 1, "its work is on the child's shelf");
     }
 
     /// A resume that cannot bring every child back gives back every

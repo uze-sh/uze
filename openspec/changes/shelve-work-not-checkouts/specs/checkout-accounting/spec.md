@@ -106,13 +106,12 @@ manifest that still declares it is reported as declaring an unknown key.
 ## ADDED Requirements
 
 ### Requirement: The pool keeps free checkouts until they go idle
-The system SHALL keep the directory of every free checkout until it has
-gone unused for longer than a declared age, measured from when it was last
-placed or released — three days when the project
-declares none — and SHALL then remove the directory on the next
-collection, keeping its branch. The rule SHALL apply to free checkouts
-only, and SHALL be decided from the checkouts' present state alone, with
-no record of past use.
+The system SHALL keep a free checkout's directory until unused for longer
+than a declared age since last placed or released, three days by default,
+and then remove it on the next collection, keeping its branch. A free
+checkout last held by a subagent SHALL be removed on the next collection
+whatever its age. Both rules SHALL apply to free checkouts only, decided
+from their present state alone.
 
 #### Scenario: Four agents, four checkouts
 - **WHEN** four agents end with nothing left in their checkouts and four new agents are created the same day
@@ -121,6 +120,10 @@ no record of past use.
 #### Scenario: An idle project gives its disk back
 - **WHEN** a free checkout has not been used for more than three days and the project declares no age
 - **THEN** its directory is removed and its branch is kept
+
+#### Scenario: A subagent's checkout ends with its work
+- **WHEN** a subagent's checkout is freed, by a join or because its agent ended
+- **THEN** its directory is removed on the next collection whatever its age, and its branch is kept
 
 #### Scenario: In use and pinned checkouts are never trimmed
 - **WHEN** a checkout held by a live agent or pinned has gone unchanged for longer than the idle age

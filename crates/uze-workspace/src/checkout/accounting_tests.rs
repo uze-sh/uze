@@ -661,6 +661,30 @@ mod idle_age {
         );
     }
 
+    /// A subagent's checkout ends with its work: a burst of them does not
+    /// keep the pool at the burst's size for the idle age.
+    #[test]
+    fn a_subagent_leaves_no_checkout_behind() {
+        let repository = repository("idle-subagent");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (parent, _) = launch(&repository, &mut store, "parent");
+        let (child, split) = launch(&repository, &mut store, "child");
+        let mut recorded = store.get(&child.id).unwrap().clone();
+        recorded.parent = Some(parent.id.clone());
+        store.upsert(recorded);
+        let (closed, kept) = launch(&repository, &mut store, "closed");
+        assert_eq!(end(&repository, &mut store, &child), FREED);
+        assert_eq!(end(&repository, &mut store, &closed), FREED);
+
+        assert_eq!(
+            trim_free_slots(primary, &store, Pool::default(), &nobody()),
+            vec![split.id.clone()]
+        );
+        assert!(kept.path.is_dir(), "an agent's free checkout stays");
+        assert!(branch_exists(primary, &split.branch), "its branch is kept");
+    }
+
     /// Trimming takes directories, never work: a live agent's checkout is
     /// not free, and an ended one's work is on its shelf before its
     /// directory can go.

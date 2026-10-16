@@ -138,8 +138,8 @@ pub struct Collected {
 }
 
 /// The removals that cannot lose work, as one critical section: the
-/// directory of a free slot unused past the pool's idle age, its branch
-/// kept; a branch whose every commit is in the target and that no shelf
+/// directory of a free slot unused past the pool's idle age or last held
+/// by a subagent, its branch kept; a branch whose every commit is in the target and that no shelf
 /// stands on; and a shelf whose every change the target already carries.
 ///
 /// Slots first, so a trimmed slot's integrated branch is no longer checked
@@ -375,8 +375,8 @@ fn prune_integrated_branches_among(
 }
 
 /// Removes the directory of every free slot unused past the pool's idle
-/// age, keeping each one's branch, and keeps the index of every other free
-/// slot fresh. Returns the slots removed.
+/// age, or last held by a subagent, keeping each one's branch, and keeps
+/// the index of every other free slot fresh. Returns the slots removed.
 pub fn trim_free_slots(
     primary: &Path,
     store: &AgentStore,
@@ -392,7 +392,7 @@ pub fn trim_free_slots(
         let idle = now
             .duration_since(modified_at(&slot.path))
             .unwrap_or_default();
-        if idle < pool.idle {
+        if idle < pool.idle && !last_held_by_a_subagent(store, &slot.id) {
             // A kept slot is what the next placement switches, and one
             // whose files were written in the same second as its index
             // reads as possibly changed until the index is written again:
@@ -411,6 +411,24 @@ pub fn trim_free_slots(
         }
     }
     removed
+}
+
+/// Whether the agents that last held `slot` were all subagents. A
+/// subagent's checkout lasts as long as its work: kept for the idle age, a
+/// burst of them would size the pool at the burst for days, each slot
+/// carrying its own build output, while the pool exists for the agents an
+/// operator opens one after another.
+fn last_held_by_a_subagent(store: &AgentStore, slot: &CheckoutId) -> bool {
+    let mut holders = store
+        .agents
+        .iter()
+        .filter(|agent| {
+            agent
+                .isolation()
+                .is_some_and(|isolation| isolation.last_checkout.as_ref() == Some(slot))
+        })
+        .peekable();
+    holders.peek().is_some() && holders.all(|agent| agent.parent.is_some())
 }
 
 fn index_may_be_racy(slot: &Path) -> bool {
