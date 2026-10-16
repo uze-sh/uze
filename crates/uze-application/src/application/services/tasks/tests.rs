@@ -2179,23 +2179,28 @@ mod task_service_tests {
         let repository = repository("svc-actions-view");
         declare(
             &repository,
-            "  delivery: push\n  actions:\n    on_ready: Review your diff.\n    \
-             on_publish: Open a pull request.\n    on_review: Answer the review.\n    \
-             on_redy: typo\n",
+            "  delivery: push\n  actions:\n    on_change: Commit your work.\n    \
+             on_publish: Open a pull request.\n    on_redy: typo\n",
         );
         let root = repository.root().to_path_buf();
         repository.with_origin(&repository.branch());
         let app = application("svc-actions-view-home");
         let (id, slot) = launched(&app, &root);
         let in_root = launched_in_the_root(&app, &root);
-        agent_commits(&repository, &slot, "a.rs", "");
+        std::fs::write(slot.join("a.rs"), "").unwrap();
 
         let evaluation = app.workspace().evaluate_tasks(&root, &[]);
         assert_eq!(evaluation.ignored_actions.len(), 1, "{evaluation:?}");
+        let changed = view_of(&app, &root, &id);
+        assert_eq!(changed.state, WorkStateView::Uncommitted);
+        assert_eq!(changed.action.as_deref(), Some("Commit your work."));
+        assert_eq!(view_of(&app, &root, &in_root).action, None);
+
+        agent_commits(&repository, &slot, "a.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
         let ready = view_of(&app, &root, &id);
         assert_eq!(ready.state, WorkStateView::Ready);
-        assert_eq!(ready.action.as_deref(), Some("Review your diff."));
-        assert_eq!(view_of(&app, &root, &in_root).action, None);
+        assert_eq!(ready.action, None, "the next step from ready is UZE's");
 
         repository.git_in(&slot, &["push", "--quiet", "origin", "HEAD"]);
         app.workspace().evaluate_tasks(&root, &[]);
@@ -2219,7 +2224,7 @@ mod task_service_tests {
         app.workspace().evaluate_tasks(&root, &[]);
         let in_review = view_of(&app, &root, &reviewed);
         assert_eq!(in_review.state, WorkStateView::InReview);
-        assert_eq!(in_review.action.as_deref(), Some("Answer the review."));
+        assert_eq!(in_review.action, None, "the next step is a reviewer's");
 
         // A commit not yet on the remote is work to hand over again.
         agent_commits(&repository, &slot, "b.rs", "");

@@ -42,32 +42,46 @@ const ACTIONS: &str = "actions";
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionState {
-    OnReady,
+    OnChange,
     OnPublish,
-    OnReview,
-    OnDeliver,
     OnConflict,
     OnFail,
 }
 
 impl ActionState {
-    pub const ALL: [Self; 6] = [
-        Self::OnReady,
+    pub const ALL: [Self; 4] = [
+        Self::OnChange,
         Self::OnPublish,
-        Self::OnReview,
-        Self::OnDeliver,
         Self::OnConflict,
         Self::OnFail,
     ];
 
     pub const fn key(self) -> &'static str {
         match self {
-            Self::OnReady => "on_ready",
+            Self::OnChange => "on_change",
             Self::OnPublish => "on_publish",
-            Self::OnReview => "on_review",
-            Self::OnDeliver => "on_deliver",
             Self::OnConflict => "on_conflict",
             Self::OnFail => "on_fail",
+        }
+    }
+
+    /// What is asked when the project declares nothing for this moment.
+    /// Only the two moments where UZE itself left the agent's checkout in
+    /// a state nobody but the agent can settle — a paused rebase, a branch
+    /// the gate refused — have one: unsaid, the agent would sit in front
+    /// of work it does not know is waiting.
+    pub const fn fallback(self) -> Option<&'static str> {
+        match self {
+            Self::OnConflict => Some(
+                "Your branch no longer rebases onto its target, and the rebase is paused in \
+                 this checkout. Resolve the conflicts preserving the intent of your change, \
+                 run git rebase --continue, run the project's checks, and end your turn.",
+            ),
+            Self::OnFail => Some(
+                "The project's checks failed on your branch after it was rebased onto its \
+                 target. Fix them on this branch, commit, and end your turn.",
+            ),
+            Self::OnChange | Self::OnPublish => None,
         }
     }
 
@@ -167,6 +181,21 @@ impl<'de> Deserialize<'de> for DeclaredArtifacts {
 pub fn actions(root: &Path) -> Result<DeclaredActions> {
     let path = manifest::manifest_path_for(root);
     Ok(read(root)?.actions(&path))
+}
+
+/// What is asked at each moment: the project's instruction where it
+/// declares one, the [`ActionState::fallback`] where it does not — also
+/// when the manifest cannot be read, since a paused rebase is no less
+/// paused for it.
+pub fn instructions(root: &Path) -> BTreeMap<ActionState, String> {
+    let mut instructions: BTreeMap<ActionState, String> = ActionState::ALL
+        .into_iter()
+        .filter_map(|state| Some((state, state.fallback()?.to_owned())))
+        .collect();
+    if let Ok(declared) = actions(root) {
+        instructions.extend(declared.instructions);
+    }
+    instructions
 }
 
 /// The artifact places the project declares, if any.
@@ -650,19 +679,19 @@ mod tests {
         let root = project_declaring(
             "declared-actions-ignored",
             "  delivery: merge\n  actions:\n    on_redy: typo\n    published: old key\n    \
-             on_conflict: \"\"\n    on_deliver: Summarize what changed.\n",
+             on_conflict: \"\"\n    on_change: Commit your work.\n",
         );
         let declared = actions(&root).unwrap();
         assert_eq!(
             declared.instructions,
-            BTreeMap::from([(ActionState::OnDeliver, "Summarize what changed.".to_owned())])
+            BTreeMap::from([(ActionState::OnChange, "Commit your work.".to_owned())])
         );
         assert_eq!(declared.ignored.len(), 3, "{:?}", declared.ignored);
         assert!(
             declared
                 .ignored
                 .iter()
-                .any(|reason| reason.contains("on_redy") && reason.contains("on_ready")),
+                .any(|reason| reason.contains("on_redy") && reason.contains("on_change")),
             "names the key and the states it could have been: {:?}",
             declared.ignored
         );
@@ -685,13 +714,34 @@ mod tests {
     fn actions_alone_declare_no_policy_and_none_declared_is_empty() {
         let root = project_declaring(
             "declared-actions-alone",
-            "  actions:\n    on_ready: Review your diff.\n",
+            "  actions:\n    on_change: Commit your work.\n",
         );
         assert_eq!(declared(&root).unwrap(), None);
         assert_eq!(actions(&root).unwrap().instructions.len(), 1);
 
         let root = project_declaring("declared-actions-none", "  delivery: merge\n");
         assert_eq!(actions(&root).unwrap(), DeclaredActions::default());
+    }
+
+    #[test]
+    fn a_conflict_and_a_failed_gate_are_asked_about_unless_the_project_says_otherwise() {
+        let root = project_declaring(
+            "declared-actions-fallback",
+            "  delivery: push\n  actions:\n    on_fail: Fix the checks.\n",
+        );
+        let instructions = instructions(&root);
+        assert_eq!(
+            instructions.get(&ActionState::OnFail).map(String::as_str),
+            Some("Fix the checks.")
+        );
+        assert_eq!(
+            instructions
+                .get(&ActionState::OnConflict)
+                .map(String::as_str),
+            ActionState::OnConflict.fallback()
+        );
+        assert_eq!(instructions.get(&ActionState::OnPublish), None);
+        assert_eq!(instructions.get(&ActionState::OnChange), None);
     }
 
     #[test]

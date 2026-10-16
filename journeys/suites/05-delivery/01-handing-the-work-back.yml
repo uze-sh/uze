@@ -7,9 +7,10 @@ about: |
   workspace's status *names where it would go* — `→ main`, and how much it
   would send — and only the deliver key moves anything.
 
-  The status is not the delivery. Clicking it asks the agent what the
-  project declared for the state the work is in, and moves nothing; the
-  journey reads the branch after each gesture to check which one acted.
+  The status is not the delivery. While the work is uncommitted, clicking it
+  asks the agent what the project declared for that state, and moves
+  nothing; the journey reads the branch after each gesture to check which
+  one acted.
 
 world:
   project: demo-app
@@ -20,7 +21,7 @@ world:
       delivery: merge
       slots: 3
       actions:
-        on_ready: Review your diff, then end your turn.
+        on_change: Commit your work, then end your turn.
 
 scenes:
   - scene: an agent, working in a checkout of its own
@@ -46,12 +47,42 @@ scenes:
         about: nothing has happened to the project yet
       - capture: { name: slots, dirs: "{project}/.worktrees/*" }
 
-  - scene: it commits, and the project's branch does not move
+  - scene: clicking the status asks the agent what the project declared, and moves nothing
     when:
       - shell: |
           set -e
           slot=$(ls -d {project}/.worktrees/*/ | head -1)
           printf 'pub fn ping() -> &str { "pong" }\n' > "$slot/src/ping.rs"
+        say: the agent changes a file and has not committed it
+      - wait: screen
+        until: "uncommitted"
+        in: strip
+        timeout: 40
+        settle: 1.0
+        say: the declared on_change instruction puts a status in the strip
+      - click: "uncommitted"
+        say: click the status, which the project answers with an instruction
+        in: strip
+        expect: "Commit your work"
+        expect_timeout: 20
+      - wait: screen
+        until: "Commit your work, then end your turn."
+        in: pane
+        timeout: 20
+        say: the instruction is typed into the agent's own pane
+    then:
+      - cmd:
+          run: "git -C {project} log --oneline -1"
+          stdout_contains: "chore: declare the worktree policy"
+        about: the target has not moved, because a click never delivers
+      - tasks: { any_state: uncommitted }
+        about: and the change is still the agent's, uncommitted in its checkout
+
+  - scene: it commits, and the project's branch does not move
+    when:
+      - shell: |
+          set -e
+          slot=$(ls -d {project}/.worktrees/*/ | head -1)
           git -C "$slot" add -A
           git -C "$slot" commit -qm 'feat(api): answer ping with pong'
         say: the agent commits its work
@@ -70,26 +101,6 @@ scenes:
         about: and the target branch has not moved an inch
       - git: { in: "{project}", dirty: false }
         about: nor was the primary checkout used as a workbench
-
-  - scene: clicking the status asks the agent what the project declared, and moves nothing
-    when:
-      - click: "→ main"
-        say: click the status, which the project answers with an instruction
-        in: strip
-        expect: "Review your diff"
-        expect_timeout: 20
-      - wait: screen
-        until: "Review your diff, then end your turn."
-        in: pane
-        timeout: 20
-        say: the instruction is typed into the agent's own pane
-    then:
-      - cmd:
-          run: "git -C {project} log --oneline -1"
-          stdout_contains: "chore: declare the worktree policy"
-        about: the target has not moved, because a click never delivers
-      - tasks: { any_state: ready }
-        about: and the work is still waiting to be delivered
 
   - scene: the deliver key does exactly what the status said
     when:

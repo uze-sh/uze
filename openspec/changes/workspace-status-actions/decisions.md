@@ -54,6 +54,16 @@
 - task:     6.2
 - commit:
 - trigger:  6.2 asked to check the instruction "against the pane process's input", but the journeys' harness stand-in only echoes what it is sent; the scripted agent that writes an `.inbox` needs `AGENT_SCRIPTS`, which the journey runner does not provide.
-- decided:  follow the pattern `05-delivery/05` already used for the conflict message: the instruction appearing in the pane (`in: pane`, the strip's hint excluded) is the gate, and the checks read Git and the task store — the click moved nothing and left the work ready (`01`), the push reached the remote (`03`), the gate failure left the target alone (`02`). Covered: the click (`on_ready`, `01`), and three automatic sends (`on_publish` `03`, `on_fail` `02`, `on_conflict` `05`).
+- decided:  follow the pattern `05-delivery/05` already used for the conflict message: the instruction appearing in the pane (`in: pane`, the strip's hint excluded) is the gate, and the checks read Git and the task store — the click moved nothing and left the work uncommitted (`01`), the push reached the remote (`03`), the gate failure left the target alone (`02`). Covered: the click (`on_change`, `01`), and three automatic sends (`on_publish` `03`, `on_fail` `02`, `on_conflict` `05`).
 - rejected: teaching the runner `AGENT_SCRIPTS` to read an inbox — runner work outside this change's scope, for a claim the pane already gates and `src/ui` tests already assert byte for byte.
 - blast:    none; a later runner change can add an inbox check beside the gate.
+
+## D7 — Four keys, and fallbacks for a conflict and a failed gate
+
+- status:   accepted
+- task:     7.1
+- commit:
+- trigger:  used by hand, the uncommitted state (the commonest moment to ask the agent something) had no key, while `on_ready`, `on_review` and `on_deliver` had little to ask: the next step from each is UZE's delivery, a reviewer or nobody. With the fixed messages gone, a project declaring no `on_conflict`/`on_fail` left the agent unaware of a paused rebase or a refused branch.
+- decided:  keys `on_change`, `on_publish`, `on_conflict`, `on_fail`; an `uncommitted` status is drawn beside the change count only when `on_change` is declared, since the count already reports the changes and opens them on a click; `on_conflict` and `on_fail` fall back to UZE's own static line when undeclared.
+- rejected: a dropdown of several actions per state (commit / open PR) — a second interaction model, and an "open PR" offered over uncommitted work would push without it; making the change count the action — it already opens the changes.
+- blast:    `on_ready`, `on_review` and `on_deliver` are reported as unknown keys; adding one back later is additive.

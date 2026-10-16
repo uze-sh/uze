@@ -355,19 +355,20 @@ pub enum WorkStateView {
 }
 
 impl WorkStateView {
-    /// The moment whose instruction answers work in this state, for the
-    /// states the workspace shows a chip for. In flight there is none:
-    /// nothing is asked of an agent while its work is being delivered.
+    /// The moment whose instruction answers work in this state. In flight
+    /// there is none: nothing is asked of an agent while its work is being
+    /// delivered. `Ready`, `InReview` and `Integrated` have none either:
+    /// the next step from each is UZE's delivery, a reviewer, or nobody's.
     pub fn answered_by(&self) -> Option<ActionState> {
         match self {
-            Self::Ready => Some(ActionState::OnReady),
+            Self::Uncommitted => Some(ActionState::OnChange),
             Self::Published => Some(ActionState::OnPublish),
-            Self::InReview => Some(ActionState::OnReview),
-            Self::Integrated => Some(ActionState::OnDeliver),
             Self::Conflicted { .. } => Some(ActionState::OnConflict),
             Self::GateFailed => Some(ActionState::OnFail),
             Self::Running
-            | Self::Uncommitted
+            | Self::Ready
+            | Self::InReview
+            | Self::Integrated
             | Self::Integrating
             | Self::Shelved
             | Self::Closed => None,

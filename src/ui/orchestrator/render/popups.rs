@@ -717,15 +717,25 @@ pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState
 /// the status legend cannot come to say different things about one state.
 /// Whether a click answers it is not this function's question: that is
 /// whether the project declared an instruction for the state.
+///
+/// `Uncommitted` is the exception that asks it. The diff count beside
+/// this zone already reports uncommitted changes, and is the shortcut to
+/// them, so a status saying so again is drawn only when the project asks
+/// something there: then it is the control that sends it, not a report.
 pub(super) fn status_notification(
     task: &AgentView,
     state: &WorkStateView,
     tick: usize,
 ) -> Option<(String, Token)> {
+    if *state == WorkStateView::Uncommitted {
+        task.action.as_ref()?;
+        let (symbol, hue) = task_tone(state)?;
+        return Some((format!("{} uncommitted", theme::glyph(symbol)), hue));
+    }
     // Which states put a status in this zone: the ones handing work over
-    // passes through. `Uncommitted` and `Shelved` carry marks of their own
-    // in the sidebar, but they are facts about a checkout rather than
-    // steps of a delivery, and this zone is the second.
+    // passes through. `Shelved` carries a mark of its own in the sidebar,
+    // but it is a fact about a checkout rather than a step of a delivery,
+    // and this zone is the second.
     if !matches!(
         state,
         WorkStateView::Ready

@@ -30,15 +30,19 @@ Underneath that sits a blurrier interface.
 - **The chip is feedback only.** It is read from the checkout and the remote, the same
   whoever acted.
 - **A project may declare `workspace.actions` in `agents.yaml`:** one plain-text instruction
-  per state. The keys name the moment, one per state the chip shows: `on_ready`, `on_publish`,
-  `on_review`, `on_deliver`, `on_conflict`, `on_fail`.
+  per state the agent acts in: `on_change` (uncommitted), `on_publish`, `on_conflict`,
+  `on_fail`. Ready, in review and delivered take none: the next step from each is the
+  delivery, a reviewer or nobody.
   - An instruction is sent, ended with Enter, when the operator clicks that state's chip.
+    Uncommitted work shows a chip only when `on_change` is declared, beside the change count.
   - It is also sent when a delivery or an automatic rebase leaves the work in that state: a
-    push sends `on_publish`, a merge `on_deliver`, a conflict `on_conflict`, a failed gate
-    `on_fail`.
-  - With nothing declared, the state is only reported, and nothing reaches the agent.
-- **BREAKING:** the fixed messages UZE types into an agent's pane go. A project keeps today's
-  flow by declaring them, for example `on_publish: open a pull request for this branch…`.
+    push sends `on_publish`, a conflict `on_conflict`, a failed gate `on_fail`.
+  - With nothing declared, the state is only reported and nothing reaches the agent, except
+    a conflict and a failed gate, which fall back to a line of UZE's own: in both the agent's
+    checkout is waiting on the agent.
+- **BREAKING:** the fixed `pr` message ("open the request") goes, and the conflict and gate
+  messages become fallbacks a project may replace. A project keeps today's `pr` flow by
+  declaring `on_publish: open a pull request for this branch…`.
 - **One kind of action.** A skill is asked for in the instruction's own words. There is no
   per-harness syntax, no built-in verbs and no placeholders.
 - **Nothing interrupts.** An instruction is never sent into a pane where the agent is working
@@ -57,7 +61,7 @@ Underneath that sits a blurrier interface.
 
 ### Modified Capabilities
 - `worktree-policy`: `delivery:` becomes `merge | push` or undeclared; delivery stops asking
-  for a request; a failed gate and a conflict no longer promise a fixed message to the agent.
+  for a request; a failed gate and a conflict send the project's instruction, or UZE's fallback.
 - `agent-isolation`: delivery is offered for an isolated agent only when the project declares a
   completion behavior.
 

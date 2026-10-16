@@ -239,12 +239,11 @@ struct Repository {
 /// What the project asks an agent at each state it declares one for.
 pub(super) type Instructions = BTreeMap<ActionState, String>;
 
-/// The instructions `primary` declares. A manifest that cannot be read
-/// declares none here: the policy beside them is what reports it.
+/// What is asked at each moment in `primary`: its declared instructions
+/// over UZE's fallbacks. A manifest that cannot be read leaves only the
+/// fallbacks here: the policy beside them is what reports it.
 pub(super) fn instructions_of(primary: &Path) -> Instructions {
-    declaration::actions(primary)
-        .map(|declared| declared.instructions)
-        .unwrap_or_default()
+    declaration::instructions(primary)
 }
 
 impl Repository {

@@ -206,29 +206,28 @@ in the project's own words.
 workspace:
   delivery: push
   actions:
-    on_ready: Review your diff and tidy the commits, then end your turn.
-    on_publish: Open a pull request for this branch against main, by this project's convention, then end your turn.
-    on_review: Read the review comments on the pull request and address them.
-    on_deliver: Summarize what changed for the changelog, then end your turn.
+    on_change: Commit your work with the git:commit skill, then end your turn.
+    on_publish: Open a pull request for this branch against main with the git:pr skill, then end your turn.
     on_conflict: The rebase onto main is paused here. Resolve it preserving your change, run git rebase --continue and the checks, then end your turn.
     on_fail: The project's checks failed after the rebase. Fix them on this branch, commit, and end your turn.
 ```
 
 | Key | The work is | Sent on its own when |
 | --- | --- | --- |
-| `on_ready` | committed, with commits the target lacks | never |
+| `on_change` | changed in the checkout, not committed | never |
 | `on_publish` | on the remote, with no request yet | a `push` delivery pushed it |
-| `on_review` | on the remote, with a request open | never |
-| `on_deliver` | in the target | a `merge` delivery fast-forwarded it |
 | `on_conflict` | paused mid-rebase | a rebase uze ran stopped on conflicts |
 | `on_fail` | refused by the `gate` | the `gate` failed on a delivery |
 
-Clicking the status in the workspace's header sends that state's line too,
-whatever the state, so a line that is never sent on its own is still one click
-away. Nothing is sent while the agent is working or while you have text typed
-in its input: the click says why, and nothing is queued. A state with no line
-is only shown, and a project that declares no `actions` asks its agents
-nothing.
+Clicking the status in the workspace's tab strip sends that state's line too,
+so `on_change`, which is never sent on its own, is one click away: with it
+declared, an `uncommitted` status appears beside the change count. Nothing is
+sent while the agent is working or while you have text typed in its input: the
+click says why, and nothing is queued. Any other state is only shown.
+
+`on_conflict` and `on_fail` have a line of uze's own when the project declares
+none, since in both the agent's checkout is waiting on the agent: a rebase
+paused, a branch the gate refused. Declaring them replaces those lines.
 
 To ask for a skill, say so in the line, as you would in the prompt: `Use the
 git:pr skill to open a pull request`. An unknown key, or a value that is not a

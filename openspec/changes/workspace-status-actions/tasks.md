@@ -26,7 +26,7 @@
 
 ## 3. Declaration and read model
 
-- [x] 3.1 Add `ActionState` (`on_ready`, `on_publish`, `on_review`, `on_deliver`, `on_conflict`, `on_fail`); remove `actions` before the strict parse; add `declaration::actions(root)` returning the map and the entries left out
+- [x] 3.1 Add `ActionState` (`on_change`, `on_publish`, `on_conflict`, `on_fail`); remove `actions` before the strict parse; add `declaration::actions(root)` returning the map and the entries left out
 - [x] 3.2 Add `AgentView::action` through `from_agent`'s four call sites, resolved from the final drawn state, `None` for a root agent; add `Evaluation::ignored_actions`, toasted once per primary
 - [x] 3.3 Tests: a declared map reads; an unknown key or empty value is left out and named while the rest reads; the policy's own misspelled-key test still holds
 
@@ -49,7 +49,7 @@
 ## 6. Journeys, docs and gates
 
 - [x] 6.1 Move every journey world off `handoff`/`pr`: 03-context, 04-workspace, 05-delivery and 06-recovery to `merge`, `push` or no `delivery:` as each scene needs; the `07-upgrade` worlds to `merge` or no key, since the released binary rejects `push`; the `05-delivery` chip clicks to the `deliver-task` key; declare the instructions each world's checks expect in the agent's pane
-- [x] 6.2 Cover the instruction in the `05-delivery` journeys: a click on the status (`on_ready`) and the automatic sends (`on_publish` after a push, `on_fail`, `on_conflict`), each gated on the instruction reaching the real agent pane and checked against Git and the task store (see decisions D6)
+- [x] 6.2 Cover the instruction in the `05-delivery` journeys: a click on the status (`on_change`) and the automatic sends (`on_publish` after a push, `on_fail`, `on_conflict`), each gated on the instruction reaching the real agent pane and checked against Git and the task store (see decisions D6)
 - [x] 6.3 Rewrite the doc comments that describe the chip as a button or `pr` as pushing: `chip.rs:1-7`, `tab_strip.rs:290-296`, `popups.rs:716-728`, `views.rs:125`, `views.rs:344`, `crates/uze-workspace/src/landing/request.rs`
 - [x] 6.4 Update the shipped and published text for `delivery: merge | push` and `workspace.actions`, including the instruction set that reproduces today's `pr` flow:
   - `plugins/uze/skills/worktree/SKILL.md` ("three things come back to you", the `pr` request flow)
@@ -59,3 +59,10 @@
   - `docs/architecture/agent-lifecycle.mmd` (its `handoff` edge), followed by `make artifacts` and `cargo test -p uze-extensions`
 - [x] 6.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`, `openspec validate --all --strict` and `journey validate`
 - [x] 6.6 Last: move this repository's `agents.yaml` to `delivery: push` and declare `on_publish`, `on_conflict` and `on_fail` (the installed release rejects `push`, so this lands with the release that ships the change)
+
+## 7. Four keys, after trying it by hand
+
+- [x] 7.1 Narrow `ActionState` to `on_change`, `on_publish`, `on_conflict`, `on_fail`; `WorkStateView::answered_by` maps `Uncommitted` to `on_change` and gives `Ready`, `InReview` and `Integrated` none; drop `Merged` from the automatic sends
+- [x] 7.2 Add `ActionState::fallback` for `on_conflict` and `on_fail`, and `declaration::instructions(root)` (declared over fallbacks), read by `instructions_of`
+- [x] 7.3 Draw an `uncommitted` status beside the change count only when `on_change` is declared; the count keeps opening the changes
+- [x] 7.4 Tests, the reference page, journey `05-delivery/01` (the click moves to `on_change`), and this repository's `agents.yaml`

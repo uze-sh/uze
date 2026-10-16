@@ -15,6 +15,10 @@ The tab strip SHALL show the selected isolated agent's work state as a chip read
 - **WHEN** the agent itself pushed its branch
 - **THEN** the chip reads the branch as published exactly as if anyone else had pushed it
 
+#### Scenario: Uncommitted changes are a chip only when the project asks something there
+- **WHEN** the agent's checkout holds uncommitted changes
+- **THEN** the change count reports them, and a chip reading uncommitted is drawn beside it only when the project declares `on_change`
+
 ### Requirement: The states the chip reads
 The chip SHALL read one of: `ready` (commits the target lacks), `published` (on the remote with nothing left to push and no request), `in_review` (a request is open for it and nothing is left to push), `delivered` (the target holds all of it), `conflicted` (a rebase is paused) or `failed` (the gate refused it). When more than one holds, the one furthest along SHALL be read.
 
@@ -38,14 +42,14 @@ The chip SHALL read one of: `ready` (commits the target lacks), `published` (on 
 No work-state chip SHALL be drawn, and no declared instruction SHALL be sent, for an agent working in the space's own root: its branch is the operator's.
 
 #### Scenario: A root agent with ready work
-- **WHEN** an agent in the space's root has commits the target lacks and the project declares `workspace.actions.on_ready`
+- **WHEN** an agent in the space's root has uncommitted changes and the project declares `workspace.actions.on_change`
 - **THEN** no chip is drawn for it and nothing is offered to send
 
 ### Requirement: A project declares one instruction per state
-A project MAY declare `workspace.actions` in `agents.yaml`: one plain-text instruction per state the chip reads, keyed `on_ready`, `on_publish`, `on_review`, `on_deliver`, `on_conflict` and `on_fail`. An unknown state or an empty instruction SHALL be reported and left out, and SHALL NOT stop the rest of the declaration from being read.
+A project MAY declare `workspace.actions` in `agents.yaml`: one plain-text instruction per state, keyed `on_change` (uncommitted), `on_publish` (published), `on_conflict` (conflicted) and `on_fail` (failed). Ready, in review and delivered take none, since the next step from each is the delivery, a reviewer or nobody. An unknown key or an empty instruction SHALL be reported and left out, and SHALL NOT stop the rest of the declaration from being read.
 
 #### Scenario: A declared instruction makes its state clickable
-- **WHEN** `agents.yaml` declares `workspace.actions.on_review` and the selected agent's work is in review
+- **WHEN** `agents.yaml` declares `workspace.actions.on_publish` and the selected agent's work is published
 - **THEN** the chip is drawn as an action
 
 #### Scenario: An unknown state is reported, not fatal
@@ -72,7 +76,7 @@ A click on a chip that has an instruction SHALL submit that instruction, verbati
 - **THEN** the text is submitted unchanged, with no translation for the harness in the pane
 
 ### Requirement: An operation of UZE's sends the instruction of the state it leaves
-When a delivery or an automatic rebase that UZE runs leaves the work in a state with a declared instruction, the system SHALL submit that instruction to the agent once, under the same rules as a click. A state reached any other way SHALL send nothing on its own. With no instruction declared, nothing SHALL be sent.
+When a delivery or an automatic rebase that UZE runs leaves the work in a state with an instruction, the system SHALL submit that instruction to the agent once, under the same rules as a click. A state reached any other way SHALL send nothing on its own. `conflicted` and `failed` SHALL have an instruction of UZE's own when the project declares none, since in both the agent's checkout waits on the agent; any other undeclared state SHALL send nothing.
 
 #### Scenario: A push hands the work over
 - **WHEN** a push delivery rebases the branch, the gate passes, the branch is pushed, and the project declares `workspace.actions.on_publish`
@@ -82,12 +86,16 @@ When a delivery or an automatic rebase that UZE runs leaves the work in a state 
 - **WHEN** an automatic rebase stops on conflicts and the project declares `workspace.actions.on_conflict`
 - **THEN** that instruction is submitted to the agent once, and the chip shows the conflict
 
-#### Scenario: Nothing declared, nothing typed into the pane
+#### Scenario: A failed gate with nothing declared still reaches the agent
 - **WHEN** a delivery's gate fails and the project declares no `on_fail` instruction
-- **THEN** nothing is submitted to the agent, and the chip and a toast report the failure
+- **THEN** UZE's own instruction for a failed gate is submitted to the agent once
+
+#### Scenario: Nothing declared, nothing typed into the pane
+- **WHEN** a push delivery publishes the branch and the project declares no `on_publish` instruction
+- **THEN** nothing is submitted to the agent, and the chip and a toast report the push
 
 #### Scenario: States reached outside UZE's operations send nothing
-- **WHEN** the agent's own commits make the work ready, or its own push makes it published, or a request appears on the forge
+- **WHEN** the agent's own edits leave the checkout uncommitted, or its own push makes it published
 - **THEN** nothing is submitted on its own; a declared instruction for that state is sent only by a click
 
 #### Scenario: An automatic send meets a busy agent
@@ -135,9 +143,9 @@ A click on the work-state chip SHALL NOT start a delivery. Delivery SHALL stay r
 - **THEN** the delivery runs as the project's completion behavior describes
 
 #### Scenario: Hovering ready work without an instruction names the key
-- **WHEN** the pointer rests on a ready chip and the project declares no `on_ready` instruction
+- **WHEN** the pointer rests on a ready chip
 - **THEN** the chip is drawn as at rest, and the message zone names the key bound to delivering
 
 #### Scenario: The chip never delivers
-- **WHEN** the operator clicks the chip of ready work in a project that declares no `on_ready` instruction
+- **WHEN** the operator clicks the chip of ready work
 - **THEN** no rebase, gate or fast-forward is started

@@ -227,8 +227,7 @@ impl Attach<'_> {
                 // the project's instruction for it goes to the agent.
                 if matches!(
                     report.outcome,
-                    DeliveryOutcome::Merged
-                        | DeliveryOutcome::Published { .. }
+                    DeliveryOutcome::Published { .. }
                         | DeliveryOutcome::Conflicted { .. }
                         | DeliveryOutcome::Failed { .. }
                 ) {

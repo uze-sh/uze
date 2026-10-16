@@ -2463,6 +2463,38 @@ mod workspace_tests {
         );
     }
 
+    /// Uncommitted changes are already reported by the change count, which
+    /// opens them on a click; a status beside it is drawn only to send the
+    /// project's `on_change`, and then it is an action.
+    #[test]
+    fn uncommitted_work_shows_a_status_only_when_the_project_asks_something_there() {
+        let model = agent_with_task(WorkStateView::Uncommitted, 0);
+        let (rows, hits) = tab_strip(&model);
+        assert!(
+            !rows.iter().any(|row| row.contains("uncommitted")),
+            "{rows:?}"
+        );
+        assert!(
+            !hits.iter().any(|(_, hit)| matches!(
+                hit,
+                WorkspaceHit::StatusAction(_) | WorkspaceHit::StatusReport(_)
+            )),
+            "nothing to report the count does not already"
+        );
+
+        let model = answered(model, "Commit your work.");
+        let (rows, hits) = tab_strip(&model);
+        assert!(
+            rows.iter().any(|row| row.contains("uncommitted")),
+            "{rows:?}"
+        );
+        assert!(
+            hits.iter()
+                .any(|(_, hit)| matches!(hit, WorkspaceHit::StatusAction(_))),
+            "declared, it is the control that sends the instruction"
+        );
+    }
+
     /// The work's own model, with `instruction` declared for every state.
     fn answered(mut model: WorkspaceModel, instruction: &str) -> WorkspaceModel {
         for task in model.remembered.tasks.values_mut().flatten() {
@@ -3245,14 +3277,29 @@ mod workspace_tests {
 
         let (typed, _) = delivered_with(
             "orchestrator-left-undeclared",
-            DeliveryOutcome::Conflicted { files: Vec::new() },
-            WorkStateView::Conflicted { files: Vec::new() },
+            DeliveryOutcome::Published {
+                branch: "feat/x".into(),
+                request: None,
+            },
+            WorkStateView::Published,
             None,
             false,
         );
         assert!(
             typed.is_empty(),
             "nothing declared, nothing typed: {typed:?}"
+        );
+
+        let (typed, _) = delivered_with(
+            "orchestrator-left-merged",
+            DeliveryOutcome::Merged,
+            WorkStateView::Integrated,
+            Some("Summarize what changed."),
+            false,
+        );
+        assert!(
+            typed.is_empty(),
+            "a merge leaves the work delivered, which asks nothing: {typed:?}"
         );
 
         let (typed, _) = delivered_with(
@@ -3274,9 +3321,12 @@ mod workspace_tests {
     fn an_automatic_send_into_a_busy_agent_is_held_back() {
         let (typed, said) = delivered_with(
             "orchestrator-left-busy",
-            uze_application::DeliveryOutcome::Merged,
-            WorkStateView::Integrated,
-            Some("Summarize what changed."),
+            uze_application::DeliveryOutcome::Failed {
+                command: "cargo test".into(),
+                log: None,
+            },
+            WorkStateView::GateFailed,
+            Some("Fix the checks."),
             true,
         );
         assert!(typed.is_empty(), "{typed:?}");

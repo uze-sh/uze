@@ -103,16 +103,23 @@ state, and no word reaches the agent from anywhere else.
 - Rejected: `skill:` in particular. It would carry vendor invocation syntax onto a click path
   in `src/`. "Use the git:pr skill to …" reaches every harness as written.
 
-**D4. The keys name the moment, as `on_<event>`, one per state.**
+**D4. The keys name the moment, as `on_<event>`, one per state the agent acts in.**
 
-| State the chip reads | Key |
+| State | Key |
 |---|---|
-| ready | `on_ready` |
+| uncommitted | `on_change` |
 | published | `on_publish` |
-| in review | `on_review` |
-| delivered | `on_deliver` |
 | conflicted | `on_conflict` |
 | failed | `on_fail` |
+
+- Four, not one per chip state. From `ready` the next step is UZE's delivery (the key), from
+  `in_review` a reviewer's, and from `delivered` nobody's, so a key there would mostly go
+  undeclared. The file grows by additive keys, so adding one later breaks nothing, while
+  shipping one and removing it would break every file that declared it.
+- `uncommitted` gets a key although it is not a delivery state: it is the state an agent's
+  work sits in most, and "commit it" is the request an operator otherwise types by hand. Its
+  chip is drawn only when `on_change` is declared, beside the change count, which keeps
+  reporting the changes and opening them on a click.
 
 - The key says *when* and the text says *what*.
 - The form is the familiar event-handler one: `on` plus the event in its base form, as in
@@ -147,14 +154,17 @@ state, and no word reaches the agent from anywhere else.
 | UZE's operation | Resulting state | Instruction sent |
 |---|---|---|
 | `push` delivery, branch pushed | published | `on_publish` |
-| `merge` delivery, target fast-forwarded | delivered | `on_deliver` |
 | delivery or automatic refresh, rebase stops | conflicted | `on_conflict` |
 | delivery, gate fails | failed | `on_fail` |
 
-- Every other way into a state sends nothing on its own: the agent's commits (`ready`), a
-  push the agent made (`published`), a request on the forge (`in_review`), a squash merge
-  detected later (`delivered`). Those are observations, and an agent typed at on each of its own commits
-  would be interrupted mid-turn. Their instructions go by click.
+- Every other way into a state sends nothing on its own: the agent's edits (`uncommitted`)
+  and a push the agent made (`published`). Those are observations, and an agent typed at on
+  each of its own edits would be interrupted mid-turn. Their instructions go by click.
+- `on_conflict` and `on_fail` fall back to a line of UZE's own when undeclared
+  (`ActionState::fallback`): in both UZE left the agent's checkout waiting on the agent, a
+  rebase paused or a branch the gate refused, and an agent told nothing sits in front of it.
+  The fallback is static text, so the target and the gate's output are not quoted; the
+  checkout and the gate's log say both.
 - `DeliveryOutcome::{ReturnedToAgent, AwaitingRequest}` and `Evaluation::notices` lose their
   `AgentNotice` and carry the resulting state. The outcome toasts become state words.
 
@@ -202,7 +212,7 @@ The bullet "if UZE tells you a rebase is paused" stays, since it is already cond
 **D11. The hint and the toasts are bounded.**
 - The hint lives in the message zone, as that zone already works: over the tab side's tail,
   never over a control. It is at most 30 columns, cut with `…`, and dropped without room.
-- A `ready` chip with no instruction shows the deliver key, from
+- A `ready` chip, which never has an instruction, shows the deliver key, from
   `chord_for(Action::DeliverTask)`.
 - Toasts: title at most 24 columns, detail at most 32.
 
