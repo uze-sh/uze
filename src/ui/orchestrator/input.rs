@@ -244,10 +244,10 @@ pub(super) fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let parameter = modifier_parameter(key.modifiers);
     let bytes = match key.code {
-        KeyCode::Char(character) if control && character.is_ascii_alphabetic() => {
-            vec![(character.to_ascii_lowercase() as u8) - b'a' + 1]
-        }
-        KeyCode::Char(character) => character.to_string().into_bytes(),
+        KeyCode::Char(character) => match control_byte(character).filter(|_| control) {
+            Some(code) => vec![code],
+            None => character.to_string().into_bytes(),
+        },
         KeyCode::Enter => vec![b'\r'],
         KeyCode::Backspace => vec![0x7f],
         KeyCode::Tab => vec![b'\t'],
@@ -284,6 +284,25 @@ pub(super) fn encode_key(key: KeyEvent) -> Option<Vec<u8>> {
     } else {
         bytes
     })
+}
+
+/// The control code Ctrl turns `character` into, as xterm sends it. Past
+/// the letters, a terminal in legacy mode reports the punctuation chords
+/// by the digit sharing their code (`Ctrl+\` arrives as `Ctrl+4`), and one
+/// speaking the enhanced protocol reports the punctuation itself; both
+/// spellings are the same keystroke to the program in the pane.
+fn control_byte(character: char) -> Option<u8> {
+    match character {
+        'a'..='z' | 'A'..='Z' => Some((character.to_ascii_lowercase() as u8) - b'a' + 1),
+        ' ' | '@' | '2' => Some(0x00),
+        '[' | '3' => Some(0x1b),
+        '\\' | '4' => Some(0x1c),
+        ']' | '5' => Some(0x1d),
+        '^' | '6' => Some(0x1e),
+        '_' | '/' | '7' => Some(0x1f),
+        '?' | '8' => Some(0x7f),
+        _ => None,
+    }
 }
 
 /// xterm's modifier parameter, or `None` for a key pressed on its own.
@@ -363,6 +382,35 @@ mod tests {
                 "{code:?} with {modifiers:?}"
             );
         }
+    }
+
+    /// Legacy mode reports `Ctrl+\` as `Ctrl+4` and `Ctrl+@` as `Ctrl+Space`,
+    /// the enhanced protocol as the punctuation itself: the pane receives
+    /// xterm's control code for each spelling.
+    #[test]
+    fn a_control_chord_on_punctuation_reaches_the_pane_as_its_control_code() {
+        let control = |character| {
+            encode_key(KeyEvent::new(
+                KeyCode::Char(character),
+                KeyModifiers::CONTROL,
+            ))
+            .unwrap()
+        };
+        for (spellings, code) in [
+            (&[' ', '@', '2'][..], 0x00),
+            (&['[', '3'], 0x1b),
+            (&['\\', '4'], 0x1c),
+            (&[']', '5'], 0x1d),
+            (&['^', '6'], 0x1e),
+            (&['_', '/', '7'], 0x1f),
+            (&['?', '8'], 0x7f),
+        ] {
+            for &character in spellings {
+                assert_eq!(control(character), [code], "Ctrl+{character}");
+            }
+        }
+        assert_eq!(control('C'), [0x03]);
+        assert_eq!(control('1'), b"1");
     }
 
     #[test]
