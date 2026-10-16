@@ -78,7 +78,7 @@ scenes:
         # up; what says this one opened is the diff it is read in.
         expect: "DIFF ·"
         expect_timeout: 20
-      - key: "."
+      - key: "M-."
         say: open the actions of the change the surface selected
         expect: "Discard changes"
       - click: "Discard changes"
