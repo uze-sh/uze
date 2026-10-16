@@ -1,10 +1,11 @@
 //! How the code surface behaves against a real, large checkout — the
 //! latencies an operator waits through and the CPU it burns while open.
 //!
-//! Ignored: it needs a repository worth measuring, named by `BENCH_REPO`,
-//! and `BENCH_FILE`, a file in it to open (a directory holding siblings,
-//! so moving to the next one is a real second open). Run it with
-//! `cargo test --release -p uze --lib code_surface_under_load -- --ignored --nocapture`.
+//! Behind the `bench` feature, and ignored: it needs a repository worth
+//! measuring, named by `BENCH_REPO`, and `BENCH_FILE`, a file in it to open
+//! (a directory holding siblings, so moving to the next one is a real
+//! second open). Run it with
+//! `cargo test --release -p uze --features bench --lib code_surface_under_load -- --ignored --nocapture`.
 //!
 //! Drives the same `Attach` the workspace client runs — its threads, its
 //! channels, its frame — so a number here is what the loop would have

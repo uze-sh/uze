@@ -114,6 +114,11 @@ telemetry = [
   "dep:tracing-opentelemetry",
 ]
 
+# The code surface's latency harness (`src/ui/orchestrator/tests/perf.rs`),
+# which needs a real checkout to measure and asserts nothing: compiled only
+# when someone is about to run it.
+bench = []
+
 # The non-shipping `[[bin]]` targets below, and nothing else. Named as a
 # feature rather than moved to `[dev-dependencies]` because a `[[bin]]` cannot
 # use one; the self dev-dependency below is what turns it on for `cargo test`,
