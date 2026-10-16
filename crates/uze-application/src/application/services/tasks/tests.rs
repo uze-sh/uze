@@ -1247,6 +1247,28 @@ mod task_service_tests {
         let _ = std::fs::remove_dir_all(project);
     }
 
+    /// A subagent's checkout belongs to the agent it was split from, so
+    /// only that agent is listed.
+    #[test]
+    fn a_subagent_is_not_listed_apart_from_its_agent() {
+        let app = application("preserved-child-home");
+        let project = uze_testkit::temp::scratch("preserved-child");
+        std::fs::create_dir_all(&project).unwrap();
+        let agent = record_an_agent(&app, &project, WorkState::Running, None);
+        let child = record_an_agent(&app, &project, WorkState::Ready, None);
+        task::locked(&app.home, &project, |store| {
+            let child = store.agents.iter_mut().find(|it| it.id.as_str() == child);
+            child.unwrap().parent = Some(AgentId::adopted(&agent));
+            Ok(())
+        })
+        .unwrap();
+
+        let preserved = app.workspace().preserved_work();
+        let listed: Vec<&str> = preserved.iter().map(|work| work.id.as_str()).collect();
+        assert_eq!(listed, vec![agent.as_str()]);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
     /// An agent that worked in the project's root has a conversation like
     /// any other, and no branch of its own to say.
     #[test]
