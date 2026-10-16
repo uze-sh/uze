@@ -63,17 +63,27 @@ state, and no word reaches the agent from anywhere else.
   `publish` minus the "open the request" message.
 - Both rebase and gate first. That is how UZE gets the work there, so it is never a mode an
   operator chooses.
-- Undeclared, there is no delivery: the deliver key toasts that the project declares none.
+- Undeclared, there is no delivery. `deliver_task` and `deliver_ready` in `uze-application`
+  refuse, so the key, recent and anything else that asks are refused alike.
   Not configured means nothing happens, the same as for `actions`.
 - `pr` becomes `push`: the name promised a request that UZE no longer opens.
 - `handoff` goes: "validate and stop" was the internal step exposed as a mode.
 - Who pushes in `push`: UZE, right after the gate. The remote then only ever receives what the
   gate passed. With the agent pushing, a commit made after the gate would reach the request
   unchecked.
+- `refresh` today passes `CompletionBehavior::Handoff` to `target_tip` to mean "the local
+  target". That becomes an explicit `TargetSource::{Local, Remote}`, so no behavior value
+  stands in for a target.
+- `Delivered::Handoff` and `DeliveryOutcome::Handoff` go.
+- `DeliveryPolicyView.completion` becomes optional.
+- `set_completion` gains the ability to unset the key, so the policy popup can choose "no
+  delivery".
 - The spellings carry no aliases. The project is alpha and keeps no scattered compatibility,
   so `pr` and `handoff` fail with the strict section's error naming `merge | push`.
 
-**D3. The states, and their precedence.**
+**D2. The states, and their precedence.**
+- `in_review` holds only while nothing is left to push, and `delivered` only while the target
+  holds all of the branch. New commits therefore always read `ready`.
 - `WorkStateView` gains `InReview`. `Integrated` and `GateFailed` are shown as `delivered` and
   `failed`.
 - When more than one holds, the furthest along wins:
@@ -86,14 +96,14 @@ state, and no word reaches the agent from anywhere else.
 - The chip's subject no longer depends on the behavior: `#41` in review, otherwise
   `→ <target>`.
 
-**D4. One kind of action: an instruction string.**
-- `workspace.actions` maps a state to text, and its keys are the states of D3.
+**D3. One kind of action: an instruction string.**
+- `workspace.actions` maps a state to text, and its keys are the states of D2.
 - Rejected: typed actions (`skill:`, `prompt:`, `open:`, `uze:`). Each kind is a branch in
   the schema, the parser, the renderer and the spec.
 - Rejected: `skill:` in particular. It would carry vendor invocation syntax onto a click path
   in `src/`. "Use the git:pr skill to …" reaches every harness as written.
 
-**D5. The keys name the moment, as `on_<event>`, one per state.**
+**D4. The keys name the moment, as `on_<event>`, one per state.**
 
 | State the chip reads | Key |
 |---|---|
@@ -110,12 +120,13 @@ state, and no word reaches the agent from anywhere else.
 - The handler name fits both ways in:
   - UZE's operation is the event;
   - a click on the chip asks for that moment's instruction again.
-- Rejected: deed names such as `open_pr`. They bind a key to one deed and undo D4.
+- Rejected: deed names such as `open_pr`. They bind a key to one deed and undo D3.
 - Rejected: a bare `on:` block. YAML 1.1 reads `on` as `true`, the same trap GitHub Actions
   is known for.
 - `ActionState` is its own enum in `uze-workspace`, so a state added to the view is never
   accepted by the manifest silently.
-**D6. `actions` is read beside the policy, not inside it.**
+
+**D5. `actions` is read beside the policy, not inside it.**
 - Like `artifacts`, it is removed before the strict parse. `declaration::actions(root)` then
   reads it leniently, returning the map and the entries it left out.
 - The strict section protects policy: an unknown `delivery` read as a default is a policy
@@ -125,13 +136,13 @@ state, and no word reaches the agent from anywhere else.
 - The left-out entries reach the client as `Evaluation::ignored_actions`, said once per
   primary.
 
-**D7. The view carries the instruction; the client never reads the manifest.**
+**D6. The view carries the instruction; the client never reads the manifest.**
 - `AgentView` gains `action: Option<String>`.
 - `from_agent` takes the actions map at its four call sites, and the instruction is resolved
   from the final drawn state.
 - The client's local `Integrating` override drops it. A root agent gets `None`.
 
-**D8. An operation of UZE's sends the instruction of the state it leaves.**
+**D7. An operation of UZE's sends the instruction of the state it leaves.**
 
 | UZE's operation | Resulting state | Instruction sent |
 |---|---|---|
@@ -147,7 +158,7 @@ state, and no word reaches the agent from anywhere else.
 - `DeliveryOutcome::{ReturnedToAgent, AwaitingRequest}` and `Evaluation::notices` lose their
   `AgentNotice` and carry the resulting state. The outcome toasts become state words.
 
-**D9. Sending: one predicate, refuse rather than queue, submitted with Enter.**
+**D8. Sending: one predicate, refuse rather than queue, submitted with Enter.**
 - The target is `pane_for_agent(task.id)`, found by launch stamp.
 - `may_submit(pane)` answers:
   - `Busy` when the agent is working;
@@ -166,16 +177,19 @@ state, and no word reaches the agent from anywhere else.
   bracketed paste) and is not recorded in prompt history.
 - Known limit: the guard reads only this client's buffer.
 
-**D10. The region projected into `AGENTS.md` says the new split.**
-`CompletionBehavior::instruction_clause`:
+**D9. The region projected into `AGENTS.md` says the new split.**
+The clause is rendered from `Option<CompletionBehavior>` in `WorktreePolicy::instructions`, so
+the bullet's "delivery is UZE's" half agrees in every case:
 - `push`: UZE rebases your branch onto the target, runs the project's checks and pushes it.
   Open a request only when the project's instruction asks you to.
 - `merge`: as today.
-- No delivery: your branch is left for a person to integrate; commit on it and stop.
+- No delivery: the bullet reads "Never commit to, merge into, rebase, or reset the target
+  branch: your branch is left for a person to integrate; commit on it and stop", with no
+  claim that delivery is UZE's.
 
 The bullet "if UZE tells you a rebase is paused" stays, since it is already conditional.
 
-**D11. Affordance moves from ground to weight.**
+**D10. Affordance moves from ground to weight.**
 - `ChipState` loses only `Static`. The status chip gets `StatusChip::{Report,
   Action { hovered, pressed }}`.
 - Report: muted hue, regular weight, unchanged under the pointer.
@@ -185,7 +199,7 @@ The bullet "if UZE tells you a rebase is paused" stays, since it is already cond
   added to `token.rs`, `theme.schema.json` and the bundled themes.
 - The extension group keeps its ground.
 
-**D12. The hint and the toasts are bounded.**
+**D11. The hint and the toasts are bounded.**
 - The hint lives in the message zone, as that zone already works: over the tab side's tail,
   never over a control. It is at most 30 columns, cut with `…`, and dropped without room.
 - A `ready` chip with no instruction shows the deliver key, from
@@ -200,9 +214,9 @@ The bullet "if UZE tells you a rebase is paused" stays, since it is already cond
 | `Typed` | `you have text typed` | agent's label |
 | `Unknown` | `can't tell what's typed` | `press enter or ctrl-c` |
 
-**D13. No consent step for instructions.** Setup and gate lines ask consent because UZE runs
+**D12. No consent step for instructions.** Setup and gate lines ask consent because UZE runs
 them as shell. An instruction is text an agent reads, in the trust class of `AGENTS.md`, and it
-is sanitized (D9).
+is sanitized (D8).
 
 ## Candidate ADRs
 
@@ -224,5 +238,8 @@ is sanitized (D9).
   the deliver key.
 - [`PromptBuffer` models the line and may be wrong] → untrusted refuses (`Unknown`). A false
   refusal costs a key, and a false send mixes with the operator's words.
+- [Two binaries on one machine] → the installed release rejects `push` in this repository's
+  `agents.yaml`. The release reads the section as unreadable, so the `agents.yaml` edit is the
+  last task, and the release that ships this change is the one to adopt it.
 - [Wider reach] → five journeys and the delivery tests click the chip or assume `pr`, and five
   doc comments call the chip a button. The tasks list each.

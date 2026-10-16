@@ -91,7 +91,7 @@ not as absent.
 #### Scenario: An undeclared policy reads as the default, attributed
 - **WHEN** the popup opens in a repository whose manifest declares no
   policy
-- **THEN** it shows the default completion behavior, attributed to the
+- **THEN** it shows that no delivery is declared, attributed to the
   default rather than to the project
 
 #### Scenario: A declared policy is attributed to the manifest
@@ -131,6 +131,33 @@ creating one, and SHALL never hold up what the client draws.
 #### Scenario: A declaration changed through the workspace reaches the file
 - **WHEN** the operator changes the policy through the workspace rather than by editing `agents.yaml`
 - **THEN** the shared instruction file carries the new region without any command being run
+
+### Requirement: A task's identity is immutable and its name is derived
+The system SHALL give every agent launch a generated task identifier that
+never changes, keying its checkout and persisted state. The branch SHALL
+start as that identifier under `agent/`; branch and label SHALL then be
+replaced once while still generated and never overwritten afterwards
+(`agent-work-naming`). A name derived at publish time SHALL be only the
+fallback for a task nobody named. Task state SHALL be persisted outside
+every checkout and written atomically.
+
+#### Scenario: The branch starts from the identifier
+- **WHEN** an agent is created
+- **THEN** its branch is the identifier under the `agent/` prefix, and its
+  label is the generated one until the work is named
+
+#### Scenario: A published branch carries a readable name
+- **WHEN** a task nobody named is delivered by a push delivery
+- **THEN** the pushed branch is named from the task's first commit
+- **AND** the task's identifier, checkout and state are unchanged
+
+#### Scenario: State survives the checkout
+- **WHEN** a task's checkout directory is removed
+- **THEN** the task's state and transcript are still available
+
+#### Scenario: An interrupted write leaves a valid state file
+- **WHEN** the process is killed while task state is being written
+- **THEN** the state file on disk is either the previous version or the new one, never truncated
 
 ## REMOVED Requirements
 

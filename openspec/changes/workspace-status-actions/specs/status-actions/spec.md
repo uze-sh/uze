@@ -16,11 +16,15 @@ The tab strip SHALL show the selected isolated agent's work state as a chip read
 - **THEN** the chip reads the branch as published exactly as if anyone else had pushed it
 
 ### Requirement: The states the chip reads
-The chip SHALL read one of: `ready` (commits the target lacks), `published` (on the remote with nothing left to push and no request), `in_review` (a request is open for it), `delivered` (the target holds it), `conflicted` (a rebase is paused) or `failed` (the gate refused it). When more than one holds, the one furthest along SHALL be read.
+The chip SHALL read one of: `ready` (commits the target lacks), `published` (on the remote with nothing left to push and no request), `in_review` (a request is open for it and nothing is left to push), `delivered` (the target holds all of it), `conflicted` (a rebase is paused) or `failed` (the gate refused it). When more than one holds, the one furthest along SHALL be read.
 
 #### Scenario: A new commit after publishing
 - **WHEN** the agent commits on a branch that read as published
 - **THEN** the chip reads ready again, with the commits not yet on the remote counted
+
+#### Scenario: A new commit while in review
+- **WHEN** the agent commits on a branch that read as in review
+- **THEN** the chip reads ready again until those commits are on the remote
 
 #### Scenario: A request found on the remote
 - **WHEN** the branch is on the remote and the forge publishes a request for its tip
@@ -129,6 +133,10 @@ A click on the work-state chip SHALL NOT start a delivery. Delivery SHALL stay r
 #### Scenario: The key still delivers
 - **WHEN** the operator presses the key bound to delivering the selected task and the work is ready
 - **THEN** the delivery runs as the project's completion behavior describes
+
+#### Scenario: Hovering ready work without an instruction names the key
+- **WHEN** the pointer rests on a ready chip and the project declares no `on_ready` instruction
+- **THEN** the chip is drawn as at rest, and the message zone names the key bound to delivering
 
 #### Scenario: The chip never delivers
 - **WHEN** the operator clicks the chip of ready work in a project that declares no `on_ready` instruction

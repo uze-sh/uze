@@ -58,6 +58,8 @@ Underneath that sits a blurrier interface.
 ### Modified Capabilities
 - `worktree-policy`: `delivery:` becomes `merge | push` or undeclared; delivery stops asking
   for a request; a failed gate and a conflict no longer promise a fixed message to the agent.
+- `agent-isolation`: delivery is offered for an isolated agent only when the project declares a
+  completion behavior.
 
 ## Impact
 
