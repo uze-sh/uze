@@ -591,15 +591,30 @@ pub(super) fn render_root_picker(
 }
 
 /// `text` split after the head `needle` names, when it names one at all.
+/// `needle` is lowercase, and each character of `text` is lowered on its
+/// own as it is compared: lowering can change how many characters there
+/// are (`İ` is two), so a count taken on the lowered text cuts the
+/// original in the wrong place.
 pub(super) fn split_at_head(text: &str, needle: &str) -> (String, String) {
-    if needle.is_empty() || !text.to_lowercase().starts_with(needle) {
-        return (String::new(), text.to_owned());
+    let unmatched = || (String::new(), text.to_owned());
+    if needle.is_empty() {
+        return unmatched();
     }
-    let cut = text
-        .char_indices()
-        .nth(needle.chars().count())
-        .map_or(text.len(), |(index, _)| index);
-    (text[..cut].to_owned(), text[cut..].to_owned())
+    let mut wanted = needle.chars().peekable();
+    for (index, character) in text.char_indices() {
+        for lowered in character.to_lowercase() {
+            match wanted.next() {
+                Some(expected) if expected == lowered => {}
+                Some(_) => return unmatched(),
+                None => break,
+            }
+        }
+        if wanted.peek().is_none() {
+            let cut = index + character.len_utf8();
+            return (text[..cut].to_owned(), text[cut..].to_owned());
+        }
+    }
+    unmatched()
 }
 
 /// The column every row of the picker starts in — the kinds, what is being
@@ -809,4 +824,24 @@ pub(in crate::ui::orchestrator) fn render_action_index(
     );
     // Prepended: what is underneath must not answer a click meant here.
     hits.splice(0..0, entries);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_at_head;
+
+    #[test]
+    fn the_head_a_query_names_is_cut_where_it_ends_in_the_original() {
+        assert_eq!(
+            split_at_head("Projects", "pro"),
+            ("Pro".into(), "jects".into())
+        );
+        assert_eq!(
+            split_at_head("İstanbul", &"İs".to_lowercase()),
+            ("İs".into(), "tanbul".into())
+        );
+        assert_eq!(split_at_head("uze", "uzer"), (String::new(), "uze".into()));
+        assert_eq!(split_at_head("docs", "ox"), (String::new(), "docs".into()));
+        assert_eq!(split_at_head("docs", ""), (String::new(), "docs".into()));
+    }
 }
