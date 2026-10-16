@@ -1,9 +1,9 @@
-# The landing page's hero, as a spec: the same story the page used to draw
-# by hand (web/components/home/session.tsx), performed by the real binary.
-# A marketplace is added, one plugin reaches four agents, the project file
-# records it, and `uze workspace` takes the screen with three agents on three
-# harnesses, each in a checkout of its own; spec, arch and code then open on
-# the one that finished.
+# The landing page's hero, as a spec, performed by the real binary. It opens
+# where the product does, in the workspace; the package manager runs in the
+# space's own shell (a marketplace, one plugin, what each agent received);
+# agents on three harnesses then work side by side, each in a worktree of its
+# own; and the first is reviewed (spec, arch, code), commits through the
+# plugin's own skill, and is delivered.
 #
 #   tui-record seed   .demo/landing   # build the sandbox (first run, or after a /tmp wipe)
 #   tui-record probe  .demo/landing   # the shell in its sandbox, to try a selector out
@@ -150,6 +150,11 @@ sandbox:
   patch_json:
     - path: '{home}/.claude/settings.json'
       merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash"]}}'
+    # Left to itself, OpenCode in a fresh home picks a free model that
+    # refuses to run outside OpenCode's own app. The one the operator's
+    # granted subscription (auth.json, above) serves.
+    - path: '{home}/.config/opencode/opencode.json'
+      merge: '{"model": "opencode-go/glm-5.3-flash"}'
 # Its own fixture rather than demo-app: demo-app's remembered HEAD is shared
 # with three other specs, and this one starts from a manifest that declares
 # no plugin yet, so the install on camera is what writes them in.
@@ -292,111 +297,134 @@ fixtures:
             - [ ] 2.1 Ask the limiter before dispatching
             - [ ] 2.2 Answer `429` with `Retry-After`
 beats:
-  # ── the CLI ─────────────────────────────────────────────────────────────
+  # ── 1. open the workspace ───────────────────────────────────────────────
+  # From a bare shell, so the first thing on screen says this is a CLI; the
+  # rest happens inside it.
   - say: a shell, in a project
-    pause: 0.8
-  - say: a marketplace is added — a Git repository of plugins
-    type: uze market add hiukky/ai
-    expect: 1 marketplace added
-    expect_timeout: 60
-    pause: 1.4
-  - say: one plugin, installed once, reaches every agent in its own form
-    type: uze git@ai
-    expect: added to this project
-    expect_timeout: 90
-    pause: 1.6
-  # The install's own report is one line; what each agent received is
-  # `inspect`'s matrix, a column per harness, in the route each one takes.
-  - say: what each agent received, in its own form
-    type: uze inspect git
-    expect: files in place
-    expect_timeout: 15
-    pause: 3.2
-  - say: the project file now records it
-    type: cat agents.yaml
-    expect: 'plugins:'
-    pause: 2.6
-  # ── the workspace ───────────────────────────────────────────────────────
-  - say: the workspace takes the screen
+    pause: 0.6
+  - say: the workspace takes the screen, with a shell of its own
     type: uze workspace
     expect: demo-api
     expect_in: sidebar
     expect_timeout: 15
+    pause: 1.4
+  # ── 2. add a plugin ─────────────────────────────────────────────────────
+  # Typed into the space's own shell pane: the package manager is the same
+  # binary, reached from inside the screen it serves.
+  - say: a marketplace is added, a Git repository of plugins
+    type: uze market add hiukky/ai
+    expect: 1 marketplace added
+    expect_timeout: 60
     pause: 1.0
-  - say: an agent on Claude Code, in a checkout of its own
+  - say: one plugin, installed once, for every agent
+    type: uze git@ai
+    expect: added to this project
+    expect_timeout: 90
+    pause: 1.0
+  - say: what each agent received, in its own form
+    type: uze inspect git
+    expect: files in place
+    expect_timeout: 15
+    pause: 3.0
+  # ── 3. agents side by side ──────────────────────────────────────────────
+  - say: an agent on Claude Code, in a worktree of its own
     click: new
     in: sidebar
     expect: new agent
     expect_timeout: 6
-    pause: 0.6
+    pause: 0.5
   - click: Claude Code
     in: screen
     offset: 2
     expect: Claude Code v
     expect_timeout: 25
-    pause: 0.8
-  - type: add a /ping route to src/router.rs that answers pong, then commit
+    pause: 0.6
+  # No commit asked for here: committing is what the plugin's skill does,
+  # once the change is there.
+  - type: add a /ping route to src/router.rs that answers pong
     expect: 'esc to interrupt|for \d+s · done'
     expect_timeout: 60
-    pause: 0.8
+    pause: 0.6
   - say: a second, on Codex
     click: new
     in: sidebar
     expect: new agent
     expect_timeout: 6
-    pause: 0.6
+    pause: 0.5
   - click: Codex
     in: screen
     offset: 2
     expect: Ask Codex to do anything
     expect_timeout: 40
-    pause: 0.8
+    pause: 0.6
   - type: cover GET /health with a test in src/health.rs
-    pause: 1.2
+    pause: 0.8
   - say: a third, on OpenCode
     click: new
     in: sidebar
     expect: new agent
     expect_timeout: 6
-    pause: 0.6
+    pause: 0.5
   - click: OpenCode
     in: screen
     offset: 2
     expect: ctrl\+p commands
     expect_timeout: 25
-    pause: 0.8
+    pause: 0.6
   - type: add a Routes section to README.md listing every route in src/router.rs
-    pause: 1.2
-  - say: wait for its edit — the only stretch the cut squeezes
+    pause: 0.8
+  # ── 4. review and deliver ───────────────────────────────────────────────
+  - say: wait for Claude's edit, the only stretch the cut squeezes
     wait: shell
-    until: grep -qs Routes /tmp/demos/demo-api/.worktrees/*/README.md
+    until: grep -qs pong /tmp/demos/demo-api/.worktrees/*/src/router.rs
     timeout: 300
-    settle: 2.0
-    pause: 1.6
-  # ── on the one that finished ───────────────────────────────────────────
+    settle: 3.0
+    pause: 0.2
+  - say: back to the first agent
+    click: claude
+    in: sidebar
+    expect: Claude Code v
+    expect_timeout: 8
+    pause: 0.8
   - say: what the project plans
     click: spec
     in: strip
     expect: add-rate-limiting
     expect_in: pane
     expect_timeout: 10
-    pause: 2.4
+    pause: 2.0
   - say: what it wrote down about itself, drawn in cells
     click: arch
     in: strip
     expect: system-context\.mmd
     expect_timeout: 10
-    pause: 2.8
-  - say: and what the agent changed, in its own checkout
+    pause: 2.2
+  - say: and what the agent changed, in its own worktree
     key: M-g
     expect: 'DIFF ·'
     expect_timeout: 10
     refuse: no changes
-    pause: 3.4
+    pause: 3.0
   - click: code
     in: strip
-    expect: ctrl\+p commands
+    expect: Claude Code v
     expect_timeout: 6
-    pause: 1.6
-  - say: and out — the cut stops here, before the screen blanks
+    pause: 0.6
+  # The plugin installed in chapter 2, used: the skill is in Claude's own
+  # slash menu, and the commit it makes is what makes the work ready.
+  - say: the plugin's skill, invoked inside the harness
+    type: /git:commit
+    pause: 0.4
+  - wait: shell
+    until: for w in /tmp/demos/demo-api/.worktrees/*; do git -C "$w" log -1 --format=%s 2>/dev/null; done | grep -qi ping
+    timeout: 180
+    settle: 2.0
+    pause: 1.2
+  - say: ready work is delivered, rebased, checked and merged
+    click: ready
+    in: strip
+    expect: delivered
+    expect_timeout: 60
+    pause: 2.8
+  - say: and out, the cut stops here, before the screen blanks
     end: C-q

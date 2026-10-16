@@ -8,10 +8,10 @@ import { useEffect, useRef, useState } from 'react';
 // seconds of the rendered video, so re-recording means re-reading these off
 // the new cut (`tui-record run` prints where each beat landed).
 const CHAPTERS: { label: string; at: number }[] = [
-  { label: 'add a marketplace', at: 0 },
-  { label: 'add a plugin', at: 0 },
-  { label: 'the project file', at: 0 },
   { label: 'open the workspace', at: 0 },
+  { label: 'add a plugin', at: 0 },
+  { label: 'agents side by side', at: 0 },
+  { label: 'review and deliver', at: 0 },
 ];
 
 export function HeroRecording() {
@@ -84,7 +84,7 @@ export function HeroRecording() {
           preload={still ? 'none' : 'auto'}
           poster="/uze-landing-poster.png"
           onTimeUpdate={follow}
-          aria-label="A terminal session recorded with the real uze: uze market add hiukky/ai adds a marketplace; uze git@ai installs the git plugin; uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents.yaml records it; then uze workspace opens and three agents, on Claude Code, Codex and OpenCode, each work in a worktree of their own, while spec, arch and code open on the one that finished."
+          aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on the first, which commits through the plugin skill and is delivered."
           className="block h-auto w-full"
         >
           <source src="/uze-landing.webm" type="video/webm" />
