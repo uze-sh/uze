@@ -530,17 +530,6 @@ impl UzeHome {
         self.runtime_project_dir(project_id).join(integration)
     }
 
-    /// Everything UZE generates for another program to read, and
-    /// everything it remembered from observing. Deleting either costs
-    /// nothing: the first is produced again, the second observed again.
-    ///
-    /// Named together because that is the one question an operator staring
-    /// at `~/.uze` actually has — *can I delete this* — and the layout
-    /// answers it by which directory a thing is in.
-    pub fn rebuildable_dirs(&self) -> [PathBuf; 2] {
-        [self.runtime_dir(), self.cache_dir()]
-    }
-
     /// Narrows an existing root to this user alone (`0700`; a protected ACL
     /// on Windows). What is under it names every project, branch and agent
     /// on the machine, and the terminal runtime's records carry the
@@ -690,7 +679,10 @@ mod tests {
     #[test]
     fn nothing_a_record_needs_sits_in_a_tier_that_can_be_deleted() {
         let home = UzeHome::at("/tmp/uze-tiers");
-        let rebuildable = home.rebuildable_dirs();
+        // Everything UZE generates for another program to read, and
+        // everything it remembered from observing: the two tiers whose
+        // deletion costs nothing.
+        let rebuildable = [home.runtime_dir(), home.cache_dir()];
 
         let records = [
             home.registry_path(),
