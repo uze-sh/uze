@@ -130,6 +130,16 @@ pub(super) fn connect_starting(
     socket: &Path,
     started: &mut std::process::Child,
 ) -> Result<Stream, RuntimeError> {
+    connect_starting_within(socket, started, READY_WITHIN)
+}
+
+/// [`connect_starting`], giving the server that won the claim instead
+/// `ready_within` to answer.
+pub(super) fn connect_starting_within(
+    socket: &Path,
+    started: &mut std::process::Child,
+    ready_within: Duration,
+) -> Result<Stream, RuntimeError> {
     let deadline = Instant::now() + STARTING_WITHIN;
     loop {
         match transport::connect(socket) {
@@ -141,7 +151,7 @@ pub(super) fn connect_starting(
                 ) =>
             {
                 if matches!(started.try_wait(), Ok(Some(_))) {
-                    return connect_waiting(socket);
+                    return connect_waiting_within(socket, ready_within);
                 }
                 if Instant::now() >= deadline {
                     return Err(RuntimeError::Protocol(
@@ -156,7 +166,11 @@ pub(super) fn connect_starting(
 }
 
 pub(super) fn connect_waiting(socket: &Path) -> Result<Stream, RuntimeError> {
-    let deadline = Instant::now() + READY_WITHIN;
+    connect_waiting_within(socket, READY_WITHIN)
+}
+
+fn connect_waiting_within(socket: &Path, ready_within: Duration) -> Result<Stream, RuntimeError> {
+    let deadline = Instant::now() + ready_within;
     loop {
         match transport::connect(socket) {
             Ok(stream) => return Ok(stream),
