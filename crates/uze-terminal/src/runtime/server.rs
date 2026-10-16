@@ -1142,11 +1142,11 @@ impl Server {
             return;
         }
         let session = self.session.lock().expect("session poisoned").clone();
+        // Encoded outside the map's lock: a whole pane can be a large
+        // frame, and input and damage wait on that lock.
         let repaints: Vec<Frame> = self
-            .panes
-            .lock()
-            .expect("panes poisoned")
-            .values()
+            .runtimes()
+            .iter()
             .map(|pane| Frame::of(&ClientEvent::Damage(whole_pane(pane.snapshot()))))
             .collect();
         self.clients
