@@ -51,6 +51,11 @@ pub(super) fn workspace_lock_path() -> PathBuf {
 /// [`workspace_is_claimed`] asks with a shared lock. Panes never inherit it:
 /// the descriptor is opened close-on-exec, and `portable-pty` closes every
 /// descriptor above stdio in the child before `exec` besides.
+/// How long a starting server waits out clients asking about the claim:
+/// each holds it for an instant, so only a stream of them that never
+/// pauses lasts this long.
+const CLIENTS_LET_GO_WITHIN: Duration = Duration::from_secs(5);
+
 pub(super) struct WorkspaceLock {
     pub(super) file: fs::File,
 }
@@ -58,6 +63,7 @@ pub(super) struct WorkspaceLock {
 impl WorkspaceLock {
     pub(super) fn acquire() -> Result<Self, RuntimeError> {
         let mut file = open_workspace_lock()?;
+        let deadline = Instant::now() + CLIENTS_LET_GO_WITHIN;
         loop {
             match try_lock(&file, LockMode::Exclusive) {
                 Ok(()) => {
@@ -74,7 +80,12 @@ impl WorkspaceLock {
                     }
                     // A client was asking; it lets go as soon as it has its
                     // answer.
-                    thread::yield_now();
+                    if Instant::now() >= deadline {
+                        return Err(RuntimeError::Protocol(
+                            "the workspace lock stayed busy with clients asking about it".into(),
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(2));
                 }
             }
         }
