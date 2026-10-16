@@ -358,6 +358,8 @@ mod tests {
         if std::env::var_os(LISTEN).is_none() {
             return;
         }
+        // Replaced by the one below before any stop arrives.
+        listen_for_stop("uze-platform-test", || std::process::exit(1));
         listen_for_stop("uze-platform-test", || {
             println!("stopped");
             std::process::exit(0);

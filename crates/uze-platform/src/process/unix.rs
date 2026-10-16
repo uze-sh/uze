@@ -10,7 +10,10 @@ use std::{
     io,
     os::unix::process::CommandExt,
     process::Command,
-    sync::atomic::{AtomicI32, Ordering},
+    sync::{
+        Mutex, Once, PoisonError,
+        atomic::{AtomicI32, Ordering},
+    },
 };
 
 /// `pid` as something `kill(2)` may be given — only where it names one
@@ -45,8 +48,14 @@ pub(super) fn request_stop(pid: u32, _channel: &str) {
 }
 
 /// The write end of the pipe the `SIGTERM` handler wakes the listener
-/// through; `-1` while nobody listens.
+/// through; `-1` until something listens. Made once and never closed: a
+/// handler that loaded it must not write into a descriptor that was closed
+/// and handed to something else in between.
 static STOP_PIPE: AtomicI32 = AtomicI32::new(-1);
+
+/// What the listener runs on the next stop request.
+type OnStop = Box<dyn FnOnce() + Send>;
+static ON_STOP: Mutex<Option<OnStop>> = Mutex::new(None);
 
 extern "C" fn note_stop(_signal: libc::c_int) {
     let fd = STOP_PIPE.load(Ordering::SeqCst);
@@ -59,8 +68,15 @@ extern "C" fn note_stop(_signal: libc::c_int) {
 
 /// The default `SIGTERM` ends the process before anything it started is
 /// ended with it, so the handler only wakes a thread, which runs `on_stop`
-/// where anything may be done.
+/// where anything may be done. A listener installed again replaces the
+/// callback the one thread runs, never the pipe.
 pub(super) fn listen_for_stop(_channel: &str, on_stop: impl FnOnce() + Send + 'static) {
+    *ON_STOP.lock().unwrap_or_else(PoisonError::into_inner) = Some(Box::new(on_stop));
+    static LISTENING: Once = Once::new();
+    LISTENING.call_once(start_listening);
+}
+
+fn start_listening() {
     let mut ends = [0; 2];
     // SAFETY: `pipe` fills the two descriptors it is handed.
     if unsafe { libc::pipe(ends.as_mut_ptr()) } != 0 {
@@ -74,14 +90,7 @@ pub(super) fn listen_for_stop(_channel: &str, on_stop: impl FnOnce() + Send + 's
         libc::fcntl(write_end, libc::F_SETFD, libc::FD_CLOEXEC);
         libc::fcntl(write_end, libc::F_SETFL, libc::O_NONBLOCK);
     }
-    // A listener installed again retires the one before it: its pipe's
-    // write end closes, and its thread reads the end of the pipe rather
-    // than a request.
-    let previous = STOP_PIPE.swap(write_end, Ordering::SeqCst);
-    if previous >= 0 {
-        // SAFETY: the previous write end, which nothing else holds.
-        unsafe { libc::close(previous) };
-    }
+    STOP_PIPE.store(write_end, Ordering::SeqCst);
     // SAFETY: the struct is plain data, zeroed is valid for it, and the
     // handler only writes to a pipe. `SA_RESTART`, so a call another thread
     // is blocked in resumes rather than failing with `EINTR`.
@@ -94,18 +103,21 @@ pub(super) fn listen_for_stop(_channel: &str, on_stop: impl FnOnce() + Send + 's
     }
     std::thread::spawn(move || {
         let mut byte = 0u8;
-        let woken = loop {
+        loop {
             // SAFETY: one byte into a local this thread owns.
             match unsafe { libc::read(read_end, (&raw mut byte).cast(), 1) } {
-                1 => break true,
+                1 => {
+                    let on_stop = ON_STOP
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .take();
+                    if let Some(on_stop) = on_stop {
+                        on_stop();
+                    }
+                }
                 -1 if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted => {}
-                _ => break false,
+                _ => return,
             }
-        };
-        // SAFETY: the read end, owned by this thread alone.
-        unsafe { libc::close(read_end) };
-        if woken {
-            on_stop();
         }
     });
 }
