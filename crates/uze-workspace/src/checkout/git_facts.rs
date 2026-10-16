@@ -230,3 +230,60 @@ pub(crate) fn commits_ahead_checked(root: &Path, target: &str, branch: &str) -> 
 pub fn commits_ahead(root: &Path, target: &str, branch: &str) -> usize {
     commits_ahead_checked(root, target, branch).unwrap_or(0)
 }
+
+/// A number that changes whenever Git writes what a checkout's state is
+/// read from: its `HEAD`, its index, a paused rebase, and the refs of the
+/// branch it is on, local and on `origin`. Read from the file system
+/// alone — no process, no lock — so a client can ask it every second for
+/// every checkout it shows, and read Git only when it moved. `None` when
+/// `checkout` is not a Git working tree.
+///
+/// What it does not see is an edit Git has not been told about: a file
+/// written and not added. That is the pane's own activity to say.
+pub fn change_stamp(checkout: &Path) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+
+    let git_dir = git_dir_of(checkout)?;
+    let common = fs::read_to_string(git_dir.join("commondir"))
+        .ok()
+        .map(|relative| git_dir.join(relative.trim()))
+        .unwrap_or_else(|| git_dir.clone());
+    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let mut watched = vec![
+        git_dir.join("HEAD"),
+        git_dir.join("index"),
+        git_dir.join("rebase-merge"),
+        git_dir.join("rebase-apply"),
+        common.join("packed-refs"),
+    ];
+    if let Some(branch) = head.trim().strip_prefix("ref: refs/heads/") {
+        watched.push(common.join("refs/heads").join(branch));
+        watched.push(common.join("refs/remotes/origin").join(branch));
+    }
+    let mut hasher = std::hash::DefaultHasher::new();
+    head.hash(&mut hasher);
+    for path in watched {
+        fs::metadata(&path)
+            .ok()
+            .map(|meta| (meta.modified().ok(), meta.len()))
+            .hash(&mut hasher);
+    }
+    Some(hasher.finish())
+}
+
+/// The administrative directory of the checkout at `root`: `.git` itself,
+/// or where a worktree's `.git` file points.
+fn git_dir_of(root: &Path) -> Option<PathBuf> {
+    let dot_git = root.join(".git");
+    let meta = fs::metadata(&dot_git).ok()?;
+    if meta.is_dir() {
+        return Some(dot_git);
+    }
+    let pointer = fs::read_to_string(&dot_git).ok()?;
+    let target = Path::new(pointer.trim().strip_prefix("gitdir:")?.trim());
+    Some(if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        root.join(target)
+    })
+}

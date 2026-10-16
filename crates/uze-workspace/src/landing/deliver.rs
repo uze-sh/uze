@@ -109,12 +109,19 @@ pub(super) fn deliver_locked(
 /// Takes the state beside the branch rather than the whole agent: this
 /// runs inside a pass that is already holding one, and two disjoint
 /// fields borrowed apart is what lets it.
+///
+/// Never waits for the repository's write lock: a busy lock is answered
+/// as an error and the next pass follows the target instead. The pass
+/// that calls this holds the tasks document, and a delivery holding the
+/// write lock through a slow `pre-push` needs that document to record
+/// its outcome — waiting here left both standing still until the lock's
+/// timeout, and the operator watching a delivery that had already pushed.
 pub fn refresh(
     primary: &Path,
     state: &mut WorkState,
     isolation: &mut Isolation,
 ) -> Result<bool, DeliveryFailure> {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+    uze_git::locked(primary, Duration::ZERO, || {
         let slot =
             slot_path(primary, isolation).ok_or(DeliveryFailure::NotReady(Readiness::Running))?;
         checkout::anchored(primary, &slot).map_err(DeliveryFailure::Git)?;

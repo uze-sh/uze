@@ -1812,3 +1812,34 @@ mod ownership {
         assert!(!resumed.created);
     }
 }
+
+/// The stamp moves on what Git records — a commit, a `git add`, a push to
+/// `origin` — and stays put across reads, so a client that polls it reads
+/// Git only when there is something new to read.
+#[test]
+fn a_checkouts_change_stamp_moves_with_what_git_records_and_only_then() {
+    let repository = repository("change-stamp");
+    repository.with_origin(TARGET);
+    let mut store = AgentStore::default();
+    let (_, acquired) = launch(&repository, &mut store, "stamp");
+    let slot = acquired.path;
+    let stamp = || change_stamp(&slot).expect("a working tree");
+
+    let at_rest = stamp();
+    let _ = is_dirty(&slot);
+    assert_eq!(stamp(), at_rest, "reading the checkout changes nothing");
+
+    fs::write(slot.join("a.rs"), "").unwrap();
+    repository.git_in(&slot, &["add", "a.rs"]);
+    let added = stamp();
+    assert_ne!(added, at_rest, "an add is recorded in the index");
+
+    repository.git_in(&slot, &["commit", "-qm", "a"]);
+    let committed = stamp();
+    assert_ne!(committed, added, "a commit moves the branch");
+
+    repository.git_in(&slot, &["push", "--quiet", "origin", "HEAD"]);
+    assert_ne!(stamp(), committed, "a push moves the remote's ref");
+
+    assert_eq!(change_stamp(&slot.join("missing")), None);
+}

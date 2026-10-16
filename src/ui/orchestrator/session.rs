@@ -302,6 +302,7 @@ impl Attach<'_> {
         self.absorb_checkouts();
         self.absorb_joins();
         self.absorb_labels();
+        self.absorb_checkout_stamps();
         self.absorb_task_evaluations();
         self.absorb_deliveries();
         self.absorb_task_mutations();

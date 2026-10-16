@@ -83,6 +83,14 @@ pub struct RequestObservation {
     pub(super) request: Option<u32>,
 }
 
+impl RequestObservation {
+    /// Whether answering this took a question to the remote, rather than
+    /// the local refs and the clock alone.
+    pub fn asked_the_remote(&self) -> bool {
+        self.asked_at_unix.is_some()
+    }
+}
+
 /// Asks the remote whether a request is open for this task's published
 /// branch, writing nothing.
 ///

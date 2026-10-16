@@ -67,16 +67,18 @@ impl Attach<'_> {
     pub(super) fn absorb_task_evaluations(&mut self) {
         let mut asked_again = Vec::new();
         while let Ok(resolution) = self.channels.tasks.receiver.try_recv() {
-            self.model
-                .remembered
-                .task_eval_pending
-                .remove(&resolution.key);
-            asked_again.extend(
+            if !resolution.remote_half {
                 self.model
                     .remembered
-                    .task_eval_again
-                    .remove(&resolution.key),
-            );
+                    .task_eval_pending
+                    .remove(&resolution.key);
+                asked_again.extend(
+                    self.model
+                        .remembered
+                        .task_eval_again
+                        .remove(&resolution.key),
+                );
+            }
             self.model
                 .remembered
                 .evaluated
@@ -381,6 +383,21 @@ impl Attach<'_> {
             // a relaunch needs the answer.
             spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
         }
+        if !self.model.remembered.checkout_watch_pending
+            && self
+                .model
+                .remembered
+                .last_checkout_watch
+                .is_none_or(|last| last.elapsed() >= CHECKOUT_WATCH)
+        {
+            self.model.remembered.last_checkout_watch = Some(Instant::now());
+            self.model.remembered.checkout_watch_pending = true;
+            spawn_checkout_watch(
+                self.home,
+                self.model.watched_checkouts(&self.identities),
+                self.channels.checkout_stamps.sender.clone(),
+            );
+        }
         if self
             .model
             .remembered
@@ -393,6 +410,34 @@ impl Attach<'_> {
                 self.model.space_directories(&self.identities),
                 self.channels.target_syncs.sender.clone(),
             );
+        }
+    }
+
+    /// Checkouts whose stamp moved since it was last read: Git recorded
+    /// something there, so its repository is evaluated now rather than on
+    /// the refresh clock. A checkout read for the first time only sets its
+    /// stamp — the evaluation that put it on screen already read it.
+    pub(in crate::ui::orchestrator) fn absorb_checkout_stamps(&mut self) {
+        while let Ok(resolution) = self.channels.checkout_stamps.receiver.try_recv() {
+            self.model.remembered.checkout_watch_pending = false;
+            for (checkout, stamp) in resolution.stamps {
+                let Some(stamp) = stamp else {
+                    self.model.remembered.checkout_stamps.remove(&checkout);
+                    continue;
+                };
+                let before = self
+                    .model
+                    .remembered
+                    .checkout_stamps
+                    .insert(checkout.clone(), stamp);
+                if before.is_some_and(|before| before != stamp) {
+                    self.model.schedule_evaluation(
+                        self.home,
+                        checkout,
+                        &self.channels.tasks.sender,
+                    );
+                }
+            }
         }
     }
 

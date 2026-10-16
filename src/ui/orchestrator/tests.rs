@@ -4678,6 +4678,7 @@ mod workspace_tests {
         let resolution = WorkResolution {
             key: evaluation_key(&nested),
             answered: None,
+            remote_half: false,
         };
         let mut pending = std::collections::BTreeSet::new();
         pending.insert(evaluation_key(&nested));
@@ -11746,6 +11747,43 @@ mod workspace_tests {
     /// A message for an agent reaches the agent's own pane, never a shell
     /// that happens to stand in the same slot: typed into the shell, it
     /// would run as a command.
+    /// A checkout's stamp read for the first time is only remembered; one
+    /// that moved since is evaluated at once, without waiting for the
+    /// refresh clock.
+    #[test]
+    fn a_checkout_whose_stamp_moved_is_evaluated_at_once() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-stamp"));
+        let mut driven = driven(agent_with_task(WorkStateView::Running, 0), &home);
+        let checkout = PathBuf::from("/repo/.worktrees/stamped");
+        let stamp = |driven: &mut Driven<'_>, value: u64| {
+            driven
+                .attach
+                .channels
+                .checkout_stamps
+                .sender
+                .send(super::StampResolution {
+                    stamps: vec![(checkout.clone(), Some(value))],
+                })
+                .unwrap();
+            driven.attach.absorb_checkout_stamps();
+        };
+        let pending = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .remembered
+                .task_eval_pending
+                .contains(&evaluation_key(&checkout))
+        };
+
+        stamp(&mut driven, 1);
+        assert!(!pending(&driven), "a first read only sets the stamp");
+        stamp(&mut driven, 1);
+        assert!(!pending(&driven), "an unchanged stamp asks nothing");
+        stamp(&mut driven, 2);
+        assert!(pending(&driven), "a moved stamp evaluates its repository");
+    }
+
     #[test]
     fn a_notice_for_an_agent_skips_a_shell_standing_in_its_slot() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-notice-pane"));
@@ -11788,6 +11826,7 @@ mod workspace_tests {
                         ..uze_application::Evaluation::default()
                     },
                 }),
+                remote_half: false,
             })
             .unwrap();
         driven.pump();

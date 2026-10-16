@@ -67,3 +67,9 @@
 - [x] 7.3 Draw an `uncommitted` status beside the change count only when `on_change` is declared; the count keeps opening the changes
 - [x] 7.4 Tests, the reference page, journey `05-delivery/01` (the click moves to `on_change`), and this repository's `agents.yaml`
 - [x] 7.5 Name the hovered action by its key (`send <key>`) instead of the instruction's start
+
+## 8. Status latency, after trying it by hand
+
+- [x] 8.1 `landing::refresh` takes the repository write lock without waiting (`Duration::ZERO`): the evaluation pass holds the tasks document, and waiting there held a delivery's outcome behind a slow `pre-push` until the lock's 60 s timeout
+- [x] 8.2 Split the evaluation into `read_tasks` (no network) and `ask_about_requests` (the `git ls-remote`, carried as `RequestQuestion`); the client draws the first answer and replaces the views with the second
+- [x] 8.3 Poll a per-checkout `change_stamp` (`HEAD`, index, rebase state, the branch's local and `origin` refs; `stat` only) every second and evaluate a repository whose stamp moved

@@ -236,6 +236,12 @@ pub(crate) enum WorkspaceExit {
 /// integrated by hand, a checkout removed.
 const TASK_REFRESH: Duration = Duration::from_secs(20);
 
+/// How often each checkout on screen is asked whether Git recorded
+/// anything in it. A handful of `stat`s per checkout and no process, so a
+/// commit an agent makes mid-turn is drawn within about this long rather
+/// than on the next [`TASK_REFRESH`].
+const CHECKOUT_WATCH: Duration = Duration::from_secs(1);
+
 /// How often each visible project's target is brought in line with its
 /// remote, and therefore how far behind the team a new agent can start.
 /// A network round trip, so far less often than [`TASK_REFRESH`]; a
@@ -1396,6 +1402,9 @@ struct Channels {
     policy_regions: Answers<PolicyRegionResolution>,
     /// Bringing each project's target in line with its remote.
     target_syncs: Answers<TargetSyncReport>,
+    /// What each checkout on screen last recorded, polled on
+    /// [`CHECKOUT_WATCH`].
+    checkout_stamps: Answers<StampResolution>,
     /// A project's gates this machine cannot run, read where it opens.
     unspelled_gates: Answers<UnspelledGates>,
     /// A project's commands that wait for the operator's approval, read
@@ -1526,6 +1535,11 @@ struct Remembered {
     task_name_adoptions: BTreeMap<TabId, String>,
     last_task_refresh: Option<Instant>,
     last_target_sync: Option<Instant>,
+    /// Each checkout's [`StampResolution`] as last read, and when the next
+    /// read was asked for; a checkout whose stamp moves is evaluated.
+    checkout_stamps: BTreeMap<PathBuf, u64>,
+    last_checkout_watch: Option<Instant>,
+    checkout_watch_pending: bool,
     /// Projects whose target sync last said new agents start behind, so
     /// it is said once rather than on every pass.
     target_sync_behind: BTreeSet<PathBuf>,

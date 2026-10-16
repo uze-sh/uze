@@ -339,6 +339,10 @@ pub(super) struct WorkResolution {
     /// What the directory's repository holds, or `None` when the
     /// directory turned out not to be a Git working tree.
     pub(super) answered: Option<EvaluationAnswer>,
+    /// The remote's half of a pass whose own answer already arrived: the
+    /// views after the forge was asked about requests. It releases no
+    /// reservation, since the first half already did.
+    pub(super) remote_half: bool,
 }
 
 /// One evaluated directory: the repository its tasks hang off, the branch
@@ -357,6 +361,26 @@ pub(super) struct EvaluationAnswer {
     pub(super) target: Option<String>,
     pub(super) sync: Option<UpstreamSync>,
     pub(super) evaluation: Evaluation,
+}
+
+impl EvaluationAnswer {
+    /// This answer as the remote's half will carry it: the same
+    /// repository facts and question, and nothing the first half already
+    /// acted on — no arrivals to send instructions for, nothing recovered
+    /// to say again.
+    fn remote_half(&self) -> Self {
+        Self {
+            primary: self.primary.clone(),
+            branch: self.branch.clone(),
+            target: self.target.clone(),
+            sync: self.sync,
+            evaluation: Evaluation {
+                ignored_actions: self.evaluation.ignored_actions.clone(),
+                requests: self.evaluation.requests.clone(),
+                ..Evaluation::default()
+            },
+        }
+    }
 }
 
 /// What a background delivery answered.
@@ -423,7 +447,7 @@ pub(super) fn spawn_task_evaluation(
         // key, and the directory is then never evaluated again.
         let answered = answered_or(
             || {
-                tui_application(home).ok().and_then(|app| {
+                tui_application(home.clone()).ok().and_then(|app| {
                     let workspace = app.workspace();
                     // Every question here is about the *repository*, and `cwd`
                     // is only how the caller named it. A slot removed from
@@ -441,14 +465,80 @@ pub(super) fn spawn_task_evaluation(
                             .delivery_policy(&key)
                             .and_then(|policy| policy.target),
                         sync: workspace.target_upstream_sync(&key),
-                        evaluation: workspace.evaluate_tasks(&primary, &occupied),
+                        evaluation: workspace.read_tasks(&primary, &occupied),
                         primary,
                     })
                 })
             },
             None,
         );
-        let _ = sender.send(WorkResolution { key, answered });
+        // The states first, the remote after: a `git ls-remote` takes
+        // seconds, and what the checkouts already say is not made to wait
+        // for an answer about a request.
+        let remote = answered.as_ref().map(EvaluationAnswer::remote_half);
+        let _ = sender.send(WorkResolution {
+            key: key.clone(),
+            answered,
+            remote_half: false,
+        });
+        let Some(remote) = remote else {
+            return;
+        };
+        let asked = answered_or(
+            || {
+                tui_application(home).ok().and_then(|app| {
+                    app.workspace()
+                        .ask_about_requests(&remote.evaluation.requests)
+                })
+            },
+            None,
+        );
+        if let Some(tasks) = asked {
+            let mut answer = remote;
+            answer.evaluation.tasks = tasks;
+            let _ = sender.send(WorkResolution {
+                key,
+                answered: Some(answer),
+                remote_half: true,
+            });
+        }
+    });
+}
+
+/// What each checkout's stamp read, `None` for one that is no longer a
+/// working tree.
+pub(super) struct StampResolution {
+    pub(super) stamps: Vec<(PathBuf, Option<u64>)>,
+}
+
+/// Reads the change stamp of every checkout on screen. Off the render
+/// path like every other read, cheap as it is: a directory on a slow mount
+/// still answers a `stat` at its own pace.
+pub(super) fn spawn_checkout_watch(
+    home: &UzeHome,
+    checkouts: Vec<PathBuf>,
+    sender: mpsc::Sender<StampResolution>,
+) {
+    let home = home.clone();
+    thread::spawn(move || {
+        let stamps = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        let workspace = app.workspace();
+                        checkouts
+                            .into_iter()
+                            .map(|checkout| {
+                                let stamp = workspace.checkout_stamp(&checkout);
+                                (checkout, stamp)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(StampResolution { stamps });
     });
 }
 

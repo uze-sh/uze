@@ -152,6 +152,24 @@ impl WorkspaceModel {
 
     /// The directory each space's header reads its branch and its sync
     /// against, once per repository.
+    /// Every checkout whose state the workspace draws: each space's own
+    /// root, and the checkout of every live agent recorded in it.
+    pub(super) fn watched_checkouts(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
+        let mut checkouts: BTreeSet<PathBuf> =
+            self.space_directories(identities).into_iter().collect();
+        checkouts.extend(
+            self.remembered
+                .tasks
+                .values()
+                .flatten()
+                .filter(|task| {
+                    !matches!(task.state, WorkStateView::Closed | WorkStateView::Shelved)
+                })
+                .filter_map(|task| task.checkout.clone()),
+        );
+        checkouts.into_iter().collect()
+    }
+
     pub(super) fn space_directories(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
         let Some(session) = &self.session else {
             return Vec::new();

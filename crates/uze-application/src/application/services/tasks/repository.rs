@@ -116,6 +116,17 @@ impl Workspace<'_> {
         })
     }
 
+    /// A number that changes when Git records something in `checkout` —
+    /// a commit, an add, a rebase, a push — read from the file system
+    /// alone, so a client can poll it cheaply and evaluate only when it
+    /// moved. `None` outside a working tree. At `trace`: it is asked every
+    /// second for every checkout on screen, and a span each time would be
+    /// most of the journal.
+    #[tracing::instrument(name = "workspace.checkout_stamp", level = "trace", skip_all, fields(checkout = %checkout.display()))]
+    pub fn checkout_stamp(&self, checkout: &Path) -> Option<u64> {
+        checkout::change_stamp(checkout)
+    }
+
     /// Every piece of work on this machine that no live agent is in front
     /// of, whichever project it belongs to.
     ///

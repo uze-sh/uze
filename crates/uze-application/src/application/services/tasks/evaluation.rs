@@ -4,11 +4,27 @@ use super::*;
 
 impl Workspace<'_> {
     /// Re-reads every live task's state from its checkout — what the
-    /// sidebar shows after an agent's pane goes quiet — and lets a clean,
-    /// live task follow a target that moved. A conflict that produces
-    /// returns to the owning agent as a notice for its pane.
+    /// sidebar shows after an agent's pane goes quiet — lets a clean, live
+    /// task follow a target that moved, and asks the remote about the
+    /// requests that are due: [`Self::read_tasks`] and
+    /// [`Self::ask_about_requests`] in one call, for a caller with nobody
+    /// waiting on the first half.
     #[tracing::instrument(name = "workspace.evaluate_tasks", skip_all, fields(cwd = %cwd.display()))]
     pub fn evaluate_tasks(&self, cwd: &Path, occupied: &[PathBuf]) -> Evaluation {
+        let mut evaluation = self.read_tasks(cwd, occupied);
+        if let Some(tasks) = self.ask_about_requests(&evaluation.requests) {
+            evaluation.tasks = tasks;
+        }
+        evaluation
+    }
+
+    /// The pass without the network: every state read from the checkouts
+    /// and the record, and the question for the remote carried in
+    /// [`Evaluation::requests`] rather than asked. A `git ls-remote` takes
+    /// seconds over SSH, and a state the disk already knows was drawn only
+    /// once the forge had answered about something else.
+    #[tracing::instrument(name = "workspace.read_tasks", skip_all, fields(cwd = %cwd.display()))]
+    pub fn read_tasks(&self, cwd: &Path, occupied: &[PathBuf]) -> Evaluation {
         let (primary, policy) = match self.repository_context(cwd) {
             Ok(Some(context)) => context,
             Ok(None) => return Evaluation::default(),
@@ -22,7 +38,10 @@ impl Workspace<'_> {
             }
         };
         let target = target_of(&primary, &policy);
-        let declared = declaration::actions(&primary).unwrap_or_default();
+        let ignored_actions = declaration::actions(&primary)
+            .map(|declared| declared.ignored)
+            .unwrap_or_default();
+        let instructions = instructions_of(&primary);
         let mut arrived = Vec::new();
         let mut ask_the_remote: Vec<(AgentId, Isolation)> = Vec::new();
         let completion = policy.completion;
@@ -85,19 +104,10 @@ impl Workspace<'_> {
                 };
             }
         };
-        let recorded = self
-            .adopt_observed_requests(&primary, &ask_the_remote)
-            .unwrap_or(recorded);
         Evaluation {
-            tasks: task_views(
-                &primary,
-                &recorded,
-                completion,
-                &declared.instructions,
-                &target,
-            ),
+            tasks: task_views(&primary, &recorded, completion, &instructions, &target),
             arrived,
-            ignored_actions: declared.ignored,
+            ignored_actions,
             unreadable: None,
             recovered: recovery.set_aside.map(|set_aside| {
                 format!(
@@ -105,14 +115,38 @@ impl Workspace<'_> {
                     set_aside.path.display()
                 )
             }),
+            requests: RequestQuestion {
+                asked: ask_the_remote,
+                primary,
+                completion,
+                instructions,
+                target,
+            },
         }
+    }
+
+    /// Asks the remote the question a [`Self::read_tasks`] pass left, and
+    /// answers with every task's view as recorded after it — `None` when
+    /// the remote was not asked at all (each task was asked within the
+    /// minute, or already has its number), so the views that pass gave
+    /// still stand.
+    #[tracing::instrument(name = "workspace.ask_about_requests", skip_all)]
+    pub fn ask_about_requests(&self, question: &RequestQuestion) -> Option<Vec<AgentView>> {
+        let recorded = self.adopt_observed_requests(&question.primary, &question.asked)?;
+        Some(task_views(
+            &question.primary,
+            &recorded,
+            question.completion,
+            &question.instructions,
+            &question.target,
+        ))
     }
 
     /// Asks the remote about each task's request with the document
     /// unlocked, then takes the lock once to write the answers down,
     /// answering with the records as written so a request discovered here
-    /// is in the views this pass gives rather than in the next one's.
-    /// `None` when nothing was asked or nothing could be written.
+    /// is in the views at once rather than in the next pass's. `None` when
+    /// the remote was not asked, or nothing could be written.
     pub(super) fn adopt_observed_requests(
         &self,
         primary: &Path,
@@ -125,6 +159,9 @@ impl Workspace<'_> {
         if observed.is_empty() {
             return None;
         }
+        let asked_the_remote = observed
+            .iter()
+            .any(|(_, observation)| observation.asked_the_remote());
         let adopted = task::locked(&self.0.home, primary, |store| {
             for ((id, asked), observation) in &observed {
                 // Only onto the record the question was asked about.
@@ -144,7 +181,10 @@ impl Workspace<'_> {
             Ok(store.clone())
         });
         match adopted {
-            Ok(recorded) => Some(recorded),
+            // Written either way — a number for a branch the remote no
+            // longer has is dropped without asking it — but only a
+            // question the remote answered is news the pass's views lack.
+            Ok(recorded) => asked_the_remote.then_some(recorded),
             // The pass itself stands — its states were written, and the
             // views already say them. What is lost is a request number the
             // next pass asks for again, which is not worth a notice in an

@@ -2234,6 +2234,47 @@ mod task_service_tests {
         assert_eq!(again.unsynced, Some(1));
     }
 
+    /// The pass reads states without the network, and the remote's
+    /// question is answered apart: a request appears only once the remote
+    /// is asked, and asking again within the minute asks nothing.
+    #[test]
+    fn states_are_read_before_the_remote_is_asked_about_requests() {
+        let repository = repository("svc-requests-apart");
+        declare(&repository, "  delivery: push\n");
+        let root = repository.root().to_path_buf();
+        repository.with_origin(&repository.branch());
+        let app = application("svc-requests-apart-home");
+        let (id, slot) = launched(&app, &root);
+        agent_commits(&repository, &slot, "a.rs", "");
+        repository.git_in(&slot, &["push", "--quiet", "origin", "HEAD"]);
+        let tip = repository.git_in(&slot, &["rev-parse", "HEAD"]);
+        repository.git(&[
+            "push",
+            "--quiet",
+            "origin",
+            &format!("{}:refs/pull/7/head", tip.trim()),
+        ]);
+
+        let read = app.workspace().read_tasks(&root, &[]);
+        let local = read.tasks.iter().find(|task| task.id == id).unwrap();
+        assert_eq!(local.state, WorkStateView::Published, "{local:?}");
+
+        let asked = app
+            .workspace()
+            .ask_about_requests(&read.requests)
+            .expect("the remote was asked");
+        let answered = asked.iter().find(|task| task.id == id).unwrap();
+        assert_eq!(answered.state, WorkStateView::InReview);
+        assert_eq!(answered.published_request, Some(7));
+
+        let again = app.workspace().read_tasks(&root, &[]);
+        assert_eq!(
+            app.workspace().ask_about_requests(&again.requests),
+            None,
+            "a number already known asks the remote nothing"
+        );
+    }
+
     /// A push is a fact whoever made it and whatever the project delivers
     /// by: a `merge` project's agent that pushed its branch has it on the
     /// remote, and the view says so rather than pretending it did not.

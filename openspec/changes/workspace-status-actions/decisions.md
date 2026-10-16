@@ -67,3 +67,13 @@
 - decided:  keys `on_change`, `on_publish`, `on_conflict`, `on_fail`; an `uncommitted` status is drawn beside the change count only when `on_change` is declared, since the count already reports the changes and opens them on a click; `on_conflict` and `on_fail` fall back to UZE's own static line when undeclared.
 - rejected: a dropdown of several actions per state (commit / open PR) — a second interaction model, and an "open PR" offered over uncommitted work would push without it; making the change count the action — it already opens the changes.
 - blast:    `on_ready`, `on_review` and `on_deliver` are reported as unknown keys; adding one back later is additive.
+
+## D8 — Cut the status's latency in this change
+
+- status:   accepted
+- task:     8.1
+- commit:
+- trigger:  by hand the status lagged its work. The journal showed three causes: states read only when a pane went quiet or every 20 s; every pass waiting ~2.2 s on a `git ls-remote` once a minute, made a per-project cost by D3; and an evaluation holding the tasks document while waiting 60 s for the write lock a delivery held through a 90 s `pre-push`, which held the delivery's own outcome behind it (`time.busy=94.0s`).
+- decided:  the follow-the-target rebase never waits for the write lock; the remote's question is answered after the states are drawn; a `stat`-only stamp per checkout, polled each second, evaluates a repository the moment Git records something in it.
+- rejected: a file-system watcher crate (`notify`) — a new dependency for what a few `stat`s a second already answer; a shorter refresh clock — a full Git pass every few seconds for every repository, changed or not.
+- blast:    an edit not yet added to the index is still seen when the pane goes quiet or on the clock, as before.

@@ -535,6 +535,49 @@ fn a_live_task_follows_the_target_when_clean_and_is_left_alone_when_dirty() {
     );
 }
 
+/// Following the target while a delivery holds the repository's write
+/// lock answers at once and moves nothing: the pass that asks holds the
+/// tasks document, which the delivery needs to record what it did.
+#[test]
+fn following_the_target_never_waits_for_a_write_in_progress() {
+    let repository = repository("landing-refresh-busy");
+    let primary = repository.root().to_path_buf();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "refresh-busy");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    repository.commit_file("theirs.rs", "");
+    let base = work(&isolation).base_commit.clone();
+
+    let (held, release) = (
+        std::sync::mpsc::channel::<()>(),
+        std::sync::mpsc::channel::<()>(),
+    );
+    let holder = {
+        let primary = primary.clone();
+        std::thread::spawn(move || {
+            uze_git::locked(&primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+                held.0.send(()).unwrap();
+                release.1.recv().unwrap();
+            })
+            .unwrap();
+        })
+    };
+    held.1.recv().unwrap();
+    let started = std::time::Instant::now();
+    let answer = refresh(
+        &primary,
+        &mut isolation.state,
+        isolation.isolation.as_mut().unwrap(),
+    );
+    let waited = started.elapsed();
+    release.0.send(()).unwrap();
+    holder.join().unwrap();
+
+    assert!(matches!(answer, Err(DeliveryFailure::Git(_))), "{answer:?}");
+    assert!(waited < std::time::Duration::from_secs(1), "{waited:?}");
+    assert_eq!(work(&isolation).base_commit, base, "nothing moved");
+}
+
 /// A repository with a bare `origin` behind it and a second checkout
 /// of that remote, standing in for whoever else pushes to it.
 fn published(label: &str) -> (Repository, PathBuf) {

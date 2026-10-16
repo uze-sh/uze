@@ -451,6 +451,21 @@ pub struct Evaluation {
     /// from being placed, which is a worse answer than starting the
     /// record again from what is on disk.
     pub recovered: Option<String>,
+    /// What the pass left to ask the remote, for
+    /// [`crate::Workspace::ask_about_requests`].
+    pub requests: RequestQuestion,
+}
+
+/// The remote's half of an evaluation, carried from the pass that found
+/// it due to whoever asks it: which tasks to ask about, and what their
+/// views are drawn with once the answers are written down.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RequestQuestion {
+    pub(super) primary: PathBuf,
+    pub(super) asked: Vec<(AgentId, Isolation)>,
+    pub(super) completion: Option<CompletionBehavior>,
+    pub(super) instructions: Instructions,
+    pub(super) target: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
