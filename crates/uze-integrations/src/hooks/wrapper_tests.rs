@@ -631,6 +631,40 @@ fn a_handler_that_ignores_term_does_not_outlive_its_deadline() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// The `KILL` pass reaches only what has run since before the `TERM`, and
+/// that includes a child whose parent the `TERM` ended: an orphan no
+/// longer descends from the handler, and is still the handler's.
+#[test]
+fn an_orphan_that_ignores_term_does_not_outlive_its_deadline() {
+    let target = crate::claude::HOOKS;
+    let root = package("wrapper-orphan");
+    write_script(
+        &root.join("scripts").join("abandoning"),
+        "sh -c 'trap \"\" TERM; exec sleep 30' &\n\
+             printf '%s' \"$!\" > \"$PLUGIN_ROOT/orphan.pid\"\nsleep 30",
+    );
+    let hook = group_at(HookEvent::PreToolUse, HookEffect::Deny, &["abandoning"], 1);
+    let answer = run_wrapper(target, &root, &hook, &payload(target, "ls"), None);
+    assert_eq!(answer.exit, block_exit(target), "the deadline blocks");
+    let orphan = fs::read_to_string(root.join("orphan.pid")).unwrap();
+    let running = || {
+        let alive = Command::new("ps")
+            .args(["-p", orphan.trim(), "-o", "pid="])
+            .output()
+            .expect("ps reports whether the orphan is still running");
+        !String::from_utf8_lossy(&alive.stdout).trim().is_empty()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while running() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        !running(),
+        "an orphan that ignored TERM is killed, not left behind: pid {orphan}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 /// A `stop` payload carries no tool at all, and the wrapper has to
 /// leave the handler seeing that rather than a stale or invented one.
 #[test]

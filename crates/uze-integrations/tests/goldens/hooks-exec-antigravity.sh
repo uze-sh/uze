@@ -134,6 +134,26 @@ family() {                                       # $1 pid -> $1 and its issue
   printf '%s' "$all"
 }
 
+# `pid seconds` for each of the pids given that is still running, by how
+# long it has run: how a pid is told from the one it may have become.
+ages() {
+  ps -A -o pid=,etime= 2>/dev/null | while read -r pid elapsed; do
+    for one in "$@"; do
+      [ "$pid" = "$one" ] && printf '%s %s\n' "$pid" "$(seconds "$elapsed")"
+    done
+  done
+}
+# Only ever run in a command substitution, whose IFS is its own.
+seconds() {                                      # [[dd-]hh:]mm:ss -> seconds
+  days=0 rest=$1
+  case $rest in *-*) days=${rest%%-*} rest=${rest#*-} ;; esac
+  IFS=:; set -- $rest
+  [ $# = 2 ] && set -- 0 "$@"
+  days=${days#0} hours=${1:-0} minutes=${2:-0} secs=${3:-0}
+  hours=${hours#0} minutes=${minutes#0} secs=${secs#0}
+  echo $(( ((${days:-0} * 24 + ${hours:-0}) * 60 + ${minutes:-0}) * 60 + ${secs:-0} ))
+}
+
 # Where a handler's reason is collected: a file, never a pipe. Anything the
 # handler starts inherits a pipe, and one that outlives its deadline would
 # hold this shell open long past the deadline it just enforced. The file
@@ -175,9 +195,21 @@ guarded() {
       wait "$napper" 2>/dev/null
       fired=1
       doomed=$(family "$child")
+      aged=$(ages $doomed)
       for one in $doomed; do kill -TERM "$one" 2>/dev/null; done
       sleep 1                                     # then the ones that stayed
-      for one in $doomed; do kill -KILL "$one" 2>/dev/null; done
+      if [ -n "$aged" ]; then
+        # A pid that ended during that second may already be somebody
+        # else's: only one that has run since before the TERM is killed.
+        ages $doomed | while read -r pid now; do
+          printf '%s\n' "$aged" | while read -r was then; do
+            [ "$pid" = "$was" ] && [ "$now" -gt "$then" ] && kill -KILL "$pid" 2>/dev/null
+          done
+        done
+      else
+        # No `ps` to tell them apart by.
+        for one in $doomed; do kill -KILL "$one" 2>/dev/null; done
+      fi
     ) >/dev/null 2>&1 &
     watchdog=$!
     wait "$child"; code=$?
