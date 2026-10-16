@@ -27,7 +27,7 @@ use std::{
 
 use crate::{
     briefing,
-    conversation::{self, Claim, ConversationOrigin},
+    conversation::{self, Claim, ConversationOrigin, ConversationRecord, SessionId},
     home::UzeHome,
     integration::{IntegrationPort, ObservationContext, SessionContinuity},
 };
@@ -86,7 +86,6 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
     }
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
     let id = integration.id();
-    let claimed = conversation::claimed_by_others(home, &owner.project_root, &owner.agent, id);
 
     // A launch whose read-back never happened — the client was not running,
     // or the agent was relaunched before the refresh came round — would
@@ -96,25 +95,7 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
     // alternative is losing the conversation, and a harness that answers
     // this question expensively is answering it once per relaunch rather
     // than on a clock.
-    if let Some(entry) = record.get(id)
-        && entry.conversation.is_none()
-        && let Some(observed) = integration.observe_session(&ObservationContext {
-            cwd: claim.cwd,
-            since_unix: entry.launched_at_unix,
-            preceded_by: entry.preceded_by.as_ref(),
-            claimed_elsewhere: &claimed,
-        })
-    {
-        let launched_at = entry.launched_at_unix;
-        // Applied to what is stored now rather than to what was read
-        // before the observation: the launch it answers is named by its
-        // timestamp, so a launch recorded since simply refuses it.
-        if record.observed(id, launched_at, observed.clone()) {
-            let _ = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
-                stored.observed(id, launched_at, observed)
-            });
-        }
-    }
+    resolve_pending(home, &owner, &mut record, claim.cwd, integration);
 
     if let Some(recorded) = record.get(id).and_then(|entry| entry.conversation.clone()) {
         if integration.session_exists(&recorded, claim.cwd) {
@@ -150,6 +131,57 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         "no conversation recorded for this agent; starting one"
     );
     start(home, claim.cwd, integration, &owner)
+}
+
+/// Fills in the conversation `integration`'s entry is still waiting to have
+/// read back, asking the harness now, and writes it to the stored record.
+fn resolve_pending(
+    home: &UzeHome,
+    owner: &conversation::Owner,
+    record: &mut ConversationRecord,
+    cwd: &Path,
+    integration: &dyn IntegrationPort,
+) {
+    let id = integration.id();
+    let Some(entry) = record.get(id).filter(|entry| entry.conversation.is_none()) else {
+        return;
+    };
+    let claimed = conversation::claimed_by_others(home, &owner.project_root, &owner.agent, id);
+    let Some(observed) = integration.observe_session(&ObservationContext {
+        cwd,
+        since_unix: entry.launched_at_unix,
+        preceded_by: entry.preceded_by.as_ref(),
+        claimed_elsewhere: &claimed,
+    }) else {
+        return;
+    };
+    let launched_at = entry.launched_at_unix;
+    // Applied to what is stored now rather than to what was read before
+    // the observation: the launch it answers is named by its timestamp, so
+    // a launch recorded since simply refuses it.
+    if record.observed(id, launched_at, observed.clone()) {
+        let _ = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
+            stored.observed(id, launched_at, observed)
+        });
+    }
+}
+
+/// The conversation `agent` is in on `integration`, resolving one whose
+/// read-back has not happened yet. What a switch reads the outgoing
+/// harness's transcript by: an agent switched away moments after it
+/// started would otherwise be briefed from Git alone.
+pub fn conversation_now(
+    home: &UzeHome,
+    owner: &conversation::Owner,
+    cwd: &Path,
+    integration: &dyn IntegrationPort,
+) -> Option<SessionId> {
+    if integration.session_continuity() == SessionContinuity::Unsupported {
+        return None;
+    }
+    let mut record = conversation::load(home, &owner.project_root, &owner.agent);
+    resolve_pending(home, owner, &mut record, cwd, integration);
+    record.get(integration.id())?.conversation.clone()
 }
 
 /// Records a new launch, replacing whatever conversation the harness had

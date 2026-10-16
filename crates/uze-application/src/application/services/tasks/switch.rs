@@ -3,6 +3,7 @@
 use uze_core::integration::IntegrationPort;
 use uze_workspace::{
     briefing::{self, GitFacts, Handover},
+    continuity,
     conversation::{ConversationRecord, PendingBriefing},
 };
 
@@ -139,10 +140,15 @@ impl Workspace<'_> {
         outgoing: Option<&dyn IntegrationPort>,
         incoming: &dyn IntegrationPort,
     ) -> Option<PathBuf> {
+        let owner = conversation::Owner {
+            project_root: root.to_path_buf(),
+            agent: switched.id.clone(),
+            isolated: matches!(switched.placement, Placement::Isolated { .. }),
+        };
+        let session = outgoing.and_then(|outgoing| {
+            continuity::conversation_now(&self.0.home, &owner, &switched.directory, outgoing)
+        });
         let record = conversation::load(&self.0.home, root, &switched.id);
-        let session = outgoing
-            .and_then(|outgoing| record.get(outgoing.id()))
-            .and_then(|entry| entry.conversation.clone());
         let returning_since = returning_since(&record, incoming.id());
         let digest = outgoing
             .zip(session.as_ref())
@@ -204,12 +210,14 @@ mod tests {
     use uze_core::{
         capability::Resource,
         exposure::{ExposureMechanism, ExposurePlan},
+        integration::{ObservationContext, SessionContinuity},
         router::{CompatibilityRoute, HarnessCapabilities},
         session::{ConversationDigest, SessionId, Speaker, Turn},
     };
     use uze_workspace::conversation::ConversationOrigin;
 
-    /// A harness whose transcript always says the same thing.
+    /// A harness that names its own conversations — always `observed` when
+    /// asked — and whose transcript always says the same thing.
     struct Harness(&'static str);
 
     impl IntegrationPort for Harness {
@@ -230,6 +238,12 @@ mod tests {
                 },
                 evidence: "test".to_owned(),
             }
+        }
+        fn session_continuity(&self) -> SessionContinuity {
+            SessionContinuity::Observed
+        }
+        fn observe_session(&self, _ctx: &ObservationContext) -> Option<SessionId> {
+            Some(SessionId::new("observed"))
         }
         fn conversation_digest(
             &self,
@@ -315,6 +329,34 @@ mod tests {
             record.get("left").is_some(),
             "the conversation left behind is kept"
         );
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// Switched away before any refresh read the conversation back: the
+    /// switch asks the harness itself rather than briefing from Git alone.
+    #[test]
+    fn a_conversation_not_read_back_yet_is_observed_for_the_briefing() {
+        let app = application("switch-pending-home");
+        let project = project("switch-pending");
+        let root = canonical(&project);
+        let id = agent_on_left(&app, &project);
+        conversation::update(&app.home, &root, &id, |record| {
+            record.launched("left", ConversationOrigin::Observed, None, None);
+        })
+        .unwrap();
+
+        app.workspace()
+            .switch_harness(&project, id.as_str(), "left", "right")
+            .unwrap();
+
+        let record = conversation::load(&app.home, &root, &id);
+        assert_eq!(
+            record.get("left").unwrap().conversation,
+            Some(SessionId::new("observed")),
+            "the observation is recorded, not only used"
+        );
+        let text = std::fs::read_to_string(record.briefing.unwrap().path).unwrap();
+        assert!(text.contains("the goal of observed"), "{text}");
         let _ = std::fs::remove_dir_all(project);
     }
 
