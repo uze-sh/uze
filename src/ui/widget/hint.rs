@@ -195,15 +195,20 @@ impl<'a> Hints<'a> {
         }
     }
 
-    fn key_style(&self) -> Style {
-        theme::fg_bold(self.tone.unwrap_or(Token::Accent))
+    fn hue(&self) -> Token {
+        self.tone.unwrap_or(Token::Accent)
     }
 
-    /// A lit label takes its key's colour, so the whole hint answers the
-    /// pointer, the same way on every surface.
+    fn key_style(&self) -> Style {
+        theme::fg_bold(self.hue())
+    }
+
+    /// A lit label takes its key's colour and nothing else of it, so the
+    /// whole hint answers the pointer, the same way on every surface,
+    /// without its width or weight moving under the pointer.
     fn label_style(&self, lit: bool) -> Style {
         match (lit, self.tone) {
-            (true, _) => self.key_style(),
+            (true, _) => theme::fg(self.hue()),
             (false, Some(tone)) => theme::fg(tone),
             (false, None) => theme::fg(Token::TextMuted),
         }

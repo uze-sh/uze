@@ -1274,7 +1274,8 @@ fn a_hovered_hint_lights_its_label_and_no_other() {
     let label = |action: Action| format!(" {}", action.label().to_lowercase());
     assert_eq!(
         style_of(&label(Action::Dismiss)),
-        theme::fg_bold(Token::Accent)
+        theme::fg(Token::Accent),
+        "the colour alone: no weight moves under the pointer"
     );
     assert_eq!(
         style_of(&label(Action::Refresh)),
