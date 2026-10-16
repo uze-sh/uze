@@ -13,6 +13,7 @@ from .scenarios import claude_container, drive_onboarding
 
 class ClaudeBindings(Bindings):
     harness = "claude"
+    integration_id = "claude-code"
     display_name = "Claude Code"
     launch = "exec claude"
     ready_markers = ("Opus", "API Usage Billing", "❯")

@@ -240,7 +240,7 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings, scene):
         # The process ends and another starts in its place — what the
         # terminal runtime does when it restores a workspace after a
         # restart, with no client in the room to compose a command.
-        plain, ended = _end_the_process(tui, bindings)
+        plain, ended = end_the_process(tui, bindings)
         check(
             f"{scene.prefix}-first-process-ended",
             bool(ended),
@@ -276,7 +276,7 @@ def _assert_a_relaunch_carries_the_turn(cfg, prov_ip, bindings, scene):
         )
 
 
-def _end_the_process(tui, bindings):
+def end_the_process(tui, bindings):
     """Sends this harness's exit keys, one at a time, stopping the moment
     the shell says the process is gone.
 

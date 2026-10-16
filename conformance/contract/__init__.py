@@ -22,6 +22,7 @@ contradicted it.
 
 from . import (
     agent,
+    briefing,
     context,
     continuity,
     first_session,
@@ -43,6 +44,7 @@ CONTRACTS = (
     context,
     isolation,
     continuity,
+    briefing,
 )
 
 

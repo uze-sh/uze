@@ -70,7 +70,7 @@ def run(cfg, prov_ip):
             tui.collect(reads=4)
             say(f"[{elapsed()}] first turn sent")
 
-        plain, ended = continuity._end_the_process(tui, bindings)
+        plain, ended = continuity.end_the_process(tui, bindings)
         say(f"[{elapsed()}] exit keys sent, first process ended={ended}")
         say(f"[{elapsed()}] reading for {WATCH_SECONDS}s")
 
@@ -119,7 +119,7 @@ def probe_rejoin(cfg, prov_ip):
         tui.type(f"{continuity.FIRST_MARKER}: remember this word")
         tui.submit()
         tui.collect(reads=4)
-        _, ended = continuity._end_the_process(tui, bindings)
+        _, ended = continuity.end_the_process(tui, bindings)
         say(f"[{time.time() - started:6.1f}s] first ended={ended}")
         plain, matched = bindings.rejoin(tui)
         say(f"[{time.time() - started:6.1f}s] rejoin matched={bool(matched)}")

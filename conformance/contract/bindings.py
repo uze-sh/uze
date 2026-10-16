@@ -46,6 +46,9 @@ printf 'lab project\\n' > README.md
 class Bindings:
     #: Registry id, matching the integration's own.
     harness = ""
+    #: The id UZE records a conversation under (`IntegrationPort::id`),
+    #: where it differs from `harness`.
+    integration_id = ""
 
     #: Whether delivered hooks are started through the generated wrapper
     #: file. A harness that runs them in its own process (a generated
@@ -125,6 +128,10 @@ class Bindings:
         """A live TUI started in `cwd` after `prelude` — a shell script the
         contract wrote to lay a scene down — has run in the container."""
         raise NotImplementedError
+
+    @property
+    def integration(self):
+        return self.integration_id or self.harness
 
     def launcher_name(self):
         """The launcher's file name — the id unless the harness declares
