@@ -40,4 +40,4 @@ At this point the switch is usable with a Git-only briefing.
 - [x] 6.1 Add the switch edge to `docs/architecture/agent-lifecycle.mmd` (and `workspace-components.mmd` if it names the launch plan); run `make artifacts` and `cargo test -p uze-extensions`
 - [x] 6.2 Document the switch in the user-facing workspace docs page it belongs on
 - [x] 6.3 Journey (`04-workspace`, stand-in harnesses echoing their argv): switch from one stand-in to another from the menu; check the recorded harness, the briefing outside the checkout with mode 0600, the first turn last in the incoming argv, a restore with no first turn, and a switch back resuming the first conversation; `proves:` names the docs page from 6.2
-- [ ] 6.4 `make check` green; `openspec validate switch-agent-harness --strict`
+- [x] 6.4 `make check` green; `openspec validate switch-agent-harness --strict`
