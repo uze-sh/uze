@@ -153,23 +153,48 @@ pub(crate) fn marquee(
         .iter()
         .flat_map(|(text, style)| text.chars().map(|glyph| (glyph, *style)))
         .collect();
-    if text.len() <= room {
+    let length: usize = text.iter().map(|(glyph, _)| text::cell_width(*glyph)).sum();
+    if length <= room {
         return None;
     }
-    let cycle = text.len() + GAP;
+    let cycle = length + GAP;
     let offset = (ticks % (REST + cycle * PACE)).saturating_sub(REST) / PACE;
     let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut push = |glyph: char, style: Style| match spans.last_mut() {
+        Some(last) if last.style == style => last.content.to_mut().push(glyph),
+        _ => spans.push(Span::styled(glyph.to_string(), style)),
+    };
+    // Measured in cells, as `room` is: a wide glyph cut by either edge of
+    // the window shows as the blank half it leaves rather than overflowing.
+    let (mut column, mut used) = (0, 0);
     for (glyph, style) in text
         .iter()
         .copied()
         .chain(std::iter::repeat_n((' ', Style::default()), GAP))
         .chain(text.iter().copied())
-        .skip(offset)
-        .take(room)
     {
-        match spans.last_mut() {
-            Some(last) if last.style == style => last.content.to_mut().push(glyph),
-            _ => spans.push(Span::styled(glyph.to_string(), style)),
+        let width = text::cell_width(glyph);
+        let start = column;
+        column += width;
+        if column <= offset {
+            continue;
+        }
+        let shown = if start < offset {
+            column - offset
+        } else {
+            width
+        };
+        if shown < width || used + width > room {
+            for _ in 0..shown.min(room - used) {
+                push(' ', style);
+            }
+            used += shown.min(room - used);
+        } else {
+            push(glyph, style);
+            used += width;
+        }
+        if used == room {
+            break;
         }
     }
     Some(spans)
@@ -181,7 +206,7 @@ pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: Str
     // two never read as one word.
     let room = width.saturating_sub(leading + TRAILING_PAD + 1).max(1);
     let text = text::elide(&text, room as usize);
-    let used = leading + text.chars().count() as u16 + TRAILING_PAD;
+    let used = leading + text::columns(&text) as u16 + TRAILING_PAD;
     let gap = width.saturating_sub(used).max(1);
     spans.push(Span::raw(" ".repeat(gap as usize)));
     spans.push(Span::styled(text, Style::default().fg(hue)));
@@ -192,7 +217,7 @@ pub(crate) fn push_trailing<'a>(spans: &mut Vec<Span<'a>>, width: u16, text: Str
 /// dismisses it pinned to the right.
 pub(crate) fn title_row(name: &str, dismiss: &str, width: usize) -> ratatui::text::Line<'static> {
     let gap = width
-        .saturating_sub(name.chars().count() + dismiss.chars().count())
+        .saturating_sub(text::columns(name) + text::columns(dismiss))
         .max(1);
     Line::from(vec![
         Span::styled(

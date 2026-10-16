@@ -2477,6 +2477,37 @@ fn a_hint_line_reads_its_keys_off_the_keymap() {
     assert!(unbound.spans.is_empty());
 }
 
+/// A name or caption in wide characters — a CJK branch, an emoji — takes
+/// two cells a character. Counted as one, the row ran past its column by
+/// the difference and the frame cut the pad or the caption off.
+#[test]
+fn a_row_of_wide_characters_fits_the_columns_it_was_given() {
+    use ratatui::{style::Style, text::Span};
+
+    use crate::ui::widget::row;
+
+    let width = |spans: &[Span<'_>]| spans.iter().map(Span::width).sum::<usize>();
+
+    let mut caption = vec![Span::raw("▾ Git")];
+    row::push_trailing(
+        &mut caption,
+        20,
+        "功能分支".to_owned(),
+        theme::color(Token::TextMuted),
+    );
+    assert_eq!(width(&caption), 20);
+
+    let title = row::title_row("提交说明", "esc", 30);
+    assert_eq!(title.width(), 30);
+
+    let name = "エージェントの作業ブランチ";
+    for tick in 0..200 {
+        let window = row::marquee(&[(name, Style::default())], 9, tick)
+            .expect("a name wider than the room slides");
+        assert_eq!(width(&window), 9, "at tick {tick}");
+    }
+}
+
 /// A caption pinned to the right edge is elided to what is left of the
 /// row. It used to be appended whole and cut by the frame, which is how a
 /// long branch name on the Git section header lost both its ending and any

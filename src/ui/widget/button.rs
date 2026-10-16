@@ -82,7 +82,7 @@ impl Button {
     /// The columns this button occupies, for a caller sizing the slot it
     /// will go in before there is a frame to draw into.
     pub(crate) fn width(&self) -> u16 {
-        self.text().chars().count() as u16
+        super::text::columns(&self.text()) as u16
     }
 
     /// Draws this one button into `rect`, for a control that sits in a

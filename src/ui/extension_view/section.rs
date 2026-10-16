@@ -138,7 +138,7 @@ pub(crate) fn render_section_with(
         };
         let (mark, mark_width) = row_mark(row.mark);
         let marker_width = mark_width + 1;
-        let trailing_width = row.trailing.text.chars().count() as u16;
+        let trailing_width = text::columns(&row.trailing.text) as u16;
         // The name gives way before the trailing value, and one column is
         // reserved for the gap `push_trailing` always leaves between them.
         let name_width = rect

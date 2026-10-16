@@ -25,7 +25,7 @@ pub(crate) fn columns(text: &str) -> usize {
 
 /// A control character has no width of its own; it is counted as the one
 /// cell it was always counted as, so nothing already fitted moves.
-fn cell_width(character: char) -> usize {
+pub(crate) fn cell_width(character: char) -> usize {
     character.width().unwrap_or(1)
 }
 

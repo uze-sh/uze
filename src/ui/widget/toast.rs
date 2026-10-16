@@ -172,7 +172,7 @@ impl Toast {
     /// The clock and the close mark, which ride with the title. A toast
     /// that stays spends nothing on the clock it does not have.
     fn head_tail(&self) -> u16 {
-        let clock = self.clock().chars().count() as u16;
+        let clock = text::columns(&self.clock()) as u16;
         let gap = if clock == 0 { 0 } else { 1 };
         clock + gap + close_width()
     }
@@ -181,7 +181,7 @@ impl Toast {
     fn foot_tail(&self) -> u16 {
         self.action
             .as_ref()
-            .map_or(0, |label| label.chars().count() as u16)
+            .map_or(0, |label| text::columns(label) as u16)
     }
 
     /// Draws into `area` — two rows, no frame — and answers with the rects
@@ -255,7 +255,7 @@ impl Toast {
             on(theme::fg_bold(Token::TextBright)),
         ));
         let used: u16 = title.iter().map(|span| span.width() as u16).sum();
-        let clocked = clock.chars().count() as u16;
+        let clocked = text::columns(&clock) as u16;
         let tail_x = close
             .x
             .saturating_sub(if clocked == 0 { 0 } else { clocked + 1 });
@@ -278,7 +278,7 @@ impl Toast {
         let mut under = vec![pad(PAD + self.lead())];
         under.extend(quoted(&self.detail, room, on(theme::fg(Token::TextMuted))));
         if let Some(label) = &self.action {
-            let width = label.chars().count() as u16;
+            let width = text::columns(label) as u16;
             let at = area.right().saturating_sub(PAD + width);
             let used: u16 = under.iter().map(|span| span.width() as u16).sum();
             under.push(pad(at.saturating_sub(area.x + used).max(1)));
