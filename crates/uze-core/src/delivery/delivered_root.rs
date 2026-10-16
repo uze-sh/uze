@@ -44,10 +44,9 @@ mod tests {
         store::PackageId,
     };
 
-    fn installed(name: &str) -> (UzeHome, StoredPackage) {
-        let base =
-            std::env::temp_dir().join(format!("uze-delivered-root-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+    fn installed(name: &str) -> (uze_testkit::temp::TempDir, UzeHome, StoredPackage) {
+        let scratch = uze_testkit::temp::TempDir::new("delivered-root");
+        let base = scratch.path().to_path_buf();
         let home = UzeHome::at(base.join("home"));
         let manifest = base.join("store/plugin.json");
         let id = PackageId::from_marketplace_plugin("market", name, &manifest).unwrap();
@@ -69,12 +68,12 @@ mod tests {
             },
             active_name: name.to_owned(),
         };
-        (home, package)
+        (scratch, home, package)
     }
 
     #[test]
     fn the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store() {
-        let (home, package) = installed("rooted");
+        let (_scratch, home, package) = installed("rooted");
         let root = materialize(&home, &package).unwrap();
         assert!(root.starts_with(home.runtime_dir()));
         assert_eq!(

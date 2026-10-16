@@ -451,13 +451,12 @@ mod tests {
 
     #[test]
     fn a_saved_lock_ends_with_a_newline() {
-        let root = std::env::temp_dir().join(format!("uze-lock-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let scratch = uze_testkit::temp::TempDir::new("lock-newline");
+        let root = scratch.path();
         let mut lock = ProjectLock::default();
         lock.plugins.insert("flow".to_owned(), locked("ai"));
-        save_lock(&root, &lock).unwrap();
-        let written = fs::read_to_string(lock_path_for(&root)).unwrap();
-        fs::remove_dir_all(&root).ok();
+        save_lock(root, &lock).unwrap();
+        let written = fs::read_to_string(lock_path_for(root)).unwrap();
         assert!(written.ends_with('\n'), "{written:?}");
     }
 

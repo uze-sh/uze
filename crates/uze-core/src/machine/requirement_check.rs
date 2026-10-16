@@ -553,9 +553,8 @@ mod tests {
     fn a_checked_executable_is_asked_once_and_again_when_it_changes() {
         use std::os::unix::fs::PermissionsExt;
 
-        let root =
-            std::env::temp_dir().join(format!("uze-requirement-check-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let scratch = uze_testkit::temp::TempDir::new("requirement-check");
+        let root = scratch.path();
         let bin = root.join("bin");
         fs::create_dir_all(&bin).unwrap();
         let tool = bin.join("probe-tool");
@@ -609,7 +608,6 @@ mod tests {
 
         let elsewhere = RequirementChecker::searching(cache, vec![root.join("empty")]);
         assert_eq!(elsewhere.status(&requirement), RequirementStatus::Missing);
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// A relative search entry resolves against the directory the command
@@ -621,9 +619,8 @@ mod tests {
     fn a_relative_search_entry_is_never_probed() {
         use std::os::unix::fs::PermissionsExt;
 
-        let root =
-            std::env::temp_dir().join(format!("uze-requirement-relative-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let scratch = uze_testkit::temp::TempDir::new("requirement-relative");
+        let root = scratch.path();
         let bin = root.join("bin");
         fs::create_dir_all(&bin).unwrap();
         let ran = root.join("ran");
@@ -651,6 +648,5 @@ mod tests {
             !ran.exists(),
             "nothing reached through a relative entry ran"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 }
