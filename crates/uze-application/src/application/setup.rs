@@ -47,7 +47,7 @@ impl UzeApplication {
     pub fn ensure_default_plugins(&self) -> Result<bool> {
         if self.bootstrap_is_settled() {
             let _span = tracing::info_span!("bootstrap.ensure_default_plugins").entered();
-            let _ = self.prepare_detected_integrations();
+            self.prepare_detected_integrations_reporting();
             return Ok(false);
         }
         let _mutation = match uze_core::persistence::MutationLock::acquire(&self.home) {
@@ -89,8 +89,8 @@ impl UzeApplication {
         }
         // Prepares detected harnesses (creating `~/.claude/skills` etc.) so a
         // harness detected since the last run does not wait for an explicit
-        // `uze setup`. Best-effort: `setup`/`doctor` surface a failure.
-        let _ = self.prepare_detected_integrations();
+        // `uze setup`.
+        self.prepare_detected_integrations_reporting();
         // A Generated Native Package's own catalogue is written by
         // republishing, and a vendor CLI reading a missing one fails
         // outright. Only a view that no longer matches the installed set is
@@ -310,16 +310,31 @@ impl UzeApplication {
     /// This is the shared bridge between explicit `setup` and implicit
     /// preparation during an install; neither presentation layer needs to
     /// know which directories/configuration an integration owns.
+    ///
+    /// Every detected harness is tried, so one refusing does not leave the
+    /// harnesses after it unprepared; the first refusal is the answer.
     pub(crate) fn prepare_detected_integrations(&self) -> Result<()> {
+        let mut first_refusal = None;
         for integration in &self.integrations {
             let detection = self.detect_cached(integration.as_ref());
             if detection.present {
                 let _span =
                     tracing::debug_span!("integration.install", integration = integration.id())
                         .entered();
-                integration.install(&self.home, &detection)?;
+                if let Err(error) = integration.install(&self.home, &detection) {
+                    first_refusal.get_or_insert(error);
+                }
             }
         }
-        Ok(())
+        first_refusal.map_or(Ok(()), Err)
+    }
+
+    /// `prepare_detected_integrations` for a caller with no report to carry
+    /// a refusal in: a harness that could not be prepared is still said, in
+    /// the log, and `setup`/`doctor` surface it.
+    fn prepare_detected_integrations_reporting(&self) {
+        if let Err(error) = self.prepare_detected_integrations() {
+            tracing::warn!(%error, "a detected harness could not be prepared");
+        }
     }
 }

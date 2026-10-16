@@ -1024,6 +1024,37 @@ pub(crate) fn a_harness_that_fails_to_prepare_does_not_stop_the_others() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// The bootstrap prepares every detected harness on every command, so one
+/// harness refusing must not leave the harnesses after it unprepared.
+#[test]
+fn preparing_detected_harnesses_tries_every_one_and_answers_the_refusal() {
+    let root = uze_testkit::temp::scratch("prepare-detected-every-one");
+    let later_calls = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![
+            Box::new(PreparationRefusedOnce {
+                calls: Arc::new(AtomicUsize::new(0)),
+                refuse_at: Arc::new(AtomicUsize::new(0)),
+            }),
+            Box::new(PreparationRefusedOnce {
+                calls: later_calls.clone(),
+                refuse_at: Arc::new(AtomicUsize::new(usize::MAX)),
+            }),
+        ],
+    );
+
+    let error = app.prepare_detected_integrations().unwrap_err();
+
+    assert!(error.to_string().contains("read-only"), "{error}");
+    assert_eq!(
+        later_calls.load(Ordering::SeqCst),
+        1,
+        "the harness after the refusing one is still prepared"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Bootstrap runs ahead of every command. Another UZE mid-mutation is not
 /// its to race: it skips, and the next command seeds.
 #[test]
