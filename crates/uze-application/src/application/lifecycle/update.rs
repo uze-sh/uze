@@ -125,6 +125,11 @@ impl Plugins<'_> {
         self.0
             .authorize(&materialized, authority, &previous, true, origin)?;
 
+        // From here on the machine changes, so this is where the lock
+        // belongs: everything above only read, and the bytes it fetched are
+        // in scratch nobody else can see.
+        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
+
         // Asked here rather than from inside the install below, which is the
         // only other place that asks it: preparing a harness needs nothing
         // the removal takes away, and a vendor configuration that refuses to
@@ -133,10 +138,6 @@ impl Plugins<'_> {
         // plugin gone from the machine with nothing left to heal it.
         self.0.prepare_detected_integrations()?;
 
-        // From here on the machine changes, so this is where the lock
-        // belongs: everything above only read, and the bytes it fetched are
-        // in scratch nobody else can see.
-        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         // The package may have moved under us while the network was busy.
         // Re-read it rather than acting on what was true before the fetch —
         // including the trust answer, which was given against what it could
