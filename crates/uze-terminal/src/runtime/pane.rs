@@ -335,31 +335,38 @@ impl PaneRuntime {
     pub(super) fn stop(&self) -> thread::JoinHandle<()> {
         let child = Arc::clone(&self.child);
         let group = self.group.clone();
+        let leader = self.leader;
         thread::spawn(move || {
             let mut child = child.lock().expect("child poisoned");
+            // What the leader started and left behind: a harness's workers
+            // that ignore the hangup would otherwise outlive the pane, and
+            // hold its terminal open so its reader never ends either. Ended
+            // before the leader is reaped, while the group's id is still
+            // nobody else's; `kill` reaps what exits on its hangup, so the
+            // hangup is sent on its own first.
+            if let Some(group) = group {
+                let _ = child.clone_killer().kill();
+                wait_for_hangup(leader);
+                group.end();
+            }
             // Waited on whether or not the kill landed: a program that
             // already exited is exactly the zombie this is here to reap.
             let _ = child.kill();
-            // What the leader started and left behind: a harness's workers
-            // that ignore the hangup would otherwise outlive the pane, and
-            // hold its terminal open so its reader never ends either.
-            if let Some(group) = group {
-                group.end();
-            }
             let _ = child.wait();
         })
     }
 
     /// Whether this pane ran an agent that has since exited. What it left
-    /// running in its group is ended first, while the leader is still
-    /// unreaped and its group's id cannot have been handed to anybody
-    /// else: workers that ignore the hangup keep the old terminal open,
-    /// and its reader alive.
+    /// running in its group is ended, while the leader is still unreaped
+    /// and its group's id cannot have been handed to anybody else: workers
+    /// that ignore the hangup keep the old terminal open, and its reader
+    /// alive. The leader is left for [`PaneRuntime::stop`] to reap, which
+    /// signals it first, and a reaped pid may already be somebody else's.
     pub(super) fn finished_agent(&self) -> bool {
         if !matches!(self.launch, Launch::Program { .. }) {
             return false;
         }
-        let mut child = self.child.lock().expect("child poisoned");
+        let child = self.child.lock().expect("child poisoned");
         if !child
             .process_id()
             .is_none_or(uze_platform::process::has_exited)
@@ -369,7 +376,7 @@ impl PaneRuntime {
         if let Some(group) = &self.group {
             group.end();
         }
-        child.try_wait().ok().flatten().is_some()
+        true
     }
 
     /// Best-effort reading of whatever runs in the foreground of this pane:
@@ -496,6 +503,21 @@ impl PaneRuntime {
         };
         *last_sent = Some(current);
         damage
+    }
+}
+
+/// How long a pane's program has to act on its hangup before its group is
+/// ended: the grace `portable_pty`'s own `kill` gives it.
+const HANGUP_GRACE: Duration = Duration::from_millis(250);
+
+/// Gives `leader` its [`HANGUP_GRACE`] to exit, without reaping it.
+fn wait_for_hangup(leader: Option<u32>) {
+    let Some(leader) = leader else {
+        return;
+    };
+    let deadline = Instant::now() + HANGUP_GRACE;
+    while !uze_platform::process::has_exited(leader) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
     }
 }
 

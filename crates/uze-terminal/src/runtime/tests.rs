@@ -1167,6 +1167,12 @@ fn a_finished_agent_takes_what_it_left_in_its_group_with_it() {
         );
         thread::sleep(Duration::from_millis(25));
     }
+    let leader = pane.leader.expect("the agent has a pid");
+    assert_eq!(
+        uze_platform::process::alive(leader),
+        Some(true),
+        "a finished agent is left unreaped for the stop that signals it"
+    );
 
     let (ended, hung_up) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -1177,6 +1183,7 @@ fn a_finished_agent_takes_what_it_left_in_its_group_with_it() {
     let outlived = hung_up.recv_timeout(Duration::from_secs(10)).is_err();
     pane.stop().join().expect("the reaper finished");
     assert!(!outlived, "the worker outlived its finished agent");
+    assert_eq!(uze_platform::process::alive(leader), Some(false));
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
