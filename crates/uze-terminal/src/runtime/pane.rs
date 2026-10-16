@@ -489,7 +489,12 @@ impl PaneRuntime {
                 .filter(|(_, (new, old))| new != old)
                 .map(|(index, (new, _))| cell_coordinates(index, current.columns, new.clone()))
                 .collect(),
-            _ => whole_pane(current.clone()).changed,
+            _ => current
+                .cells
+                .iter()
+                .enumerate()
+                .map(|(index, cell)| cell_coordinates(index, current.columns, cell.clone()))
+                .collect(),
         };
         let damage = PaneDamage {
             pane: self.id,
