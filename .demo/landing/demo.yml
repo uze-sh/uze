@@ -9,8 +9,8 @@
 #   tui-record probe  .demo/landing   # the shell in its sandbox, to try a selector out
 #   tui-record run    .demo/landing   # record → cut → leak-check → render → poster
 #
-# Shares ~/.uzedemo with the other specs: never run two at once, they share
-# one tmux session.
+# Its sandbox is its own (/var/tmp/uzedemo), but the tmux session is shared
+# with the other specs: never run two at once.
 
 video:
   title: uze
@@ -48,7 +48,11 @@ video:
   poster_when: 'DIFF ·'
   sidebar: 31
 sandbox:
-  root: ~/.uzedemo
+  # Out of $HOME, and not shared with the other specs' ~/.uzedemo: a
+  # harness taking over an agent is pointed at its briefing under
+  # $HOME/.uze/runtime, and that path is on screen. /var/tmp, not /tmp, so a
+  # login made in this sandbox survives the boot-time wipe of /tmp.
+  root: /var/tmp/uzedemo
   fixtures: /tmp/demos
   cwd: '{fixtures}/demo-api'
   # A shell, not the workspace: the first half of the story is the CLI.
@@ -80,8 +84,8 @@ sandbox:
     # auth.json, and `opencode auth login` replaces the file it writes, so a
     # link here is overwritten by the login and then deletes it on the next
     # seed. The operator logs in once, inside the sandbox:
-    #   HOME=~/.uzedemo/home ~/.opencode/bin/opencode auth login
-    # and deleting ~/.uzedemo/home/.local/share/opencode ends it.
+    #   HOME=/var/tmp/uzedemo/home ~/.opencode/bin/opencode auth login
+    # and deleting /var/tmp/uzedemo/home/.local/share/opencode ends it.
     # Granted for this video by the operator (2026-10-16): the third harness.
     - from: ~/.codex/auth.json
       to: '{home}/.codex/auth.json'
@@ -117,6 +121,18 @@ sandbox:
         cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
         case "$cmd" in *"terminal serve --root /tmp/demos/"*) kill -TERM "$pid" 2>/dev/null ;; esac
       done
+    # And the previous attempt's own client, which outlives the tmux session
+    # that ran it and writes its layout back after the reset: the next take
+    # would then open on its tabs, one of them an agent whose checkout is gone.
+    - |
+      for pid in $(pgrep -x uze 2>/dev/null); do
+        tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -qx 'HOME={home}' || continue
+        case "$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)" in "uze workspace"*|*"/uze workspace"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
+      sleep 1
+    # Then the state it wrote on its way out: a client saves its layout when
+    # it is ended, so deleting it before (in `clear`) is undone by the kill.
+    - rm -rf {home}/.uze/state/terminal {home}/.uze/state/projects
     # Every take adds the marketplace and installs the plugin on camera, so
     # both come off the machine first: through uze, which knows what it
     # placed in each harness, never by deleting its directories.
@@ -186,7 +202,7 @@ sandbox:
         }
   patch_json:
     - path: '{home}/.claude/settings.json'
-      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash"]}}'
+      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash", "Read(//var/tmp/uzedemo/home/.uze/runtime/**)"]}}'
     # The model the operator's OpenCode Go login serves. Without that login
     # OpenCode falls back to a free model that refuses to run when the
     # workspace launches it, whatever this says.
@@ -484,5 +500,73 @@ beats:
     timeout: 60
     settle: 1.5
     pause: 2.8
+  # ── 5. pick up anywhere ────────────────────────────────────────────────
+  # OpenCode's agent, with its README change uncommitted, is carried on in
+  # Claude Code: the same name, branch and worktree, briefed by uze. Its tab
+  # is then closed, the work goes to the shelf, and Recent brings it back.
+  - say: the same agent, carried on in another harness
+    click: opencode
+    in: sidebar
+    expect: ctrl\+p commands
+    expect_in: pane
+    expect_timeout: 8
+    pause: 0.6
+  - key: M-.
+    expect: Continue in
+    expect_timeout: 6
+    pause: 0.6
+  - key: [Down, Enter]
+    expect: Antigravity
+    expect_timeout: 6
+    pause: 0.8
+  # The submenu lists the harnesses set up here, Claude Code first.
+  - key: Enter
+    expect: continuing work another agent started
+    expect_in: pane
+    expect_timeout: 40
+    pause: 3.0
+  - say: closed, its work is kept
+    key: C-w
+    expect: work kept
+    expect_timeout: 8
+    pause: 1.6
+  - say: and Recent has it, across every project
+    key: M-p
+    expect: shelved
+    expect_in: sidebar
+    expect_timeout: 8
+    pause: 2.2
+  # Resumed, Claude reopens its own conversation, scrolled to its end: its
+  # footer, back in the pane the shell had, is what proves it.
+  - say: resumed where it was, its change put back
+    key: Enter
+    expect: shift\+tab to cycle
+    expect_in: pane
+    expect_timeout: 30
+    pause: 2.4
+  # ── the management side, in passing ─────────────────────────────────────
+  # Each screen is proved by its own heading, which carries a count only that
+  # screen computes; the tab row is drawn whichever screen is showing.
+  - say: the management side, in passing
+    key: C-o
+    expect: manage\s+1 Marketplace\s+2 Integrations
+    expect_timeout: 8
+    pause: 0.8
+  - click: Marketplace
+    in: screen
+    expect: Marketplace\s+\d+ marketplaces?\s+·
+    expect_timeout: 8
+    pause: 1.8
+  - click: Integrations
+    in: screen
+    expect: Integrations\s+\d+ installed
+    expect_timeout: 8
+    pause: 1.8
+  - key: C-o
+    refuse: manage\s+1 Marketplace\s+2 Integrations
+    expect: spec.+arch.+code
+    expect_in: strip
+    expect_timeout: 6
+    pause: 1.4
   - say: and out, the cut stops here, before the screen blanks
     end: C-q
