@@ -126,9 +126,11 @@ pub fn render(
     // entry goes first.
     let mut sections: Vec<String> = vec![header(handover, digest)];
     if let Some(digest) = digest {
-        if handover.returning_since.is_none()
-            && let Some(goal) = &digest.goal
-        {
+        let goal = digest
+            .goal
+            .as_deref()
+            .filter(|_| handover.returning_since.is_none());
+        if let Some(goal) = goal {
             sections.push(section("Goal", &clip(goal, GOAL_BOUND)));
         }
         if let Some(summary) = &digest.summary {
@@ -137,7 +139,7 @@ pub fn render(
                 &clip(summary, SUMMARY_BOUND),
             ));
         }
-        sections.push(operator_turns(digest));
+        sections.push(operator_turns(digest, goal));
         sections.push(agent_messages(handover.from, digest));
         if let Some(command) = &digest.last_command {
             let outcome = match command.failed {
@@ -201,14 +203,17 @@ fn header(handover: &Handover<'_>, digest: Option<&ConversationDigest>) -> Strin
     lines.join("\n") + "\n"
 }
 
-fn operator_turns(digest: &ConversationDigest) -> String {
-    let skip_goal = usize::from(digest.goal.is_some() && digest.summary.is_none());
+/// The operator's turns, without the one already shown as the goal: a
+/// digest floored at a time keeps turns from after it, where the goal is
+/// usually not among them, so it is told apart by what it says.
+fn operator_turns(digest: &ConversationDigest, goal: Option<&str>) -> String {
+    let mut goal = goal;
     let turns: Vec<&str> = digest
         .turns
         .iter()
         .filter(|turn| turn.speaker == Speaker::Operator)
-        .skip(skip_goal)
         .map(|turn| turn.text.as_str())
+        .filter(|text| goal.take_if(|goal| goal == text).is_none())
         .collect();
     // Newest kept first: what the operator asked last is what the agent
     // was answering when it stopped.
@@ -454,6 +459,34 @@ mod tests {
         let text = render(&handover, &git(), Some(&digest));
         assert!(text.contains("You worked on this agent before"), "{text}");
         assert!(!text.contains("## Goal"), "{text}");
+    }
+
+    #[test]
+    fn the_goal_is_listed_once_and_no_other_turn_is_taken_for_it() {
+        let digest = ConversationDigest {
+            goal: Some("the goal".into()),
+            turns: vec![
+                turn(Speaker::Operator, "the goal"),
+                turn(Speaker::Operator, "the second ask"),
+            ],
+            ..ConversationDigest::default()
+        };
+        let text = render(&handover(), &git(), Some(&digest));
+        assert_eq!(text.matches("the goal").count(), 1, "{text}");
+        assert!(text.contains("- the second ask"), "{text}");
+    }
+
+    #[test]
+    fn a_returning_harness_is_told_every_turn_since_it_left() {
+        let mut handover = handover();
+        handover.returning_since = Some(100);
+        let digest = ConversationDigest {
+            goal: Some("the goal".into()),
+            turns: vec![turn(Speaker::Operator, "asked after you left")],
+            ..ConversationDigest::default()
+        };
+        let text = render(&handover, &git(), Some(&digest));
+        assert!(text.contains("- asked after you left"), "{text}");
     }
 
     #[test]
