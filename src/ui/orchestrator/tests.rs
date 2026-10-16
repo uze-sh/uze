@@ -11269,15 +11269,9 @@ mod workspace_tests {
     /// rather than landing in the one in front of the operator.
     #[test]
     fn resuming_a_preserved_task_that_kept_its_checkout_opens_a_stamped_tab() {
-        resumes_the_task_in_its_projects_space("resume");
-    }
-
-    fn resumes_the_task_in_its_projects_space(name: &str) {
-        let repository = uze_testkit::git::Repository::new(&format!("orchestrator-{name}-kept"));
+        let repository = uze_testkit::git::Repository::new("orchestrator-resume-kept");
         let root = repository.root().to_path_buf();
-        let home = UzeHome::at(uze_testkit::temp::scratch(&format!(
-            "orchestrator-{name}-kept-home"
-        )));
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-resume-kept-home"));
         set_up_every_harness(&home);
         let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
         let placement = app
