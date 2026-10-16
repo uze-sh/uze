@@ -769,7 +769,8 @@ mod tests {
     /// anywhere it can name".
     #[test]
     fn the_write_grant_is_narrower_than_the_filesystem() {
-        let directory = scratch("uze-write-grant");
+        let directory_scratch = uze_testkit::temp::TempDir::new("write-grant");
+        let directory = directory_scratch.path();
         let file = directory.join("a.txt");
         std::fs::write(&file, "before\n").unwrap();
         let nested = directory.join("nested");
@@ -777,37 +778,37 @@ mod tests {
 
         assert!(
             WorkspaceHost
-                .write_file(&directory, &file, "after\n")
+                .write_file(directory, &file, "after\n")
                 .is_ok()
         );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "after\n");
 
         assert!(
             WorkspaceHost
-                .write_file(&directory, &directory.join("invented.txt"), "x")
+                .write_file(directory, &directory.join("invented.txt"), "x")
                 .is_err(),
             "saving never creates a file that was not there"
         );
         assert!(
-            WorkspaceHost.write_file(&directory, &nested, "x").is_err(),
+            WorkspaceHost.write_file(directory, &nested, "x").is_err(),
             "a directory is not a file to be overwritten"
         );
         assert!(
-            WorkspaceHost.delete_file(&directory, &nested).is_err(),
+            WorkspaceHost.delete_file(directory, &nested).is_err(),
             "a directory is never removed by the gesture that removes a file"
         );
         assert!(nested.is_dir(), "and it is still there afterwards");
 
-        assert!(WorkspaceHost.delete_file(&directory, &file).is_ok());
+        assert!(WorkspaceHost.delete_file(directory, &file).is_ok());
         assert!(!file.exists());
-        std::fs::remove_dir_all(&directory).ok();
     }
 
     /// A rename gives a new name and nothing more: it never moves a path
     /// to another directory and never replaces what is already there.
     #[test]
     fn a_rename_neither_moves_nor_overwrites() {
-        let directory = scratch("uze-rename-grant");
+        let directory_scratch = uze_testkit::temp::TempDir::new("rename-grant");
+        let directory = directory_scratch.path();
         let nested = directory.join("nested");
         std::fs::create_dir_all(&nested).unwrap();
         let file = directory.join("a.txt");
@@ -815,15 +816,11 @@ mod tests {
         let taken = directory.join("b.txt");
         std::fs::write(&taken, "b\n").unwrap();
 
-        assert!(
-            WorkspaceHost
-                .rename_path(&directory, &file, &taken)
-                .is_err()
-        );
+        assert!(WorkspaceHost.rename_path(directory, &file, &taken).is_err());
         assert_eq!(std::fs::read_to_string(&taken).unwrap(), "b\n");
         assert!(
             WorkspaceHost
-                .rename_path(&directory, &file, &nested.join("a.txt"))
+                .rename_path(directory, &file, &nested.join("a.txt"))
                 .is_err(),
             "a rename is not a move"
         );
@@ -831,22 +828,22 @@ mod tests {
         let renamed = directory.join("c.txt");
         assert!(
             WorkspaceHost
-                .rename_path(&directory, &file, &renamed)
+                .rename_path(directory, &file, &renamed)
                 .is_ok()
         );
         assert!(!file.exists() && renamed.is_file());
         assert!(
             WorkspaceHost
-                .rename_path(&directory, &nested, &directory.join("moved"))
+                .rename_path(directory, &nested, &directory.join("moved"))
                 .is_ok()
         );
         assert!(directory.join("moved").is_dir());
-        std::fs::remove_dir_all(&directory).ok();
     }
 
     #[test]
     fn a_directory_is_deleted_whole_by_its_own_grant() {
-        let directory = scratch("uze-delete-dir");
+        let directory_scratch = uze_testkit::temp::TempDir::new("delete-dir");
+        let directory = directory_scratch.path();
         let nested = directory.join("nested");
         std::fs::create_dir_all(nested.join("deeper")).unwrap();
         std::fs::write(nested.join("deeper/file.txt"), "x\n").unwrap();
@@ -854,36 +851,37 @@ mod tests {
         std::fs::write(&file, "a\n").unwrap();
 
         assert!(
-            WorkspaceHost.delete_dir(&directory, &file).is_err(),
+            WorkspaceHost.delete_dir(directory, &file).is_err(),
             "a file is not a directory"
         );
-        assert!(WorkspaceHost.delete_dir(&directory, &nested).is_ok());
+        assert!(WorkspaceHost.delete_dir(directory, &nested).is_ok());
         assert!(!nested.exists() && file.is_file());
-        std::fs::remove_dir_all(&directory).ok();
     }
 
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn deleting_a_directory_never_follows_a_link_into_its_target() {
-        let directory = scratch("uze-delete-dir-link");
-        let outside = scratch("uze-delete-dir-link-outside");
+        let directory_scratch = uze_testkit::temp::TempDir::new("delete-dir-link");
+        let directory = directory_scratch.path();
+        let outside_scratch = uze_testkit::temp::TempDir::new("delete-dir-link-outside");
+        let outside = outside_scratch.path();
         std::fs::write(outside.join("kept"), "x\n").unwrap();
         let link = directory.join("innocent");
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        std::os::unix::fs::symlink(outside, &link).unwrap();
 
-        assert!(WorkspaceHost.delete_dir(&directory, &link).is_err());
+        assert!(WorkspaceHost.delete_dir(directory, &link).is_err());
         assert!(outside.join("kept").is_file());
-        std::fs::remove_dir_all(&directory).ok();
-        std::fs::remove_dir_all(&outside).ok();
     }
 
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn a_save_never_follows_a_link_out_of_its_repository() {
-        let directory = scratch("uze-write-link");
-        let outside = scratch("uze-write-link-outside");
+        let directory_scratch = uze_testkit::temp::TempDir::new("write-link");
+        let directory = directory_scratch.path();
+        let outside_scratch = uze_testkit::temp::TempDir::new("write-link-outside");
+        let outside = outside_scratch.path();
         let secret = outside.join("secret");
         std::fs::write(&secret, "untouched\n").unwrap();
         let link = directory.join("innocent.txt");
@@ -891,47 +889,47 @@ mod tests {
 
         assert!(
             WorkspaceHost
-                .write_file(&directory, &link, "overwritten\n")
+                .write_file(directory, &link, "overwritten\n")
                 .is_err()
         );
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched\n");
 
-        assert!(WorkspaceHost.delete_file(&directory, &link).is_ok());
+        assert!(WorkspaceHost.delete_file(directory, &link).is_ok());
         assert!(secret.is_file(), "deleting a link leaves its target");
-        std::fs::remove_dir_all(&directory).ok();
-        std::fs::remove_dir_all(&outside).ok();
     }
 
     // A symbolic link, which Windows lets an ordinary account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn no_write_reaches_through_a_directory_linked_out_of_the_root() {
-        let directory = scratch("uze-write-linked-dir");
-        let outside = scratch("uze-write-linked-dir-outside");
+        let directory_scratch = uze_testkit::temp::TempDir::new("write-linked-dir");
+        let directory = directory_scratch.path();
+        let outside_scratch = uze_testkit::temp::TempDir::new("write-linked-dir-outside");
+        let outside = outside_scratch.path();
         std::fs::create_dir_all(outside.join("sub")).unwrap();
         let secret = outside.join(".bashrc");
         std::fs::write(&secret, "untouched\n").unwrap();
-        std::os::unix::fs::symlink(&outside, directory.join("docs")).unwrap();
+        std::os::unix::fs::symlink(outside, directory.join("docs")).unwrap();
         let through = directory.join("docs");
 
         assert!(
             WorkspaceHost
-                .write_file(&directory, &through.join(".bashrc"), "overwritten\n")
+                .write_file(directory, &through.join(".bashrc"), "overwritten\n")
                 .is_err()
         );
         assert!(
             WorkspaceHost
-                .rename_path(&directory, &through.join(".bashrc"), &through.join("moved"))
+                .rename_path(directory, &through.join(".bashrc"), &through.join("moved"))
                 .is_err()
         );
         assert!(
             WorkspaceHost
-                .delete_file(&directory, &through.join(".bashrc"))
+                .delete_file(directory, &through.join(".bashrc"))
                 .is_err()
         );
         assert!(
             WorkspaceHost
-                .delete_dir(&directory, &through.join("sub"))
+                .delete_dir(directory, &through.join("sub"))
                 .is_err()
         );
         assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched\n");
@@ -939,11 +937,9 @@ mod tests {
         let inside = directory.join("kept.txt");
         std::fs::write(&inside, "kept\n").unwrap();
         assert!(
-            WorkspaceHost.write_file(&outside, &inside, "x").is_err(),
+            WorkspaceHost.write_file(outside, &inside, "x").is_err(),
             "a path is only ever written inside the root it is asked under"
         );
-        std::fs::remove_dir_all(&directory).ok();
-        std::fs::remove_dir_all(&outside).ok();
     }
 
     // Its stand-in programs are POSIX shell scripts.
@@ -952,13 +948,14 @@ mod tests {
     fn a_save_keeps_the_permissions_the_file_had() {
         use std::os::unix::fs::PermissionsExt;
 
-        let directory = scratch("uze-write-mode");
+        let directory_scratch = uze_testkit::temp::TempDir::new("write-mode");
+        let directory = directory_scratch.path();
         let script = directory.join("run.sh");
         std::fs::write(&script, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o750)).unwrap();
 
         WorkspaceHost
-            .write_file(&directory, &script, "#!/bin/sh\necho saved\n")
+            .write_file(directory, &script, "#!/bin/sh\necho saved\n")
             .unwrap();
 
         assert_eq!(
@@ -968,11 +965,10 @@ mod tests {
         let mode = std::fs::metadata(&script).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o750);
         assert_eq!(
-            std::fs::read_dir(&directory).unwrap().count(),
+            std::fs::read_dir(directory).unwrap().count(),
             1,
             "nothing is left beside the file"
         );
-        std::fs::remove_dir_all(&directory).ok();
     }
 
     /// A click on a row in a tree never reads more than the grant allows,
@@ -980,7 +976,8 @@ mod tests {
     /// a binary gets — the two are different things to do about it.
     #[test]
     fn opening_a_file_is_bounded_by_what_the_grant_allows() {
-        let directory = scratch("uze-read-cap");
+        let directory_scratch = uze_testkit::temp::TempDir::new("read-cap");
+        let directory = directory_scratch.path();
         let at_the_cap = directory.join("at-the-cap");
         std::fs::write(&at_the_cap, "x".repeat(super::READABLE_FILE_LIMIT as usize)).unwrap();
         let over_the_cap = directory.join("over-the-cap");
@@ -1018,21 +1015,21 @@ mod tests {
             Err(Unreadable::NotText),
             "bytes that are not text are a kind of file, not a failure"
         );
-        std::fs::remove_dir_all(&directory).ok();
     }
 
     /// Directories before files, each half by name — a tree that reorders
     /// itself between two listings is a tree nobody can click in.
     #[test]
     fn a_listing_is_ordered_the_same_way_every_time() {
-        let directory = scratch("uze-listing-order");
+        let directory_scratch = uze_testkit::temp::TempDir::new("listing-order");
+        let directory = directory_scratch.path();
         std::fs::create_dir_all(directory.join("zeta")).unwrap();
         std::fs::create_dir_all(directory.join("alpha")).unwrap();
         std::fs::write(directory.join("b.txt"), "").unwrap();
         std::fs::write(directory.join("a.txt"), "").unwrap();
 
         let names: Vec<String> = WorkspaceHost
-            .list_dir(&directory)
+            .list_dir(directory)
             .unwrap()
             .into_iter()
             .map(|entry| entry.name)
@@ -1042,21 +1039,6 @@ mod tests {
             WorkspaceHost.list_dir(&directory.join("absent")).is_err(),
             "a directory that is not there is an error, not an empty tree"
         );
-        std::fs::remove_dir_all(&directory).ok();
-    }
-
-    /// A scratch directory of this test run's own.
-    fn scratch(prefix: &str) -> std::path::PathBuf {
-        let directory = std::env::temp_dir().join(format!(
-            "{prefix}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|since| since.as_nanos())
-                .unwrap_or_default()
-        ));
-        std::fs::create_dir_all(&directory).unwrap();
-        directory
     }
 
     /// The streaming count must answer exactly what the contract's default
@@ -1066,15 +1048,8 @@ mod tests {
     /// than the read buffer.
     #[test]
     fn counting_lines_without_the_file_in_memory_matches_str_lines() {
-        let directory = std::env::temp_dir().join(format!(
-            "uze-count-lines-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|since| since.as_nanos())
-                .unwrap_or_default()
-        ));
-        std::fs::create_dir_all(&directory).unwrap();
+        let directory_scratch = uze_testkit::temp::TempDir::new("count-lines");
+        let directory = directory_scratch.path();
 
         let big = "x".repeat(100) + "\n";
         for (name, contents) in [
@@ -1099,6 +1074,5 @@ mod tests {
             0,
             "a file that cannot be read counts as nothing, never as an error"
         );
-        std::fs::remove_dir_all(&directory).ok();
     }
 }
