@@ -100,16 +100,7 @@ impl UzeApplication {
         integration: &dyn IntegrationPort,
     ) -> Result<()> {
         let mut first_error: Option<uze_core::UzeError> = None;
-        for package_id in self.store.package_ids()? {
-            let package = match self.store.package(&package_id) {
-                Ok(pkg) => pkg,
-                Err(error) => {
-                    if first_error.is_none() {
-                        first_error = Some(error);
-                    }
-                    continue;
-                }
-            };
+        for package in self.store.packages()? {
             if let Err(error) = self.attach_package_to(&package, integration)
                 && first_error.is_none()
             {

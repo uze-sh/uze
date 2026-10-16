@@ -202,6 +202,7 @@ impl Health<'_> {
             );
         }
 
+        let ledger = state::receipts(&self.0.home, None);
         for package in packages.iter().flatten() {
             if let uze_core::PackageSource::Embedded { id } = &package.provenance.requested
                 && crate::bootstrap::has_update(id, &package.root).unwrap_or(false)
@@ -211,8 +212,12 @@ impl Health<'_> {
                 });
             }
 
-            let entries = match state::receipts(&self.0.home, Some(package.id.as_str())) {
-                Ok(entries) => entries,
+            let entries: Vec<_> = match &ledger {
+                Ok(receipts) => receipts
+                    .iter()
+                    .filter(|receipt| receipt.package_id == package.id.as_str())
+                    .cloned()
+                    .collect(),
                 Err(error) => {
                     report.outcomes.push(MaintenanceOutcome::NeedsHumanAction {
                         plugin: package.id.as_str().to_owned(),
