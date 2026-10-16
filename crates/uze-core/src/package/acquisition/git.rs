@@ -1411,18 +1411,20 @@ mod tests {
     /// be able to name a credential helper for the operator.
     #[test]
     fn a_repository_planted_in_the_shared_temporary_directory_is_never_read() {
+        // The very path the old reader pointed at, so it cannot be a unique
+        // scratch; a plant that cannot be made fails rather than passing
+        // without having checked anything.
         let planted = std::env::temp_dir().join("uze-no-repository");
-        if fs::create_dir_all(planted.join("objects")).is_err()
-            || fs::create_dir_all(planted.join("refs")).is_err()
-            || fs::write(planted.join("HEAD"), "ref: refs/heads/main\n").is_err()
-            || fs::write(
+        let plant = || -> std::io::Result<()> {
+            fs::create_dir_all(planted.join("objects"))?;
+            fs::create_dir_all(planted.join("refs"))?;
+            fs::write(planted.join("HEAD"), "ref: refs/heads/main\n")?;
+            fs::write(
                 planted.join("config"),
                 "[credential]\n\thelper = !planted-by-another-user\n",
             )
-            .is_err()
-        {
-            return;
-        }
+        };
+        plant().expect("the repository is planted where the old reader looked");
 
         let credentials = read_operator_config(CREDENTIAL_KEYS);
         let _ = fs::remove_dir_all(&planted);
