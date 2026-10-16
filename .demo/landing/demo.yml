@@ -1,0 +1,402 @@
+# The landing page's hero, as a spec: the same story the page used to draw
+# by hand (web/components/home/session.tsx), performed by the real binary.
+# A marketplace is added, one plugin reaches four agents, the project file
+# records it, and `uze workspace` takes the screen with three agents on three
+# harnesses, each in a checkout of its own; spec, arch and code then open on
+# the one that finished.
+#
+#   tui-record seed   .demo/landing   # build the sandbox (first run, or after a /tmp wipe)
+#   tui-record probe  .demo/landing   # the shell in its sandbox, to try a selector out
+#   tui-record run    .demo/landing   # record → cut → leak-check → render → poster
+#
+# Shares ~/.uzedemo with the other specs: never run two at once, they share
+# one tmux session.
+
+video:
+  title: uze
+  # The page embeds a video, not a GIF: text stays sharp and the file is a
+  # fraction of the size. The GIF is the renderer's output and the source the
+  # mp4/webm are encoded from (`make landing-video`), so only those and the
+  # poster are published.
+  out: .demo/landing/uze-landing.gif
+  poster: .demo/landing/uze-landing-poster.png
+  publish:
+    - from: poster
+      to: web/public/uze-landing-poster.png
+  forbid:
+    - Upstream request limit
+    - Retry attempt
+    - weekly limit
+    - America/
+  cast: '{root}/uze-landing.cast'
+  # The page frames it at ~1370px: 140 columns keeps the text near the
+  # page's own body size there, and still fits the four install lanes.
+  cols: 140
+  rows: 36
+  speed: 1.2
+  idle_limit: 3.5
+  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
+  # Twice the width the page shows it at, so a retina screen gets real pixels.
+  font_size: 22
+  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
+  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
+  wait_collapse: 1.5
+  # The workspace with all three agents named and the code surface on the
+  # finished one: the frame that says the most, for reduced motion.
+  poster_when: 'DIFF ·'
+  sidebar: 31
+sandbox:
+  root: ~/.uzedemo
+  fixtures: /tmp/demos
+  cwd: '{fixtures}/demo-api'
+  # A shell, not the workspace: the first half of the story is the CLI.
+  command:
+    - '{home}/demoshell'
+  shell: '{home}/demoshell'
+  path:
+    - '{home}/.uze/shims'
+    - '{home}/.local/bin'
+    - '{home}/bin'
+    - '{home}/landing-bin'
+    - /usr/local/bin
+    - /usr/bin
+    - /bin
+  env:
+    TZ: UTC
+    PS1: '\[\e[38;5;245m\]~/demo-api\[\e[0m\] \[\e[38;5;252m\]❯\[\e[0m\] '
+  binaries:
+    - claude
+    - agy
+  author: Ada Lovelace
+  author_email: ada@demo.dev
+  link:
+    - from: ~/.opencode/bin/opencode
+      to: '{home}/bin/opencode'
+    - from: ~/.claude/.credentials.json
+      to: '{home}/.claude/.credentials.json'
+      optional: true
+    - from: ~/.local/share/opencode/auth.json
+      to: '{home}/.local/share/opencode/auth.json'
+      optional: true
+    # Granted for this video by the operator (2026-10-16): the third harness.
+    - from: ~/.codex/auth.json
+      to: '{home}/.codex/auth.json'
+      optional: true
+  copy:
+    - from: ~/.config/opencode/opencode.json
+      to: '{home}/.config/opencode/opencode.json'
+  provision:
+    - test -x {home}/.local/bin/codex || curl -fsSL https://chatgpt.com/codex/install.sh | sh
+    - rm -rf {home}/.uze
+    - opencode service set port 49375
+    - '{project}/target/release/uze setup claude codex opencode antigravity'
+    - test -e {home}/.uze/shims/opencode || ln -s {project}/target/release/uze {home}/.uze/shims/opencode
+    - '{project}/target/release/uze config icons nerd'
+    # `uze` on the shell's PATH is this checkout's release build, so what the
+    # video types is the bare command a reader would.
+    - mkdir -p {home}/landing-bin && ln -sf {project}/target/release/uze {home}/landing-bin/uze
+  reset:
+    - |
+      for pid in $(pgrep -x uze 2>/dev/null); do
+        cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
+        case "$cmd" in *"terminal serve --root /tmp/demos/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
+    # Every take adds the marketplace and installs the plugin on camera, so
+    # both come off the machine first: through uze, which knows what it
+    # placed in each harness, never by deleting its directories.
+    - env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze market remove ai >/dev/null 2>&1 || true
+    # Codex asks whether to trust a folder on its first launch there, and
+    # its answer lives in its own config, which `uze setup` also writes to.
+    - grep -qs '/tmp/demos/demo-api' {home}/.codex/config.toml || printf '\n[projects."/tmp/demos/demo-api"]\ntrust_level = "trusted"\n' >> {home}/.codex/config.toml
+    - git -C {fixtures}/demo-api clean -qfd -e .worktrees 2>/dev/null || true
+    - |
+      cat > {home}/.uze/state/layout.json <<'LAYOUT'
+      {
+        "sidebar": { "width": null },
+        "workspace": { "timeline_collapsed": false, "timeline_rows": null, "collapsed_space_roots": [] },
+        "management": { "route": "overview", "drawer_width": null,
+                        "profile_columns_width": null, "collapsed_marketplaces": [] },
+        "first_steps": { "collapsed": true, "closed": false, "taken": [] }
+      }
+      LAYOUT
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
+  clear:
+    - '{fixtures}/demo-api/.worktrees'
+    - '{home}/.uze/state/terminal'
+    - '{home}/.uze/state/projects'
+    - '{runtime}/uze-runtime'
+  write:
+    - path: '{home}/demoshell'
+      executable: true
+      text: |
+        #!/bin/sh
+        exec /bin/bash --norc --noprofile
+    - path: '{home}/.gitconfig'
+      text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
+    - path: '{home}/.claude.json'
+      text: |
+        {
+          "hasCompletedOnboarding": true,
+          "lastOnboardingVersion": "2.1.201",
+          "installMethod": "native",
+          "autoUpdates": false,
+          "theme": "dark",
+          "tipsHistory": { "powerup-onboarding": 99, "new-user-warmup": 99, "shift-enter": 99 },
+          "tipLifetimeShownCounts": { "powerup-onboarding": 99 },
+          "projects": {
+            "/tmp/demos/demo-api": { "hasTrustDialogAccepted": true, "allowedTools": [] }
+          }
+        }
+  patch_json:
+    - path: '{home}/.claude/settings.json'
+      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash"]}}'
+# Its own fixture rather than demo-app: demo-app's remembered HEAD is shared
+# with three other specs, and this one starts from a manifest that declares
+# no plugin yet, so the install on camera is what writes them in.
+fixtures:
+  - name: demo-api
+    commits:
+      - message: 'chore: initial commit'
+        days_ago: 9
+        files:
+          README.md: |
+            # demo-api
+
+            A small HTTP service.
+      - message: 'feat(api): add the health route'
+        days_ago: 7
+        files:
+          src/main.rs: |-
+            mod config;
+            mod health;
+            mod router;
+
+            fn main() {
+                let port = config::port();
+                println!("demo-api listening on {}", port);
+                serve(port, router::route);
+            }
+          src/health.rs: |-
+            pub fn health() -> Response {
+                Response::json(200, r#"{"status":"ok"}"#)
+            }
+          src/router.rs: |-
+            use crate::health;
+
+            /// Every route this service answers, in the order they are tried.
+            pub fn route(path: &str) -> Response {
+                match path {
+                    "/health" => health::health(),
+                    _ => not_found(path),
+                }
+            }
+
+            fn not_found(path: &str) -> Response {
+                Response::text(404, format!("no route for {path}"))
+            }
+      - message: 'feat(config): read settings from config.toml'
+        days_ago: 4
+        files:
+          config.toml: |-
+            [app]
+            port = 8080
+            log = "info"
+          src/config.rs: |-
+            pub fn port() -> u16 {
+                settings().app.port
+            }
+      - message: 'docs: add AGENTS.md'
+        days_ago: 3
+        files:
+          AGENTS.md: |
+            # AGENTS.md
+
+            `demo-api` is a small HTTP service. `src/router.rs` maps a path to
+            a response; `config.toml` carries the runtime settings.
+
+            - Keep handlers total: every route returns a `Response`.
+            - Conventional Commits for commit subjects.
+      # Only the workspace: the marketplace and the plugin are what the
+      # video adds, and `cat agents.yaml` then shows both halves.
+      - message: 'chore: declare the project in agents.yaml'
+        days_ago: 2
+        files:
+          agents.yaml: |-
+            workspace:
+              worktree: always
+              delivery: merge
+              branch: conventional
+              artifacts: docs/architecture
+      - message: 'docs(architecture): draw the context and the containers'
+        days_ago: 2
+        files:
+          docs/architecture/system-context.mmd: |
+            ---
+            title: System context
+            ---
+            C4Context
+              Person(dev, "Developer", "Runs the service and reads its logs")
+              System(app, "demo-api", "The HTTP service")
+              System_Ext(lb, "Load balancer", "Routes traffic to live instances")
+              Rel(dev, app, "Runs, reviews")
+              Rel(lb, app, "Calls /health")
+          docs/architecture/containers.mmd: |
+            ---
+            title: Containers
+            ---
+            C4Container
+              System_Boundary(app, "demo-api") {
+                Container(router, "Router", "Rust", "Maps a path to a response")
+                Container(health, "Health", "Rust", "Answers /health")
+                Container(config, "Config", "TOML", "Runtime settings")
+              }
+              Rel(router, health, "Dispatches /health")
+              Rel(router, config, "Reads the port")
+      - message: 'docs(openspec): plan rate limiting'
+        days_ago: 1
+        files:
+          openspec/config.yaml: |
+            schema: spec-driven
+          openspec/specs/health/spec.md: |
+            # health Specification
+
+            ## Purpose
+            Says whether the service can answer.
+
+            ## Requirements
+            ### Requirement: The service reports its health
+            The service SHALL answer `GET /health` with `200` and
+            `{"status":"ok"}` while it can serve requests.
+
+            #### Scenario: A healthy service
+            - **WHEN** `/health` is requested
+            - **THEN** the answer SHALL be `200` with `{"status":"ok"}`
+          openspec/changes/add-rate-limiting/proposal.md: |
+            ## Why
+
+            One noisy client can take the service down for everyone.
+
+            ## What Changes
+
+            - A token bucket per client address, refilled every second.
+            - `429 Too Many Requests` with a `Retry-After` header.
+          openspec/changes/add-rate-limiting/tasks.md: |
+            ## 1. Limiter
+
+            - [x] 1.1 Token bucket with a refill clock
+            - [x] 1.2 One bucket per client address
+            - [ ] 1.3 Read the budget from `config.toml`
+
+            ## 2. Routing
+
+            - [ ] 2.1 Ask the limiter before dispatching
+            - [ ] 2.2 Answer `429` with `Retry-After`
+beats:
+  # ── the CLI ─────────────────────────────────────────────────────────────
+  - say: a shell, in a project
+    pause: 0.8
+  - say: a marketplace is added — a Git repository of plugins
+    type: uze market add hiukky/ai
+    expect: 1 marketplace added
+    expect_timeout: 60
+    pause: 1.4
+  - say: one plugin, installed once, reaches every agent in its own form
+    type: uze git@ai
+    expect: added to this project
+    expect_timeout: 90
+    pause: 1.6
+  # The install's own report is one line; what each agent received is
+  # `inspect`'s matrix, a column per harness, in the route each one takes.
+  - say: what each agent received, in its own form
+    type: uze inspect git
+    expect: files in place
+    expect_timeout: 15
+    pause: 3.2
+  - say: the project file now records it
+    type: cat agents.yaml
+    expect: 'plugins:'
+    pause: 2.6
+  # ── the workspace ───────────────────────────────────────────────────────
+  - say: the workspace takes the screen
+    type: uze workspace
+    expect: demo-api
+    expect_in: sidebar
+    expect_timeout: 15
+    pause: 1.0
+  - say: an agent on Claude Code, in a checkout of its own
+    click: new
+    in: sidebar
+    expect: new agent
+    expect_timeout: 6
+    pause: 0.6
+  - click: Claude Code
+    in: screen
+    offset: 2
+    expect: Claude Code v
+    expect_timeout: 25
+    pause: 0.8
+  - type: add a /ping route to src/router.rs that answers pong, then commit
+    expect: 'esc to interrupt|for \d+s · done'
+    expect_timeout: 60
+    pause: 0.8
+  - say: a second, on Codex
+    click: new
+    in: sidebar
+    expect: new agent
+    expect_timeout: 6
+    pause: 0.6
+  - click: Codex
+    in: screen
+    offset: 2
+    expect: Ask Codex to do anything
+    expect_timeout: 40
+    pause: 0.8
+  - type: cover GET /health with a test in src/health.rs
+    pause: 1.2
+  - say: a third, on OpenCode
+    click: new
+    in: sidebar
+    expect: new agent
+    expect_timeout: 6
+    pause: 0.6
+  - click: OpenCode
+    in: screen
+    offset: 2
+    expect: ctrl\+p commands
+    expect_timeout: 25
+    pause: 0.8
+  - type: add a Routes section to README.md listing every route in src/router.rs
+    pause: 1.2
+  - say: wait for its edit — the only stretch the cut squeezes
+    wait: shell
+    until: grep -qs Routes /tmp/demos/demo-api/.worktrees/*/README.md
+    timeout: 300
+    settle: 2.0
+    pause: 1.6
+  # ── on the one that finished ───────────────────────────────────────────
+  - say: what the project plans
+    click: spec
+    in: strip
+    expect: add-rate-limiting
+    expect_in: pane
+    expect_timeout: 10
+    pause: 2.4
+  - say: what it wrote down about itself, drawn in cells
+    click: arch
+    in: strip
+    expect: system-context\.mmd
+    expect_timeout: 10
+    pause: 2.8
+  - say: and what the agent changed, in its own checkout
+    key: M-g
+    expect: 'DIFF ·'
+    expect_timeout: 10
+    refuse: no changes
+    pause: 3.4
+  - click: code
+    in: strip
+    expect: ctrl\+p commands
+    expect_timeout: 6
+    pause: 1.6
+  - say: and out — the cut stops here, before the screen blanks
+    end: C-q
