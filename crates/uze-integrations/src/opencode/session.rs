@@ -82,7 +82,7 @@ pub(super) fn exists(executable: &Path, home: &Path, session: &SessionId) -> boo
     // Unreadable is not gone: a harness that cannot answer keeps its
     // conversation, and a resume that then fails is its own error rather
     // than a conversation UZE dropped on a guess.
-    process::capture(executable, home, &["api", "GET", path.as_str()])
+    process::capture_read_only(executable, home, &["api", "GET", path.as_str()])
         .map_or(true, |output| !names_a_missing_session(&output.stdout))
 }
 
@@ -94,7 +94,7 @@ fn names_a_missing_session(payload: &[u8]) -> bool {
 }
 
 fn listing(executable: &Path, home: &Path) -> Option<Vec<Listed>> {
-    let output = process::capture(executable, home, &LISTING_ARGS).ok()?;
+    let output = process::capture_read_only(executable, home, &LISTING_ARGS).ok()?;
     if !output.status.success() {
         return None;
     }

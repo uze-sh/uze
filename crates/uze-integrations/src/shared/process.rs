@@ -76,6 +76,17 @@ pub fn capture<S: AsRef<OsStr>>(program: &Path, home: &Path, args: &[S]) -> io::
     run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
 }
 
+/// [`capture`] for a verb that only reads, which leaves the inspections
+/// remembered: a probe between two inspections otherwise threw away the
+/// answer the second one was there to reuse.
+pub(crate) fn capture_read_only<S: AsRef<OsStr>>(
+    program: &Path,
+    home: &Path,
+    args: &[S],
+) -> io::Result<Output> {
+    run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
+}
+
 /// How long an inspection verb's answer stands for the next identical
 /// question. One pass inspects every package a harness carries, and asked
 /// apart each one re-ran the same listing — a second or more of a vendor
@@ -151,7 +162,7 @@ fn inspect_json<S: AsRef<OsStr>>(
 
 /// Whether a vendor probe ran and exited successfully.
 pub(crate) fn succeeds<S: AsRef<OsStr>>(program: &Path, home: &Path, args: &[S]) -> bool {
-    capture(program, home, args).is_ok_and(|output| output.status.success())
+    capture_read_only(program, home, args).is_ok_and(|output| output.status.success())
 }
 
 /// Where a vendor's `--version` output puts the version.
@@ -418,8 +429,9 @@ mod tests {
     }
 
     /// One pass inspects every package with the same listing; asked twice
-    /// it runs once, and anything else run against that program — a
-    /// mutation — makes the next one run again.
+    /// it runs once, a probe that only reads leaves that answer standing,
+    /// and anything else run against that program — a mutation — makes the
+    /// next one run again.
     // Unix only: the fake vendor is a `#!/bin/sh` script marked executable,
     // which is the one program a test can write without building one.
     #[cfg(unix)]
@@ -446,9 +458,13 @@ mod tests {
         json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
         assert_eq!(count(), 1, "the second question is answered from the first");
 
+        assert!(succeeds(&program, &scratch, &["mcp", "get", "x"]));
+        json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
+        assert_eq!(count(), 2, "a probe that only reads leaves it standing");
+
         capture(&program, &scratch, &["plugin", "add", "x"]).unwrap();
         json(&program, &scratch, &["plugin", "list"], "vendor").unwrap();
-        assert_eq!(count(), 3, "a run of anything else asks again");
+        assert_eq!(count(), 4, "a run of anything else asks again");
     }
 
     /// A non-success exit status without touching vendor installs: the
