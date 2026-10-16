@@ -67,3 +67,24 @@
 - decided:  implemented and unit-tested every other item; those three stay unchecked until the operator has tried the switch.
 - rejected: writing the Lab scenes and journey now and iterating them against a feature that may still change shape.
 - blast:    none; they are additive.
+
+## D8 — Claude's first turn goes behind `--`
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  the Lab's first run of `briefing` on Claude: the turn never reached the model. The runtime projection adds `--add-dir <dir>`, and `--add-dir <directories...>` takes any number of values, so the positional prompt behind it was read as one more directory.
+- decided:  `first_turn_args` for Claude is `["--", turn]`; Commander reads everything after `--` as positional.
+- rejected: moving the prompt ahead of the contributed arguments (the shim's order is resume, contribution, first turn for every harness, and Codex's resume subcommand needs it).
+- blast:    one argument; the unit test and the Lab hold it.
+
+## D9 — The transcript replay runs in the deterministic suite, recorded by the Lab
+
+- status:   pending
+- task:     5.6
+- commit:
+- trigger:  the digest is Rust with no command that exposes it, so a Lab check cannot run it inside the container.
+- decided:  `experiments/<vendor>/transcript` drives one real turn and copies the transcript the binary wrote into `tests/_fixtures/foreign/transcripts/`; `<vendor>/digest.rs` replays it in `cargo test`. Re-recorded on a version drift.
+- rejected: a hidden `uze agent` verb that prints a digest, to be called from the Lab (a new surface whose only reader is a test).
+- blast:    two fixtures and two tests.
+

@@ -23,7 +23,7 @@
 ## 4. Integrations: first turn (uze-integrations)
 
 - [x] 4.1 `first_turn_args` for Claude (positional), Codex (positional after `resume <id>`), OpenCode (`--prompt`), Antigravity (`-i`), each unit-tested against the argument order with start and with resume
-- [ ] 4.2 Lab contract check (vendor-neutral, beside continuity): a launch carrying a first turn with and without resume is accepted by the real binary and the turn reaches the synthetic provider
+- [x] 4.2 Lab contract check (`contract/briefing.py`, vendor-neutral, beside continuity): a launch carrying a first turn with and without resume is accepted by the real binary and the turn reaches the synthetic provider
 
 At this point the switch is usable with a Git-only briefing.
 
@@ -33,7 +33,7 @@ At this point the switch is usable with a Git-only briefing.
 - [x] 5.2 Claude digest: string-content `user` turns, `text` assistant blocks, `isCompactSummary` summary, skip `tool_result`, `isSidechain`, `isMeta` and API error records; tested on a recorded, scrubbed fixture
 - [x] 5.3 Codex digest: `item_completed` `UserMessage`/`AgentMessage`/`CommandExecution`, top-level `compacted` summary, never `response_item` messages; tested on a recorded, scrubbed fixture
 - [x] 5.4 Wire the digest into the briefing (2.3) and the delta into its time floor (2.4)
-- [ ] 5.6 Lab: replay each harness's recorded transcript fixture through its digest
+- [x] 5.6 Lab: record each harness's real transcript (`experiments/<vendor>/transcript`) into `tests/_fixtures/foreign/transcripts/`, replayed through its digest by the deterministic suite
 
 ## 6. Diagrams, docs, proof
 

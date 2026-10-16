@@ -228,4 +228,39 @@ mod tests {
         assert_eq!(digest.turns.len(), 2);
         assert_eq!(digest.goal.as_deref(), Some("make branch names short"));
     }
+
+    /// The transcript the real binary wrote in the Lab, replayed
+    /// (`conformance/experiments/codex/transcript`, re-recorded on a version
+    /// drift): what holds this reader to the format the vendor writes now
+    /// rather than to the one these hand-written cases remember.
+    #[test]
+    fn the_transcript_the_real_binary_wrote_reads_as_its_turns() {
+        let recorded = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/_fixtures/foreign/transcripts/codex.jsonl");
+        let digest = read(&recorded, None).expect("the recorded transcript reads");
+
+        let goal = digest.goal.as_deref().unwrap_or_default();
+        assert!(
+            goal.contains("UZE_CONFORMANCE_PECAN"),
+            "the typed turn is the goal: {goal:?}"
+        );
+        assert!(
+            digest
+                .turns
+                .iter()
+                .any(|turn| turn.speaker == Speaker::Agent && !turn.text.is_empty()),
+            "and the agent's answer is a turn: {:?}",
+            digest.turns
+        );
+        assert_eq!(
+            digest
+                .turns
+                .iter()
+                .filter(|turn| turn.speaker == Speaker::Operator)
+                .count(),
+            1,
+            "one operator turn, and no injected context taken for one: {:?}",
+            digest.turns
+        );
+    }
 }

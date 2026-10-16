@@ -47,6 +47,11 @@ as its own format. One per vendor, minimal:
 - `antigravity/native-plugin/` — Antigravity reads the canonical
   `plugin.json` itself as its manifest; this fixture carries vendor
   metadata fields on top.
+- `transcripts/claude.jsonl`, `transcripts/codex.jsonl` — a conversation as
+  the real binary files it: one typed turn answered by the Lab's synthetic
+  provider, recorded by `conformance/experiments/<vendor>/transcript` and
+  replayed through the briefing's reader (`<vendor>/digest.rs`). Re-record
+  on a version drift; the diff is what the vendor changed.
 
 ## scenarios/
 
