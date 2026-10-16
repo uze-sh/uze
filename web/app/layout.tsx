@@ -14,13 +14,15 @@ const inter = localFont({
   variable: '--font-body',
 });
 
-// IBM's own release of Plex Mono, for the same hinting reason. OFL-1.1, beside it.
-const plexMono = localFont({
+// JetBrains Mono from its own release (v2.304): drawn on proportions close to
+// Inter's, so a command beside a sentence reads as the same voice rather than
+// a narrower, colder one. OFL-1.1, beside it.
+const jetbrainsMono = localFont({
   src: [
-    { path: './fonts/IBMPlexMono-Regular.woff2', weight: '400' },
-    { path: './fonts/IBMPlexMono-Medium.woff2', weight: '500' },
-    { path: './fonts/IBMPlexMono-SemiBold.woff2', weight: '600' },
-    { path: './fonts/IBMPlexMono-Bold.woff2', weight: '700' },
+    { path: './fonts/JetBrainsMono-Regular.woff2', weight: '400' },
+    { path: './fonts/JetBrainsMono-Medium.woff2', weight: '500' },
+    { path: './fonts/JetBrainsMono-SemiBold.woff2', weight: '600' },
+    { path: './fonts/JetBrainsMono-Bold.woff2', weight: '700' },
   ],
   variable: '--font-ui-mono',
 });
@@ -49,7 +51,7 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${plexMono.variable} scrollbar-thin scrollbar-thumb-scrollbar scrollbar-track-transparent scrollbar-thumb-rounded-full`}
+      className={`${inter.variable} ${jetbrainsMono.variable} scrollbar-thin scrollbar-thumb-scrollbar scrollbar-track-transparent scrollbar-thumb-rounded-full`}
       suppressHydrationWarning
     >
       <body className="flex flex-col min-h-screen font-sans">
