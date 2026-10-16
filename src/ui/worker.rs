@@ -1141,8 +1141,7 @@ pub(crate) fn drain_worker_results(
                 model.status = Status::Idle;
             }
             WorkerResult::ContextApplied(ticket, Ok((message, report))) => {
-                model.mutation_answered(ticket, Status::Success(message));
-                let _ = report;
+                model.mutation_answered(ticket, context_applied(message, &report));
             }
             WorkerResult::ProfileApplied(ticket, Ok((message, results, data))) => {
                 model.refreshed(data);
@@ -1185,6 +1184,28 @@ pub(crate) fn drain_worker_results(
 /// `Applied profile "default" to 3 harnesses · 1 approximation` — the one
 /// concise status line the spec asks for; per-harness detail lives in the
 /// Harnesses panel's badges (`model.profile_apply_results`), not here.
+/// How a reconciliation went: a region it could not write or an orphan
+/// it refused to remove is named, since the pass still finishing would
+/// otherwise read as everything having landed.
+fn context_applied(message: String, report: &ContextReconciliationReport) -> Status {
+    let problems: Vec<String> = report
+        .failed
+        .iter()
+        .map(|(package, reason)| format!("{package} not written: {reason}"))
+        .chain(
+            report
+                .blocked_orphans
+                .iter()
+                .map(|(region, reason)| format!("{region} not removed: {reason}")),
+        )
+        .collect();
+    if problems.is_empty() {
+        Status::Success(message)
+    } else {
+        Status::Error(format!("{message} except {}", problems.join(" · ")))
+    }
+}
+
 fn apply_message(id: &str, results: &[ProfileApplyResult]) -> String {
     use uze_application::PreferenceApplyOutcome;
     let approximated = results
@@ -1716,6 +1737,60 @@ mod tests {
         }
         drain_worker_results(&mut model, &receiver);
         model
+    }
+
+    fn reconciled(
+        failed: Vec<(String, String)>,
+        blocked_orphans: Vec<(String, String)>,
+    ) -> ContextReconciliationReport {
+        ContextReconciliationReport {
+            agents_md: PathBuf::from("AGENTS.md"),
+            packages: Vec::new(),
+            removed_orphans: Vec::new(),
+            blocked_orphans,
+            failed,
+            authoring_region: None,
+            bridges: Vec::new(),
+        }
+    }
+
+    fn after_applying_context(report: ContextReconciliationReport) -> Status {
+        let mut model = TuiModel::default();
+        let ticket = model.mutation_asked("Applying context reconciliation…".to_owned());
+        drained(
+            vec![WorkerResult::ContextApplied(
+                ticket,
+                Ok(("Context reconciled".to_owned(), report)),
+            )],
+            model,
+        )
+        .status
+    }
+
+    #[test]
+    fn a_reconciliation_that_wrote_everything_says_so() {
+        assert_eq!(
+            after_applying_context(reconciled(Vec::new(), Vec::new())),
+            Status::Success("Context reconciled".to_owned())
+        );
+    }
+
+    /// The pass finishing is not the same as every region landing: the
+    /// ones it could not write or refused to remove are named.
+    #[test]
+    fn a_reconciliation_that_left_regions_behind_names_them() {
+        let status = after_applying_context(reconciled(
+            vec![("lint".to_owned(), "permission denied".to_owned())],
+            vec![("old-plugin".to_owned(), "malformed markers".to_owned())],
+        ));
+        assert_eq!(
+            status,
+            Status::Error(
+                "Context reconciled except lint not written: permission denied \
+                 · old-plugin not removed: malformed markers"
+                    .to_owned()
+            )
+        );
     }
 
     /// Clearing the marker on failure would have the per-frame check ask
