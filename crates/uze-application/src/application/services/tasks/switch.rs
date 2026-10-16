@@ -16,6 +16,7 @@ struct Switched {
     directory: PathBuf,
     placement: Placement,
     base: Option<String>,
+    launch_key: String,
 }
 
 impl Workspace<'_> {
@@ -23,9 +24,10 @@ impl Workspace<'_> {
     /// identity, its checkout, its branch and every harness's conversation,
     /// and answers the placement the client relaunches it at.
     ///
-    /// The harness is changed only while it is still `from`: two clients
-    /// switching one agent at once would otherwise each issue a key, and the
-    /// process launched for the first would start as nobody's. Before
+    /// The harness is changed only while it is still `from`, and in the
+    /// same write that issues the launch its key: two clients switching one
+    /// agent at once would otherwise each issue a key, and the process
+    /// launched for the first would start as nobody's. Before
     /// answering, it writes the agent's briefing and leaves it pending for
     /// `to`, whose first launch is pointed at it once.
     #[tracing::instrument(name = "workspace.switch_harness", skip_all, fields(cwd = %cwd.display(), agent = %agent_id, from = %from, to = %to), err)]
@@ -90,12 +92,21 @@ impl Workspace<'_> {
                 ),
             };
             agent.harness = to.to_owned();
+            // In the same write as the harness: a key that cannot be
+            // issued leaves the record naming the harness it had, rather
+            // than one no launch is coming for.
+            let launch_key = agent.issue_launch_key().map_err(|error| {
+                UzeError::AgentPlacement(format!(
+                    "the agent's launch could not be issued a key: {error}"
+                ))
+            })?;
             Ok(Ok(Switched {
                 id: agent.id.clone(),
                 label: agent.label.clone(),
                 directory,
                 placement,
                 base,
+                launch_key,
             }))
         })?
         .map_err(refused)?;
@@ -119,14 +130,14 @@ impl Workspace<'_> {
             .and_then(|(primary, policy)| {
                 self.placed_view(&primary, switched.id.as_str(), &policy)
             });
-        self.keyed(AgentPlacement {
+        Ok(AgentPlacement {
             project: root,
             cwd: switched.directory,
             placement: switched.placement,
             warnings,
             awaiting_approval: None,
             view,
-            launch_key: String::new(),
+            launch_key: switched.launch_key,
         })
     }
 
@@ -319,7 +330,17 @@ mod tests {
             placed.warnings
         );
         let store = task::load(&app.home, &root).unwrap();
-        assert_eq!(store.agent(id.as_str()).unwrap().harness, "right");
+        let agent = store.agent(id.as_str()).unwrap();
+        assert_eq!(agent.harness, "right");
+        let claim = Claim {
+            id: id.as_str(),
+            key: &placed.launch_key,
+            cwd: &root,
+        };
+        assert!(
+            conversation::owner_of(&app.home, claim).is_some(),
+            "the key the placement carries is the one the switch recorded"
+        );
         let record = conversation::load(&app.home, &root, &id);
         let pending = record.briefing.clone().expect("a briefing is pending");
         assert_eq!(pending.integration, "right");
