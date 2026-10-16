@@ -399,6 +399,9 @@ pub fn portable_tool_aliases() -> impl Iterator<Item = &'static str> {
 
 /// The portable fields one alias guarantees; empty for an alias the
 /// vocabulary carries without a portable payload, and for `native:` tools.
+///
+/// Asked only by the tests that hold each harness's binding table to the
+/// promise; delivery reads each binding's own fields.
 pub fn alias_fields(alias: &str) -> &'static [&'static str] {
     portable_tool_vocabulary()
         .iter()
@@ -446,9 +449,14 @@ impl HarnessToolVocabulary {
         self.bindings.iter().find(|entry| entry.alias == alias)
     }
 
-    /// The alias a native tool name normalizes to, or `None` when this
-    /// harness's table does not know the tool — the handler then receives
-    /// `HOOK_TOOL_NATIVE` and `HOOK_INPUT` alone.
+    /// The binding a native tool name normalizes to, or `None` when this
+    /// harness's table does not know it.
+    ///
+    /// No delivery path asks this at runtime: the generated wrapper and the
+    /// OpenCode bridge carry their own dispatch table, built from
+    /// [`Self::native_names`]. This is
+    /// the same question asked of the table itself, by the tests that hold
+    /// each harness's bindings to it.
     pub fn binding_for_native(&self, native: &str) -> Option<&'static ToolBinding> {
         self.bindings
             .iter()
