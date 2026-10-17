@@ -79,15 +79,11 @@ pub(crate) fn pixel_rgb(rgba: [u8; 4]) -> [u8; 3] {
     over_ground(rgba, uze_theme::active().color(Token::SurfaceBackground))
 }
 
-/// Every pixel of an image as [`pixel_rgb`] has it, for one sent to the
-/// terminal as pixels rather than drawn into cells — the theme asked once
-/// for the whole image rather than once a pixel.
-pub(crate) fn pixels_rgb(pixels: &[[u8; 4]]) -> Vec<[u8; 3]> {
+/// [`pixel_rgb`] with the theme asked once, for an image sent to the
+/// terminal as pixels: one lookup for the image rather than one a pixel.
+pub(crate) fn laid_over_ground() -> impl Fn([u8; 4]) -> [u8; 3] {
     let ground = uze_theme::active().color(Token::SurfaceBackground);
-    pixels
-        .iter()
-        .map(|pixel| over_ground(*pixel, ground))
-        .collect()
+    move |pixel| over_ground(pixel, ground)
 }
 
 fn over_ground([red, green, blue, alpha]: [u8; 4], ground: uze_theme::Rgb) -> [u8; 3] {

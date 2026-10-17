@@ -346,15 +346,18 @@ fn positioned(placement: &Placement) -> Vec<u8> {
 /// a transparent edge blends into what it is drawn on rather than into
 /// whatever colour its invisible pixels happen to hold.
 fn resampled(picture: &Picture, width: usize, height: usize) -> Vec<[u8; 3]> {
-    let laid: Vec<[f32; 3]> = theme::pixels_rgb(&picture.pixels)
-        .into_iter()
-        .map(|pixel| pixel.map(f32::from))
-        .collect();
+    let lay = theme::laid_over_ground();
     let columns = lanczos_weights(picture.width, width);
     let rows = lanczos_weights(picture.height, height);
+    // One source row laid over the ground at a time, not the whole image:
+    // as floats, a 4096-pixel square would be 200 MB held for one pass.
+    let mut source = vec![[0f32; 3]; picture.width];
     let mut across = vec![[0f32; 3]; width * picture.height];
     for y in 0..picture.height {
-        let source = &laid[y * picture.width..(y + 1) * picture.width];
+        let row = &picture.pixels[y * picture.width..(y + 1) * picture.width];
+        for (laid, pixel) in source.iter_mut().zip(row) {
+            *laid = lay(*pixel).map(f32::from);
+        }
         for (x, (first, weights)) in columns.iter().enumerate() {
             across[y * width + x] = blend(weights.iter().zip(&source[*first..]));
         }
