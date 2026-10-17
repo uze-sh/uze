@@ -103,6 +103,7 @@ jobs:
       - name: Build the Lab harness image
         run: |
           docker buildx build --load --build-context uze-build="${RUNNER_TEMP}/uze-build" \
+            --build-arg UZE_SOURCE_DIGEST="$(cd conformance && python3 -c 'from shared.image import source_digest; print(source_digest())')" \
             -f conformance/Dockerfile -t conformance-harness:latest .
       - name: Install Lab runner dependency
         run: python3 -m pip install --user pexpect

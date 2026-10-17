@@ -22,6 +22,10 @@ RUN --mount=type=cache,target=/usr/local/rustup \
     && cp /src/target/release/uze /src/target/release/uze-mcp-conformance-fixture /out/
 
 FROM node:22-bookworm-slim AS harness-lab
+# What the `uze` below was built from (`shared/image.py`): every run
+# compares it with the checkout and rebuilds this image when they differ.
+ARG UZE_SOURCE_DIGEST=unlabelled
+LABEL sh.uze.lab.source=$UZE_SOURCE_DIGEST
 
 # Latest-channel policy: the harnesses update on their own; the Lab always
 # tests what the channel delivers. Actual versions are NOT asserted here —

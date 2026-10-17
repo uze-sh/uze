@@ -170,7 +170,7 @@ HARNESS ?= antigravity
 LAB_IMAGE ?= conformance-harness:latest
 
 lab-image: ## Build the Lab harness image (installs channel-latest harnesses).
-	docker build -f conformance/Dockerfile -t $(LAB_IMAGE) .
+	docker build -f conformance/Dockerfile --build-arg UZE_SOURCE_DIGEST=$$(cd conformance && python3 -c 'from shared.image import source_digest; print(source_digest())') -t $(LAB_IMAGE) .
 
 lab-run: ## Run the isolation vertical for $(HARNESS) (3x clean is the gate; gate enforced per ADR-035).
 	python3 conformance/lab.py --harness $(HARNESS)

@@ -223,22 +223,33 @@ measurement:
   receives is a real limitation; a gate that is a documented setting is a
   fixture to set.
 
-## Step 5 — after any Rust change, rebuild the Lab image before trusting a run
+## Step 5 — the image is the checkout, or the run does not happen
 
-The image bakes a release build of `uze` plus the real vendor CLIs. A stale
-image silently tests your *old* code:
+The image bakes a release build of `uze` plus the real vendor CLIs. A
+stale image tests your *old* code, and its failures read exactly like a
+regression of the change you are making — this has cost whole sessions.
+The Lab now refuses that: the image carries a `sh.uze.lab.source` label,
+the digest of every file its build reads (uncommitted ones included,
+`shared/image.py`), and **every `lab.py` run compares it with the checkout
+and rebuilds the image first when they differ** (`lab image: … Rebuilding.`
+on stderr). So:
 
-```bash
-docker build -f conformance/Dockerfile -t conformance-harness:latest .
-```
+- Run `lab.py` from the checkout whose code you are testing. Never point it
+  at an image someone else built, and never skip the rebuild it starts.
+- Before reading a failure, check the run's `provenance:` line: `uze=` must
+  be the version this checkout builds, and `fixture=` its commit. A
+  mismatch means the run proves nothing about your change — rerun.
+- `UZE_LAB_IMAGE=<image>` is the one way past the check, on purpose: to
+  rerun a scenario against an older build (Step 4). It says so on stderr;
+  outside that use, leave it unset.
+- `make lab-image` builds the same labelled image by hand.
 
 Rebuilds are fast when only `crates/`/`src/` changed (cached apt/provision
 layers); expect ~30-40s from a clean base, ~5-10s incremental. Python under
-`conformance/` (providers, scenarios, bindings, contract) runs on the host —
-no rebuild needed. The fixture marketplace is baked into the image, so a
-fixture added since the last build fails `materialize_marketplace` before
-the harness starts; rebuild, or run with
-`UZE_MARKETPLACE_MOUNT=$PWD/conformance/_fixtures/marketplace`.
+`conformance/` (providers, scenarios, bindings, contract) runs on the host
+and is not in the digest — no rebuild for it. The fixture marketplace is
+baked into the image and is in the digest, so a fixture added since the
+last build triggers the rebuild on its own.
 
 ## The measured vocabulary
 
@@ -294,6 +305,9 @@ or `$AGY_OUTDIR`) holds:
 
 ## Don't
 
+- Don't trust a run whose `provenance:` names another `uze` than the one
+  this checkout builds, and don't set `UZE_LAB_IMAGE` to dodge a rebuild
+  (Step 5).
 - Don't iterate against the full gate run (`lab.py --harness <h>` with no
   `--sandbox`/`--experiment`) while narrowing down a cause — that's the
   ~10-minute loop, reserved for confirming the fix at the end.

@@ -38,7 +38,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Build the Lab harness image
-        run: docker build -f conformance/Dockerfile -t conformance-harness:latest .
+        run: >
+          docker build -f conformance/Dockerfile
+          --build-arg UZE_SOURCE_DIGEST="$(cd conformance && python3 -c 'from shared.image import source_digest; print(source_digest())')"
+          -t conformance-harness:latest .
       - name: Hand it to the verticals
         run: docker save conformance-harness:latest | zstd -T0 -3 -o /tmp/lab-image.tar.zst
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

@@ -431,6 +431,12 @@ need to).
   always runs.
   `conformance-stability.yml` is ADR-035's promotion gate (3 clean runs per
   vertical), nightly only.
+  The image bakes a release `uze` built from the checkout: every `lab.py`
+  run compares the image's `sh.uze.lab.source` label with the checkout
+  (uncommitted files included) and rebuilds it first when they differ, so a
+  run never tests an older binary than the code being changed. Read the
+  run's `provenance:` line before reading a failure; `UZE_LAB_IMAGE` pins
+  another image only on purpose.
   Debugging a failure: see the `conformance-debug` skill (fast `--sandbox`
   reproduction loop, seconds not minutes) before iterating against the full
   gate run.

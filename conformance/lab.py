@@ -554,6 +554,9 @@ def run_experiment(cfg, vendor, name, variation, discovery=False):
 def main(argv=None):
     argv = list(argv) if argv is not None else sys.argv[1:]
     args = parse_args(argv)
+    from shared import image
+
+    image.ensure_current()
     if args.all:
         from legs import run_all
 
