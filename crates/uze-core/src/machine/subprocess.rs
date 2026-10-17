@@ -373,9 +373,16 @@ mod tests {
         let _interrupts = uze_testkit::process::interrupts();
         let watch = InterruptWatch::install();
         let mut command = Command::new("sh");
-        command.args(["-c", "sleep 30 & sleep 30"]);
+        command
+            .args(["-c", "sleep 30 & sleep 30"])
+            .stdout(Stdio::piped());
         let (mut child, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
-        let group = child.id();
+        // Every process of the tree inherits the write end, so the read end
+        // reaches EOF exactly when the last of them has exited — a wait,
+        // where asking the group whether it is empty races the reaping of
+        // the orphaned `sleep`, still a zombie member until launchd or init
+        // collects it.
+        let mut tree_output = child.stdout.take().unwrap();
         // SAFETY: plain `raise(3)`; the watch catches it.
         unsafe {
             libc::raise(libc::SIGINT);
@@ -389,19 +396,13 @@ mod tests {
         assert_eq!(ending, Ending::Interrupted);
         assert!(started.elapsed() < Duration::from_secs(10));
         drop(watch);
-        assert!(group_is_empty(group), "the whole tree is gone");
-    }
-
-    /// Whether no process is left in group `pgid`: signal 0 to the group
-    /// delivers nothing and answers `ESRCH` once it is empty, on every Unix
-    /// (a `/proc` scan here found nothing on macOS, which has none, and so
-    /// proved nothing there).
-    // Asks the kernel about a process group, as only Unix keeps them.
-    #[cfg(unix)]
-    fn group_is_empty(pgid: u32) -> bool {
-        // SAFETY: signal 0 checks for existence and delivers nothing.
-        let answer = unsafe { libc::kill(-(pgid as libc::pid_t), 0) };
-        answer == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        // Left alive, the two `sleep`s would hold the pipe open for thirty
+        // seconds.
+        std::io::Read::read_to_end(&mut tree_output, &mut Vec::new()).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the whole tree is gone"
+        );
     }
 
     #[test]
