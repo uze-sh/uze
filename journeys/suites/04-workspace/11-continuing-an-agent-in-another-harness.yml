@@ -204,7 +204,7 @@ scenes:
       - cmd:
           run: >
             line=$(tail -1 {world}/bin/.invocations/claude.log);
-            case "$line" in *"--add-dir"*"/agents/"*) ;; *) exit 1 ;; esac
+            case "$line" in *"--add-dir"*agents*) ;; *) exit 1 ;; esac
         about: Claude is handed the agent's context directory
       - file: "{uze_home}/runtime/projects/*/agents/*/CLAUDE.md"
         contains: "You worked on this agent before"
