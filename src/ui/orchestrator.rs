@@ -898,8 +898,9 @@ pub(super) enum WorkspaceHit {
     OverviewSection(usize),
     /// A row of the overview's section in front, by position.
     OverviewRow(usize),
-    /// The overview's way to the space's shell.
-    OverviewShell,
+    /// One option of a choice in the overview's Workspace section: its
+    /// row, and the option's position.
+    OverviewChoice(usize, usize),
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Saving or dropping the overview's workspace edits; `true` saves.

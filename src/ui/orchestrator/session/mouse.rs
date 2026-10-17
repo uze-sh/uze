@@ -1024,6 +1024,16 @@ impl Attach<'_> {
                     ScrollDirection::Down
                 });
             }
+            // The overview's sections are lists, so the wheel walks them
+            // the way the arrows do, scrolling the one in front.
+            _ if self.model.space_overview.is_some() && in_pane => {
+                let action = if mouse.kind == MouseEventKind::ScrollUp {
+                    Action::SelectPrevious
+                } else {
+                    Action::SelectNext
+                };
+                self.space_overview_action(action, viewport);
+            }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -1407,9 +1417,9 @@ impl Attach<'_> {
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
             }
-            WorkspaceHit::OverviewRow(index) => self.model.select_overview_row(index),
-            WorkspaceHit::OverviewShell => return self.act(Action::OpenSpaceShell, viewport),
+            WorkspaceHit::OverviewRow(index) => self.click_overview_row(index, viewport),
             WorkspaceHit::OverviewReview => self.review_overview_commands(),
+            WorkspaceHit::OverviewChoice(row, option) => self.choose_overview_option(row, option),
             WorkspaceHit::OverviewSave(true) => return self.act(Action::SaveChanges, viewport),
             WorkspaceHit::OverviewSave(false) => {
                 return self.act(Action::DiscardChanges, viewport);

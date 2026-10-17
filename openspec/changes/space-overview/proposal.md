@@ -26,8 +26,8 @@ workspace without knowing its keys.
   architect and spec surfaces, scoped to the selected space.
   - Selecting the space's row shows it instead of focusing the space's
     shell.
-  - The tab strip leads with an `overview` tab, before the space's own
-    shells, selected while the overview is up. "Open shell" brings
+  - The space's own strip leads with an `overview` tab, before its
+    shells, selected while the overview is up; an agent's strip has none. "Open shell" brings
     the space's shell to the front, or creates one for a space that only
     has agents.
 - **Four sections, one per thing in the project**, reached from a section

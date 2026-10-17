@@ -4,21 +4,27 @@
 
 use super::*;
 use crate::ui::widget::{
-    Button, Field, RowState, drawer,
+    Button, RowState, Scrollbar, drawer,
     hint::Hints,
     row,
     tabs::{self, Tab},
 };
 use uze_application::application::{FreshnessState, HarnessContextDelivery, StatusHarness};
-use uze_application::{
-    DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview, WorkStateView,
-};
+use uze_application::{DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview};
 
 /// The width under which the drawer stands over the section instead of
 /// beside it.
 const SIDE_BY_SIDE: u16 = 110;
 
 const INSET: u16 = 2;
+
+/// One option of a choice as drawn on its line: its column and width,
+/// the row it belongs to and its position among the options.
+type OptionCell = (u16, u16, usize, usize);
+
+/// The Workspace form's label column, and the width of a value's box.
+const LABEL: u16 = 18;
+const BOX: u16 = 48;
 
 pub(super) fn render_space_overview(
     frame: &mut ratatui::Frame<'_>,
@@ -48,6 +54,7 @@ pub(super) fn render_space_overview(
     };
     render_header(
         frame,
+        model,
         Rect::new(inner.x, inner.y + 1, inner.width, 1),
         &name,
         overview,
@@ -74,7 +81,7 @@ pub(super) fn render_space_overview(
             foot,
             model,
             overview,
-            &[(Action::Dismiss, "back")],
+            &[(Action::OpenSpaceShell, "shell"), (Action::Dismiss, "back")],
             hits,
         );
         return;
@@ -123,7 +130,7 @@ pub(super) fn render_space_overview(
             foot,
             model,
             overview,
-            &[(Action::Dismiss, "back")],
+            &[(Action::OpenSpaceShell, "shell"), (Action::Dismiss, "back")],
             hits,
         );
         return;
@@ -201,6 +208,7 @@ pub(super) fn render_space_overview(
 
 fn render_header(
     frame: &mut ratatui::Frame<'_>,
+    model: &WorkspaceModel,
     rect: Rect,
     name: &str,
     overview: &SpaceOverviewView,
@@ -217,17 +225,11 @@ fn render_header(
     let Some(project) = project else {
         return;
     };
-    let count = |states: &[fn(&WorkStateView) -> bool]| {
-        project
-            .preserved
-            .iter()
-            .filter(|work| states.iter().any(|state| state(&work.state)))
-            .count()
-    };
-    let running =
-        count(&[|state| matches!(state, WorkStateView::Running | WorkStateView::Uncommitted)]);
-    let ready = count(&[|state| matches!(state, WorkStateView::Ready)]);
-    let preserved = count(&[|state| matches!(state, WorkStateView::Shelved)]);
+    let Activity {
+        running,
+        ready,
+        preserved,
+    } = model.overview_activity(overview, project);
     let figure = |value: usize, token: Token| {
         Span::styled(
             value.to_string(),
@@ -695,6 +697,29 @@ fn draw_scrolled(
         .and_then(|selected| lines.iter().position(|line| line.row == Some(selected)))
         .unwrap_or(0);
     let offset = at.saturating_sub(height.saturating_sub(1));
+    // The groove takes the list's last column, and only when the lines do
+    // not fit: the rows narrow by it rather than run under it.
+    let groove = Scrollbar::width();
+    let bar = Scrollbar::measure(
+        Rect::new(
+            area.right().saturating_sub(groove),
+            area.y,
+            groove,
+            area.height,
+        ),
+        height,
+        lines.len(),
+    );
+    let area = match bar {
+        Some(_) => Rect {
+            width: area.width.saturating_sub(groove + 1),
+            ..area
+        },
+        None => area,
+    };
+    if let Some(bar) = bar {
+        bar.render(frame, offset);
+    }
     let mut rows = Vec::new();
     for (index, line) in lines.iter().skip(offset).take(height).enumerate() {
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
@@ -822,166 +847,231 @@ fn render_workspace(
         .map(|step| step.command.as_str())
         .collect();
     let selected = overview.row();
-    let mut lines = vec![said("workspace:", Token::TextSecondary)];
     let rows = overview.workspace_rows();
     let field = overview.edit.field.as_ref();
+    let editable = overview.editable();
+    let mut lines: Vec<SectionLine> = Vec::new();
+    // Where on its line a typed value or a choice's options are drawn,
+    // by line: placed once the list has scrolled.
     let mut field_at = None;
-    for (index, row) in rows.iter().enumerate() {
-        let key = row.key();
-        let edited = overview.edit.values.contains_key(&key);
-        match row {
-            WorkspaceRow::Key(key) => {
-                let value = overview.effective(*key);
-                let mut spans = vec![Span::styled(
-                    format!("  {}: ", key.name()),
-                    theme::fg(if index == selected {
-                        Token::TextBright
-                    } else {
-                        Token::TextSecondary
-                    }),
-                )];
-                let editing_here =
-                    field.is_some_and(|field| field.key == *key && field.item.is_none());
-                if editing_here {
-                    field_at = Some((
-                        lines.len(),
-                        spans.iter().map(|span| span.width()).sum::<usize>() as u16,
-                    ));
-                } else if !choices(*key).is_empty() && index == selected && overview.editable() {
-                    let current = match &value {
-                        None => key.default_spelled().to_owned(),
-                        Some(DeclaredValue::List(_)) => "types".to_owned(),
-                        Some(value) => scalar(value),
-                    };
-                    for option in choices(*key) {
-                        if *option == current {
-                            spans.push(Span::styled(
-                                format!(" {option} "),
-                                theme::fg_bold(Token::TextBright)
-                                    .bg(theme::color(Token::SurfaceRaised)),
-                            ));
-                        } else {
-                            spans.push(Span::styled(
-                                format!(" {option} "),
-                                theme::fg(Token::TextDim),
-                            ));
-                        }
-                    }
-                } else {
-                    match &value {
-                        None => spans.push(Span::styled(
-                            key.default_spelled(),
-                            theme::fg(Token::TextMuted),
-                        )),
-                        Some(DeclaredValue::List(_) | DeclaredValue::Commands(_)) => {}
-                        Some(value) => {
-                            spans.push(Span::styled(scalar(value), theme::fg(Token::TextPrimary)))
-                        }
-                    }
-                }
-                if value.is_none() && !editing_here {
-                    spans.push(Span::styled("   # default", theme::fg(Token::TextFaint)));
-                }
-                if edited {
-                    spans.push(Span::styled("   # edited", theme::fg(Token::StateInfo)));
-                }
-                lines.push(SectionLine {
-                    spans,
-                    row: Some(index),
-                });
-            }
-            WorkspaceRow::Item(key, item) => {
-                let value = overview.effective(*key);
-                let text = value
-                    .as_ref()
-                    .map(items)
-                    .and_then(|items| items.get(*item).cloned())
-                    .unwrap_or_default();
-                let mut spans = vec![Span::styled("    - ", theme::fg(Token::TextFaint))];
-                if field.is_some_and(|field| field.key == *key && field.item == Some(*item)) {
-                    field_at = Some((lines.len(), 6));
-                } else {
-                    spans.push(Span::styled(text.clone(), theme::fg(Token::TextCode)));
-                    if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
-                        let posix = text.split(" | windows: ").next().unwrap_or_default();
-                        let note = if unspelled.contains(&posix) || text.starts_with("windows: ") {
-                            Some((
-                                "   # no spelling here: never runs on this machine",
-                                Token::StateDanger,
-                            ))
-                        } else if awaiting.contains(&posix) {
-                            Some(("   # waiting for approval", Token::StateWarning))
-                        } else if edited {
-                            Some(("   # not saved", Token::StateInfo))
-                        } else {
-                            None
-                        };
-                        if let Some((note, tone)) = note {
-                            spans.push(Span::styled(note, theme::fg(tone)));
-                        }
-                    }
-                }
-                lines.push(SectionLine {
-                    spans,
-                    row: Some(index),
-                });
-            }
+    let mut options_at: Vec<(usize, Vec<OptionCell>)> = Vec::new();
+    let label_cell = |key: DeclarationKey, focused: bool| {
+        Span::styled(
+            pad(key_label(key), LABEL),
+            if focused {
+                theme::fg_bold(Token::TextBright)
+            } else {
+                theme::fg(Token::TextSecondary)
+            },
+        )
+    };
+    // The room a value's box takes: what the row leaves after its label
+    // and a word of state beside it, never wider than a value needs.
+    let box_width = usize::from(list.width.saturating_sub(LABEL + 22).clamp(12, BOX));
+    let boxed = |text: &str, tone: Token| {
+        Span::styled(
+            format!(
+                " {:<width$}",
+                text::elide(text, box_width - 2),
+                width = box_width - 1
+            ),
+            theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+        )
+    };
+    let edited_mark = || Span::styled("  edited", theme::fg(Token::StateInfo));
+    let mut index = 0;
+    for (group, keys) in GROUPS {
+        if !lines.is_empty() {
+            lines.push(blank());
         }
-        let last_of_key = rows.get(index + 1).is_none_or(|next| next.key() != key);
-        if last_of_key {
-            if let Some(field) = field.filter(|field| field.key == key)
-                && let Some(item) = field.item
-                && value_len(overview, key) == item
-            {
-                field_at = Some((lines.len(), 6));
-                lines.push(SectionLine {
-                    spans: vec![Span::styled("    - ", theme::fg(Token::TextFaint))],
-                    row: None,
-                });
+        lines.push(said(text::small_caps(group), Token::TextDim));
+        for key in keys.iter().copied() {
+            let value = overview.effective(key);
+            let edited = overview.edit.values.contains_key(&key);
+            let focused = index == selected;
+            let mut spans = vec![label_cell(key, focused)];
+            if !choices(key).is_empty() {
+                let current = chosen(key, value.as_ref());
+                let mut at = LABEL;
+                let mut placed: Vec<OptionCell> = Vec::new();
+                for (option_index, option) in choices(key).iter().enumerate() {
+                    let on = *option == current;
+                    let mark = theme::glyph(if on {
+                        Symbol::StatusSelected
+                    } else {
+                        Symbol::StatusIdle
+                    });
+                    let word = format!("{mark} {option}");
+                    let width = Line::from(word.as_str()).width() as u16;
+                    spans.push(Span::styled(
+                        mark,
+                        theme::fg(if on { Token::Accent } else { Token::TextDim }),
+                    ));
+                    spans.push(Span::styled(
+                        format!(" {option}"),
+                        if on {
+                            theme::fg_bold(Token::TextBright)
+                        } else {
+                            theme::fg(Token::TextSecondary)
+                        },
+                    ));
+                    spans.push(Span::raw("   "));
+                    placed.push((at, width, index, option_index));
+                    at += width + 3;
+                }
+                if editable {
+                    options_at.push((lines.len(), placed));
+                }
+            } else if is_listed(key, overview) {
+                spans.push(Span::styled(
+                    if editable { "+ add" } else { "" },
+                    theme::fg(if focused {
+                        Token::TextSecondary
+                    } else {
+                        Token::TextDim
+                    }),
+                ));
+            } else if field.is_some_and(|field| field.key == key && field.item.is_none()) {
+                field_at = Some((lines.len(), LABEL));
+            } else {
+                match &value {
+                    Some(value) => spans.push(boxed(&scalar(value), Token::TextPrimary)),
+                    None => spans.push(boxed(key.default_spelled(), Token::TextDim)),
+                }
+            }
+            if edited {
+                spans.push(edited_mark());
+            }
+            lines.push(SectionLine {
+                spans,
+                row: Some(index),
+            });
+            index += 1;
+            if is_listed(key, overview) {
+                let entries = value.as_ref().map(items).unwrap_or_default();
+                for (item, entry) in entries.iter().enumerate() {
+                    let indent = Span::raw(" ".repeat(usize::from(LABEL)));
+                    if field.is_some_and(|field| field.key == key && field.item == Some(item)) {
+                        field_at = Some((lines.len(), LABEL));
+                        lines.push(SectionLine {
+                            spans: vec![indent],
+                            row: Some(index),
+                        });
+                        index += 1;
+                        continue;
+                    }
+                    let mut spans = vec![indent];
+                    if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
+                        spans.push(boxed(entry, Token::TextCode));
+                        let posix = entry.split(" | windows: ").next().unwrap_or_default();
+                        let (word, tone) =
+                            if unspelled.contains(&posix) || entry.starts_with("windows: ") {
+                                ("never runs here", Token::StateDanger)
+                            } else if awaiting.contains(&posix) {
+                                ("waiting for approval", Token::StateWarning)
+                            } else if edited {
+                                ("not saved", Token::StateInfo)
+                            } else {
+                                ("approved", Token::TextMuted)
+                            };
+                        spans.push(Span::styled(format!("  {word}"), theme::fg(tone)));
+                    } else {
+                        spans.push(Span::styled(
+                            theme::glyph(Symbol::MarkDot),
+                            theme::fg(Token::TextFaint),
+                        ));
+                        spans.push(Span::styled(
+                            format!(" {entry}"),
+                            theme::fg(Token::TextCode),
+                        ));
+                    }
+                    lines.push(SectionLine {
+                        spans,
+                        row: Some(index),
+                    });
+                    index += 1;
+                }
+                if let Some(field) = field.filter(|field| field.key == key)
+                    && field.item == Some(entries.len())
+                {
+                    field_at = Some((lines.len(), LABEL));
+                    lines.push(SectionLine {
+                        spans: Vec::new(),
+                        row: None,
+                    });
+                }
             }
             for problem in problems
                 .iter()
                 .filter(|problem| problem.key.as_deref() == Some(key.name()))
             {
-                lines.push(said(
-                    format!(
-                        "      {} {}",
-                        theme::glyph(Symbol::MarkFailed),
-                        problem.reason
-                    ),
-                    Token::StateDanger,
-                ));
+                lines.push(SectionLine {
+                    spans: vec![
+                        Span::raw(" ".repeat(usize::from(LABEL))),
+                        Span::styled(
+                            format!("{} {}", theme::glyph(Symbol::MarkFailed), problem.reason),
+                            theme::fg(Token::StateDanger),
+                        ),
+                    ],
+                    row: None,
+                });
             }
         }
+        if group == "project" && !declaration.actions.is_empty() {
+            lines.push(SectionLine {
+                spans: vec![
+                    Span::styled(pad("Agent actions", LABEL), theme::fg(Token::TextSecondary)),
+                    Span::styled(declaration.actions.join(", "), theme::fg(Token::TextMuted)),
+                ],
+                row: None,
+            });
+        }
     }
-    if !declaration.actions.is_empty() {
-        lines.push(SectionLine {
-            spans: vec![
-                Span::styled("  actions: ", theme::fg(Token::TextSecondary)),
-                Span::styled(declaration.actions.join(", "), theme::fg(Token::TextMuted)),
-            ],
-            row: None,
-        });
-    }
+    debug_assert_eq!(index, rows.len(), "the form draws every row the keys walk");
     for problem in problems.iter().filter(|problem| problem.key.is_none()) {
         lines.push(said(
-            format!("  {} {}", theme::glyph(Symbol::MarkFailed), problem.reason),
+            format!("{} {}", theme::glyph(Symbol::MarkFailed), problem.reason),
             Token::StateDanger,
         ));
     }
     let (drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected));
-    if let (Some(field), Some((line, column))) = (field, field_at)
-        && line >= offset
-    {
-        let y = list.y + (line - offset) as u16;
-        if y < list.bottom() {
-            let rect = Rect::new(list.x + column, y, list.width.saturating_sub(column), 1);
-            widget::fill(frame, rect, Token::SurfaceRecessed);
-            let (before, after) = field.buffer.split();
-            let mut typed = String::from(before);
-            typed.push_str(after);
-            Field::new(&typed, "").focused(true).render(frame, rect);
+    let line_y = |line: usize| {
+        (line >= offset)
+            .then(|| list.y + (line - offset) as u16)
+            .filter(|y| *y < list.bottom())
+    };
+    for (line, placed) in options_at {
+        if let Some(y) = line_y(line) {
+            for (x, width, row, option) in placed {
+                hits.push((
+                    Rect::new(list.x + x, y, width, 1),
+                    WorkspaceHit::OverviewChoice(row, option),
+                ));
+            }
         }
+    }
+    if let (Some(field), Some((line, column))) = (field, field_at)
+        && let Some(y) = line_y(line)
+    {
+        let rect = Rect::new(
+            list.x + column,
+            y,
+            BOX.min(list.width.saturating_sub(column)),
+            1,
+        );
+        // One row: the box itself is the field, so it carries the text
+        // and a caret where typing lands rather than a rule beneath.
+        widget::fill(frame, rect, Token::SurfaceRecessed);
+        let (before, after) = field.buffer.split();
+        let mut spans = vec![
+            Span::raw(" "),
+            Span::styled(before.to_owned(), theme::fg(Token::TextBright)),
+            widget::field::caret(),
+            Span::styled(after.to_owned(), theme::fg(Token::TextBright)),
+        ];
+        // Padded to the box, so nothing the row drew beneath shows through.
+        row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
     let pending = overview.edit.values.len();
     if let Err(reason) = &declaration.editable {
@@ -1005,9 +1095,15 @@ fn render_workspace(
             hits,
         );
     } else if pending > 0 {
-        let blocked = !problems.is_empty();
+        let failed = match overview.current_preview() {
+            Some(Err(reason)) => Some(reason.clone()),
+            _ => None,
+        };
+        let blocked = !problems.is_empty() || failed.is_some();
         let checking = overview.current_preview().is_none();
-        let detail = if blocked {
+        let detail = if let Some(reason) = &failed {
+            reason.as_str()
+        } else if blocked {
             "Fix the errors to save."
         } else if checking {
             "Checking the edits…"
@@ -1062,13 +1158,6 @@ fn render_workspace(
     }
     let _ = model;
     drawn
-}
-
-fn value_len(overview: &SpaceOverviewView, key: DeclarationKey) -> usize {
-    overview
-        .effective(key)
-        .as_ref()
-        .map_or(0, |value| items(value).len())
 }
 
 /// A section's closing word: what stands, why, and the buttons that act
@@ -1392,6 +1481,7 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
         }
         _ => {}
     }
+    keys.push((Action::OpenSpaceShell, "shell"));
     keys.push((Action::Refresh, "refresh"));
     keys.push((Action::Dismiss, "back"));
     keys
@@ -1405,11 +1495,6 @@ fn render_foot(
     keys: &[(Action, &str)],
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let shell = Button::new("Open shell", Token::TextPrimary).ground(Token::SurfaceSelected);
-    let width = shell.width();
-    let at = Rect::new(rect.x, rect.y, width.min(rect.width), 1);
-    shell.render(frame, at);
-    hits.push((at, WorkspaceHit::OverviewShell));
     let attention = Section::ALL
         .iter()
         .filter(|section| {
@@ -1459,7 +1544,7 @@ fn render_foot(
             hints.named(*action, *word)
         })
         .hovered(model.hovered_hint());
-    let left = at.right() + 3;
+    let left = rect.x;
     let room = rect.right().saturating_sub(left + summary_width + 2);
     for (hint, action) in hints.render(frame, Rect::new(left, rect.y, room, 1)) {
         hits.push((hint, WorkspaceHit::HintAction(action)));

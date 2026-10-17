@@ -277,7 +277,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::OpenSpaceShell,
-        Control("the overview's Open shell button, at its foot"),
+        Control("the shell hint along the overview's foot"),
     );
     put(
         Action::AddItem,
