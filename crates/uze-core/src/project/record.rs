@@ -197,6 +197,31 @@ mod tests {
     }
 
     #[test]
+    fn forgetting_a_project_takes_its_locks_with_it() {
+        let (home, scratch) = home("project-locks");
+        let project = scratch.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        ensure(&home, &project).unwrap();
+        let id = project_id_for(&project.canonical().unwrap());
+        let locks = [
+            home.agents_lock_path(&id),
+            home.agents_md_lock_path(&id),
+            home.conversations_lock_path(&id),
+            home.prompt_history_lock_path(&id),
+        ];
+        for lock in &locks {
+            fs::write(lock, b"").unwrap();
+        }
+
+        forget(&home, &project).unwrap();
+
+        for lock in &locks {
+            assert!(!lock.exists(), "{} outlived its project", lock.display());
+        }
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
     fn a_newer_builds_marker_is_left_as_it_was() {
         let (home, scratch) = home("project-marker-newer");
         let project = scratch.join("demo");

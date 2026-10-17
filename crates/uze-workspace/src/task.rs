@@ -566,10 +566,14 @@ impl AgentStore {
 
 /// The document for `project_root`, keyed on the canonical root.
 pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
+    home.tasks_path(&project_id(project_root))
+}
+
+fn project_id(project_root: &Path) -> String {
     let canonical = project_root
         .canonical()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    home.tasks_path(&project_id_for(&canonical))
+    project_id_for(&canonical)
 }
 
 /// The project's tasks; empty when nothing was ever recorded.
@@ -771,7 +775,7 @@ pub fn locked_reporting<T>(
     // its own beside nothing.
     crate::record::ensure(home, project_root)?;
     let path = store_path(home, project_root);
-    let _held = MutationGuard::acquire(&path)?;
+    let _held = MutationGuard::acquire(&home.agents_lock_path(&project_id(project_root)))?;
     // Read in the document crate's own vocabulary rather than through
     // `read_document`, so the direction rule — which shape may be set
     // aside and which may never be — is asked of the one place that holds
@@ -809,8 +813,8 @@ struct MutationGuard {
 }
 
 impl MutationGuard {
-    fn acquire(store: &Path) -> Result<Self> {
-        let path = store.with_extension("lock");
+    fn acquire(lock: &Path) -> Result<Self> {
+        let path = lock.to_path_buf();
         if HELD.with(|held| held.borrow().contains(&path)) {
             debug_assert!(
                 false,

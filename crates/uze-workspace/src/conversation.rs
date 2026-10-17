@@ -211,6 +211,9 @@ pub fn update<T>(
     agent: &AgentId,
     change: impl FnOnce(&mut ConversationRecord) -> T,
 ) -> Result<T> {
+    // Before the lock, whose file sits in the project's directory and would
+    // otherwise create it unmarked and readable by anyone.
+    crate::record::ensure(home, project_root)?;
     let _held = crate::file_lock::Held::acquire(
         &home.conversations_lock_path(&project_id(project_root)),
         REWRITE_PATIENCE,

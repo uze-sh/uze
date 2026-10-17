@@ -110,7 +110,13 @@ pub struct AgentsMdGuard {
 
 impl AgentsMdGuard {
     pub fn acquire(home: &UzeHome, project_root: &Path) -> Result<Self> {
-        let path = home.agents_md_lock_path(&project_id_for(project_root));
+        // The lock lives in the project's record directory, which only
+        // `ensure` may create: it marks it with the root and keeps it private.
+        crate::record::ensure(home, project_root)?;
+        let canonical = project_root
+            .canonical()
+            .unwrap_or_else(|_| project_root.to_path_buf());
+        let path = home.agents_md_lock_path(&project_id_for(&canonical));
         Ok(Self {
             _held: FileLock::acquire(&path, AGENTS_MD_WAIT, AGENTS_MD_RETRY)?,
         })

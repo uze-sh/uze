@@ -276,17 +276,28 @@ impl UzeHome {
     /// and a CLI command each change one key of the whole file, and without
     /// it the later write drops the earlier one's key. A lock, not a record.
     pub fn config_lock_path(&self) -> PathBuf {
-        self.state_dir().join("locks").join("config.lock")
+        self.state_dir().join("config.lock")
+    }
+
+    /// The guard every rewrite of a project's agents takes, beside the
+    /// document it guards.
+    ///
+    /// Every per-project lock sits in [`Self::project_dir`] rather than in
+    /// a directory of their own: forgetting a project then takes its locks
+    /// with it, where a shared directory kept one file per project UZE had
+    /// ever touched. It stays in `state/`, never under the runtime tree,
+    /// because that tree is swept, and unlinking a lock another process
+    /// holds hands the next caller a fresh file and the exclusion is gone.
+    pub fn agents_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("agents.lock")
     }
 
     /// The guard both owners of a project's `AGENTS.md` take before they
     /// rewrite it (see [`crate::project_context::AgentsMdGuard`]). A lock,
-    /// not a record, keyed on the project id so two projects never wait on
+    /// not a record, keyed on the project so two projects never wait on
     /// each other.
     pub fn agents_md_lock_path(&self, project_id: &str) -> PathBuf {
-        self.state_dir()
-            .join("locks")
-            .join(format!("agents-md-{project_id}.lock"))
+        self.project_dir(project_id).join("agents-md.lock")
     }
 
     /// The guard every read-modify-write of a project's conversation
@@ -295,18 +306,14 @@ impl UzeHome {
     /// rather than per agent, so agents that come and go leave nothing
     /// behind here.
     pub fn conversations_lock_path(&self, project_id: &str) -> PathBuf {
-        self.state_dir()
-            .join("locks")
-            .join(format!("conversations-{project_id}.lock"))
+        self.project_dir(project_id).join("conversations.lock")
     }
 
     /// The guard a project's prompt history is appended and compacted
     /// under, so a compaction never drops a line another client appended
     /// while it read. A lock, not a record.
     pub fn prompt_history_lock_path(&self, project_id: &str) -> PathBuf {
-        self.state_dir()
-            .join("locks")
-            .join(format!("prompt-history-{project_id}.lock"))
+        self.project_dir(project_id).join("prompt-history.lock")
     }
 
     /// What UZE remembers about its own binary between runs: when it last
@@ -322,15 +329,16 @@ impl UzeHome {
         self.state_dir().join("install.json")
     }
 
-    /// Where an update keeps the revision of `id` it is replacing, under
-    /// UZE's own state rather than beside the plugins: nothing that reads
-    /// the Store may mistake it for an installed package.
+    /// Where an update keeps the revision of `id` it is replacing: in the
+    /// Store, because a restore that failed leaves the only copy of that
+    /// revision here, and that is bytes, not a record; beside
+    /// [`Self::plugins_dir`] rather than in it, so nothing that reads the
+    /// installed packages may mistake it for one.
     ///
-    /// One per package, because a restore that failed leaves the only copy
-    /// of that revision here, and an update of another package must not be
-    /// what sweeps it away.
+    /// One per package, so an update of another package is never what
+    /// sweeps it away.
     pub fn superseded_dir(&self, id: &PackageId) -> PathBuf {
-        self.state_dir().join("superseded").join(id.as_str())
+        self.store_dir().join("superseded").join(id.as_str())
     }
 
     /// One project's prompt history, beside its other records.
