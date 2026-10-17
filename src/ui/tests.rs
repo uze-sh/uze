@@ -2570,7 +2570,7 @@ fn clip_line_truncates_long_status_with_ellipsis() {
 // --- Overview workspace awareness ---------------------------------------
 
 use uze_application::application::{
-    AnchorKind, MarketplaceState, MemoryState, OverviewMarketplace, OverviewWorkspaceSummary,
+    AnchorKind, ContextState, MarketplaceState, OverviewMarketplace, OverviewWorkspaceSummary,
     ProjectEnvironmentState, ProjectOverview,
 };
 fn consumer_workspace(
@@ -2588,7 +2588,7 @@ fn consumer_workspace(
         project: ProjectOverview {
             drift: Default::default(),
             environment: state,
-            memory: MemoryState::Ready,
+            context: ContextState::Ready,
             declared_plugins: declared,
             installed_plugins: installed,
             missing_plugins: missing.iter().map(ToString::to_string).collect(),
@@ -2606,7 +2606,7 @@ fn marketplace_workspace(root: &std::path::Path) -> OverviewWorkspaceSummary {
         project: ProjectOverview {
             drift: Default::default(),
             environment: ProjectEnvironmentState::NotConfigured,
-            memory: MemoryState::None,
+            context: ContextState::None,
             declared_plugins: 0,
             installed_plugins: 0,
             missing_plugins: Vec::new(),
@@ -3112,7 +3112,7 @@ fn no_workspace_render_creates_nothing() {
                 project: ProjectOverview {
                     drift: Default::default(),
                     environment: ProjectEnvironmentState::NotConfigured,
-                    memory: MemoryState::None,
+                    context: ContextState::None,
                     declared_plugins: 0,
                     installed_plugins: 0,
                     missing_plugins: Vec::new(),

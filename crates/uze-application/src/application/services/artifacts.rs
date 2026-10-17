@@ -46,25 +46,8 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
     let Some(artifacts) = declared else {
         return ProjectArtifacts::Undeclared;
     };
-    if let Some(outside) = artifacts.paths.iter().find(|path| !stays_inside(path)) {
-        // The file has to be fixed either way, and drawing half of what was
-        // declared would need somewhere to say the other half is missing.
-        return ProjectArtifacts::Refused(format!(
-            "`workspace.artifacts` names `{}`, which leaves the project — every entry has to be \
-             a directory inside it",
-            outside.display()
-        ));
-    }
-    if let Some(linked) = artifacts
-        .paths
-        .iter()
-        .find(|path| !resolves_inside(&root, path))
-    {
-        return ProjectArtifacts::Refused(format!(
-            "`workspace.artifacts` names `{}`, which is a link leading out of the project — every \
-             entry has to be a directory inside it",
-            linked.display()
-        ));
+    if let Some(refusal) = refusal(&root, &artifacts.paths) {
+        return ProjectArtifacts::Refused(refusal);
     }
     ProjectArtifacts::Declared {
         directories: artifacts
@@ -77,6 +60,26 @@ pub fn project_artifacts(cwd: &Path) -> ProjectArtifacts {
             .collect(),
         project: root,
     }
+}
+
+/// Why the declared directories are not places UZE will follow, or `None`
+/// when every one is inside the project at `root`.
+pub(super) fn refusal(root: &Path, paths: &[PathBuf]) -> Option<String> {
+    if let Some(outside) = paths.iter().find(|path| !stays_inside(path)) {
+        // The file has to be fixed either way, and drawing half of what was
+        // declared would need somewhere to say the other half is missing.
+        return Some(format!(
+            "`workspace.artifacts` names `{}`, which leaves the project — every entry has to be \
+             a directory inside it",
+            outside.display()
+        ));
+    }
+    let linked = paths.iter().find(|path| !resolves_inside(root, path))?;
+    Some(format!(
+        "`workspace.artifacts` names `{}`, which is a link leading out of the project — every \
+         entry has to be a directory inside it",
+        linked.display()
+    ))
 }
 
 /// Spelling alone cannot keep an entry inside: `docs` committed as a link

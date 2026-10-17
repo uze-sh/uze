@@ -20,6 +20,9 @@ use noyalib::{
     cst::{Document, parse_document},
 };
 
+use serde::Serialize;
+
+use super::Section;
 use crate::{Result, UzeError, persistence::write_atomic_within};
 
 /// A manifest open for editing: the authored bytes plus the tree that
@@ -84,27 +87,41 @@ impl ManifestDocument {
         }
         let full = format!("{mapping_path}.{key}");
         if self.document.get(&full).is_some() {
-            // A scalar replacing a scalar is an in-place edit: the library
-            // matches the value's existing style, and the comment its
-            // author wrote beside it stays where they put it.
-            if !matches!(
-                value,
-                serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)
-            ) {
+            // A value replacing one of its own kind is an in-place edit: the
+            // library matches the value's existing style, and the comment
+            // its author wrote beside it stays where they put it.
+            if is_block(value) == self.holds_block(&full) {
                 return self
                     .document
                     .set_value(&full, value)
                     .map_err(|error| self.refusal(&full, error.to_string()));
             }
-            // Growing a scalar into a block is not one, and the library
-            // refuses it as such. When it was the mapping's only entry the
-            // parent goes with it, and the re-insert takes the create path.
+            // Growing a scalar into a block, or folding a block into a
+            // scalar, is not one: the library refuses the first and spells
+            // the second as a multi-line plain scalar. When it was the
+            // mapping's only entry the parent goes with it, and the
+            // re-insert takes the create path.
             self.remove(mapping_path, key)?;
             return self.upsert(mapping_path, key, value);
         }
         self.document
             .insert_entry_value(mapping_path, key, value)
             .map_err(|error| self.refusal(mapping_path, error.to_string()))
+    }
+
+    /// Declares `key` in one of the sections the manifest carries for its
+    /// owner, whatever shape its value takes. The owner decides what the
+    /// value means and reads it back; this only places it.
+    pub fn set_key(&mut self, section: Section, key: &str, value: &impl Serialize) -> Result<()> {
+        let value = serde_yaml::to_value(value).map_err(|error| {
+            self.refusal(&format!("{}.{key}", section.key()), error.to_string())
+        })?;
+        self.upsert(section.key(), key, &value)
+    }
+
+    /// Takes `key` out of `section`; the section goes with its last key.
+    pub fn unset_key(&mut self, section: Section, key: &str) -> Result<()> {
+        self.remove(section.key(), key)
     }
 
     /// Appends `item` to the sequence at `sequence_path`, creating the
@@ -151,19 +168,16 @@ impl ManifestDocument {
             .map_err(|error| self.refusal(sequence_path, error.to_string()))
     }
 
+    fn holds_block(&self, path: &str) -> bool {
+        self.held(path).as_ref().is_some_and(is_block)
+    }
+
     /// The sequence's items as strings. A non-sequence, or an item that is
     /// not a scalar, reads as empty: the schema refuses both, and this is
     /// only ever asked to locate an entry to edit.
     fn items(&self, sequence_path: &str) -> Vec<String> {
-        // Walked segment by segment: `Value::get` reads one key, so a
-        // dotted path handed to it whole would look for a key literally
-        // named `marketplaces.acme.plugins` and quietly find nothing.
-        let root = self.document.as_value();
-        let mut value = Some(&*root);
-        for segment in sequence_path.split('.') {
-            value = value.and_then(|held| held.get(segment));
-        }
-        value
+        self.held(sequence_path)
+            .as_ref()
             .and_then(|value| value.as_sequence())
             .map(|items| {
                 items
@@ -172,6 +186,19 @@ impl ManifestDocument {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// The value at a dotted path, walked segment by segment: `Value::get`
+    /// reads one key, so a dotted path handed to it whole would look for a
+    /// key literally named `marketplaces.acme.plugins` and quietly find
+    /// nothing.
+    fn held(&self, path: &str) -> Option<serde_yaml::Value> {
+        let root = self.document.as_value();
+        let mut value = Some(&*root);
+        for segment in path.split('.') {
+            value = value.and_then(|held| held.get(segment));
+        }
+        value.cloned()
     }
 
     /// The create path: `mapping_path` has never been declared, so there is
@@ -265,6 +292,9 @@ impl ManifestDocument {
             .and_then(|mapping| mapping.as_mapping().map(|entries| entries.len()))
             == Some(1);
         if last_one {
+            if self.is_the_only_root_key(mapping_path) {
+                return self.drop_root_block(mapping_path);
+            }
             self.document
                 .remove(mapping_path)
                 .map_err(|error| self.refusal(mapping_path, error.to_string()))?;
@@ -273,6 +303,39 @@ impl ManifestDocument {
         self.document
             .remove(&full)
             .map_err(|error| self.refusal(&full, error.to_string()))
+    }
+
+    fn is_the_only_root_key(&self, key: &str) -> bool {
+        !key.contains('.')
+            && self
+                .document
+                .as_value()
+                .as_mapping()
+                .is_some_and(|root| root.len() == 1)
+    }
+
+    /// Removes a root key's whole block by its lines. The library, asked to
+    /// remove the last key of a document, leaves `{}` in place of the file
+    /// and drops the comments around it; the comments are the author's.
+    fn drop_root_block(&mut self, key: &str) -> Result<()> {
+        let mut text = String::new();
+        let mut inside = false;
+        for line in self.document.source().split_inclusive('\n') {
+            let bare = line.trim_end_matches(['\n', '\r']);
+            let at_margin = !bare.is_empty() && !bare.starts_with([' ', '#']);
+            if at_margin {
+                inside = bare
+                    .strip_prefix(key)
+                    .is_some_and(|rest| rest.starts_with(':'));
+            } else if bare.starts_with('#') {
+                inside = false;
+            }
+            if !inside {
+                text.push_str(line);
+            }
+        }
+        *self = Self::from_source(&self.path, &text)?;
+        Ok(())
     }
 
     /// Appends a block verbatim — used only when writing a manifest UZE
@@ -364,6 +427,13 @@ fn reject_shapes_we_will_not_edit(path: &Path, text: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_block(value: &serde_yaml::Value) -> bool {
+    matches!(
+        value,
+        serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)
+    )
 }
 
 /// `line` is `key:` at column zero with nothing after it but a comment.
@@ -542,6 +612,64 @@ marketplaces:
         let mut document = open(AUTHORED);
         document.remove("marketplaces", "never-declared").unwrap();
         assert_eq!(document.source(), AUTHORED);
+    }
+
+    #[test]
+    fn any_workspace_key_can_be_set_and_unset_keeping_every_comment() {
+        let mut document = open(AUTHORED);
+        document
+            .set_key(
+                Section::Workspace,
+                "gate",
+                &vec!["cargo test", "cargo clippy"],
+            )
+            .unwrap();
+        document.set_key(Section::Workspace, "slots", &4).unwrap();
+        document
+            .set_key(Section::Workspace, "link", &vec![".env", ".env.local"])
+            .unwrap();
+        document.unset_key(Section::Workspace, "delivery").unwrap();
+        let after = reparsed(&document);
+        assert_eq!(after["workspace"]["gate"][1].as_str(), Some("cargo clippy"));
+        assert_eq!(after["workspace"]["slots"].as_u64(), Some(4));
+        assert_eq!(after["workspace"]["link"][1].as_str(), Some(".env.local"));
+        assert!(after["workspace"].get("delivery").is_none());
+        let source = document.source();
+        assert!(
+            source.contains("# O ambiente de agentes deste projeto."),
+            "{source}"
+        );
+        assert!(
+            source.contains("# pinado ate o fix do #431 subir"),
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn a_list_can_become_a_scalar_and_back() {
+        let mut document = open("workspace:\n  gate:\n    - a\n    - b\n  slots: 2\n");
+        document
+            .set_key(Section::Workspace, "gate", &"make check")
+            .unwrap();
+        assert_eq!(
+            reparsed(&document)["workspace"]["gate"].as_str(),
+            Some("make check"),
+            "{}",
+            document.source()
+        );
+        document
+            .set_key(Section::Workspace, "gate", &vec!["x", "y", "z"])
+            .unwrap();
+        let after = reparsed(&document);
+        assert_eq!(after["workspace"]["gate"][2].as_str(), Some("z"));
+        assert_eq!(after["workspace"]["slots"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn unsetting_the_last_workspace_key_takes_the_section_with_it() {
+        let mut document = open("# kept\nworkspace:\n  slots: 2\n");
+        document.unset_key(Section::Workspace, "slots").unwrap();
+        assert_eq!(document.source().trim_end(), "# kept");
     }
 
     #[test]

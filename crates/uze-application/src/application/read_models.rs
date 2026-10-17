@@ -998,9 +998,11 @@ pub struct StatusReport {
     /// on.
     pub instructions: InstructionsFile,
     pub portability: Portability,
-    pub harnesses: Vec<HarnessContextStatus>,
+    pub harnesses: Vec<StatusHarness>,
     pub packages_installed: usize,
-    pub packages_contributing_here: usize,
+    /// The installed packages whose instructions this project's `AGENTS.md`
+    /// carries a region for, by package id.
+    pub packages_contributing_here: Vec<String>,
     pub project_lock: ProjectLockStatus,
     /// What `agents.yaml` asks for that the rest of the chain has not
     /// caught up to. Empty when the declaration, the lock, the Store and
@@ -1008,21 +1010,54 @@ pub struct StatusReport {
     pub drift: EnvironmentDrift,
     /// Human-readable, one-line-each context problems: a non-matched
     /// contribution, a bridge gap, a malformed or blocked orphan region.
-    /// Empty means healthy. Never a substitute for the full detail of
-    /// `agent context inspect` — this is the "does anything need my
-    /// attention" view.
+    /// What concerns one harness alone is on that harness instead, so the
+    /// project is healthy when this is empty and no harness carries
+    /// [`StatusHarness::context_unread`] or [`StatusHarness::outdated`].
+    /// Never a substitute for the full detail of `agent context inspect` —
+    /// this is the "does anything need my attention" view.
     pub issues: Vec<String>,
     /// What a harness holds back of what UZE delivered until the person
     /// acts in it, with the action. Not an issue of the project's: the
     /// delivery is in place, and only the person can let the harness use it.
     pub held_back: Vec<HeldBackNote>,
-    /// The detected harnesses an agent the workspace launches is not given
-    /// its context invisibly on, and why. Not an issue of the project's:
-    /// it is the harness's, on this machine.
-    pub agent_context: Vec<String>,
     /// What agents and the operator keep for this project and the machine,
     /// with the harnesses' own entries beside UZE's.
     pub memory: crate::application::memory::MemoryReport,
+}
+
+/// One registered harness as `uze status` reports it, keyed by integration
+/// id so a surface can place each finding beside the harness it is about.
+#[derive(Clone, Debug, Serialize)]
+pub struct StatusHarness {
+    pub integration: String,
+    pub display_name: String,
+    /// How the project's instructions reach it. `None` for a harness that
+    /// takes no project instructions at all.
+    pub context: Option<HarnessContextDelivery>,
+    /// Why a detected harness that reads the instructions will not read
+    /// them here: a project the person marked untrusted, a file past the
+    /// size it reads.
+    pub context_unread: Option<String>,
+    /// Why an agent the workspace launches on this detected harness is not
+    /// given its context invisibly. Not an issue of the project's: it is
+    /// the harness's, on this machine.
+    pub agent_context: Option<String>,
+    /// The sentence saying the detected harness is older than its
+    /// integration supports.
+    pub outdated: Option<String>,
+}
+
+/// What `uze status` answers inside a project: the package manager's
+/// report, and what the workspace adds about the commands its policy runs.
+#[derive(Clone, Debug, Serialize)]
+pub struct ProjectStatus {
+    #[serde(flatten)]
+    pub report: StatusReport,
+    pub steps_not_spelled_here: Vec<super::services::StepNotSpelledHere>,
+    /// The commands the workspace will not run until the operator
+    /// approves them (ADR-055).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commands_awaiting_approval: Option<super::services::CommandsAwaitingApproval>,
 }
 
 /// One delivered capability a harness holds back until the person acts in

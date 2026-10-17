@@ -4,14 +4,14 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::ui::hit::Hit;
 use crate::ui::model::{ResizablePanel, TuiModel};
 use crate::ui::side_panel_area;
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, Edge, Field, Rule, button_row};
+use crate::ui::widget::{Align, Button, Field, button_row, drawer};
 use uze_application::application::offers::ActionOffer;
 
 pub mod catalog;
@@ -24,49 +24,19 @@ pub mod plugins;
 pub mod profiles;
 pub mod settings;
 
-/// A drawer's width at rest, and on a terminal wide enough that the list
-/// beside it has columns to spare and a paragraph reads in fewer rows.
-pub(crate) const DRAWER_DEFAULT_WIDTH: u16 = 44;
-const DRAWER_WIDE_WIDTH: u16 = 56;
-const DRAWER_WIDE_FROM: u16 = 150;
-/// The narrowest a drawer, or the list beside it, is ever drawn.
-const DRAWER_MIN_WIDTH: u16 = 24;
-
-/// How far a drawer's text sits inside it: past its rule and three columns
-/// of air on the left, three on the right — the inset every screen's own
-/// content keeps from the modal's border.
-const DRAWER_PAD_LEFT: u16 = 4;
-const DRAWER_PAD_RIGHT: u16 = 3;
+/// A drawer's width at rest, which a screen sizing a column of its own
+/// beside one starts from.
+pub(crate) const DRAWER_DEFAULT_WIDTH: u16 = drawer::DEFAULT_WIDTH;
 
 /// How wide `panel`'s drawer is drawn over `content`: where it was dragged
-/// to, or its width at rest, never squeezing itself or the list beside it
-/// past the minimum, and never taking more than half of what there is.
-///
-/// The half is the part the minimum alone could not do. Leaving the list
-/// its 24 columns is a floor, not a share: on a narrow screen a drawer at
-/// its default took two thirds of the content and the list it is a detail
-/// *of* got what was left over. A detail panel is read a paragraph at a
-/// time and the list beside it is read as a whole, so when there is not
-/// enough for both, the list is the one that keeps its shape.
+/// to, or its width at rest, within what [`drawer::width`] allows.
 pub(crate) fn drawer_width(panel: ResizablePanel, model: &TuiModel, content: Rect) -> u16 {
-    let ceiling = (content.width / 2)
-        .min(content.width.saturating_sub(DRAWER_MIN_WIDTH))
-        .max(DRAWER_MIN_WIDTH);
-    let rest = if content.width >= DRAWER_WIDE_FROM {
-        DRAWER_WIDE_WIDTH
-    } else {
-        DRAWER_DEFAULT_WIDTH
-    };
-    panel
-        .width(model)
-        .unwrap_or(rest)
-        .clamp(DRAWER_MIN_WIDTH, ceiling)
+    drawer::width(panel.width(model), content.width)
 }
 
-/// A detail drawer's shell off the right of `content`: a hairline rule on
-/// its left that is its drag handle, lit while it is dragged, on the same
-/// ground as the screen — a drawer is a column of the screen, not a slab
-/// laid over it. Returns the padded rectangle its content goes in.
+/// `panel`'s detail drawer off the right of `content`, its rule lit while
+/// it is dragged and registered first as `panel`'s resize handle. Returns
+/// the padded rectangle its content goes in.
 pub(crate) fn drawer(
     frame: &mut ratatui::Frame<'_>,
     content: Rect,
@@ -75,24 +45,9 @@ pub(crate) fn drawer(
     hits: &mut Vec<(Rect, Hit)>,
 ) -> Rect {
     let area = side_panel_area(content, drawer_width(panel, model, content));
-    frame.render_widget(Clear, area);
-    crate::ui::widget::fill(frame, area, Token::SurfaceBackground);
-    Rule::draggable(Edge::Left, model.dragging_panel == Some(panel)).render(frame, area);
-    // First, so the rule answers the pointer before the rows behind it do.
-    hits.insert(
-        0,
-        (
-            Rect::new(area.x, area.y, 1, area.height),
-            Hit::ResizePanel(panel),
-        ),
-    );
-    Rect::new(
-        area.x + DRAWER_PAD_LEFT,
-        area.y,
-        area.width
-            .saturating_sub(DRAWER_PAD_LEFT + DRAWER_PAD_RIGHT),
-        area.height,
-    )
+    let (inner, handle) = drawer::render(frame, area, model.dragging_panel == Some(panel));
+    hits.insert(0, (handle, Hit::ResizePanel(panel)));
+    inner
 }
 
 /// A drawer's content split into its body and the footer
@@ -302,11 +257,11 @@ mod drawer_tests {
             let content = Rect::new(0, 0, width, 40);
             let drawn = drawer_width(panel, &model, content);
             assert!(
-                drawn <= (width / 2).max(DRAWER_MIN_WIDTH),
+                drawn <= (width / 2).max(drawer::MIN_WIDTH),
                 "{width} wide: {drawn}"
             );
             assert!(
-                content.width.saturating_sub(drawn) >= DRAWER_MIN_WIDTH,
+                content.width.saturating_sub(drawn) >= drawer::MIN_WIDTH,
                 "and the list keeps its own minimum at {width}: {drawn}"
             );
         }
@@ -318,7 +273,7 @@ mod drawer_tests {
         );
         assert_eq!(
             drawer_width(panel, &model, Rect::new(0, 0, 200, 40)),
-            DRAWER_WIDE_WIDTH
+            drawer::WIDE_WIDTH
         );
     }
 }

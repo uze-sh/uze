@@ -164,6 +164,13 @@ scopes! {
     /// The spec surface: a checkout's changes and specs, read as
     /// documents.
     Spec => "spec", "Spec", Workspace, seals: true, text: false;
+    /// A space's overview, standing where the pane is. It does not seal:
+    /// the sidebar's chords stay live over it, since it is where a space
+    /// is landed on.
+    SpaceOverview => "space-overview", "Space overview", Workspace, seals: false, text: false;
+    /// The overview with a workspace value open for typing.
+    SpaceOverviewEditing => "space-overview-editing", "Editing a workspace value", Workspace,
+        seals: true, text: true;
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
     /// The inline rename buffer over a tab or space label.

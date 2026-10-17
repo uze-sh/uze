@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use ratatui::{
     layout::Rect,
-    style::Style,
     text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
@@ -27,7 +26,13 @@ use super::worker::{
 };
 use super::{overlay, view};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Edge, Rule, Surface, footer::Leading, hint::Hints, modal, text};
+use crate::ui::widget::{
+    self, Edge, Rule, Surface,
+    footer::Leading,
+    hint::Hints,
+    modal,
+    tabs::{self, Tab},
+};
 
 /// How long a resolution of the machine stands for before opening the
 /// modal re-resolves it. The window exists for one case: the session's
@@ -409,91 +414,6 @@ pub(crate) const FIRST_STEPS: [uze_keys::Action; 2] =
 /// the first tab starts at the same column whatever the name.
 const NAME_WIDTH: usize = 12;
 
-/// Between one tab and the next.
-const TAB_GAP: u16 = 2;
-
-/// How much of itself a tab says, from all of it down to its number
-/// alone: a strip that does not fit gives up the badges first, then the
-/// names of the screens that are not open.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum TabDetail {
-    NumberOnly,
-    Name,
-    Badge,
-}
-
-/// One tab: its number, which is the key that reaches it, its name, and
-/// the count or the badge the screen carries. The open screen stands on
-/// a raised ground, or on the selection's while the keyboard is on the
-/// strip itself.
-fn tab_line(position: usize, route: Route, model: &TuiModel, detail: TabDetail) -> Line<'static> {
-    let open = route == model.route;
-    let ground = match (open, model.focus == Focus::Sidebar) {
-        (true, true) => Some(Token::SurfaceSelected),
-        (true, false) => Some(Token::SurfaceRaised),
-        (false, _) => None,
-    };
-    let with_ground = |style: Style| match ground {
-        Some(token) => style.bg(theme::color(token)),
-        None => style,
-    };
-    let (number, label) = if open {
-        (
-            theme::fg_bold(Token::Accent),
-            theme::fg_bold(Token::TextBright),
-        )
-    } else {
-        (
-            theme::fg_bold(Token::TextDim),
-            theme::fg(Token::TextSecondary),
-        )
-    };
-    let mut spans = vec![
-        Span::styled(" ", with_ground(Style::default())),
-        Span::styled(position.to_string(), with_ground(number)),
-    ];
-    if open || detail >= TabDetail::Name {
-        spans.push(Span::styled(
-            format!(" {}", route.label()),
-            with_ground(label),
-        ));
-    }
-    let badge = match detail {
-        TabDetail::Badge => route.badge().map(text::small_caps),
-        TabDetail::Name | TabDetail::NumberOnly => None,
-    };
-    if let Some(badge) = badge {
-        spans.push(Span::styled(
-            format!(" {badge}"),
-            with_ground(theme::fg(Token::StateWarning)),
-        ));
-    }
-    spans.push(Span::styled(" ", with_ground(Style::default())));
-    Line::from(spans)
-}
-
-/// The tabs at the most detail that fits in `room` columns.
-fn fitted_tabs(model: &TuiModel, room: u16) -> Vec<(Route, Line<'static>)> {
-    let tabs = |detail| -> Vec<(Route, Line<'static>)> {
-        model::routes()
-            .into_iter()
-            .enumerate()
-            .map(|(index, route)| (route, tab_line(index + 1, route, model, detail)))
-            .collect()
-    };
-    let width = |tabs: &[(Route, Line<'static>)]| -> u16 {
-        tabs.iter()
-            .map(|(_, line)| line.width() as u16 + TAB_GAP)
-            .sum::<u16>()
-            .saturating_sub(TAB_GAP)
-    };
-    [TabDetail::Badge, TabDetail::Name]
-        .into_iter()
-        .map(tabs)
-        .find(|candidate| width(candidate) <= room)
-        .unwrap_or_else(|| tabs(TabDetail::NumberOnly))
-}
-
 /// The header: the modal's name, a tab per screen, and the key that
 /// closes it at the other end — which is also the close target, so it
 /// answers the pointer the way the close mark it replaced did. Answers
@@ -529,17 +449,22 @@ fn render_header(
             ..area
         },
     );
-    let mut x = area.x + NAME_WIDTH as u16;
-    let room_end = close.x.saturating_sub(TAB_GAP);
-    for (route, line) in fitted_tabs(model, room_end.saturating_sub(x)) {
-        let width = line.width() as u16;
-        if x + width > room_end {
-            break;
-        }
-        let rect = Rect::new(x, area.y, width, area.height);
-        frame.render_widget(Paragraph::new(line), rect);
+    let x = area.x + NAME_WIDTH as u16;
+    let room_end = close.x.saturating_sub(tabs::GAP);
+    let routes = model::routes();
+    let strip: Vec<(Tab, Route)> = routes
+        .iter()
+        .map(|&route| {
+            (
+                Tab::new(route.label()).badge(route.badge(), Token::StateWarning),
+                route,
+            )
+        })
+        .collect();
+    let open = routes.iter().position(|&route| route == model.route);
+    let row = Rect::new(x, area.y, room_end.saturating_sub(x), area.height);
+    for (rect, route) in tabs::tab_bar(frame, row, &strip, open, model.focus == Focus::Sidebar) {
         hits.push((rect, Hit::Route(route)));
-        x += width + TAB_GAP;
     }
     close
 }

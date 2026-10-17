@@ -17,12 +17,14 @@ mod pane;
 mod popups;
 mod recent;
 mod sidebar;
+mod space_overview;
 mod tab_strip;
 
 pub(super) use pane::*;
 pub(super) use popups::*;
 use recent::*;
 pub(super) use sidebar::*;
+use space_overview::*;
 pub(super) use tab_strip::*;
 
 pub(super) fn blank_pane(pane: PaneId, columns: u16, rows: u16) -> PaneSnapshot {
@@ -170,7 +172,12 @@ pub(super) fn render(
             question
         }
         None => {
-            render_pane(frame, layout.pane, model);
+            match &model.space_overview {
+                Some(overview) => {
+                    render_space_overview(frame, layout.pane, model, overview, hits);
+                }
+                None => render_pane(frame, layout.pane, model),
+            }
             None
         }
     };

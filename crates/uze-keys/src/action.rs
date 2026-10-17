@@ -318,6 +318,26 @@ actions! {
     // only by its generated id, which says nothing until asked for.
     ToggleAllWork => "toggle-all-work", false,
         "All", "Show every agent recent holds, not only the named ones";
+
+    // --- The space overview -------------------------------------------
+    OpenSpaceOverview => "open-space-overview", false,
+        "Overview", "Show this space's overview: its context, plugins, workspace and memory";
+    OpenSpaceShell => "open-space-shell", false,
+        "Open shell", "Bring this space's shell to the front, or open one at its root";
+    AddItem => "add-item", false,
+        "Add", "Add an entry to the list in focus";
+    // Takes back a value not yet saved: nothing on disk changes until the
+    // diff is confirmed, which is why it may sit on a bare letter.
+    RemoveItem => "remove-item", false,
+        "Remove", "Remove the entry in focus, or unset the key";
+    MoveItemUp => "move-item-up", false,
+        "Move up", "Move the entry in focus up its list";
+    MoveItemDown => "move-item-down", false,
+        "Move down", "Move the entry in focus down its list";
+    SaveChanges => "save-changes", false,
+        "Save", "Show the diff of the edits, to save them";
+    DiscardChanges => "discard-changes", false,
+        "Discard", "Drop every edit not yet saved";
 }
 
 impl fmt::Display for Action {

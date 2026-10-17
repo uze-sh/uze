@@ -23,8 +23,8 @@ use uze_application::{
     application::{
         AddPluginReport, ContextPlan, ContextReconciliationReport, DoctorReport,
         HarnessContextDelivery, HarnessHealth, MachineStatusReport, MarketplaceRemovalReport,
-        MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus, ProvisionRoute,
-        RemovePluginReport, RemoveProjectPluginReport, StatusReport,
+        MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus, ProjectStatus,
+        ProvisionRoute, RemovePluginReport, RemoveProjectPluginReport, StatusReport,
     },
 };
 // `Chime` arrives through the facade's own re-export (see uze-application).
@@ -606,15 +606,8 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             // instead of the project's own report with the project absent.
             // `-m` states the machine read model even inside a project.
             if !machine {
-                match app.health().status(&root) {
-                    Ok(report) => {
-                        let status = ProjectStatus {
-                            steps_not_spelled_here: app.workspace().steps_not_spelled_here(&root),
-                            commands_awaiting_approval: app
-                                .workspace()
-                                .commands_awaiting_approval(&report.root),
-                            report,
-                        };
+                match app.health().project_status(&root) {
+                    Ok(status) => {
                         emit(format, &status, render_status);
                         return Ok(());
                     }
@@ -869,10 +862,11 @@ mod grammar_tests {
 #[cfg(test)]
 mod status_output_tests {
     use uze_application::application::{
-        EnvironmentDrift, InstructionsFile, Portability, ProjectLockStatus, StatusReport,
+        EnvironmentDrift, HarnessContextDelivery, InstructionsFile, Portability, ProjectLockStatus,
+        ProjectStatus, StatusHarness, StatusReport,
     };
 
-    use super::{ProjectStatus, render_status, status_next_step};
+    use super::{render_status, status_next_step};
 
     fn report(instructions: InstructionsFile, portability: Portability) -> ProjectStatus {
         let report = StatusReport {
@@ -881,12 +875,11 @@ mod status_output_tests {
             portability,
             harnesses: Vec::new(),
             packages_installed: 0,
-            packages_contributing_here: 0,
+            packages_contributing_here: Vec::new(),
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
             held_back: Vec::new(),
-            agent_context: Vec::new(),
             memory: Default::default(),
         };
         ProjectStatus {
@@ -967,6 +960,104 @@ mod status_output_tests {
     #[test]
     fn a_healthy_project_is_owed_nothing() {
         assert!(status_next_step(&report(present(), Portability::Portable)).is_none());
+    }
+
+    fn fact(
+        name: &str,
+        scope: uze_application::application::memory::MemoryScope,
+        origin: &str,
+    ) -> uze_application::application::memory::Entry {
+        uze_application::application::memory::Entry {
+            name: name.to_owned(),
+            description: format!("what {name} says"),
+            kind: uze_application::application::memory::Kind::Project,
+            scope,
+            origin: origin.to_owned(),
+            source: None,
+            path: std::path::PathBuf::from(format!("/memory/{name}.md")),
+            updated: None,
+            writable: origin == "uze",
+            proposed: false,
+        }
+    }
+
+    fn harness(integration: &str, display_name: &str) -> StatusHarness {
+        StatusHarness {
+            integration: integration.to_owned(),
+            display_name: display_name.to_owned(),
+            context: Some(HarnessContextDelivery::Native),
+            context_unread: None,
+            agent_context: None,
+            outdated: None,
+        }
+    }
+
+    /// Fifty facts listed one per line buried every other finding: status
+    /// counts each scope by who keeps it, and names only what waits on the
+    /// operator.
+    #[test]
+    fn memory_is_counted_per_scope_and_never_listed() {
+        use uze_application::application::memory::{MemoryScope, UnreadableFact};
+        let mut status = report(present(), Portability::Portable);
+        status.report.harnesses = vec![harness("keeper", "The Keeper")];
+        status.report.memory.entries = vec![
+            fact("first", MemoryScope::Project, "keeper"),
+            fact("second", MemoryScope::Project, "keeper"),
+            fact("third", MemoryScope::Project, "uze"),
+        ];
+        let mut proposal = fact("proposed-rule", MemoryScope::Machine, "uze");
+        proposal.proposed = true;
+        status.report.memory.proposals = vec![proposal];
+        status.report.memory.unreadable = vec![UnreadableFact {
+            path: std::path::PathBuf::from("/memory/broken.md"),
+            reason: "no front matter".to_owned(),
+        }];
+
+        let rendered = super::progress::unpainted(&render_status(&status));
+        let line = |label: &str| {
+            rendered
+                .lines()
+                .skip_while(|line| line.trim() != "Memory")
+                .find(|line| line.trim_start().starts_with(label))
+                .unwrap_or_else(|| panic!("no {label} line: {rendered}"))
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(line("project"), "project 3 facts · 2 The Keeper · 1 uze");
+        assert_eq!(line("machine"), "machine none");
+        assert!(rendered.contains("proposed-rule"), "{rendered}");
+        assert!(rendered.contains("/memory/proposed-rule.md"), "{rendered}");
+        assert!(
+            rendered.contains("/memory/broken.md: no front matter"),
+            "{rendered}"
+        );
+        for listed in ["first", "second", "third", "what first says"] {
+            assert!(!rendered.contains(listed), "{listed}: {rendered}");
+        }
+    }
+
+    /// What concerns one harness is carried on it, and read back as the
+    /// line it always was.
+    #[test]
+    fn a_harness_finding_reads_as_its_own_line() {
+        let mut status = report(present(), Portability::Portable);
+        let mut keeper = harness("keeper", "The Keeper");
+        keeper.context_unread = Some("the project is not trusted".to_owned());
+        keeper.agent_context = Some("no channel".to_owned());
+        let mut idle = harness("idle", "Idle");
+        idle.context = None;
+        status.report.harnesses = vec![keeper, idle];
+
+        let rendered = super::progress::unpainted(&render_status(&status));
+        assert!(
+            rendered.contains("! The Keeper: the project is not trusted"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("· The Keeper: no channel"), "{rendered}");
+        assert!(rendered.contains("context needs reconciling"), "{rendered}");
+        assert!(!rendered.contains("Idle"), "{rendered}");
+        assert_eq!(status_next_step(&status), Some("uze install"));
     }
 
     /// A person who runs `uze status` and nothing else learns the workspace

@@ -1415,3 +1415,126 @@ pub(super) fn spawn_clear_prompt_history(
         let _ = sender.send(PromptHistoryResolution { root, entries });
     });
 }
+
+/// Reads a space's overview: `uze status`'s computation, which re-runs a
+/// harness's CLI when its inspection is not cached, plus the plugin index
+/// and the `workspace:` declaration, which asks Git about each link.
+pub(super) fn spawn_space_overview(
+    home: &UzeHome,
+    space: SpaceId,
+    asked: u64,
+    root: PathBuf,
+    sender: mpsc::Sender<SpaceOverviewResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.space_overview", parent: &parent);
+        let answer = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.workspace().space_overview(&root))
+                    .map_err(|error| error.to_string())
+            },
+            Err("reading the overview failed".to_owned()),
+        );
+        let _ = sender.send(SpaceOverviewResolution {
+            space,
+            asked,
+            answer,
+        });
+    });
+}
+
+/// Reads one of the project's facts, for the overview's drawer.
+pub(super) fn spawn_fact_body(
+    home: &UzeHome,
+    space: SpaceId,
+    root: PathBuf,
+    name: String,
+    sender: mpsc::Sender<FactBodyResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.fact_body").entered();
+        use uze_application::application::memory::{MemoryCaller, MemoryScope};
+        let body = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| {
+                        app.memory().show(
+                            MemoryCaller::Operator { cwd: &root },
+                            MemoryScope::Project,
+                            &name,
+                        )
+                    })
+                    .map(|shown| shown.body)
+                    .map_err(|error| error.to_string())
+            },
+            Err("reading the fact failed".to_owned()),
+        );
+        let _ = sender.send(FactBodyResolution { space, name, body });
+    });
+}
+
+/// Applies the overview's `workspace:` edits to `agents.yaml` in memory
+/// and checks them the way the workspace would read them, off the frame:
+/// a link is checked by asking Git whether it is ignored.
+pub(super) fn spawn_declaration_preview(
+    home: &UzeHome,
+    space: SpaceId,
+    asked: u64,
+    root: PathBuf,
+    edits: Vec<uze_application::Edit>,
+    sender: mpsc::Sender<DeclarationPreviewResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.declaration_preview").entered();
+        let answer = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.workspace().preview_declaration(&root, &edits))
+                    .map_err(|error| error.to_string())
+            },
+            Err("checking the edits failed".to_owned()),
+        );
+        let _ = sender.send(DeclarationPreviewResolution {
+            space,
+            asked,
+            answer,
+        });
+    });
+}
+
+/// Writes the overview's `workspace:` edits, refused when `agents.yaml`
+/// changed since the diff the operator confirmed was made from it.
+pub(super) fn spawn_declaration_save(
+    home: &UzeHome,
+    space: SpaceId,
+    root: PathBuf,
+    edits: Vec<uze_application::Edit>,
+    expected: Option<String>,
+    sender: mpsc::Sender<DeclarationSaveResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.declaration_save").entered();
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| {
+                        app.workspace()
+                            .save_declaration(&root, &edits, expected.as_deref())
+                    })
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            },
+            Err("saving failed".to_owned()),
+        );
+        let _ = sender.send(DeclarationSaveResolution { space, outcome });
+    });
+}

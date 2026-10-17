@@ -9969,16 +9969,15 @@ mod workspace_tests {
         );
     }
 
-    /// A space's own row lands on a shell of the space's, not on whichever
-    /// agent the strip was showing: it is the way back to the space's
-    /// shells. A space whose first shell became an agent when a harness
-    /// was typed into it has no such tab, so the click opens one — the
-    /// space ends where "new" leaves it, not bound to the agent.
+    /// A space's row shows its overview where the pane is, with the shell
+    /// the space owns behind it, and opens no tab. A space whose first
+    /// shell became an agent when a harness was typed into it is not given
+    /// one by the click either: the overview's "Open shell" is the way to
+    /// a shell of its own.
     #[test]
-    fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
+    fn a_space_row_shows_its_overview_and_its_shell_is_one_action_away() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-row"));
-        let click_space_row = |model: WorkspaceModel| {
-            let mut driven = driven(model, &home);
+        let click_space_row = |driven: &mut Driven<'_>| {
             driven.frame();
             let (row, space) = driven
                 .attach
@@ -9991,8 +9990,16 @@ mod workspace_tests {
                 })
                 .expect("the space row is a target");
             driven.press(row.x + 4, row.y);
-            let sent = driven.sent();
-            (space, sent)
+            space
+        };
+        let opened_a_shell = |sent: &[ClientRequest]| {
+            sent.iter().any(|request| {
+                matches!(
+                    request,
+                    ClientRequest::CreateTab { agent: None, command: None, cwd: Some(cwd), .. }
+                        if cwd == Path::new("/repo")
+                )
+            })
         };
 
         let mut with_shell = session("/repo");
@@ -10007,31 +10014,50 @@ mod workspace_tests {
             PathBuf::from("/repo"),
         );
         with_shell.update_pane_status(agent_pane, PathBuf::from("/repo"), "agent".into());
-        let (_, sent) = click_space_row(model_of(with_shell));
+        let mut first = driven(model_of(with_shell), &home);
+        click_space_row(&mut first);
+        let sent = first.sent();
+        assert!(
+            first
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.space == space),
+            "the space's overview is not shown"
+        );
         assert!(
             sent.iter().any(
                 |request| matches!(request, ClientRequest::SelectTab { tab } if *tab == shell)
             ),
-            "the space's own shell was not selected: {sent:?}"
+            "the space's own shell does not stand behind the overview: {sent:?}"
         );
+        assert!(!opened_a_shell(&sent), "the click opened a tab: {sent:?}");
 
         let mut only_agents = session("/repo");
         let pane = only_agents.selected_tab().pane.id;
         only_agents.update_pane_status(pane, PathBuf::from("/repo"), "agent".into());
-        let (space, sent) = click_space_row(model_of(only_agents));
-        let switched = sent.iter().position(|request| {
-            matches!(request, ClientRequest::SelectSpace { space: selected } if *selected == space)
-        });
-        let opened = sent.iter().position(|request| {
-            matches!(
-                request,
-                ClientRequest::CreateTab { agent: None, command: None, cwd: Some(cwd), .. }
-                    if cwd == Path::new("/repo")
-            )
-        });
+        let mut second = driven(model_of(only_agents), &home);
+        let space = click_space_row(&mut second);
+        let sent = second.sent();
         assert!(
-            matches!((switched, opened), (Some(switched), Some(opened)) if switched < opened),
-            "a space of agents alone was not switched to and given a shell of its own: {sent:?}"
+            sent.iter().any(|request| matches!(
+                request,
+                ClientRequest::SelectSpace { space: selected } if selected == &space
+            )),
+            "the space was not switched to: {sent:?}"
+        );
+        assert!(!opened_a_shell(&sent), "the click opened a tab: {sent:?}");
+        second.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('o'),
+        ));
+        assert!(
+            opened_a_shell(&second.sent()),
+            "Open shell gave a space of agents alone no shell of its own"
+        );
+        assert!(
+            second.attach.model.space_overview.is_none(),
+            "the overview stayed up over the shell it opened"
         );
     }
 

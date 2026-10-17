@@ -12,8 +12,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use uze_application::UzeApplication;
-use uze_application::application::{HarnessContextDelivery, Portability, ProjectContextStatus};
+use uze_application::application::{
+    ContextState, HarnessContextDelivery, Portability, ProjectContextStatus, ProjectLockStatus,
+};
+use uze_application::{SpaceOverview, UzeApplication};
 use uze_core::PackageSource;
 use uze_core::{
     Result, UzeHome,
@@ -35,7 +37,7 @@ fn status_reports_healthy_with_zero_issues_once_reconciled() {
     let status = application.health().status(&project).unwrap();
     assert!(matches!(status.portability, Portability::Portable));
     assert_eq!(status.packages_installed, 1);
-    assert_eq!(status.packages_contributing_here, 1);
+    assert_eq!(status.packages_contributing_here.len(), 1);
     assert!(status.issues.is_empty());
 }
 
@@ -69,7 +71,105 @@ fn status_distinguishes_installed_from_contributing_here() {
 
     let status = application.health().status(&project).unwrap();
     assert_eq!(status.packages_installed, 2);
-    assert_eq!(status.packages_contributing_here, 1);
+    assert_eq!(status.packages_contributing_here.len(), 1);
+}
+
+/// The space overview shows what `uze status` says, never a second
+/// reading of it: one project, one installed plugin it locks and
+/// contributes, one it locks and the machine lacks.
+#[test]
+fn the_space_overview_agrees_with_status() {
+    let root = temp("space-overview-agrees");
+    let application = app(&root, true);
+    install(&application, fixture_a());
+    let installed = application.plugins().list().unwrap().remove(0);
+    let (name, market) = installed.id.split_once('@').expect("a qualified id");
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    application.context().reconcile(&project).unwrap();
+    fs::write(
+        project.join("agents.lock"),
+        format!("version: 1\nplugins:\n  {name}:\n    marketplace: {market}\n  absent:\n    marketplace: {market}\n"),
+    )
+    .unwrap();
+
+    let status = application.health().project_status(&project).unwrap();
+    let SpaceOverview::Project(space) = application.workspace().space_overview(&project).unwrap()
+    else {
+        panic!("a project answers with its overview");
+    };
+
+    let context_of = |status: &uze_application::application::ProjectStatus| {
+        serde_json::to_value((
+            &status.report.instructions,
+            &status.report.portability,
+            &status.report.harnesses,
+            &status.report.issues,
+        ))
+        .unwrap()
+    };
+    assert_eq!(context_of(&space.status), context_of(&status));
+    let summary = application.project().summary(&project).unwrap();
+    assert_eq!(
+        summary.project.context == ContextState::Ready,
+        matches!(status.report.portability, Portability::Portable)
+    );
+
+    let ProjectLockStatus::Present { plugins: locked } = &status.report.project_lock else {
+        panic!("the lock reads");
+    };
+    assert_eq!(space.plugins.plugins.len(), locked.len());
+    for (row, health) in space.plugins.plugins.iter().zip(locked) {
+        assert_eq!(row.plugin, health.plugin);
+        assert_eq!(row.installed, health.installed);
+        assert_eq!(row.differs_from_lock, health.differs_from_lock);
+        assert_eq!(
+            row.contributing,
+            status
+                .report
+                .packages_contributing_here
+                .contains(&row.package)
+        );
+        assert_eq!(row.freshness.is_some(), row.installed);
+    }
+    assert!(
+        space
+            .plugins
+            .plugins
+            .iter()
+            .any(|row| row.package == installed.id && row.installed && row.contributing)
+    );
+    assert!(
+        space
+            .plugins
+            .plugins
+            .iter()
+            .any(|row| row.plugin == "absent" && !row.installed)
+    );
+    assert_eq!(
+        serde_json::to_value(&space.plugins.drift).unwrap(),
+        serde_json::to_value(&status.report.drift).unwrap()
+    );
+}
+
+#[test]
+fn a_space_with_no_project_or_no_root_is_answered_as_such() {
+    let root = temp("space-overview-absent");
+    let application = app(&root, true);
+    let bare = root.join("bare");
+    fs::create_dir_all(&bare).unwrap();
+
+    assert!(matches!(
+        application.workspace().space_overview(&bare).unwrap(),
+        SpaceOverview::NotAProject { .. }
+    ));
+    assert!(matches!(
+        application
+            .workspace()
+            .space_overview(&root.join("gone"))
+            .unwrap(),
+        SpaceOverview::RootGone { .. }
+    ));
 }
 
 fn temp(label: &str) -> PathBuf {

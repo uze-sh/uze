@@ -109,6 +109,7 @@ impl WorkspaceModel {
     /// Notes the tab in front as the one a surface opening now stands in
     /// for.
     pub(super) fn stand_extension_in_front(&mut self) {
+        self.space_overview = None;
         self.extension_tab = self
             .session
             .as_ref()

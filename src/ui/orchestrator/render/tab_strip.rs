@@ -429,13 +429,52 @@ fn render_agent_tabs(
     // render would otherwise cover over a bar drawn mid-loop (unlike the
     // sidebar's per-row renders, every chip here shares that one `Line`).
     let mut drop_indicator: Option<Rect> = None;
+    // The space itself leads its tabs: its overview, a tab of the client's
+    // own that no process stands behind. While it is in front it is the
+    // strip's one selected chip, and the tab behind it is not.
+    let overview_open = model.space_overview.is_some();
+    {
+        let label = Span::styled(
+            "overview",
+            if overview_open {
+                theme::fg_bold(Token::TextBright)
+            } else {
+                theme::fg(Token::TextInactive)
+            },
+        );
+        let chip_width = label.width() as u16 + 2 * chip::PAD;
+        if x + chip_width <= limit {
+            let mut chip = vec![Span::raw(" "), label, Span::raw(" ")];
+            if overview_open {
+                row::pad_to(&mut chip, chip_width, theme::color(Token::SurfaceRaised));
+            } else if model.hovered == Some(WorkspaceHit::OpenOverview) {
+                row::pad_to(
+                    &mut chip,
+                    chip_width,
+                    theme::color(Token::SurfaceRaisedSubtle),
+                );
+            }
+            hits.push((
+                Rect::new(x, slot.y, chip_width, 1),
+                WorkspaceHit::OpenOverview,
+            ));
+            spans.extend(chip);
+            spans.push(Span::raw(" "));
+            x += chip_width + 1;
+            if x + 2 <= limit {
+                spans.push(Span::styled("/", theme::fg(Token::TextFaint)));
+                spans.push(Span::raw(" "));
+                x += 2;
+            }
+        }
+    }
     for (strip_index, tab) in strip.into_iter().enumerate() {
         if x >= limit {
             break;
         }
         let is_last = strip_index + 1 == strip_len;
         let is_agent = Some(tab.id) == context;
-        let selected = tab.id == space.selected_tab;
+        let selected = tab.id == space.selected_tab && !overview_open;
         let marker_fg = if selected {
             theme::color(Token::Accent)
         } else {

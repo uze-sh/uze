@@ -159,7 +159,7 @@ impl Workspace<'_> {
 
 /// The primary checkout a directory's commands are declared in. Found
 /// without asking Git, as `uze status` reads only what is on disk.
-fn primary_of(project_root: &Path) -> PathBuf {
+pub(super) fn primary_of(project_root: &Path) -> PathBuf {
     isolated_checkout(project_root).map_or_else(
         || project_root.to_path_buf(),
         |checkout| checkout.primary.to_path_buf(),

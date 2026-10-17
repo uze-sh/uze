@@ -637,20 +637,6 @@ pub(crate) fn render_held_back(notes: &[uze_application::application::HeldBackNo
     text
 }
 
-/// What `uze status` answers inside a project: the package manager's
-/// report, and what the workspace adds about the commands its policy runs.
-#[derive(serde::Serialize)]
-pub(crate) struct ProjectStatus {
-    #[serde(flatten)]
-    pub(crate) report: StatusReport,
-    pub(crate) steps_not_spelled_here:
-        Vec<uze_application::application::services::StepNotSpelledHere>,
-    /// The commands the workspace will not run until the operator
-    /// approves them (ADR-055).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) commands_awaiting_approval: Option<uze_application::CommandsAwaitingApproval>,
-}
-
 pub(crate) fn render_status(status: &ProjectStatus) -> String {
     let report = &status.report;
     let name = report.root.file_name().map_or_else(
@@ -670,7 +656,10 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         );
     }
     let mut rows = vec![instructions];
-    rows.extend(report.harnesses.iter().map(render_status_harness));
+    rows.extend(report.harnesses.iter().filter_map(|harness| {
+        let delivery = harness.context.as_ref()?;
+        Some(render_status_harness(&harness.display_name, delivery))
+    }));
     text.push_str(&progress::aligned_rows(rows));
     text.push('\n');
     text.push_str(&render_portability_gaps(&report.portability));
@@ -709,12 +698,18 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         || !report.memory.unreadable.is_empty()
     {
         text.push('\n');
-        text.push_str(&crate::cli::agent::render_memory(&report.memory));
+        text.push_str(&render_status_memory(report));
     }
-    for note in &report.agent_context {
-        text.push_str(&format!("{} {note}\n", progress::label("·")));
+    for harness in &report.harnesses {
+        if let Some(reason) = &harness.agent_context {
+            text.push_str(&format!(
+                "{} {}: {reason}\n",
+                progress::label("·"),
+                harness.display_name
+            ));
+        }
     }
-    for issue in &report.issues {
+    for issue in status_issues(report) {
         text.push_str(&format!("{} {issue}\n", progress::warning_icon()));
     }
     for unspelled in &status.steps_not_spelled_here {
@@ -765,7 +760,7 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
             progress::warning_text(what)
         )
     };
-    if !report.issues.is_empty() {
+    if !status_issues(report).is_empty() {
         return attention("context needs reconciling".to_owned());
     }
     if missing > 0 {
@@ -875,11 +870,101 @@ pub(crate) fn render_portability_gaps(portability: &Portability) -> String {
         .collect()
 }
 
+/// Every context problem the report names, in the order `uze status`
+/// prints them: the project's own, then what keeps each harness from
+/// reading it here, then the harnesses too old for their integration.
+pub(crate) fn status_issues(report: &StatusReport) -> Vec<String> {
+    let harnesses = &report.harnesses;
+    report
+        .issues
+        .iter()
+        .cloned()
+        .chain(harnesses.iter().filter_map(|harness| {
+            let reason = harness.context_unread.as_ref()?;
+            Some(format!("{}: {reason}", harness.display_name))
+        }))
+        .chain(
+            harnesses
+                .iter()
+                .filter_map(|harness| harness.outdated.clone()),
+        )
+        .collect()
+}
+
+/// What memory holds, one line per scope counted by who keeps it, and only
+/// what waits on the operator by name: the facts themselves are the space
+/// overview's and `--json`'s, and fifty of them would bury the report.
+pub(crate) fn render_status_memory(report: &StatusReport) -> String {
+    use uze_application::application::memory::MemoryScope;
+    let memory = &report.memory;
+    let keeper = |origin: &str| {
+        report
+            .harnesses
+            .iter()
+            .find(|harness| harness.integration == origin)
+            .map_or_else(|| origin.to_owned(), |harness| harness.display_name.clone())
+    };
+    let scope_row = |label: &str, scope: MemoryScope| {
+        let mut kept: Vec<(String, usize)> = Vec::new();
+        for entry in memory.entries.iter().filter(|entry| entry.scope == scope) {
+            let by = keeper(&entry.origin);
+            match kept.iter_mut().find(|(keeper, _)| *keeper == by) {
+                Some((_, n)) => *n += 1,
+                None => kept.push((by, 1)),
+            }
+        }
+        kept.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        let total: usize = kept.iter().map(|(_, n)| n).sum();
+        let summary = if total == 0 {
+            progress::label("none")
+        } else {
+            std::iter::once(count(total, "fact"))
+                .chain(kept.iter().map(|(keeper, n)| format!("{n} {keeper}")))
+                .collect::<Vec<_>>()
+                .join(&progress::label(" · "))
+        };
+        vec![progress::label(label), summary]
+    };
+    let mut text = progress::report_section("Memory");
+    text.push_str(&progress::aligned_rows(vec![
+        scope_row("project", MemoryScope::Project),
+        scope_row("machine", MemoryScope::Machine),
+    ]));
+    text.push('\n');
+    if !memory.proposals.is_empty() {
+        text.push_str(&format!(
+            "\n{}",
+            progress::report_section("Proposed, waiting for the operator")
+        ));
+        text.push_str(&progress::aligned_rows(
+            memory
+                .proposals
+                .iter()
+                .map(|entry| vec![entry.name.clone(), progress::path(&entry.path)])
+                .collect(),
+        ));
+        text.push('\n');
+    }
+    for unreadable in &memory.unreadable {
+        text.push_str(&format!(
+            "{} {}: {}\n",
+            progress::warning_icon(),
+            unreadable.path.display(),
+            uze_application::inert(&unreadable.reason)
+        ));
+    }
+    // A section's end, as every other section here has before what
+    // follows it.
+    text.push('\n');
+    text
+}
+
 pub(crate) fn render_status_harness(
-    harness: &uze_application::application::HarnessContextStatus,
+    display_name: &str,
+    delivery: &HarnessContextDelivery,
 ) -> Vec<String> {
     let ok = |word: &str| format!("{} {}", progress::success_icon(), progress::label(word));
-    let state = match &harness.delivery {
+    let state = match delivery {
         HarnessContextDelivery::Native => ok("native"),
         HarnessContextDelivery::Projected => ok("inside the workspace"),
         HarnessContextDelivery::NotDetected => progress::label("not installed"),
@@ -894,7 +979,7 @@ pub(crate) fn render_status_harness(
             progress::label("needs reconciling")
         ),
     };
-    vec![harness.display_name.clone(), state]
+    vec![display_name.to_owned(), state]
 }
 
 pub(crate) fn locked_plugin_count(
@@ -929,7 +1014,7 @@ pub(crate) fn status_next_step(status: &ProjectStatus) -> Option<&'static str> {
         Portability::NoContext | Portability::VendorLocked { .. } => {
             Some("write an AGENTS.md; the uze:init skill drafts one with you")
         }
-        Portability::Portable if report.issues.is_empty() => None,
+        Portability::Portable if status_issues(report).is_empty() => None,
         _ => Some("uze install"),
     }
 }

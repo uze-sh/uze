@@ -422,6 +422,33 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "pagedown", Action::ScrollPageDown),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
+        // The space overview: a row of sections over a list with a drawer,
+        // so the arrows walk sideways between sections and down the list,
+        // and the digits name a section the way they name a manage screen.
+        bind(Scope::Workspace, "alt+o", Action::OpenSpaceOverview),
+        bind(Scope::SpaceOverview, "esc", Action::Dismiss),
+        bind(Scope::SpaceOverview, "left", Action::FocusPrevious),
+        bind(Scope::SpaceOverview, "right", Action::FocusNext),
+        bind(Scope::SpaceOverview, "down", Action::SelectNext),
+        bind(Scope::SpaceOverview, "up", Action::SelectPrevious),
+        bind(Scope::SpaceOverview, "enter", Action::Activate),
+        bind(Scope::SpaceOverview, "o", Action::OpenSpaceShell),
+        bind(Scope::SpaceOverview, "r", Action::Refresh),
+        bind(Scope::SpaceOverview, "a", Action::AddItem),
+        bind(Scope::SpaceOverview, "d", Action::RemoveItem),
+        // Not alt: over a space, alt and the arrows walk its agents.
+        bind(Scope::SpaceOverview, "shift+up", Action::MoveItemUp),
+        bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
+        bind(Scope::SpaceOverview, "s", Action::SaveChanges),
+        bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
+        bind(Scope::SpaceOverviewEditing, "enter", Action::Activate),
+        bind(Scope::SpaceOverviewEditing, "esc", Action::Dismiss),
+        bind(Scope::SpaceOverviewEditing, "backspace", Action::EraseBack),
+        bind(Scope::SpaceOverviewEditing, "delete", Action::EraseForward),
+        bind(Scope::SpaceOverviewEditing, "left", Action::CaretLeft),
+        bind(Scope::SpaceOverviewEditing, "right", Action::CaretRight),
+        bind(Scope::SpaceOverviewEditing, "home", Action::CaretLineStart),
+        bind(Scope::SpaceOverviewEditing, "end", Action::CaretLineEnd),
         // Recent: enter does what moves the selected row on, and the
         // letters are the two things beyond it, each only where it applies.
         bind(Scope::Recent, "esc", Action::Dismiss),
@@ -491,6 +518,13 @@ fn default_bindings() -> Vec<Binding> {
             &format!("alt+{index}"),
             Action::SelectTab(index),
         ));
+        if index <= 4 {
+            bindings.push(bind(
+                Scope::SpaceOverview,
+                &index.to_string(),
+                Action::SelectTab(index),
+            ));
+        }
         // Bare digits: management owns the keyboard, and the screens are
         // numbered on the tab strip that heads the modal.
         bindings.push(bind(

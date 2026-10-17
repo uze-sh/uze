@@ -337,27 +337,61 @@ impl Health<'_> {
         })
     }
 
+    /// What `uze status` answers inside a project: the package manager's
+    /// report, and what the workspace adds about the commands its policy
+    /// runs. One computation for every surface that shows it.
+    #[tracing::instrument(name = "health.project_status", skip_all, fields(project_root = %project_root.display()), err)]
+    pub fn project_status(&self, project_root: &std::path::Path) -> Result<ProjectStatus> {
+        let report = self.status(project_root)?;
+        let workspace = self.0.workspace();
+        Ok(ProjectStatus {
+            steps_not_spelled_here: workspace.steps_not_spelled_here(project_root),
+            commands_awaiting_approval: workspace.commands_awaiting_approval(&report.root),
+            report,
+        })
+    }
+
     #[tracing::instrument(name = "health.status", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn status(&self, project_root: &std::path::Path) -> Result<StatusReport> {
         let context = self.0.context().inspect(project_root)?;
         let installed = self.0.store.package_ids()?.len();
-        let contributing = context.contributions.len();
+        let contributing = context
+            .contributions
+            .iter()
+            .map(|contribution| contribution.package_id.clone())
+            .collect();
         let agents_md = context
             .canonical
             .join(uze_core::project_context::AGENTS_MD_FILE_NAME);
-        // A harness that reads the context but will not here — a project
-        // the person marked untrusted, a file past the size it reads.
-        let unread = self
+        let harnesses = self
             .0
             .integrations
             .iter()
-            .map(|integration| integration.as_ref())
-            .filter(|integration| self.0.detect_cached(*integration).present)
-            .filter_map(|integration| {
-                integration
-                    .context_unread(&context.canonical, &agents_md)
-                    .map(|reason| format!("{}: {reason}", integration.display_name()))
-            });
+            .map(|integration| {
+                let integration = integration.as_ref();
+                let detection = self.0.detect_cached(integration);
+                let context_delivery = context
+                    .harnesses
+                    .iter()
+                    .find(|harness| harness.integration == integration.id())
+                    .map(|harness| harness.delivery.clone());
+                // Only a harness on this machine is asked: one that is not
+                // here reads nothing, and has no agents to give context to.
+                let detected = |finding: &dyn Fn() -> Option<String>| {
+                    detection.present.then(finding).flatten()
+                };
+                StatusHarness {
+                    integration: integration.id().to_owned(),
+                    display_name: integration.display_name().to_owned(),
+                    context: context_delivery,
+                    context_unread: detected(&|| {
+                        integration.context_unread(&context.canonical, &agents_md)
+                    }),
+                    agent_context: detected(&|| agent_context_shortfall(integration)),
+                    outdated: super::harness_floor::sentence(integration, &detection),
+                }
+            })
+            .collect();
         let issues: Vec<String> = context
             .contributions
             .iter()
@@ -383,13 +417,6 @@ impl Health<'_> {
                     .iter()
                     .map(|region| format!("{region}: malformed")),
             )
-            .chain(unread)
-            .chain(self.0.integrations.iter().filter_map(|integration| {
-                super::harness_floor::sentence(
-                    integration.as_ref(),
-                    &self.0.detect_cached(integration.as_ref()),
-                )
-            }))
             .collect();
         // Read out of the sources the inspection already observed rather
         // than asked of the filesystem again: `status` and `agent context
@@ -427,24 +454,13 @@ impl Health<'_> {
             instructions,
             drift,
             portability: context.portability,
-            harnesses: context.harnesses,
+            harnesses,
             packages_installed: installed,
             packages_contributing_here: contributing,
             project_lock,
             issues,
             held_back: held_back_notes(self.0, None),
             memory: self.0.memory().report_at(&context.canonical),
-            agent_context: self
-                .0
-                .integrations
-                .iter()
-                .map(|integration| integration.as_ref())
-                .filter(|integration| self.0.detect_cached(*integration).present)
-                .filter_map(|integration| {
-                    agent_context_shortfall(integration)
-                        .map(|reason| format!("{}: {reason}", integration.display_name()))
-                })
-                .collect(),
         })
     }
 }
@@ -619,12 +635,13 @@ mod tests {
         let harness = app.health().harness("floored").unwrap();
         assert_eq!(harness.below_minimum.as_deref(), Some("1.3.4"));
 
-        let issues = app.health().status(&project).unwrap().issues;
+        let outdated = app.health().status(&project).unwrap().harnesses[0]
+            .outdated
+            .clone()
+            .unwrap_or_default();
         assert!(
-            issues
-                .iter()
-                .any(|issue| issue.starts_with("Floored 1.3.3 is older than 1.3.4")),
-            "{issues:?}"
+            outdated.starts_with("Floored 1.3.3 is older than 1.3.4"),
+            "{outdated:?}"
         );
         fs::remove_dir_all(&base).ok();
     }
@@ -637,11 +654,16 @@ mod tests {
             fs::create_dir_all(&project).unwrap();
             fs::write(project.join("agents.yaml"), "{}\n").unwrap();
             assert_eq!(app.health().harness("floored").unwrap().below_minimum, None);
-            let issues = app.health().status(&project).unwrap().issues;
+            let status = app.health().status(&project).unwrap();
             assert!(
-                !issues.iter().any(|issue| issue.contains("oldest version")),
-                "{version:?}: {issues:?}"
+                !status
+                    .issues
+                    .iter()
+                    .any(|issue| issue.contains("oldest version")),
+                "{version:?}: {:?}",
+                status.issues
             );
+            assert_eq!(status.harnesses[0].outdated, None, "{version:?}");
             fs::remove_dir_all(&base).ok();
         }
     }

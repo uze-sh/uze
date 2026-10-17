@@ -93,7 +93,12 @@ impl Attach<'_> {
     /// Opens a shell of `space` itself, belonging to no agent, in the
     /// directory the space stands in. Sent after the space is selected,
     /// since the server opens a tab in the space the client is on.
-    pub(super) fn open_space_shell(&mut self, space: SpaceId, columns: u16, rows: u16) {
+    pub(in crate::ui::orchestrator) fn open_space_shell(
+        &mut self,
+        space: SpaceId,
+        columns: u16,
+        rows: u16,
+    ) {
         let Some(space) = self
             .model
             .session
@@ -1346,26 +1351,11 @@ impl Attach<'_> {
                 // no-op.
             }
             WorkspaceHit::SelectSpace(space) => {
-                self.model.close_extension();
-                // A space's own row is its own context: it
-                // lands on a shell belonging to no agent, the
-                // way each agent row lands on that agent. That
-                // is the whole way back to the space's shells
-                // once an agent is what the strip is showing.
-                // A space of nothing but agents — its first
-                // shell became one when a harness was typed
-                // into it — is given a shell of its own, so it
-                // ends where "new" leaves it rather than
-                // bound to the agent.
-                self.land_on_space(space, columns, rows);
-                let bound = self.model.session.as_ref().is_some_and(|session| {
-                    session
-                        .space(space)
-                        .is_some_and(|space| space_own_tab(space, &self.identities).is_none())
-                });
-                if bound {
-                    self.open_space_shell(space, columns, rows);
-                }
+                // A space's own row is the space itself: its overview,
+                // with the shell it owns behind it. The way to that shell
+                // is the overview's own, which also opens one for a space
+                // of nothing but agents.
+                self.show_space_overview(space, columns, rows);
                 // The header is also the handle a space is carried by;
                 // nothing moves until the pointer does (see
                 // `DraggingSpace`).
@@ -1410,6 +1400,19 @@ impl Attach<'_> {
                 self.model.close_architect();
             }
             WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
+            // A tab, not a switch: pressing the one in front keeps it.
+            WorkspaceHit::OpenOverview if self.model.space_overview.is_some() => {}
+            WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
+            WorkspaceHit::OverviewSection(index) => {
+                return self.act(Action::SelectTab(index as u8 + 1), viewport);
+            }
+            WorkspaceHit::OverviewRow(index) => self.model.select_overview_row(index),
+            WorkspaceHit::OverviewShell => return self.act(Action::OpenSpaceShell, viewport),
+            WorkspaceHit::OverviewReview => self.review_overview_commands(),
+            WorkspaceHit::OverviewSave(true) => return self.act(Action::SaveChanges, viewport),
+            WorkspaceHit::OverviewSave(false) => {
+                return self.act(Action::DiscardChanges, viewport);
+            }
             // The counts are the changes' door, not the surface's, and
             // keep the keys' toggle.
             WorkspaceHit::OpenChanges => return self.act(Action::ToggleChanges, viewport),
