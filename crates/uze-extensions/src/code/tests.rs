@@ -864,6 +864,74 @@ impl Host for StillRepository {
     }
 }
 
+/// A repository whose one change is an image, counting how often its
+/// bytes were read.
+struct ChangedImage {
+    reads: std::cell::Cell<usize>,
+}
+
+impl Host for ChangedImage {
+    fn git(&self, _root: &Path, _args: &[&str], _answers: &[i32]) -> Result<String, String> {
+        Ok("diff --git a/logo.png b/logo.png\nindex 1..2 100644\nBinary files a/logo.png and b/logo.png differ\n".to_owned())
+    }
+
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(path.to_path_buf())
+    }
+
+    fn read_file(&self, _path: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::NotText)
+    }
+
+    fn read_bytes(&self, _path: &Path) -> Result<Vec<u8>, crate::Unreadable> {
+        self.reads.set(self.reads.get() + 1);
+        let mut encoded = Vec::new();
+        let mut encoder = png::Encoder::new(&mut encoded, 1, 1);
+        encoder.set_color(png::ColorType::Rgb);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[1, 2, 3]).unwrap();
+        writer.finish().unwrap();
+        Ok(encoded)
+    }
+
+    fn list_dir(&self, _path: &Path) -> Result<Vec<DirEntry>, String> {
+        Ok(Vec::new())
+    }
+
+    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
+        unreachable!("reading a repository writes nothing")
+    }
+
+    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
+        unreachable!("reading a repository deletes nothing")
+    }
+
+    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
+        unreachable!("reading a repository restores nothing")
+    }
+
+    fn syntax_theme(&self) -> String {
+        FALLBACK_SYNTAX_THEME.to_owned()
+    }
+}
+
+/// The timer that re-reads the changes would otherwise decode a changed
+/// image again every time it fires, for the picture already on screen.
+#[test]
+fn an_image_whose_diff_has_not_moved_is_not_read_again() {
+    let host = ChangedImage {
+        reads: std::cell::Cell::new(0),
+    };
+    let (root, path) = (Path::new("/repo"), Path::new("logo.png"));
+    let first = changes::read_diff(&host, root, path, FileStatus::Modified, 0);
+    assert!(first.picture.is_some(), "the image is drawn the first time");
+    assert_eq!(host.reads.get(), 1);
+
+    let again = changes::read_diff(&host, root, path, FileStatus::Modified, first.digest);
+    assert!(matches!(again.outcome, Ok(None)), "the diff has not moved");
+    assert_eq!(host.reads.get(), 1, "so the image is not read again");
+}
+
 /// The changes are re-read on a timer, because the checkout is under an
 /// agent's hands. Colouring a diff that did not move is the same picture
 /// drawn twice — the one unbounded cost this surface pays over and over
