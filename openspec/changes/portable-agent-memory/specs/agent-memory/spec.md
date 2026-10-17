@@ -136,13 +136,20 @@ rather than instructions, and that memory holds no secrets.
 - **THEN** its index lists UZE's facts and other harnesses' entries, and none of the Claude facts Claude already loads itself
 
 ### Requirement: The operator reads memory through status
-`uze status` SHALL list, for each scope, where its facts are kept and every
-fact by name, type and provenance. It SHALL list the proposed machine facts
-waiting for the operator and the facts it could not read.
+`uze status` SHALL summarize each scope in one line: how many facts it
+holds and how many each provenance keeps. It SHALL list by name the
+proposed machine facts waiting for the operator, with where each is kept,
+and the files it could not read. The facts themselves SHALL be listed by
+the workspace's space overview and by `uze status --json`, not by the
+text report.
 
-#### Scenario: Status lists memory
+#### Scenario: Status summarizes memory
 - **WHEN** the operator runs `uze status` in a project with facts at both scopes
-- **THEN** it lists both directories and each fact's name, type and provenance, separating proposed and unreadable facts
+- **THEN** it shows one line per scope with its count by provenance, and no fact's name or description
+
+#### Scenario: What needs the operator is listed
+- **WHEN** a machine fact is proposed or a fact file cannot be read
+- **THEN** status names the proposal and where it is kept, and the unreadable file and why
 
 ### Requirement: Claude's own memory is read live as a source, never copied or redirected
 At each launch, the system SHALL read the Claude memory kept for the

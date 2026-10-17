@@ -1451,6 +1451,7 @@ impl Project<'_> {
             .iter()
             .map(|(name, locked)| ProjectPluginHealth {
                 plugin: name.clone(),
+                package: format!("{name}@{}", locked.marketplace),
                 installed: !missing.contains(name.as_str()),
                 differs_from_lock: self.differs_from_lock(&lock, name, locked),
             })
@@ -1508,6 +1509,8 @@ pub enum ProjectLockStatus {
 #[derive(Clone, Debug, Serialize)]
 pub struct ProjectPluginHealth {
     pub plugin: String,
+    /// The installed package it answers to, `<plugin>@<marketplace>`.
+    pub package: String,
     pub installed: bool,
     /// Installed, at a revision other than the lock's. The ordinary state
     /// once the machine has updated past a project: the lock is a floor for

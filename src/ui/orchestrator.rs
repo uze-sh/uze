@@ -72,6 +72,7 @@ mod events;
 mod interrupt;
 mod notices;
 mod proposal;
+mod space_overview;
 
 /// Input/redraw cadence. Unlike the pane content itself — which the server
 /// now pushes on PTY output instead of the client polling for it (see
@@ -217,6 +218,7 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 use approval::*;
 use interrupt::*;
 use proposal::*;
+use space_overview::*;
 mod input;
 mod recent;
 mod render;
@@ -889,6 +891,19 @@ pub(super) enum WorkspaceHit {
     OpenArchitect,
     /// The tab strip's spec button, first of the three.
     OpenSpec,
+    /// The tab strip's overview button, before the three: the space's
+    /// overview, lit while it stands in the pane.
+    OpenOverview,
+    /// A tab of the overview's section bar, by position.
+    OverviewSection(usize),
+    /// A row of the overview's section in front, by position.
+    OverviewRow(usize),
+    /// The overview's way to the space's shell.
+    OverviewShell,
+    /// The overview's question about the project's commands.
+    OverviewReview,
+    /// Saving or dropping the overview's workspace edits; `true` saves.
+    OverviewSave(bool),
     /// Opens contextual support details for the selected agent tab.
     OpenAgentSupport(Rect),
     /// A prompt listed in the agent drawer, by position in its list.
@@ -1448,6 +1463,11 @@ struct Channels {
     proposal_answers: Answers<ProposalAnswerResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
+    /// A space's overview, and what its drawer and its edits ask.
+    space_overviews: Answers<SpaceOverviewResolution>,
+    fact_bodies: Answers<FactBodyResolution>,
+    declaration_previews: Answers<DeclarationPreviewResolution>,
+    declaration_saves: Answers<DeclarationSaveResolution>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -1808,6 +1828,10 @@ struct WorkspaceModel {
     /// to the front — however it got there — puts it away rather than
     /// leaving it answering for a checkout nobody is looking at.
     extension_tab: Option<TabId>,
+    /// The overview of a space, standing where the pane is. It belongs to
+    /// its space rather than to [`Self::extension_tab`]: the broadcast that
+    /// confirms the space changes the tab in front.
+    space_overview: Option<SpaceOverviewView>,
     /// The diagram held by the pointer. A press on it is not yet a click
     /// or a drag — the first movement says which, as it does for
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here

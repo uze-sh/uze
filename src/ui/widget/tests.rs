@@ -1311,3 +1311,75 @@ fn a_hovered_hint_lights_its_label_and_no_other() {
         theme::fg(Token::TextMuted)
     );
 }
+
+fn row_text(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
+    (0..buffer.area.width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect()
+}
+
+/// A strip with room says everything; one without gives up the badges,
+/// then the names of the tabs that are not open — never the open one's,
+/// and never a tab's mark.
+#[test]
+fn a_tab_bar_gives_up_badges_then_the_closed_tabs_names() {
+    use super::tabs::{Tab, tab_bar};
+    let strip = [
+        (Tab::new("Context").lead("!", Token::StateWarning), 'c'),
+        (
+            Tab::new("Plugins").badge(Some("beta"), Token::StateWarning),
+            'p',
+        ),
+    ];
+    let at = |width: u16| {
+        let mut placed = Vec::new();
+        let buffer = drawn(width, 1, |frame| {
+            placed = tab_bar(frame, Rect::new(0, 0, width, 1), &strip, Some(1), false);
+        });
+        (row_text(&buffer, 0), placed)
+    };
+
+    let (wide, placed) = at(40);
+    assert!(
+        wide.contains(" 1 ! Context ") && wide.contains("Plugins ʙᴇᴛᴀ"),
+        "{wide}"
+    );
+    assert_eq!(
+        placed.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        ['c', 'p']
+    );
+    assert_eq!(placed[1].0.x, placed[0].0.right() + super::tabs::GAP);
+
+    let (named, _) = at(26);
+    assert!(
+        named.contains("Context") && !named.contains("ʙᴇᴛᴀ"),
+        "{named}"
+    );
+
+    let (narrow, _) = at(18);
+    assert!(
+        narrow.starts_with(" 1 ! ") && !narrow.contains("Context"),
+        "{narrow}"
+    );
+    assert!(
+        narrow.contains("2 Plugins"),
+        "the open tab keeps its name: {narrow}"
+    );
+}
+
+/// The drawer is handed its width and drag state; it answers with the
+/// padded content rect and the one-column handle on its rule.
+#[test]
+fn a_drawer_answers_with_its_content_and_its_handle() {
+    use super::drawer;
+    assert_eq!(drawer::width(None, 100), drawer::DEFAULT_WIDTH);
+    assert_eq!(drawer::width(Some(80), 100), 50, "never more than half");
+    assert_eq!(drawer::width(Some(10), 100), 24, "never under the minimum");
+    assert_eq!(drawer::width(None, 160), 56);
+
+    drawn(60, 10, |frame| {
+        let (inner, handle) = drawer::render(frame, Rect::new(20, 0, 40, 10), true);
+        assert_eq!(handle, Rect::new(20, 0, 1, 10));
+        assert_eq!(inner, Rect::new(24, 0, 33, 10));
+    });
+}

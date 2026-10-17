@@ -88,6 +88,7 @@ pub(crate) mod action_index;
 pub(crate) mod button;
 pub(crate) mod chip;
 pub(crate) mod dialog;
+pub(crate) mod drawer;
 pub(crate) mod field;
 pub(crate) mod footer;
 pub(crate) mod hint;
@@ -101,6 +102,7 @@ pub(crate) mod scrim;
 pub(crate) mod scrollbar;
 pub(crate) mod stat;
 pub(crate) mod surface;
+pub(crate) mod tabs;
 pub(crate) mod text;
 pub(crate) mod toast;
 

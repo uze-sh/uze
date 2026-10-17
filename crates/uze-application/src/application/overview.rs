@@ -6,7 +6,7 @@
 //! - `agents.lock` parsing (`uze_core::project_lock`) for the consumer side
 //! - `marketplace.json` parsing (`acquisition::marketplace`) for the marketplace side
 //! - Store package ids (`installed_packages`) for installed vs required
-//! - `Context::inspect` for the memory/portability half
+//! - `Context::inspect` for the context/portability half
 //!
 //! This is deliberately a *projection*: files (agents.lock, marketplace.json,
 //! `.agents/`, paths, counts-by-inspection) are evidence used *here* to
@@ -190,7 +190,7 @@ impl Project<'_> {
         ProjectOverview {
             environment,
             drift,
-            memory: derive_memory(agents_md, portability),
+            context: derive_context(agents_md, portability),
             declared_plugins: declared,
             installed_plugins: installed,
             missing_plugins: missing,
@@ -256,7 +256,7 @@ pub struct ProjectOverview {
     /// What the manifest asks for that the lock, the Store or the
     /// projection has not caught up to.
     pub drift: EnvironmentDrift,
-    pub memory: MemoryState,
+    pub context: ContextState,
     /// Plugins declared by `agents.lock` (0 when there is no valid lock).
     pub declared_plugins: usize,
     /// Declared plugins present in the Store.
@@ -281,7 +281,7 @@ pub enum ProjectEnvironmentState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum MemoryState {
+pub enum ContextState {
     /// No `AGENTS.md` and no vendor-only context.
     None,
     /// `AGENTS.md` present and the context is portable across harnesses.
@@ -313,22 +313,22 @@ pub enum MarketplaceState {
     InvalidManifest,
 }
 
-/// The `MemoryState` truth table, pure and testable: `AGENTS.md` presence
+/// The `ContextState` truth table, pure and testable: `AGENTS.md` presence
 /// plus the portability verdict `Context::inspect` produced (or `None` when
 /// inspection was unavailable). `Issue` means "context exists but is not
 /// portable everywhere" — a bridge gap behind a present `AGENTS.md`, or
 /// vendor-specific files carrying content with no shared `AGENTS.md`.
-fn derive_memory(agents_md: bool, portability: Option<&Portability>) -> MemoryState {
+fn derive_context(agents_md: bool, portability: Option<&Portability>) -> ContextState {
     match (agents_md, portability) {
-        (true, Some(Portability::Portable)) => MemoryState::Ready,
-        (true, Some(_)) => MemoryState::Issue,
+        (true, Some(Portability::Portable)) => ContextState::Ready,
+        (true, Some(_)) => ContextState::Issue,
         (true, None) => {
             // Inspection unavailable: the one fact we can still verify is
             // the file itself. "Present", not "portable everywhere".
-            MemoryState::Ready
+            ContextState::Ready
         }
-        (false, Some(Portability::VendorLocked { .. })) => MemoryState::Issue,
-        (false, _) => MemoryState::None,
+        (false, Some(Portability::VendorLocked { .. })) => ContextState::Issue,
+        (false, _) => ContextState::None,
     }
 }
 
@@ -480,21 +480,21 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let project = fx.project(&dir);
         assert_eq!(project.environment, ProjectEnvironmentState::NotConfigured);
-        assert_eq!(project.memory, MemoryState::None);
+        assert_eq!(project.context, ContextState::None);
         assert_eq!(project.declared_plugins, 0);
         assert_eq!(project.installed_plugins, 0);
         assert!(project.missing_plugins.is_empty());
     }
 
     #[test]
-    fn agents_md_alone_has_memory_but_no_environment() {
+    fn agents_md_alone_has_context_but_no_environment() {
         let fx = Fixture::new("agents-md-only");
         let dir = fx._drop_root.join("docs");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("AGENTS.md"), "# hi\n").unwrap();
         let project = fx.project(&dir);
         assert_eq!(project.environment, ProjectEnvironmentState::NotConfigured);
-        assert_eq!(project.memory, MemoryState::Ready);
+        assert_eq!(project.context, ContextState::Ready);
     }
 
     #[test]
@@ -640,40 +640,40 @@ mod tests {
     }
 
     #[test]
-    fn memory_truth_table_is_exact() {
+    fn context_truth_table_is_exact() {
         use Portability::{NoContext, PartiallyPortable, Portable, VendorLocked};
-        // (agents_md, portability) → MemoryState, covering every reachable
+        // (agents_md, portability) → ContextState, covering every reachable
         // combination plus the inspection-unavailable case.
-        assert_eq!(derive_memory(false, None), MemoryState::None);
-        assert_eq!(derive_memory(true, None), MemoryState::Ready);
-        assert_eq!(derive_memory(false, Some(&NoContext)), MemoryState::None);
-        assert_eq!(derive_memory(false, Some(&Portable)), MemoryState::None);
+        assert_eq!(derive_context(false, None), ContextState::None);
+        assert_eq!(derive_context(true, None), ContextState::Ready);
+        assert_eq!(derive_context(false, Some(&NoContext)), ContextState::None);
+        assert_eq!(derive_context(false, Some(&Portable)), ContextState::None);
         assert_eq!(
-            derive_memory(false, Some(&VendorLocked { files: vec![] })),
-            MemoryState::Issue
+            derive_context(false, Some(&VendorLocked { files: vec![] })),
+            ContextState::Issue
         );
-        assert_eq!(derive_memory(true, Some(&NoContext)), MemoryState::Issue);
-        assert_eq!(derive_memory(true, Some(&Portable)), MemoryState::Ready);
+        assert_eq!(derive_context(true, Some(&NoContext)), ContextState::Issue);
+        assert_eq!(derive_context(true, Some(&Portable)), ContextState::Ready);
         assert_eq!(
-            derive_memory(true, Some(&VendorLocked { files: vec![] })),
-            MemoryState::Issue
+            derive_context(true, Some(&VendorLocked { files: vec![] })),
+            ContextState::Issue
         );
         assert_eq!(
-            derive_memory(true, Some(&PartiallyPortable { gaps: vec![] })),
-            MemoryState::Issue
+            derive_context(true, Some(&PartiallyPortable { gaps: vec![] })),
+            ContextState::Issue
         );
     }
 
     #[test]
-    fn memory_is_ready_with_agents_md_and_none_without_it() {
-        let fx = Fixture::new("memory-presence");
+    fn context_is_ready_with_agents_md_and_none_without_it() {
+        let fx = Fixture::new("context-presence");
         let root = fx._drop_root.join("project");
         fs::create_dir_all(&root).unwrap();
         write_lock(&root, &[], "test");
 
-        assert_eq!(fx.project(&root).memory, MemoryState::None);
+        assert_eq!(fx.project(&root).context, ContextState::None);
         fs::write(root.join("AGENTS.md"), "# hi\n").unwrap();
-        assert_eq!(fx.project(&root).memory, MemoryState::Ready);
+        assert_eq!(fx.project(&root).context, ContextState::Ready);
     }
 
     // --- Marketplace semantics ---------------------------------------------

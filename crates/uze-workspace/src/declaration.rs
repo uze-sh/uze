@@ -27,6 +27,12 @@ use crate::{
     worktree::{CompletionBehavior, WorktreePolicy},
 };
 
+mod candidate;
+
+pub use candidate::{
+    Checked, DeclarationKey, DeclarationProblem, DeclaredValue, Edit, apply, check,
+};
+
 /// The key under `workspace:` that names places rather than policy.
 const ARTIFACTS: &str = "artifacts";
 
@@ -117,11 +123,18 @@ impl DeclaredActions {
 /// repository ignores, and a cap of zero is refused.
 pub fn declared(root: &Path) -> Result<Option<WorktreePolicy>> {
     let path = manifest::manifest_path_for(root);
-    let Some(policy) = read(root)?.policy(&path)? else {
+    let (policy, problems) = read(root)?.policy();
+    // The first problem is the one reported, and Git is not asked about
+    // links in a policy that is already refused.
+    if let Some(first) = problems.into_iter().next() {
+        return Err(malformed(&path, first.reason));
+    }
+    let Some(policy) = policy else {
         return Ok(None);
     };
-    validate(&policy, &path)?;
-    reject_unignored_links(root, &path, &policy)?;
+    if let Some(first) = unignored_links(root, &policy).into_iter().next() {
+        return Err(malformed(&path, first.reason));
+    }
     Ok(Some(policy))
 }
 
@@ -140,11 +153,9 @@ pub fn policy(root: &Path) -> Result<WorktreePolicy> {
 /// after.
 pub fn set_completion(root: &Path, behavior: Option<CompletionBehavior>) -> Result<bool> {
     let created = match behavior {
-        Some(behavior) => {
-            manifest::set_scalar(root, Section::Workspace, "delivery", behavior.abi_name())?
-        }
+        Some(behavior) => manifest::set_key(root, Section::Workspace, "delivery", &behavior)?,
         None => {
-            manifest::unset_scalar(root, Section::Workspace, "delivery")?;
+            manifest::unset_key(root, Section::Workspace, "delivery")?;
             false
         }
     };
@@ -231,19 +242,43 @@ impl WorkspaceSection {
         }
     }
 
-    fn policy(&self, path: &Path) -> Result<Option<WorktreePolicy>> {
+    /// The policy the section declares, and every problem with it. Each key
+    /// is read on its own, so one mistake never hides the next; the policy
+    /// is what the keys that read make, and is the policy in force only
+    /// when there are no problems.
+    fn policy(&self) -> (Option<WorktreePolicy>, Vec<DeclarationProblem>) {
         let Some(section) = &self.0 else {
-            return Ok(None);
+            return (None, Vec::new());
         };
-        let mut policy = section.clone();
-        let places = policy.remove(ARTIFACTS).is_some();
-        let actions = policy.remove(ACTIONS).is_some();
-        if (places || actions) && policy.is_empty() {
-            return Ok(None);
+        let mut written = section.clone();
+        let places = written.remove(ARTIFACTS).is_some();
+        let actions = written.remove(ACTIONS).is_some();
+        if (places || actions) && written.is_empty() {
+            return (None, Vec::new());
         }
-        serde_json::from_value(serde_json::Value::Object(policy))
-            .map(Some)
-            .map_err(|error| malformed(path, format!("workspace: {error}")))
+        let mut problems = Vec::new();
+        let mut accepted = serde_json::Map::new();
+        for (key, value) in written {
+            let alone = serde_json::Map::from_iter([(key.clone(), value)]);
+            match serde_json::from_value::<WorktreePolicy>(serde_json::Value::Object(alone.clone()))
+            {
+                Ok(_) => accepted.extend(alone),
+                Err(error) => problems.push(DeclarationProblem::about(
+                    &key,
+                    format!("workspace: {error}"),
+                )),
+            }
+        }
+        let policy =
+            match serde_json::from_value::<WorktreePolicy>(serde_json::Value::Object(accepted)) {
+                Ok(policy) => policy,
+                Err(error) => {
+                    problems.push(DeclarationProblem::whole(format!("workspace: {error}")));
+                    return (None, problems);
+                }
+            };
+        problems.extend(misdeclared(&policy));
+        (Some(policy), problems)
     }
 
     fn actions(&self) -> DeclaredActions {
@@ -291,21 +326,24 @@ fn malformed(path: &Path, reason: String) -> UzeError {
     }
 }
 
-fn validate(policy: &WorktreePolicy, path: &Path) -> Result<()> {
+/// What the workspace refuses in a policy that reads: a cap that refuses
+/// every checkout, and links that cannot stay inside the repository.
+fn misdeclared(policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
+    let mut problems = Vec::new();
     if policy.slots == Some(0) {
         // Zero is honored, and honoring it refuses every checkout: the cap
         // is compared with `>=`, so the first task fails with "cap
         // reached" and nothing says the manifest is why.
-        return Err(malformed(
-            path,
+        problems.push(DeclarationProblem::about(
+            "slots",
             "`workspace.slots` is 0, which would refuse every checkout there is; leave it \
              undeclared for no cap at all, or give it at least 1"
                 .to_owned(),
         ));
     }
-    if let Some((link, why)) = policy.misplaced_links().into_iter().next() {
-        return Err(malformed(
-            path,
+    for (link, why) in policy.misplaced_links() {
+        problems.push(DeclarationProblem::about(
+            "link",
             format!(
                 "`workspace.link` names `{}`, which is {why}; a link is a relative path inside \
                  the repository",
@@ -313,46 +351,41 @@ fn validate(policy: &WorktreePolicy, path: &Path) -> Result<()> {
             ),
         ));
     }
-    Ok(())
+    problems
 }
 
 /// A linked file must be ignored by the repository: a tracked file linked
 /// into a checkout would land in the agent's commits as a symlink. Asked of
 /// Git only when a manifest declares links, so one that declares none costs
-/// no subprocess to read.
-fn reject_unignored_links(root: &Path, path: &Path, policy: &WorktreePolicy) -> Result<()> {
-    for link in &policy.link {
+/// no subprocess to read. A link already refused for where it points is
+/// not asked about.
+fn unignored_links(root: &Path, policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
+    let misplaced: Vec<PathBuf> = policy
+        .misplaced_links()
+        .into_iter()
+        .map(|(link, _)| link)
+        .collect();
+    let mut problems = Vec::new();
+    for link in policy.link.iter().filter(|link| !misplaced.contains(link)) {
         let spelled = link.to_string_lossy();
-        let answer = crate::git::read(root, &["check-ignore", "--quiet", "--", &spelled]).map_err(
-            |error| UzeError::MalformedManifest {
-                path: path.to_path_buf(),
-                reason: format!("`workspace.link` names `{spelled}`, but {error}"),
+        let reason = match crate::git::read(root, &["check-ignore", "--quiet", "--", &spelled]) {
+            Err(error) => format!("`workspace.link` names `{spelled}`, but {error}"),
+            Ok(answer) => match answer.code {
+                Some(0) => continue,
+                Some(1) => format!(
+                    "`workspace.link` names `{spelled}`, which the repository does not ignore; \
+                     a linked file must be ignored, or it would be committed as a symlink from \
+                     an agent's checkout"
+                ),
+                _ => format!(
+                    "`workspace.link` names `{spelled}`, but this directory is not a Git \
+                     repository that could ignore it"
+                ),
             },
-        )?;
-        match answer.code {
-            Some(0) => {}
-            Some(1) => {
-                return Err(UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!(
-                        "`workspace.link` names `{spelled}`, which the repository does not \
-                         ignore; a linked file must be ignored, or it would be committed as a \
-                         symlink from an agent's checkout"
-                    ),
-                });
-            }
-            _ => {
-                return Err(UzeError::MalformedManifest {
-                    path: path.to_path_buf(),
-                    reason: format!(
-                        "`workspace.link` names `{spelled}`, but this directory is not a Git \
-                         repository that could ignore it"
-                    ),
-                });
-            }
-        }
+        };
+        problems.push(DeclarationProblem::about("link", reason));
     }
-    Ok(())
+    problems
 }
 
 #[cfg(test)]
@@ -379,10 +412,10 @@ mod tests {
     fn parsed(text: &str) -> Result<Parsed> {
         let path = Path::new("/p/agents.yaml");
         let manifest = manifest::parse(text, path)?;
-        let policy = WorkspaceSection::of(manifest.section(Section::Workspace, path)?, path)?
-            .policy(path)?;
-        if let Some(policy) = &policy {
-            validate(policy, path)?;
+        let (policy, problems) =
+            WorkspaceSection::of(manifest.section(Section::Workspace, path)?, path)?.policy();
+        if let Some(first) = problems.into_iter().next() {
+            return Err(malformed(path, first.reason));
         }
         Ok(Parsed {
             policy,

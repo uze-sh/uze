@@ -74,6 +74,18 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// Opens the question about `project`'s commands, when they wait.
+    pub(super) fn review_commands_for(&mut self, project: &Path) {
+        let Some(awaiting) = self.remembered.commands_awaiting.get(project).cloned() else {
+            return;
+        };
+        self.approval = Some(ApprovalDialog {
+            awaiting,
+            on_approve: false,
+        });
+        self.dirty = true;
+    }
+
     /// Takes the answer off the dialog: the commands to approve when it was
     /// yes, nothing when it was not. Declining keeps the question for the
     /// next placement to raise again.
