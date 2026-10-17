@@ -298,6 +298,55 @@ pub(super) fn spawn_command_approval(
     });
 }
 
+/// Reads the machine facts agents proposed, off the frame: a walk of one
+/// directory of small files, and nothing a frame waits on.
+pub(super) fn spawn_memory_proposals(home: &UzeHome, sender: mpsc::Sender<ProposalsResolution>) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.memory_proposals").entered();
+        let proposals = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| app.memory().report(None).proposals)
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(ProposalsResolution { proposals });
+    });
+}
+
+/// Accepts or discards a proposed machine fact, off the frame.
+pub(super) fn spawn_proposal_answer(
+    home: &UzeHome,
+    name: String,
+    choice: ProposalChoice,
+    sender: mpsc::Sender<ProposalAnswerResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.proposal_answer").entered();
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| match choice {
+                        ProposalChoice::Accept => app.memory().accept(&name).map(|_| ()),
+                        _ => app.memory().discard(&name).map(|_| ()),
+                    })
+                    .map_err(|error| error.to_string())
+            },
+            Err("answering failed".to_owned()),
+        );
+        let _ = sender.send(ProposalAnswerResolution {
+            name,
+            choice,
+            outcome,
+        });
+    });
+}
+
 /// Asks the registry, once, which names a harness launched through a shim
 /// runs under. Off the frame: composing the application reads the machine.
 pub(super) fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {

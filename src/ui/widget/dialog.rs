@@ -94,6 +94,46 @@ pub(crate) fn render<T: Clone>(
     cancel: T,
     confirm: T,
 ) -> Answers<T> {
+    render_with(frame, area, dialog, scopes, cancel, None, confirm)
+}
+
+/// Which answer of a three-answer dialog is the alternative, between the
+/// way out and the affirmative.
+pub(crate) const ALTERNATIVE: usize = 1;
+
+/// A dialog with a third answer between the way out and the affirmative —
+/// for a question whose "no" is itself an act ("Discard") rather than
+/// leaving things as they are. Focus moves over all three; the hint names
+/// the one Enter takes.
+pub(crate) fn render_choice<T: Clone>(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    dialog: &Dialog<'_>,
+    scopes: &[uze_keys::Scope],
+    cancel: T,
+    alternative: (&str, T),
+    confirm: T,
+) -> Answers<T> {
+    render_with(
+        frame,
+        area,
+        dialog,
+        scopes,
+        cancel,
+        Some(alternative),
+        confirm,
+    )
+}
+
+fn render_with<T: Clone>(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    dialog: &Dialog<'_>,
+    scopes: &[uze_keys::Scope],
+    cancel: T,
+    alternative: Option<(&str, T)>,
+    confirm: T,
+) -> Answers<T> {
     let width = WIDTH.min(area.width.saturating_sub(4));
     let measure = usize::from(width.saturating_sub(2 + PAD_X * 2).max(1));
     let hue = dialog.tone.token();
@@ -143,8 +183,12 @@ pub(crate) fn render<T: Clone>(
     frame.render_widget(Clear, popup);
     // Wider than a popup's own inset and with no row above: a dialog's
     // first line is a question, and it is read across rather than down.
+    let hint = match &alternative {
+        Some((label, _)) => choice_hint(dialog, scopes, label),
+        None => hint_line(dialog, scopes),
+    };
     let inner = Surface::floating()
-        .hint(hint_line(dialog, scopes))
+        .hint(hint)
         .padding(Padding::horizontal(PAD_X))
         .render(frame, popup);
     frame.render_widget(Paragraph::new(lines), inner);
@@ -159,6 +203,7 @@ pub(crate) fn render<T: Clone>(
             Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
             dialog,
             cancel,
+            alternative,
             confirm,
         )
     } else {
@@ -187,6 +232,31 @@ fn hint_line(dialog: &Dialog<'_>, scopes: &[uze_keys::Scope]) -> Line<'static> {
         ]
     };
     border_hint(scopes, &answers)
+}
+
+/// `enter accept · tab discard · esc cancel`: what Enter takes now, the key
+/// that moves to the next answer, and the way out.
+fn choice_hint(
+    dialog: &Dialog<'_>,
+    scopes: &[uze_keys::Scope],
+    alternative: &str,
+) -> Line<'static> {
+    use uze_keys::Action;
+    let confirm = dialog.confirm.unwrap_or("confirm").to_lowercase();
+    let alternative = alternative.to_lowercase();
+    let on = match dialog.focus {
+        Some(CANCEL) => "cancel".to_owned(),
+        Some(ALTERNATIVE) => alternative,
+        _ => confirm,
+    };
+    border_hint(
+        scopes,
+        &[
+            (Action::Activate, on.as_str()),
+            (Action::FocusNext, "next"),
+            (Action::Dismiss, "cancel"),
+        ],
+    )
 }
 
 /// The keys a dialog answers to, as its bottom border carries them.
@@ -299,9 +369,12 @@ fn buttons<T: Clone>(
     row: Rect,
     dialog: &Dialog<'_>,
     cancel: T,
+    alternative: Option<(&str, T)>,
     confirm: T,
 ) -> Vec<(Rect, T)> {
+    let three = alternative.is_some();
     let on_cancel = dialog.focus == Some(CANCEL) || dialog.confirm.is_none();
+    let on_alternative = three && dialog.focus == Some(ALTERNATIVE);
     let mut buttons = vec![(
         Button::new(
             if dialog.confirm.is_some() {
@@ -314,9 +387,15 @@ fn buttons<T: Clone>(
         .strong(on_cancel),
         cancel,
     )];
+    if let Some((label, tag)) = alternative {
+        buttons.push((
+            Button::new(label, Token::TextSecondary).strong(on_alternative),
+            tag,
+        ));
+    }
     if let Some(label) = dialog.confirm {
         buttons.push((
-            Button::new(label, dialog.tone.token()).strong(!on_cancel),
+            Button::new(label, dialog.tone.token()).strong(!on_cancel && !on_alternative),
             confirm,
         ));
     }

@@ -20,6 +20,7 @@
 pub mod anchor;
 pub mod context;
 pub mod manifest;
+pub mod memory;
 pub mod project_context;
 pub mod project_lock;
 pub mod project_root;

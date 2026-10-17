@@ -47,6 +47,9 @@ pub struct LaunchPlan {
     /// Said once, on the shim's existing note channel. Present only when
     /// something was expected to be carried over and could not be.
     pub note: Option<String>,
+    /// Whether this launch is one UZE owns: an agent its record backs, in
+    /// the directory the record puts it. Only such a launch is changed.
+    pub owned: bool,
 }
 
 impl LaunchPlan {
@@ -69,7 +72,19 @@ impl LaunchPlan {
 /// each answers with the launch that would have happened anyway.
 /// Continuity is never a precondition for an agent starting.
 pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort) -> LaunchPlan {
-    let continuity = integration.session_continuity();
+    plan_with(home, claim, integration, &|_| Vec::new())
+}
+
+/// [`plan`], with the sections a caller adds to the agent's context beside
+/// its briefing, asked for the project's primary checkout once the launch
+/// is known to be UZE's. The workspace composes sections and knows nothing
+/// of what they hold.
+pub fn plan_with(
+    home: &UzeHome,
+    claim: Claim<'_>,
+    integration: &dyn IntegrationPort,
+    sections: &dyn Fn(&Path) -> Vec<Section>,
+) -> LaunchPlan {
     // Not an agent UZE launched, or not where its record put it: an
     // ordinary invocation stays ordinary.
     let Some(owner) = conversation::owner_of(home, claim) else {
@@ -80,11 +95,25 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         );
         return LaunchPlan::nothing();
     };
+    let mut plan = plan_for(home, claim, integration, &owner, sections);
+    plan.owned = true;
+    plan
+}
+
+fn plan_for(
+    home: &UzeHome,
+    claim: Claim<'_>,
+    integration: &dyn IntegrationPort,
+    owner: &conversation::Owner,
+    sections: &dyn Fn(&Path) -> Vec<Section>,
+) -> LaunchPlan {
+    let owner = owner.clone();
+    let continuity = integration.session_continuity();
     // A harness that carries no conversation over can still be told what
     // the one before it was doing.
     if continuity == SessionContinuity::Unsupported {
         let mut plan = LaunchPlan::nothing();
-        give_context(&mut plan, home, &owner, integration, None);
+        give_context(&mut plan, home, &owner, integration, None, sections);
         return plan;
     }
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
@@ -110,7 +139,14 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
                 "resuming the recorded conversation"
             );
             let mut plan = LaunchPlan::args(integration.resume_session_args(&recorded));
-            give_context(&mut plan, home, &owner, integration, Some(&recorded));
+            give_context(
+                &mut plan,
+                home,
+                &owner,
+                integration,
+                Some(&recorded),
+                sections,
+            );
             return plan;
         }
         tracing::warn!(
@@ -120,7 +156,7 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
             cwd = %claim.cwd.display(),
             "the recorded conversation is no longer there; starting a new one"
         );
-        let mut plan = start(home, claim.cwd, integration, &owner);
+        let mut plan = start(home, claim.cwd, integration, &owner, sections);
         plan.note = Some(format!(
             "the recorded conversation ({recorded}) is no longer there; starting a new one"
         ));
@@ -133,7 +169,7 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
         cwd = %claim.cwd.display(),
         "no conversation recorded for this agent; starting one"
     );
-    start(home, claim.cwd, integration, &owner)
+    start(home, claim.cwd, integration, &owner, sections)
 }
 
 /// Fills in the conversation `integration`'s entry is still waiting to have
@@ -194,6 +230,7 @@ fn start(
     cwd: &Path,
     integration: &dyn IntegrationPort,
     owner: &conversation::Owner,
+    sections: &dyn Fn(&Path) -> Vec<Section>,
 ) -> LaunchPlan {
     let id = integration.id();
     let (plan, origin, session, preceded_by) = match integration.session_continuity() {
@@ -225,7 +262,14 @@ fn start(
         stored.launched(id, origin, session.clone(), preceded_by);
     });
     let mut plan = plan;
-    give_context(&mut plan, home, owner, integration, session.as_ref());
+    give_context(
+        &mut plan,
+        home,
+        owner,
+        integration,
+        session.as_ref(),
+        sections,
+    );
     plan
 }
 
@@ -241,6 +285,7 @@ fn give_context(
     owner: &conversation::Owner,
     integration: &dyn IntegrationPort,
     session: Option<&SessionId>,
+    extra: &dyn Fn(&Path) -> Vec<Section>,
 ) {
     let id = integration.id();
     let agent = owner.agent.as_str();
@@ -259,6 +304,7 @@ fn give_context(
             share: agent_context::BRIEFING_SHARE,
         })
         .into_iter()
+        .chain(extra(&owner.project_root))
         .collect();
     let Some(text) = agent_context::compose(&sections) else {
         // A context an earlier launch was given must not outlive what it
@@ -792,7 +838,10 @@ mod tests {
 
         assert_eq!(
             plan(&home, claim(&id, &slot), &harness),
-            LaunchPlan::nothing()
+            LaunchPlan {
+                owned: true,
+                ..LaunchPlan::nothing()
+            }
         );
 
         let store = task::load(&home, &primary).unwrap();
@@ -906,7 +955,10 @@ mod tests {
                 claim(&id, &slot),
                 &Harness::new(SessionContinuity::Unsupported)
             ),
-            LaunchPlan::nothing()
+            LaunchPlan {
+                owned: true,
+                ..LaunchPlan::nothing()
+            }
         );
         assert_eq!(recorded(&home, &primary), None);
     }

@@ -30,6 +30,7 @@ from . import (
     isolation,
     lifecycle,
     mcp,
+    memory,
     skill,
 )
 
@@ -45,6 +46,7 @@ CONTRACTS = (
     isolation,
     continuity,
     briefing,
+    memory,
 )
 
 

@@ -136,6 +136,10 @@ pub enum UzeError {
     /// made, and repeating the command unchanged should not change it.
     #[error("trust denied for `{0}`; nothing was installed")]
     TrustDenied(String),
+    /// A memory verb that cannot do what it was asked: no project scope
+    /// here, a name that is not one, a fact that does not read.
+    #[error("{0}")]
+    Memory(String),
     /// Nobody could be asked — a non-interactive process. Structured so a
     /// pipeline can act on it instead of guessing.
     #[error(

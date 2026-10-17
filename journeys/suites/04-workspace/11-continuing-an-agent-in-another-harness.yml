@@ -129,7 +129,7 @@ scenes:
           the restored launch was given the context again, and no launch was
           given a turn the operator did not type
 
-  - scene: once the agent commits, its briefing retires and the next launch is given nothing
+  - scene: once the agent commits, its briefing retires and the next launch is not told it again
     when:
       - shell: >
           git -C {project} -c user.name=agent -c user.email=agent@example.com
@@ -155,12 +155,16 @@ scenes:
     then:
       - cmd:
           run: >
-            line=$(tail -1 {world}/bin/.invocations/codex.log);
-            case "$line" in *"hooks.SessionStart"*) exit 1 ;; esac
-        about: the relaunch after the commit is handed no context
+            f=$(ls -t {uze_home}/runtime/projects/*/agents/*/context.md | head -1);
+            test -n "$f" && ! grep -q "## Briefing" "$f"
+        about: |
+          the relaunch after the commit is composed without the briefing;
+          what is left is the agent's memory, which every launch carries
       - cmd:
-          run: test -z "$(ls {uze_home}/runtime/projects/*/agents/*/context.md 2>/dev/null)"
-        about: and no context file outlives the briefing it carried
+          run: >
+            line=$(tail -1 {world}/bin/.invocations/codex.log);
+            case "$line" in *"carry on."*|*"Agent:"*) exit 1 ;; esac
+        about: and no launch hands the briefing over as a turn or an argument
 
   - scene: switching back resumes the conversation the first harness left
     when:

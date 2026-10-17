@@ -1,0 +1,107 @@
+journey: an agent keeps a fact for later agents, and one meant for every project waits for the operator
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/agents.mdx
+about: |
+  What an agent learns about a project is kept by UZE, outside every
+  checkout, and every agent launched afterwards — on any harness — is given
+  an index of it. A fact meant for every project is different: it would
+  reach every agent on the machine, so one an agent writes is a proposal
+  until the operator reads it in the workspace and accepts it.
+
+  Read off the machine: the project fact is a document under UZE's state
+  and nothing was written into the project; the machine fact sits among the
+  proposals until the operator accepts it, then among the machine's facts;
+  and the next agent's own context file lists both.
+
+world:
+  project: demo-app
+  manifest: |
+    workspace:
+      target: main
+
+scenes:
+  - scene: an agent keeps a project fact and proposes a machine one
+    when:
+      - shell: "{uze} setup"
+        say: the operator provisions their harnesses, which installs the launchers
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent picker
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: place a Claude agent
+        row_offset: 1
+        offset: 3
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
+      - shell: |
+          set -e
+          cd {project}
+          echo "Kill a process group with libc::kill, never /bin/kill." |
+            {uze} agent memory remember wsl-kill --type project --description "kill a group by pid with libc"
+          echo "The operator reads Portuguese." |
+            {uze} agent memory remember reply-ptbr --type feedback --description "reply in pt-BR" -m
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT, UZE_AGENT_KEY] }
+        say: the agent keeps one fact for this project and proposes one for every project
+    then:
+      - file: "{uze_home}/state/projects/*/memory/wsl-kill.md"
+        contains: "kill a group by pid with libc"
+        about: the project fact is kept under UZE's state
+      - file: "{uze_home}/state/memory/proposed/reply-ptbr.md"
+        contains: "reply in pt-BR"
+        about: the machine fact is a proposal
+      - cmd:
+          run: test ! -e {uze_home}/state/memory/reply-ptbr.md
+        about: and is not among the machine's facts yet
+      - cmd:
+          run: test -z "$(find {project} -name 'wsl-kill.md' -o -name 'reply-ptbr.md')"
+        about: nothing was written into the project
+
+  - scene: the operator reads the proposal and accepts it
+    when:
+      - wait: screen
+        until: "machine fact proposed"
+        timeout: 40
+        say: the workspace asks about it within one pass
+      - click: "Review"
+        say: read the proposal
+        expect: "Keep this fact for every project\\?"
+        expect_timeout: 20
+      - click: "Accept"
+        occurrence: last
+        expect: machine fact kept
+        expect_timeout: 20
+    then:
+      - file: "{uze_home}/state/memory/reply-ptbr.md"
+        contains: "reply in pt-BR"
+        about: the fact is now the machine's
+      - cmd:
+          run: test -z "$(ls {uze_home}/state/memory/proposed/ 2>/dev/null)"
+        about: and no longer a proposal
+
+  - scene: the next agent is given both facts in its own context
+    when:
+      - click: "new"
+        say: place another agent
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: another Claude agent
+        row_offset: 1
+        offset: 3
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
+    then:
+      - cmd:
+          run: >
+            f=$(ls -t {uze_home}/runtime/projects/*/agents/*/CLAUDE.md | head -1);
+            grep -q "wsl-kill" "$f" && grep -q "reply-ptbr" "$f"
+        about: |
+          the newest agent's context lists the project fact and the
+          accepted machine fact

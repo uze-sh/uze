@@ -90,6 +90,7 @@ def full_script(channel, agents_md):
         if agents_md
         else ""
     )
+    # decision: headless-permissions
     flags = "--permission-mode bypassPermissions --output-format json"
     return f"""
 set -e

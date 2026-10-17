@@ -49,6 +49,7 @@ mod maintenance;
 mod managed_region;
 mod marketplace;
 mod marketplace_catalogue;
+pub mod memory;
 mod notifications;
 pub mod offers;
 mod overview;

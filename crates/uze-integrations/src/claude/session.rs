@@ -58,7 +58,7 @@ fn transcripts_dir(projects_root: &Path, cwd: &Path) -> PathBuf {
 /// Claude Code's own name for `cwd`'s directory, as it was observed to
 /// write it: pinned by the same cases in `uze-testkit`'s stand-in, which
 /// emulates it, so the two cannot drift apart while both pass.
-fn slug(cwd: &Path) -> String {
+pub(super) fn slug(cwd: &Path) -> String {
     cwd.to_string_lossy()
         .chars()
         .map(|character| {

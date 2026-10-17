@@ -40,7 +40,7 @@ Measured on 2026-10-17 (decisions.md M1). The experiment files live in the `agen
 
 - [x] 5.1 `conformance/contract/agent_context.py`: the four outcomes, bindings per harness, declared limitations where measured
 - [x] 5.2 Move `briefing-first-turn-*` onto the contract as `briefing-reaches-the-model`, and keep `briefing-first-turn` for `FirstTurn` harnesses
-- [ ] 5.3 A journey in `04-workspace`: switch an agent; the incoming pane holds no turn the operator did not type, and the record on disk holds the briefing; after a commit, a relaunch's context file has no briefing
+- [x] 5.3 A journey in `04-workspace`: switch an agent; the incoming pane holds no turn the operator did not type, and the record on disk holds the briefing; after a commit, a relaunch's context file has no briefing
 
 ## 6. Docs
 

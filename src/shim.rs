@@ -31,6 +31,7 @@ use uze_core::{
     harness_runtime::{self, HarnessRuntimeContribution, RuntimeContext},
 };
 
+use uze_application::application::memory;
 use uze_integrations::registry::IntegrationRegistry;
 use uze_terminal::launch;
 use uze_workspace::{continuity, conversation::Claim};
@@ -155,7 +156,9 @@ pub fn run(shim_name: &str) -> ! {
         && let Some(integration) = &integration
         && let Some((id, key)) = owned_identity()
     {
-        let session = continuity::plan(
+        let integrations: Vec<&dyn uze_core::integration::IntegrationPort> =
+            registry.iter().collect();
+        let session = continuity::plan_with(
             &home,
             Claim {
                 id: &id,
@@ -163,6 +166,7 @@ pub fn run(shim_name: &str) -> ! {
                 cwd: &cwd,
             },
             *integration,
+            &|primary| memory::context_sections(&home, primary, *integration, &integrations),
         );
         if let Some(note) = &session.note {
             eprintln!("uze: {}.", uze_core::authored::inert(note));
@@ -177,6 +181,14 @@ pub fn run(shim_name: &str) -> ! {
             .chain(session.trailing)
             .collect();
         contribution.extra_env.extend(session.env);
+        if session.owned
+            && harness_memory_off(&home)
+            && !integration.writes_own_memory()
+            && let Some(off) = integration.memory_off()
+        {
+            contribution.extra_args.extend(off.args);
+            contribution.extra_env.extend(off.env);
+        }
     }
 
     exec_or_die(
@@ -186,6 +198,16 @@ pub fn run(shim_name: &str) -> ! {
         shim_name,
         telemetry,
     );
+}
+
+/// Whether the operator asked, in `config.toml`'s `[memory] harness`, for
+/// a harness's own memory to be off in the agents the workspace launches.
+/// Anything but `off` keeps it as the operator configured it.
+fn harness_memory_off(home: &uze_core::UzeHome) -> bool {
+    uze_core::config::get(home, "memory", "harness")
+        .ok()
+        .flatten()
+        .is_some_and(|setting| setting.trim() == "off")
 }
 
 /// The agent identity this launch owns, and the key it was issued, if it

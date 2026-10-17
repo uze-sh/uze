@@ -539,6 +539,28 @@ impl UzeHome {
             .join(agent)
     }
 
+    /// The facts agents and the operator recorded for every project: one
+    /// Markdown document each. A record, because a fact deleted is lost.
+    pub fn machine_memory_dir(&self) -> PathBuf {
+        self.state_dir().join("memory")
+    }
+
+    /// Machine facts an agent proposed, kept out of every index until the
+    /// operator accepts them.
+    pub fn proposed_memory_dir(&self) -> PathBuf {
+        self.machine_memory_dir().join("proposed")
+    }
+
+    /// The facts recorded for one project, shared by every checkout of it.
+    pub fn project_memory_dir(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("memory")
+    }
+
+    /// The lock every write to the memory kept in `dir` holds.
+    pub fn memory_lock_path(&self, dir: &Path) -> PathBuf {
+        dir.with_extension("lock")
+    }
+
     /// Where an integration whose channel finds the document by
     /// conversation keeps one per conversation. Machine-wide rather than
     /// per project, because such a harness serves every project from one

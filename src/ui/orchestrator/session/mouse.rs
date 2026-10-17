@@ -150,6 +150,9 @@ impl Attach<'_> {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
             }
+            _ if self.model.proposal.is_some() => {
+                self.proposal_press(mouse.column, mouse.row);
+            }
             _ if self.model.interrupt.is_some() => {
                 self.interrupt_press(mouse.column, mouse.row);
             }
@@ -1377,10 +1380,13 @@ impl Attach<'_> {
             | WorkspaceHit::RecentShowAll => {}
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
+            WorkspaceHit::ReviewProposal => self.model.review_proposal(),
             // Only reachable while the question is open, which the guarded
             // arm in `press` answers first.
             WorkspaceHit::ApprovalAnswer(_)
             | WorkspaceHit::ApprovalBody
+            | WorkspaceHit::ProposalAnswer(_)
+            | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody => {}
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {

@@ -399,6 +399,12 @@ impl Attach<'_> {
             // client that was not running is finally resolved, well before
             // a relaunch needs the answer.
             spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
+            // And on it, the machine facts agents proposed: a proposal is
+            // asked about within one pass of being written.
+            if !self.model.remembered.memory_proposals_pending {
+                self.model.remembered.memory_proposals_pending = true;
+                spawn_memory_proposals(self.home, self.channels.proposals.sender.clone());
+            }
         }
         if !self.model.remembered.checkout_watch_pending
             && self
@@ -623,6 +629,12 @@ impl Attach<'_> {
     pub(super) fn absorb_command_approvals(&mut self) {
         while let Ok(awaiting) = self.channels.commands_awaiting.receiver.try_recv() {
             self.model.commands_await(awaiting, false);
+        }
+        while let Ok(resolution) = self.channels.proposals.receiver.try_recv() {
+            self.model.absorb_proposals(resolution);
+        }
+        while let Ok(resolution) = self.channels.proposal_answers.receiver.try_recv() {
+            self.model.absorb_proposal_answer(resolution);
         }
         while let Ok(resolution) = self.channels.approvals.receiver.try_recv() {
             self.model.absorb_approval(resolution);

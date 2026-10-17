@@ -71,6 +71,7 @@ mod approval;
 mod events;
 mod interrupt;
 mod notices;
+mod proposal;
 
 /// Input/redraw cadence. Unlike the pane content itself — which the server
 /// now pushes on PTY output instead of the client polling for it (see
@@ -215,6 +216,7 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
 use interrupt::*;
+use proposal::*;
 mod input;
 mod recent;
 mod render;
@@ -853,6 +855,12 @@ pub(super) enum WorkspaceHit {
     InterruptAnswer(bool),
     /// That question itself, which a click on answers nothing.
     InterruptBody,
+    /// A toast's offer to read a machine fact an agent proposed.
+    ReviewProposal,
+    /// One of the answers to that question.
+    ProposalAnswer(ProposalChoice),
+    /// That question itself, which a click on answers nothing.
+    ProposalBody,
     /// The sidebar's "+ space" control — opens the root picker
     /// ([`WorkspaceModel::root_picker`]), since a space is born from a
     /// directory and that directory is chosen, not typed blind.
@@ -1434,6 +1442,10 @@ struct Channels {
     commands_awaiting: Answers<uze_application::CommandsAwaitingApproval>,
     /// Recording an approval, and the setup it lets run.
     approvals: Answers<ApprovalResolution>,
+    /// The machine facts agents proposed, read on the evaluation clock.
+    proposals: Answers<ProposalsResolution>,
+    /// Accepting or discarding one.
+    proposal_answers: Answers<ProposalAnswerResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
 }
@@ -1444,6 +1456,12 @@ struct Channels {
 /// transients like echo windows and hit rects.
 #[derive(Default)]
 struct Remembered {
+    /// The machine facts agents proposed, as last read.
+    memory_proposals: Vec<uze_application::application::memory::Entry>,
+    /// Which of them a toast already said wait, this session.
+    memory_proposals_told: std::collections::BTreeSet<String>,
+    /// A read of them is out.
+    memory_proposals_pending: bool,
     /// Per-agent-pane repaint evidence and busy deadline. A pane starts
     /// working either because the user submitted a line into it or because
     /// it started animating on its own — an agent that resumes work with
@@ -1765,6 +1783,9 @@ struct WorkspaceModel {
     /// it on another harness (see `interrupt`). Seals the client like the
     /// approval does.
     interrupt: Option<InterruptDialog>,
+    /// The open question about a machine fact an agent proposed (see
+    /// `proposal`). Seals the client like the approval does.
+    proposal: Option<ProposalDialog>,
     /// Open state of the code surface; `None` when closed. Drawn where the
     /// pane is, with the sidebar and the strip live around it — so unlike
     /// `renaming`/`agent_picker`/`context_menu` a click outside it is not a
@@ -2232,6 +2253,7 @@ impl WorkspaceModel {
             && self.context_menu.is_none()
             && self.approval.is_none()
             && self.interrupt.is_none()
+            && self.proposal.is_none()
             && self.action_index.is_none()
             && self.release_notes.is_none()
             && self.manage.is_none()

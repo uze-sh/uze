@@ -1020,6 +1020,9 @@ pub struct StatusReport {
     /// its context invisibly on, and why. Not an issue of the project's:
     /// it is the harness's, on this machine.
     pub agent_context: Vec<String>,
+    /// What agents and the operator keep for this project and the machine,
+    /// with the harnesses' own entries beside UZE's.
+    pub memory: crate::application::memory::MemoryReport,
 }
 
 /// One delivered capability a harness holds back until the person acts in

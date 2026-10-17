@@ -106,6 +106,15 @@ impl CodexIntegration {
         self.command_home.join(".codex").join("hooks.json")
     }
 
+    /// The narrative Codex consolidates its memory into and injects at its
+    /// own session start (codex-rs `memories/`).
+    fn memory_summary_path(&self) -> PathBuf {
+        self.command_home
+            .join(".codex")
+            .join("memories")
+            .join("memory_summary.md")
+    }
+
     /// Where Codex files one rollout per conversation. Read only for the
     /// `session_meta` line that names a conversation and the directory it
     /// was started in — never for what was said in it.
@@ -269,6 +278,43 @@ impl IntegrationPort for CodexIntegration {
 
     fn context_accumulates(&self) -> bool {
         true
+    }
+
+    /// Codex's memory is prose consolidated across every project by a
+    /// background job, and its layout is mid-migration, so it is offered as
+    /// one machine entry naming the summary, never parsed.
+    fn memory_source(&self, _project_root: &Path) -> Vec<uze_core::memory::MemoryEntry> {
+        let path = self.memory_summary_path();
+        let Ok(metadata) = fs::metadata(&path) else {
+            return Vec::new();
+        };
+        vec![uze_core::memory::MemoryEntry {
+            name: "codex-memory-summary".to_owned(),
+            description: format!(
+                "what Codex consolidated from earlier conversations, across projects ({} bytes); \
+                 asked to bring it over, read it and remember what is durable",
+                metadata.len()
+            ),
+            kind: uze_core::memory::FactKind::Reference,
+            scope: uze_core::memory::Scope::Machine,
+            origin: self.id().to_owned(),
+            source: None,
+            path,
+            updated: None,
+            writable: false,
+            proposed: false,
+        }]
+    }
+
+    /// `features.memories` per launch: a `-c` layer, so nothing is written
+    /// into the person's configuration.
+    fn memory_off(&self) -> Option<uze_core::integration::ContextContribution> {
+        Some(uze_core::integration::ContextContribution {
+            args: ["-c", "features.memories=false"]
+                .map(std::ffi::OsString::from)
+                .to_vec(),
+            env: Vec::new(),
+        })
     }
 
     fn deliver_context(

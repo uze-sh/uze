@@ -887,6 +887,7 @@ mod status_output_tests {
             issues: Vec::new(),
             held_back: Vec::new(),
             agent_context: Vec::new(),
+            memory: Default::default(),
         };
         ProjectStatus {
             report,

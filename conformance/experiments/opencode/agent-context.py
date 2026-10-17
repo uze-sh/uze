@@ -108,15 +108,19 @@ export UZE_AGENT_CONTEXT_DIR={CONTEXT_DIR}
 cd /work/project
 opencode service stop >/dev/null 2>&1
 echo '=== warm'
+# decision: headless-permissions
 timeout 150 opencode run --auto "{warm}" </dev/null 2>&1 | tail -c 300
 cat > {USER_PLUGIN} <<'PLUGIN_EOF'
 {plugin("svc-file")}PLUGIN_EOF
 echo '=== file'
+# decision: headless-permissions
 timeout 150 opencode run --auto "{file_turn}" </dev/null 2>&1 | tail -c 300
 echo '=== content'
+# decision: headless-permissions
 OPENCODE_CONFIG_CONTENT='{CONTENT}' timeout 150 opencode run --auto "{content_turn}" </dev/null 2>&1 | tail -c 300
 opencode service stop >/dev/null 2>&1
 echo '=== restarted'
+# decision: headless-permissions
 timeout 150 opencode run --auto "{restarted}" </dev/null 2>&1 | tail -c 300
 opencode service stop >/dev/null 2>&1
 echo '=== debug'
@@ -137,6 +141,7 @@ export UZE_AGENT_CONTEXT_DIR={CONTEXT_DIR}
 export OPENCODE_CONFIG_CONTENT='{CONTENT}'
 cd /work/project
 echo '=== one'
+# decision: headless-permissions
 timeout 150 opencode run --standalone --auto --format json "{probe.TURN_ONE}" </dev/null > /work/one.out 2>&1
 echo "exit $?"; tail -c 3000 /work/one.out
 sid=$(node -e 'const l=require("fs").readFileSync("{DEBUG}","utf8").trim().split("\\n").map(JSON.parse).filter(e=>e.sessionID);console.log(l.length?l[l.length-1].sessionID:"")')
@@ -144,6 +149,7 @@ echo '=== sid'
 echo "$sid"
 {probe.write_document(f'{CONTEXT_DIR}/"$sid".md', probe.MARKER_B, "two")}
 echo '=== two'
+# decision: headless-permissions
 timeout 150 opencode run --standalone --auto --format json --session "$sid" "{probe.TURN_TWO}" </dev/null 2>&1 | tail -c 3000
 echo "exit $?"
 echo '=== debug'

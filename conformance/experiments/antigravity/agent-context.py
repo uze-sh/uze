@@ -158,6 +158,7 @@ def judge_tui(cfg, step, r):
 
 def final(step):
     flags = (
+        # decision: headless-permissions
         f"--add-dir {LAUNCH} --output-format json --dangerously-skip-permissions "
         "--print-timeout 90s"
     )

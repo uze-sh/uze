@@ -704,6 +704,13 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         text.push('\n');
     }
     text.push_str(&render_held_back(&report.held_back));
+    if !report.memory.entries.is_empty()
+        || !report.memory.proposals.is_empty()
+        || !report.memory.unreadable.is_empty()
+    {
+        text.push('\n');
+        text.push_str(&crate::cli::agent::render_memory(&report.memory));
+    }
     for note in &report.agent_context {
         text.push_str(&format!("{} {note}\n", progress::label("·")));
     }

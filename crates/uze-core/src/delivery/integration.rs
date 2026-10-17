@@ -447,6 +447,29 @@ pub trait IntegrationPort: Send + Sync {
         Ok(ContextContribution::default())
     }
 
+    /// The facts this harness keeps for `project_root` (and for the
+    /// machine) that UZE reads into every agent's memory index, never
+    /// copying, moving or changing them. Each is read-only, and `origin` is
+    /// this integration's id. The default is none.
+    fn memory_source(&self, _project_root: &Path) -> Vec<crate::memory::MemoryEntry> {
+        Vec::new()
+    }
+
+    /// Whether this harness's agents write their facts into its own memory,
+    /// following its own instruction. Such an agent is given no
+    /// instruction to write through UZE: one model told two ways to
+    /// remember follows whichever it weighs more, and splits the memory.
+    fn writes_own_memory(&self) -> bool {
+        false
+    }
+
+    /// What one launch carries to turn this harness's own memory off,
+    /// where it can be turned off per launch and is not how its agents
+    /// write. `None` where there is nothing to turn off, or no way to.
+    fn memory_off(&self) -> Option<ContextContribution> {
+        None
+    }
+
     /// Takes back what an earlier launch's delivery left where the harness
     /// keeps reading it, when this launch has nothing to give. Only a
     /// channel that reads outside the launch's own arguments needs it: one

@@ -209,6 +209,12 @@ pub(crate) enum AgentAction {
         #[command(subcommand)]
         action: AgentWorkAction,
     },
+    /// The facts kept for later agents, on any harness: this project's,
+    /// and with `-m` the machine's
+    Memory {
+        #[command(subcommand)]
+        action: AgentMemoryAction,
+    },
     /// The diagrams this project declares under `workspace.artifacts`
     Artifacts {
         #[command(subcommand)]
@@ -335,6 +341,46 @@ pub(crate) enum AgentWorkAction {
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AgentMemoryAction {
+    /// Keep a fact, or replace one of the same name; the fact itself is
+    /// read from stdin
+    Remember {
+        /// A short kebab-case name, unique in its scope
+        name: String,
+        /// feedback, user, project or reference
+        #[arg(long = "type", value_parser = ["feedback", "user", "project", "reference"])]
+        kind: String,
+        /// One line saying what the fact is about, which every agent's
+        /// index lists
+        #[arg(long)]
+        description: String,
+        /// A fact that holds in every project: from an agent, a proposal
+        /// the operator accepts first
+        #[arg(short = 'm', long)]
+        machine: bool,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Remove a fact
+    Forget {
+        name: String,
+        #[arg(short = 'm', long)]
+        machine: bool,
+    },
+    /// Every fact kept here, with where it lives and who wrote it
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// One fact in full
+    Show {
+        name: String,
+        #[arg(short = 'm', long)]
+        machine: bool,
     },
 }
 

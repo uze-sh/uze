@@ -42,6 +42,7 @@ mod digest;
 mod generate;
 mod hooks;
 mod mcp;
+mod memory;
 mod plugin;
 mod preferences;
 mod runtime;
@@ -264,6 +265,18 @@ impl IntegrationPort for ClaudeIntegration {
     }
 
     fn context_accumulates(&self) -> bool {
+        true
+    }
+
+    /// Claude's auto memory, read where Claude keeps it; never written.
+    fn memory_source(&self, project_root: &Path) -> Vec<uze_core::memory::MemoryEntry> {
+        memory::source(&self.transcripts_root, project_root, self.id())
+    }
+
+    /// Claude's system prompt carries its own memory instruction, which
+    /// outweighs anything a project's context says, so a Claude agent
+    /// remembers the way Claude does and UZE reads it.
+    fn writes_own_memory(&self) -> bool {
         true
     }
 

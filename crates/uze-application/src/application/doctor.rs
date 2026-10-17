@@ -433,6 +433,7 @@ impl Health<'_> {
             project_lock,
             issues,
             held_back: held_back_notes(self.0, None),
+            memory: self.0.memory().report_at(&context.canonical),
             agent_context: self
                 .0
                 .integrations
@@ -478,11 +479,13 @@ fn package_store_inconsistency(package: &StoredPackage) -> Option<String> {
 /// run on this machine right now.
 pub(crate) fn agent_context_shortfall(integration: &dyn IntegrationPort) -> Option<String> {
     if let Some(reason) = integration.context_channel_unavailable() {
-        return Some(format!("agent context is not delivered ({reason})"));
+        return Some(format!(
+            "agent context (memory and briefings) does not reach it ({reason})"
+        ));
     }
     integration.context_channel().is_degraded().then(|| {
-        "agent context is not delivered; a switched agent is pointed at its briefing by a \
-         visible first turn"
+        "agent context does not reach it: no memory is given, and a switched agent is pointed \
+         at its briefing by a visible first turn"
             .to_owned()
     })
 }

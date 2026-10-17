@@ -53,6 +53,12 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // agent not working.
     ("agent work name", PerformanceClass::Budgeted),
     ("agent work list", PerformanceClass::Budgeted),
+    // One small file read or written under a lock, plus the front matter of
+    // the few facts a scope keeps; an agent waiting on it is not working.
+    ("agent memory remember", PerformanceClass::Budgeted),
+    ("agent memory forget", PerformanceClass::Budgeted),
+    ("agent memory list", PerformanceClass::Budgeted),
+    ("agent memory show", PerformanceClass::Budgeted),
     (
         "agent work split",
         PerformanceClass::JustifiedSlow(
@@ -223,6 +229,22 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     (
         "agent work list",
         "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
+    ),
+    (
+        "agent memory remember",
+        "crates/uze-application/tests/performance.rs::the_memory_surface_meets_the_budget",
+    ),
+    (
+        "agent memory forget",
+        "crates/uze-application/tests/performance.rs::the_memory_surface_meets_the_budget",
+    ),
+    (
+        "agent memory list",
+        "crates/uze-application/tests/performance.rs::the_memory_surface_meets_the_budget",
+    ),
+    (
+        "agent memory show",
+        "crates/uze-application/tests/performance.rs::the_memory_surface_meets_the_budget",
     ),
     (
         "status",

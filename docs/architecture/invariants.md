@@ -2252,6 +2252,29 @@ a harness an agent starts — is composed nothing and given nothing.
 > `crates/uze-workspace/src/continuity.rs::nothing_to_give_delivers_nothing`
 > `crates/uze-integrations/src/opencode/agent_context.rs::the_document_is_written_under_the_assigned_conversation`
 
+### Memory never enters a checkout, and an agent's machine fact waits for the operator
+
+Facts are kept under `$UZE_HOME/state/`, one Markdown document each, never
+in a checkout. A machine fact written from an invocation that carries a
+launch identity is a proposal: no index lists it until the operator accepts
+it, because a machine fact reaches every agent in every project.
+
+> `crates/uze-core/src/project/memory/tests.rs::a_fact_round_trips_through_its_document`
+> `crates/uze-core/src/project/memory/tests.rs::a_proposal_reaches_no_index_until_it_is_accepted`
+> `crates/uze-application/src/application/memory/tests.rs::a_proposed_machine_fact_reaches_no_agent_until_accepted`
+> `src/ui/orchestrator/tests.rs::only_the_operators_accept_keeps_a_proposed_fact`
+
+### A harness's own memory is read, never written; each agent is told one way to remember
+
+Claude's memory is read where Claude keeps it and never written, copied or
+redirected; Codex's summary is one entry naming its file. An agent whose
+harness writes its own memory is given no instruction to write through UZE,
+and no harness's agents are given back the entries that harness keeps.
+
+> `crates/uze-integrations/src/claude/memory.rs::both_front_matter_shapes_are_read_and_the_index_file_is_not`
+> `crates/uze-application/src/application/memory/tests.rs::an_agent_writing_its_own_memory_is_given_only_the_index`
+> `crates/uze-application/src/application/memory/tests.rs::an_agent_writing_through_uze_is_told_how_and_sees_every_other_source`
+
 ### A harness without an invisible channel is told so, and pointed at its briefing once
 
 Where a harness declares no channel, or its channel cannot run here, the

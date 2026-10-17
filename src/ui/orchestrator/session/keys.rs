@@ -22,7 +22,10 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
-        if self.model.approval.is_some() || self.model.interrupt.is_some() {
+        if self.model.approval.is_some()
+            || self.model.interrupt.is_some()
+            || self.model.proposal.is_some()
+        {
             scopes.push(Scope::Confirm);
             return scopes;
         }
@@ -131,7 +134,10 @@ impl Attach<'_> {
     /// pane's; with a picker or a menu open it dismisses, which is that
     /// surface's own "anything else means no".
     pub(super) fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
-        if self.model.approval.is_some() || self.model.interrupt.is_some() {
+        if self.model.approval.is_some()
+            || self.model.interrupt.is_some()
+            || self.model.proposal.is_some()
+        {
             // Nothing the question did not ask for reaches anything: not
             // the pane behind it, and not an answer.
         } else if self.model.action_index.is_some() {
@@ -259,6 +265,10 @@ impl Attach<'_> {
         }
         if self.model.approval.is_some() {
             self.approval_action(action);
+            return Flow::Continue;
+        }
+        if self.model.proposal.is_some() {
+            self.proposal_action(action);
             return Flow::Continue;
         }
         if self.model.interrupt.is_some() {

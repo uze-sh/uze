@@ -393,6 +393,38 @@ fn the_agent_surface_meets_the_budget() {
     });
 }
 
+/// `uze agent memory` writes one small file under a lock and reads the front
+/// matter of the facts a scope keeps — never a repository, never a
+/// harness's process.
+#[test]
+fn the_memory_surface_meets_the_budget() {
+    use uze_application::application::memory::MemoryCaller;
+    use uze_core::memory::{FactKind, Scope};
+    let world = World::build("budget-memory-surface");
+    let caller = MemoryCaller::Operator {
+        cwd: &world.project,
+    };
+    world.within_budget("agent memory remember", |app| {
+        app.memory()
+            .remember(
+                caller,
+                Scope::Project,
+                "budget",
+                FactKind::Project,
+                "d",
+                "b",
+            )
+            .ok()
+    });
+    world.within_budget("agent memory list", |app| app.memory().list(caller).ok());
+    world.within_budget("agent memory show", |app| {
+        app.memory().show(caller, Scope::Project, "budget").ok()
+    });
+    world.within_budget("agent memory forget", |app| {
+        app.memory().forget(caller, Scope::Project, "budget").ok()
+    });
+}
+
 /// Withdrawing a project's approval of its commands is one file removed
 /// from the project's records — the operator's word, never a read of the
 /// repository.

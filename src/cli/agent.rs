@@ -8,6 +8,7 @@ use crate::*;
 pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()> {
     match action {
         AgentAction::Work { action } => run_agent_work(app, action),
+        AgentAction::Memory { action } => run_agent_memory(app, action),
         AgentAction::Artifacts { action } => run_agent_artifacts(action),
         AgentAction::Context { action } => run_context(app, action),
         AgentAction::Market { action } => run_agent_market(app, action),
@@ -629,4 +630,184 @@ pub(crate) fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
         ));
     }
     out
+}
+
+/// `uze agent memory …` — the facts later agents are given, on any harness.
+pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) -> Result<()> {
+    use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
+    let cwd = cwd()?;
+    let identity = launched_agent(uze_application::UzeError::Memory).ok();
+    let caller = match &identity {
+        Some((id, key)) => MemoryCaller::Agent(uze_application::Claim { id, key, cwd: &cwd }),
+        None => MemoryCaller::Operator { cwd: &cwd },
+    };
+    let scope = |machine: bool| {
+        if machine {
+            MemoryScope::Machine
+        } else {
+            MemoryScope::Project
+        }
+    };
+    match action {
+        AgentMemoryAction::Remember {
+            name,
+            kind,
+            description,
+            machine,
+            format,
+        } => {
+            let kind = Kind::parse(&kind).expect("clap allows only the four kinds");
+            let mut body = String::new();
+            if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut body)
+                    .map_err(|error| uze_application::UzeError::Memory(error.to_string()))?;
+            }
+            let kept =
+                app.memory()
+                    .remember(caller, scope(machine), &name, kind, &description, &body)?;
+            let report = MemoryWrite {
+                name: &name,
+                scope: kept.scope.label(),
+                path: &kept.path,
+                updated: kept.updated,
+                proposed: kept.proposed,
+            };
+            emit(format, &report, |report| {
+                if report.proposed {
+                    format!(
+                        "{} proposed `{}` for every project; the operator accepts it before any \
+                         agent is given it\n",
+                        progress::success_icon(),
+                        report.name
+                    )
+                } else {
+                    format!(
+                        "{} {} `{}` in the {} memory ({})\n",
+                        progress::success_icon(),
+                        if report.updated {
+                            "updated"
+                        } else {
+                            "remembered"
+                        },
+                        report.name,
+                        report.scope,
+                        report.path.display()
+                    )
+                }
+            });
+        }
+        AgentMemoryAction::Forget { name, machine } => {
+            let scope = scope(machine);
+            if app.memory().forget(caller, scope, &name)? {
+                println!(
+                    "{} forgot `{name}` from the {} memory",
+                    progress::success_icon(),
+                    scope.label()
+                );
+            } else {
+                println!(
+                    "no fact named `{name}` is kept in the {} memory",
+                    scope.label()
+                );
+            }
+        }
+        AgentMemoryAction::List { format } => {
+            let report = app.memory().list(caller)?;
+            emit(format, &report, render_memory);
+        }
+        AgentMemoryAction::Show { name, machine } => {
+            let shown = app.memory().show(caller, scope(machine), &name)?;
+            println!(
+                "{} ({}, {} memory{}): {}\n{}\n\n{}",
+                shown.entry.name,
+                shown.entry.kind.label(),
+                shown.entry.scope.label(),
+                if shown.entry.writable {
+                    String::new()
+                } else {
+                    format!(", kept by {}", shown.entry.origin)
+                },
+                uze_application::inert(&shown.entry.description),
+                shown.entry.path.display(),
+                uze_application::inert(shown.body.trim())
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct MemoryWrite<'a> {
+    name: &'a str,
+    scope: &'a str,
+    path: &'a std::path::Path,
+    updated: bool,
+    proposed: bool,
+}
+
+/// The memory as the agent and the operator read it: where each scope
+/// lives, each fact with who wrote it, proposals and what does not read.
+pub(crate) fn render_memory(report: &uze_application::application::memory::MemoryReport) -> String {
+    use uze_application::application::memory::MemoryScope;
+    let mut text = String::new();
+    let mut section = |title: &str, dir: Option<&std::path::Path>, scope: MemoryScope| {
+        let entries: Vec<_> = report.entries.iter().filter(|e| e.scope == scope).collect();
+        text.push_str(&format!(
+            "{}{}\n",
+            progress::report_section(title),
+            dir.map(|dir| format!("  {}", dir.display()))
+                .unwrap_or_default()
+        ));
+        if entries.is_empty() {
+            text.push_str("  nothing kept\n");
+        }
+        for entry in entries {
+            text.push_str(&memory_line(entry));
+        }
+        text.push('\n');
+    };
+    section(
+        "Project memory",
+        report.project_dir.as_deref(),
+        MemoryScope::Project,
+    );
+    section(
+        "Machine memory",
+        Some(&report.machine_dir),
+        MemoryScope::Machine,
+    );
+    if !report.proposals.is_empty() {
+        text.push_str(&progress::report_section(
+            "Proposed, waiting for the operator",
+        ));
+        for entry in &report.proposals {
+            text.push_str(&memory_line(entry));
+            text.push_str(&format!("    {}\n", entry.path.display()));
+        }
+        text.push('\n');
+    }
+    for unreadable in &report.unreadable {
+        text.push_str(&format!(
+            "{} {}: {}\n",
+            progress::warning_icon(),
+            unreadable.path.display(),
+            uze_application::inert(&unreadable.reason)
+        ));
+    }
+    text
+}
+
+fn memory_line(entry: &uze_application::application::memory::Entry) -> String {
+    let by = match (&entry.source, entry.writable) {
+        (_, false) => format!("kept by {}", entry.origin),
+        (Some(source), true) => format!("by {}", source.describe()),
+        (None, true) => String::new(),
+    };
+    format!(
+        "  {} ({})  {}  {}\n",
+        entry.name,
+        entry.kind.label(),
+        uze_application::inert(&entry.description),
+        progress::label(by)
+    )
 }
