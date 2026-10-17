@@ -432,9 +432,9 @@ fn lanczos_weights(source: usize, target: usize) -> Vec<(usize, Vec<f32>)> {
         .collect()
 }
 
-/// The pixel at `column`, `row` of the picture drawn `columns` × `rows`:
-/// the average of the source pixels it covers, or the nearest one when
-/// it covers less than one.
+/// The pixel at `column`, `row` of the picture drawn `columns` × `rows`,
+/// for half blocks: the average of an even sample of the source pixels it
+/// covers, or the nearest one when it covers less than one.
 pub(crate) fn sample(picture: &Picture, column: u16, row: u16, columns: u16, rows: u16) -> [u8; 4] {
     // At most this many taps a side: a cell standing for a hundred source
     // pixels is drawn on every frame, and an even sample of them looks the
