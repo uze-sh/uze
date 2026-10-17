@@ -7,7 +7,7 @@
 Measured on 2026-10-17 (decisions.md M1). The experiment files live in the `agent-context-lab` subagent checkout and are joined with this branch before group 5.
 
 
-- [ ] 1.1 Synthetic providers record where a marker lands per dialect (Anthropic `system` / user block; OpenAI `instructions` / developer / user input item; Gemini `systemInstruction` / `contents`) as evidence beside the existing substring flags
+- [x] 1.1 Synthetic providers record where a marker lands per dialect (Anthropic `system` / user block; OpenAI `instructions` / developer / user input item; Gemini `systemInstruction` / `contents`) as evidence beside the existing substring flags
 - [x] 1.2 `experiments/claude/agent-context`: a marker in a `CLAUDE.md` under a second `--add-dir`, with the env flag set; four outcomes, also in a project with no `AGENTS.md`; repeat with the `--settings` `SessionStart` fallback
 - [x] 1.3 `experiments/codex/agent-context`: launch-scoped `SessionStart` via `-c` plus session-layer trust, handler printing an absolute path; four outcomes, copies after two resumes, size in bytes against the spill limit, and the daemon variant without `-c` as a control
 - [x] 1.4 `experiments/opencode/agent-context`: a standalone plugin's `session.hook("context")` reading a file keyed by `sessionID`; four outcomes against the shared server, hot-load of a plugin written while it runs, and a `/new` session getting nothing
@@ -46,4 +46,4 @@ Measured on 2026-10-17 (decisions.md M1). The experiment files live in the `agen
 
 - [x] 6.1 Update `agent-lifecycle.mmd` and `workspace-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`
 - [x] 6.2 Invariants with their tests: no context text in argv or environment; context only for launches UZE owns
-- [ ] 6.3 `make check` green
+- [x] 6.3 `make check` green

@@ -447,6 +447,12 @@ pub trait IntegrationPort: Send + Sync {
         Ok(ContextContribution::default())
     }
 
+    /// Takes back what an earlier launch's delivery left where the harness
+    /// keeps reading it, when this launch has nothing to give. Only a
+    /// channel that reads outside the launch's own arguments needs it: one
+    /// given per launch is simply not given again.
+    fn withdraw_context(&self, _home: &UzeHome, _session: Option<&SessionId>) {}
+
     /// What `session`'s transcript says the conversation was about, read
     /// from this harness's own records, keeping only what was said at or
     /// after `since_unix` when it is given. `None` — no transcript, a shape

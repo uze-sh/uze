@@ -261,6 +261,12 @@ fn give_context(
         .into_iter()
         .collect();
     let Some(text) = agent_context::compose(&sections) else {
+        // A context an earlier launch was given must not outlive what it
+        // said: a retired briefing is no longer the agent's to be told.
+        let _ = std::fs::remove_file(
+            agent_context::dir(home, &owner.project_root, agent).join(agent_context::FILE_NAME),
+        );
+        integration.withdraw_context(home, session);
         return;
     };
     let delivered =
@@ -681,6 +687,33 @@ mod tests {
         assert!(
             pending(&home, &primary).is_some(),
             "kept until the work moves on"
+        );
+    }
+
+    #[test]
+    fn a_retired_briefing_is_taken_back_from_the_next_launch() {
+        let (home, primary, slot, id) = managed("continuity-context-withdrawn");
+        let harness = Harness::with_channel(SessionContinuity::Assigned);
+        briefed(&home, &primary, "harness");
+        let given = plan(&home, claim(&id, &slot), &harness);
+        let at = given
+            .args
+            .iter()
+            .position(|word| word == "--context")
+            .unwrap();
+        let file = PathBuf::from(&given.args[at + 1]);
+        assert!(file.is_file());
+
+        let store = task::load(&home, &primary).unwrap();
+        conversation::update(&home, &primary, &store.agents[0].id, |stored| {
+            stored.briefing = None;
+        })
+        .unwrap();
+        let next = plan(&home, claim(&id, &slot), &harness);
+        assert!(!next.args.contains(&OsString::from("--context")));
+        assert!(
+            !file.exists(),
+            "the last launch's context does not outlive it"
         );
     }
 

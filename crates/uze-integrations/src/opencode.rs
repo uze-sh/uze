@@ -272,6 +272,13 @@ impl IntegrationPort for OpenCodeIntegration {
         agent_context::deliver(&self.session_context_dir(), ctx)
     }
 
+    /// The plugin reads the conversation's document on every request, so a
+    /// launch with nothing to give removes it rather than leaving the last
+    /// one there.
+    fn withdraw_context(&self, _home: &UzeHome, session: Option<&uze_core::session::SessionId>) {
+        agent_context::withdraw(&self.session_context_dir(), session);
+    }
+
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,

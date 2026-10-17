@@ -108,6 +108,13 @@ pub(super) fn deliver(dir: &Path, ctx: &AgentContext) -> Result<ContextContribut
     Ok(ContextContribution::default())
 }
 
+/// Removes the conversation's document, so the plugin gives it nothing.
+pub(super) fn withdraw(dir: &Path, session: Option<&uze_core::session::SessionId>) {
+    if let Some(session) = session {
+        let _ = fs::remove_file(dir.join(format!("{}.md", session.as_str())));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +173,11 @@ mod tests {
         assert_eq!(
             fs::read_to_string(root.join("ses_abc.md")).unwrap(),
             "facts"
+        );
+        withdraw(&root, Some(&session));
+        assert!(
+            !root.join("ses_abc.md").exists(),
+            "a launch with nothing to give leaves nothing behind"
         );
         let _ = fs::remove_dir_all(root);
     }

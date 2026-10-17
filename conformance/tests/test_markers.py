@@ -5,6 +5,7 @@ Run without the Lab: no docker, no harness binaries.
 `python3 conformance/tests/test_markers.py`.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -38,6 +39,52 @@ class ObservedMarkersTest(unittest.TestCase):
     def test_requests_without_the_field_are_ignored(self):
         turn = [{"path": "/api/hello", "summary": {}}, {"path": "/v1/messages"}]
         self.assertEqual(observed_markers(turn, "hook_markers"), {})
+
+
+class ContextPlacementTest(unittest.TestCase):
+    """Where an agent's context lands, per dialect: evidence for the
+    briefing contract, recorded beside the substring flags."""
+
+    def test_each_dialect_names_its_own_part(self):
+        from shared import markers
+
+        anthropic = json.dumps(
+            {
+                "system": [{"type": "text", "text": "UZE_CONFORMANCE_PECAN"}],
+                "messages": [{"role": "user", "content": "hello"}],
+            }
+        )
+        openai = json.dumps(
+            {
+                "instructions": "base",
+                "input": [
+                    {
+                        "role": "developer",
+                        "content": [{"text": "UZE_CONFORMANCE_PECAN"}],
+                    }
+                ],
+            }
+        )
+        gemini = json.dumps(
+            {"systemInstruction": {"parts": [{"text": "UZE_CONFORMANCE_PECAN"}]}}
+        )
+        claude_md = json.dumps(
+            {
+                "messages": [
+                    {"role": "user", "content": [{"text": "UZE_CONFORMANCE_PECAN"}]}
+                ]
+            }
+        )
+        marker = "UZE_CONFORMANCE_PECAN"
+        self.assertEqual(markers.placement(anthropic, marker), ["system"])
+        self.assertEqual(markers.placement(openai, marker), ["developer"])
+        self.assertEqual(markers.placement(gemini, marker), ["systemInstruction"])
+        self.assertEqual(markers.placement(claude_md, marker), ["user"])
+
+    def test_a_request_without_the_marker_records_nothing(self):
+        from shared import markers
+
+        self.assertEqual(markers.summary("{}")["context_placement"], {})
 
 
 if __name__ == "__main__":

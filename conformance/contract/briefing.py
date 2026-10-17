@@ -83,10 +83,12 @@ def _assert_the_briefing_reaches_the_model(cfg, prov_ip, bindings):
         bindings.await_input(tui)
         tui.type(f"{TYPED_MARKER}: carry on")
         tui.submit()
+        reached = _arrives(cfg, tui, "briefing-first-turn", TYPED_MARKER, FRESH_MARKER)
         check(
             "briefing-reaches-the-model",
-            _arrives(cfg, tui, "briefing-first-turn", TYPED_MARKER, FRESH_MARKER),
-            "the request answering the operator's first turn carries the briefing",
+            reached,
+            "the request answering the operator's first turn carries the briefing"
+            + (f", in a {_placed(cfg, FRESH_MARKER)} part" if reached else ""),
         )
         seen = tui.collect(reads=4)
         tui.snapshot("briefing-first-pane", seen)
@@ -152,3 +154,19 @@ def _carried(cfg, *markers):
         if all(found.get(marker) for marker in markers):
             return True
     return False
+
+
+def _placed(cfg, marker):
+    """Where the provider saw `marker`, for the check's account: evidence of
+    how the channel placed the context, never the verdict, because
+    `AGENTS.md` itself rides in a user part on two harnesses."""
+    roles = sorted(
+        {
+            role
+            for record in provider_struct(cfg)
+            for role in record.get("summary", {})
+            .get("context_placement", {})
+            .get(marker, [])
+        }
+    )
+    return " / ".join(roles) or "unrecorded"

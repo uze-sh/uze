@@ -14,6 +14,7 @@ plugin-root check needs: the path a Skill named after the harness resolved
 its placeholder, so the contract can look for that file in the container.
 """
 
+import json
 import re
 
 #: The `flow` fixture's agents, by the label UZE commits to on every
@@ -102,6 +103,13 @@ HOOK_DENIALS = (
 #: writes them into the project before the session starts).
 HOOK_READS = ("UZE_HOOK_READ_DENIED_BODY", "UZE_HOOK_READ_ALLOWED_BODY")
 
+#: The briefing contract's markers (`contract/briefing.py`), whose place in
+#: the request is recorded as evidence: an agent's context reaches the model
+#: in a system, developer or user part depending on the harness, and
+#: `AGENTS.md` itself rides in a user part on two of them, so where it lands
+#: is evidence, never the verdict.
+CONTEXT_PLACED = ("UZE_CONFORMANCE_PECAN", "UZE_CONFORMANCE_ALMOND")
+
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")
 _MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
 
@@ -138,4 +146,36 @@ def summary(body):
         # The model a request asked for, where the body names it (Gemini
         # names it in the path instead, which the request record keeps).
         "model": next(iter(_MODEL.findall(body)), None),
+        "context_placement": {
+            m: placement(body, m) for m in CONTEXT_PLACED if m in body
+        },
     }
+
+
+def placement(body, needle):
+    """Where `needle` sits in a JSON request, as the roles of the parts that
+    carry it: the nearest enclosing `role`, or the top-level field a dialect
+    carries instructions in (Anthropic `system`, OpenAI Responses
+    `instructions`, Gemini `systemInstruction`). Sorted, deduplicated."""
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return ["unparsed"]
+    found = set()
+
+    def walk(value, role):
+        if isinstance(value, dict):
+            if isinstance(value.get("role"), str):
+                role = value["role"]
+            for child in value.values():
+                walk(child, role)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, role)
+        elif isinstance(value, str) and needle in value:
+            found.add(role)
+
+    if isinstance(document, dict):
+        for key, value in document.items():
+            walk(value, key)
+    return sorted(found)

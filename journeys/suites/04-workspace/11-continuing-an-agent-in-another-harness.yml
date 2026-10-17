@@ -129,6 +129,39 @@ scenes:
           the restored launch was given the context again, and no launch was
           given a turn the operator did not type
 
+  - scene: once the agent commits, its briefing retires and the next launch is given nothing
+    when:
+      - shell: >
+          git -C {project} -c user.name=agent -c user.email=agent@example.com
+          commit --allow-empty -q -m "chore: carry on in codex"
+        say: the agent lands its first commit on the harness it was moved to
+      - wait: shell
+        until: "! grep -q '\"briefing\"' {uze_home}/state/projects/*/conversations/*.json"
+        timeout: 30
+        say: the workspace sees the work moved past the switch
+      - kill: "{uze}"
+        say: kill everything holding this workspace again
+      - open: ["{uze}", "workspace"]
+        say: and open it once more
+        expect: demo-app
+        expect_timeout: 25
+        pause: 3.0
+      - click: agent 1
+        say: walk into the agent
+        in: sidebar
+        expect: Codex v
+        expect_timeout: 30
+        pause: 1.5
+    then:
+      - cmd:
+          run: >
+            line=$(tail -1 {world}/bin/.invocations/codex.log);
+            case "$line" in *"hooks.SessionStart"*) exit 1 ;; esac
+        about: the relaunch after the commit is handed no context
+      - cmd:
+          run: test -z "$(ls {uze_home}/runtime/projects/*/agents/*/context.md 2>/dev/null)"
+        about: and no context file outlives the briefing it carried
+
   - scene: switching back resumes the conversation the first harness left
     when:
       - key: "M-."
