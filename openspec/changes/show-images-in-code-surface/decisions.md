@@ -61,7 +61,7 @@
 
 - status:   pending
 - task:     3.1
-- commit:
+- commit:   f4403cd8
 - trigger:  moving Sixel off the drawing thread left the half blocks there,
             which averaged every source pixel on every frame: up to 16 Mi
             reads per redraw for a 4096-pixel image, on each pointer move.
