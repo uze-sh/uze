@@ -451,6 +451,12 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverviewEditing, "right", Action::CaretRight),
         bind(Scope::SpaceOverviewEditing, "home", Action::CaretLineStart),
         bind(Scope::SpaceOverviewEditing, "end", Action::CaretLineEnd),
+        // An action's instruction takes enter as a line break, so it is
+        // finished with the save chord the file editor uses.
+        bind(Scope::SpaceOverviewEditing, "ctrl+s", Action::SaveFile),
+        // A list's field offers paths to choose from, walked like a list.
+        bind(Scope::SpaceOverviewEditing, "down", Action::SelectNext),
+        bind(Scope::SpaceOverviewEditing, "up", Action::SelectPrevious),
         // Recent: enter does what moves the selected row on, and the
         // letters are the two things beyond it, each only where it applies.
         bind(Scope::Recent, "esc", Action::Dismiss),

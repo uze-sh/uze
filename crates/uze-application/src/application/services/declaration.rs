@@ -21,6 +21,8 @@ use uze_workspace::{
 
 use super::{Workspace, artifacts, policy_commands::primary_of};
 
+pub use uze_workspace::declaration::{ActionState, Choices as DeclarationChoices};
+
 /// The project's `workspace:` section, key by key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationView {
@@ -31,13 +33,26 @@ pub struct DeclarationView {
     pub exists: bool,
     /// Every key, in [`DeclarationKey::ALL`]'s order.
     pub entries: Vec<DeclarationEntry>,
-    /// The moments `actions` writes an instruction for, by name only.
-    pub actions: Vec<String>,
+    /// What an agent is asked at each moment, in [`ActionState::ALL`]'s
+    /// order.
+    pub actions: Vec<ActionEntry>,
     /// Whether UZE will edit the file, or why it will not; the file is then
     /// the author's to edit by hand.
     pub editable: std::result::Result<(), String>,
     /// What the workspace refuses in the file as it is.
     pub problems: Vec<DeclarationProblem>,
+    /// What `link` and `artifacts` may be set to, offered to be chosen.
+    pub choices: DeclarationChoices,
+}
+
+/// One moment `actions` may write an instruction for.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActionEntry {
+    pub state: ActionState,
+    /// The project's instruction, or `None` when it declares none.
+    pub declared: Option<String>,
+    /// What is asked when it declares none, where UZE asks anything.
+    pub fallback: Option<&'static str>,
 }
 
 /// One key of `workspace:`.
@@ -102,9 +117,17 @@ impl Workspace<'_> {
                     description: key.description(),
                 })
                 .collect(),
-            actions: checked.actions,
+            actions: ActionState::ALL
+                .into_iter()
+                .map(|state| ActionEntry {
+                    state,
+                    declared: checked.actions.remove(&state),
+                    fallback: state.fallback(),
+                })
+                .collect(),
             editable,
             problems: checked.problems,
+            choices: declaration::choices(&primary),
         })
     }
 

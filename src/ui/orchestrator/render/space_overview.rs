@@ -10,7 +10,9 @@ use crate::ui::widget::{
     tabs::{self, Tab},
 };
 use uze_application::application::{FreshnessState, HarnessContextDelivery, StatusHarness};
-use uze_application::{DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview};
+use uze_application::{
+    ActionState, DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview,
+};
 
 /// The width under which the drawer stands over the section instead of
 /// beside it.
@@ -341,7 +343,7 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
             if !causes.is_empty() {
                 return (causes.join(" · "), Token::StateWarning);
             }
-            let edited = overview.edit.values.len();
+            let edited = overview.edit.pending();
             if edited > 0 {
                 (format!("{edited} edited"), Token::StateInfo)
             } else if overview
@@ -834,7 +836,7 @@ fn render_workspace(
         return Vec::new();
     }
     let problems = match overview.current_preview() {
-        Some(Ok(preview)) if !overview.edit.values.is_empty() => preview.problems.clone(),
+        Some(Ok(preview)) if overview.edit.pending() > 0 => preview.problems.clone(),
         _ => declaration.problems.clone(),
     };
     let awaiting: Vec<&str> = project
@@ -860,6 +862,7 @@ fn render_workspace(
     let mut field_at = None;
     let mut options_at: Vec<(usize, Vec<OptionCell>)> = Vec::new();
     let mut steps_at: Vec<StepCells> = Vec::new();
+    let mut picks_at: Vec<(usize, usize)> = Vec::new();
     let label_cell = |key: DeclarationKey, focused: bool| {
         Span::styled(
             pad(key_label(key), LABEL),
@@ -890,7 +893,12 @@ fn render_workspace(
             lines.push(blank());
         }
         lines.push(said(text::small_caps(group), Token::TextDim));
-        for key in keys.iter().copied() {
+        for (position, key) in keys.iter().copied().enumerate() {
+            // A line of air between keys: a form read down a column, not a
+            // table read across it.
+            if position > 0 {
+                lines.push(blank());
+            }
             let value = overview.effective(key);
             let edited = overview.edit.values.contains_key(&key);
             let focused = index == selected;
@@ -930,8 +938,11 @@ fn render_workspace(
             } else if is_number(key)
                 && !field.is_some_and(|field| field.key == key && field.item.is_none())
             {
+                // Slots left out is no bound at all: an empty count says so
+                // where a number stands, and the drawer names it.
                 let shown = match &value {
                     Some(value) => (scalar(value), Token::TextBright),
+                    None if key == DeclarationKey::Slots => (String::new(), Token::TextDim),
                     None => (key.default_spelled().to_owned(), Token::TextDim),
                 };
                 let minus = theme::glyph(Symbol::StepDecrease);
@@ -997,6 +1008,7 @@ fn render_workspace(
                             spans: vec![indent],
                             row: Some(index),
                         });
+                        picker_lines(overview, box_width, &mut lines, &mut picks_at);
                         index += 1;
                         continue;
                     }
@@ -1039,6 +1051,7 @@ fn render_workspace(
                         spans: Vec::new(),
                         row: None,
                     });
+                    picker_lines(overview, box_width, &mut lines, &mut picks_at);
                 }
             }
             for problem in problems
@@ -1057,15 +1070,101 @@ fn render_workspace(
                 });
             }
         }
-        if group == "project" && !declaration.actions.is_empty() {
+    }
+    // What an agent is asked at each moment: prose, so each is a box of
+    // as many lines as the instruction runs to.
+    lines.push(blank());
+    lines.push(said(text::small_caps("agent actions"), Token::TextDim));
+    for (position, state) in ActionState::ALL.into_iter().enumerate() {
+        if position > 0 {
+            lines.push(blank());
+        }
+        let fallback = declaration
+            .actions
+            .iter()
+            .find(|entry| entry.state == state)
+            .and_then(|entry| entry.fallback);
+        let focused = index == selected;
+        let label = Span::styled(
+            pad(action_label(state), LABEL),
+            if focused {
+                theme::fg_bold(Token::TextBright)
+            } else {
+                theme::fg(Token::TextSecondary)
+            },
+        );
+        let writing = overview
+            .edit
+            .text
+            .as_ref()
+            .filter(|(writing, _)| *writing == state)
+            .map(|(_, buffer)| buffer);
+        let edited = overview.edit.actions.contains_key(&state);
+        let box_line = |spans: Vec<Span<'static>>| {
+            let mut spans = spans;
+            row::pad_to(
+                &mut spans,
+                box_width as u16,
+                theme::color(Token::SurfaceRecessed),
+            );
+            spans
+        };
+        let mut boxes: Vec<Vec<Span<'static>>> = Vec::new();
+        if let Some(buffer) = writing {
+            // The caret stands where typing lands, on whichever line that is.
+            let (before, after) = buffer.split();
+            let mut current = vec![Span::raw(" ")];
+            for (index, part) in before.split('\n').enumerate() {
+                if index > 0 {
+                    boxes.push(std::mem::replace(&mut current, vec![Span::raw(" ")]));
+                }
+                current.push(Span::styled(part.to_owned(), theme::fg(Token::TextBright)));
+            }
+            current.push(widget::field::caret());
+            for (index, part) in after.split('\n').enumerate() {
+                if index > 0 {
+                    boxes.push(std::mem::replace(&mut current, vec![Span::raw(" ")]));
+                }
+                current.push(Span::styled(part.to_owned(), theme::fg(Token::TextBright)));
+            }
+            boxes.push(current);
+            boxes = boxes.into_iter().map(box_line).collect();
+        } else {
+            let (shown, tone) = match overview.effective_action(state) {
+                Some(text) => (text, Token::TextPrimary),
+                None => (
+                    fallback.unwrap_or("nothing is sent").to_owned(),
+                    Token::TextDim,
+                ),
+            };
+            for paragraph in shown.lines() {
+                for folded in text::fold(paragraph, box_width.saturating_sub(2).max(8)) {
+                    boxes.push(box_line(vec![
+                        Span::raw(" "),
+                        Span::styled(folded, theme::fg(tone)),
+                    ]));
+                }
+            }
+            if boxes.is_empty() {
+                boxes.push(box_line(vec![Span::raw(" ")]));
+            }
+        }
+        for (line, mut spans) in boxes.into_iter().enumerate() {
+            let mut row_spans = vec![if line == 0 {
+                label.clone()
+            } else {
+                Span::raw(" ".repeat(usize::from(LABEL)))
+            }];
+            row_spans.append(&mut spans);
+            if line == 0 && edited {
+                row_spans.push(edited_mark());
+            }
             lines.push(SectionLine {
-                spans: vec![
-                    Span::styled(pad("Agent actions", LABEL), theme::fg(Token::TextSecondary)),
-                    Span::styled(declaration.actions.join(", "), theme::fg(Token::TextMuted)),
-                ],
-                row: None,
+                spans: row_spans,
+                row: Some(index),
             });
         }
+        index += 1;
     }
     debug_assert_eq!(index, rows.len(), "the form draws every row the keys walk");
     for problem in problems.iter().filter(|problem| problem.key.is_none()) {
@@ -1088,6 +1187,14 @@ fn render_workspace(
                     WorkspaceHit::OverviewChoice(row, option),
                 ));
             }
+        }
+    }
+    for (line, option) in picks_at {
+        if let Some(y) = line_y(line) {
+            hits.push((
+                Rect::new(list.x + LABEL, y, box_width as u16, 1),
+                WorkspaceHit::OverviewPick(option),
+            ));
         }
     }
     for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in steps_at {
@@ -1125,7 +1232,7 @@ fn render_workspace(
         row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
-    let pending = overview.edit.values.len();
+    let pending = overview.edit.pending();
     if let Err(reason) = &declaration.editable {
         render_answer(
             frame,
@@ -1210,6 +1317,78 @@ fn render_workspace(
     }
     let _ = model;
     drawn
+}
+
+/// The paths a list's field offers, under it: a window of them around the
+/// one the keys are on, each answering a click, and what is left past it.
+/// Nothing is drawn for a key that offers none.
+fn picker_lines(
+    overview: &SpaceOverviewView,
+    width: usize,
+    lines: &mut Vec<SectionLine>,
+    picks_at: &mut Vec<(usize, usize)>,
+) {
+    const SHOWN: usize = 6;
+    let Some(field) = &overview.edit.field else {
+        return;
+    };
+    if !matches!(field.key, DeclarationKey::Link | DeclarationKey::Artifacts) {
+        return;
+    }
+    let indent = || Span::raw(" ".repeat(usize::from(LABEL)));
+    let options = overview.picker_options();
+    if options.is_empty() {
+        let none = if field.key == DeclarationKey::Link {
+            "nothing ignored matches; enter takes what is typed"
+        } else {
+            "no tracked directory matches; enter takes what is typed"
+        };
+        lines.push(SectionLine {
+            spans: vec![indent(), Span::styled(none, theme::fg(Token::TextFaint))],
+            row: None,
+        });
+        return;
+    }
+    let picked = field.picked.min(options.len() - 1);
+    let start = picked.saturating_sub(SHOWN - 1);
+    for (index, option) in options.iter().enumerate().skip(start).take(SHOWN) {
+        let on = index == picked;
+        let ground = if on {
+            Token::SurfaceRaised
+        } else {
+            Token::SurfaceRaisedSubtle
+        };
+        picks_at.push((lines.len(), index));
+        lines.push(SectionLine {
+            spans: vec![
+                indent(),
+                Span::styled(
+                    format!(
+                        " {:<width$}",
+                        text::elide(option, width - 2),
+                        width = width - 1
+                    ),
+                    theme::fg(if on {
+                        Token::TextBright
+                    } else {
+                        Token::TextInactive
+                    })
+                    .bg(theme::color(ground)),
+                ),
+            ],
+            row: None,
+        });
+    }
+    let hidden = options.len().saturating_sub(start + SHOWN);
+    if hidden > 0 {
+        lines.push(SectionLine {
+            spans: vec![
+                indent(),
+                Span::styled(format!(" +{hidden} more"), theme::fg(Token::TextFaint)),
+            ],
+            row: None,
+        });
+    }
 }
 
 /// A section's closing word: what stands, why, and the buttons that act
@@ -1457,7 +1636,35 @@ fn render_drawer(
             let Some(row) = overview.selected_workspace_row() else {
                 return;
             };
-            let key = row.key();
+            if let WorkspaceRow::Action(state) = row {
+                head("agents.yaml · workspace.actions", state.key(), &mut lines);
+                paragraph(action_moment(state), Token::TextSecondary, &mut lines);
+                lines.push(Line::default());
+                let fallback = overview
+                    .declaration()
+                    .and_then(|declaration| {
+                        declaration
+                            .actions
+                            .iter()
+                            .find(|entry| entry.state == state)
+                    })
+                    .and_then(|entry| entry.fallback);
+                lines.push(pair(
+                    "when unset",
+                    fallback
+                        .map_or("nothing is sent", |_| "UZE's own instruction")
+                        .to_owned(),
+                    Token::TextSecondary,
+                ));
+                if overview.edit.actions.contains_key(&state) {
+                    lines.push(pair("", "edited, not saved".to_owned(), Token::StateInfo));
+                }
+                frame.render_widget(Paragraph::new(lines), area);
+                return;
+            }
+            let Some(key) = row.key() else {
+                return;
+            };
             let Some(entry) = overview
                 .declaration()
                 .and_then(|declaration| declaration.entries.iter().find(|entry| entry.key == key))
@@ -1498,6 +1705,13 @@ fn render_drawer(
 }
 
 fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &'static str)> {
+    if overview.edit.text.is_some() {
+        return vec![
+            (Action::Activate, "new line"),
+            (Action::SaveFile, "done"),
+            (Action::Dismiss, "cancel"),
+        ];
+    }
     if overview.edit.field.is_some() {
         return vec![(Action::Activate, "apply"), (Action::Dismiss, "cancel")];
     }
@@ -1590,10 +1804,17 @@ fn render_foot(
             1,
         ),
     );
+    // The keys a hint prints are the ones live now: while a value is being
+    // typed, those of the scope that takes the typing.
+    let typing = overview.edit.field.is_some() || overview.edit.text.is_some();
     let scopes = [
         uze_keys::Scope::Global,
         uze_keys::Scope::Workspace,
-        uze_keys::Scope::SpaceOverview,
+        if typing {
+            uze_keys::Scope::SpaceOverviewEditing
+        } else {
+            uze_keys::Scope::SpaceOverview
+        },
     ];
     let hints = keys
         .iter()

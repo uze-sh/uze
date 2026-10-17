@@ -119,6 +119,25 @@ impl ManifestDocument {
         self.upsert(section.key(), key, &value)
     }
 
+    /// Whether the document holds anything at the dotted `path`.
+    pub fn holds(&self, path: &str) -> bool {
+        self.document.get(path).is_some()
+    }
+
+    /// Sets `key` in the mapping at the dotted `mapping_path`, which must
+    /// exist: the entries beside it, and their comments, stay as written.
+    pub fn set_in(&mut self, mapping_path: &str, key: &str, value: &impl Serialize) -> Result<()> {
+        let value = serde_yaml::to_value(value)
+            .map_err(|error| self.refusal(&format!("{mapping_path}.{key}"), error.to_string()))?;
+        self.upsert(mapping_path, key, &value)
+    }
+
+    /// Takes `key` out of the mapping at the dotted `mapping_path`; the
+    /// mapping goes with its last key.
+    pub fn unset_in(&mut self, mapping_path: &str, key: &str) -> Result<()> {
+        self.remove(mapping_path, key)
+    }
+
     /// Takes `key` out of `section`; the section goes with its last key.
     pub fn unset_key(&mut self, section: Section, key: &str) -> Result<()> {
         self.remove(section.key(), key)
@@ -285,12 +304,17 @@ impl ManifestDocument {
         if self.document.get(&full).is_none() {
             return Ok(());
         }
-        let last_one = self
-            .document
-            .as_value()
-            .get(mapping_path)
-            .and_then(|mapping| mapping.as_mapping().map(|entries| entries.len()))
-            == Some(1);
+        // Walked a segment at a time: the value's own lookup reads a dotted
+        // path as one key, and a nested mapping's last entry would leave it
+        // behind as `{}`.
+        let last_one = {
+            let root = self.document.as_value();
+            mapping_path
+                .split('.')
+                .try_fold(&*root, |value, segment| value.get(segment))
+                .and_then(|mapping| mapping.as_mapping().map(|entries| entries.len()))
+                == Some(1)
+        };
         if last_one {
             if self.is_the_only_root_key(mapping_path) {
                 return self.drop_root_block(mapping_path);
@@ -670,6 +694,17 @@ marketplaces:
         let mut document = open("# kept\nworkspace:\n  slots: 2\n");
         document.unset_key(Section::Workspace, "slots").unwrap();
         assert_eq!(document.source().trim_end(), "# kept");
+    }
+
+    #[test]
+    fn unsetting_the_last_key_of_a_nested_mapping_takes_the_mapping_with_it() {
+        let mut document = ManifestDocument::from_source(
+            Path::new("/project/agents.yaml"),
+            "workspace:\n  delivery: push\n  actions:\n    on_change: Commit.\n",
+        )
+        .unwrap();
+        document.unset_in("workspace.actions", "on_change").unwrap();
+        assert_eq!(document.source(), "workspace:\n  delivery: push\n");
     }
 
     #[test]

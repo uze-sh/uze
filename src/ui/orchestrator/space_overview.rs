@@ -9,8 +9,8 @@
 
 use super::*;
 use uze_application::{
-    DeclarationKey, DeclarationPreview, DeclarationView, DeclaredValue, Edit, ProjectSpace,
-    ShellCommand, SpaceOverview,
+    ActionState, DeclarationKey, DeclarationPreview, DeclarationView, DeclaredValue, Edit,
+    ProjectSpace, ShellCommand, SpaceOverview,
 };
 
 /// The overview's sections, in the order the bar shows them.
@@ -87,7 +87,12 @@ pub(super) struct SpaceOverviewView {
 pub(super) struct WorkspaceEdit {
     /// A key's new value; `None` unsets it.
     pub(super) values: BTreeMap<DeclarationKey, Option<DeclaredValue>>,
+    /// An action's new instruction; `None` takes it out.
+    pub(super) actions: BTreeMap<ActionState, Option<String>>,
     pub(super) field: Option<EditField>,
+    /// An action's instruction being written, over as many lines as it
+    /// takes.
+    pub(super) text: Option<(ActionState, RenameBuffer)>,
     /// The preview of `values`, once read, for the edits it was made of.
     pub(super) preview: Option<(u64, std::result::Result<DeclarationPreview, String>)>,
     pub(super) preview_asked: u64,
@@ -101,12 +106,22 @@ pub(super) struct WorkspaceEdit {
     pub(super) refusal: Option<String>,
 }
 
+impl WorkspaceEdit {
+    /// How many keys and actions the edits change.
+    pub(super) fn pending(&self) -> usize {
+        self.values.len() + self.actions.len()
+    }
+}
+
 /// A value being typed: a key's text, or one item of its list.
 pub(super) struct EditField {
     pub(super) key: DeclarationKey,
     /// The list item, `Some(len)` for a new one; `None` for the key itself.
     pub(super) item: Option<usize>,
     pub(super) buffer: RenameBuffer,
+    /// The offered path the keys are on, when the key offers paths to
+    /// choose from rather than to type.
+    pub(super) picked: usize,
 }
 
 /// The overview's count of the space's agents.
@@ -121,13 +136,35 @@ pub(super) struct Activity {
 pub(super) enum WorkspaceRow {
     Key(DeclarationKey),
     Item(DeclarationKey, usize),
+    Action(ActionState),
 }
 
 impl WorkspaceRow {
-    pub(super) fn key(self) -> DeclarationKey {
+    pub(super) fn key(self) -> Option<DeclarationKey> {
         match self {
-            Self::Key(key) | Self::Item(key, _) => key,
+            Self::Key(key) | Self::Item(key, _) => Some(key),
+            Self::Action(_) => None,
         }
+    }
+}
+
+/// An action as the form names it.
+pub(super) fn action_label(state: ActionState) -> &'static str {
+    match state {
+        ActionState::OnChange => "onChange",
+        ActionState::OnPublish => "onPublish",
+        ActionState::OnConflict => "onConflict",
+        ActionState::OnFail => "onFail",
+    }
+}
+
+/// When an action's instruction is sent, in words.
+pub(super) fn action_moment(state: ActionState) -> &'static str {
+    match state {
+        ActionState::OnChange => "Sent when an agent's checkout holds uncommitted work",
+        ActionState::OnPublish => "Sent when an agent's branch has been published",
+        ActionState::OnConflict => "Sent when rebasing onto the target paused on a conflict",
+        ActionState::OnFail => "Sent when the project's checks failed on the rebased branch",
     }
 }
 
@@ -176,6 +213,7 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::DiscardChanges
             | Action::NextValue
             | Action::PreviousValue
+            | Action::SaveFile
             | Action::EraseBack
             | Action::EraseForward
             | Action::CaretLeft
@@ -368,6 +406,7 @@ impl SpaceOverviewView {
                 }
             }
         }
+        rows.extend(ActionState::ALL.into_iter().map(WorkspaceRow::Action));
         rows
     }
 
@@ -448,6 +487,43 @@ impl SpaceOverviewView {
         self.set(key, value);
     }
 
+    /// The paths the field being typed offers to choose from: for a link,
+    /// what the repository ignores; for artifacts, the directories it
+    /// tracks. Those already in the list are left out, those the typed
+    /// text heads first, then those it appears in.
+    pub(super) fn picker_options(&self) -> Vec<String> {
+        let Some(field) = &self.edit.field else {
+            return Vec::new();
+        };
+        let Some(choices) = self.declaration().map(|declaration| &declaration.choices) else {
+            return Vec::new();
+        };
+        let source = match field.key {
+            DeclarationKey::Link => &choices.links,
+            DeclarationKey::Artifacts => &choices.directories,
+            _ => return Vec::new(),
+        };
+        let taken = self
+            .effective(field.key)
+            .as_ref()
+            .map(items)
+            .unwrap_or_default();
+        let editing = field.item.and_then(|item| taken.get(item));
+        let typed = field.buffer.text().trim().to_lowercase();
+        let open: Vec<&String> = source
+            .iter()
+            .filter(|path| !taken.contains(path) || Some(*path) == editing)
+            .collect();
+        let heads = open
+            .iter()
+            .filter(|path| path.to_lowercase().starts_with(&typed));
+        let inside = open.iter().filter(|path| {
+            let lowered = path.to_lowercase();
+            !lowered.starts_with(&typed) && lowered.contains(&typed)
+        });
+        heads.chain(inside).map(|path| (*path).clone()).collect()
+    }
+
     /// The edits as the application takes them.
     pub(super) fn edits(&self) -> Vec<Edit> {
         self.edit
@@ -460,7 +536,43 @@ impl SpaceOverviewView {
                 },
                 None => Edit::Unset { key: *key },
             })
+            .chain(self.edit.actions.iter().map(|(state, text)| Edit::Action {
+                state: *state,
+                text: text.clone(),
+            }))
             .collect()
+    }
+
+    /// An action's instruction as it would be saved.
+    pub(super) fn effective_action(&self, state: ActionState) -> Option<String> {
+        if let Some(edited) = self.edit.actions.get(&state) {
+            return edited.clone();
+        }
+        self.declaration()?
+            .actions
+            .iter()
+            .find(|entry| entry.state == state)
+            .and_then(|entry| entry.declared.clone())
+    }
+
+    fn set_action(&mut self, state: ActionState, text: Option<String>) {
+        let text = text.filter(|text| !text.trim().is_empty());
+        let declared = self
+            .declaration()
+            .and_then(|declaration| {
+                declaration
+                    .actions
+                    .iter()
+                    .find(|entry| entry.state == state)
+            })
+            .and_then(|entry| entry.declared.clone());
+        if text == declared {
+            self.edit.actions.remove(&state);
+        } else {
+            self.edit.actions.insert(state, text);
+        }
+        self.edit.preview_asked += 1;
+        self.edit.refusal = None;
     }
 
     /// The preview read for the edits as they stand, if it has arrived.
@@ -862,7 +974,7 @@ impl Attach<'_> {
             return;
         };
         let edit = &overview.edit;
-        if edit.values.is_empty()
+        if edit.pending() == 0
             || edit.preview_pending
             || edit
                 .preview
@@ -888,11 +1000,42 @@ impl Attach<'_> {
             return;
         };
         self.model.dirty = true;
+        if let Some((state, buffer)) = overview.edit.text.as_mut() {
+            let state = *state;
+            match action {
+                Action::Dismiss => overview.edit.text = None,
+                // Enter is a line break here: an instruction runs to as
+                // many lines as it needs, and is done with the save chord.
+                Action::Activate => buffer.insert('\n'),
+                Action::SaveFile => {
+                    let text = buffer.text().to_owned();
+                    overview.edit.text = None;
+                    overview.set_action(state, Some(text));
+                    self.schedule_declaration_preview();
+                }
+                Action::EraseBack => buffer.erase_back(),
+                Action::EraseForward => buffer.erase_forward(),
+                Action::CaretLeft => buffer.left(),
+                Action::CaretRight => buffer.right(),
+                Action::CaretLineStart => buffer.home(),
+                Action::CaretLineEnd => buffer.end(),
+                _ => {}
+            }
+            return;
+        }
+        let offered = overview.picker_options().len();
         if let Some(field) = overview.edit.field.as_mut() {
             match action {
                 Action::Dismiss => overview.edit.field = None,
+                Action::SelectNext if offered > 0 => {
+                    field.picked = (field.picked + 1).min(offered - 1);
+                }
+                Action::SelectPrevious => field.picked = field.picked.saturating_sub(1),
                 Action::Activate => self.commit_field(),
-                Action::EraseBack => field.buffer.erase_back(),
+                Action::EraseBack => {
+                    field.buffer.erase_back();
+                    field.picked = 0;
+                }
                 Action::EraseForward => field.buffer.erase_forward(),
                 Action::CaretLeft => field.buffer.left(),
                 Action::CaretRight => field.buffer.right(),
@@ -1007,7 +1150,10 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_ref() else {
             return;
         };
-        if overview.section != Section::Settings || overview.edit.field.is_some() {
+        if overview.section != Section::Settings
+            || overview.edit.field.is_some()
+            || overview.edit.text.is_some()
+        {
             return;
         }
         let choice = matches!(
@@ -1017,6 +1163,22 @@ impl Attach<'_> {
         if !choice {
             self.space_overview_action(Action::Activate, viewport);
         }
+    }
+
+    /// A click on a path a list's field offers: it is taken, as enter
+    /// takes the one the keys are on.
+    pub(super) fn pick_overview_option(&mut self, option: usize) {
+        let Some(field) = self
+            .model
+            .space_overview
+            .as_mut()
+            .and_then(|overview| overview.edit.field.as_mut())
+        else {
+            return;
+        };
+        field.picked = option;
+        self.model.dirty = true;
+        self.commit_field();
     }
 
     /// Steps the number on `row` by `delta`, selecting it: its − and +
@@ -1076,7 +1238,14 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        let key = row.key();
+        let key = match row {
+            WorkspaceRow::Action(state) => {
+                let text = overview.effective_action(state).unwrap_or_default();
+                overview.edit.text = Some((state, RenameBuffer::new(text)));
+                return;
+            }
+            WorkspaceRow::Key(key) | WorkspaceRow::Item(key, _) => key,
+        };
         let value = overview.effective(key);
         match row {
             WorkspaceRow::Item(_, index) => {
@@ -1089,6 +1258,7 @@ impl Attach<'_> {
                     key,
                     item: Some(index),
                     buffer: RenameBuffer::new(text),
+                    picked: 0,
                 });
             }
             WorkspaceRow::Key(key) if !choices(key).is_empty() => {
@@ -1106,6 +1276,7 @@ impl Attach<'_> {
                     key,
                     item: Some(len),
                     buffer: RenameBuffer::new(String::new()),
+                    picked: 0,
                 });
             }
             WorkspaceRow::Key(key) => {
@@ -1114,8 +1285,11 @@ impl Attach<'_> {
                     key,
                     item: None,
                     buffer: RenameBuffer::new(text),
+                    picked: 0,
                 });
             }
+            // Answered above, before the key was read.
+            WorkspaceRow::Action(_) => {}
         }
         self.schedule_declaration_preview();
     }
@@ -1125,10 +1299,16 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
+        let options = overview.picker_options();
         let Some(field) = overview.edit.field.take() else {
             return;
         };
-        let typed = field.buffer.text().trim().to_owned();
+        // A path on offer is taken as offered; with none matching, what
+        // was typed stands, and the check says whether it may.
+        let typed = options
+            .get(field.picked.min(options.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_else(|| field.buffer.text().trim().to_owned());
         let key = field.key;
         let value = match field.item {
             None if typed.is_empty() => None,
@@ -1170,10 +1350,12 @@ impl Attach<'_> {
         if overview.section != Section::Settings || !overview.editable() {
             return;
         }
-        let Some(row) = overview.selected_workspace_row() else {
+        let Some(key) = overview
+            .selected_workspace_row()
+            .and_then(WorkspaceRow::key)
+        else {
             return;
         };
-        let key = row.key();
         if !is_list(key) && !listed_branch(key, overview) {
             return;
         }
@@ -1185,6 +1367,7 @@ impl Attach<'_> {
             key,
             item: Some(len),
             buffer: RenameBuffer::new(String::new()),
+            picked: 0,
         });
     }
 
@@ -1208,6 +1391,7 @@ impl Attach<'_> {
             // must not take every entry with it.
             WorkspaceRow::Key(key) if is_listed(key, overview) => return,
             WorkspaceRow::Key(key) => overview.set(key, None),
+            WorkspaceRow::Action(state) => overview.set_action(state, None),
         }
         let count = overview.row_count();
         let index = Section::Settings.index();
@@ -1257,7 +1441,7 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        if overview.section != Section::Settings || overview.edit.values.is_empty() {
+        if overview.section != Section::Settings || overview.edit.pending() == 0 {
             return;
         }
         if let Some(Ok(preview)) = overview.current_preview()
