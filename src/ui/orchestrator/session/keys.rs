@@ -318,7 +318,14 @@ impl Attach<'_> {
         // The overview's door stands over the surfaces too, as theirs do
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
-            self.show_current_space_overview();
+            if let Some(space) = self
+                .model
+                .session
+                .as_ref()
+                .map(|session| session.selected_space().id)
+            {
+                self.show_space_overview(space, columns, rows);
+            }
             return Flow::Continue;
         }
         if self.model.architect.is_some() {

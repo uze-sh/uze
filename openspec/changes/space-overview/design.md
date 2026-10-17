@@ -136,7 +136,8 @@ What the code holds today (2026-10-17):
     the server. Esc at the top of the screen returns to that tab.
   - Pending workspace edits are dropped when it is put away; the footer
     says they are unsaved while they exist.
-- **The tab strip.** An `overview` tab leads the strip, flush left and
+- **The tab strip.** In the space's own context (its shells, not an
+  agent's), an `overview` tab leads the strip, flush left and
   set off from the space's tabs by the strip's "/" separator, the way the
   agent in front is set off from its shells. It is selected while the
   overview is shown, and the tab behind it is drawn unselected; pressing

@@ -107,6 +107,13 @@ pub(super) struct EditField {
     pub(super) buffer: RenameBuffer,
 }
 
+/// The overview's count of the space's agents.
+pub(super) struct Activity {
+    pub(super) running: usize,
+    pub(super) ready: usize,
+    pub(super) preserved: usize,
+}
+
 /// One line of the Workspace section, which the keys walk.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum WorkspaceRow {
@@ -173,6 +180,61 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::CaretLineStart
             | Action::CaretLineEnd
     )
+}
+
+/// The Workspace section's keys, grouped by what they decide about, in
+/// the order the section shows them.
+pub(super) const GROUPS: [(&str, &[DeclarationKey]); 3] = [
+    (
+        "checkouts",
+        &[
+            DeclarationKey::Worktree,
+            DeclarationKey::Link,
+            DeclarationKey::Setup,
+            DeclarationKey::Slots,
+            DeclarationKey::IdleDays,
+        ],
+    ),
+    (
+        "delivery",
+        &[
+            DeclarationKey::Target,
+            DeclarationKey::Delivery,
+            DeclarationKey::Branch,
+            DeclarationKey::Gate,
+        ],
+    ),
+    ("project", &[DeclarationKey::Artifacts]),
+];
+
+/// A key as the form names it.
+pub(super) fn key_label(key: DeclarationKey) -> &'static str {
+    match key {
+        DeclarationKey::Worktree => "Worktree",
+        DeclarationKey::Target => "Target branch",
+        DeclarationKey::Delivery => "Delivery",
+        DeclarationKey::Branch => "Branch names",
+        DeclarationKey::Link => "Linked files",
+        DeclarationKey::Setup => "Setup",
+        DeclarationKey::Gate => "Gate",
+        DeclarationKey::Slots => "Slots",
+        DeclarationKey::IdleDays => "Idle days",
+        DeclarationKey::Artifacts => "Artifacts",
+    }
+}
+
+/// Whether the key is a list of entries, one per line.
+pub(super) fn is_listed(key: DeclarationKey, view: &SpaceOverviewView) -> bool {
+    is_list(key) || listed_branch(key, view)
+}
+
+/// The option a choice key holds as it would be saved.
+pub(super) fn chosen(key: DeclarationKey, value: Option<&DeclaredValue>) -> String {
+    match value {
+        None => key.default_spelled().to_owned(),
+        Some(DeclaredValue::List(_)) => "types".to_owned(),
+        Some(value) => scalar(value),
+    }
 }
 
 /// The choices a key offers, when it is one choice among a few.
@@ -287,7 +349,7 @@ impl SpaceOverviewView {
     /// The Workspace section's lines: each key, and under a list its items.
     pub(super) fn workspace_rows(&self) -> Vec<WorkspaceRow> {
         let mut rows = Vec::new();
-        for key in DeclarationKey::ALL {
+        for key in GROUPS.iter().flat_map(|(_, keys)| keys.iter().copied()) {
             rows.push(WorkspaceRow::Key(key));
             if let Some(value) = self
                 .effective(key)
@@ -338,6 +400,26 @@ impl SpaceOverviewView {
         self.fact = None;
         self.edit.field = None;
         self.edit.reviewing = false;
+    }
+
+    /// Sets a choice key to its option at `index`. Choosing the project's
+    /// own branch types starts the list with the two every vocabulary has.
+    pub(super) fn choose(&mut self, key: DeclarationKey, index: usize) {
+        let Some(option) = choices(key).get(index) else {
+            return;
+        };
+        if chosen(key, self.effective(key).as_ref()) == *option {
+            return;
+        }
+        let value = match (key, *option) {
+            (DeclarationKey::Delivery, "none") => None,
+            (DeclarationKey::Branch, "types") => Some(DeclaredValue::List(vec![
+                "feat".to_owned(),
+                "fix".to_owned(),
+            ])),
+            (_, option) => Some(DeclaredValue::Text(option.to_owned())),
+        };
+        self.set(key, value);
     }
 
     /// The edits as the application takes them.
@@ -437,6 +519,46 @@ impl WorkspaceModel {
         }
     }
 
+    /// How many of the space's agents are at work, ready to deliver, and
+    /// kept with no pane: from what the client holds live — its tabs and
+    /// its last evaluation — so the figures move with the sidebar rather
+    /// than with the overview's own read.
+    pub(super) fn overview_activity(
+        &self,
+        overview: &SpaceOverviewView,
+        project: &ProjectSpace,
+    ) -> Activity {
+        let live: BTreeSet<&str> = self.tabs().filter_map(launched_agent_id).collect();
+        let running = self
+            .session
+            .as_ref()
+            .and_then(|session| session.space(overview.space))
+            .map_or(0, |space| {
+                space
+                    .tabs
+                    .iter()
+                    .filter(|tab| launched_agent_id(tab).is_some())
+                    .count()
+            });
+        let primary = evaluation_key(&project.status.report.root);
+        let ready = self.remembered.tasks.get(&primary).map_or(0, |tasks| {
+            tasks
+                .iter()
+                .filter(|task| matches!(task.state, uze_application::WorkStateView::Ready))
+                .count()
+        });
+        let preserved = project
+            .preserved
+            .iter()
+            .filter(|work| !live.contains(work.id.as_str()))
+            .count();
+        Activity {
+            running,
+            ready,
+            preserved,
+        }
+    }
+
     /// A click on a row of the section in front.
     pub(super) fn select_overview_row(&mut self, index: usize) {
         if let Some(overview) = self.space_overview.as_mut()
@@ -507,9 +629,10 @@ impl WorkspaceModel {
         else {
             return false;
         };
-        if resolution.asked == overview.edit.preview_asked {
-            overview.edit.preview_pending = false;
-        }
+        // Whichever edits it was for, the read is over: an answer to older
+        // edits is kept only until the one for the current edits, which
+        // the next pass asks for, replaces it.
+        overview.edit.preview_pending = false;
         overview.edit.preview = Some((resolution.asked, resolution.answer));
         true
     }
@@ -623,20 +746,6 @@ impl Attach<'_> {
             self.model.open_space_overview(space, behind, false);
             self.schedule_space_overview();
         }
-    }
-
-    /// The overview of the space in front, over the tab in front.
-    pub(super) fn show_current_space_overview(&mut self) {
-        let Some((space, behind)) = self.model.session.as_ref().map(|session| {
-            (
-                session.selected_space().id,
-                session.selected_space().selected_tab,
-            )
-        }) else {
-            return;
-        };
-        self.model.open_space_overview(space, behind, true);
-        self.schedule_space_overview();
     }
 
     /// Reads the overview open now, unless its answer is awaited already.
@@ -855,6 +964,43 @@ impl Attach<'_> {
         let _ = viewport;
     }
 
+    /// A click on a row: it is selected, and in the Workspace form a value,
+    /// an entry or a list's add is opened for typing, as Enter would. A
+    /// choice's row waits for a click on one of its options.
+    pub(super) fn click_overview_row(&mut self, index: usize, viewport: &Viewport) {
+        self.model.select_overview_row(index);
+        let Some(overview) = self.model.space_overview.as_ref() else {
+            return;
+        };
+        if overview.section != Section::Workspace || overview.edit.field.is_some() {
+            return;
+        }
+        let choice = matches!(
+            overview.selected_workspace_row(),
+            Some(WorkspaceRow::Key(key)) if !choices(key).is_empty()
+        );
+        if !choice {
+            self.space_overview_action(Action::Activate, viewport);
+        }
+    }
+
+    /// A click on one of a choice's options: selects its row and sets it.
+    pub(super) fn choose_overview_option(&mut self, row: usize, option: usize) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        if !overview.editable() {
+            return;
+        }
+        let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
+            return;
+        };
+        overview.rows[Section::Workspace.index()] = row;
+        overview.choose(key, option);
+        self.model.dirty = true;
+        self.schedule_declaration_preview();
+    }
+
     /// Opens the approval question about this project's commands.
     pub(super) fn review_overview_commands(&mut self) {
         let Some(project) = self
@@ -890,28 +1036,15 @@ impl Attach<'_> {
                 });
             }
             WorkspaceRow::Key(key) if !choices(key).is_empty() => {
-                let current = match &value {
-                    None => key.default_spelled().to_owned(),
-                    Some(DeclaredValue::List(_)) => "types".to_owned(),
-                    Some(value) => scalar(value),
-                };
+                let current = chosen(key, value.as_ref());
                 let options = choices(key);
                 let at = options
                     .iter()
                     .position(|option| *option == current)
                     .unwrap_or(0);
-                let next = options[(at + 1) % options.len()];
-                let value = match (key, next) {
-                    (DeclarationKey::Delivery, "none") => None,
-                    (DeclarationKey::Branch, "types") => Some(DeclaredValue::List(vec![
-                        "feat".to_owned(),
-                        "fix".to_owned(),
-                    ])),
-                    (_, option) => Some(DeclaredValue::Text(option.to_owned())),
-                };
-                overview.set(key, value);
+                overview.choose(key, (at + 1) % options.len());
             }
-            WorkspaceRow::Key(key) if is_list(key) => {
+            WorkspaceRow::Key(key) if is_listed(key, overview) => {
                 let len = value.as_ref().map_or(0, |value| items(value).len());
                 overview.edit.field = Some(EditField {
                     key,
@@ -1015,6 +1148,9 @@ impl Attach<'_> {
                 with_item(&mut list, key, index, None);
                 overview.set(key, list);
             }
+            // A list goes one entry at a time: a stray `d` on its heading
+            // must not take every entry with it.
+            WorkspaceRow::Key(key) if is_listed(key, overview) => return,
             WorkspaceRow::Key(key) => overview.set(key, None),
         }
         let count = overview.row_count();

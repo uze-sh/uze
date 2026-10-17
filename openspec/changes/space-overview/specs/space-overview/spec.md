@@ -31,7 +31,8 @@ meanwhile.
 The overview SHALL be put away when the operator selects a tab or an agent,
 selects another space (whose overview then shows), or presses Esc with
 nothing open inside it, which returns to the space's selected tab. An
-`overview` tab leading the tab strip, selected while the overview is shown,
+`overview` tab leading the space's own tabs in the strip (never an agent's),
+selected while the overview is shown,
 and a chord SHALL bring the current space's overview back.
 
 #### Scenario: Back to a tab

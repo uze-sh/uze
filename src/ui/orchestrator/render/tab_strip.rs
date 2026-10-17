@@ -429,11 +429,12 @@ fn render_agent_tabs(
     // render would otherwise cover over a bar drawn mid-loop (unlike the
     // sidebar's per-row renders, every chip here shares that one `Line`).
     let mut drop_indicator: Option<Rect> = None;
-    // The space itself leads its tabs: its overview, a tab of the client's
-    // own that no process stands behind. While it is in front it is the
-    // strip's one selected chip, and the tab behind it is not.
+    // The space itself leads its own tabs: its overview, a tab of the
+    // client's own that no process stands behind. Only in the space's own
+    // context — an agent's strip is about that agent. While it is in front
+    // it is the strip's one selected chip, and the tab behind it is not.
     let overview_open = model.space_overview.is_some();
-    {
+    if context.is_none() {
         let label = Span::styled(
             "overview",
             if overview_open {
