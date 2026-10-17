@@ -37,7 +37,10 @@ pub(super) fn render_picture(
         area.width,
         area.height.saturating_sub(1),
     );
-    let placement = cell.and_then(|cell| Placement::fit(picture, body, cell));
+    let screen = frame.area();
+    let placement = cell
+        .and_then(|cell| Placement::fit(picture, body, cell))
+        .map(|placement| placement.on(screen));
     // Under pixels, the half blocks fill exactly the cells the pixels are
     // sent over: they are the mark that says nothing covered them, and a
     // fit at two pixels a cell can come out a column short of a fit at the

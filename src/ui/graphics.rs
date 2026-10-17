@@ -115,6 +115,10 @@ pub(crate) struct Placement {
     /// Its size in pixels, within `cells`.
     pixels: (u16, u16),
     picture: Picture,
+    /// The whole frame it was drawn in. A frame of another size is drawn
+    /// on a cleared screen, which took the pixels with it even where the
+    /// image lands on the same cells.
+    screen: Rect,
 }
 
 impl Placement {
@@ -148,7 +152,13 @@ impl Placement {
             ),
             pixels: (u16::try_from(width).ok()?, u16::try_from(height).ok()?),
             picture: picture.clone(),
+            screen: Rect::default(),
         })
+    }
+
+    /// This placement as drawn in a frame of `screen`.
+    pub(crate) fn on(self, screen: Rect) -> Self {
+        Self { screen, ..self }
     }
 
     /// Whether every cell it covers still holds a half block — nothing,
@@ -168,6 +178,7 @@ impl Placement {
             pixels: self.picture.pixels.clone(),
             cells: self.cells,
             size: self.pixels,
+            screen: self.screen,
             theme: uze_theme::generation(),
         }
     }
@@ -185,13 +196,15 @@ struct Identity {
     pixels: Arc<[[u8; 4]]>,
     cells: Rect,
     size: (u16, u16),
+    screen: Rect,
     theme: u64,
 }
 
 impl PartialEq for Identity {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.pixels, &other.pixels)
-            && (self.cells, self.size, self.theme) == (other.cells, other.size, other.theme)
+            && (self.cells, self.size, self.screen, self.theme)
+                == (other.cells, other.size, other.screen, other.theme)
     }
 }
 
@@ -758,6 +771,23 @@ mod tests {
             painter.take_ready().is_some(),
             "sent, not taken for the first"
         );
+    }
+
+    /// A frame of a new size is drawn on a cleared screen, so the image is
+    /// sent again even when it lands on the very same cells.
+    #[test]
+    fn a_resized_screen_sends_the_image_again_on_the_same_cells() {
+        let placement = placement_of(2, Rect::new(0, 0, 4, 4));
+        let mut painter = Painter::default();
+        let before = placement.clone().on(Rect::new(0, 0, 80, 24));
+        painter.after_frame(Some(&before));
+        settle(&mut painter);
+        assert!(painter.take_ready().is_some());
+        let after = placement.on(Rect::new(0, 0, 80, 25));
+        assert_eq!(before.cells, after.cells);
+        painter.after_frame(Some(&after));
+        settle(&mut painter);
+        assert!(painter.take_ready().is_some(), "sent again after the clear");
     }
 
     #[test]
