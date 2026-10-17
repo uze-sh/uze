@@ -1,6 +1,7 @@
 //! The sidebar: spaces, their agents, the spec summary, first steps and the timeline.
 
 use super::*;
+use crate::ui::extension_view::{SECTION_CHROME, SectionState};
 
 /// Whether `cwd` is outside any slot: no repository, no commit to branch
 /// from — or an agent that simply has not been isolated, standing in
@@ -298,6 +299,14 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         )
     });
     let foot = reserved + spec_reserved;
+    // Every divider at the foot is a handle on the timeline while it has
+    // rows to give or take (see `WorkspaceModel::grab_foot`), and the one
+    // lit while dragging is the one that was grabbed: its distance from
+    // the timeline's own divider is the grab.
+    let foot_resizable = reserved > 0 && !model.timeline_collapsed;
+    let grabbed = |offset: u16| model.timeline_grab == Some(offset);
+    // A divider at the foot is plain (`None`) or a handle, held or not.
+    let handle = |offset: u16| foot_resizable.then(|| grabbed(offset));
     let strip = steps.rect(Rect::new(
         inner.x,
         inner.y,
@@ -418,11 +427,25 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
 
     if let Some(rect) = strip {
         let mut section_hits = Vec::new();
+        let mut section = steps.section();
+        section.resizable = foot_resizable;
         crate::ui::extension_view::render_section(
             frame,
-            &steps.section(),
+            &section,
             &mut Rows::over(rect),
-            false,
+            SectionState {
+                dragging: grabbed(spec_reserved + rect.height),
+                focused: matches!(
+                    model.hovered,
+                    Some(
+                        WorkspaceHit::ToggleFirstSteps
+                            | WorkspaceHit::CloseFirstSteps
+                            | WorkspaceHit::ResizeFirstSteps
+                            | WorkspaceHit::QuickAction(_)
+                    )
+                ),
+                ..SectionState::default()
+            },
             &mut section_hits,
         );
         // The closing mark rides on the header, and an ordinary click
@@ -440,6 +463,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         for (rect, hit) in section_hits {
             match hit {
                 ViewHit::ToggleSection => hits.push((rect, WorkspaceHit::ToggleFirstSteps)),
+                ViewHit::ResizeSection => hits.push((rect, WorkspaceHit::ResizeFirstSteps)),
                 ViewHit::SelectItem(index) => {
                     if let Some(action) = steps.steps.get(index) {
                         hits.push((rect, WorkspaceHit::QuickAction(*action)));
@@ -454,14 +478,16 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         && spec_reserved > 0
     {
         rows.scroll_past(0);
-        let air = if model.spec_summary_open && spec_reserved > 1 {
-            SPEC_SUMMARY_AIR
-        } else {
-            0
-        };
-        rows.bottom = column_bottom - reserved - air;
+        rows.bottom = column_bottom - reserved;
         rows.y = column_bottom - foot;
-        metrics.marquee |= render_spec_summary(frame, summary, model, &mut rows, hits);
+        metrics.marquee |= render_spec_summary(
+            frame,
+            summary,
+            model,
+            handle(spec_reserved),
+            &mut rows,
+            hits,
+        );
     }
     if let Some(timeline) = timeline
         && reserved > 0
@@ -469,47 +495,45 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         rows.scroll_past(0);
         rows.bottom = column_bottom;
         rows.y = column_bottom - reserved;
-        metrics.marquee |= render_timeline(frame, timeline, model, &mut rows, hits);
+        metrics.marquee |= render_timeline(frame, timeline, model, grabbed(0), &mut rows, hits);
     }
 }
 
-/// The rows the spec section takes: its header, and while it is open a row
-/// per change and a row of air under the last, so the next section's
-/// header starts a block of its own rather than reading as one more
-/// change — all within half of what the column has left, since the spaces
-/// are what the sidebar is for. Nothing when even the header would not
-/// fit.
+/// The rows the spec section takes: the divider over it and its header,
+/// and while it is open a row per change — all within half of what the
+/// column has left, since the spaces are what the sidebar is for. Nothing
+/// when even the divider and the header would not fit.
 pub(in crate::ui::orchestrator) fn spec_summary_height(
     summary: &uze_extensions::spec::Summary,
     open: bool,
     remaining: u16,
 ) -> u16 {
     let budget = remaining / 2;
-    if budget < 1 {
+    if budget < SECTION_CHROME {
         return 0;
     }
     let changes = u16::try_from(summary.changes.len()).unwrap_or(u16::MAX);
     if open {
-        1 + changes + SPEC_SUMMARY_AIR
+        SECTION_CHROME + changes
     } else {
-        1
+        SECTION_CHROME
     }
     .min(budget)
 }
 
-/// The blank row an open spec section keeps under its last change.
-pub(super) const SPEC_SUMMARY_AIR: u16 = 1;
-
 /// The sidebar's spec section. The extension says what it holds; this
-/// supplies the fold, which is host state, and tags the hits it gets back.
+/// supplies the fold and whether its divider is a handle (`handle`, held
+/// or not), which are host state, and tags the hits it gets back.
 pub(super) fn render_spec_summary(
     frame: &mut ratatui::Frame<'_>,
     summary: &uze_extensions::spec::Summary,
     model: &WorkspaceModel,
+    handle: Option<bool>,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
+    let mut section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
+    section.resizable = handle.is_some();
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     let under = match model.hovered {
@@ -531,13 +555,16 @@ pub(super) fn render_spec_summary(
                 .position(|change| change.name == name)
         });
     let lit_rows: Vec<usize> = hovered_row.into_iter().chain(on_show).collect();
-    let slid = crate::ui::extension_view::render_section_with(
+    let slid = crate::ui::extension_view::render_section(
         frame,
         &section,
         &mut column,
-        false,
-        under.map(|hit| (hit, model.hovered_for())),
-        &lit_rows,
+        SectionState {
+            dragging: handle == Some(true),
+            focused: under.is_some(),
+            sliding: under.map(|hit| (hit, model.hovered_for())),
+            lit_rows: &lit_rows,
+        },
         &mut section_hits,
     );
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {
@@ -1174,13 +1201,13 @@ pub(in crate::ui::orchestrator) const FIRST_STEP_SCOPES: &[uze_keys::Scope] = &[
 /// row after them.
 pub(super) const MIN_TREE_ROWS: u16 = 4;
 
-/// The rows the timeline section takes at the foot of the column: its
-/// header, and while it is open the divider under it and one row per
+/// The rows the timeline section takes at the foot of the column: the
+/// divider over it and its header, and while it is open one row per
 /// commit. Left alone, that is within half of what the column has left,
 /// since the spaces are what the sidebar is for; dragged (`rows_wanted`),
 /// it is what was asked for, within the history there is and what the
-/// column can spare past the tree's minimum. Nothing when even the header
-/// would not fit.
+/// column can spare past the tree's minimum. Nothing when even the
+/// divider and the header would not fit.
 pub(in crate::ui::orchestrator) fn timeline_height(
     timeline: &uze_extensions::code::Timeline,
     collapsed: bool,
@@ -1189,24 +1216,19 @@ pub(in crate::ui::orchestrator) fn timeline_height(
 ) -> u16 {
     let commits = timeline.commits.len() as u16;
     let (chrome, rows, budget) = match rows_wanted {
-        _ if collapsed => (1, 0, remaining / 2),
+        _ if collapsed => (SECTION_CHROME, 0, remaining / 2),
         Some(wanted) => (
-            TIMELINE_CHROME,
+            SECTION_CHROME,
             wanted.clamp(1, commits),
             remaining.saturating_sub(MIN_TREE_ROWS),
         ),
-        None => (TIMELINE_CHROME, commits, remaining / 2),
+        None => (SECTION_CHROME, commits, remaining / 2),
     };
     if budget < chrome {
         return 0;
     }
     (chrome + rows).min(budget)
 }
-
-/// The rows of an open timeline section that are not commits: its header
-/// and the divider under it. The drag handler subtracts the same two to
-/// turn where the divider was dropped into a count of commit rows.
-pub(in crate::ui::orchestrator) const TIMELINE_CHROME: u16 = 2;
 
 /// The sidebar's commit-timeline section.
 ///
@@ -1220,14 +1242,17 @@ pub(super) fn render_timeline(
     frame: &mut ratatui::Frame<'_>,
     timeline: &uze_extensions::code::Timeline,
     model: &WorkspaceModel,
+    dragging: bool,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::code::timeline_section(
+    let mut section = uze_extensions::code::timeline_section(
         timeline,
         model.timeline_collapsed,
         model.timeline_scroll,
     );
+    // Folded, it has no rows to give or take.
+    section.resizable &= !model.timeline_collapsed;
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     // The branch name on the header and a commit's subject are captions
@@ -1243,13 +1268,16 @@ pub(super) fn render_timeline(
         Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
-    let sliding = crate::ui::extension_view::render_section_with(
+    let sliding = crate::ui::extension_view::render_section(
         frame,
         &section,
         &mut column,
-        model.dragging_timeline,
-        under.map(|hit| (hit, model.hovered_for())),
-        hovered_row.as_slice(),
+        SectionState {
+            dragging,
+            focused: under.is_some() || model.timeline_grab.is_some(),
+            sliding: under.map(|hit| (hit, model.hovered_for())),
+            lit_rows: hovered_row.as_slice(),
+        },
         &mut section_hits,
     );
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {

@@ -677,15 +677,11 @@ impl FirstSteps<'_> {
     /// before they lay out what sits above it — a strip pinned to the foot
     /// that the list above could grow over would be pinned to nothing.
     pub(crate) fn height(&self) -> u16 {
+        let chrome = crate::ui::extension_view::SECTION_CHROME;
         if self.collapsed {
-            1
+            chrome
         } else {
-            // The trailing row is blank on purpose: open, the last step
-            // would otherwise sit against the next section's header with
-            // nothing saying where one ends and the other begins. The
-            // section renderer simply runs out of rows before it reaches
-            // it, so no one has to draw the gap.
-            1 + self.steps.len() as u16 + 1
+            chrome + self.steps.len() as u16
         }
     }
 

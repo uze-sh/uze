@@ -1188,11 +1188,11 @@ mod workspace_tests {
     /// The spec button stands first of the three and is the surface's
     /// switch like the others: a click puts it where the pane is, lit, and
     /// a second click on it puts it away.
-    /// Open, the spec section keeps a row of air under its last change, so
-    /// the timeline's header below it starts a block of its own; folded,
-    /// it is its header alone.
+    /// The spec section is the divider over it and its header, and open,
+    /// a row per change under them: the timeline's own divider is what
+    /// says where the changes end, so no row of air is kept for it.
     #[test]
-    fn an_open_spec_section_keeps_air_under_its_last_change() {
+    fn a_spec_section_is_its_divider_and_header_then_its_changes() {
         let summary = uze_extensions::spec::Summary {
             changes: vec![
                 uze_extensions::spec::ChangeSummary {
@@ -1207,8 +1207,8 @@ mod workspace_tests {
             done: 0,
             total: 0,
         };
-        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
-        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+        assert_eq!(render::spec_summary_height(&summary, true, 40), 2 + 2);
+        assert_eq!(render::spec_summary_height(&summary, false, 40), 2);
     }
 
     /// The sidebar's sections are the sidebar's while a surface is open:
@@ -5438,7 +5438,7 @@ mod workspace_tests {
 
         let header = timeline_hit(&hits).expect("the header folds the section");
         let divider = resize_hit(&hits).expect("the divider resizes it");
-        assert_eq!(divider.y, header.y + 1, "the handle sits under the header");
+        assert_eq!(divider.y + 1, header.y, "the handle sits over the header");
 
         let commits: Vec<usize> = hits
             .iter()
@@ -5453,7 +5453,7 @@ mod workspace_tests {
 
         // Nothing in the section reaches the host's own hit vocabulary.
         // Nothing in the section reaches the host's own hit vocabulary.
-        let timeline_top = header.y;
+        let timeline_top = divider.y;
         assert!(
             hits.iter()
                 .filter(|(rect, _)| rect.y >= timeline_top)
@@ -5533,8 +5533,60 @@ mod workspace_tests {
         );
         assert_eq!(
             timeline_height(timeline, true, Some(9), 24),
-            1,
-            "folded is the header alone"
+            2,
+            "folded is the divider and the header alone"
+        );
+    }
+
+    /// The foot is one container: the divider over the first steps pulls
+    /// the timeline under them the way the timeline's own does, since the
+    /// timeline is the one section whose height is not its content's.
+    /// Folded, the timeline has nothing to give, and no divider is a
+    /// handle.
+    #[test]
+    fn any_divider_at_the_foot_resizes_the_timeline() {
+        let subjects: Vec<String> = (0..20).map(|index| format!("commit {index}")).collect();
+        let subjects: Vec<&str> = subjects.iter().map(String::as_str).collect();
+        let mut model = session_with_timeline(&subjects);
+        model.first_steps_collapsed = true;
+        model.timeline_rows = Some(2);
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-foot-resize"));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let divider = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == WorkspaceHit::ResizeFirstSteps).then_some(*rect))
+            .expect("the steps' divider is a handle");
+
+        driven.press(divider.x + 4, divider.y);
+        driven.mouse(
+            divider.x + 4,
+            divider.y - 3,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            divider.x + 4,
+            divider.y - 3,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        assert_eq!(
+            driven.attach.model.timeline_rows,
+            Some(5),
+            "three rows up is three more commits"
+        );
+
+        driven.attach.model.timeline_collapsed = true;
+        driven.frame();
+        assert!(
+            !driven.attach.model.hits.iter().any(|(_, hit)| matches!(
+                hit,
+                WorkspaceHit::ResizeFirstSteps
+                    | WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ResizeSection))
+            )),
+            "nothing to resize while the timeline is folded"
         );
     }
 
@@ -5832,10 +5884,11 @@ mod workspace_tests {
         );
     }
 
-    /// The header is the section's one heading: filled and bold, where the
-    /// commit rows under it are plain.
+    /// The header is the section's one heading: bold on the column's own
+    /// ground, under the divider that opens the section. A band under it
+    /// read as a selection in a column whose rows are picked.
     #[test]
-    fn the_timeline_header_stands_out_from_its_rows() {
+    fn the_timeline_header_is_bold_under_its_divider() {
         let model = session_with_timeline(&["feat: only"]);
         let buffer = sidebar(&model, &identities_fixture()).buffer;
         let rows = sidebar(&model, &identities_fixture()).rows;
@@ -5846,10 +5899,18 @@ mod workspace_tests {
         let column = rows[header].chars().position(|c| c == 't').unwrap() as u16;
 
         let cell = &buffer[(column, header as u16)];
-        assert_eq!(cell.bg, theme::color(Token::SurfaceRaised));
         assert!(cell.modifier.contains(ratatui::style::Modifier::BOLD));
-        let commit = &buffer[(column, header as u16 + 2)];
-        assert_ne!(commit.bg, theme::color(Token::SurfaceRaised));
+        assert_eq!(
+            cell.fg,
+            theme::color(Token::TextTertiary),
+            "a step under the brightest"
+        );
+        let commit = &buffer[(column, header as u16 + 1)];
+        assert_eq!(cell.bg, commit.bg, "no band under the header");
+        assert!(
+            inside(&rows[header - 1]).chars().all(|c| c == '─'),
+            "the divider over it: {rows:?}"
+        );
     }
 
     /// A folded section's title is plain: bold is for a heading over
@@ -5895,7 +5956,11 @@ mod workspace_tests {
             .iter()
             .position(|row| row.contains("timeline"))
             .expect("and the history under them");
-        assert_eq!(timeline, steps + 1, "in that order, adjacent: {rows:?}");
+        assert_eq!(
+            timeline,
+            steps + 2,
+            "in that order, the history's divider between them: {rows:?}"
+        );
         assert_eq!(timeline, rows.len() - 1, "and nothing below: {rows:?}");
 
         // Opening the steps pushes the history down the column, never over
@@ -5913,12 +5978,12 @@ mod workspace_tests {
         assert_eq!(
             timeline,
             steps + 1 + render::FIRST_STEPS.len() + 1,
-            "the steps came between them, with a blank row closing them off \
-             so the last one does not sit against the next header: {rows:?}"
+            "the steps came between them, closed off by the history's own \
+             divider: {rows:?}"
         );
         assert!(
-            inside(&rows[timeline - 1]).trim().is_empty(),
-            "and that row is blank: {rows:?}"
+            inside(&rows[timeline - 1]).chars().all(|c| c == '─'),
+            "and that row is the divider: {rows:?}"
         );
         assert_eq!(timeline, rows.len() - 1, "{rows:?}");
     }
@@ -6869,16 +6934,15 @@ mod workspace_tests {
         assert!(!untaken.contains(&tick), "{untaken:?}");
     }
 
-    /// Folded, the header carries no band. A filled row across the column
-    /// says "this is a heading over content", and a folded section has
-    /// none — two of them stacked at the foot of the sidebar read as a
-    /// toolbar rather than as two things you can open.
+    /// Open or folded, the header carries no band: the divider over it
+    /// is what says a section starts there, and a filled row in a column
+    /// whose rows are picked reads as the one picked.
     #[test]
-    fn a_folded_section_header_carries_no_band() {
+    fn a_section_header_carries_no_band() {
         let mut model = session_with_timeline(&["feat: only"]);
         model.first_steps_collapsed = true;
 
-        for (collapsed, banded) in [(false, true), (true, false)] {
+        for collapsed in [false, true] {
             model.timeline_collapsed = collapsed;
             let buffer = sidebar(&model, &identities_fixture()).buffer;
             let rows = sidebar(&model, &identities_fixture()).rows;
@@ -6890,9 +6954,9 @@ mod workspace_tests {
                 .chars()
                 .position(|glyph| glyph == 't')
                 .expect("its title") as u16;
-            assert_eq!(
-                buffer[(column, header as u16)].bg == theme::color(Token::SurfaceRaised),
-                banded,
+            assert_ne!(
+                buffer[(column, header as u16)].bg,
+                theme::color(Token::SurfaceRaised),
                 "collapsed={collapsed}: {rows:?}"
             );
         }
@@ -6911,31 +6975,31 @@ mod workspace_tests {
         assert!(rows[last - 1].contains("● fix: second"), "{rows:?}");
         assert!(rows[last - 2].contains("◉ feat: third"), "{rows:?}");
         assert!(inside(&rows[last - 2]).ends_with("3h"), "{rows:?}");
+        let header = &rows[last - 3];
+        assert!(header.contains("▾ timeline"), "{header}");
+        assert!(inside(header).ends_with("main"), "{header}");
+        assert_eq!(
+            timeline_hit(&hits).map(|rect| rect.y),
+            Some((last - 3) as u16)
+        );
         assert!(
-            inside(&rows[last - 3]).trim().chars().all(|c| c == '─'),
-            "a divider parts the header from its rows: {rows:?}"
+            inside(&rows[last - 4]).trim().chars().all(|c| c == '─'),
+            "a divider opens the section over its header: {rows:?}"
         );
         assert_eq!(
             resize_hit(&hits).map(|rect| rect.y),
-            Some((last - 3) as u16),
+            Some((last - 4) as u16),
             "the divider is the handle"
         );
-        let header = &rows[last - 4];
-        assert!(header.contains("▾ timeline"), "{header}");
-        assert!(inside(header).ends_with("main"), "{header}");
         let space_row = rows
             .iter()
             .position(|row| row.contains("Agent"))
             .expect("the agent stays in the tree above");
         assert!(space_row < last - 4, "{rows:?}");
-        assert_eq!(
-            timeline_hit(&hits).map(|rect| rect.y),
-            Some((last - 4) as u16)
-        );
     }
 
-    /// Folded, the section is its header alone — still at the foot, still
-    /// the one target that opens it back up.
+    /// Folded, the section is its divider and header alone — still at the
+    /// foot, still the one target that opens it back up.
     #[test]
     fn folding_the_timeline_keeps_only_its_header() {
         let mut model = session_with_timeline(&["feat: third", "fix: second"]);
@@ -7619,7 +7683,11 @@ mod workspace_tests {
             "a section folds where a space does: {rows:?}"
         );
         assert!(
-            rows[steps - 1].trim_end_matches('│').trim().is_empty(),
+            inside(&rows[steps - 1]).chars().all(|c| c == '─'),
+            "the section's divider over its header: {rows:?}"
+        );
+        assert!(
+            inside(&rows[steps - 2]).trim().is_empty(),
             "a row of air over the foot: {rows:?}"
         );
     }

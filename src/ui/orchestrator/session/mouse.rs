@@ -483,16 +483,18 @@ impl Attach<'_> {
             _ if self.model.recent.grab.is_some() => {
                 self.drag_recent_edge(mouse.column, mouse.row);
             }
-            _ if self.model.dragging_timeline => {
-                // The divider follows the pointer; what is remembered
-                // is the commit rows that leaves under it, never fewer
+            _ if let Some(grab) = self.model.timeline_grab => {
+                // The divider follows the pointer, whichever section's it
+                // is (see `grab_foot`); what is remembered is the commit
+                // rows that leaves the timeline, never fewer
                 // than one — folding is the header's own click, not a
                 // drag to nothing.
                 let wanted = layout
                     .sidebar
                     .bottom()
                     .saturating_sub(mouse.row)
-                    .saturating_sub(render::TIMELINE_CHROME - 1)
+                    .saturating_sub(grab)
+                    .saturating_sub(crate::ui::extension_view::SECTION_CHROME)
                     .clamp(1, TIMELINE_COMMITS as u16);
                 if self.model.timeline_rows != Some(wanted) {
                     self.model.timeline_rows = Some(wanted);
@@ -556,7 +558,7 @@ impl Attach<'_> {
             }
             _ if !self.model.dragging_sidebar
                 && self.model.code_edge_drag.is_none()
-                && !self.model.dragging_timeline
+                && self.model.timeline_grab.is_none()
                 && self.model.dragging_tab.is_none()
                 && self.model.dragging_space.is_none()
                 && self.model.no_modal_open() =>
@@ -597,7 +599,7 @@ impl Attach<'_> {
         if !self.model.dragging_sidebar
             && self.model.code_edge_drag.is_none()
             && !self.model.dragging_code_content
-            && !self.model.dragging_timeline
+            && self.model.timeline_grab.is_none()
             && self.model.dragging_tab.is_none()
             && self.model.dragging_space.is_none()
             && self.model.no_modal_open()
@@ -628,7 +630,7 @@ impl Attach<'_> {
                 },
             );
         }
-        if self.model.dragging_timeline || self.model.dragging_sidebar {
+        if self.model.timeline_grab.is_some() || self.model.dragging_sidebar {
             // Where the drag settled is the user's answer, kept for the
             // next run; the widths and heights it passed through on the
             // way there are not, which is why this is the release rather
@@ -646,7 +648,7 @@ impl Attach<'_> {
         }
         self.model.recent.grab = None;
         self.model.dragging_code_content = false;
-        self.model.dragging_timeline = false;
+        self.model.timeline_grab = None;
         self.model.dirty = true;
         Flow::Continue
     }
@@ -1210,6 +1212,7 @@ impl Attach<'_> {
                 self.model.remember_sidebar();
                 self.model.dirty = true;
             }
+            WorkspaceHit::ResizeFirstSteps => self.model.grab_foot(hit_rect),
             WorkspaceHit::ToggleFirstSteps => {
                 self.model.first_steps_collapsed = !self.model.first_steps_collapsed;
                 self.model.remember_sidebar();
@@ -1465,6 +1468,7 @@ impl Attach<'_> {
             // surface on that change. Nothing else is drawn in it.
             WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {
                 ViewHit::ToggleSection => toggle_spec_summary(&mut self.model),
+                ViewHit::ResizeSection => self.model.grab_foot(hit_rect),
                 ViewHit::SelectItem(index) => {
                     let change = self
                         .model
@@ -1479,7 +1483,7 @@ impl Attach<'_> {
             },
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
                 ViewHit::ToggleSection => toggle_timeline(&mut self.model),
-                ViewHit::ResizeSection => self.model.dragging_timeline = true,
+                ViewHit::ResizeSection => self.model.grab_foot(hit_rect),
                 ViewHit::SelectItem(index) => open_commit_detail(
                     &mut self.model,
                     index,
