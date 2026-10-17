@@ -13,8 +13,9 @@ const CAST = '/uze-landing.cast';
 const CHAPTERS: { label: string; at: number }[] = [
   { label: 'open the workspace', at: 0 },
   { label: 'add a plugin', at: 4 },
-  { label: 'agents side by side', at: 18.6 },
-  { label: 'review and deliver', at: 42.4 },
+  { label: 'agents side by side', at: 16.7 },
+  { label: 'review and deliver', at: 41.4 },
+  { label: 'pick up anywhere', at: 58 },
 ];
 // What the spec records at: the pace that reads as a person typing.
 const SPEED = 1.2;
@@ -108,7 +109,7 @@ export function HeroRecording() {
             ref={host}
             className="hero-recording"
             role="img"
-            aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on one, while Claude commits through the plugin skill and is delivered to main."
+            aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on one, while Claude commits through the plugin skill and is delivered to main; the OpenCode agent then continues in Claude Code, is closed, found in Recent and resumed, and the management screens are shown."
           />
         </div>
       </figure>
