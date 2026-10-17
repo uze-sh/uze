@@ -89,11 +89,7 @@ impl Memory<'_> {
                 // machine fact it writes is a proposal wherever it stands.
                 let Some(owner) = conversation::owner_of(home, claim) else {
                     return Ok(Resolved {
-                        primary: conversation::project_of(home, claim.cwd).or_else(|| {
-                            uze_core::project_root::resolve_project_root(claim.cwd)
-                                .ok()
-                                .flatten()
-                        }),
+                        primary: primary_of(home, claim.cwd),
                         source: Source::Agent {
                             harness: String::new(),
                             task: claim.id.to_owned(),
@@ -115,11 +111,7 @@ impl Memory<'_> {
                 })
             }
             MemoryCaller::Operator { cwd } => Ok(Resolved {
-                primary: conversation::project_of(home, cwd).or_else(|| {
-                    uze_core::project_root::resolve_project_root(cwd)
-                        .ok()
-                        .flatten()
-                }),
+                primary: primary_of(home, cwd),
                 source: Source::Operator,
                 launched: false,
             }),
@@ -183,8 +175,7 @@ impl Memory<'_> {
     /// Everything kept for the project `dir` belongs to, keyed on its
     /// primary checkout so every checkout of it reads one memory.
     pub fn report_at(&self, dir: &Path) -> MemoryReport {
-        let primary =
-            conversation::project_of(&self.0.home, dir).unwrap_or_else(|| dir.to_path_buf());
+        let primary = primary_of(&self.0.home, dir).unwrap_or_else(|| dir.to_path_buf());
         self.report(Some(&primary))
     }
 
@@ -203,6 +194,18 @@ impl Memory<'_> {
     pub fn discard(&self, name: &str) -> Result<bool> {
         MemoryStore::new(&self.0.home, None).discard(name)
     }
+}
+
+/// The primary checkout of the project `dir` belongs to: the one the
+/// workspace recorded it under, or the project root above it when the
+/// workspace has not opened it yet. The one answer every memory verb and
+/// `status` key a project's memory on, so they never read two.
+fn primary_of(home: &UzeHome, dir: &Path) -> Option<PathBuf> {
+    conversation::project_of(home, dir).or_else(|| {
+        uze_core::project_root::resolve_project_root(dir)
+            .ok()
+            .flatten()
+    })
 }
 
 fn shown_fact(fact: Fact, scope: Scope, path: PathBuf) -> Shown {
