@@ -55,6 +55,12 @@ pub(super) enum Health {
 pub(super) struct SpaceOverviewView {
     pub(super) space: SpaceId,
     pub(super) root: PathBuf,
+    /// The tab it stands in front of, as asked of the server.
+    behind: TabId,
+    /// Whether the server has said that tab is in front. Until it has,
+    /// the selection it reports is the one being left; once it has, any
+    /// other selection is the operator going somewhere else.
+    settled: bool,
     pub(super) section: Section,
     /// The selected row of each section, by section index.
     pub(super) rows: [usize; 4],
@@ -150,7 +156,7 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::FocusPrevious
             | Action::SelectNext
             | Action::SelectPrevious
-            | Action::SelectTab(_)
+            | Action::SelectSection(_)
             | Action::Activate
             | Action::Refresh
             | Action::OpenSpaceShell
@@ -227,10 +233,12 @@ pub(super) fn scalar(value: &DeclaredValue) -> String {
 }
 
 impl SpaceOverviewView {
-    fn new(space: SpaceId, root: PathBuf) -> Self {
+    fn new(space: SpaceId, root: PathBuf, behind: TabId, settled: bool) -> Self {
         Self {
             space,
             root,
+            behind,
+            settled,
             section: Section::Context,
             rows: [0; 4],
             drawer: false,
@@ -382,13 +390,17 @@ fn listed_branch(key: DeclarationKey, view: &SpaceOverviewView) -> bool {
 }
 
 impl WorkspaceModel {
-    /// Opens `space`'s overview, or keeps the one already open for it.
-    pub(super) fn open_space_overview(&mut self, space: SpaceId) {
-        if self
+    /// Opens `space`'s overview in front of `behind`, or keeps the one
+    /// already open for it. `settled` says the server already has that
+    /// tab in front.
+    pub(super) fn open_space_overview(&mut self, space: SpaceId, behind: TabId, settled: bool) {
+        if let Some(overview) = self
             .space_overview
-            .as_ref()
-            .is_some_and(|overview| overview.space == space)
+            .as_mut()
+            .filter(|overview| overview.space == space)
         {
+            overview.behind = behind;
+            overview.settled = settled;
             return;
         }
         let Some(root) = self.session.as_ref().and_then(|session| {
@@ -402,8 +414,27 @@ impl WorkspaceModel {
             return;
         };
         self.close_extension();
-        self.space_overview = Some(SpaceOverviewView::new(space, root));
+        self.space_overview = Some(SpaceOverviewView::new(space, root, behind, settled));
         self.dirty = true;
+    }
+
+    /// Puts the overview away once the selection moved on from the tab it
+    /// stands in front of — a tab opened, an agent placed, another space —
+    /// however that came about.
+    pub(super) fn put_away_space_overview_left_behind(&mut self) {
+        let Some(overview) = self.space_overview.as_mut() else {
+            return;
+        };
+        let Some(session) = &self.session else {
+            return;
+        };
+        let space = session.selected_space();
+        let in_front = space.id == overview.space && space.selected_tab == overview.behind;
+        if in_front {
+            overview.settled = true;
+        } else if overview.settled || session.space(overview.space).is_none() {
+            self.put_away_space_overview();
+        }
     }
 
     /// A click on a row of the section in front.
@@ -583,8 +614,28 @@ impl Attach<'_> {
     /// Lands on `space` and shows its overview: the shell it owns stays
     /// behind it, so the strip shows the space's own tabs.
     pub(super) fn show_space_overview(&mut self, space: SpaceId, columns: u16, rows: u16) {
+        let behind = self.model.session.as_ref().and_then(|session| {
+            let space = session.space(space)?;
+            Some(space_own_tab(space, &self.identities).unwrap_or(space.selected_tab))
+        });
         self.land_on_space(space, columns, rows);
-        self.model.open_space_overview(space);
+        if let Some(behind) = behind {
+            self.model.open_space_overview(space, behind, false);
+            self.schedule_space_overview();
+        }
+    }
+
+    /// The overview of the space in front, over the tab in front.
+    pub(super) fn show_current_space_overview(&mut self) {
+        let Some((space, behind)) = self.model.session.as_ref().map(|session| {
+            (
+                session.selected_space().id,
+                session.selected_space().selected_tab,
+            )
+        }) else {
+            return;
+        };
+        self.model.open_space_overview(space, behind, true);
         self.schedule_space_overview();
     }
 
@@ -712,7 +763,7 @@ impl Attach<'_> {
             Action::Dismiss if overview.drawer => overview.drawer = false,
             Action::Dismiss if overview.fact.is_some() => overview.fact = None,
             Action::Dismiss => self.model.put_away_space_overview(),
-            Action::SelectTab(position) => {
+            Action::SelectSection(position) => {
                 if let Some(section) = Section::ALL.get(usize::from(position).saturating_sub(1)) {
                     overview.switch(*section);
                 }

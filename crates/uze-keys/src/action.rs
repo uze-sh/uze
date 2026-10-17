@@ -30,6 +30,10 @@ macro_rules! actions {
             /// rather than one action carrying a number, because the
             /// keymap binds positions, not a counter.
             SelectTab(u8),
+            /// Show the nth section of a space's overview. Apart from
+            /// [`Action::SelectTab`], whose chords stay live over the
+            /// overview and choose a tab of the strip behind it.
+            SelectSection(u8),
         }
 
         /// Every action this build knows, in vocabulary order — the order
@@ -39,6 +43,8 @@ macro_rules! actions {
             Action::SelectTab(1), Action::SelectTab(2), Action::SelectTab(3),
             Action::SelectTab(4), Action::SelectTab(5), Action::SelectTab(6),
             Action::SelectTab(7), Action::SelectTab(8), Action::SelectTab(9),
+            Action::SelectSection(1), Action::SelectSection(2),
+            Action::SelectSection(3), Action::SelectSection(4),
         ];
 
         impl Action {
@@ -47,6 +53,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $name.to_owned(),)*
                     Action::SelectTab(index) => format!("select-tab-{index}"),
+                    Action::SelectSection(index) => format!("select-section-{index}"),
                 }
             }
 
@@ -60,7 +67,14 @@ macro_rules! actions {
                         .strip_prefix("select-tab-")
                         .and_then(|index| index.parse::<u8>().ok())
                         .filter(|index| (1..=9).contains(index))
-                        .map(Action::SelectTab),
+                        .map(Action::SelectTab)
+                        .or_else(|| {
+                            other
+                                .strip_prefix("select-section-")
+                                .and_then(|index| index.parse::<u8>().ok())
+                                .filter(|index| (1..=4).contains(index))
+                                .map(Action::SelectSection)
+                        }),
                 }
             }
 
@@ -70,7 +84,7 @@ macro_rules! actions {
             pub fn destructive(self) -> bool {
                 match self {
                     $(Action::$variant => $destructive,)*
-                    Action::SelectTab(_) => false,
+                    Action::SelectTab(_) | Action::SelectSection(_) => false,
                 }
             }
 
@@ -79,6 +93,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $label.to_owned(),)*
                     Action::SelectTab(index) => format!("Tab {index}"),
+                    Action::SelectSection(index) => format!("Section {index}"),
                 }
             }
 
@@ -93,6 +108,9 @@ macro_rules! actions {
                             "Select tab {index} on the strip in front of you: an agent \
                              and its shells, or a management screen"
                         )
+                    }
+                    Action::SelectSection(index) => {
+                        format!("Show section {index} of the space's overview")
                     }
                 }
             }

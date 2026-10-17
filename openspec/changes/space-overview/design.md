@@ -129,9 +129,11 @@ What the code holds today (2026-10-17):
   - The overview belongs to a `SpaceId`, never to the tab in front.
     `close_extension_left_behind` does not touch it: tying it to the tab
     in front would close it on the very broadcast that confirms the space.
-  - It is put away by: selecting a tab, selecting an agent row, `+`,
-    selecting another space (whose overview opens), and Esc at the top of
-    the screen. Esc returns to the space's selected tab.
+  - It records the tab it stands in front of. Once the server has that
+    tab in front, any other selection puts it away, whatever caused it:
+    a tab or agent chosen, `+`, an agent placed, another space. A click
+    on the tab behind it puts it away too, since that changes nothing on
+    the server. Esc at the top of the screen returns to that tab.
   - Pending workspace edits are dropped when it is put away; the footer
     says they are unsaved while they exist.
 - **The tab strip.** An `overview` tab leads the strip, flush left and
@@ -281,7 +283,9 @@ What the code holds today (2026-10-17):
   pushed where the code, architect and spec scopes are, before
   `Scope::Surfaces`.
 - **Chords:**
-  - `1`-`4` and ←→ switch section; ↑↓ move within it;
+  - `1`-`4` (`Action::SelectSection`) and ←→ switch section; ↑↓ move
+    within it. `SelectTab`'s chords stay the strip's over the overview,
+    so `alt+n` still chooses a tab and puts the overview away;
   - Enter opens the drawer or edits; Esc closes the innermost thing open
     (field, diff, drawer) and, at the top, puts the screen away;
   - `o` opens the shell; `r` refreshes;
