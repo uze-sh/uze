@@ -107,3 +107,10 @@ wrong. `every_language_fixture_is_read_as_its_own_language` in
 on any read as another language or drawn as plain text. Adding a language
 is adding a file here and its name and grammar to that list. Opening the directory in the code surface is also
 the quickest way to look at them all by hand.
+
+## images/
+
+The JPEG samples the code surface's image decoding is tested against,
+since nothing in the tree encodes JPEG: `rust.jpg` (16×8, one colour) and
+`gray.jpg` (8×8, one channel), made with `ffmpeg -f lavfi -i color=…`.
+Every other format those tests read is encoded inside the test itself.

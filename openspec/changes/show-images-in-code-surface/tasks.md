@@ -11,14 +11,14 @@
 
 ## 2. Remaining formats
 
-- [ ] 2.1 Run `cargo info` and `cargo tree -p` for `zune-jpeg`, `gif` and `image-webp`; confirm publisher, repository, no C build script, and default features to turn off
-- [ ] 2.2 JPEG (`.jpg`, `.jpeg`) through `zune-jpeg`, including grayscale and CMYK output to RGBA; test with an encoded fixture made in the test
-- [ ] 2.3 GIF through `gif`, first frame composited into the logical screen with its transparency; test a two-frame GIF draws the first
-- [ ] 2.4 WebP (lossy and lossless) through `image-webp`, first frame; test with a small committed fixture, since no encoder is in the tree
-- [ ] 2.5 BMP in-house: `BITMAPINFOHEADER` and later headers, 24 and 32 bits, bottom-up and top-down rows, `BI_RGB` and `BI_BITFIELDS` for 32-bit; anything else returns `None`. Tests for each orientation and a truncated file
-- [ ] 2.6 ICO in-house: read the directory, take the largest entry, decode it as PNG or as a header-less BMP with its AND mask as alpha. Tests for a PNG entry and a BMP entry
-- [ ] 2.7 `is_picture` answers for every extension above, case-insensitively, and only those; extend the existing test
-- [ ] 2.8 Regenerate `CREDITS.md` (`make attributions`), run `cargo deny check`, and record each decoder's provenance in the PR
+- [x] 2.1 Run `cargo info` and `cargo tree -p` for `zune-jpeg`, `gif` and `image-webp`; confirm publisher, repository, no C build script, and default features to turn off
+- [x] 2.2 JPEG (`.jpg`, `.jpeg`) through `zune-jpeg`, to RGBA from whatever colour space it reports; test colour and grayscale against committed fixtures (decisions.md D2, D3)
+- [x] 2.3 GIF through `gif`, first frame composited into the logical screen with its transparency; test a two-frame GIF draws the first
+- [x] 2.4 WebP (lossy and lossless) through `image-webp`, first frame; test with an image its own lossless encoder writes (decisions.md D2)
+- [x] 2.5 BMP in-house: `BITMAPINFOHEADER` and later headers, 24 and 32 bits, bottom-up and top-down rows, `BI_RGB` and `BI_BITFIELDS` for 32-bit; anything else returns `None`. Tests for each orientation and a truncated file
+- [x] 2.6 ICO in-house: read the directory, take the largest entry, decode it as PNG or as a header-less BMP with its AND mask as alpha. Tests for a PNG entry and a BMP entry
+- [x] 2.7 `is_picture` answers for every extension above, case-insensitively, and only those; extend the existing test
+- [x] 2.8 Regenerate `CREDITS.md` (`make attributions`), run `cargo deny check`, and record each decoder's provenance (in `crates/uze-extensions/Cargo.toml` and the commit)
 
 ## 3. Off the drawing thread
 

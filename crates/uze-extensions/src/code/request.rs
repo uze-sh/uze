@@ -236,7 +236,7 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
                 (Err(Unreadable::NotText), true) => match host
                     .read_bytes(&path)
                     .ok()
-                    .and_then(|bytes| super::picture::decode(&bytes))
+                    .and_then(|bytes| super::picture::decode(&path, &bytes))
                 {
                     Some(picture) => FileAnswer::Pictured { path, picture },
                     None => FileAnswer::Read { path, file },

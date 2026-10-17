@@ -62,11 +62,12 @@ six decoders for nothing.
 `#![forbid(unsafe_code)]` in the decoders. `zune-jpeg`: single
 maintainer, mature, the JPEG decoder the `image` crate itself moved to;
 pure Rust. Each with default features off where that drops encoders.
-BMP and ICO in-house: a BMP is a header and uncompressed 24/32-bit rows
-(the bitmaps people still commit), and an ICO is a directory whose
-largest entry is either a BMP without its file header or a PNG, which
-reuses the PNG decoder. RLE-compressed and paletted BMPs below 8 bits
-stay "not text". Alternative rejected: the `image` crate, which brings
+BMP and ICO in-house: a BMP is a header, a palette or bit masks, and
+uncompressed rows (1/4/8 bits paletted, 16/32 bits masked, 24 bits), and
+an ICO is a directory whose largest entry is either a BMP without its
+file header or a PNG, which reuses the PNG decoder. RLE-compressed BMPs
+stay "not text". Every decoder refuses an image over 64 Mi pixels from
+its header, before allocating (see decisions.md D4). Alternative rejected: the `image` crate, which brings
 every format, its own resampling and a far larger dependency tree for
 what is six decoders and one filter.
 

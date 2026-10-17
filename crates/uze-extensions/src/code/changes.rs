@@ -268,7 +268,7 @@ pub(super) fn read_diff(
         picture: (binary && super::picture::is_picture(path))
             .then(|| host.read_bytes(&root.join(path)).ok())
             .flatten()
-            .and_then(|bytes| super::picture::decode(&bytes)),
+            .and_then(|bytes| super::picture::decode(path, &bytes)),
         outcome,
     }
 }

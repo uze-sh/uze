@@ -28,6 +28,14 @@ two-face = { version = "0.5", default-features = false, features = ["syntect-def
 # PNG, for showing an image in the code surface. image-rs org, pure Rust
 # with no C anywhere in its tree (fdeflate, miniz_oxide).
 png = "0.18"
+# The other raster formats the code surface draws, all pure Rust with no C
+# build script. `gif` and `image-webp` are image-rs, like `png`; `gif`
+# without `color_quant`, which only its encoder uses. `zune-jpeg` is the
+# JPEG decoder `image` itself moved to (one maintainer, etemesi254, mature);
+# its SIMD paths are Rust intrinsics, not C.
+gif = { version = "0.14", default-features = false, features = ["std"] }
+image-webp = "0.2"
+zune-jpeg = { version = "0.5", default-features = false, features = ["std", "x86", "neon"] }
 
 [dev-dependencies]
 uze-git = { path = "../uze-git" }
