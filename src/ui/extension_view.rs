@@ -222,8 +222,15 @@ fn render_surface(
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
-            rendered.picture =
-                picture::render_picture(frame, content_area, heading, picture, column_modes, hits);
+            rendered.picture = picture::render_picture(
+                frame,
+                content_area,
+                heading,
+                picture,
+                crate::ui::graphics::cell_pixels(),
+                column_modes,
+                hits,
+            );
         }
         Content::Lines {
             heading,
@@ -378,7 +385,15 @@ fn render_board(
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
-            rendered.picture = picture::render_picture(frame, board, heading, picture, &[], hits);
+            rendered.picture = picture::render_picture(
+                frame,
+                board,
+                heading,
+                picture,
+                crate::ui::graphics::cell_pixels(),
+                &[],
+                hits,
+            );
         }
         Content::Lines {
             heading,

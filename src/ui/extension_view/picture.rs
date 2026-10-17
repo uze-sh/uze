@@ -5,20 +5,16 @@ use uze_extensions::view::Picture;
 use super::*;
 use crate::ui::graphics::{self, Placement};
 
-/// The upper half block: its glyph paints the top pixel and the cell's
-/// ground the bottom one, so every terminal with true colour shows two
-/// pixels per cell without a graphics protocol — which a pane inside the
-/// workspace could not pass through anyway.
-const UPPER_HALF: &str = "\u{2580}";
-
 /// `heading` over `picture`, scaled to fit what is left of `area` and
 /// centred in it — in half blocks always, and where the terminal draws
-/// images, as the [`Placement`] the frame lays over them once it is out.
+/// images (`cell`, its pixels a cell), as the [`Placement`] the frame
+/// lays over them once it is out.
 pub(super) fn render_picture(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     heading: &str,
     picture: &Picture,
+    cell: Option<(u16, u16)>,
     modes: &[Mode],
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Option<Placement> {
@@ -41,7 +37,7 @@ pub(super) fn render_picture(
         area.width,
         area.height.saturating_sub(1),
     );
-    let placement = graphics::cell_pixels().and_then(|cell| Placement::fit(picture, body, cell));
+    let placement = cell.and_then(|cell| Placement::fit(picture, body, cell));
     let room = placement.as_ref().map_or(body, |placement| placement.cells);
     render_half_blocks(frame, room, picture);
     placement
@@ -69,7 +65,7 @@ fn render_half_blocks(frame: &mut ratatui::Frame<'_>, room: Rect, picture: &Pict
                 false => theme::color(Token::SurfaceBackground),
             };
             if let Some(cell) = buffer.cell_mut((left + column, top + row)) {
-                cell.set_symbol(UPPER_HALF)
+                cell.set_symbol(graphics::HALF_BLOCK)
                     .set_fg(theme::pixel(upper))
                     .set_bg(lower);
             }

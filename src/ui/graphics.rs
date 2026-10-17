@@ -30,8 +30,11 @@ static CELL_PIXELS: OnceLock<Option<(u16, u16)>> = OnceLock::new();
 /// ends the wait as soon as it does.
 const PATIENCE: Duration = Duration::from_millis(500);
 
-/// The glyph [`super::extension_view`] fills an image's cells with.
-const HALF_BLOCK: &str = "\u{2580}";
+/// The upper half block: its glyph paints the top pixel and the cell's
+/// ground the bottom one, so every terminal with true colour shows two
+/// pixels per cell without a graphics protocol. Also the mark
+/// [`Placement::uncovered_in`] looks for, which is why there is one.
+pub(crate) const HALF_BLOCK: &str = "\u{2580}";
 
 /// Asks the terminal whether it draws Sixel and how large a cell is.
 /// Before anything reads the terminal's input, which would take the reply
