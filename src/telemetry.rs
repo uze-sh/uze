@@ -122,7 +122,7 @@ impl Telemetry {
     fn shutdown(&mut self) {
         #[cfg(feature = "telemetry")]
         if let Some(provider) = self.provider.take() {
-            let _ = provider.shutdown();
+            let _ = provider.shutdown_with_timeout(otlp::FLUSH_WITHIN);
         }
         drop(self.journal.take());
     }
@@ -425,6 +425,12 @@ mod otlp {
     };
     use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+    /// How long a command may wait at exit for its spans to leave. A
+    /// collector that is not running does not always refuse the connection
+    /// (WSL's localhost forwarding holds it open), and the SDK's own default
+    /// then kept every command's prompt for five seconds.
+    pub(super) const FLUSH_WITHIN: std::time::Duration = std::time::Duration::from_millis(500);
+
     /// A batch exporter on its own thread, over HTTP/protobuf to the
     /// collector's traces path. The blocking client, not the async one:
     /// the binary's tokio runtime exists only for the MCP fixture.
@@ -439,6 +445,7 @@ mod otlp {
         match opentelemetry_otlp::SpanExporter::builder()
             .with_http()
             .with_endpoint(traces)
+            .with_timeout(FLUSH_WITHIN)
             .build()
         {
             Ok(exporter) => builder.with_batch_exporter(exporter).build(),
