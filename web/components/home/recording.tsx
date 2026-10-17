@@ -1,15 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import 'asciinema-player/dist/bundle/asciinema-player.css';
+import { CastHandle, CastPlayer } from '@/components/cast-player';
 
 // The hero, recorded rather than drawn: the real binary, in a sandbox, from
-// .demo/landing/demo.yml. The take's own cast is played here as text, so it
-// is as sharp as the page around it at any size and any zoom, where a video
-// of it carried the GIF's palette and blur. Each chapter starts where the
-// take reaches that beat, in seconds of the cast: a new take means reading
-// these off the new cut.
-const CAST = '/uze-landing.cast';
+// .demo/landing/demo.yml. Each chapter starts where the take reaches that
+// beat, in seconds of the cast: a new take means reading these off the new
+// cut.
+const CAST = '/casts/landing.cast';
 const CHAPTERS: { label: string; at: number }[] = [
   { label: 'open the workspace', at: 0 },
   { label: 'add a plugin', at: 4 },
@@ -17,62 +15,20 @@ const CHAPTERS: { label: string; at: number }[] = [
   { label: 'review and deliver', at: 41.4 },
   { label: 'pick up anywhere', at: 58 },
 ];
-// What the spec records at: the pace that reads as a person typing.
-const SPEED = 1.2;
-// The frame shown before it plays, and to reduced motion instead of it:
-// three agents named, each in its own worktree, and Claude's commit.
+// Three agents named, each in its own worktree, and Claude's commit.
 const POSTER_AT = 39.7;
 const FRAME_WIDTH = 'min(calc((100svh - 16rem) * 1.89), calc(100vw - 4rem), 1600px)';
 
-type Player = {
-  play: () => Promise<void>;
-  seek: (to: number) => Promise<void>;
-  getCurrentTime: () => number;
-  dispose: () => void;
-};
-
 export function HeroRecording() {
-  const host = useRef<HTMLDivElement>(null);
-  const player = useRef<Player | null>(null);
+  const player = useRef<CastHandle | null>(null);
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let follow: ReturnType<typeof setInterval> | undefined;
-    let disposed = false;
-    // Loaded on the client only: the player measures the box it draws in,
-    // and it measures a cell in the font it is given, so the font is loaded
-    // first or every row is laid out at the fallback's width and overflows.
-    void Promise.all([
-      import('asciinema-player'),
-      document.fonts.load("16px 'Uze Terminal'"),
-      document.fonts.load("bold 16px 'Uze Terminal'"),
-    ]).then(([{ create }]) => {
-      if (disposed) return;
-      player.current = create(CAST, el, {
-        autoPlay: !still,
-        loop: true,
-        speed: SPEED,
-        fit: 'width',
-        controls: false,
-        poster: `npt:${POSTER_AT}`,
-        theme: 'uze',
-        terminalFontFamily: "'Uze Terminal', 'JetBrains Mono', monospace",
-        terminalLineHeight: 1.22,
-      }) as Player;
-      follow = setInterval(() => {
-        const t = player.current?.getCurrentTime() ?? 0;
-        setCurrent(CHAPTERS.reduce((found, chapter, index) => (t >= chapter.at ? index : found), 0));
-      }, 250);
-    });
-    return () => {
-      disposed = true;
-      if (follow) clearInterval(follow);
-      player.current?.dispose();
-      player.current = null;
-    };
+    const follow = setInterval(() => {
+      const t = player.current?.getCurrentTime() ?? 0;
+      setCurrent(CHAPTERS.reduce((found, chapter, index) => (t >= chapter.at ? index : found), 0));
+    }, 250);
+    return () => clearInterval(follow);
   }, []);
 
   const jump = (index: number) => {
@@ -105,11 +61,11 @@ export function HeroRecording() {
               ~/demo-api · uze
             </figcaption>
           </div>
-          <div
-            ref={host}
-            className="hero-recording"
-            role="img"
-            aria-label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on one, while Claude commits through the plugin skill and is delivered to main; the OpenCode agent then continues in Claude Code, is closed, found in Recent and resumed, and the management screens are shown."
+          <CastPlayer
+            src={CAST}
+            posterAt={POSTER_AT}
+            handle={player}
+            label="A terminal session recorded with the real uze: uze workspace opens; in its shell, uze market add hiukky/ai adds a marketplace, uze git@ai installs the git plugin and uze inspect git shows what Claude Code, Codex, OpenCode and Antigravity each received; agents on Claude Code, Codex and OpenCode then work side by side, each in a worktree of its own; spec, arch and code open on one, while Claude commits through the plugin skill and is delivered to main; the OpenCode agent then continues in Claude Code, is closed, found in Recent and resumed, and the management screens are shown."
           />
         </div>
       </figure>

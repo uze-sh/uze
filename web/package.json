@@ -7,7 +7,8 @@
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
-    "types:check": "next typegen && tsc --noEmit"
+    "types:check": "next typegen && tsc --noEmit",
+    "terminal-font": "bun scripts/terminal-font.ts"
   },
   "dependencies": {
     "asciinema-player": "3.17.0",
@@ -28,7 +29,9 @@
     "@types/node": "^26.3.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "fflate": "0.8.3",
     "postcss": "^8.5.26",
+    "subset-font": "2.9.0",
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
