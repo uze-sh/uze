@@ -130,7 +130,8 @@ mod tests {
         assert!(unavailable(&root, &dir).is_none());
         let source = fs::read_to_string(plugin_path(&root)).unwrap();
         assert!(source.contains("session.hook(\"context\""));
-        assert!(source.contains(&*dir.to_string_lossy()));
+        let dir_literal = serde_json::to_string(&dir.to_string_lossy()).unwrap();
+        assert!(source.contains(&format!("const DIR = {dir_literal};")));
 
         let moved = root.join("elsewhere");
         ensure_plugin(&root, &moved).unwrap();
