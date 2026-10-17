@@ -22,6 +22,10 @@ const INSET: u16 = 2;
 /// the row it belongs to and its position among the options.
 type OptionCell = (u16, u16, usize, usize);
 
+/// A number's − and + as drawn: its line, its row, and the column and
+/// width of each.
+type StepCells = (usize, usize, (u16, u16), (u16, u16));
+
 /// The Workspace form's label column, and the width of a value's box.
 const LABEL: u16 = 18;
 const BOX: u16 = 48;
@@ -81,7 +85,7 @@ pub(super) fn render_space_overview(
             foot,
             model,
             overview,
-            &[(Action::OpenSpaceShell, "shell"), (Action::Dismiss, "back")],
+            &[(Action::Refresh, "refresh")],
             hits,
         );
         return;
@@ -130,7 +134,7 @@ pub(super) fn render_space_overview(
             foot,
             model,
             overview,
-            &[(Action::OpenSpaceShell, "shell"), (Action::Dismiss, "back")],
+            &[(Action::Refresh, "refresh")],
             hits,
         );
         return;
@@ -319,7 +323,7 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 (causes.join(" · "), Token::StateWarning)
             }
         }
-        Section::Workspace => {
+        Section::Settings => {
             let mut causes = Vec::new();
             let unspelled = project.status.steps_not_spelled_here.len();
             if unspelled > 0 {
@@ -383,7 +387,7 @@ fn render_section(
     let lines = match overview.section {
         Section::Context => context_lines(project),
         Section::Plugins => plugin_lines(project),
-        Section::Workspace => {
+        Section::Settings => {
             return render_workspace(frame, area, model, overview, project, hits);
         }
         Section::Memory => memory_lines(project),
@@ -855,6 +859,7 @@ fn render_workspace(
     // by line: placed once the list has scrolled.
     let mut field_at = None;
     let mut options_at: Vec<(usize, Vec<OptionCell>)> = Vec::new();
+    let mut steps_at: Vec<StepCells> = Vec::new();
     let label_cell = |key: DeclarationKey, focused: bool| {
         Span::styled(
             pad(key_label(key), LABEL),
@@ -921,6 +926,41 @@ fn render_workspace(
                 }
                 if editable {
                     options_at.push((lines.len(), placed));
+                }
+            } else if is_number(key)
+                && !field.is_some_and(|field| field.key == key && field.item.is_none())
+            {
+                let shown = match &value {
+                    Some(value) => (scalar(value), Token::TextBright),
+                    None => (key.default_spelled().to_owned(), Token::TextDim),
+                };
+                let minus = theme::glyph(Symbol::StepDecrease);
+                let plus = theme::glyph(Symbol::StepIncrease);
+                let step_tone = if editable {
+                    Token::TextSecondary
+                } else {
+                    Token::TextFaint
+                };
+                let middle = format!("  {}  ", shown.0);
+                spans.push(Span::styled(
+                    format!(" {minus} "),
+                    theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
+                ));
+                spans.push(Span::styled(middle.clone(), theme::fg_bold(shown.1)));
+                spans.push(Span::styled(
+                    format!(" {plus} "),
+                    theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
+                ));
+                if editable {
+                    let minus_width = Line::from(format!(" {minus} ")).width() as u16;
+                    let middle_width = Line::from(middle.as_str()).width() as u16;
+                    let plus_width = Line::from(format!(" {plus} ")).width() as u16;
+                    steps_at.push((
+                        lines.len(),
+                        index,
+                        (LABEL, minus_width),
+                        (LABEL + minus_width + middle_width, plus_width),
+                    ));
                 }
             } else if is_listed(key, overview) {
                 spans.push(Span::styled(
@@ -1048,6 +1088,18 @@ fn render_workspace(
                     WorkspaceHit::OverviewChoice(row, option),
                 ));
             }
+        }
+    }
+    for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in steps_at {
+        if let Some(y) = line_y(line) {
+            hits.push((
+                Rect::new(list.x + minus_x, y, minus_width, 1),
+                WorkspaceHit::OverviewStep(row, false),
+            ));
+            hits.push((
+                Rect::new(list.x + plus_x, y, plus_width, 1),
+                WorkspaceHit::OverviewStep(row, true),
+            ));
         }
     }
     if let (Some(field), Some((line, column))) = (field, field_at)
@@ -1401,7 +1453,7 @@ fn render_drawer(
                 }
             }
         }
-        Section::Workspace => {
+        Section::Settings => {
             let Some(row) = overview.selected_workspace_row() else {
                 return;
             };
@@ -1461,13 +1513,19 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
     }
     let mut keys = vec![(Action::SelectNext, "move")];
     match overview.section {
-        Section::Workspace if overview.editable() => {
+        Section::Settings if overview.editable() => {
             keys.extend([
                 (Action::Activate, "edit"),
                 (Action::AddItem, "add"),
                 (Action::RemoveItem, "remove"),
                 (Action::SaveChanges, "save"),
             ]);
+            if matches!(
+                overview.selected_workspace_row(),
+                Some(WorkspaceRow::Key(key)) if is_number(key)
+            ) {
+                keys.extend([(Action::PreviousValue, "less"), (Action::NextValue, "more")]);
+            }
             if matches!(
                 overview.selected_workspace_row(),
                 Some(WorkspaceRow::Item(..))
@@ -1481,7 +1539,6 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
         }
         _ => {}
     }
-    keys.push((Action::OpenSpaceShell, "shell"));
     keys.push((Action::Refresh, "refresh"));
     keys.push((Action::Dismiss, "back"));
     keys

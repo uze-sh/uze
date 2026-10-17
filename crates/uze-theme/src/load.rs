@@ -789,6 +789,7 @@ mod tests {
                     "code"
                         | "architect"
                         | "spec"
+                        | "overview"
                         | "map"
                         | "changes"
                         | "in-flight"

@@ -16,20 +16,22 @@ use uze_application::{
 /// The overview's sections, in the order the bar shows them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
-    Context,
+    /// The `workspace:` section of `agents.yaml`, as a form.
+    Settings,
     Plugins,
-    Workspace,
+    Context,
     Memory,
 }
 
 impl Section {
-    pub(super) const ALL: [Self; 4] = [Self::Context, Self::Plugins, Self::Workspace, Self::Memory];
+    // What the project declares first, then what follows from it.
+    pub(super) const ALL: [Self; 4] = [Self::Settings, Self::Plugins, Self::Context, Self::Memory];
 
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Context => "Context",
             Self::Plugins => "Plugins",
-            Self::Workspace => "Workspace",
+            Self::Settings => "Settings",
             Self::Memory => "Memory",
         }
     }
@@ -166,13 +168,14 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::SelectSection(_)
             | Action::Activate
             | Action::Refresh
-            | Action::OpenSpaceShell
             | Action::AddItem
             | Action::RemoveItem
             | Action::MoveItemUp
             | Action::MoveItemDown
             | Action::SaveChanges
             | Action::DiscardChanges
+            | Action::NextValue
+            | Action::PreviousValue
             | Action::EraseBack
             | Action::EraseForward
             | Action::CaretLeft
@@ -235,6 +238,11 @@ pub(super) fn chosen(key: DeclarationKey, value: Option<&DeclaredValue>) -> Stri
         Some(DeclaredValue::List(_)) => "types".to_owned(),
         Some(value) => scalar(value),
     }
+}
+
+/// Whether the key is a number, stepped with − and +.
+pub(super) fn is_number(key: DeclarationKey) -> bool {
+    matches!(key, DeclarationKey::Slots | DeclarationKey::IdleDays)
 }
 
 /// The choices a key offers, when it is one choice among a few.
@@ -301,7 +309,7 @@ impl SpaceOverviewView {
             root,
             behind,
             settled,
-            section: Section::Context,
+            section: Section::Settings,
             rows: [0; 4],
             drawer: false,
             asked: 0,
@@ -371,14 +379,14 @@ impl SpaceOverviewView {
         match self.section {
             Section::Context => 1 + project.status.report.harnesses.len(),
             Section::Plugins => project.plugins.plugins.len(),
-            Section::Workspace => self.workspace_rows().len(),
+            Section::Settings => self.workspace_rows().len(),
             Section::Memory => project.memory.project.len(),
         }
     }
 
     pub(super) fn selected_workspace_row(&self) -> Option<WorkspaceRow> {
         self.workspace_rows()
-            .get(self.rows[Section::Workspace.index()])
+            .get(self.rows[Section::Settings.index()])
             .copied()
     }
 
@@ -418,6 +426,24 @@ impl SpaceOverviewView {
                 "fix".to_owned(),
             ])),
             (_, option) => Some(DeclaredValue::Text(option.to_owned())),
+        };
+        self.set(key, value);
+    }
+
+    /// Steps a number by `delta`. Leaving it out is its default: slots
+    /// below one is no limit, and idle days start from the three the
+    /// workspace applies.
+    pub(super) fn step(&mut self, key: DeclarationKey, delta: i64) {
+        let current = match self.effective(key) {
+            Some(DeclaredValue::Number(number)) => number as i64,
+            Some(DeclaredValue::Text(text)) => text.trim().parse().unwrap_or(0),
+            _ if key == DeclarationKey::IdleDays => 3,
+            _ => 0,
+        };
+        let next = (current + delta).max(0) as u64;
+        let value = match key {
+            DeclarationKey::Slots if next == 0 => None,
+            _ => Some(DeclaredValue::Number(next)),
         };
         self.set(key, value);
     }
@@ -708,7 +734,7 @@ impl WorkspaceModel {
                     Health::Fine
                 }
             }
-            Section::Workspace => {
+            Section::Settings => {
                 let failing = !project.status.steps_not_spelled_here.is_empty()
                     || project
                         .workspace
@@ -768,6 +794,29 @@ impl Attach<'_> {
         );
     }
 
+    /// The space's own context is its overview: whenever no agent is in
+    /// front and no surface stands in the pane, the overview does, over
+    /// the shell the server keeps for the space.
+    fn keep_space_overview_in_front(&mut self) {
+        let surface_up = self.model.code.is_some()
+            || self.model.spec.is_some()
+            || self.model.architect.is_some();
+        if self.model.space_overview.is_some()
+            || surface_up
+            || context_agent(&self.model, &self.identities).is_some()
+        {
+            return;
+        }
+        let Some((space, behind)) = self.model.session.as_ref().map(|session| {
+            let space = session.selected_space();
+            (space.id, space.selected_tab)
+        }) else {
+            return;
+        };
+        self.model.open_space_overview(space, behind, true);
+        self.schedule_space_overview();
+    }
+
     /// Reads it again, drawing the last answer until the new one lands.
     pub(super) fn refresh_space_overview(&mut self) {
         if let Some(overview) = self.model.space_overview.as_mut() {
@@ -779,6 +828,7 @@ impl Attach<'_> {
     /// Takes in whatever the overview's reads answered, and asks what it
     /// now needs.
     pub(super) fn absorb_space_overview_answers(&mut self) {
+        self.keep_space_overview_in_front();
         while let Ok(resolution) = self.channels.space_overviews.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_space_overview(resolution);
         }
@@ -834,7 +884,6 @@ impl Attach<'_> {
 
     /// One action, while the overview has the keyboard.
     pub(super) fn space_overview_action(&mut self, action: Action, viewport: &Viewport) {
-        let Viewport { columns, rows, .. } = *viewport;
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -871,7 +920,13 @@ impl Attach<'_> {
         match action {
             Action::Dismiss if overview.drawer => overview.drawer = false,
             Action::Dismiss if overview.fact.is_some() => overview.fact = None,
-            Action::Dismiss => self.model.put_away_space_overview(),
+            // Only over an agent is there somewhere to go back to: in the
+            // space's own context the overview is the screen.
+            Action::Dismiss => {
+                if context_agent(&self.model, &self.identities).is_some() {
+                    self.model.put_away_space_overview();
+                }
+            }
             Action::SelectSection(position) => {
                 if let Some(section) = Section::ALL.get(usize::from(position).saturating_sub(1)) {
                     overview.switch(*section);
@@ -885,43 +940,23 @@ impl Attach<'_> {
             Action::SelectNext => overview.select(1),
             Action::SelectPrevious => overview.select(-1),
             Action::Refresh => self.refresh_space_overview(),
-            Action::OpenSpaceShell => self.open_space_shell_from_overview(columns, rows),
             Action::Activate => self.activate_overview_row(viewport),
             Action::AddItem => self.add_workspace_item(),
             Action::RemoveItem => self.remove_workspace_row(),
             Action::MoveItemUp => self.move_workspace_item(-1),
             Action::MoveItemDown => self.move_workspace_item(1),
             Action::SaveChanges => self.review_declaration(),
+            Action::NextValue | Action::PreviousValue => {
+                let delta = if action == Action::NextValue { 1 } else { -1 };
+                let row = overview.rows[Section::Settings.index()];
+                if overview.section == Section::Settings {
+                    self.step_overview_value(row, delta);
+                }
+            }
             Action::DiscardChanges => {
                 overview.edit = WorkspaceEdit::default();
             }
             _ => {}
-        }
-    }
-
-    /// The shell the space owns, brought to the front, or one opened at
-    /// its root when it has only agents — what selecting the row did.
-    pub(super) fn open_space_shell_from_overview(&mut self, columns: u16, rows: u16) {
-        let Some(space) = self
-            .model
-            .space_overview
-            .as_ref()
-            .map(|overview| overview.space)
-        else {
-            return;
-        };
-        self.model.put_away_space_overview();
-        let own = self.model.session.as_ref().and_then(|session| {
-            session
-                .workspace
-                .spaces
-                .iter()
-                .find(|candidate| candidate.id == space)
-                .and_then(|space| space_own_tab(space, &self.identities))
-        });
-        match own {
-            Some(tab) => self.land_on_tab(tab, columns, rows),
-            None => self.open_space_shell(space, columns, rows),
         }
     }
 
@@ -932,7 +967,7 @@ impl Attach<'_> {
             return;
         };
         match overview.section {
-            Section::Workspace => {
+            Section::Settings => {
                 let Some(row) = overview.selected_workspace_row() else {
                     return;
                 };
@@ -972,16 +1007,37 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_ref() else {
             return;
         };
-        if overview.section != Section::Workspace || overview.edit.field.is_some() {
+        if overview.section != Section::Settings || overview.edit.field.is_some() {
             return;
         }
         let choice = matches!(
             overview.selected_workspace_row(),
-            Some(WorkspaceRow::Key(key)) if !choices(key).is_empty()
+            Some(WorkspaceRow::Key(key)) if !choices(key).is_empty() || is_number(key)
         );
         if !choice {
             self.space_overview_action(Action::Activate, viewport);
         }
+    }
+
+    /// Steps the number on `row` by `delta`, selecting it: its − and +
+    /// clicked, or the keys that stand for them.
+    pub(super) fn step_overview_value(&mut self, row: usize, delta: i64) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        if !overview.editable() {
+            return;
+        }
+        let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
+            return;
+        };
+        if !is_number(key) {
+            return;
+        }
+        overview.rows[Section::Settings.index()] = row;
+        overview.step(key, delta);
+        self.model.dirty = true;
+        self.schedule_declaration_preview();
     }
 
     /// A click on one of a choice's options: selects its row and sets it.
@@ -995,7 +1051,7 @@ impl Attach<'_> {
         let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
             return;
         };
-        overview.rows[Section::Workspace.index()] = row;
+        overview.rows[Section::Settings.index()] = row;
         overview.choose(key, option);
         self.model.dirty = true;
         self.schedule_declaration_preview();
@@ -1101,7 +1157,7 @@ impl Attach<'_> {
                         .position(|row| *row == WorkspaceRow::Key(key))
                 });
             if let Some(row) = row {
-                overview.rows[Section::Workspace.index()] = row;
+                overview.rows[Section::Settings.index()] = row;
             }
         }
         self.schedule_declaration_preview();
@@ -1111,7 +1167,7 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        if overview.section != Section::Workspace || !overview.editable() {
+        if overview.section != Section::Settings || !overview.editable() {
             return;
         }
         let Some(row) = overview.selected_workspace_row() else {
@@ -1136,7 +1192,7 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        if overview.section != Section::Workspace || !overview.editable() {
+        if overview.section != Section::Settings || !overview.editable() {
             return;
         }
         let Some(row) = overview.selected_workspace_row() else {
@@ -1154,7 +1210,7 @@ impl Attach<'_> {
             WorkspaceRow::Key(key) => overview.set(key, None),
         }
         let count = overview.row_count();
-        let index = Section::Workspace.index();
+        let index = Section::Settings.index();
         overview.rows[index] = overview.rows[index].min(count.saturating_sub(1));
         self.schedule_declaration_preview();
     }
@@ -1163,7 +1219,7 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        if overview.section != Section::Workspace || !overview.editable() {
+        if overview.section != Section::Settings || !overview.editable() {
             return;
         }
         let Some(WorkspaceRow::Item(key, index)) = overview.selected_workspace_row() else {
@@ -1190,7 +1246,7 @@ impl Attach<'_> {
             return;
         }
         overview.set(key, Some(value));
-        let selected = &mut overview.rows[Section::Workspace.index()];
+        let selected = &mut overview.rows[Section::Settings.index()];
         *selected = (*selected as isize + delta) as usize;
         self.schedule_declaration_preview();
     }
@@ -1201,7 +1257,7 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        if overview.section != Section::Workspace || overview.edit.values.is_empty() {
+        if overview.section != Section::Settings || overview.edit.values.is_empty() {
             return;
         }
         if let Some(Ok(preview)) = overview.current_preview()

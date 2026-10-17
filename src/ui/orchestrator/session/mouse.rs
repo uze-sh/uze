@@ -90,37 +90,6 @@ impl Attach<'_> {
         );
     }
 
-    /// Opens a shell of `space` itself, belonging to no agent, in the
-    /// directory the space stands in. Sent after the space is selected,
-    /// since the server opens a tab in the space the client is on.
-    pub(in crate::ui::orchestrator) fn open_space_shell(
-        &mut self,
-        space: SpaceId,
-        columns: u16,
-        rows: u16,
-    ) {
-        let Some(space) = self
-            .model
-            .session
-            .as_ref()
-            .and_then(|session| session.space(space))
-        else {
-            return;
-        };
-        let _ = send_request(
-            &mut self.stream,
-            &ClientRequest::CreateTab {
-                label: "shell 1".into(),
-                agent: None,
-                columns,
-                rows,
-                cwd: Some(space_cwd(space, &self.identities)),
-                command: None,
-                env: Vec::new(),
-            },
-        );
-    }
-
     /// A left button going down.
     ///
     /// Guards first, in the same modal-precedence order the keyboard has:
@@ -1420,6 +1389,9 @@ impl Attach<'_> {
             WorkspaceHit::OverviewRow(index) => self.click_overview_row(index, viewport),
             WorkspaceHit::OverviewReview => self.review_overview_commands(),
             WorkspaceHit::OverviewChoice(row, option) => self.choose_overview_option(row, option),
+            WorkspaceHit::OverviewStep(row, adds) => {
+                self.step_overview_value(row, if adds { 1 } else { -1 });
+            }
             WorkspaceHit::OverviewSave(true) => return self.act(Action::SaveChanges, viewport),
             WorkspaceHit::OverviewSave(false) => {
                 return self.act(Action::DiscardChanges, viewport);
