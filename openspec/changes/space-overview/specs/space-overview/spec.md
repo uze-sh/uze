@@ -30,7 +30,7 @@ meanwhile.
 ### Requirement: The overview is put away only by choosing something else
 The overview SHALL be put away when the operator selects a tab or an agent,
 selects another space (whose overview then shows), or presses Esc with
-nothing open inside it, which returns to the space's selected tab. An
+nothing open inside it over an agent, which returns to that agent. An
 `overview` tab leading the space's own tabs in the strip (never an agent's),
 selected while the overview is shown,
 and a chord SHALL bring the current space's overview back.
@@ -43,15 +43,19 @@ and a chord SHALL bring the current space's overview back.
 - **WHEN** a pane of a space is in front and the operator presses the overview chord
 - **THEN** that space's overview is shown and the strip's `overview` tab is selected
 
-### Requirement: The space's own shell is one action away
-The overview SHALL offer an action that brings the space's own shell to the
-front, creating one at the space's root when the space has none. That
-action SHALL be the way back to the space's shells that selecting the row
-used to be.
+### Requirement: The space's own context is its overview
+In the space's own context, where no agent is in front, the tab strip SHALL
+show the `overview` tab alone, the overview SHALL stand where the pane is,
+and no shell SHALL be offered there: no shell tabs, no tab to add, no chord
+that opens one. An agent's context SHALL keep its own tabs.
 
-#### Scenario: A space whose tabs are all agents
-- **WHEN** the operator takes the shell action on the overview of a space with only agent tabs
-- **THEN** a shell opens at the space's root and is in front
+#### Scenario: Back to the space from an agent
+- **WHEN** the operator leaves an agent for the space's row
+- **THEN** the strip shows only the overview tab and the overview is drawn
+
+#### Scenario: A new tab in the space's context
+- **WHEN** the operator presses the new-tab chord with the space's own context in front
+- **THEN** no tab is created
 
 ### Requirement: The overview is a screen, never a tab
 The overview SHALL be drawn by the client and SHALL own no process. It
@@ -64,7 +68,7 @@ as before.
 - **THEN** each space comes back with its tabs as they were, and no tab stands for an overview
 
 ### Requirement: The overview has four sections, each with its state
-The overview SHALL show four sections, Context, Plugins, Workspace and
+The overview SHALL show four sections, Settings, Plugins, Context and
 Memory, in that order, one at a time, chosen from a section bar. Each tab
 SHALL carry the worst state among its section's parts, and each section's
 first line SHALL name the cause of that state. A drawer SHALL show the
@@ -83,7 +87,7 @@ The overview SHALL report the project's state from the read model `uze
 status` renders, composed once in the application: the instructions file
 and each harness's context and agent-context delivery under Context; the
 declared plugins and the lock's drift under Plugins; commands that wait for
-approval or have no spelling for this machine under Workspace.
+approval or have no spelling for this machine under Settings.
 
 #### Scenario: Status and the overview agree
 - **WHEN** `uze status` reports a harness missing agent context or a plugin missing from the Store
@@ -91,11 +95,11 @@ approval or have no spelling for this machine under Workspace.
 
 #### Scenario: Commands awaiting approval
 - **WHEN** a project's commands wait for approval
-- **THEN** the Workspace section marks those lines and its Review opens the approval dialog for that project
+- **THEN** the Settings section marks those lines and its Review opens the approval dialog for that project
 
 ### Requirement: A space that is not a project says so
 When a space's root no longer exists, or is not inside a project, the
-overview SHALL say which, offer the shell action, and show no section.
+overview SHALL say which and show no section.
 
 #### Scenario: A root that is gone
 - **WHEN** a space's root was deleted
@@ -103,7 +107,7 @@ overview SHALL say which, offer the shell action, and show no section.
 
 #### Scenario: A directory that is not a project
 - **WHEN** a space's root is a plain directory with no project in or above it
-- **THEN** the overview says it is not a project and offers the shell action
+- **THEN** the overview says it is not a project and draws no section bar
 
 ### Requirement: The Memory section lists the project's facts
 The Memory section SHALL list the facts kept for the project, each with its
@@ -116,8 +120,8 @@ machine facts SHALL NOT be listed.
 - **WHEN** a project has UZE facts and Claude keeps memory for it
 - **THEN** the section lists both, each naming where it is kept
 
-### Requirement: The Workspace section shows every key
-The Workspace section SHALL list every key the `workspace:` section of
+### Requirement: The Settings section shows every key
+The Settings section SHALL list every key the `workspace:` section of
 `agents.yaml` accepts, each with its declared value or, when undeclared,
 the default the workspace applies marked as a default, and a one-line
 description in the drawer. `actions` SHALL be shown by name and read-only.
@@ -126,7 +130,7 @@ description in the drawer. `actions` SHALL be shown by name and read-only.
 - **WHEN** the project declares no `workspace:` section
 - **THEN** every key is shown with its default, marked as such
 
-### Requirement: The Workspace section edits agents.yaml after a diff
+### Requirement: The Settings section edits agents.yaml after a diff
 The operator SHALL be able to change, add, remove and reorder workspace
 values in place. Edits SHALL be validated by the parser that reads the
 section, every problem shown at its key, and Save refused while any
@@ -152,7 +156,7 @@ changed since the diff was made.
 
 #### Scenario: A file UZE will not edit
 - **WHEN** `agents.yaml` uses a YAML anchor
-- **THEN** the Workspace section is read-only and says why
+- **THEN** the Settings section is read-only and says why
 
 ### Requirement: The overview counts the space's agents by state
 The overview SHALL show how many of the space's agents are running, ready
@@ -169,7 +173,7 @@ edit, save and open the shell from the keyboard alone, through chords
 declared in a scope of its own.
 
 #### Scenario: Reviewing commands by keyboard
-- **WHEN** the operator switches to the Workspace section, moves onto a line awaiting approval and activates Review
+- **WHEN** the operator switches to the Settings section, moves onto a line awaiting approval and activates Review
 - **THEN** the approval dialog opens for that project
 
 ### Requirement: The overview never waits on a read

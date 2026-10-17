@@ -94,8 +94,9 @@ What the code holds today (2026-10-17):
 - **Header.** The space's name and root; activity on the right
   ("● 2 running · 1 ready · 3 preserved"), shortened to numbers when
   narrow.
-- **Section bar.** One tab per section, in a fixed order: `1 Context`,
-  `2 Plugins`, `3 Workspace`, `4 Memory`.
+- **Section bar.** One tab per section, in a fixed order: `1 Settings`,
+  `2 Plugins`, `3 Context`, `4 Memory`: what the project declares first,
+  then what follows from it. The overview opens on Settings.
   - A tab carries a glyph only when its section warns, fails or is
     loading. Its state is the worst among the section's parts.
   - Without room, inactive tabs shrink to number and glyph.
@@ -112,7 +113,7 @@ What the code holds today (2026-10-17):
   room for both; otherwise Enter opens it over the section and Esc closes
   it. It is the manage drawer, moved to `src/ui/widget/` with the width
   and the drag state passed in rather than read from `TuiModel`.
-- **Footer.** "Open shell" (`o`), the hints for the focus, and on the
+- **Footer.** The hints for the focus, and on the
   right how many sections need attention ("! 3 to check", or "✓ ready").
 - **Built from the vocabulary.** Every part comes from `src/ui/widget/`;
   nothing is assembled at the call site. New widgets the Workspace
@@ -144,9 +145,12 @@ What the code holds today (2026-10-17):
   it reopens the overview (`WorkspaceHit::OpenOverview`). It is the
   space's own, so it is not among spec, arch and code, which are about a
   checkout and switched off with their extension.
-- **The way back to the shells.** "Open shell" focuses `space_own_tab`, or
-  creates one with `open_space_shell` when the space has only agents,
-  exactly what selecting the row did.
+- **No shells in the space's own context.** The strip there shows the
+  overview tab alone, with no shell tabs and no `+`, and the overview is
+  kept in front whenever no agent and no surface is: the shell the server
+  keeps for the space stands behind it. `ctrl+t` and the tab chords do
+  nothing there; Esc puts the overview away only over an agent. Shells
+  stay an agent's, opened beside it.
 - **A space that is not a project.** When the root is gone, or no project
   lies in or above it, the screen says which and offers only "Open
   shell". No section bar is drawn.
@@ -179,7 +183,7 @@ What the code holds today (2026-10-17):
     errors.
 - **Activity counts are the client's.** Running and ready come from the
   task views the client already holds; only preserved work is read.
-- **Approvals come from what the toast uses.** The Workspace section marks
+- **Approvals come from what the toast uses.** The Settings section marks
   lines awaiting approval from `remembered.commands_awaiting`, never a
   second read that could disagree with the toast.
 - **Agreement is tested.** A test compares the overview's Context and
@@ -262,10 +266,9 @@ What the code holds today (2026-10-17):
 
 - **Commands awaiting approval.** `review_commands()` opens the first
   project waiting. It gains `review_commands_for(project)`, which the
-  Workspace section's Review uses.
+  Settings section's Review uses.
 - **A fact's body** is read through `memory().show` on the read thread
   and shown in the drawer.
-- **Open shell** is D3's action.
 - Nothing else writes but D6's Save. `health().status` writes `cache/`
   (detection, inspection), which is remembered state.
 
@@ -290,7 +293,7 @@ What the code holds today (2026-10-17):
   - Enter opens the drawer or edits; Esc closes the innermost thing open
     (field, diff, drawer) and, at the top, puts the screen away;
   - `o` opens the shell; `r` refreshes;
-  - in Workspace: `a`, `d`, alt+↑↓, `s`, `x` (D6).
+  - in Settings: `a`, `d`, alt+↑↓, `s`, `x` (D6).
 - **Reopening from a pane.** `Action::OpenSpaceOverview` in
   `Scope::Workspace` opens the current space's overview.
 - **One adapter.** No chord is hard-coded in the view; `src/ui/keys.rs`
@@ -299,8 +302,8 @@ What the code holds today (2026-10-17):
 ## Risks / Trade-offs
 
 - **[Operators used to landing on the shell.]**
-  - The strip shows the space's own shells while the overview is up, and
-    "Open shell" is one key.
+  - A shell is an agent's, opened beside it; the space's own context is
+    its overview.
   - The release notes say it.
 - **[Status cost on a drifted project.]** A drifted project re-runs vendor
   CLIs on every status read. The overview reads it on open, on refresh, on

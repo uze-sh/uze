@@ -484,17 +484,19 @@ mod workspace_tests {
         assert!(strip.contains("Agent one shell"), "{strip}");
     }
 
-    /// The space's own shells are its own context, reached from its row in
-    /// the sidebar — no agent leads the strip there.
+    /// The space's own context, reached from its row in the sidebar, is
+    /// its overview alone: no agent leads the strip there, and none of the
+    /// shells behind it is a tab to choose or a "+" to add to.
     #[test]
-    fn the_spaces_own_shell_is_a_context_of_its_own() {
+    fn the_spaces_own_context_is_its_overview_alone() {
         let (mut model, _, _) = two_agents_with_shells();
         let own = first_tab(&model).id;
         model.session.as_mut().expect("session").select_tab(own);
 
         let (rows, _) = tab_strip(&model);
         let strip = rows.join(" ");
-        assert!(strip.contains("shell"), "{strip}");
+        assert!(strip.contains("overview"), "{strip}");
+        assert!(!strip.contains("shell"), "{strip}");
         assert!(!strip.contains("Agent"), "{strip}");
     }
 
@@ -9974,12 +9976,10 @@ mod workspace_tests {
     }
 
     /// A space's row shows its overview where the pane is, with the shell
-    /// the space owns behind it, and opens no tab. A space whose first
-    /// shell became an agent when a harness was typed into it is not given
-    /// one by the click either: the overview's "Open shell" is the way to
-    /// a shell of its own.
+    /// the space owns behind it, and opens no tab — a space whose tabs are
+    /// all agents included.
     #[test]
-    fn a_space_row_shows_its_overview_and_its_shell_is_one_action_away() {
+    fn a_space_row_shows_its_overview_and_opens_no_tab() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-row"));
         let click_space_row = |driven: &mut Driven<'_>| {
             driven.frame();
@@ -9996,14 +9996,9 @@ mod workspace_tests {
             driven.press(row.x + 4, row.y);
             space
         };
-        let opened_a_shell = |sent: &[ClientRequest]| {
-            sent.iter().any(|request| {
-                matches!(
-                    request,
-                    ClientRequest::CreateTab { agent: None, command: None, cwd: Some(cwd), .. }
-                        if cwd == Path::new("/repo")
-                )
-            })
+        let opened_a_tab = |sent: &[ClientRequest]| {
+            sent.iter()
+                .any(|request| matches!(request, ClientRequest::CreateTab { .. }))
         };
 
         let mut with_shell = session("/repo");
@@ -10036,63 +10031,50 @@ mod workspace_tests {
             ),
             "the space's own shell does not stand behind the overview: {sent:?}"
         );
-        assert!(!opened_a_shell(&sent), "the click opened a tab: {sent:?}");
+        assert!(!opened_a_tab(&sent), "the click opened a tab: {sent:?}");
 
         let mut only_agents = session("/repo");
         let pane = only_agents.selected_tab().pane.id;
         only_agents.update_pane_status(pane, PathBuf::from("/repo"), "agent".into());
         let mut second = driven(model_of(only_agents), &home);
-        let space = click_space_row(&mut second);
+        click_space_row(&mut second);
         let sent = second.sent();
         assert!(
-            sent.iter().any(|request| matches!(
-                request,
-                ClientRequest::SelectSpace { space: selected } if selected == &space
-            )),
-            "the space was not switched to: {sent:?}"
+            second.attach.model.space_overview.is_some(),
+            "a space of agents alone shows no overview"
         );
-        assert!(!opened_a_shell(&sent), "the click opened a tab: {sent:?}");
-        second.press_key(crossterm::event::KeyEvent::from(
-            crossterm::event::KeyCode::Char('o'),
-        ));
-        assert!(
-            opened_a_shell(&second.sent()),
-            "Open shell gave a space of agents alone no shell of its own"
-        );
-        assert!(
-            second.attach.model.space_overview.is_none(),
-            "the overview stayed up over the shell it opened"
-        );
+        assert!(!opened_a_tab(&sent), "the click opened a tab: {sent:?}");
     }
 
     /// The overview stands in front of one tab and leaves the moment the
-    /// operator chooses another way: a click on any tab of the strip, the
-    /// one behind it included, a tab chord, or the server moving the
-    /// selection on once it had settled — a tab opened, an agent placed.
+    /// operator chooses another way: an agent chosen, by the strip, the
+    /// sidebar or the server moving the selection on once it had settled.
     /// What it survives is the broadcast confirming the space it was
-    /// opened for.
+    /// opened for, and in the space's own context the tab chords, which
+    /// have nothing there to choose.
     #[test]
-    fn the_overview_leaves_for_whatever_tab_is_chosen_next() {
+    fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-leaves"));
-        let mut with_shell = session("/repo");
-        let space = with_shell.selected_space().id;
-        let shell = with_shell.selected_tab().id;
-        let other = with_shell.add_tab(
+        let mut base = session("/repo");
+        let space = base.selected_space().id;
+        let shell = base.selected_tab().id;
+        let agent_pane = base.add_tab(
             space,
-            "shell 2".into(),
+            "agent 1".into(),
             None,
             80,
             24,
             PathBuf::from("/repo"),
         );
-        let other_tab = with_shell
+        base.update_pane_status(agent_pane, PathBuf::from("/repo"), "agent".into());
+        let agent = base
             .selected_space()
             .tabs
             .iter()
-            .find(|tab| tab.pane.id == other)
-            .expect("the second shell")
+            .find(|tab| tab.pane.id == agent_pane)
+            .expect("the agent's tab")
             .id;
-        with_shell.select_tab(shell);
+        base.select_tab(shell);
         let open_overview = |driven: &mut Driven<'_>| {
             driven.frame();
             let row = driven
@@ -10116,52 +10098,34 @@ mod workspace_tests {
             );
         };
 
-        // A click on the tab standing behind it: nothing changes on the
-        // server, so the click alone has to put it away.
-        let mut driven = driven(model_of(with_shell.clone()), &home);
-        open_overview(&mut driven);
-        driven.frame();
-        let behind = driven
-            .attach
-            .model
-            .hits
-            .iter()
-            .find_map(|(rect, hit)| (*hit == WorkspaceHit::SelectTab(shell)).then_some(*rect))
-            .expect("the shell behind the overview is on the strip");
-        driven.press(behind.x + 1, behind.y);
-        assert!(
-            driven.attach.model.space_overview.is_none(),
-            "a click on the tab behind the overview left it up"
-        );
-
-        // A tab chord reaches the strip, not the overview's sections.
-        let mut driven = driven_again(&home, &with_shell);
+        // A tab chord has nothing to choose in the space's own context.
+        let mut driven = driven_again(&home, &base);
         open_overview(&mut driven);
         driven.press_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('2'),
+            crossterm::event::KeyCode::Char('1'),
             crossterm::event::KeyModifiers::ALT,
         ));
         assert!(
-            driven.attach.model.space_overview.is_none(),
-            "alt+2 was taken by the overview"
+            driven.attach.model.space_overview.is_some(),
+            "alt+1 took the space's overview away"
         );
 
-        // The server moving the selection on, however it came about.
-        let mut driven = driven_again(&home, &with_shell);
+        // The server moving the selection onto an agent.
+        let mut driven = driven_again(&home, &base);
         open_overview(&mut driven);
         let mut moved = driven.attach.model.session.clone().expect("session");
-        moved.select_tab(other_tab);
+        moved.select_tab(agent);
         driven.attach.model.apply(
             ClientEvent::SessionUpdated { session: moved },
             &identities_fixture(),
         );
         assert!(
             driven.attach.model.space_overview.is_none(),
-            "the overview stayed over a tab it was not opened in front of"
+            "the overview stayed over an agent it was not opened in front of"
         );
 
         // A section chord stays the overview's.
-        let mut driven = driven_again(&home, &with_shell);
+        let mut driven = driven_again(&home, &base);
         open_overview(&mut driven);
         driven.press_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('3'),
@@ -10174,8 +10138,8 @@ mod workspace_tests {
                 .space_overview
                 .as_ref()
                 .is_some_and(|overview| overview.section
-                    == crate::ui::orchestrator::space_overview::Section::Workspace),
-            "3 did not show the Workspace section"
+                    == crate::ui::orchestrator::space_overview::Section::Context),
+            "3 did not show the Context section"
         );
     }
 
@@ -10338,7 +10302,7 @@ mod workspace_tests {
             problems: Vec::new(),
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
-        overview.section = crate::ui::orchestrator::space_overview::Section::Workspace;
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
         overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
 
         let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
@@ -10417,7 +10381,7 @@ mod workspace_tests {
             problems: Vec::new(),
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
-        overview.section = crate::ui::orchestrator::space_overview::Section::Workspace;
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
         overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
 
         let mut driven = driven(model, &home).on_a_roomy_terminal();
@@ -10520,6 +10484,101 @@ mod workspace_tests {
         assert!(
             overview.current_preview().is_none(),
             "an answer to older edits was taken for the current ones"
+        );
+    }
+
+    /// A number steps by its − and +, clicked or pressed: slots climbs
+    /// from no limit and falls back to it, idle days from the three the
+    /// workspace applies.
+    #[test]
+    fn a_number_steps_with_its_minus_and_plus() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-step"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let step = |driven: &mut Driven<'_>, adds: bool| {
+            let rect = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| match hit {
+                    WorkspaceHit::OverviewStep(row, up) if *up == adds => {
+                        let overview = driven.attach.model.space_overview.as_ref()?;
+                        (overview.workspace_rows().get(*row)
+                            == Some(&crate::ui::orchestrator::space_overview::WorkspaceRow::Key(
+                                DeclarationKey::Slots,
+                            )))
+                        .then_some(*rect)
+                    }
+                    _ => None,
+                })
+                .expect("slots draws its step");
+            driven.press(rect.x + 1, rect.y);
+            driven.frame();
+        };
+        let value = |driven: &Driven<'_>, key: DeclarationKey| {
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .expect("open")
+                .edit
+                .values
+                .get(&key)
+                .cloned()
+        };
+        step(&mut driven, true);
+        step(&mut driven, true);
+        assert_eq!(
+            value(&driven, DeclarationKey::Slots),
+            Some(Some(DeclaredValue::Number(2))),
+            "two clicks on + from no limit"
+        );
+        step(&mut driven, false);
+        step(&mut driven, false);
+        assert_eq!(
+            value(&driven, DeclarationKey::Slots),
+            None,
+            "back below one is no limit, the file as it was"
+        );
+
+        // The key on idle days: down to it, and + from its default.
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Down,
+        ));
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('+'),
+        ));
+        assert_eq!(
+            value(&driven, DeclarationKey::IdleDays),
+            Some(Some(DeclaredValue::Number(4))),
+            "+ on idle days did not add one to its default"
         );
     }
 

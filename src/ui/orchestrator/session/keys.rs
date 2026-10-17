@@ -345,6 +345,9 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         match action {
+            // A shell opens beside an agent; the space's own context is
+            // its overview, with no tabs of its own to add to.
+            Action::NewShellTab if context_agent(&self.model, &self.identities).is_none() => {}
             Action::NewShellTab => {
                 self.model.put_away_space_overview();
                 let _ = send_request(
@@ -386,6 +389,8 @@ impl Attach<'_> {
             Action::PreviousSpace => self.step_space(-1, columns, rows),
             Action::NextAgent => self.step_agent(1, columns, rows),
             Action::PreviousAgent => self.step_agent(-1, columns, rows),
+            // The space's own context has no tabs on the strip to count.
+            Action::SelectTab(_) if context_agent(&self.model, &self.identities).is_none() => {}
             Action::SelectTab(position) => {
                 let index = usize::from(position).saturating_sub(1);
                 // Counted along the strip, which is what the number on

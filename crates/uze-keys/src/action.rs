@@ -340,8 +340,6 @@ actions! {
     // --- The space overview -------------------------------------------
     OpenSpaceOverview => "open-space-overview", false,
         "Overview", "Show this space's overview: its context, plugins, workspace and memory";
-    OpenSpaceShell => "open-space-shell", false,
-        "Open shell", "Bring this space's shell to the front, or open one at its root";
     AddItem => "add-item", false,
         "Add", "Add an entry to the list in focus";
     // Takes back a value not yet saved: nothing on disk changes until the

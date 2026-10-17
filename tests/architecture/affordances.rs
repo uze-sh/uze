@@ -276,10 +276,6 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("a space's row in the sidebar, and the overview tab leading the strip"),
     );
     put(
-        Action::OpenSpaceShell,
-        Control("the shell hint along the overview's foot"),
-    );
-    put(
         Action::AddItem,
         Control("the add hint along the overview's foot, in Workspace"),
     );

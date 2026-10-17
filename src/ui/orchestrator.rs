@@ -901,6 +901,9 @@ pub(super) enum WorkspaceHit {
     /// One option of a choice in the overview's Workspace section: its
     /// row, and the option's position.
     OverviewChoice(usize, usize),
+    /// A number's − or + in the overview's Workspace section: its row, and
+    /// whether it adds.
+    OverviewStep(usize, bool),
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Saving or dropping the overview's workspace edits; `true` saves.

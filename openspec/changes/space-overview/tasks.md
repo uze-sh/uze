@@ -27,7 +27,7 @@
 
 - [x] 4.1 Move the manage header's tabs into `widget/` as a generic tab bar (label, optional mark, active index, shrink to number + mark); manage renders through it unchanged
 - [x] 4.2 Move the drawer's core into `widget/` (width and drag state passed in); manage's `drawer` calls it
-- [ ] 4.3 `Choice` (an inline enum, options shown on focus), a list editor row set, and a YAML diff view, each only as the Workspace section needs it
+- [ ] 4.3 `Choice` (an inline enum, options shown on focus), a list editor row set, and a YAML diff view, each only as the Settings section needs it
 
 ## 5. Surface (src/ui)
 
@@ -35,16 +35,16 @@
 - [ ] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, save and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
 - [x] 5.3 `land_on_space`/`step_space` open the overview; put away by a tab, an agent row, `+`, another space or Esc; never by `close_extension_left_behind`
 - [x] 5.4 An `overview` tab leading the strip (`WorkspaceHit::OpenOverview`), selected while shown
-- [x] 5.5 Actions: Open shell; `review_commands_for(project)`; a fact's body through `memory().show` on the read thread
-- [x] 5.6 Workspace editing: pending edits, preview on the read thread, problems at their key, diff with Save/Discard, save on the read thread then re-read
+- [x] 5.5 Actions: `review_commands_for(project)`; a fact's body through `memory().show` on the read thread
+- [x] 5.6 Settings editing: pending edits, preview on the read thread, problems at their key, diff with Save/Discard, save on the read thread then re-read
 - [x] 5.7 `Scope::SpaceOverview` and `Scope::SpaceOverviewEditing` in `uze-keys`, `Action::OpenSpaceOverview` in `Scope::Workspace`, default bindings
-- [ ] 5.8 `TestBackend` tests: a row click draws the overview and creates no tab; the confirming broadcast keeps it; a double click renames; a tab selection puts it away; Esc returns to the selected tab; Open shell on an agent-only space; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an invalid edit blocks Save; the diff before save
+- [ ] 5.8 `TestBackend` tests: a row click draws the overview and creates no tab; the confirming broadcast keeps it; a double click renames; a tab selection puts it away; Esc returns to the agent; no shell offered in the space's own context; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an invalid edit blocks Save; the diff before save
 
 ## 6. Journey
 
-- [ ] 6.1 A journey in `04-workspace`: selecting the space shows its overview and the process table gains no shell; Open shell from an agent-only space starts one at the root; a workspace edit saved from the overview changes `agents.yaml` on disk with its comments kept
+- [ ] 6.1 A journey in `04-workspace`: selecting the space shows its overview and the process table gains no shell; a workspace edit saved from the overview changes `agents.yaml` on disk with its comments kept
 
 ## 7. Docs and gate
 
-- [ ] 7.1 The workspace docs page (`web/content/docs/workspace/`) describes the overview and the Workspace section, and the journey's `proves:` names it
+- [ ] 7.1 The workspace docs page (`web/content/docs/workspace/`) describes the overview and the Settings section, and the journey's `proves:` names it
 - [ ] 7.2 `make check` green

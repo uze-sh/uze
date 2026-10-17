@@ -429,45 +429,30 @@ fn render_agent_tabs(
     // render would otherwise cover over a bar drawn mid-loop (unlike the
     // sidebar's per-row renders, every chip here shares that one `Line`).
     let mut drop_indicator: Option<Rect> = None;
-    // The space itself leads its own tabs: its overview, a tab of the
-    // client's own that no process stands behind. Only in the space's own
-    // context — an agent's strip is about that agent. While it is in front
-    // it is the strip's one selected chip, and the tab behind it is not.
+    // The space's own context is its overview and nothing else: the shell
+    // the server keeps for it stands behind it, and opening more there
+    // only made two ways to the same place. An agent's context keeps its
+    // tabs and its "+".
     let overview_open = model.space_overview.is_some();
-    if context.is_none() {
+    if context.is_none() || overview_open {
         let label = Span::styled(
-            "overview",
-            if overview_open {
-                theme::fg_bold(Token::TextBright)
-            } else {
-                theme::fg(Token::TextInactive)
-            },
+            surface_label(Symbol::Overview, "overview"),
+            theme::fg_bold(Token::TextBright),
         );
         let chip_width = label.width() as u16 + 2 * chip::PAD;
-        if x + chip_width <= limit {
+        if chip_width <= slot.width {
             let mut chip = vec![Span::raw(" "), label, Span::raw(" ")];
-            if overview_open {
-                row::pad_to(&mut chip, chip_width, theme::color(Token::SurfaceRaised));
-            } else if model.hovered == Some(WorkspaceHit::OpenOverview) {
-                row::pad_to(
-                    &mut chip,
-                    chip_width,
-                    theme::color(Token::SurfaceRaisedSubtle),
-                );
-            }
+            row::pad_to(&mut chip, chip_width, theme::color(Token::SurfaceRaised));
             hits.push((
-                Rect::new(x, slot.y, chip_width, 1),
+                Rect::new(slot.x, slot.y, chip_width, 1),
                 WorkspaceHit::OpenOverview,
             ));
-            spans.extend(chip);
-            spans.push(Span::raw(" "));
-            x += chip_width + 1;
-            if x + 2 <= limit {
-                spans.push(Span::styled("/", theme::fg(Token::TextFaint)));
-                spans.push(Span::raw(" "));
-                x += 2;
-            }
+            frame.render_widget(
+                Paragraph::new(Line::from(chip)),
+                Rect::new(slot.x, slot.y, chip_width, 1),
+            );
         }
+        return;
     }
     for (strip_index, tab) in strip.into_iter().enumerate() {
         if x >= limit {
@@ -475,7 +460,7 @@ fn render_agent_tabs(
         }
         let is_last = strip_index + 1 == strip_len;
         let is_agent = Some(tab.id) == context;
-        let selected = tab.id == space.selected_tab && !overview_open;
+        let selected = tab.id == space.selected_tab;
         let marker_fg = if selected {
             theme::color(Token::Accent)
         } else {

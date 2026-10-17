@@ -432,7 +432,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "down", Action::SelectNext),
         bind(Scope::SpaceOverview, "up", Action::SelectPrevious),
         bind(Scope::SpaceOverview, "enter", Action::Activate),
-        bind(Scope::SpaceOverview, "o", Action::OpenSpaceShell),
         bind(Scope::SpaceOverview, "r", Action::Refresh),
         bind(Scope::SpaceOverview, "a", Action::AddItem),
         bind(Scope::SpaceOverview, "d", Action::RemoveItem),
@@ -441,6 +440,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
         bind(Scope::SpaceOverview, "s", Action::SaveChanges),
         bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
+        // A number steps by one, the way its − and + are clicked.
+        bind(Scope::SpaceOverview, "-", Action::PreviousValue),
+        bind(Scope::SpaceOverview, "+", Action::NextValue),
         bind(Scope::SpaceOverviewEditing, "enter", Action::Activate),
         bind(Scope::SpaceOverviewEditing, "esc", Action::Dismiss),
         bind(Scope::SpaceOverviewEditing, "backspace", Action::EraseBack),

@@ -26,24 +26,24 @@ workspace without knowing its keys.
   architect and spec surfaces, scoped to the selected space.
   - Selecting the space's row shows it instead of focusing the space's
     shell.
-  - The space's own strip leads with an `overview` tab, before its
-    shells, selected while the overview is up; an agent's strip has none. "Open shell" brings
-    the space's shell to the front, or creates one for a space that only
-    has agents.
-- **Four sections, one per thing in the project**, reached from a section
-  bar like the manage modal's header. Each tab carries the worst state of
+  - The space's own context is its overview alone: its strip shows only
+    the `overview` tab, and no shell is opened there. An agent's strip
+    keeps its tabs, and shells are opened there.
+- **Four sections, one per thing in the project**, what it declares first
+  and what follows from it after, reached from a section bar like the
+  manage modal's header. Each tab carries the worst state of
   its parts, and the section's first line names the cause.
-  - **Context.** `AGENTS.md` and, per harness, whether it is installed,
-    whether the project context reaches it and what agent context it
-    misses.
-  - **Plugins.** The plugins `agents.yaml` declares: installed, contributing
-    here, the commit installed and its freshness; and `agents.lock`'s drift
-    against the declaration.
-  - **Workspace.** Every key of `agents.yaml`'s `workspace:` section, set or
+  - **Settings.** Every key of `agents.yaml`'s `workspace:` section, set or
     defaulted, and the state of each `setup` and `gate` line on this
     machine. The section is **editable**: a key is changed in place, the
     real parser validates the result, and Save shows the `agents.yaml`
     diff before writing it.
+  - **Plugins.** The plugins `agents.yaml` declares: installed, contributing
+    here, the commit installed and its freshness; and `agents.lock`'s drift
+    against the declaration.
+  - **Context.** `AGENTS.md` and, per harness, whether it is installed,
+    whether the project context reaches it and what agent context it
+    misses.
   - **Memory.** The project's facts with their kind, origin and date, and
     how many machine facts also reach agents here. A fact's body opens in
     the drawer.
