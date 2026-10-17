@@ -315,6 +315,12 @@ impl Attach<'_> {
             self.recent_action(action);
             return Flow::Continue;
         }
+        // The overview's door stands over the surfaces too, as theirs do
+        // over each other: one of them in front must not swallow it.
+        if action == Action::OpenSpaceOverview {
+            self.show_current_space_overview();
+            return Flow::Continue;
+        }
         if self.model.architect.is_some() {
             self.architect_action(action);
             return Flow::Continue;
@@ -332,17 +338,6 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         match action {
-            Action::OpenSpaceOverview => {
-                if let Some(space) = self
-                    .model
-                    .session
-                    .as_ref()
-                    .map(|session| session.selected_space().id)
-                {
-                    self.model.open_space_overview(space);
-                    self.schedule_space_overview();
-                }
-            }
             Action::NewShellTab => {
                 self.model.put_away_space_overview();
                 let _ = send_request(

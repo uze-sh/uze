@@ -522,7 +522,7 @@ fn default_bindings() -> Vec<Binding> {
             bindings.push(bind(
                 Scope::SpaceOverview,
                 &index.to_string(),
-                Action::SelectTab(index),
+                Action::SelectSection(index),
             ));
         }
         // Bare digits: management owns the keyboard, and the screens are

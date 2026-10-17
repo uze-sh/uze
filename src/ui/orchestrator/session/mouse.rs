@@ -1263,8 +1263,9 @@ impl Attach<'_> {
             WorkspaceHit::SelectTab(tab) => {
                 // Choosing a tab is choosing to see it, the one already in
                 // front included: that is how the pane is had back from a
-                // surface standing in it.
+                // surface or the overview standing in it.
                 self.model.close_extension();
+                self.model.put_away_space_overview();
                 // Whether this click landed on the tab already
                 // holding its space's selection — read before
                 // `SelectTab` is sent below, since the model
@@ -1404,7 +1405,7 @@ impl Attach<'_> {
             WorkspaceHit::OpenOverview if self.model.space_overview.is_some() => {}
             WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
             WorkspaceHit::OverviewSection(index) => {
-                return self.act(Action::SelectTab(index as u8 + 1), viewport);
+                return self.act(Action::SelectSection(index as u8 + 1), viewport);
             }
             WorkspaceHit::OverviewRow(index) => self.model.select_overview_row(index),
             WorkspaceHit::OverviewShell => return self.act(Action::OpenSpaceShell, viewport),

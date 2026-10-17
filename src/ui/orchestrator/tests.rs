@@ -10061,6 +10061,124 @@ mod workspace_tests {
         );
     }
 
+    /// The overview stands in front of one tab and leaves the moment the
+    /// operator chooses another way: a click on any tab of the strip, the
+    /// one behind it included, a tab chord, or the server moving the
+    /// selection on once it had settled — a tab opened, an agent placed.
+    /// What it survives is the broadcast confirming the space it was
+    /// opened for.
+    #[test]
+    fn the_overview_leaves_for_whatever_tab_is_chosen_next() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-leaves"));
+        let mut with_shell = session("/repo");
+        let space = with_shell.selected_space().id;
+        let shell = with_shell.selected_tab().id;
+        let other = with_shell.add_tab(
+            space,
+            "shell 2".into(),
+            None,
+            80,
+            24,
+            PathBuf::from("/repo"),
+        );
+        let other_tab = with_shell
+            .selected_space()
+            .tabs
+            .iter()
+            .find(|tab| tab.pane.id == other)
+            .expect("the second shell")
+            .id;
+        with_shell.select_tab(shell);
+        let open_overview = |driven: &mut Driven<'_>| {
+            driven.frame();
+            let row = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| {
+                    matches!(hit, WorkspaceHit::SelectSpace(_)).then_some(*rect)
+                })
+                .expect("the space row is a target");
+            driven.press(row.x + 4, row.y);
+            let session = driven.attach.model.session.clone().expect("session");
+            driven.attach.model.apply(
+                ClientEvent::SessionUpdated { session },
+                &identities_fixture(),
+            );
+            assert!(
+                driven.attach.model.space_overview.is_some(),
+                "the broadcast confirming the space put the overview away"
+            );
+        };
+
+        // A click on the tab standing behind it: nothing changes on the
+        // server, so the click alone has to put it away.
+        let mut driven = driven(model_of(with_shell.clone()), &home);
+        open_overview(&mut driven);
+        driven.frame();
+        let behind = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == WorkspaceHit::SelectTab(shell)).then_some(*rect))
+            .expect("the shell behind the overview is on the strip");
+        driven.press(behind.x + 1, behind.y);
+        assert!(
+            driven.attach.model.space_overview.is_none(),
+            "a click on the tab behind the overview left it up"
+        );
+
+        // A tab chord reaches the strip, not the overview's sections.
+        let mut driven = driven_again(&home, &with_shell);
+        open_overview(&mut driven);
+        driven.press_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('2'),
+            crossterm::event::KeyModifiers::ALT,
+        ));
+        assert!(
+            driven.attach.model.space_overview.is_none(),
+            "alt+2 was taken by the overview"
+        );
+
+        // The server moving the selection on, however it came about.
+        let mut driven = driven_again(&home, &with_shell);
+        open_overview(&mut driven);
+        let mut moved = driven.attach.model.session.clone().expect("session");
+        moved.select_tab(other_tab);
+        driven.attach.model.apply(
+            ClientEvent::SessionUpdated { session: moved },
+            &identities_fixture(),
+        );
+        assert!(
+            driven.attach.model.space_overview.is_none(),
+            "the overview stayed over a tab it was not opened in front of"
+        );
+
+        // A section chord stays the overview's.
+        let mut driven = driven_again(&home, &with_shell);
+        open_overview(&mut driven);
+        driven.press_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('3'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.section
+                    == crate::ui::orchestrator::space_overview::Section::Workspace),
+            "3 did not show the Workspace section"
+        );
+    }
+
+    fn driven_again<'a>(home: &'a UzeHome, session: &uze_terminal::Session) -> Driven<'a> {
+        driven(model_of(session.clone()), home)
+    }
+
     /// The selected space alone carries "new", at its header's right
     /// edge, and it opens the agent picker under itself: the new agent
     /// lands in the space in front, so no other header offers one.
