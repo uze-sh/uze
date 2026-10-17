@@ -1,5 +1,7 @@
 # The demo video, as a spec. This file is the source of truth: it says what
-# the video shows, in order, and everything needed to make it again.
+# the video shows, in order, and everything needed to make it again. What it
+# shares with the other demos (the sandbox, the fixtures, the gestures) is
+# in .demo/_shared.
 #
 #   tui-record beats  .demo   # the script, as prose
 #   tui-record seed   .demo   # build the sandbox (first run, or after a /tmp wipe)
@@ -9,522 +11,36 @@
 #
 # `tui-record` ships with the `tui` plugin: uze install -m tui@ai
 
+extends:
+  - _shared/agents.yml
+  - _shared/macros.yml
+
 video:
   title: uze
-  # Rendered beside its spec, published where it is consumed. Only the
-  # published copy is committed (.demo renders are gitignored): the same
-  # ~700KB blob twice per recording is history nobody needs, and both the
-  # site (/uze-demo.gif) and the README already point at web/public.
+  # The site plays the cut cast itself, as text; the GIF is rendered beside
+  # the spec as the take's proof and published only because README.md embeds
+  # it, and GitHub cannot play a cast. Only the published copies are
+  # committed (.demo renders are gitignored).
   out: .demo/uze-demo.gif
   poster: .demo/uze-demo-poster.png
   publish:
+    - from: cast
+      to: web/public/casts/hero.cast
     - from: out
       to: web/public/uze-demo.gif
-    - from: poster
-      to: web/public/uze-demo-poster.png
-  # A take that caught the provider rate-limiting is a bad take, not a bad
-  # render: fail loudly instead of publishing it.
-  forbid:
-    - Upstream request limit
-    - Retry attempt
-    # The account's own state, which the harness prints unasked and which no
-    # sandbox can pre-answer: the quota line, and — the reason this is not
-    # merely untidy — the timezone it names, which is the operator's region
-    # on a published video. The leak scan looks for a username and a
-    # hostname; a place is neither. `TZ` above should keep the second one
-    # from ever firing; it stays as the proof that it did.
-    #
-    # The quota line is the one thing here a re-take cannot clear: it is
-    # true until the week resets. When it fires, blank that sentence in the
-    # `.raw.cast` — spaces, the same count of characters, so nothing on the
-    # row reflows — and `recut`. Not `redact`, which substitutes `x` and
-    # would put a bar of them on camera where the line was.
-    - weekly limit
-    - America/
-    # `usage credits` was here too, for the referral promo that rides with
-    # the quota line. It is gone because the same sentence is the static
-    # description of Claude's own `/passes` command, which the command
-    # palette beat is *meant* to show — the phrase does not say whose
-    # account it is, and the line above does.
   cast: '{root}/uze-hero.cast'
-  cols: 152                 # wide enough for the Integrations cards, narrow
-  rows: 36                  # enough that GitHub's ~900px column stays readable
   speed: 1.2                # reads as a person; at 1.45 the extension scene read as fast-forward
-  # A beat's pause is a still screen, and the renderer caps a still at its
-  # idle limit (1.5s by default) — which cut every 3s look at an extension
-  # in half. Above the longest pause, so the spec says how long a screen holds.
-  idle_limit: 3.5
-  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
-  # Twice the width the README embeds it at, so the page downscales it.
-  font_size: 20
-  # The app draws with the nerd glyph set (see `provision`), so the
-  # renderer needs the patched font too — without it every icon is a
-  # blank cell. The fallback is named so a machine without the patched
-  # build still renders readable text instead of nothing.
-  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
-  # Where that font is read from when the system never installed it: the
-  # Nerd Fonts v3.5.1 FiraCode release, unpacked. Without it the renderer
-  # silently draws the text in the fallback above.
-  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   wait_collapse: 1.5        # what an agent's thinking time collapses to
-  # The still the site shows first: named by what must be on screen, so a
+  # The poster: named by what must be on screen, so a
   # re-cut cannot silently move it to a half-drawn frame. Not the drawer's
   # heading: the drawer draws `reading…` first and its prompt list a frame
   # later, so the heading's frame is the half-drawn one. The list's row is
   # the prompt wrapped at the drawer's width; the pane breaks it elsewhere,
   # so only the drawer puts an escape between those two words.
   poster_when: 'listing every\x1b[^r]*route in src/router'
-  sidebar: 31               # where the sidebar band ends, for `in: sidebar`
-sandbox:
-  root: ~/.uzedemo          # never on screen
-  fixtures: /tmp/demos      # on screen: a path under $HOME carries a username
-  cwd: '{fixtures}/demo-app'
-  command:
-    - '{project}/target/release/uze'
-    - workspace
-  shell: '{home}/demoshell'
-  path:
-    - '{home}/.uze/shims'
-    - '{home}/.local/bin'
-    - '{home}/bin'
-    - /usr/local/bin
-    - /usr/bin
-    - /bin
-  env:
-    # UTC, so nothing the harness prints carries the operator's region. A
-    # provider's own status line names the timezone it resets in, and the
-    # leak scan looks for a username and a hostname — a place is neither.
-    TZ: UTC
-    PS1: '\[\e[38;5;114m\]demo-app\[\e[0m\] $ '
-  # Named binaries are symlinked into the sandbox from the real PATH.
-  # `opencode` is not among them on purpose: its v2 launcher is a `sh`
-  # script that execs `$(dirname "$0")/opencode`, so a symlink of *that*
-  # under another name execs itself and spins forever. The real binary is
-  # granted below, by path.
-  binaries:
-    - claude
-    - agy
-  author: Ada Lovelace
-  author_email: ada@demo.dev
-  # A deliberate, revocable grant: symlinks, never copies. Delete the link
-  # and the grant is over; without them the harnesses record a login screen.
-  link:
-    - from: ~/.opencode/bin/opencode
-      to: '{home}/bin/opencode'
-    - from: ~/.claude/.credentials.json
-      to: '{home}/.claude/.credentials.json'
-      optional: true
-    - from: ~/.local/share/opencode/auth.json
-      to: '{home}/.local/share/opencode/auth.json'
-      optional: true
-  copy:
-    - from: ~/.config/opencode/opencode.json
-      to: '{home}/.config/opencode/opencode.json'
-  # Setup first, or every Integrations card reads "Not configured" on camera.
-
-  provision:
-    - test -x {home}/.local/bin/codex || curl -fsSL https://chatgpt.com/codex/install.sh | sh
-    # UZE's own state starts from nothing on every seed. A home carried
-    # across builds carries their records too: the official plugin installed
-    # from an older binary's embedded bytes reads as an update waiting on
-    # the Plugins screen.
-    - rm -rf {home}/.uze
-    # OpenCode v2 runs a background service on one fixed port per machine,
-    # not per HOME: with the operator's own OpenCode running, the sandbox's
-    # cannot bind it and the pane sits on "Starting background server...".
-    - opencode service set port 49375
-    - '{project}/target/release/uze setup claude codex opencode antigravity'
-    # OpenCode's official route is `opencode upgrade`, and from this sandbox
-    # it cannot tell how OpenCode was installed: the binary is the host's,
-    # reached through a link, under a HOME that is not the one it was
-    # installed for. Setup then stops short of UZE's launcher, and the
-    # agent opens with a toast saying its conversation will not be carried
-    # over. The launcher is the same link setup would have made — the one
-    # `claude`, `codex` and `agy` already have. Pointing the sandbox at the
-    # host's own ~/.opencode instead would let that upgrade run, on the
-    # operator's real install.
-    - test -e {home}/.uze/shims/opencode || ln -s {project}/target/release/uze {home}/.uze/shims/opencode
-    - '{project}/target/release/uze config icons nerd'
-  # The sandbox's own terminal server, by pid, verified through /proc — never
-  # a pattern kill, which would match the shell running it.
-  reset:
-    - |
-      for pid in $(pgrep -x uze 2>/dev/null); do
-        cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
-        case "$cmd" in *"terminal serve --root /tmp/demos/"*) kill -TERM "$pid" 2>/dev/null ;; esac
-      done
-    # `git reset --hard` — the fixture rewind before every attempt — reverts
-    # tracked files and leaves untracked ones, so a file another spec's beats
-    # wrote is still there, counted in this take's changes badge. `.worktrees`
-    # is excluded: the rewind removes those itself, and pulling the directory
-    # out from under Git first leaves metadata to prune.
-    - git -C {fixtures}/demo-app clean -qfd -e .worktrees 2>/dev/null || true
-    # A home with no layout is a first run: the first-steps list opens and
-    # pushes the timeline off the sidebar. The video is of a project already
-    # in use, so the list starts folded and the timeline open — written here
-    # rather than left to whatever an earlier take folded or ticked, before
-    # every attempt, since a take ticks steps and moves the manage route.
-    - |
-      cat > {home}/.uze/state/layout.json <<'LAYOUT'
-      {
-        "sidebar": { "width": null },
-        "workspace": { "timeline_collapsed": false, "timeline_rows": null, "collapsed_space_roots": [] },
-        "management": { "route": "overview", "drawer_width": null,
-                        "profile_columns_width": null, "collapsed_marketplaces": [] },
-        "first_steps": { "collapsed": true, "closed": false, "taken": [] }
-      }
-      LAYOUT
-    # The appearance demo shares this home and ends on another theme: every
-    # take starts from the default, the one the site's own palette matches.
-    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
-  clear:
-    # The rewind removes the checkouts but leaves the directory that held
-    # them, and the `clean` above deliberately spares it — so an empty
-    # `.worktrees/` survives into the next take and shows up in the file
-    # tree. `clear` runs after the removal and the prune, so it is the one
-    # place this can be deleted without dangling Git's metadata.
-    - '{fixtures}/demo-app/.worktrees'
-    - '{home}/.uze/state/terminal'
-    # The project's records — its agents and its prompt history — or the
-    # Overview counts every take ever recorded as recent work.
-    - '{home}/.uze/state/projects'
-    - '{runtime}/uze-runtime'
-  write:
-    - path: '{home}/demoshell'
-      executable: true
-      text: |
-        #!/bin/sh
-        exec /bin/bash --norc --noprofile
-    - path: '{home}/.gitconfig'
-      text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
-    - path: '{home}/.claude.json'
-      text: |
-        {
-          "hasCompletedOnboarding": true,
-          "lastOnboardingVersion": "2.1.201",
-          "installMethod": "native",
-          "autoUpdates": false,
-          "theme": "dark",
-          "tipsHistory": { "powerup-onboarding": 99, "new-user-warmup": 99, "shift-enter": 99 },
-          "tipLifetimeShownCounts": { "powerup-onboarding": 99 },
-          "projects": {
-            "/tmp/demos/demo-app": { "hasTrustDialogAccepted": true, "allowedTools": [] },
-            "/tmp/demos/demo-web": { "hasTrustDialogAccepted": true, "allowedTools": [] }
-          }
-        }
-  # An allow list, not a bypass mode: the bypass opens a consent screen that
-  # would be the first frame of the video.
-  patch_json:
-    - path: '{home}/.claude/settings.json'
-      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash"]}}'
-# Two projects with a believable past: an empty repo reads as a test
-# fixture, a handful of dated commits reads as a project.
-#
-# `demo-app` is shared, byte for byte, with .demo/code and .demo/architect:
-# the three specs record in one sandbox ({root}) against one fixtures
-# directory, so its remembered HEAD is shared with them too. Change a commit
-# here and change it there, or `tui-record seed` on one spec rewinds the
-# other two to a base they were not recorded against.
 fixtures:
-  - name: demo-app
-    commits:
-      - message: 'chore: initial commit'
-        days_ago: 9
-        files:
-          README.md: '# demo-app'
-      - message: 'feat(api): add the health endpoint'
-        days_ago: 7
-        files:
-          src/main.rs: |-
-            mod router;
-
-            fn main() {
-                let port = config::port();
-                println!("demo-app listening on {}", port);
-                serve(port, router::route);
-            }
-          src/health.rs: |-
-            pub fn health() -> Response {
-                Response::json(200, r#"{"status":"ok"}"#)
-            }
-      - message: 'docs: describe the request lifecycle'
-        days_ago: 5
-        files:
-          docs/lifecycle.md: |
-            # Request lifecycle
-
-            A request arrives, the router looks its path up in the route
-            table, and the handler it finds answers. A path the table does
-            not carry falls through to the 404 handler.
-
-            ## Routes
-
-            | Path | Handler |
-            | --- | --- |
-            | `/health` | `health::health` |
-      - message: 'feat(config): read settings from config.toml'
-        days_ago: 4
-        files:
-          config.toml: |-
-            [app]
-            port = 8080
-            log = "info"
-          src/config.rs: |-
-            pub fn port() -> u16 {
-                settings().app.port
-            }
-      - message: 'docs: add AGENTS.md with the project''s conventions'
-        days_ago: 3
-        files:
-          AGENTS.md: |
-            # AGENTS.md
-
-            Guidance for agentic tools working in this repository.
-
-            ## What this is
-
-            `demo-app` is a small HTTP service. `src/router.rs` maps a path to a
-            response; `config.toml` carries the runtime settings.
-
-            ## Conventions
-
-            - Keep handlers total: every route returns a `Response`, never panics.
-            - Document a new route in `docs/lifecycle.md` in the same change.
-            - Conventional Commits for commit subjects.
-      # The policy belongs in the manifest, not the lock: `agents.lock` is
-      # derived, and an agent reading a worktree policy from it would be
-      # reading something UZE regenerates. `worktree: always` is what puts
-      # every agent this demo starts in a checkout of its own.
-      - message: 'chore: declare the project''s environment in agents.yaml'
-        days_ago: 2
-        files:
-          agents.yaml: |-
-            workspace:
-              worktree: always
-              target: main
-              delivery: handoff
-              branch: conventional
-              slots: 3
-              artifacts: docs/architecture
-      - message: 'docs(architecture): draw the context, the containers and the lifecycle'
-        days_ago: 2
-        files:
-          docs/architecture/system-context.mmd: |
-            ---
-            title: System context
-            ---
-            C4Context
-              Person(dev, "Developer", "Runs the service and reads its logs")
-              System(app, "demo-app", "The HTTP service")
-              System_Ext(site, "demo-web", "The marketing site")
-              Rel(dev, app, "Runs, reviews")
-              Rel(site, app, "Calls /health")
-          docs/architecture/containers.mmd: |
-            ---
-            title: Containers
-            ---
-            C4Container
-              System_Boundary(app, "demo-app") {
-                Container(router, "Router", "Rust", "Maps a path to a response")
-                Container(health, "Health", "Rust", "Answers /health")
-                Container(config, "Config", "TOML", "Runtime settings")
-              }
-              Rel(router, health, "Dispatches /health")
-              Rel(router, config, "Reads the port")
-          docs/architecture/router-components.mmd: |
-            ---
-            title: Router components
-            ---
-            C4Component
-              Container_Boundary(router, "Router") {
-                Component(table, "Route table", "Rust", "Path to handler")
-                Component(dispatch, "Dispatch", "Rust", "Calls the handler it found")
-                Component(fallback, "Fallback", "Rust", "Answers 404")
-              }
-              Rel(table, dispatch, "Hands the match to")
-              Rel(table, fallback, "No match")
-          docs/architecture/request-lifecycle.mmd: |
-            ---
-            title: Request lifecycle
-            ---
-            flowchart LR
-              req([Request]) --> router[Router]
-              router --> known{Known route?}
-              known -- yes --> handler[Handler]
-              known -- no --> missing[404]
-              handler --> res([Response])
-              missing --> res
-              click router href "src/router.rs"
-              click handler href "src/health.rs"
-      # A project that plans its changes with OpenSpec, so the spec surface
-      # has something true to show: one change in flight, one finished and
-      # never archived, one barely started, and one put away. The design of
-      # rate limiting is not here on purpose — .demo/spec writes it
-      # untracked, which is what makes that change the checkout's own.
-      - message: 'docs(openspec): plan rate limiting, logging and config reload'
-        days_ago: 1
-        files:
-          openspec/config.yaml: |
-            schema: spec-driven
-          openspec/specs/health/spec.md: |
-            # health Specification
-
-            ## Purpose
-            Says whether the service can answer, for the load balancer and
-            for whoever is on call.
-
-            ## Requirements
-            ### Requirement: The service reports its health
-            The service SHALL answer `GET /health` with `200` and
-            `{"status":"ok"}` while it can serve requests.
-
-            #### Scenario: A healthy service
-            - **WHEN** `/health` is requested
-            - **THEN** the answer SHALL be `200` with `{"status":"ok"}`
-          openspec/specs/routing/spec.md: |
-            # routing Specification
-
-            ## Purpose
-            Maps a request's path to the handler that answers it.
-
-            ## Requirements
-            ### Requirement: An unknown path is answered, not dropped
-            A path the route table does not carry SHALL be answered with `404`.
-
-            #### Scenario: A path nobody routes
-            - **WHEN** `/nope` is requested
-            - **THEN** the answer SHALL be `404` naming the path
-          openspec/changes/archive/2026-09-18-add-health-endpoint/proposal.md: |
-            ## Why
-
-            The load balancer has no way to tell a live instance from a
-            dead one.
-
-            ## What Changes
-
-            - `GET /health` answers `200` while the service can serve.
-          openspec/changes/archive/2026-09-18-add-health-endpoint/tasks.md: |
-            ## 1. Endpoint
-
-            - [x] 1.1 Add `health::health`
-            - [x] 1.2 Route `/health` to it
-          openspec/changes/add-rate-limiting/proposal.md: |
-            ## Why
-
-            One noisy client can take the service down for everyone.
-            Requests need a budget per client, and a clear answer when it
-            runs out.
-
-            ## What Changes
-
-            - A token bucket per client address, refilled every second.
-            - `429 Too Many Requests` with a `Retry-After` header when the
-              bucket is empty.
-            - The budget is set in `config.toml`, under `[limits]`.
-
-            ## Impact
-
-            - `src/router.rs` asks the limiter before dispatching.
-            - A new `src/limiter.rs`.
-          openspec/changes/add-rate-limiting/tasks.md: |
-            ## 1. Limiter
-
-            - [x] 1.1 Token bucket with a refill clock
-            - [x] 1.2 One bucket per client address
-            - [x] 1.3 Read the budget from `config.toml`
-
-            ## 2. Routing
-
-            - [ ] 2.1 Ask the limiter before dispatching
-            - [ ] 2.2 Answer `429` with `Retry-After`
-
-            ## 3. Proof
-
-            - [ ] 3.1 A burst past the budget is refused
-            - [ ] 3.2 The bucket refills after a second
-          openspec/changes/add-rate-limiting/specs/rate-limiting/spec.md: |
-            ## ADDED Requirements
-
-            ### Requirement: A client past its budget is told to wait
-            The service SHALL answer `429` with a `Retry-After` header to a
-            client that has spent its request budget.
-
-            #### Scenario: A burst
-            - **WHEN** a client sends more requests in a second than its
-              budget allows
-            - **THEN** the requests past the budget SHALL be answered `429`
-          openspec/changes/add-request-logging/proposal.md: |
-            ## Why
-
-            Nobody can say what the service answered, or how slowly.
-
-            ## What Changes
-
-            - One line per request: method, path, status, duration.
-          openspec/changes/add-request-logging/tasks.md: |
-            ## 1. Logging
-
-            - [x] 1.1 Log method, path and status
-            - [x] 1.2 Log the duration
-            - [x] 1.3 Respect the `log` level in `config.toml`
-          openspec/changes/add-config-reload/proposal.md: |
-            ## Why
-
-            Changing a setting means restarting the service.
-
-            ## What Changes
-
-            - `SIGHUP` re-reads `config.toml` without dropping connections.
-          openspec/changes/add-config-reload/tasks.md: |
-            ## 1. Reload
-
-            - [x] 1.1 Catch `SIGHUP`
-            - [ ] 1.2 Re-read `config.toml`
-            - [ ] 1.3 Swap the settings atomically
-            - [ ] 1.4 Log what changed
-      - message: 'fix(api): return 404 for an unknown route'
-        days_ago: 1
-        files:
-          src/router.rs: |-
-            use crate::{config, health};
-
-            /// Every route this service answers, in the order they are tried.
-            pub fn route(path: &str) -> Response {
-                match path {
-                    "/health" => health::health(),
-                    _ => not_found(path),
-                }
-            }
-
-            fn not_found(path: &str) -> Response {
-                Response::text(404, format!("no route for {path}"))
-            }
-  - name: demo-web
-    commits:
-      - message: 'chore: initial commit'
-        days_ago: 6
-        files:
-          index.html: <!doctype html><title>demo-web</title>
-      - message: 'feat(ui): base typography'
-        days_ago: 3
-        files:
-          styles.css: 'body { font: 16px system-ui; }'
-      - message: 'docs: add AGENTS.md'
-        days_ago: 2
-        files:
-          AGENTS.md: |-
-            # AGENTS.md
-
-            The marketing site for demo-app. Plain HTML and CSS, no build step.
-      - message: 'chore: declare the worktree policy in agents.yaml'
-        days_ago: 2
-        files:
-          agents.yaml: |-
-            workspace:
-              worktree: always
-              target: main
-              delivery: handoff
-              slots: 3
+  - include: _shared/demo-app.yml
+  - include: _shared/demo-web.yml
 # What the video shows, in order. Edit this list first.
 beats:
   - say: uze is open on a project, a real shell in the space
@@ -541,21 +57,8 @@ beats:
   - type: api
     clear: 8
     pause: 0.9
-  # The new-agent control sits on the selected space's own sidebar row, and
-  # its menu opens over the sidebar's edge — so the harness is aimed at
-  # across the whole screen, not in one band.
-  - say: an agent is placed, in a checkout of its own
-    click: new
-    in: sidebar
-    expect: new agent
-    expect_timeout: 6
-    pause: 0.9
-  - click: Claude Code
-    in: screen
-    offset: 2
-    expect: Claude Code v
-    expect_timeout: 25
-    pause: 1.6
+  - use: launch-claude
+    with: {say: 'an agent is placed, in a checkout of its own', menu_pause: 0.9, pause: 1.6}
   # The tabs carry the agent mark, aimed at by glyph rather than by
   # character, with both spellings named: `mark.sparkle` is `✦` in the
   # default set and a private-use codepoint in the nerd one, so a spec that
@@ -586,18 +89,8 @@ beats:
     expect: 'esc to interrupt|for \d+s · done'
     expect_timeout: 60
     pause: 1.8
-  - say: a second agent, on a different harness
-    click: new
-    in: sidebar
-    expect: new agent
-    expect_timeout: 6
-    pause: 0.9
-  - click: OpenCode
-    in: screen
-    offset: 2
-    expect: ctrl\+p commands
-    expect_timeout: 25
-    pause: 1.8
+  - use: launch-opencode
+    with: {say: 'a second agent, on a different harness', menu_pause: 0.9, pause: 1.8}
   - dclick: ''
     glyph: '✦'
     in: strip
@@ -734,47 +227,16 @@ beats:
     expect_timeout: 6
     refuse: Ranking
     pause: 0.8
-  # By its chord, not by a label: management is reached through a mark in
-  # the sidebar now, and a glyph is a worse target than the key the product
-  # documents for it. The modal is a row of numbered tabs over one screen;
-  # the tab row is drawn whichever screen is showing, so it proves the modal
-  # is open and nothing else — each screen is then proved by its own
-  # heading, which carries a count only that screen computes.
-  - say: the management side, unhurried
-    key: C-o
-    # What it opens *on* is the screen it was left on, so naming a screen
-    # here is naming a memory. The screen this beat wants is asked for next,
-    # explicitly.
-    expect: manage\s+1 Marketplace\s+2 Integrations
-    expect_timeout: 8
-    pause: 1.2
-  # Aimed at across the whole screen: the modal spans the sidebar's columns
-  # too, so no band holds just the tabs. The tab row sits above everything
-  # else the modal draws, which makes each name's first hit its tab.
-  - click: Marketplace
-    in: screen
-    expect: Marketplace\s+\d+ marketplaces?\s+·
-    expect_timeout: 8
-    pause: 2.1
-  - click: Extensions
-    in: screen
-    expect: Extensions\s+\d+ bundled
-    expect_timeout: 8
-    pause: 2.1
-  - click: Integrations
-    in: screen
-    expect: Integrations\s+\d+ installed
-    expect_timeout: 8
-    pause: 2.1
-  # Back where it opened, with both agents still there: the same chord, and
-  # a last frame that is the product rather than a settings screen.
-  - key: C-o
-    expect: spec.+arch.+code
-    expect_in: strip
-    expect_timeout: 6
-    # The strip is drawn under the modal too, so it is the modal's own tab
-    # row going that proves it closed.
-    refuse: manage\s+1 Marketplace\s+2 Integrations
-    pause: 1.8
+  - use: manage-open
+    with: {say: 'the management side, unhurried', pause: 1.2}
+  - use: manage-marketplace
+    with: {pause: 2.1}
+  - use: manage-extensions
+    with: {pause: 2.1}
+  - use: manage-integrations
+    with: {pause: 2.1}
+  # Back where it opened, with both agents still there.
+  - use: manage-close
+    with: {pause: 1.8}
   - say: and out — the cut stops here, before the screen blanks
     end: C-q

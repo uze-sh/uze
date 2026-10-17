@@ -11,16 +11,20 @@
 #
 # `inspect` prints where each agent's copy lives, so the sandbox home is on
 # screen: it lives under /tmp, where a path carries no username.
+#
+# So it shares the demos' look (.demo/_shared/video.yml) and nothing of
+# their sandbox: what the agents hold is what this take writes, and the
+# workspace demos' home already holds a plugin and a set-up uze.
+
+extends: ../_shared/video.yml
 
 video:
   title: uze — package manager
   out: .demo/packages/uze-packages.gif
   poster: .demo/packages/uze-packages-poster.png
   publish:
-    - from: out
-      to: web/public/uze-packages.gif
-    - from: poster
-      to: web/public/uze-packages-poster.png
+    - from: cast
+      to: web/public/casts/packages.cast
   cast: '{root}/uze-packages.cast'
   # The other demos' proportions (152x36), smaller: this one is text to be
   # read, and the docs scale a GIF to their column, so fewer cells is bigger
@@ -32,10 +36,6 @@ video:
   # Above the longest pause: the renderer caps a still screen at its idle
   # limit (1.5s by default), which would halve the look at `inspect`.
   idle_limit: 4.0
-  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
-  font_size: 20
-  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
-  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   # The first `market add` mirrors the repository; that wait is squeezed.
   wait_collapse: 0.8
   poster_when: 'files in place'
@@ -95,19 +95,7 @@ sandbox:
     - path: '{home}/.gitconfig'
       text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
 fixtures:
-  - name: my-app
-    commits:
-      - message: 'chore: initial commit'
-        days_ago: 6
-        files:
-          README.md: '# my-app'
-      - message: 'feat: add the entry point'
-        days_ago: 3
-        files:
-          src/main.rs: |-
-            fn main() {
-                println!("hello from my-app");
-            }
+  - include: ../_shared/my-app.yml
   - name: acme-tools
     commits:
       - message: 'chore: start the team marketplace'

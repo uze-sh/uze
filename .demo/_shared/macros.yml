@@ -1,0 +1,82 @@
+# Gestures more than one demo makes, each with the proof that it landed.
+# A spec says when and how long a screen holds (`pause`); what a gesture
+# aims at and what proves it lives here, so a screen that changes is fixed
+# once.
+
+macros:
+  # The new-agent control sits on the selected space's own sidebar row, and
+  # its menu opens over the sidebar's edge — so the harness is aimed at
+  # across the whole screen, not in one band. `{ready}` is what the harness
+  # draws once it can take a prompt.
+  launch:
+    - say: '{say}'
+      click: new
+      in: sidebar
+      expect: new agent
+      expect_timeout: 6
+      pause: '{menu_pause}'
+    - click: '{harness}'
+      in: screen
+      offset: 2
+      expect: '{ready}'
+      expect_timeout: '{timeout}'
+      pause: '{pause}'
+  launch-claude:
+    - use: launch
+      with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
+             harness: Claude Code, ready: Claude Code v, timeout: 25}
+  launch-codex:
+    - use: launch
+      with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
+             harness: Codex, ready: Ask Codex to do anything, timeout: 40}
+  launch-opencode:
+    - use: launch
+      with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
+             harness: OpenCode, ready: 'ctrl\+p commands', timeout: 25}
+
+  # By its chord, not by a label: management is reached through a mark in
+  # the sidebar now, and a glyph is a worse target than the key the product
+  # documents for it. The modal is a row of numbered tabs over one screen;
+  # the tab row is drawn whichever screen is showing, so it proves the modal
+  # is open and nothing else. What it opens *on* is the screen it was left
+  # on, so naming a screen here is naming a memory: the screen a beat wants
+  # is asked for next, explicitly.
+  manage-open:
+    - say: '{say}'
+      key: C-o
+      expect: manage\s+1 Marketplace\s+2 Integrations
+      expect_timeout: 8
+      pause: '{pause}'
+  # Aimed at across the whole screen: the modal spans the sidebar's columns
+  # too, so no band holds just the tabs. The tab row sits above everything
+  # else the modal draws, which makes each name's first hit its tab. Each
+  # screen is proved by its own heading, which carries a count only that
+  # screen computes.
+  manage-marketplace:
+    - click: Marketplace
+      in: screen
+      expect: Marketplace\s+\d+ marketplaces?\s+·
+      expect_timeout: 8
+      pause: '{pause}'
+  manage-extensions:
+    - click: Extensions
+      in: screen
+      expect: Extensions\s+\d+ bundled
+      expect_timeout: 8
+      pause: '{pause}'
+  manage-integrations:
+    - click: Integrations
+      in: screen
+      expect: Integrations\s+\d+ installed
+      expect_timeout: 8
+      pause: '{pause}'
+  # Back where it opened, by the same chord, on a last frame that is the
+  # product rather than a settings screen. The strip is drawn under the
+  # modal too, so it is the modal's own tab row going that proves it closed.
+  manage-close:
+    - key: C-o
+      expect: spec.+arch.+code
+      expect_in: strip
+      expect_timeout: 6
+      refuse: manage\s+1 Marketplace\s+2 Integrations
+      pause: '{pause}'

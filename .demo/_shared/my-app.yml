@@ -1,0 +1,17 @@
+# The bare project the shell demos (install, packages) start in. Each builds
+# it in a fixtures directory of its own, so the two never share a repository
+# on disk; one definition keeps them the same project on screen.
+
+- name: my-app
+  commits:
+    - message: 'chore: initial commit'
+      days_ago: 6
+      files:
+        README.md: '# my-app'
+    - message: 'feat: add the entry point'
+      days_ago: 3
+      files:
+        src/main.rs: |-
+          fn main() {
+              println!("hello from my-app");
+          }

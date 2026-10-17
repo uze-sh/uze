@@ -1,0 +1,157 @@
+# The landing take's project, its own rather than demo-app: demo-app's
+# remembered HEAD is shared with other specs, and this one starts from a
+# manifest that declares no plugin yet, so the install on camera is what
+# writes them in.
+
+- name: demo-api
+  commits:
+    - message: 'chore: initial commit'
+      days_ago: 9
+      files:
+        README.md: |
+          # demo-api
+
+          A small HTTP service.
+    - message: 'feat(api): add the health route'
+      days_ago: 7
+      files:
+        src/main.rs: |-
+          mod config;
+          mod health;
+          mod router;
+
+          fn main() {
+              let port = config::port();
+              println!("demo-api listening on {}", port);
+              serve(port, router::route);
+          }
+        src/health.rs: |-
+          pub fn health() -> Response {
+              Response::json(200, r#"{"status":"ok"}"#)
+          }
+        src/router.rs: |-
+          use crate::health;
+
+          /// Every route this service answers, in the order they are tried.
+          pub fn route(path: &str) -> Response {
+              match path {
+                  "/health" => health::health(),
+                  _ => not_found(path),
+              }
+          }
+
+          fn not_found(path: &str) -> Response {
+              Response::text(404, format!("no route for {path}"))
+          }
+    - message: 'feat(config): read settings from config.toml'
+      days_ago: 4
+      files:
+        config.toml: |-
+          [app]
+          port = 8080
+          log = "info"
+        src/config.rs: |-
+          pub fn port() -> u16 {
+              settings().app.port
+          }
+    # With the workspace's own section in it, committed the way a project
+    # that uses the workspace has it: a worktree is cut from a commit, so
+    # a section only the primary checkout holds never reaches an agent.
+    - message: 'docs: add AGENTS.md'
+      days_ago: 3
+      files:
+        AGENTS.md: |
+          # AGENTS.md
+
+          `demo-api` is a small HTTP service. `src/router.rs` maps a path to
+          a response; `config.toml` carries the runtime settings.
+
+          - Keep handlers total: every route returns a `Response`.
+          - Conventional Commits for commit subjects.
+          <!-- uze:begin project:worktree-policy/4a95691426ef9fb0 -->
+          ## Concurrent work isolation
+
+          This section is for an agent `uze workspace` launched. An agent started any other way can ignore it: nothing below applies to it, and the `uze agent work` commands it names refuse outside the workspace.
+
+          - As soon as a user message gives the conversation a clear topic — normally the first message — make naming your work your first command, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is ideally one or two words, never more than three, naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The command always updates your label. In a checkout of your own it also renames your branch; in the operator's checkout only your label changes. Work that reaches a commit still unnamed is named by UZE from that commit's subject. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands. Invoke the command directly; do not merely say you will name the work.
+          - An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are already isolated; do not switch branches.
+          - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch keeps the name it has. Naming your work still applies here, first: it names your label, never their branch.
+          - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks, and fast-forwards the target itself; commit on your branch and stop.
+          - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
+          - Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
+          <!-- uze:end project:worktree-policy/4a95691426ef9fb0 -->
+    # Only the workspace: the marketplace and the plugin are what the
+    # video adds, and `cat agents.yaml` then shows both halves.
+    - message: 'chore: declare the project in agents.yaml'
+      days_ago: 2
+      files:
+        agents.yaml: |-
+          workspace:
+            worktree: always
+            delivery: merge
+            branch: conventional
+            artifacts: docs/architecture
+    - message: 'docs(architecture): draw the context and the containers'
+      days_ago: 2
+      files:
+        docs/architecture/system-context.mmd: |
+          ---
+          title: System context
+          ---
+          C4Context
+            Person(dev, "Developer", "Runs the service and reads its logs")
+            System(app, "demo-api", "The HTTP service")
+            System_Ext(lb, "Load balancer", "Routes traffic to live instances")
+            Rel(dev, app, "Runs, reviews")
+            Rel(lb, app, "Calls /health")
+        docs/architecture/containers.mmd: |
+          ---
+          title: Containers
+          ---
+          C4Container
+            System_Boundary(app, "demo-api") {
+              Container(router, "Router", "Rust", "Maps a path to a response")
+              Container(health, "Health", "Rust", "Answers /health")
+              Container(config, "Config", "TOML", "Runtime settings")
+            }
+            Rel(router, health, "Dispatches /health")
+            Rel(router, config, "Reads the port")
+    - message: 'docs(openspec): plan rate limiting'
+      days_ago: 1
+      files:
+        openspec/config.yaml: |
+          schema: spec-driven
+        openspec/specs/health/spec.md: |
+          # health Specification
+
+          ## Purpose
+          Says whether the service can answer.
+
+          ## Requirements
+          ### Requirement: The service reports its health
+          The service SHALL answer `GET /health` with `200` and
+          `{"status":"ok"}` while it can serve requests.
+
+          #### Scenario: A healthy service
+          - **WHEN** `/health` is requested
+          - **THEN** the answer SHALL be `200` with `{"status":"ok"}`
+        openspec/changes/add-rate-limiting/proposal.md: |
+          ## Why
+
+          One noisy client can take the service down for everyone.
+
+          ## What Changes
+
+          - A token bucket per client address, refilled every second.
+          - `429 Too Many Requests` with a `Retry-After` header.
+        openspec/changes/add-rate-limiting/tasks.md: |
+          ## 1. Limiter
+
+          - [x] 1.1 Token bucket with a refill clock
+          - [x] 1.2 One bucket per client address
+          - [ ] 1.3 Read the budget from `config.toml`
+
+          ## 2. Routing
+
+          - [ ] 2.1 Ask the limiter before dispatching
+          - [ ] 2.2 Answer `429` with `Retry-After`

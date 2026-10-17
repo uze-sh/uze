@@ -14,16 +14,20 @@
 #
 # The installer prints the directory it installed into, so the sandbox home
 # is on screen here: it lives under /tmp, where a path carries no username.
+#
+# So it shares the demos' look (.demo/_shared/video.yml) and nothing of
+# their sandbox: the workspace demos' home has uze set up and its harnesses
+# signed in, which is exactly what this take must not find.
+
+extends: ../_shared/video.yml
 
 video:
   title: uze — install
   out: .demo/install/uze-install.gif
   poster: .demo/install/uze-install-poster.png
   publish:
-    - from: out
-      to: web/public/uze-install.gif
-    - from: poster
-      to: web/public/uze-install-poster.png
+    - from: cast
+      to: web/public/casts/install.cast
   cast: '{root}/uze-install.cast'
   # The other demos' proportions (152x36), smaller: the output of each
   # command is what this one is for, and the docs scale a GIF to their
@@ -32,18 +36,10 @@ video:
   cols: 126
   rows: 30
   speed: 1.2
-  # Above the longest pause: the renderer caps a still screen at its idle
-  # limit (1.5s by default), which halved every look the beats ask for.
-  idle_limit: 3.5
-  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
-  font_size: 20
-  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
-  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
   # Two downloads happen on camera — uze's release and Claude Code's — and
   # both are waits, squeezed to this.
   wait_collapse: 1.2
   poster_when: 'agents? ready'
-  sidebar: 31
 sandbox:
   root: /tmp/uzeinstall
   fixtures: /tmp/uzeinstall/work
@@ -119,19 +115,7 @@ sandbox:
     - path: '{home}/.gitconfig'
       text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"
 fixtures:
-  - name: my-app
-    commits:
-      - message: 'chore: initial commit'
-        days_ago: 6
-        files:
-          README.md: '# my-app'
-      - message: 'feat: add the entry point'
-        days_ago: 3
-        files:
-          src/main.rs: |-
-            fn main() {
-                println!("hello from my-app");
-            }
+  - include: ../_shared/my-app.yml
 beats:
   - say: a project, and a shell with no uze on it
     pause: 1.0

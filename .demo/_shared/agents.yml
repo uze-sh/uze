@@ -1,0 +1,123 @@
+# The workspace sandbox with the harnesses in it, for the specs that start
+# an agent on camera: the binaries, the grants, `uze setup`, and each
+# harness's first run pre-answered.
+#
+# Credentials are a deliberate, revocable grant: symlinks, never copies.
+# Delete the link and the grant is over; without them the harnesses record a
+# login screen. The video costs whatever those accounts spend.
+
+extends: workspace.yml
+
+video:
+  # A take that caught the provider rate-limiting is a bad take, not a bad
+  # render: fail loudly instead of publishing it.
+  forbid:
+    - Upstream request limit
+    - Retry attempt
+    # The account's own state, which the harness prints unasked and which no
+    # sandbox can pre-answer: the quota line, and — the reason this is not
+    # merely untidy — the timezone it names, which is the operator's region
+    # on a published video. The leak scan looks for a username and a
+    # hostname; a place is neither. `TZ` in the sandbox should keep the
+    # second one from ever firing; it stays as the proof that it did.
+    #
+    # The quota line is the one thing here a re-take cannot clear: it is
+    # true until the week resets. When it fires, blank that sentence in the
+    # `.raw.cast` — spaces, the same count of characters, so nothing on the
+    # row reflows — and `recut`. Not `redact`, which substitutes `x` and
+    # would put a bar of them on camera where the line was.
+    - weekly limit
+    - America/
+    # `usage credits` was here too, for the referral promo that rides with
+    # the quota line. It is gone because the same sentence is the static
+    # description of Claude's own `/passes` command, which a command palette
+    # beat may be *meant* to show — the phrase does not say whose account it
+    # is, and the line above does.
+
+sandbox:
+  # Named binaries are symlinked into the sandbox from the real PATH.
+  # `opencode` is not among them on purpose: its v2 launcher is a `sh`
+  # script that execs `$(dirname "$0")/opencode`, so a symlink of *that*
+  # under another name execs itself and spins forever. The real binary is
+  # granted below, by path.
+  binaries:
+    - claude
+    - agy
+  link:
+    - from: ~/.opencode/bin/opencode
+      to: '{home}/bin/opencode'
+    - from: ~/.claude/.credentials.json
+      to: '{home}/.claude/.credentials.json'
+      optional: true
+    # OpenCode's grant is not a link: v2 keeps its providers outside
+    # auth.json, and `opencode auth login` replaces the file it writes, so a
+    # link here is overwritten by the login and then deletes it on the next
+    # seed. The operator logs in once, inside the sandbox:
+    #   HOME=/var/tmp/uzedemo/home ~/.opencode/bin/opencode auth login
+    # and deleting /var/tmp/uzedemo/home/.local/share/opencode ends it.
+    # Granted by the operator (2026-10-16): the third harness.
+    - from: ~/.codex/auth.json
+      to: '{home}/.codex/auth.json'
+      optional: true
+  copy:
+    - from: ~/.config/opencode/opencode.json
+      to: '{home}/.config/opencode/opencode.json'
+  provision:
+    - test -x {home}/.local/bin/codex || curl -fsSL https://chatgpt.com/codex/install.sh | sh
+    # UZE's own state starts from nothing on every seed. A home carried
+    # across builds carries their records too: the official plugin installed
+    # from an older binary's embedded bytes reads as an update waiting on
+    # the Plugins screen.
+    - rm -rf {home}/.uze
+    # OpenCode v2 runs a background service on one fixed port per machine,
+    # not per HOME: with the operator's own OpenCode running, the sandbox's
+    # cannot bind it and the pane sits on "Starting background server...".
+    - opencode service set port 49375
+    # Setup first, or every Integrations card reads "Not configured" on camera.
+    - '{project}/target/release/uze setup claude codex opencode antigravity'
+    # OpenCode's official route is `opencode upgrade`, and from this sandbox
+    # it cannot tell how OpenCode was installed: the binary is the host's,
+    # reached through a link, under a HOME that is not the one it was
+    # installed for. Setup then stops short of UZE's launcher, and the
+    # agent opens with a toast saying its conversation will not be carried
+    # over. The launcher is the same link setup would have made — the one
+    # `claude`, `codex` and `agy` already have. Pointing the sandbox at the
+    # host's own ~/.opencode instead would let that upgrade run, on the
+    # operator's real install.
+    - test -e {home}/.uze/shims/opencode || ln -s {project}/target/release/uze {home}/.uze/shims/opencode
+  reset:
+    # Codex asks whether to trust a folder on its first launch there, and
+    # its answer lives in its own config, which `uze setup` also writes to.
+    - |
+      for repo in {fixtures}/demo-app {fixtures}/demo-web {fixtures}/demo-api; do
+        grep -qsF "\"$repo\"]" {home}/.codex/config.toml ||
+          printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$repo" >> {home}/.codex/config.toml
+      done
+  write:
+    - path: '{home}/.claude.json'
+      text: |
+        {
+          "hasCompletedOnboarding": true,
+          "lastOnboardingVersion": "2.1.201",
+          "installMethod": "native",
+          "autoUpdates": false,
+          "theme": "dark",
+          "tipsHistory": { "powerup-onboarding": 99, "new-user-warmup": 99, "shift-enter": 99 },
+          "tipLifetimeShownCounts": { "powerup-onboarding": 99 },
+          "projects": {
+            "/tmp/demos/demo-app": { "hasTrustDialogAccepted": true, "allowedTools": [] },
+            "/tmp/demos/demo-web": { "hasTrustDialogAccepted": true, "allowedTools": [] },
+            "/tmp/demos/demo-api": { "hasTrustDialogAccepted": true, "allowedTools": [] }
+          }
+        }
+  patch_json:
+    # An allow list, not a bypass mode: the bypass opens a consent screen that
+    # would be the first frame of the video. The runtime path is the briefing
+    # an agent carried on from another harness is pointed at.
+    - path: '{home}/.claude/settings.json'
+      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash", "Read(/{home}/.uze/runtime/**)"]}}'
+    # The model the operator's OpenCode Go login serves. Without that login
+    # OpenCode falls back to a free model that refuses to run when the
+    # workspace launches it, whatever this says.
+    - path: '{home}/.config/opencode/opencode.json'
+      merge: '{"model": "opencode-go/glm-5.3-flash"}'

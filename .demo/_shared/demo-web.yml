@@ -1,0 +1,29 @@
+# The second project in the hero's sidebar: the marketing site for demo-app,
+# there so the workspace reads as more than one project.
+
+- name: demo-web
+  commits:
+    - message: 'chore: initial commit'
+      days_ago: 6
+      files:
+        index.html: <!doctype html><title>demo-web</title>
+    - message: 'feat(ui): base typography'
+      days_ago: 3
+      files:
+        styles.css: 'body { font: 16px system-ui; }'
+    - message: 'docs: add AGENTS.md'
+      days_ago: 2
+      files:
+        AGENTS.md: |-
+          # AGENTS.md
+
+          The marketing site for demo-app. Plain HTML and CSS, no build step.
+    - message: 'chore: declare the worktree policy in agents.yaml'
+      days_ago: 2
+      files:
+        agents.yaml: |-
+          workspace:
+            worktree: always
+            target: main
+            delivery: merge
+            slots: 3

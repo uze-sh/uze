@@ -1,0 +1,156 @@
+# The sandbox every workspace demo records in: one HOME, one fixtures
+# directory, one remembered HEAD per fixture. A spec that films a surface
+# extends this alone; one that starts an agent extends agents.yml, which
+# adds the harnesses and their grants on top. The tmux session is shared
+# too: never run two specs at once.
+#
+# Out of $HOME: a harness taking over an agent is pointed at its briefing
+# under $HOME/.uze/runtime, and that path is on screen. /var/tmp, not /tmp,
+# so a login made in this sandbox survives the boot-time wipe of /tmp.
+
+extends: video.yml
+
+sandbox:
+  root: /var/tmp/uzedemo
+  fixtures: /tmp/demos      # on screen: a path under $HOME carries a username
+  cwd: '{fixtures}/demo-app'
+  command:
+    - '{project}/target/release/uze'
+    - workspace
+  shell: '{home}/demoshell'
+  path:
+    - '{home}/.uze/shims'
+    - '{home}/.local/bin'
+    - '{home}/bin'
+    - '{home}/landing-bin'
+    - /usr/local/bin
+    - /usr/bin
+    - /bin
+  env:
+    # UTC, so nothing the harness prints carries the operator's region. A
+    # provider's own status line names the timezone it resets in, and the
+    # leak scan looks for a username and a hostname — a place is neither.
+    TZ: UTC
+  author: Ada Lovelace
+  author_email: ada@demo.dev
+  link:
+    # The two plugins that change what typing looks like, linked out of the
+    # operator's zinit rather than loading zinit or their .zshrc, which
+    # carries far more than a prompt. Their caches land in the sandbox HOME.
+    - from: ~/.local/share/zinit/plugins/zdharma-continuum---fast-syntax-highlighting
+      to: '{home}/.zsh/zdharma-continuum---fast-syntax-highlighting'
+    - from: ~/.local/share/zinit/plugins/zsh-users---zsh-autosuggestions
+      to: '{home}/.zsh/zsh-users---zsh-autosuggestions'
+  copy:
+    # The operator's own prompt, so the shell on camera looks like theirs.
+    # Starship shows neither user nor host outside SSH, and the leak scan
+    # stands behind that if a module ever does.
+    - from: ~/.config/starship.toml
+      to: '{home}/.config/starship.toml'
+  provision:
+    # `uze` on the shell's PATH is this checkout's release build, so what a
+    # video types is the bare command a reader would.
+    - mkdir -p {home}/landing-bin && ln -sf {project}/target/release/uze {home}/landing-bin/uze
+  reset:
+    # The sandbox's own terminal server, by pid, verified through /proc —
+    # never a pattern kill, which would match the shell running it.
+    - |
+      for pid in $(pgrep -x uze 2>/dev/null); do
+        cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
+        case "$cmd" in *"terminal serve --root {fixtures}/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
+    # And the previous attempt's own client, which outlives the tmux session
+    # that ran it and writes its layout back after the reset: the next take
+    # would then open on its tabs, one of them an agent whose checkout is gone.
+    - |
+      for pid in $(pgrep -x uze 2>/dev/null); do
+        tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -qx 'HOME={home}' || continue
+        case "$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)" in "uze workspace"*|*"/uze workspace"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
+      sleep 1
+    # Then the state it wrote on its way out: a client saves its layout when
+    # it is ended, so deleting it before (in `clear`) is undone by the kill.
+    - rm -rf {home}/.uze/state/terminal {home}/.uze/state/projects
+    # Every fixture in the shared directory, not only this spec's: the rewind
+    # covers the fixtures a spec names, and the workspace restores what
+    # another spec's take left in the others.
+    #
+    # The rewind resets the tree, not the refs: every attempt's agents leave
+    # a branch and a shelf (refs/uze/shelf/*) behind, and the workspace
+    # restores a shelved agent, so the next take would open with them all.
+    # The checkouts go first, so `clear` can delete their directory without
+    # dangling Git's metadata.
+    #
+    # `git reset --hard` — the fixture rewind before every attempt — reverts
+    # tracked files and leaves untracked ones, so a file another spec's beats
+    # wrote is still there, counted in this take's changes badge. `.worktrees`
+    # is excluded: the checkouts are removed above, and pulling the directory
+    # out from under Git first leaves metadata to prune.
+    - |
+      for repo in {fixtures}/demo-*; do
+        [ -d "$repo/.git" ] || continue
+        git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p' | tail -n +2 |
+          while read -r tree; do git -C "$repo" worktree remove --force "$tree" 2>/dev/null; done
+        git -C "$repo" worktree prune 2>/dev/null
+        git -C "$repo" for-each-ref --format='%(refname)' refs/uze refs/heads | while read ref; do
+          [ "$ref" = refs/heads/main ] || git -C "$repo" update-ref -d "$ref"
+        done
+        git -C "$repo" clean -qfd -e .worktrees 2>/dev/null || true
+      done
+    # A home with no layout is a first run: the first-steps list opens and
+    # pushes the timeline off the sidebar. The video is of a project already
+    # in use, so the list starts folded and the timeline open — written here
+    # rather than left to whatever an earlier take folded or ticked, before
+    # every attempt, since a take ticks steps and moves the manage route.
+    - |
+      mkdir -p {home}/.uze/state
+      cat > {home}/.uze/state/layout.json <<'LAYOUT'
+      {
+        "sidebar": { "width": null },
+        "workspace": { "timeline_collapsed": false, "timeline_rows": null, "collapsed_space_roots": [] },
+        "management": { "route": "overview", "drawer_width": null,
+                        "profile_columns_width": null, "collapsed_marketplaces": [] },
+        "first_steps": { "collapsed": true, "closed": false, "taken": [] }
+      }
+      LAYOUT
+    # Every take starts from the look the demos are recorded in: the default
+    # theme, the one the site's own palette matches, and the nerd glyph set,
+    # the one the docs recommend and the product is drawn for. The appearance
+    # demo shares this home and ends on another of each, so this runs before
+    # every attempt rather than once at seed.
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config theme set dark >/dev/null
+    - env -i HOME={home} PATH=/usr/bin:/bin {project}/target/release/uze config icons nerd >/dev/null
+  clear:
+    # The rewind removes the checkouts but leaves the directory that held
+    # them, and the `clean` above deliberately spares it — so an empty
+    # `.worktrees/` survives into the next take and shows up in the file
+    # tree. `clear` runs after the removal and the prune, so it is the one
+    # place this can be deleted without dangling Git's metadata.
+    - '{fixtures}/demo-app/.worktrees'
+    - '{fixtures}/demo-web/.worktrees'
+    - '{fixtures}/demo-api/.worktrees'
+    - '{home}/.uze/state/terminal'
+    # The project's records — its agents and its prompt history — or the
+    # Overview counts every take ever recorded as recent work.
+    - '{home}/.uze/state/projects'
+    - '{runtime}/uze-runtime'
+  write:
+    - path: '{home}/demoshell'
+      executable: true
+      text: |
+        #!/bin/sh
+        exec /usr/bin/zsh
+    # Written here, never copied: the prompt, the two plugins, and no history,
+    # so an autosuggestion never offers what an earlier take typed.
+    - path: '{home}/.zshrc'
+      text: |
+        HISTFILE=/dev/null
+        SAVEHIST=0
+        autoload -Uz compinit && compinit -d /tmp/demos/.zcompdump
+        source ~/.zsh/zsh-users---zsh-autosuggestions/zsh-autosuggestions.zsh
+        source ~/.zsh/zdharma-continuum---fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
+        eval "$(starship init zsh)"
+    - path: '{home}/.zshenv'
+      text: ''
+    - path: '{home}/.gitconfig'
+      text: "[user]\n\tname = Ada Lovelace\n\temail = ada@demo.dev\n[init]\n\tdefaultBranch = main\n"

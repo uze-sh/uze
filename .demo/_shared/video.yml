@@ -1,0 +1,30 @@
+# The grade every demo is rendered in, so the site and the docs read as one
+# set. A spec states only where it departs from it, and says why there.
+
+video:
+  # A terminal with room in it: wide enough for the Integrations cards,
+  # narrow enough that GitHub's ~900px column stays readable. Cutting
+  # columns to make the text bigger was solving the wrong axis — it reads as
+  # the app running on a tiny screen, everything zoomed and pressed against
+  # the edges. Resolution is `font_size`'s job.
+  cols: 152
+  rows: 36
+  # A beat's pause is a still screen, and the renderer caps a still at its
+  # idle limit (1.5s by default) — which cut every 3s look at an extension
+  # in half. Above the longest pause, so the spec says how long a screen holds.
+  idle_limit: 3.5
+  background: 0a0c0d        # crate::ui::BASE — a mismatch shows as a border
+  # Twice the column it is embedded in, so the page downscales rather
+  # than stretches. The grid above is untouched by this — it only
+  # multiplies the pixels each cell is drawn with.
+  font_size: 20
+  # The app draws with the nerd glyph set (see `config icons nerd` in the
+  # sandbox), so the renderer needs the patched font too — without it every
+  # icon is a blank cell. The fallback is named so a machine without the
+  # patched build still renders readable text instead of nothing.
+  font_family: FiraCode Nerd Font Mono,DejaVu Sans Mono
+  # Where that font is read from when the system never installed it: the
+  # Nerd Fonts v3.5.1 FiraCode release, unpacked. Without it the renderer
+  # silently draws the text in the fallback above.
+  font_dir: ~/.cache/nerd-fonts/v3.5.1/FiraCode
+  sidebar: 31               # where the sidebar band ends, for `in: sidebar`
