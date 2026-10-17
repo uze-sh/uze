@@ -38,18 +38,28 @@ pub(super) fn render_picture(
         area.height.saturating_sub(1),
     );
     let placement = cell.and_then(|cell| Placement::fit(picture, body, cell));
-    let room = placement.as_ref().map_or(body, |placement| placement.cells);
-    render_half_blocks(frame, room, picture);
+    // Under pixels, the half blocks fill exactly the cells the pixels are
+    // sent over: they are the mark that says nothing covered them, and a
+    // fit at two pixels a cell can come out a column short of a fit at the
+    // terminal's own cell size.
+    let drawn = match &placement {
+        Some(placement) => Some((placement.cells, placement.cells.height * 2)),
+        None => fitted(picture, body.width, body.height).map(|(columns, rows)| {
+            let left = body.x + (body.width - columns) / 2;
+            let top = body.y + (body.height - rows.div_ceil(2)) / 2;
+            (Rect::new(left, top, columns, rows.div_ceil(2)), rows)
+        }),
+    };
+    if let Some((cells, rows)) = drawn {
+        render_half_blocks(frame, cells, rows, picture);
+    }
     placement
 }
 
-/// `picture` in half blocks, centred in `room`.
-fn render_half_blocks(frame: &mut ratatui::Frame<'_>, room: Rect, picture: &Picture) {
-    let Some((columns, rows)) = fitted(picture, room.width, room.height) else {
-        return;
-    };
-    let left = room.x + (room.width - columns) / 2;
-    let top = room.y + (room.height - rows.div_ceil(2)) / 2;
+/// `picture` in half blocks over `cells`, `rows` pixels tall: twice the
+/// cells, or one fewer when the picture ends on an upper half.
+fn render_half_blocks(frame: &mut ratatui::Frame<'_>, cells: Rect, rows: u16, picture: &Picture) {
+    let (columns, left, top) = (cells.width, cells.x, cells.y);
     let buffer = frame.buffer_mut();
     for row in 0..rows.div_ceil(2) {
         for column in 0..columns {
@@ -108,6 +118,38 @@ mod tests {
     #[test]
     fn a_tall_image_takes_the_height_two_pixels_to_a_row() {
         assert_eq!(fitted(&picture(100, 200), 80, 20), Some((20, 40)));
+    }
+
+    /// The pixels are sent only over cells that all still hold a half
+    /// block, so the half blocks must cover every cell of the placement —
+    /// on a terminal whose cells are not exactly twice as tall as wide as
+    /// much as on one whose are.
+    #[test]
+    fn the_half_blocks_cover_every_cell_the_pixels_are_sent_over() {
+        for cell in [(10, 20), (9, 19), (8, 17), (7, 16)] {
+            let backend = ratatui::backend::TestBackend::new(100, 41);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            let mut placement = None;
+            terminal
+                .draw(|frame| {
+                    placement = render_picture(
+                        frame,
+                        frame.area(),
+                        "poster.png",
+                        &picture(1000, 500),
+                        Some(cell),
+                        &[],
+                        &mut Vec::new(),
+                    );
+                })
+                .unwrap();
+            let placement = placement.expect("a terminal that draws images gets a placement");
+            assert!(
+                placement.uncovered_in(terminal.backend().buffer()),
+                "{cell:?}: every cell of {:?} is a half block",
+                placement.cells
+            );
+        }
     }
 
     #[test]
