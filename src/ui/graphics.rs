@@ -163,20 +163,37 @@ impl Placement {
         })
     }
 
-    /// What makes two frames' images the same image on screen. The
-    /// theme is part of it: a transparent pixel is drawn over its ground,
-    /// so a new theme redraws the half blocks under the pixels.
     fn identity(&self) -> Identity {
-        (
-            Arc::as_ptr(&self.picture.pixels).cast::<u8>() as usize,
-            self.cells,
-            self.pixels,
-            uze_theme::generation(),
-        )
+        Identity {
+            pixels: self.picture.pixels.clone(),
+            cells: self.cells,
+            size: self.pixels,
+            theme: uze_theme::generation(),
+        }
     }
 }
 
-type Identity = (usize, Rect, (u16, u16), u64);
+/// What makes two frames' images the same image on screen.
+///
+/// The pixels by their allocation, held rather than remembered as an
+/// address: an address alone is free to be reused by the next image of
+/// the same size, which would then pass for the one already shown. The
+/// theme is part of it because a transparent pixel is drawn over its
+/// ground, so a new theme redraws the half blocks under the pixels.
+#[derive(Clone)]
+struct Identity {
+    pixels: Arc<[[u8; 4]]>,
+    cells: Rect,
+    size: (u16, u16),
+    theme: u64,
+}
+
+impl PartialEq for Identity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.pixels, &other.pixels)
+            && (self.cells, self.size, self.theme) == (other.cells, other.size, other.theme)
+    }
+}
 
 /// What was last sent as pixels, so a frame that changed nothing about
 /// the image sends nothing — and the encoding of the one wanted next,
@@ -231,15 +248,15 @@ impl Painter {
             return None;
         };
         let identity = placement.identity();
-        if self.shown == Some(identity) {
+        if self.shown.as_ref() == Some(&identity) {
             return None;
         }
-        self.wanted = Some(identity);
+        self.wanted = Some(identity.clone());
         if let Some(bytes) = self.ready() {
             return Some(bytes);
         }
-        if self.encoding != Some(identity) {
-            self.encoding = Some(identity);
+        if self.encoding.as_ref() != Some(&identity) {
+            self.encoding = Some(identity.clone());
             let (placement, sender) = (placement.clone(), self.sender.clone());
             std::thread::spawn(move || {
                 let _ = sender.send((identity, Arc::new(positioned(&placement))));
@@ -261,7 +278,7 @@ impl Painter {
     /// that started earlier is for an image already replaced, whichever
     /// order the two threads finish in.
     fn absorb(&mut self, (identity, bytes): (Identity, Arc<Vec<u8>>)) {
-        if self.encoding != Some(identity) {
+        if self.encoding.as_ref() != Some(&identity) {
             return;
         }
         self.encoding = None;
@@ -269,14 +286,13 @@ impl Painter {
     }
 
     fn ready(&mut self) -> Option<Arc<Vec<u8>>> {
-        let wanted = self.wanted?;
         let (made, bytes) = self.encoded.as_ref()?;
-        if *made != wanted {
+        if self.wanted.as_ref() != Some(made) {
             return None;
         }
-        self.shown = Some(wanted);
-        self.wanted = None;
-        Some(bytes.clone())
+        let bytes = bytes.clone();
+        self.shown = self.wanted.take();
+        Some(bytes)
     }
 }
 
@@ -693,6 +709,26 @@ mod tests {
             .expect("the image on screen is written");
         assert_eq!(*written, positioned(&new));
         assert!(painter.take_ready().is_none());
+    }
+
+    /// A picture read again — a screenshot an agent regenerated at the
+    /// same size — is a new image even with every pixel equal, and is sent.
+    #[test]
+    fn the_same_size_image_read_again_is_sent_again() {
+        let room = Rect::new(0, 0, 4, 4);
+        let mut painter = Painter::default();
+        let first = placement_of(2, room);
+        painter.after_frame(Some(&first));
+        settle(&mut painter);
+        assert!(painter.take_ready().is_some());
+        drop(first);
+        let second = placement_of(2, room);
+        assert!(painter.after_frame(Some(&second)).is_none(), "encoding");
+        settle(&mut painter);
+        assert!(
+            painter.take_ready().is_some(),
+            "sent, not taken for the first"
+        );
     }
 
     #[test]
