@@ -23,14 +23,16 @@ workspace without knowing its keys.
 ## What Changes
 
 - **A space overview.** A screen drawn where the pane is, like the code,
-  architect and spec surfaces, scoped to the selected space.
-  - Selecting the space's row shows it instead of focusing the space's
-    shell.
-  - The space's own context is its overview alone: its strip shows only
-    the `overview` tab, and no shell is opened there. An agent's strip
-    keeps its tabs, and shells are opened there.
-- **Four sections, one per thing in the project**, what it declares first
-  and what follows from it after, reached from a section bar like the
+  architect and spec surfaces, scoped to the space in front.
+  - A `space` button at the strip's right end, apart from spec, arch and
+    code, opens it from any context of the space: an agent's or the
+    space's own. It takes the place of the agent drawer's mark.
+  - Selecting a space's row keeps landing on its shells, as before.
+- **An Agent section** takes the agent drawer's place: the prompts the agent
+  in front, or its space, was given, and what reaches that agent. Enter on a
+  prompt copies it. The drawer itself is removed.
+- **Five sections**: the agent in front, then what the project declares
+  and what follows from it, reached from a section bar like the
   manage modal's header. Each tab carries the worst state of
   its parts, and the section's first line names the cause.
   - **Settings.** Every key of `agents.yaml`'s `workspace:` section, set or

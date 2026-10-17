@@ -370,21 +370,17 @@ mod workspace_tests {
         assert!(!strip.contains("Agent one"), "{strip}");
     }
 
-    /// The way into an agent's support belongs to the context, not to
-    /// whichever of its tabs is in front of the person. Every chip on the
-    /// strip is contextual to the agent leading it — that is what the
-    /// strip *is* — so stepping into a shell the agent opened is still
-    /// being in the agent's context, and the badge cannot blink out on
-    /// the way. The one row with no agent to support is the space's own,
-    /// which holds shells and nothing else.
+    /// The space button stands in every context of the space: the agent
+    /// leading the strip, a shell it opened, and the space's own shells.
+    /// It is about the space, which every one of them is in.
     #[test]
-    fn the_agent_badge_follows_the_context_and_not_the_selected_tab() {
+    fn the_space_button_stands_in_every_context() {
         let (mut model, first, _second) = two_agents_with_shells();
-        let badge_is_drawn = |model: &WorkspaceModel| {
+        let button_is_drawn = |model: &WorkspaceModel| {
             tab_strip(model)
                 .1
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::OpenAgentSupport(_)))
+                .any(|(_, hit)| *hit == WorkspaceHit::OpenOverview)
         };
         let (shell, bootstrap) = {
             let space = model.session.as_ref().expect("session").selected_space();
@@ -402,28 +398,10 @@ mod workspace_tests {
                 .id;
             (shell, bootstrap)
         };
-
-        model.session.as_mut().expect("session").select_tab(first);
-        assert!(
-            badge_is_drawn(&model),
-            "the agent itself offers the way into its support"
-        );
-
-        model.session.as_mut().expect("session").select_tab(shell);
-        assert!(
-            badge_is_drawn(&model),
-            "and so does a shell it opened — the same agent is still the context"
-        );
-
-        model
-            .session
-            .as_mut()
-            .expect("session")
-            .select_tab(bootstrap);
-        assert!(
-            !badge_is_drawn(&model),
-            "only the space's own row has no agent to support"
-        );
+        for tab in [first, shell, bootstrap] {
+            model.session.as_mut().expect("session").select_tab(tab);
+            assert!(button_is_drawn(&model), "no space button over {tab:?}");
+        }
     }
 
     /// A tab number means "that chip", so it is counted along the strip —
@@ -484,19 +462,17 @@ mod workspace_tests {
         assert!(strip.contains("Agent one shell"), "{strip}");
     }
 
-    /// The space's own context, reached from its row in the sidebar, is
-    /// its overview alone: no agent leads the strip there, and none of the
-    /// shells behind it is a tab to choose or a "+" to add to.
+    /// The space's own shells are its own context, reached from its row in
+    /// the sidebar — no agent leads the strip there.
     #[test]
-    fn the_spaces_own_context_is_its_overview_alone() {
+    fn the_spaces_own_shell_is_a_context_of_its_own() {
         let (mut model, _, _) = two_agents_with_shells();
         let own = first_tab(&model).id;
         model.session.as_mut().expect("session").select_tab(own);
 
         let (rows, _) = tab_strip(&model);
         let strip = rows.join(" ");
-        assert!(strip.contains("overview"), "{strip}");
-        assert!(!strip.contains("shell"), "{strip}");
+        assert!(strip.contains("shell"), "{strip}");
         assert!(!strip.contains("Agent"), "{strip}");
     }
 
@@ -617,7 +593,6 @@ mod workspace_tests {
             model.code_tree_scroll = rendered.navigator_scroll;
             model.code_scrollbars = rendered;
         }
-        model.drawer_text = metrics.drawer.unwrap_or_default();
         if let Some(frame) = metrics.recent {
             model.recent.scroll = frame.scroll;
             model.recent.bar = frame.bar;
@@ -5092,22 +5067,33 @@ mod workspace_tests {
         crate::ui::agent_support::AgentSupport::resolve(health, &context)
     }
 
-    /// The client keeps one support answer, for whatever agent is in
-    /// front, and replaces it when that agent's harness or directory
-    /// changes. An open drawer holds its own: read from the shared one, it
-    /// stopped being drawn the moment the agent ran something, while it
-    /// still held the keyboard.
+    /// The Agent section holds the support answer read for its agent: the
+    /// client's one shared answer moves on with whatever agent comes to the
+    /// front, and the section stopped saying what reaches its own agent
+    /// the moment that happened.
     #[test]
-    fn an_open_drawer_is_drawn_whatever_the_client_resolved_since() {
+    fn the_agent_section_keeps_its_own_agents_support() {
         let mut model = agent_session_in("/repo/.worktrees/a");
-        let mut drawer = drawer_over(&model);
-        drawer.support = Some(support_fixture());
-        model.support_dropdown = Some(drawer);
+        let mut agent = drawer_over(&model);
+        agent.support = Some(support_fixture());
+        let (space, behind) = {
+            let space = model.session.as_ref().expect("session").selected_space();
+            (space.id, space.selected_tab)
+        };
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.agent = Some(agent);
+        overview.answer = Some(Ok(project_space(
+            Default::default(),
+            Err("not read".to_owned()),
+        )));
         model.remembered.agent_support = Some(SupportResolution {
             key: ("codex".to_owned(), PathBuf::from("/elsewhere")),
             support: None,
         });
-        let rows = frame_rows(&mut model);
+        // Wide enough that the drawer, where what reaches the agent is
+        // read, stands beside the prompts.
+        let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
         assert!(
             rows.iter().any(|row| row.contains("AGENTS.md")),
             "{}",
@@ -5115,19 +5101,27 @@ mod workspace_tests {
         );
     }
 
-    /// The drawer floats over the pane, so the host's selection reaches
-    /// it as it reaches a pane: a drag over a prompt copies it, whole
-    /// however it was elided, and a click on a record still only selects
-    /// it.
+    /// A prompt is read in the Agent section to be used again: enter on it
+    /// copies the whole prompt, however its lines were folded.
     #[test]
-    fn a_drag_over_the_drawer_copies_and_a_click_selects() {
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-drawer-copy"));
+    fn enter_on_a_prompt_copies_it_whole() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-copy"));
         let mut model = agent_session_in("/repo");
-        let mut drawer = drawer_over(&model);
-        drawer.support = Some(support_fixture());
-        drawer.scope = PromptScope::Space;
-        let root = drawer.space_root.clone();
-        model.support_dropdown = Some(drawer);
+        let mut agent = drawer_over(&model);
+        agent.support = Some(support_fixture());
+        agent.scope = PromptScope::Space;
+        let root = agent.space_root.clone();
+        let (space, behind) = {
+            let space = model.session.as_ref().expect("session").selected_space();
+            (space.id, space.selected_tab)
+        };
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.agent = Some(agent);
+        overview.answer = Some(Ok(project_space(
+            Default::default(),
+            Err("not read".to_owned()),
+        )));
         let origin = uze_application::PromptOrigin {
             space_label: "uze".to_owned(),
             tab_id: 1,
@@ -5145,84 +5139,21 @@ mod workspace_tests {
         });
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
-        let row_of = |driven: &Driven<'_>, text: &str| {
-            let text_of = &driven.attach.model.drawer_text;
-            let line = text_of
-                .lines
-                .iter()
-                .position(|line| line == text)
-                .unwrap_or_else(|| panic!("{text} is not drawer text: {:?}", text_of.lines));
-            text_of
-                .rows
-                .iter()
-                .filter(|row| row.line == line)
-                .cloned()
-                .collect::<Vec<_>>()
+        let press = |driven: &mut Driven<'_>, code: crossterm::event::KeyCode| {
+            driven.press_key(crossterm::event::KeyEvent::from(code));
+            driven.frame();
         };
-
-        let first = row_of(&driven, "fix the pipeline")[0].clone();
-        driven.press(first.glyphs[4].x, first.area.y);
-        driven.mouse(
-            first.glyphs[6].x,
-            first.area.y,
-            MouseEventKind::Drag(MouseButton::Left),
-        );
-        driven.mouse(
-            first.glyphs[6].x,
-            first.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("the"));
-        driven.frame();
-        assert!(
-            matches!(
-                &driven.attach.model.selection,
-                Some(crate::ui::selection::Selection::Drawer(marking)) if !marking.held()
-            ),
-            "what was taken stays drawn"
-        );
-
-        // From the long prompt's first row to past its elided end: the
-        // whole prompt, not the rows it was drawn as.
-        assert!(
-            row_of(&driven, long.trim()).len() > 1,
-            "the prompt is folded"
-        );
-        driven.attach.model.clipboard = None;
-        let rows = row_of(&driven, long.trim());
-        let (top, bottom) = (rows[0].clone(), rows.last().unwrap().clone());
-        driven.press(top.glyphs[0].x, top.area.y);
-        driven.mouse(
-            bottom.area.right() - 1,
-            bottom.area.y,
-            MouseEventKind::Drag(MouseButton::Left),
-        );
-        driven.mouse(
-            bottom.area.right() - 1,
-            bottom.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard.as_deref(), Some(long.trim()));
-
-        // A click is not a drag: it marks nothing and selects the record.
-        driven.attach.model.clipboard = None;
-        driven.press(top.glyphs[0].x, top.area.y);
-        driven.mouse(
-            top.glyphs[0].x,
-            top.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard, None);
-        assert_eq!(driven.attach.model.selection, None);
+        press(&mut driven, crossterm::event::KeyCode::Enter);
         assert_eq!(
-            driven
-                .attach
-                .model
-                .support_dropdown
-                .as_ref()
-                .unwrap()
-                .selected,
-            1
+            driven.attach.model.clipboard.as_deref(),
+            Some("fix the pipeline")
+        );
+        press(&mut driven, crossterm::event::KeyCode::Down);
+        press(&mut driven, crossterm::event::KeyCode::Enter);
+        assert_eq!(
+            driven.attach.model.clipboard.as_deref(),
+            Some(long.trim()),
+            "enter did not copy the whole prompt"
         );
     }
 
@@ -9975,13 +9906,16 @@ mod workspace_tests {
         );
     }
 
-    /// A space's row shows its overview where the pane is, with the shell
-    /// the space owns behind it, and opens no tab — a space whose tabs are
-    /// all agents included.
+    /// A space's own row lands on a shell of the space's, not on whichever
+    /// agent the strip was showing: it is the way back to the space's
+    /// shells. A space whose first shell became an agent when a harness
+    /// was typed into it has no such tab, so the click opens one — the
+    /// space ends where "new" leaves it, not bound to the agent.
     #[test]
-    fn a_space_row_shows_its_overview_and_opens_no_tab() {
+    fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-row"));
-        let click_space_row = |driven: &mut Driven<'_>| {
+        let click_space_row = |model: WorkspaceModel| {
+            let mut driven = driven(model, &home);
             driven.frame();
             let (row, space) = driven
                 .attach
@@ -9994,11 +9928,8 @@ mod workspace_tests {
                 })
                 .expect("the space row is a target");
             driven.press(row.x + 4, row.y);
-            space
-        };
-        let opened_a_tab = |sent: &[ClientRequest]| {
-            sent.iter()
-                .any(|request| matches!(request, ClientRequest::CreateTab { .. }))
+            let sent = driven.sent();
+            (space, sent)
         };
 
         let mut with_shell = session("/repo");
@@ -10013,45 +9944,38 @@ mod workspace_tests {
             PathBuf::from("/repo"),
         );
         with_shell.update_pane_status(agent_pane, PathBuf::from("/repo"), "agent".into());
-        let mut first = driven(model_of(with_shell), &home);
-        click_space_row(&mut first);
-        let sent = first.sent();
-        assert!(
-            first
-                .attach
-                .model
-                .space_overview
-                .as_ref()
-                .is_some_and(|overview| overview.space == space),
-            "the space's overview is not shown"
-        );
+        let (_, sent) = click_space_row(model_of(with_shell));
         assert!(
             sent.iter().any(
                 |request| matches!(request, ClientRequest::SelectTab { tab } if *tab == shell)
             ),
-            "the space's own shell does not stand behind the overview: {sent:?}"
+            "the space's own shell was not selected: {sent:?}"
         );
-        assert!(!opened_a_tab(&sent), "the click opened a tab: {sent:?}");
 
         let mut only_agents = session("/repo");
         let pane = only_agents.selected_tab().pane.id;
         only_agents.update_pane_status(pane, PathBuf::from("/repo"), "agent".into());
-        let mut second = driven(model_of(only_agents), &home);
-        click_space_row(&mut second);
-        let sent = second.sent();
+        let (space, sent) = click_space_row(model_of(only_agents));
+        let switched = sent.iter().position(|request| {
+            matches!(request, ClientRequest::SelectSpace { space: selected } if *selected == space)
+        });
+        let opened = sent.iter().position(|request| {
+            matches!(
+                request,
+                ClientRequest::CreateTab { agent: None, command: None, cwd: Some(cwd), .. }
+                    if cwd == Path::new("/repo")
+            )
+        });
         assert!(
-            second.attach.model.space_overview.is_some(),
-            "a space of agents alone shows no overview"
+            matches!((switched, opened), (Some(switched), Some(opened)) if switched < opened),
+            "a space of agents alone was not switched to and given a shell of its own: {sent:?}"
         );
-        assert!(!opened_a_tab(&sent), "the click opened a tab: {sent:?}");
     }
 
     /// The overview stands in front of one tab and leaves the moment the
-    /// operator chooses another way: an agent chosen, by the strip, the
-    /// sidebar or the server moving the selection on once it had settled.
-    /// What it survives is the broadcast confirming the space it was
-    /// opened for, and in the space's own context the tab chords, which
-    /// have nothing there to choose.
+    /// operator chooses another: a tab chord, an agent, or the server
+    /// moving the selection on. What it survives is a broadcast that
+    /// leaves the tab behind it in front.
     #[test]
     fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
         let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-leaves"));
@@ -10077,16 +10001,14 @@ mod workspace_tests {
         base.select_tab(shell);
         let open_overview = |driven: &mut Driven<'_>| {
             driven.frame();
-            let row = driven
+            let button = driven
                 .attach
                 .model
                 .hits
                 .iter()
-                .find_map(|(rect, hit)| {
-                    matches!(hit, WorkspaceHit::SelectSpace(_)).then_some(*rect)
-                })
-                .expect("the space row is a target");
-            driven.press(row.x + 4, row.y);
+                .find_map(|(rect, hit)| (*hit == WorkspaceHit::OpenOverview).then_some(*rect))
+                .expect("the space button is on the strip");
+            driven.press(button.x + 1, button.y);
             let session = driven.attach.model.session.clone().expect("session");
             driven.attach.model.apply(
                 ClientEvent::SessionUpdated { session },
@@ -10094,11 +10016,11 @@ mod workspace_tests {
             );
             assert!(
                 driven.attach.model.space_overview.is_some(),
-                "the broadcast confirming the space put the overview away"
+                "the space button did not open the overview, or a broadcast put it away"
             );
         };
 
-        // A tab chord has nothing to choose in the space's own context.
+        // A tab chord chooses a tab of the strip, and the overview leaves.
         let mut driven = driven_again(&home, &base);
         open_overview(&mut driven);
         driven.press_key(crossterm::event::KeyEvent::new(
@@ -10106,8 +10028,8 @@ mod workspace_tests {
             crossterm::event::KeyModifiers::ALT,
         ));
         assert!(
-            driven.attach.model.space_overview.is_some(),
-            "alt+1 took the space's overview away"
+            driven.attach.model.space_overview.is_none(),
+            "alt+1 was taken by the overview"
         );
 
         // The server moving the selection onto an agent.
@@ -10128,7 +10050,7 @@ mod workspace_tests {
         let mut driven = driven_again(&home, &base);
         open_overview(&mut driven);
         driven.press_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('3'),
+            crossterm::event::KeyCode::Char('4'),
             crossterm::event::KeyModifiers::NONE,
         ));
         assert!(
@@ -10139,35 +10061,7 @@ mod workspace_tests {
                 .as_ref()
                 .is_some_and(|overview| overview.section
                     == crate::ui::orchestrator::space_overview::Section::Context),
-            "3 did not show the Context section"
-        );
-    }
-
-    /// The overview tab leads the space's own strip — its shells — and
-    /// never an agent's, which is about that agent.
-    #[test]
-    fn the_overview_tab_stands_only_in_the_space_s_own_strip() {
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-tab"));
-        let offers_overview = |model: WorkspaceModel| {
-            let mut driven = driven(model, &home);
-            driven.frame();
-            driven
-                .attach
-                .model
-                .hits
-                .iter()
-                .any(|(_, hit)| *hit == WorkspaceHit::OpenOverview)
-        };
-        assert!(
-            offers_overview(model_of(session("/repo"))),
-            "the space's own strip has no overview tab"
-        );
-        let mut agent = session("/repo");
-        let pane = agent.selected_tab().pane.id;
-        agent.update_pane_status(pane, PathBuf::from("/repo"), "agent".into());
-        assert!(
-            !offers_overview(model_of(agent)),
-            "an agent's strip carries the space's overview tab"
+            "4 did not show the Context section"
         );
     }
 
@@ -10623,6 +10517,7 @@ mod workspace_tests {
             choices,
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
         overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
@@ -10694,7 +10589,8 @@ mod workspace_tests {
                 )
             })
             .expect("onChange is a row of the form");
-        overview.rows[0] = first_action;
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.rows[1] = first_action;
         overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
@@ -13202,64 +13098,6 @@ mod workspace_tests {
                 .entries
                 .iter()
                 .any(|entry| entry.name == "reply-ptbr")
-        );
-    }
-
-    /// A hint's key is clicked only where it would be pressed: with the
-    /// agent drawer open, the surface's footer still shows `m map`, but
-    /// `m` there is the drawer's to answer, and the click does what the
-    /// keystroke does rather than reaching past the drawer.
-    #[test]
-    fn a_hint_click_performs_only_what_its_key_would_here() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use uze_extensions::code;
-        use uze_keys::Action;
-
-        let with_drawer_over_code = || {
-            let (mut model, first, _second) = two_agents_with_shells();
-            model.session.as_mut().expect("session").select_tab(first);
-            let mut view = code::CodeView::opening(
-                PathBuf::from("/repo"),
-                "/repo".to_owned(),
-                code::ContentMode::Contents,
-            );
-            view.take_request();
-            model.code = Some(view);
-            let drawer = drawer_over(&model);
-            model.support_dropdown = Some(drawer);
-            model
-        };
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-hint-scope"));
-        let wide = Rect::new(0, 0, 200, 40);
-
-        let mut clicked = driven(with_drawer_over_code(), &home);
-        clicked.area = wide;
-        clicked.frame();
-        let map = clicked.hit(|hit| *hit == WorkspaceHit::HintAction(Action::ToggleMap));
-        clicked.press(map.x, map.y);
-
-        let mut pressed = driven(with_drawer_over_code(), &home);
-        pressed.area = wide;
-        pressed.frame();
-        pressed.press_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
-
-        let showing = |driven: &Driven<'_>| {
-            driven
-                .attach
-                .model
-                .code
-                .as_ref()
-                .map(code::CodeView::showing)
-        };
-        assert_eq!(
-            showing(&clicked),
-            Some(code::ContentMode::Contents),
-            "the map stays shut"
-        );
-        assert_eq!(showing(&clicked), showing(&pressed));
-        assert_eq!(
-            clicked.attach.model.support_dropdown.is_some(),
-            pressed.attach.model.support_dropdown.is_some()
         );
     }
 

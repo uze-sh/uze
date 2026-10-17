@@ -45,6 +45,7 @@ macro_rules! actions {
             Action::SelectTab(7), Action::SelectTab(8), Action::SelectTab(9),
             Action::SelectSection(1), Action::SelectSection(2),
             Action::SelectSection(3), Action::SelectSection(4),
+            Action::SelectSection(5),
         ];
 
         impl Action {
@@ -72,7 +73,7 @@ macro_rules! actions {
                             other
                                 .strip_prefix("select-section-")
                                 .and_then(|index| index.parse::<u8>().ok())
-                                .filter(|index| (1..=4).contains(index))
+                                .filter(|index| (1..=5).contains(index))
                                 .map(Action::SelectSection)
                         }),
                 }
@@ -340,6 +341,8 @@ actions! {
     // --- The space overview -------------------------------------------
     OpenSpaceOverview => "open-space-overview", false,
         "Overview", "Show this space's overview: its context, plugins, workspace and memory";
+    TogglePromptScope => "toggle-prompt-scope", false,
+        "Prompts", "List this agent's prompts or the whole space's";
     AddItem => "add-item", false,
         "Add", "Add an entry to the list in focus";
     // Takes back a value not yet saved: nothing on disk changes until the

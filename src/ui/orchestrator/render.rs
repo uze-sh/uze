@@ -121,8 +121,6 @@ pub(super) struct FrameMetrics {
     /// clock turns for spinners and for work in flight, and a caption
     /// passing under the pointer is neither.
     pub(super) marquee: bool,
-    /// The text the agent drawer drew, when it was open.
-    pub(super) drawer: Option<crate::ui::agent_support::DrawerText>,
     /// Where recent's list settled and the scrollbar it drew, when it was
     /// open.
     pub(super) recent: Option<RecentFrame>,
@@ -221,63 +219,6 @@ pub(super) fn render(
     }
     if let Some(picker) = &model.agent_picker {
         render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
-    }
-    if let Some(drawer) = &model.support_dropdown
-        && let Some(support) = &drawer.support
-    {
-        let history = model
-            .remembered
-            .drawer_prompts
-            .as_ref()
-            .filter(|history| history.root == drawer.space_root);
-        let prompts = crate::ui::agent_support::DrawerPrompts {
-            entries: history.map(|history| drawer.prompts(&history.entries)),
-            scope: drawer.scope,
-            agent_known: drawer.agent.is_some(),
-            selected: drawer.selected,
-            hovered_scope: match model.hovered {
-                Some(WorkspaceHit::DrawerScope(scope)) => Some(scope),
-                _ => None,
-            },
-            hovered_hint: model.hovered_hint(),
-            clearing: drawer.clearing,
-            live_labels: model
-                .tabs()
-                .filter_map(|tab| {
-                    super::launched_agent_id(tab).map(|id| (id.to_owned(), tab.label.clone()))
-                })
-                .collect(),
-            selection: match &model.selection {
-                Some(Selection::Drawer(marking)) => Some(marking),
-                _ => None,
-            },
-        };
-        let targets = crate::ui::agent_support::render(
-            frame,
-            layout.pane,
-            support,
-            &crate::ui::agent_support::DrawerAgent {
-                path: drawer.path.clone(),
-            },
-            &prompts,
-        );
-        metrics.drawer = Some(targets.text);
-        // Innermost first, so a row wins over the drawer's own body.
-        hits.splice(
-            0..0,
-            targets
-                .prompts
-                .into_iter()
-                .map(|(rect, index)| (rect, WorkspaceHit::DrawerPrompt(index)))
-                .chain(
-                    targets
-                        .scopes
-                        .into_iter()
-                        .map(|(rect, scope)| (rect, WorkspaceHit::DrawerScope(scope))),
-                )
-                .chain(hint_targets(targets.hints))
-                .chain(std::iter::once((targets.body, WorkspaceHit::DrawerBody))),
-        );
     }
     if let Some(anchor) = model.status_catalog {
         render_status_catalog(frame, frame.area(), anchor, model.tick);
