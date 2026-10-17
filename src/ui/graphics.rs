@@ -216,6 +216,8 @@ pub(crate) struct Painter {
     /// The last encode that came back, kept so an image covered and then
     /// uncovered is written again without being made again.
     encoded: Option<(Identity, Arc<Vec<u8>>)>,
+    /// The one thread that encodes, started with the first image.
+    encoder: Option<Sender<(Identity, Placement)>>,
     sender: Sender<(Identity, Arc<Vec<u8>>)>,
     answers: Receiver<(Identity, Arc<Vec<u8>>)>,
 }
@@ -228,6 +230,7 @@ impl Default for Painter {
             wanted: None,
             encoding: None,
             encoded: None,
+            encoder: None,
             sender,
             answers,
         }
@@ -257,10 +260,9 @@ impl Painter {
         }
         if self.encoding.as_ref() != Some(&identity) {
             self.encoding = Some(identity.clone());
-            let (placement, sender) = (placement.clone(), self.sender.clone());
-            std::thread::spawn(move || {
-                let _ = sender.send((identity, Arc::new(positioned(&placement))));
-            });
+            let answers = self.sender.clone();
+            let encoder = self.encoder.get_or_insert_with(|| encoder(answers));
+            let _ = encoder.send((identity, placement.clone()));
         }
         None
     }
@@ -294,6 +296,28 @@ impl Painter {
         self.shown = self.wanted.take();
         Some(bytes)
     }
+}
+
+/// Starts the thread that encodes, which answers on `answers`.
+///
+/// One thread, taking only the latest request it has been sent: moving
+/// through a directory of images asks for one encode per selection, and a
+/// thread each would run them all at once, every one for an image already
+/// gone. The painter drops any answer but the last one asked for.
+fn encoder(answers: Sender<(Identity, Arc<Vec<u8>>)>) -> Sender<(Identity, Placement)> {
+    let (requests, received) = std::sync::mpsc::channel::<(Identity, Placement)>();
+    std::thread::spawn(move || {
+        while let Ok(first) = received.recv() {
+            let (identity, placement) = received.try_iter().last().unwrap_or(first);
+            if answers
+                .send((identity, Arc::new(positioned(&placement))))
+                .is_err()
+            {
+                return;
+            }
+        }
+    });
+    requests
 }
 
 /// The image as Sixel, written at its top-left cell with the cursor put
@@ -664,10 +688,13 @@ mod tests {
         assert_eq!(out, b"!5@A");
     }
 
-    /// Waits for the one encode out, by receiving it, never by polling.
+    /// Waits for the encode last asked for, by receiving answers until it
+    /// lands, never by polling.
     fn settle(painter: &mut Painter) {
-        let answer = painter.answers.recv().unwrap();
-        painter.absorb(answer);
+        while painter.encoding.is_some() {
+            let answer = painter.answers.recv().unwrap();
+            painter.absorb(answer);
+        }
     }
 
     fn placement_of(side: usize, room: Rect) -> Placement {
@@ -702,7 +729,6 @@ mod tests {
         let mut painter = Painter::default();
         painter.after_frame(Some(&old));
         painter.after_frame(Some(&new));
-        settle(&mut painter);
         settle(&mut painter);
         let written = painter
             .take_ready()
