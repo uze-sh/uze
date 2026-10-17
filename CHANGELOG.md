@@ -4,6 +4,48 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.16](https://github.com/uze-sh/uze/compare/v1.0.0-beta.15...v1.0.0-beta.16) - 2026-10-17
+
+### Features
+
+- **integrations:** Refresh harness deliveries for current vendor releases ([#239](https://github.com/uze-sh/uze/pull/239)) ([fd0b4a7](https://github.com/uze-sh/uze/commit/fd0b4a738f7986aef9a48b191a0d764694ebfb21))
+- **workspace:** Replace the work modal with a recent mode in the sidebar ([#240](https://github.com/uze-sh/uze/pull/240)) [**breaking**] ([27a0c9a](https://github.com/uze-sh/uze/commit/27a0c9a34dbbebccbb9f6a5c83e8f5f1820558d7))
+- **playground:** Ping-pong plugin declaring every capability uze delivers ([#241](https://github.com/uze-sh/uze/pull/241)) ([9d903f3](https://github.com/uze-sh/uze/commit/9d903f3ab4b552515e1a618fe5201d29a1619701))
+- **ui:** Make every keyboard hint a pointer target ([#251](https://github.com/uze-sh/uze/pull/251)) ([66e9f11](https://github.com/uze-sh/uze/commit/66e9f111d72996f5ed87b9f55848181b699c6ebc))
+- **workspace:** Add a context menu to recent rows ([#255](https://github.com/uze-sh/uze/pull/255)) ([bbc36ae](https://github.com/uze-sh/uze/commit/bbc36ae3bfb75dc893260f0256549e31ab65c798))
+- **workspace:** Add switch_harness to continue an agent on another harness ([#258](https://github.com/uze-sh/uze/pull/258)) ([ac43cec](https://github.com/uze-sh/uze/commit/ac43cec8bc3a948775780fb062d79f2af55f9ad9))
+- **workspace:** Replace delivery handoff/pr with merge/push and add workspace.actions ([#259](https://github.com/uze-sh/uze/pull/259)) [**breaking**] ([7330f52](https://github.com/uze-sh/uze/commit/7330f523e9c7da027f3987838a1038035c375ce2))
+- **code:** Render PNG, JPEG, GIF, WebP, BMP and ICO files as images ([#262](https://github.com/uze-sh/uze/pull/262)) ([5d2280c](https://github.com/uze-sh/uze/commit/5d2280c6d3b98d2ebc3ed7be4ec3a214bf57d019))
+- **web:** Play the site's recordings as asciinema casts of real takes ([#263](https://github.com/uze-sh/uze/pull/263)) ([1d0b3a6](https://github.com/uze-sh/uze/commit/1d0b3a65e2258d4caaffc8c95029ef8dd90ab1e5))
+
+### Fixes
+
+- **workspace:** Place a resumed agent at its own checkout path ([#242](https://github.com/uze-sh/uze/pull/242)) ([5e95f3d](https://github.com/uze-sh/uze/commit/5e95f3dee3d6ba0ad67163e0060aee2e0d9a5d03))
+- **antigravity:** Adopt a staged plugin identical to the generated one ([#243](https://github.com/uze-sh/uze/pull/243)) ([a95e027](https://github.com/uze-sh/uze/commit/a95e02762c2bc5c8bf05a4c8461ea44346c40a54))
+- **trust:** Require whitespace before an inline `!` command in Skills ([#249](https://github.com/uze-sh/uze/pull/249)) ([c8eb86c](https://github.com/uze-sh/uze/commit/c8eb86c65d0e60c25cf2c36304153b38e858d342))
+- **workspace:** Open manage from recent in one click ([#250](https://github.com/uze-sh/uze/pull/250)) ([d328454](https://github.com/uze-sh/uze/commit/d328454882199371e72d82c29aeb5575de443fb8))
+- **ui:** Render the commit popover body as reflowed markdown ([#253](https://github.com/uze-sh/uze/pull/253)) ([322a695](https://github.com/uze-sh/uze/commit/322a695c074fe161e993df913980ec10f39770c6))
+- **workspace:** Trim a subagent's freed checkout on the next collection ([#254](https://github.com/uze-sh/uze/pull/254)) ([66491d7](https://github.com/uze-sh/uze/commit/66491d775edba97da9cf47a950d78be1f60aa3fb))
+- **workspace:** List every recorded agent in recent ([#256](https://github.com/uze-sh/uze/pull/256)) ([79afdb8](https://github.com/uze-sh/uze/commit/79afdb87b4ac11d7519aa2ca741d39aadb4a5d3f))
+- Harden process signals, slot Git calls and generated hook wrappers ([#257](https://github.com/uze-sh/uze/pull/257)) ([9b89f28](https://github.com/uze-sh/uze/commit/9b89f2891a1c5ff311d5172eee479bf20981ab87))
+- **workspace:** Leave subagent checkouts out of recent ([#261](https://github.com/uze-sh/uze/pull/261)) ([f68bb1b](https://github.com/uze-sh/uze/commit/f68bb1b11c0b4c3f5767c13721a380d9002ffb97))
+
+### Documentation
+
+- **openspec:** Archive eight delivered changes ([#260](https://github.com/uze-sh/uze/pull/260)) ([3406d1e](https://github.com/uze-sh/uze/commit/3406d1e6b9669b45c0dc87f14205b86a7eabe7a5))
+
+### Dependencies
+
+- **deps:** Bump actions/upload-artifact from 7.0.1 to 7.0.2 ([#244](https://github.com/uze-sh/uze/pull/244)) ([25ca1dc](https://github.com/uze-sh/uze/commit/25ca1dc4b8b08bb553269ebb3be8e8d03c953851))
+- **deps:** Bump dtolnay/rust-toolchain from 7e38f4b43b4db5c8dd498af069a4f6196df1d067 to e2a55d2ffb04f378e9626c28d38b36d230d1e12f ([#245](https://github.com/uze-sh/uze/pull/245)) ([0162387](https://github.com/uze-sh/uze/commit/016238711f05f771339df46acd1d54660e36465f))
+- **deps:** Bump taiki-e/install-action from 2.87.25 to 2.87.28 ([#246](https://github.com/uze-sh/uze/pull/246)) ([3299a64](https://github.com/uze-sh/uze/commit/3299a64a40754333c26a9b74080c21045fd1d4bc))
+- **deps:** Bump actions/download-artifact from 8.0.1 to 8.0.2 ([#247](https://github.com/uze-sh/uze/pull/247)) ([8bb5673](https://github.com/uze-sh/uze/commit/8bb56732c8effa6f0ef3b776928a813333203987))
+- **deps:** Bump the cargo-dependencies group with 7 updates ([#248](https://github.com/uze-sh/uze/pull/248)) ([3b09029](https://github.com/uze-sh/uze/commit/3b090299bd2d772131340484a579b4a2b3ec87e6))
+
+### Chore
+
+- **openspec:** Adopt openspec@ai and gate CI on openspec validate --strict ([#252](https://github.com/uze-sh/uze/pull/252)) ([29b3a37](https://github.com/uze-sh/uze/commit/29b3a37154359c1933c982bbae29c163e65cf595))
+
 ## [1.0.0-beta.15](https://github.com/uze-sh/uze/compare/v1.0.0-beta.14...v1.0.0-beta.15) - 2026-10-14
 
 ### Features
