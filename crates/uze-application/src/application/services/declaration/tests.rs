@@ -79,7 +79,18 @@ fn the_view_lists_every_key_in_order_with_what_is_declared_and_what_is_default()
         Some(DeclaredValue::Commands(vec!["pnpm install".into()]))
     );
     assert_eq!(declared(DeclarationKey::Slots), None);
-    assert_eq!(view.actions, vec!["on_publish".to_owned()]);
+    let declared_actions: Vec<ActionState> = view
+        .actions
+        .iter()
+        .filter(|entry| entry.declared.is_some())
+        .map(|entry| entry.state)
+        .collect();
+    assert_eq!(declared_actions, vec![ActionState::OnPublish]);
+    assert_eq!(
+        view.actions.len(),
+        ActionState::ALL.len(),
+        "every moment is listed"
+    );
 }
 
 #[test]
@@ -318,4 +329,83 @@ fn changing_setup_says_the_commands_wait_for_approval_again() {
         )
         .unwrap();
     assert!(changed.awaits_approval_again);
+}
+
+#[test]
+fn an_action_is_written_beside_the_others_and_taken_out_with_its_block() {
+    let app = application("declaration-actions");
+    let repository = project(
+        "declaration-actions",
+        Some(
+            "workspace:\n  delivery: push\n  actions:\n    # what an agent is asked\n    \
+             on_change: Commit your work.\n",
+        ),
+    );
+    let save = |edits: &[Edit]| {
+        let preview = app
+            .workspace()
+            .preview_declaration(repository.root(), edits)
+            .unwrap();
+        assert!(preview.problems.is_empty(), "{:?}", preview.problems);
+        app.workspace()
+            .save_declaration(repository.root(), edits, preview.expected.as_deref())
+            .unwrap();
+        written(&repository)
+    };
+
+    let after = save(&[Edit::Action {
+        state: ActionState::OnFail,
+        text: Some("Fix the checks.\nThen commit.".to_owned()),
+    }]);
+    assert!(after.contains("# what an agent is asked"), "{after}");
+    assert!(after.contains("on_change: Commit your work."), "{after}");
+    let view = app.workspace().declaration_view(repository.root()).unwrap();
+    let on_fail = view
+        .actions
+        .iter()
+        .find(|entry| entry.state == ActionState::OnFail)
+        .unwrap();
+    assert_eq!(
+        on_fail.declared.as_deref(),
+        Some("Fix the checks.\nThen commit."),
+        "{after}"
+    );
+
+    let after = save(&[
+        Edit::Action {
+            state: ActionState::OnFail,
+            text: None,
+        },
+        Edit::Action {
+            state: ActionState::OnChange,
+            text: None,
+        },
+    ]);
+    assert!(!after.contains("actions"), "{after}");
+    assert!(after.contains("delivery: push"), "{after}");
+}
+
+#[test]
+fn an_action_starts_its_block_when_the_file_has_none() {
+    let app = application("declaration-actions-new");
+    let repository = project(
+        "declaration-actions-new",
+        Some("workspace:\n  delivery: push\n"),
+    );
+    let edits = [Edit::Action {
+        state: ActionState::OnPublish,
+        text: Some("Open a pull request.".to_owned()),
+    }];
+    let preview = app
+        .workspace()
+        .preview_declaration(repository.root(), &edits)
+        .unwrap();
+    app.workspace()
+        .save_declaration(repository.root(), &edits, preview.expected.as_deref())
+        .unwrap();
+    let after = written(&repository);
+    assert!(
+        after.contains("actions:") && after.contains("on_publish: Open a pull request."),
+        "{after}"
+    );
 }

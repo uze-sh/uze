@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, path::Path};
 use serde::Serialize;
 use uze_core::shell::ShellCommand;
 
-use super::{ACTIONS, DeclaredArtifacts, WorkspaceSection, unignored_links};
+use super::{ACTIONS, ActionState, DeclaredArtifacts, WorkspaceSection, unignored_links};
 use crate::{
     Result, UzeError,
     manifest::{self, Section, edit::ManifestDocument},
@@ -177,6 +177,12 @@ pub enum Edit {
     Unset {
         key: DeclarationKey,
     },
+    /// What an agent is asked at one moment; `None` or blank takes the
+    /// moment's instruction out, leaving its fallback.
+    Action {
+        state: ActionState,
+        text: Option<String>,
+    },
 }
 
 /// Something the workspace would refuse in a section, said about the key
@@ -214,8 +220,8 @@ pub struct Checked {
     pub policy: Option<WorktreePolicy>,
     /// What each key holds, for the keys the section writes.
     pub values: BTreeMap<DeclarationKey, DeclaredValue>,
-    /// The moments `actions` writes an instruction for, by name.
-    pub actions: Vec<String>,
+    /// The instruction `actions` writes for each moment it declares.
+    pub actions: BTreeMap<ActionState, String>,
     pub artifacts: Option<DeclaredArtifacts>,
     /// Every problem, not only the first.
     pub problems: Vec<DeclarationProblem>,
@@ -247,6 +253,7 @@ pub fn check(root: &Path, text: &str) -> Checked {
         problems.push(DeclarationProblem::about(super::ARTIFACTS, reason));
         None
     });
+    let actions = section.actions().instructions;
     let written = section.0.unwrap_or_default();
     Checked {
         policy: policy.filter(|_| problems.iter().all(|problem| !is_about_policy(problem))),
@@ -257,11 +264,7 @@ pub fn check(root: &Path, text: &str) -> Checked {
                 Some((key, DeclaredValue::read(key, value)))
             })
             .collect(),
-        actions: written
-            .get(ACTIONS)
-            .and_then(serde_json::Value::as_object)
-            .map(|actions| actions.keys().cloned().collect())
-            .unwrap_or_default(),
+        actions,
         artifacts,
         problems,
     }
@@ -281,6 +284,26 @@ pub fn apply(document: &mut ManifestDocument, edits: &[Edit]) -> Result<()> {
             }
             Edit::Set { key, .. } | Edit::Unset { key } => {
                 document.unset_key(Section::Workspace, key.name())?;
+            }
+            Edit::Action { state, text } => {
+                let actions = format!("{}.{ACTIONS}", Section::Workspace.key());
+                match text
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                {
+                    // Into the mapping where there is one, so the instructions
+                    // beside it and their comments stay as they were written.
+                    Some(text) if document.holds(&actions) => {
+                        document.set_in(&actions, state.key(), &text)?;
+                    }
+                    Some(text) => document.set_key(
+                        Section::Workspace,
+                        ACTIONS,
+                        &BTreeMap::from([(state.key(), text)]),
+                    )?,
+                    None => document.unset_in(&actions, state.key())?,
+                }
             }
         }
     }

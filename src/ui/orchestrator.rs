@@ -904,6 +904,8 @@ pub(super) enum WorkspaceHit {
     /// A number's − or + in the overview's Workspace section: its row, and
     /// whether it adds.
     OverviewStep(usize, bool),
+    /// One of the paths a list's field offers, by position.
+    OverviewPick(usize),
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Saving or dropping the overview's workspace edits; `true` saves.

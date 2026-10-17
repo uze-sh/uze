@@ -7,13 +7,14 @@ pub mod bootstrap;
 
 pub use application::UzeApplication;
 pub use application::services::{
-    AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView, CheckoutsView,
-    CommandsAwaitingApproval, DeclarationEntry, DeclarationPreview, DeclarationView,
-    DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView, DeliveryReport, DiffLine, Evaluation,
-    JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace,
-    PullReport, Reconciliation, ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory,
-    SpaceOverview, SpacePlugin, SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport,
-    UpstreamSync, WorkStateView, WorkspaceEntry, project_artifacts,
+    ActionEntry, AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
+    CheckoutsView, CommandsAwaitingApproval, DeclarationChoices, DeclarationEntry,
+    DeclarationPreview, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
+    DeliveryReport, DiffLine, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind,
+    PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation, ReleasedTask,
+    RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin, SpacePlugins,
+    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
+    project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

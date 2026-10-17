@@ -359,6 +359,49 @@ fn misdeclared(policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
 /// Git only when a manifest declares links, so one that declares none costs
 /// no subprocess to read. A link already refused for where it points is
 /// not asked about.
+/// What a `workspace:` list may be set to, offered to be chosen rather than
+/// typed: the paths the repository ignores, the only ones a link may name,
+/// and the directories it tracks, where a project keeps its artifacts.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Choices {
+    pub links: Vec<String>,
+    pub directories: Vec<String>,
+}
+
+/// [`Choices`] for the repository at `root`. Empty where Git cannot say:
+/// a list offered empty is still typed into by hand.
+pub fn choices(root: &Path) -> Choices {
+    let lines = |args: &[&str]| -> Vec<String> {
+        crate::git::read(root, args)
+            .ok()
+            .filter(uze_git::Output::is_success)
+            .map(|answer| {
+                answer
+                    .stdout
+                    .lines()
+                    .map(|line| line.trim_end_matches('/').to_owned())
+                    .filter(|line| !line.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // Ignored directories are named whole rather than file by file, and
+    // UZE's own checkouts, ignored through `info/exclude`, are no
+    // project's to link.
+    let links = lines(&[
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+    ])
+    .into_iter()
+    .filter(|path| !path.starts_with(".worktrees"))
+    .collect();
+    let directories = lines(&["ls-tree", "-r", "-d", "--name-only", "HEAD"]);
+    Choices { links, directories }
+}
+
 fn unignored_links(root: &Path, policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
     let misplaced: Vec<PathBuf> = policy
         .misplaced_links()
@@ -567,6 +610,27 @@ mod tests {
         assert!(
             reason.contains("README.md") && reason.contains("ignore"),
             "{reason}"
+        );
+    }
+
+    #[test]
+    fn the_choices_are_what_git_ignores_and_the_directories_it_tracks() {
+        let repository = uze_testkit::git::Repository::new("declaration-choices");
+        repository.commit_file(".gitignore", ".env\nnode_modules/\n");
+        repository.commit_file("docs/architecture/c4.mmd", "flowchart\n");
+        let root = repository.root();
+        fs::write(root.join(".env"), "SECRET=1\n").unwrap();
+        fs::create_dir_all(root.join("node_modules/left-pad")).unwrap();
+        fs::write(root.join("node_modules/left-pad/index.js"), "\n").unwrap();
+        fs::create_dir_all(root.join(".worktrees/abc123")).unwrap();
+        fs::write(root.join(".git/info/exclude"), "/.worktrees/\n").unwrap();
+
+        let offered = choices(root);
+        assert_eq!(offered.links, vec![".env", "node_modules"], "{offered:?}");
+        assert_eq!(
+            offered.directories,
+            vec!["docs", "docs/architecture"],
+            "{offered:?}"
         );
     }
 

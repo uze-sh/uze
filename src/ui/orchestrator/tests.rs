@@ -10297,9 +10297,10 @@ mod workspace_tests {
                     description: key.description(),
                 })
                 .collect(),
-            actions: vec!["on_change".to_owned()],
+            actions: Vec::new(),
             editable: Ok(()),
             problems: Vec::new(),
+            choices: Default::default(),
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
         overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
@@ -10376,9 +10377,10 @@ mod workspace_tests {
                     description: key.description(),
                 })
                 .collect(),
-            actions: vec!["on_change".to_owned()],
+            actions: Vec::new(),
             editable: Ok(()),
             problems: Vec::new(),
+            choices: Default::default(),
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
         overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
@@ -10514,6 +10516,7 @@ mod workspace_tests {
             actions: Vec::new(),
             editable: Ok(()),
             problems: Vec::new(),
+            choices: Default::default(),
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
         overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
@@ -10579,6 +10582,151 @@ mod workspace_tests {
             value(&driven, DeclarationKey::IdleDays),
             Some(Some(DeclaredValue::Number(4))),
             "+ on idle days did not add one to its default"
+        );
+    }
+
+    /// A link is chosen from what the repository ignores rather than
+    /// typed: the field offers those paths, typing narrows them, the
+    /// arrows walk them and enter takes the one the keys are on.
+    #[test]
+    fn a_link_is_picked_from_what_the_repository_ignores() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-pick"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let choices = uze_application::DeclarationChoices {
+            links: vec![
+                ".env".to_owned(),
+                ".env.local".to_owned(),
+                "node_modules".to_owned(),
+            ],
+            directories: Vec::new(),
+        };
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices,
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let key = |driven: &mut Driven<'_>, code: crossterm::event::KeyCode| {
+            driven.press_key(crossterm::event::KeyEvent::from(code));
+            driven.frame();
+        };
+        // Down to Linked files, open it, narrow to `.env`, take the second.
+        key(&mut driven, crossterm::event::KeyCode::Down);
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+        assert!(
+            screen.contains("node_modules"),
+            "the ignored paths are not offered:\n{screen}"
+        );
+        for typed in ['.', 'e'] {
+            key(&mut driven, crossterm::event::KeyCode::Char(typed));
+        }
+        let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+        assert!(
+            !screen.contains("node_modules"),
+            "typing did not narrow:\n{screen}"
+        );
+        key(&mut driven, crossterm::event::KeyCode::Down);
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        let overview = driven.attach.model.space_overview.as_ref().expect("open");
+        assert_eq!(
+            overview.edit.values.get(&DeclarationKey::Link),
+            Some(&Some(DeclaredValue::List(vec![".env.local".to_owned()]))),
+            "enter did not take the offered path the keys were on"
+        );
+    }
+
+    /// An action's instruction is prose: enter breaks the line rather
+    /// than finishing it, and the save chord takes it as written.
+    #[test]
+    fn an_action_is_written_over_several_lines() {
+        use uze_application::{ActionState, DeclarationEntry, DeclarationKey, DeclarationView};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-action"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices: Default::default(),
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        let first_action = overview
+            .workspace_rows()
+            .iter()
+            .position(|row| {
+                *row == crate::ui::orchestrator::space_overview::WorkspaceRow::Action(
+                    ActionState::OnChange,
+                )
+            })
+            .expect("onChange is a row of the form");
+        overview.rows[0] = first_action;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let press = |driven: &mut Driven<'_>, event: crossterm::event::KeyEvent| {
+            driven.press_key(event);
+            driven.frame();
+        };
+        let plain = crossterm::event::KeyEvent::from;
+        press(&mut driven, plain(crossterm::event::KeyCode::Enter));
+        for typed in "Commit".chars() {
+            press(&mut driven, plain(crossterm::event::KeyCode::Char(typed)));
+        }
+        press(&mut driven, plain(crossterm::event::KeyCode::Enter));
+        for typed in "then push".chars() {
+            press(&mut driven, plain(crossterm::event::KeyCode::Char(typed)));
+        }
+        press(
+            &mut driven,
+            crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('s'),
+                crossterm::event::KeyModifiers::CONTROL,
+            ),
+        );
+        let overview = driven.attach.model.space_overview.as_ref().expect("open");
+        assert!(
+            overview.edit.text.is_none(),
+            "ctrl+s left the instruction open"
+        );
+        assert_eq!(
+            overview.edit.actions.get(&ActionState::OnChange),
+            Some(&Some("Commit\nthen push".to_owned())),
+            "the instruction was not taken as written"
         );
     }
 
