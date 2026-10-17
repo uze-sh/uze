@@ -576,9 +576,6 @@ pub struct Section {
     /// Folded shut. The host draws the marker and owns the gesture that
     /// changes this; the extension only reports what it was told.
     pub collapsed: bool,
-    /// Whether the host should offer the divider that resizes this
-    /// section. A section with nothing to reveal has nothing to drag.
-    pub resizable: bool,
     /// First row to show. The host clamps it to what actually fits, the
     /// same way it clamps [`Content::Lines::scroll`].
     pub scroll: usize,
@@ -683,8 +680,6 @@ pub enum ViewHit {
     DragContentScrollbar,
     /// A [`Section`]'s header, which folds it.
     ToggleSection,
-    /// A [`Section`]'s divider, dragged to change how much of it shows.
-    ResizeSection,
     Close,
 }
 

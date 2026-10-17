@@ -483,18 +483,21 @@ impl Attach<'_> {
             _ if self.model.recent.grab.is_some() => {
                 self.drag_recent_edge(mouse.column, mouse.row);
             }
-            _ if let Some(grab) = self.model.timeline_grab => {
-                // The divider follows the pointer, whichever section's it
+            _ if let Some(grab) = self.model.timeline_grab.as_mut() => {
+                // The header follows the pointer, whichever section's it
                 // is (see `grab_foot`); what is remembered is the commit
-                // rows that leaves the timeline, never fewer
-                // than one — folding is the header's own click, not a
-                // drag to nothing.
+                // rows that leaves under the timeline's own header, never
+                // fewer than one — folding is the header's own click, not
+                // a drag to nothing.
+                if mouse.row == grab.pressed_at && !grab.moved {
+                    return Flow::Continue;
+                }
+                grab.moved = true;
+                let timeline_header = mouse.row.saturating_add(grab.offset);
                 let wanted = layout
                     .sidebar
                     .bottom()
-                    .saturating_sub(mouse.row)
-                    .saturating_sub(grab)
-                    .saturating_sub(crate::ui::extension_view::SECTION_CHROME)
+                    .saturating_sub(timeline_header + 1)
                     .clamp(1, TIMELINE_COMMITS as u16);
                 if self.model.timeline_rows != Some(wanted) {
                     self.model.timeline_rows = Some(wanted);
@@ -648,9 +651,42 @@ impl Attach<'_> {
         }
         self.model.recent.grab = None;
         self.model.dragging_code_content = false;
-        self.model.timeline_grab = None;
+        // A header pressed and let go where it was is the header's click.
+        if let Some(grab) = self.model.timeline_grab.take()
+            && !grab.moved
+        {
+            self.fold_foot_section(grab.fold);
+        }
         self.model.dirty = true;
         Flow::Continue
+    }
+
+    /// Folds or opens the section at the sidebar's foot whose header is
+    /// `header`.
+    fn fold_foot_section(&mut self, header: WorkspaceHit) {
+        match header {
+            WorkspaceHit::ToggleFirstSteps => {
+                self.model.first_steps_collapsed = !self.model.first_steps_collapsed;
+                self.model.remember_sidebar();
+                self.model.dirty = true;
+            }
+            WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection)) => {
+                toggle_spec_summary(&mut self.model);
+            }
+            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
+                toggle_timeline(&mut self.model);
+            }
+            _ => {}
+        }
+    }
+
+    /// A press on a section header at the sidebar's foot: held, in case it
+    /// becomes a drag of the foot, or folded at once when there is nothing
+    /// to drag (see `WorkspaceModel::grab_foot`).
+    fn press_foot_header(&mut self, header: WorkspaceHit, rect: Rect) {
+        if !self.model.grab_foot(rect, header) {
+            self.fold_foot_section(header);
+        }
     }
 
     /// Whether a press in the pane starts a selection rather than reaching
@@ -1212,12 +1248,7 @@ impl Attach<'_> {
                 self.model.remember_sidebar();
                 self.model.dirty = true;
             }
-            WorkspaceHit::ResizeFirstSteps => self.model.grab_foot(hit_rect),
-            WorkspaceHit::ToggleFirstSteps => {
-                self.model.first_steps_collapsed = !self.model.first_steps_collapsed;
-                self.model.remember_sidebar();
-                self.model.dirty = true;
-            }
+            WorkspaceHit::ToggleFirstSteps => self.press_foot_header(hit, hit_rect),
             // Only reachable while the index is open, which the guarded
             // arm in `press` answers first.
             WorkspaceHit::ActionIndexEntry(_) | WorkspaceHit::ReleaseNotesBody => {}
@@ -1467,8 +1498,10 @@ impl Attach<'_> {
             // The spec section: its header folds it, and a change opens the
             // surface on that change. Nothing else is drawn in it.
             WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {
-                ViewHit::ToggleSection => toggle_spec_summary(&mut self.model),
-                ViewHit::ResizeSection => self.model.grab_foot(hit_rect),
+                ViewHit::ToggleSection => self.press_foot_header(
+                    WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
+                    hit_rect,
+                ),
                 ViewHit::SelectItem(index) => {
                     let change = self
                         .model
@@ -1482,8 +1515,10 @@ impl Attach<'_> {
                 _ => {}
             },
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
-                ViewHit::ToggleSection => toggle_timeline(&mut self.model),
-                ViewHit::ResizeSection => self.model.grab_foot(hit_rect),
+                ViewHit::ToggleSection => self.press_foot_header(
+                    WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),
+                    hit_rect,
+                ),
                 ViewHit::SelectItem(index) => open_commit_detail(
                     &mut self.model,
                     index,

@@ -120,7 +120,6 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
             title: "timeline".to_owned(),
             caption: Span::new(caption, Role::Muted),
             collapsed: true,
-            resizable: false,
             scroll: 0,
             rows: Vec::new(),
         };
@@ -144,7 +143,7 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
             })
             .unwrap();
         let row: String = (0..40)
-            .map(|column| terminal.backend().buffer()[(column, 1)].symbol())
+            .map(|column| terminal.backend().buffer()[(column, 0)].symbol())
             .collect();
         (slid, row)
     };
@@ -189,7 +188,6 @@ fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
         title: "timeline".to_owned(),
         caption: Span::new("main", Role::Muted),
         collapsed: false,
-        resizable: false,
         scroll: 0,
         rows: vec![uze_extensions::view::SectionRow {
             mark: uze_extensions::view::RowMark::Commit,
@@ -199,7 +197,7 @@ fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
         }],
     };
     let draw = |sliding: Option<(ViewHit, usize)>| {
-        let mut terminal = Terminal::new(TestBackend::new(32, 4)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(32, 3)).unwrap();
         let mut slid = false;
         terminal
             .draw(|frame| {
@@ -217,7 +215,7 @@ fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
             })
             .unwrap();
         let row: String = (0..32)
-            .map(|column| terminal.backend().buffer()[(column, 2)].symbol())
+            .map(|column| terminal.backend().buffer()[(column, 1)].symbol())
             .collect();
         (slid, row)
     };
@@ -250,11 +248,10 @@ fn the_row_under_the_pointer_lifts_its_name() {
         title: "timeline".to_owned(),
         caption: Span::new("main", Role::Muted),
         collapsed: false,
-        resizable: false,
         scroll: 0,
         rows: vec![commit("fix(ui): one"), commit("feat(cli): two")],
     };
-    let mut terminal = Terminal::new(TestBackend::new(40, 5)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
     terminal
         .draw(|frame| {
             let mut rows = crate::ui::Rows::over(frame.area());
@@ -272,38 +269,32 @@ fn the_row_under_the_pointer_lifts_its_name() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let bright = theme::color(Token::TextBright);
-    // The divider, the header, then one row per commit; the name starts
-    // past the lead, the mark and its gap.
+    // The header, then one row per commit; the name starts past the lead,
+    // the mark and its gap.
     let name = TRAILING_PAD + 2;
-    assert_ne!(buffer[(name, 2)].fg, bright, "the resting row's name");
-    assert_eq!(buffer[(name, 3)].fg, bright, "the hovered row's name");
+    assert_ne!(buffer[(name, 1)].fg, bright, "the resting row's name");
+    assert_eq!(buffer[(name, 2)].fg, bright, "the hovered row's name");
     assert_eq!(
-        buffer[(name, 3)].bg,
         buffer[(name, 2)].bg,
+        buffer[(name, 1)].bg,
         "on the same ground as its neighbour"
     );
 }
 
-/// While the pointer is on a section its rows stand on a ground of
-/// their own, header and divider left as they were; at rest they are on
-/// the column's.
+/// The header is the handle the foot is pulled by, and nothing marks it
+/// at rest: while it is pulled, its title goes to the accent, the one sign
+/// the drag took before the rows move.
 #[test]
-fn a_focused_section_grounds_its_rows() {
+fn a_pulled_header_lights_its_title() {
     let section = Section {
         title: "timeline".to_owned(),
         caption: Span::new("main", Role::Muted),
         collapsed: false,
-        resizable: false,
         scroll: 0,
-        rows: vec![uze_extensions::view::SectionRow {
-            mark: uze_extensions::view::RowMark::Commit,
-            mark_role: Role::Muted,
-            name: Span::new("fix(ui): one", Role::Dim),
-            trailing: Span::new("8m", Role::Muted),
-        }],
+        rows: Vec::new(),
     };
-    let ground_of = |focused: bool| {
-        let mut terminal = Terminal::new(TestBackend::new(40, 4)).unwrap();
+    let title_fg = |dragging: bool| {
+        let mut terminal = Terminal::new(TestBackend::new(40, 1)).unwrap();
         terminal
             .draw(|frame| {
                 let mut rows = crate::ui::Rows::over(frame.area());
@@ -312,22 +303,19 @@ fn a_focused_section_grounds_its_rows() {
                     &section,
                     &mut rows,
                     SectionState {
-                        focused,
+                        dragging,
                         ..SectionState::default()
                     },
                     &mut Vec::new(),
                 );
             })
             .unwrap();
-        let buffer = terminal.backend().buffer();
-        (buffer[(20, 1)].bg, buffer[(20, 2)].bg, buffer[(20, 3)].bg)
+        // Past the lead and the chevron, on the title's first letter.
+        terminal.backend().buffer()[(TRAILING_PAD + 2, 0)].fg
     };
-    let sunken = theme::color(Token::SurfaceSunken);
-    let (header, row, below) = ground_of(true);
-    assert_eq!((row, below), (sunken, sunken), "the container is grounded");
-    assert_ne!(header, sunken, "and the header is not");
-    let (_, row, _) = ground_of(false);
-    assert_ne!(row, sunken, "at rest it is not");
+    let accent = theme::color(Token::Accent);
+    assert_ne!(title_fg(false), accent, "at rest");
+    assert_eq!(title_fg(true), accent, "pulled");
 }
 
 /// Which drawn row a board's menu lands on: the first, with no frame

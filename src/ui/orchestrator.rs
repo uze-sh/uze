@@ -925,9 +925,6 @@ pub(super) enum WorkspaceHit {
     ToggleFirstSteps,
     /// The mark on that header, which puts the section away for good.
     CloseFirstSteps,
-    /// The divider over the first-steps section, which resizes the foot
-    /// (see `WorkspaceModel::grab_foot`).
-    ResizeFirstSteps,
     /// The release notice's row, which opens that release's notes.
     OpenReleaseNotes,
     /// The mark on the notice's header, which puts it away.
@@ -1645,6 +1642,21 @@ struct Remembered {
     tree_scroll: u16,
 }
 
+/// A section header at the sidebar's foot held by the pointer.
+#[derive(Clone, Copy, Debug)]
+struct FootGrab {
+    /// The rows between the held header and the timeline's own: zero on
+    /// the timeline's, the spec section's height on its, and so on up the
+    /// foot. Fixed while held, since only the timeline changes height.
+    offset: u16,
+    /// The row the header was pressed on, so a press that never left it
+    /// is told from a drag.
+    pressed_at: u16,
+    moved: bool,
+    /// The header's own click, run on release when the press never moved.
+    fold: WorkspaceHit,
+}
+
 #[derive(Default)]
 struct WorkspaceModel {
     /// What this client resolved on its own and keeps across attaches
@@ -1918,11 +1930,9 @@ struct WorkspaceModel {
     /// Mirrors `sidebar_width`/`dragging_sidebar`, kept like
     /// `timeline_collapsed`.
     timeline_rows: Option<u16>,
-    /// While a divider at the sidebar's foot is being dragged, the rows
-    /// of fixed sections between it and the timeline's own divider: zero
-    /// on the timeline's, the spec section's height on its, and so on up
-    /// the foot (see `grab_foot`).
-    timeline_grab: Option<u16>,
+    /// A section header at the sidebar's foot held by the pointer (see
+    /// `grab_foot`).
+    timeline_grab: Option<FootGrab>,
     /// The first commit the timeline section shows — where the wheel has
     /// scrolled it to. Clamped when drawn, so a history that shrank under
     /// it still shows its tail rather than nothing.
@@ -2264,24 +2274,36 @@ impl WorkspaceModel {
         })
     }
 
-    /// Takes hold of the foot of the sidebar by the divider at `divider`.
+    /// Takes hold of the foot of the sidebar by the section header at
+    /// `header`, whose own click is `fold`. Answers whether it took hold.
     ///
     /// The sections at the foot share one container, and the timeline is
-    /// the only one whose height is not its content's: whichever divider
+    /// the only one whose height is not its content's: whichever header
     /// is pulled, the timeline is what gives or takes the rows, so the
-    /// whole foot follows the pointer. Nothing to hold while the timeline
-    /// is folded or absent — then no section's divider is a handle.
-    fn grab_foot(&mut self, divider: Rect) {
+    /// whole foot follows the pointer. A press that never moves is the
+    /// header's click after all, run on release. Nothing to hold while
+    /// the timeline is folded or absent — then a header only folds.
+    fn grab_foot(&mut self, header: Rect, fold: WorkspaceHit) -> bool {
+        if self.timeline_collapsed {
+            return false;
+        }
         let timeline = self.hits.iter().find_map(|(rect, hit)| {
             matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ResizeSection))
+                WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection))
             )
             .then_some(rect.y)
         });
-        if let Some(timeline) = timeline {
-            self.timeline_grab = Some(timeline.saturating_sub(divider.y));
-        }
+        let Some(timeline) = timeline else {
+            return false;
+        };
+        self.timeline_grab = Some(FootGrab {
+            offset: timeline.saturating_sub(header.y),
+            pressed_at: header.y,
+            moved: false,
+            fold,
+        });
+        true
     }
 
     fn hit_at(&self, column: u16, row: u16) -> Option<WorkspaceHit> {

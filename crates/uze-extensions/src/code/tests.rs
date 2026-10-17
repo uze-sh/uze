@@ -798,7 +798,6 @@ fn the_timeline_section_names_meaning_rather_than_colour() {
 
     assert_eq!(section.title, "timeline");
     assert_eq!(section.caption.text, "agent/x");
-    assert!(section.resizable);
     // HEAD is ringed; standing is the hue, and the hue is a role.
     assert_eq!(section.rows[0].mark, RowMark::Head);
     assert_eq!(section.rows[0].mark_role, Role::Info);

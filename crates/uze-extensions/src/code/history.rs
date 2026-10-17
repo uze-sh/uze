@@ -113,7 +113,6 @@ pub fn timeline_section(timeline: &Timeline, collapsed: bool, scroll: usize) -> 
         title: "timeline".to_owned(),
         caption: Span::new(timeline.branch.clone(), Role::Dim),
         collapsed,
-        resizable: true,
         scroll,
         rows: timeline
             .commits

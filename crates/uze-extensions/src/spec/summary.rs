@@ -86,7 +86,6 @@ pub fn summary_section(summary: &Summary, collapsed: bool, scroll: usize) -> Sec
             Role::Muted,
         ),
         collapsed,
-        resizable: false,
         scroll,
         rows: summary
             .changes

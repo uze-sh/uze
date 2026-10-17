@@ -2,22 +2,22 @@
 
 use super::*;
 
-/// The rows of a section that are not its content: the divider over it
-/// and its header. Whoever reserves a section's rows adds these, and the
-/// timeline's drag handler subtracts them to turn where a divider was
-/// dropped into a count of commit rows.
-pub(crate) const SECTION_CHROME: u16 = 2;
+/// The rows of a section that are not its content: its header alone.
+/// Whoever reserves a section's rows adds it.
+pub(crate) const SECTION_CHROME: u16 = 1;
+
+/// The blank row an open section keeps under its last row while another
+/// section's header sits below it. Reserved by the host, never drawn: the
+/// renderer runs out of rows before it reaches it.
+pub(crate) const SECTION_AIR: u16 = 1;
 
 /// What the host knows about a section while drawing it, and the section
 /// itself may not hold: every field is the host's own state, because the
 /// gestures belong to the host, not to whoever the section came from.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SectionState<'a> {
-    /// Whether the divider over the header is being pulled right now.
+    /// Whether the header is being pulled right now.
     pub(crate) dragging: bool,
-    /// Whether the pointer is anywhere on the section, which grounds its
-    /// rows as one container.
-    pub(crate) focused: bool,
     /// The hit under the pointer and the clock a caption of it too long
     /// for its room slides by — the header's caption, or a row's name —
     /// instead of stopping at an "…".
@@ -48,23 +48,9 @@ pub(crate) fn render_section(
 ) -> bool {
     let SectionState {
         dragging,
-        focused,
         sliding,
         lit_rows,
     } = state;
-    // A hairline over every section, folded or not, is what says where the
-    // one above ends: a band under the header said it too, but read as a
-    // selection in a column whose rows are picked. On a resizable section
-    // it doubles as the drag handle, the way the sidebar's own border does.
-    let Some(divider_rect) = rows.next(1) else {
-        return false;
-    };
-    if section.resizable {
-        Rule::draggable(Edge::Top, dragging).render(frame, divider_rect);
-        hits.push((divider_rect, ViewHit::ResizeSection));
-    } else {
-        Rule::new(Edge::Top).render(frame, divider_rect);
-    }
     let Some(header_rect) = rows.next(1) else {
         return false;
     };
@@ -73,20 +59,23 @@ pub(crate) fn render_section(
     } else {
         Symbol::ChevronExpanded
     });
-    // Lifted and bold only while open: a heading over the content beneath
-    // it, a step clear of rows drawn in quieter text without reaching the
-    // brightest, which the row under the pointer wears. Folded there is
-    // nothing under it to head, and lit titles stacked at the foot of the
-    // column shouted over the tree above.
-    let title_style = if section.collapsed {
-        Style::default().fg(theme::color(Token::TextSecondary))
-    } else {
-        theme::fg(Token::TextTertiary).add_modifier(Modifier::BOLD)
-    };
-    // One column in, the pad the caption keeps at the other end: a chevron
-    // flush against the edge under a caption held off it reads as a row
-    // that slipped. Its rows keep the same column, so the heading still
-    // stands over them.
+    // Bold only while open, over its filled row: a heading over the content
+    // beneath it. Folded there is nothing under it to head, and bold titles
+    // stacked at the foot of the column shouted over the tree above.
+    let mut title_style = Style::default().fg(theme::color(Token::TextSecondary));
+    if !section.collapsed {
+        title_style = title_style.add_modifier(Modifier::BOLD);
+    }
+    // The header is the handle the foot is pulled by, and the title goes
+    // to the accent while it is pulled, the way the sidebar's own border
+    // does: the one sign the drag took before the rows move.
+    if dragging {
+        title_style = title_style.fg(theme::color(Token::Accent));
+    }
+    // One column in, the pad the caption keeps at the other end: on the
+    // band an open section wears, a chevron flush against the edge under a
+    // caption held off it reads as a row that slipped. Its rows keep the
+    // same column, so the heading still stands over them.
     let lead = " ".repeat(usize::from(TRAILING_PAD));
     let mut spans = vec![
         TextSpan::raw(lead.clone()),
@@ -116,20 +105,23 @@ pub(crate) fn render_section(
             false
         }
     };
+    // Filled only while there is something under it. A band across the
+    // column says "this is a heading over content"; on a folded section
+    // there is no content, and the band reads as a control of its own —
+    // two of them stacked at the foot of the sidebar read as a toolbar.
+    // The subtler of the raised grounds: the band only has to set the
+    // heading off, and the brighter one outweighed the rows it heads.
+    if !section.collapsed {
+        row::pad_to(
+            &mut spans,
+            header_rect.width,
+            theme::color(Token::SurfaceRaisedSubtle),
+        );
+    }
     frame.render_widget(Paragraph::new(Line::from(spans)), header_rect);
     hits.push((header_rect, ViewHit::ToggleSection));
     if section.collapsed {
         return slid;
-    }
-    // While the pointer is on the section its rows sink a shade below the
-    // column, so what the header heads reads as one container. Below
-    // rather than above: a lifted ground in this column reads as picked.
-    if focused {
-        widget::fill(
-            frame,
-            Rect::new(rows.x, rows.y, rows.width, rows.remaining()),
-            Token::SurfaceSunken,
-        );
     }
     // Scrolled by whole rows, never past the page that ends on the last
     // one — so the section is always full when its content is.
