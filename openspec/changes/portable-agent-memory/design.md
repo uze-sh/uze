@@ -125,6 +125,13 @@ What exists that this reuses:
     the useful case: an agent noticing a preference.
   - Reusing `uze workspace allow` conflates approving commands with
     approving text.
+- **Outside the workspace.** `uze status` lists each proposal with its
+  path under `state/memory/proposed/`. Moving the file into
+  `state/memory/` accepts it, and deleting it discards it. No person-facing
+  verb is added.
+- **Noticing a new proposal.** The client reads the proposals on the same
+  periodic evaluation pass that already re-reads its tasks, on the read
+  thread. A proposal is noticed within one pass, with no new watcher.
 
 ### D4. The index section and its ranking
 
@@ -132,7 +139,14 @@ What exists that this reuses:
   channel change defines. It holds one line per fact:
   `- <name> (<type>): <description>`, then a line saying how to read a
   body (`uze agent memory show <name>`).
-- **Share.** 3,000 bytes of the context's bound.
+- **Share.** Memory takes the 3,500 bytes `deliver-agent-context`
+  reserves:
+  - the write instruction (non-Claude agents only), at most 700 bytes;
+  - the index, with the Codex summary entry counted inside it, the
+    remaining 2,800, or 3,500 for a Claude agent.
+- **Per harness.** Each harness's own entries are left out of its own
+  agents' index, because Claude loads its own memory and Codex injects its
+  own summary.
 - **Ranking.** `feedback` and `user` facts first (standing guidance, which
   rarely changes and so would lose a recency race), then `project` and
   `reference`, most recently updated first. Past the share, a count of
@@ -224,9 +238,11 @@ What exists that this reuses:
   - Codex agents get no entry, because Codex already injects that summary
     itself.
   - The entry depends on one path and nothing inside the file.
-  - Distilling it into UZE facts stays available on request, as an agent
-    task using `remember` with `source: codex-import`. The machine-scope
-    gate (D3) applies.
+  - Distilling it into UZE facts stays available on request, as an
+    ordinary agent task: the agent reads the folder and uses `remember`.
+    Its facts carry the agent's own launch provenance, and the
+    machine-scope gate (D3) applies. No special provenance or verb is
+    added.
 - **Antigravity: no source yet.**
   - `conversation_summaries.db` is readable SQLite, but it is a list of
     conversations (title, preview, workspace, status), not memory.
@@ -262,9 +278,16 @@ What exists that this reuses:
   - `remember` and `forget`: UZE facts only.
   - `accept` and `discard`: proposals.
   - Warnings: unreadable facts, and harnesses without a channel.
-  - Its read model is what `uze agent memory`, `uze status`, the
-    workspace's proposal question, and `uze-workspace`'s index section all
-    consume.
+  - Its read model is what `uze agent memory`, `uze status` and the
+    workspace client's proposal question (`src/ui`, on the orchestrator's
+    read thread) consume.
+- **Who builds the index section.** `uze-application` depends on
+  `uze-workspace`, never the reverse.
+  - The application's launch path asks `MemoryService` for the entries
+    and hands them to `continuity::plan` as data: a rendered section with
+    its share.
+  - `uze-workspace` composes sections and knows nothing of memory.
+  - The same holds for the briefing, which the workspace already owns.
 - **A management screen is a later consumer, not a new API.**
   - A future per-space screen listing the index, opening bodies, and
     accepting proposals or deleting UZE facts reads the same read model.
@@ -282,9 +305,9 @@ What exists that this reuses:
 ## Risks / Trade-offs
 
 - **[A poisoned project fact persists in that project.]**
-  - Mitigation: status lists every fact with provenance; the projected
-    region calls facts notes, not instructions; the machine scope is gated
-    (D3).
+  - Mitigation: status lists every fact with provenance; the agent-context
+    memory instruction calls facts notes, not instructions; the machine
+    scope is gated (D3).
   - Residual: a project fact reaches later agents in the same project
     until the operator removes it.
 - **[An agent strips its launch identity to write machine scope

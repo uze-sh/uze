@@ -52,8 +52,8 @@ proven.
     for the operator's next turn with the briefing already in hand.
   - A degraded harness keeps today's first turn as its fallback.
 - **The briefing becomes a record.**
-  - It is given on every launch on its harness, which a resumed
-    conversation needs because the channel is not in the transcript.
+  - It is given on every launch on its harness until the agent commits,
+    and one channel (OpenCode) keeps no copy in the conversation.
   - It is retired at the agent's first commit after the switch, or by the
     next switch.
   - Once nothing else holds it, it moves from `runtime/` into the agent's

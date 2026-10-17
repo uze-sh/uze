@@ -1,3 +1,37 @@
+## MODIFIED Requirements
+
+### Requirement: A managed agent's conversation is recorded against its task
+The system SHALL record, for every agent it launches, in the space's root
+or in a checkout of its own, the conversation its harness started and the
+harness it belongs to. The record SHALL live in UZE's state beside the
+agent's, never in a checkout, keyed by the agent's identity. It SHALL hold
+no harness credential and no conversation text but the agent's current
+briefing, which is removed with the agent's conversations.
+
+#### Scenario: A new agent's conversation is recorded
+- **WHEN** an agent is launched for the first time
+- **THEN** the conversation the harness started is recorded against that agent and that harness
+
+#### Scenario: The record survives isolation
+- **WHEN** an agent working in the space's root is isolated into a checkout of its own
+- **THEN** the conversation recorded against it is the one it was already in, and the relaunched agent continues it
+
+#### Scenario: The record survives the checkout
+- **WHEN** an isolated agent's checkout is reset, or removed and given back later
+- **THEN** the recorded conversation is still the one the agent started with
+
+#### Scenario: A task carries one conversation per harness
+- **WHEN** an agent has been worked in by two different harnesses
+- **THEN** each harness's conversation is recorded separately and neither is offered to the other
+
+#### Scenario: The record holds only the briefing's text
+- **WHEN** an agent has been switched between harnesses
+- **THEN** its continuity record names its conversations and holds the current briefing's text, and nothing else of any conversation
+
+#### Scenario: The briefing goes with the conversations
+- **WHEN** an agent's conversations are forgotten
+- **THEN** its briefing is gone with them
+
 ## ADDED Requirements
 
 ### Requirement: A briefing is part of the agent's context until its work moves on
@@ -24,26 +58,14 @@ arguments, SHALL neither give the briefing nor change it.
 - **WHEN** an agent with a briefing is switched again
 - **THEN** its context carries only the briefing written for the new switch
 
-### Requirement: The record holds the briefing and no other conversation text
-An agent's continuity record SHALL hold conversation identifiers and, while
-one applies, the agent's briefing. It SHALL hold no other text of any
-conversation. A briefing SHALL be removed with the agent's conversations.
-
-#### Scenario: What the record holds
-- **WHEN** an agent has been switched between harnesses
-- **THEN** its continuity record names its conversations and holds the briefing's text, and nothing else of the conversations
-
-#### Scenario: Removed with the agent
-- **WHEN** an agent's conversations are forgotten
-- **THEN** its briefing is gone with them
-
 ## REMOVED Requirements
 
 ### Requirement: A pending briefing is given by the launch it was meant for
-**Reason**: A briefing is no longer a first turn spent once. It is part of
-the agent's context, which a resumed conversation needs again because the
-channel does not write it into the harness's transcript. It is therefore a
-record, no longer a generated file one first turn consumes.
+**Reason**: A briefing is no longer a first turn spent once. It is given
+again on every launch on its harness until the agent commits, and one
+channel (OpenCode) keeps no copy of it in the conversation. So it must
+outlive the first launch, and it becomes a record rather than a generated
+file that one first turn consumes.
 **Migration**: Covered by "A briefing is part of the agent's context until
 its work moves on". The give-once first turn remains only for a harness
 whose context delivery is declared degraded.

@@ -7,7 +7,7 @@
 - [ ] 1.1 `UzeHome` paths for machine memory, proposed machine memory and project memory; the architecture map test passes
 - [ ] 1.2 `memory` module under the project concern: front matter via `split_frontmatter` + `noyalib` serde, rendering of the fixed fields, shape read first, newer shape and unparseable facts reported and never rewritten
 - [ ] 1.3 Upsert/forget/list/show under the per-scope lock with atomic replace; tests for update-keeps-created, concurrent different facts, same-fact last writer wins whole, unreadable fact left untouched, project-over-machine name collision
-- [ ] 1.4 Index section: ranking (`feedback`, `user`, then recency), 3,000-byte share, left-out count
+- [ ] 1.4 Index section: ranking (`feedback`, `user`, then recency), within the 3,500-byte memory share (instruction ≤700 for non-Claude agents, index the rest, Codex entry included), left-out count, each harness's own entries left out of its own agents' index
 
 ## 2. Agent surface (application + CLI)
 
@@ -23,18 +23,18 @@
 - [ ] 3.1 Live reader for Claude memory directories at composition: the slug of the primary root and of its checkouts, `type` at the top level or in `metadata`, `metadata.modified`, skip `MEMORY.md`, index lines naming the file path, `claude` provenance, UZE wins a shared name; Claude's files are never written; tests against a fixture directory with both front matter shapes
 - [ ] 3.2 Codex source: one machine-scope index entry naming `~/.codex/memories/memory_summary.md` and its size when it exists, for non-Codex agents only
 - [ ] 3.3 Status lists harness-sourced entries with their provenance beside UZE's
-- [ ] 3.4 Agent-context memory instruction (non-Claude): how an agent imports Codex's memory with `remember` (read `~/.codex/memories/`, keep what is durable, `source: codex-import`, choose the scope); `source` accepts `codex-import`
+- [ ] 3.4 Agent-context memory instruction (non-Claude): how an agent asked to distill Codex's memory does it with `remember` (read `~/.codex/memories/`, keep what is durable, choose the scope)
 
 ## 4. Workspace
 
-- [ ] 4.1 The index registered as a section of the agent context
-- [ ] 4.2 The proposal question: a toast that stays until answered, accept moves, discard deletes; read on the orchestrator's read thread
+- [ ] 4.1 The application's launch path renders the index section from `MemoryService` and hands it to `continuity::plan` as data; `uze-workspace` names no memory type
+- [ ] 4.2 The proposal question in `src/ui`: a toast that stays until answered, accept moves, discard deletes; proposals read on the existing evaluation pass on the orchestrator's read thread; status lists each proposal's path for acceptance outside the workspace
 - [ ] 4.3 Status and doctor say memory does not reach a harness whose context delivery is degraded
 
 ## 5. Harness memory switch
 
 - [ ] 5.1 `memory.harness` in `config.toml` (`keep` default)
-- [ ] 5.2 With `off`: Claude `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, Codex `-c features.memories=false`, at UZE launches only; Antigravity reported as unsupported
+- [ ] 5.2 With `off`: Codex `-c features.memories=false` at UZE launches only; Claude never turned off; Antigravity reported as unsupported
 
 ## 6. Conformance and journeys
 

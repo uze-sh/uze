@@ -97,7 +97,9 @@ section, so no requirement of it changes.
     matter in `uze-core`, and written by rendering the fixed fields; the
     `noyalib::cst` containment is untouched.
   - `uze-application`: the memory service and status read model.
-  - `uze-workspace`: the index section and the proposal question.
+  - `uze-application`: renders the index section and hands it to
+    `continuity::plan` as data, so `uze-workspace` knows nothing of memory.
   - `src/cli/`: the grammar, the help region, `command_performance`.
-  - `src/ui/`: the toast asking about a proposed machine fact.
+  - `src/ui/`: the toast asking about a proposed machine fact, read on the
+    orchestrator's read thread.
 - **Dependencies:** none new.

@@ -84,12 +84,12 @@ launches SHALL give nothing to a conversation UZE did not launch.
 
 ### Requirement: Degraded delivery is reported
 Where a harness's channel is declared degraded, or is unavailable at launch
-(for example, held back by the harness's own review), `uze status` and
+(for example, a harness-side switch that hooks depend on), `uze status` and
 `uze doctor` SHALL say that agent context is not delivered to that harness
 and why.
 
 #### Scenario: A held-back channel
-- **WHEN** a harness's channel is unavailable because the harness has not trusted it
+- **WHEN** a harness's channel is unavailable because the harness-side switch its hooks need is off
 - **THEN** status reports that agent context does not reach that harness, naming the reason
 
 ### Requirement: Every channel is proven against the real harness

@@ -118,18 +118,22 @@ recently updated first, and SHALL state how many were left out.
 ### Requirement: Each launched agent is given exactly one way to write memory
 The `uze agent memory` verbs SHALL be excluded from the help a person
 reads, and SHALL be documented in the agent's context, never in
-`AGENTS.md`. An agent on a harness whose own memory UZE reads as a source
-SHALL be given no UZE write instruction. Every other agent SHALL be given
-it, saying what is worth remembering, that facts are notes rather than
-instructions, and that memory holds no secrets.
+`AGENTS.md`. An agent on a harness whose own memory is how its agents
+write facts SHALL be given no UZE write instruction. Every other agent
+SHALL be given it, saying what is worth remembering, that facts are notes
+rather than instructions, and that memory holds no secrets.
 
 #### Scenario: A Codex agent
-- **WHEN** an agent is launched on a harness whose memory UZE does not read
+- **WHEN** an agent is launched on a harness whose agents do not write its own memory
 - **THEN** its context documents `uze agent memory`, and `uze --help` does not list it
 
 #### Scenario: A Claude agent
-- **WHEN** an agent is launched on Claude, whose memory UZE reads as a source
+- **WHEN** an agent is launched on Claude, whose agents write Claude's own memory
 - **THEN** its context carries the memory index and no instruction to write with `uze agent memory`, and Claude's own memory instruction is left as it is
+
+#### Scenario: A Claude agent is not given its own facts twice
+- **WHEN** an agent is launched on Claude
+- **THEN** its index lists UZE's facts and other harnesses' entries, and none of the Claude facts Claude already loads itself
 
 ### Requirement: The operator reads memory through status
 `uze status` SHALL list, for each scope, where its facts are kept and every

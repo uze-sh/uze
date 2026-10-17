@@ -92,12 +92,15 @@ See proposal.md (Why). The current state:
 - **Path.** `runtime/projects/<id>/agents/<agent>/context.md`, generated
   and owner-only, rewritten on each launch.
 - **Bound.**
-  - 9,000 bytes in total, under Codex's 10,000-byte spill with room for
-    the preamble.
-  - Each section has a share and cuts itself by its own rule.
-  - The briefing's `render` already drops sections from the end; its
-    bound becomes its share: 6,000 bytes now, and it stays the remainder
-    once memory takes 3,000.
+  - 9,000 bytes in total, under Codex's 10,000-byte spill.
+  - The shares add up to the bound exactly:
+    - the preamble, at most 500 bytes;
+    - the briefing, 5,000;
+    - a 3,500-byte share reserved for memory, which
+      `portable-agent-memory` divides between its instruction and its
+      index.
+  - Each section cuts itself by its own rule. The briefing's `render`
+    already drops sections from the end.
   - This makes switches lossier than the 12 KiB bound of today.
 - **Wording.** It is written as facts ("This agent was moved from Claude
   to Codex. Its goal was …"), not imperatives. Claude's hook docs warn
@@ -130,8 +133,9 @@ default is `FirstTurn`.
   - The plan adds `--add-dir <agent dir>` and always sets
     `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, whether or not the
     project has portable context.
-  - Re-read per request and not in the transcript, so a resume gets the
-    current one.
+  - Re-read on every launch: a resume gets the current one. Claude also
+    records each copy in its transcript and replays it (decisions.md M1),
+    so the channel declares `accumulates`.
   - Fallback if the Lab disagrees: a `SessionStart` hook given through
     `--settings`. Its docs say it re-fires on `resume`; it is capped at
     10,000 characters.
@@ -152,18 +156,30 @@ default is `FirstTurn`.
     earlier copy" note. So it declares `accumulates` too.
   - Antigravity: `--add-dir <agent dir>` with
     `<agent dir>/.agents/hooks.json`, a `PreInvocation` handler returning
-    `injectSteps[].systemMessage` once per Antigravity process. A marker
-    keyed by the handler's parent pid in the agent's directory makes later
-    calls print nothing.
+    `injectSteps[].systemMessage` once per launch.
+    - The shim writes a fresh `hooks.json` for every launch, naming a
+      launch nonce. The handler prints the context only while
+      `<agent dir>/delivered-<nonce>` is absent, then creates it, so
+      later model calls in that process print nothing.
+    - A nonce, not a pid, so a reused pid can never suppress a delivery.
+      Composition sweeps old markers.
+    - The handler is conditional, so it has a `sh` and a PowerShell
+      template, chosen through `uze-platform`.
+    - One copy per launch stays in history, so the channel declares
+      `accumulates`, like Claude and Codex.
     - `ephemeralMessage` was measured and rejected: it is re-sent on every
       model call, outside the cached prefix (decisions.md M1).
 - **`SessionPlugin`: OpenCode.**
   - A UZE-owned plugin, `plugins/uze-context.ts`, delivered by `uze setup`
     and receipt-owned like every other attachment.
   - Its `session.hook("context")` reads
-    `runtime/sessions/opencode/<sessionID>.md`. That is a machine-wide
-    directory named in `UzeHome`, because one shared server serves every
-    project.
+    `<sessionID>.md` in a machine-wide directory. One shared server
+    serves every project, so the directory is not per project.
+  - The directory is named in `UzeHome` parameterised by the
+    integration's id, as `runtime_projection_dir(integration, …)` is, so
+    `uze-core` names no vendor.
+  - The shim rewrites the file on every launch of that session.
+    `conversation::forget` removes it with the agent's conversations.
   - The shim places the agent's composed context there under the session
     id it assigned. OpenCode's continuity is `Assigned`, so the id is
     known before launch.
@@ -195,13 +211,14 @@ native; `LaunchHook` is generated native; `FirstTurn` is safe adaptation.
 - **Why it becomes a record.**
   - In `switch-agent-harness` D3 the briefing was generated tier, because
     the receiving transcript held it once read.
-  - Here no transcript holds it: `Directory` and `SessionPlugin` re-give
-    it per request.
+  - Here it is given again on every launch on its harness until the
+    agent commits, and `SessionPlugin` keeps no copy in the conversation
+    at all.
   - Deleting `runtime/` would lose it while the record still points at
     it. So it is a record now.
 - **What the entry holds.** The pending entry becomes
   `Briefing{integration, text, head_at_switch}`, holding the rendered
-  text, at most 6,000 bytes.
+  text, at most 5,000 bytes.
 - **Shape.** The continuity record takes a shape step. Its one ladder
   rung drops an older build's `{integration, path}` entry: the generated
   file it names is not carried across, the same as today's floor for a
@@ -225,12 +242,15 @@ native; `LaunchHook` is generated native; `FirstTurn` is safe adaptation.
 - The operator's next turn, even "continue", is answered by a model that
   already holds the briefing.
 
-### D6. The shim carries the plan's environment and owns clearing it
+### D6. The shim carries the plan's environment
 
 - `LaunchPlan` gains `env: Vec<(OsString, OsString)>`, which the shim
   sets on the harness.
-- Today only Claude's flag needs it. Channels avoid environment by design
-  (D2), so a nested launch inherits no context path.
+- Today only Claude's `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`
+  needs it. A nested `claude` the agent starts inherits the flag but not
+  the `--add-dir`, so it loads nothing extra. The shim does not clear it.
+- Channels avoid environment by design (D2), so a nested launch inherits
+  no context path.
 
 ### D7. The Lab proves four outcomes, and records where the context landed
 
@@ -269,8 +289,12 @@ native; `LaunchHook` is generated native; `FirstTurn` is safe adaptation.
     contract asserts that the newest copy is the current one.
 - **[Antigravity hooks depend on the server-side `json-hooks-enabled`
   flag, which is on only when signed in.]**
-  - Status reports the channel unavailable when the flag is off, and the
-    switch falls back to `FirstTurn`.
+  - The flag is server-side and invisible before launch. UZE treats
+    "signed in" (the OAuth token the integration already detects) as the
+    flag's proxy, which the Lab measured as on.
+  - When not signed in, status reports the channel unavailable and the
+    switch falls back to `FirstTurn` for the briefing, so a switch never
+    loses it silently.
   - `workspacePaths[0]` stays on the project (measured).
 - **[OpenCode v2's `session.hook` is new API.]**
   - No version pin exists today.
