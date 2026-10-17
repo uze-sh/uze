@@ -272,7 +272,7 @@ impl Attach<'_> {
                 .space_overview
                 .as_mut()
                 .and_then(|overview| overview.agent.as_mut())
-                && agent.key == resolution.key
+                && agent.key.as_ref() == Some(&resolution.key)
                 && resolution.support.is_some()
             {
                 agent.support = resolution.support.clone();

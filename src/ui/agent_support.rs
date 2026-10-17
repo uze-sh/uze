@@ -86,13 +86,6 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     }
 }
 
-/// Whose prompts the drawer lists.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PromptScope {
-    Agent,
-    Space,
-}
-
 /// The context block's keys, and the air after them.
 const ITEM_GAP: usize = 2;
 /// The column the two capability rows' keys take, and the air after them.

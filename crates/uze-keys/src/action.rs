@@ -341,8 +341,6 @@ actions! {
     // --- The space overview -------------------------------------------
     OpenSpaceOverview => "open-space-overview", false,
         "Overview", "Show this space's overview: its context, plugins, workspace and memory";
-    TogglePromptScope => "toggle-prompt-scope", false,
-        "Prompts", "List this agent's prompts or the whole space's";
     AddItem => "add-item", false,
         "Add", "Add an entry to the list in focus";
     // Takes back a value not yet saved: nothing on disk changes until the

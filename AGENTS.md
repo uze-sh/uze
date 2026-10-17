@@ -329,8 +329,7 @@ need to).
   that may name a `KeyCode` (`one module names a physical key` in
   `tests/architecture/layering.rs`).
 - `src/ui/widget/` — the chrome vocabulary: `Surface` (a bordered box),
-  `Rule` (an edge hairline), `Button`/`button_row`, `Chip` (a filled
-  label standing where a control stands), `Status` (a work state on no
+  `Rule` (an edge hairline), `Button`/`button_row`, `Status` (a work state on no
   ground: a muted report, or a bold action that lifts under the pointer), `Field` (a text input, and the
   caret that is the only thing saying an empty one can be typed into),
   `Toast` (an outcome, stacked top-right and gone on its own clock),

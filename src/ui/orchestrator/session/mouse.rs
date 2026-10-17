@@ -484,6 +484,15 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
+            // The drawer stands at the pane's right edge: its width is what
+            // lies between the pointer and that edge.
+            _ if self.model.dragging_overview_drawer => {
+                let width = layout.pane.right().saturating_sub(mouse.column);
+                if self.model.overview_drawer_width != Some(width) {
+                    self.model.overview_drawer_width = Some(width);
+                    self.model.dirty = true;
+                }
+            }
             _ if self.model.dragging_sidebar => {
                 let new_width = crate::ui::clamp_sidebar_width(
                     mouse.column.saturating_sub(layout.sidebar.x),
@@ -617,6 +626,9 @@ impl Attach<'_> {
             self.model.remember_sidebar();
         }
         self.model.dragging_sidebar = false;
+        if std::mem::take(&mut self.model.dragging_overview_drawer) {
+            self.model.dirty = true;
+        }
         // A press that never moved is a click, and a click on the edge
         // asks the list to show that part of itself — the gesture that
         // sharing the column with the divider would otherwise have cost.
@@ -1457,10 +1469,8 @@ impl Attach<'_> {
             }
             // Answered by the drawer's own arm in `press`, which sees them
             // before any other.
-            // The overview's Agent section: a prompt chosen, or whose are
-            // listed.
+            // A prompt chosen in the overview's Agent section.
             WorkspaceHit::DrawerPrompt(index) => self.select_drawer_prompt(index),
-            WorkspaceHit::DrawerScope(scope) => self.show_drawer_scope(scope),
             // The extension's own surfaces, in its own vocabulary. The
             // overlay's hits are answered by the guarded arm in `press`
             // — same as `PickAgent`/`ContextMenuAction` above for the
@@ -1520,6 +1530,10 @@ impl Attach<'_> {
             WorkspaceHit::ManageSurface | WorkspaceHit::CloseManage => {}
             WorkspaceHit::ResizeSidebar => {
                 self.model.dragging_sidebar = true;
+            }
+            WorkspaceHit::ResizeOverviewDrawer => {
+                self.model.dragging_overview_drawer = true;
+                self.model.dirty = true;
             }
         }
         Flow::Continue

@@ -55,24 +55,21 @@ pub(super) struct ResumeTarget {
 /// label or process name — and makes a resolution for some other pane
 /// unrenderable here.
 pub(super) struct AgentSupportDropdown {
-    pub(super) key: SupportKey,
+    /// The agent in front, when there is one: what its support answer is
+    /// read for.
+    pub(super) key: Option<SupportKey>,
     /// The answer for `key`, held by the drawer itself. The client keeps
     /// one support answer, for whatever agent is in front, and replaces it
     /// whenever that agent's harness or directory changes; read from
     /// there, an open drawer stopped being drawn the moment the agent ran
     /// something, while it still held the keyboard.
     pub(super) support: Option<crate::ui::agent_support::AgentSupport>,
-    /// The agent UZE launched in the tab, which is what "this agent's
-    /// prompts" is matched on. `None` for a harness started by hand, whose
-    /// drawer can only offer the space's.
-    pub(super) agent: Option<String>,
     /// The space's root: the history is kept per space, keyed on it.
     pub(super) space_root: PathBuf,
-    /// The agent's directory as the operator reads it, taken when the
-    /// drawer opened.
+    /// The agent's directory as the operator reads it, or the space's
+    /// root when no agent is in front.
     pub(super) path: String,
-    pub(super) scope: PromptScope,
-    /// Index into the prompts `scope` shows, newest first.
+    /// Index into the space's prompts, newest first.
     pub(super) selected: usize,
     /// `x` asked whether to clear the space's history; a second `x`
     /// answers, anything else withdraws the question.
@@ -80,18 +77,12 @@ pub(super) struct AgentSupportDropdown {
 }
 
 impl AgentSupportDropdown {
-    /// The prompts `scope` shows, newest first.
+    /// The space's prompts, newest first.
     pub(super) fn prompts<'a>(
         &self,
         history: &'a [uze_application::PromptEntry],
     ) -> Vec<&'a uze_application::PromptEntry> {
-        history
-            .iter()
-            .filter(|entry| match self.scope {
-                PromptScope::Space => true,
-                PromptScope::Agent => self.agent.is_some() && entry.agent == self.agent,
-            })
-            .collect()
+        history.iter().collect()
     }
 }
 

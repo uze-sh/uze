@@ -6,8 +6,8 @@ use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 use uze_theme::Token;
 
 use super::{
-    Align, Button, Chip, ChipState, Edge, Field, RowState, Rule, Surface, Toast, ToastKind,
-    action_index, button_row, field, hint::Hints, mark, row, surface::fill, text, toast,
+    Align, Button, ChipState, Edge, Field, RowState, Rule, Surface, Toast, ToastKind, action_index,
+    button_row, field, hint::Hints, mark, row, surface::fill, text, toast,
 };
 use crate::ui::theme;
 
@@ -295,24 +295,6 @@ fn a_status_says_by_weight_and_hue_whether_a_click_answers_it() {
     for style in [report, resting, hovered] {
         assert_eq!(style.bg, None, "no ground of its own");
     }
-}
-
-/// A chip's padding is part of the control — filled, hovered and clicked
-/// like the glyphs are — so the rect it is measured into covers it.
-#[test]
-fn a_chip_is_measured_with_its_padding_and_sits_against_its_right_edge() {
-    let chip = Chip::new("deliver", theme::color(Token::Accent), ChipState::Resting);
-
-    assert_eq!(chip.width(), 9, "seven columns and one of air each side");
-    let rect = chip.rect_ending_at(40, 3);
-    assert_eq!(rect, Rect::new(31, 3, 9, 1));
-
-    let buffer = drawn(40, 4, |frame| chip.render(frame, rect));
-    assert_eq!(
-        buffer[(31, 3)].bg,
-        theme::color(Token::SurfaceRaised),
-        "the padding cell carries the fill, not just the label"
-    );
 }
 
 /// The mark's own width comes from the theme: a set spelling the ellipsis

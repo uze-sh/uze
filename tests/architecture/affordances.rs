@@ -302,10 +302,6 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
-    put(
-        Action::TogglePromptScope,
-        Control("the agent and space chips in the overview's Agent section"),
-    );
     for position in 1..=5u8 {
         put(
             Action::SelectSection(position),

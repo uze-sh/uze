@@ -440,9 +440,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
         bind(Scope::SpaceOverview, "s", Action::SaveChanges),
         bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
-        // The Agent section's prompts: whose are listed, and clearing the
-        // space's, shifted off the `x` that discards edits.
-        bind(Scope::SpaceOverview, "tab", Action::TogglePromptScope),
+        // Clearing the space's prompts, shifted off the `x` that discards
+        // edits.
         bind(Scope::SpaceOverview, "X", Action::ClearPromptHistory),
         // A number steps by one, the way its − and + are clicked.
         bind(Scope::SpaceOverview, "-", Action::PreviousValue),
