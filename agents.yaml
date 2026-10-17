@@ -47,3 +47,4 @@ marketplaces:
       - git
       - tui
       - openspec
+      - code
