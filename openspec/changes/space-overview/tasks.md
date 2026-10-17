@@ -31,14 +31,14 @@
 
 ## 5. Surface (src/ui)
 
-- [x] 5.1 `WorkspaceModel.space_overview` keyed by `SpaceId`; `orchestrator/space_overview.rs` drawn in the pane's rect from `render.rs`'s no-extension arm: header with activity, section bar, cause line, the four sections, drawer, footer; loading, "not a project" and "root gone"
+- [x] 5.1 `WorkspaceModel.space_overview` keyed by `SpaceId`; `orchestrator/space_overview.rs` drawn in the pane's rect from `render.rs`'s no-extension arm: header with activity, section bar, cause line, the five sections (Agent first), drawer, footer; loading, "not a project" and "root gone"
 - [ ] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, save and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
 - [x] 5.3 `land_on_space`/`step_space` open the overview; put away by a tab, an agent row, `+`, another space or Esc; never by `close_extension_left_behind`
 - [x] 5.4 An `overview` tab leading the strip (`WorkspaceHit::OpenOverview`), selected while shown
 - [x] 5.5 Actions: `review_commands_for(project)`; a fact's body through `memory().show` on the read thread
 - [x] 5.6 Settings editing: pending edits, preview on the read thread, problems at their key, diff with Save/Discard, save on the read thread then re-read
 - [x] 5.7 `Scope::SpaceOverview` and `Scope::SpaceOverviewEditing` in `uze-keys`, `Action::OpenSpaceOverview` in `Scope::Workspace`, default bindings
-- [ ] 5.8 `TestBackend` tests: a row click draws the overview and creates no tab; the confirming broadcast keeps it; a double click renames; a tab selection puts it away; Esc returns to the agent; no shell offered in the space's own context; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an invalid edit blocks Save; the diff before save
+- [ ] 5.8 `TestBackend` tests: the space button opens it in every context; the confirming broadcast keeps it; a tab selection puts it away; a space row lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an invalid edit blocks Save; the diff before save
 
 ## 6. Journey
 

@@ -16,6 +16,8 @@ use uze_application::{
 /// The overview's sections, in the order the bar shows them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
+    /// The agent in front: what it was asked, and what reaches it.
+    Agent,
     /// The `workspace:` section of `agents.yaml`, as a form.
     Settings,
     Plugins,
@@ -24,11 +26,19 @@ pub(super) enum Section {
 }
 
 impl Section {
-    // What the project declares first, then what follows from it.
-    pub(super) const ALL: [Self; 4] = [Self::Settings, Self::Plugins, Self::Context, Self::Memory];
+    // The agent in front first, then what the project declares, then what
+    // follows from it.
+    pub(super) const ALL: [Self; 5] = [
+        Self::Agent,
+        Self::Settings,
+        Self::Plugins,
+        Self::Context,
+        Self::Memory,
+    ];
 
     pub(super) fn label(self) -> &'static str {
         match self {
+            Self::Agent => "Agent",
             Self::Context => "Context",
             Self::Plugins => "Plugins",
             Self::Settings => "Settings",
@@ -65,7 +75,7 @@ pub(super) struct SpaceOverviewView {
     settled: bool,
     pub(super) section: Section,
     /// The selected row of each section, by section index.
-    pub(super) rows: [usize; 4],
+    pub(super) rows: [usize; 5],
     /// Whether the drawer stands over the section, where there is no room
     /// for both side by side.
     pub(super) drawer: bool,
@@ -80,6 +90,8 @@ pub(super) struct SpaceOverviewView {
     /// A fact's body, read for the drawer, by name.
     pub(super) fact: Option<(String, Option<std::result::Result<String, String>>)>,
     pub(super) edit: WorkspaceEdit,
+    /// The agent in front when the overview opened, and its prompts' state.
+    pub(super) agent: Option<AgentSupportDropdown>,
 }
 
 /// The `workspace:` edits not yet saved, and where saving them stands.
@@ -214,6 +226,8 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::NextValue
             | Action::PreviousValue
             | Action::SaveFile
+            | Action::TogglePromptScope
+            | Action::ClearPromptHistory
             | Action::EraseBack
             | Action::EraseForward
             | Action::CaretLeft
@@ -347,8 +361,8 @@ impl SpaceOverviewView {
             root,
             behind,
             settled,
-            section: Section::Settings,
-            rows: [0; 4],
+            section: Section::Agent,
+            rows: [0; 5],
             drawer: false,
             asked: 0,
             pending: false,
@@ -356,6 +370,7 @@ impl SpaceOverviewView {
             answer: None,
             fact: None,
             edit: WorkspaceEdit::default(),
+            agent: None,
         }
     }
 
@@ -420,6 +435,8 @@ impl SpaceOverviewView {
             Section::Plugins => project.plugins.plugins.len(),
             Section::Settings => self.workspace_rows().len(),
             Section::Memory => project.memory.project.len(),
+            // Its prompts are counted where they are held, by the session.
+            Section::Agent => 0,
         }
     }
 
@@ -860,6 +877,7 @@ impl WorkspaceModel {
                     Health::Fine
                 }
             }
+            Section::Agent => Health::Fine,
             Section::Memory => {
                 if project.memory.unreadable.is_empty() {
                     Health::Fine
@@ -872,18 +890,45 @@ impl WorkspaceModel {
 }
 
 impl Attach<'_> {
-    /// Lands on `space` and shows its overview: the shell it owns stays
-    /// behind it, so the strip shows the space's own tabs.
-    pub(super) fn show_space_overview(&mut self, space: SpaceId, columns: u16, rows: u16) {
-        let behind = self.model.session.as_ref().and_then(|session| {
-            let space = session.space(space)?;
-            Some(space_own_tab(space, &self.identities).unwrap_or(space.selected_tab))
-        });
-        self.land_on_space(space, columns, rows);
-        if let Some(behind) = behind {
-            self.model.open_space_overview(space, behind, false);
-            self.schedule_space_overview();
+    /// The space button: the overview of the space in front, over the tab
+    /// in front, or put away when it is already up.
+    pub(super) fn toggle_space_overview(&mut self) {
+        if self.model.space_overview.is_some() {
+            self.model.put_away_space_overview();
+            return;
         }
+        let Some((space, behind)) = self.model.session.as_ref().map(|session| {
+            let space = session.selected_space();
+            (space.id, space.selected_tab)
+        }) else {
+            return;
+        };
+        self.model.open_space_overview(space, behind, true);
+        // The agent in front is the overview's first section. Opening
+        // re-reads what reaches it and what it was asked: `AGENTS.md` and
+        // `.agents/` change under an open workspace, and this is the moment
+        // somebody is looking.
+        let agent = selected_agent_drawer(&self.model, &self.identities);
+        if let Some(agent) = &agent {
+            self.model.remembered.agent_support_pending = Some(agent.key.clone());
+            spawn_support_refresh(
+                self.home,
+                agent.key.clone(),
+                self.channels.support.sender.clone(),
+            );
+            spawn_prompt_history(
+                self.home,
+                agent.space_root.clone(),
+                self.channels.prompts.sender.clone(),
+            );
+        }
+        if let Some(overview) = self.model.space_overview.as_mut() {
+            if agent.is_none() {
+                overview.section = Section::Settings;
+            }
+            overview.agent = agent;
+        }
+        self.schedule_space_overview();
     }
 
     /// Reads the overview open now, unless its answer is awaited already.
@@ -906,29 +951,6 @@ impl Attach<'_> {
         );
     }
 
-    /// The space's own context is its overview: whenever no agent is in
-    /// front and no surface stands in the pane, the overview does, over
-    /// the shell the server keeps for the space.
-    fn keep_space_overview_in_front(&mut self) {
-        let surface_up = self.model.code.is_some()
-            || self.model.spec.is_some()
-            || self.model.architect.is_some();
-        if self.model.space_overview.is_some()
-            || surface_up
-            || context_agent(&self.model, &self.identities).is_some()
-        {
-            return;
-        }
-        let Some((space, behind)) = self.model.session.as_ref().map(|session| {
-            let space = session.selected_space();
-            (space.id, space.selected_tab)
-        }) else {
-            return;
-        };
-        self.model.open_space_overview(space, behind, true);
-        self.schedule_space_overview();
-    }
-
     /// Reads it again, drawing the last answer until the new one lands.
     pub(super) fn refresh_space_overview(&mut self) {
         if let Some(overview) = self.model.space_overview.as_mut() {
@@ -940,7 +962,6 @@ impl Attach<'_> {
     /// Takes in whatever the overview's reads answered, and asks what it
     /// now needs.
     pub(super) fn absorb_space_overview_answers(&mut self) {
-        self.keep_space_overview_in_front();
         while let Ok(resolution) = self.channels.space_overviews.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_space_overview(resolution);
         }
@@ -1060,16 +1081,23 @@ impl Attach<'_> {
             }
             return;
         }
+        if overview.section == Section::Agent
+            && matches!(
+                action,
+                Action::SelectNext
+                    | Action::SelectPrevious
+                    | Action::Activate
+                    | Action::TogglePromptScope
+                    | Action::ClearPromptHistory
+            )
+        {
+            self.drawer_action(action);
+            return;
+        }
         match action {
             Action::Dismiss if overview.drawer => overview.drawer = false,
             Action::Dismiss if overview.fact.is_some() => overview.fact = None,
-            // Only over an agent is there somewhere to go back to: in the
-            // space's own context the overview is the screen.
-            Action::Dismiss => {
-                if context_agent(&self.model, &self.identities).is_some() {
-                    self.model.put_away_space_overview();
-                }
-            }
+            Action::Dismiss => self.model.put_away_space_overview(),
             Action::SelectSection(position) => {
                 if let Some(section) = Section::ALL.get(usize::from(position).saturating_sub(1)) {
                     overview.switch(*section);
@@ -1138,6 +1166,8 @@ impl Attach<'_> {
                 );
             }
             Section::Context | Section::Plugins => overview.drawer = true,
+            // Its keys are the prompts', answered before this.
+            Section::Agent => {}
         }
         let _ = viewport;
     }

@@ -94,9 +94,10 @@ What the code holds today (2026-10-17):
 - **Header.** The space's name and root; activity on the right
   ("● 2 running · 1 ready · 3 preserved"), shortened to numbers when
   narrow.
-- **Section bar.** One tab per section, in a fixed order: `1 Settings`,
-  `2 Plugins`, `3 Context`, `4 Memory`: what the project declares first,
-  then what follows from it. The overview opens on Settings.
+- **Section bar.** One tab per section, in a fixed order: `1 Agent`,
+  `2 Settings`, `3 Plugins`, `4 Context`, `5 Memory`: the agent in front,
+  then what the project declares, then what follows from it. The overview
+  opens on Agent when an agent is in front, on Settings otherwise.
   - A tab carries a glyph only when its section warns, fails or is
     loading. Its state is the worst among the section's parts.
   - Without room, inactive tabs shrink to number and glyph.
@@ -119,41 +120,26 @@ What the code holds today (2026-10-17):
   nothing is assembled at the call site. New widgets the Workspace
   section needs (D6) are added there.
 
-### D3. Keyed by space, put away only by an explicit choice
+### D3. Opened by the space button, put away by any other choice
 
-- **Opening.** `land_on_space` and `step_space` open the overview for that
-  space. They still put the space's own shell in front when it has one, so
-  the strip shows the space's shells behind the overview, but a click no
-  longer creates one for an agent-only space. It opens at once, before the
-  server confirms the selection.
-- **Lifetime.**
-  - The overview belongs to a `SpaceId`, never to the tab in front.
-    `close_extension_left_behind` does not touch it: tying it to the tab
-    in front would close it on the very broadcast that confirms the space.
-  - It records the tab it stands in front of. Once the server has that
-    tab in front, any other selection puts it away, whatever caused it:
-    a tab or agent chosen, `+`, an agent placed, another space. A click
-    on the tab behind it puts it away too, since that changes nothing on
-    the server. Esc at the top of the screen returns to that tab.
-  - Pending workspace edits are dropped when it is put away; the footer
-    says they are unsaved while they exist.
-- **The tab strip.** In the space's own context (its shells, not an
-  agent's), an `overview` tab leads the strip, flush left and
-  set off from the space's tabs by the strip's "/" separator, the way the
-  agent in front is set off from its shells. It is selected while the
-  overview is shown, and the tab behind it is drawn unselected; pressing
-  it reopens the overview (`WorkspaceHit::OpenOverview`). It is the
-  space's own, so it is not among spec, arch and code, which are about a
-  checkout and switched off with their extension.
-- **No shells in the space's own context.** The strip there shows the
-  overview tab alone, with no shell tabs and no `+`, and the overview is
-  kept in front whenever no agent and no surface is: the shell the server
-  keeps for the space stands behind it. `ctrl+t` and the tab chords do
-  nothing there; Esc puts the overview away only over an agent. Shells
-  stay an agent's, opened beside it.
+- **Opening.** A `space` button at the strip's right end, a group of its
+  own apart from spec, arch and code, drawn in every context of the space,
+  toggles the overview over the tab in front (`WorkspaceHit::OpenOverview`,
+  `Action::OpenSpaceOverview`). It stands where the agent drawer's mark
+  stood. Selecting a space's row keeps landing on its shells.
+- **Lifetime.** The overview records the tab it stands in front of. Any
+  other selection the server reports puts it away, whatever caused it; so
+  do a tab or agent click (the one behind it included), opening a surface,
+  the button again and Esc.
+- **The Agent section.** The agent drawer's state (`AgentSupportDropdown`:
+  support, scope, selection) moves into the overview, built when it opens
+  and read again then. Its prompts are drawn with the drawer's own
+  `record_lines`, its facts with `capability_lines`; the scope switch is a
+  pair of `Chip`s. Enter copies a prompt; `tab` switches whose prompts;
+  shift+x asks to clear the space's history. The floating drawer, its
+  scope and its text selection are removed.
 - **A space that is not a project.** When the root is gone, or no project
-  lies in or above it, the screen says which and offers only "Open
-  shell". No section bar is drawn.
+  lies in or above it, the screen says which. No section bar is drawn.
 
 ### D4. One read model, composed in the application
 
@@ -287,7 +273,7 @@ What the code holds today (2026-10-17):
   pushed where the code, architect and spec scopes are, before
   `Scope::Surfaces`.
 - **Chords:**
-  - `1`-`4` (`Action::SelectSection`) and ←→ switch section; ↑↓ move
+  - `1`-`5` (`Action::SelectSection`) and ←→ switch section; ↑↓ move
     within it. `SelectTab`'s chords stay the strip's over the overview,
     so `alt+n` still chooses a tab and puts the overview away;
   - Enter opens the drawer or edits; Esc closes the innermost thing open
@@ -302,8 +288,8 @@ What the code holds today (2026-10-17):
 ## Risks / Trade-offs
 
 - **[Operators used to landing on the shell.]**
-  - A shell is an agent's, opened beside it; the space's own context is
-    its overview.
+  - The space button opens the overview from anywhere in the space;
+    the row keeps leading to the shells.
   - The release notes say it.
 - **[Status cost on a drifted project.]** A drifted project re-runs vendor
   CLIs on every status read. The overview reads it on open, on refresh, on

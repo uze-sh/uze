@@ -684,7 +684,6 @@ pub(crate) fn attach_workspace(
                 attach.model.code_tree_scroll = rendered.navigator_scroll;
                 attach.model.code_scrollbars = rendered;
             }
-            attach.model.drawer_text = metrics.drawer.unwrap_or_default();
             if let Some(frame) = metrics.recent {
                 attach.model.recent.scroll = frame.scroll;
                 attach.model.recent.bar = frame.bar;
@@ -910,14 +909,10 @@ pub(super) enum WorkspaceHit {
     OverviewReview,
     /// Saving or dropping the overview's workspace edits; `true` saves.
     OverviewSave(bool),
-    /// Opens contextual support details for the selected agent tab.
-    OpenAgentSupport(Rect),
-    /// A prompt listed in the agent drawer, by position in its list.
+    /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
-    /// Whose prompts the agent drawer lists.
+    /// Whose prompts the overview's Agent section lists.
     DrawerScope(PromptScope),
-    /// The rest of the drawer, so a click inside it does not close it.
-    DrawerBody,
     /// The task mark on a sidebar agent row — opens the catalog of what
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
@@ -1790,11 +1785,9 @@ struct WorkspaceModel {
     /// Open state of the "+ new agent" popup; `None` when closed. Same
     /// "click outside discards" rule as `renaming`.
     agent_picker: Option<AgentPicker>,
-    /// Contextual support information for the active harness tab.
-    support_dropdown: Option<AgentSupportDropdown>,
     /// The open status catalog and the glyph it hangs off — the legend for
     /// the two status columns a sidebar agent row carries. Informational
-    /// and anchored, like `support_dropdown`: any click or key dismisses
+    /// and anchored, like the agent picker: any click or key dismisses
     /// it. Just the anchor, since the catalog itself is generated from the
     /// same tables the sidebar draws with and holds no state of its own.
     status_catalog: Option<Rect>,
@@ -1865,9 +1858,6 @@ struct WorkspaceModel {
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
     code_scrollbars: extension_view::Rendered,
-    /// The text the agent drawer drew last frame, for a drag over it to
-    /// resolve against, and for its release to copy out of.
-    drawer_text: crate::ui::agent_support::DrawerText,
     /// Where the pointer asked for the code surface's row menu, which is
     /// where it opens. `None` when the keyboard asked, and the menu opens
     /// under its row instead.
@@ -2277,7 +2267,6 @@ impl WorkspaceModel {
         self.renaming.is_none()
             && self.root_picker.is_none()
             && self.agent_picker.is_none()
-            && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
             && !self.recent.has_keys()
             && self.context_menu.is_none()

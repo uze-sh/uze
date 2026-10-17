@@ -273,7 +273,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // --- The space overview ----------------------------------------------
     put(
         Action::OpenSpaceOverview,
-        Control("a space's row in the sidebar, and the overview tab leading the strip"),
+        Control("the space button at the strip's right end"),
     );
     put(
         Action::AddItem,
@@ -302,7 +302,11 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
-    for position in 1..=4u8 {
+    put(
+        Action::TogglePromptScope,
+        Control("the agent and space chips in the overview's Agent section"),
+    );
+    for position in 1..=5u8 {
         put(
             Action::SelectSection(position),
             Control("clicking the section in the overview's bar"),

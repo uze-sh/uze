@@ -440,6 +440,10 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
         bind(Scope::SpaceOverview, "s", Action::SaveChanges),
         bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
+        // The Agent section's prompts: whose are listed, and clearing the
+        // space's, shifted off the `x` that discards edits.
+        bind(Scope::SpaceOverview, "tab", Action::TogglePromptScope),
+        bind(Scope::SpaceOverview, "X", Action::ClearPromptHistory),
         // A number steps by one, the way its − and + are clicked.
         bind(Scope::SpaceOverview, "-", Action::PreviousValue),
         bind(Scope::SpaceOverview, "+", Action::NextValue),
@@ -484,15 +488,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
         bind(Scope::AgentPicker, "esc", Action::Dismiss),
-        bind(Scope::AgentDrawer, "down", Action::SelectNext),
-        bind(Scope::AgentDrawer, "up", Action::SelectPrevious),
-        bind(Scope::AgentDrawer, "enter", Action::Activate),
-        bind(Scope::AgentDrawer, "esc", Action::Dismiss),
-        // Whose prompts: this agent's or the whole space's. Two choices
-        // side by side, walked the way the root picker's chips are.
-        bind(Scope::AgentDrawer, "right", Action::FocusNext),
-        bind(Scope::AgentDrawer, "left", Action::FocusPrevious),
-        bind(Scope::AgentDrawer, "x", Action::ClearPromptHistory),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),
@@ -526,7 +521,7 @@ fn default_bindings() -> Vec<Binding> {
             &format!("alt+{index}"),
             Action::SelectTab(index),
         ));
-        if index <= 4 {
+        if index <= 5 {
             bindings.push(bind(
                 Scope::SpaceOverview,
                 &index.to_string(),
@@ -708,8 +703,8 @@ mod tests {
             vec![
                 "profiles.delete-profile=d",
                 "code.delete-file=d",
+                "space-overview.clear-prompt-history=shift+x",
                 "preserved-work.discard-task=d",
-                "agent-drawer.clear-prompt-history=x",
             ]
         );
     }

@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::ui::widget::{
-    Button, RowState, Scrollbar, drawer,
+    Button, Chip, RowState, Scrollbar, drawer,
     hint::Hints,
     row,
     tabs::{self, Tab},
@@ -200,7 +200,7 @@ pub(super) fn render_space_overview(
                 Rect::default(),
             )
         };
-        render_drawer(frame, inner, overview, project);
+        render_drawer(frame, inner, model, overview, project);
     }
     render_foot(
         frame,
@@ -271,6 +271,22 @@ fn render_header(
 fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, Token) {
     let report = &project.status.report;
     match overview.section {
+        Section::Agent => match overview.agent.as_ref() {
+            Some(agent) => {
+                let whose = match agent.scope {
+                    crate::ui::agent_support::PromptScope::Agent => "asked of this agent",
+                    crate::ui::agent_support::PromptScope::Space => "asked in this space",
+                };
+                (
+                    format!("prompts {whose}, newest first"),
+                    Token::TextSecondary,
+                )
+            }
+            None => (
+                "no agent in front: open the space from an agent's tab to read it here".to_owned(),
+                Token::TextMuted,
+            ),
+        },
         Section::Context => {
             let troubled: Vec<&str> = report
                 .harnesses
@@ -316,7 +332,9 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
             if missing > 0 {
                 causes.push(format!("{missing} missing"));
             }
-            if causes.is_empty() {
+            if causes.is_empty() && plugins.plugins.is_empty() {
+                ("no plugins declared".to_owned(), Token::TextSecondary)
+            } else if causes.is_empty() {
                 (
                     plural(plugins.plugins.len(), "plugin"),
                     Token::TextSecondary,
@@ -387,6 +405,7 @@ fn render_section(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> Vec<(Rect, usize)> {
     let lines = match overview.section {
+        Section::Agent => return render_agent(frame, area, model, overview, hits),
         Section::Context => context_lines(project),
         Section::Plugins => plugin_lines(project),
         Section::Settings => {
@@ -535,7 +554,7 @@ fn freshness_word(state: &FreshnessState) -> (String, Token) {
 fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     let plugins = &project.plugins;
     if plugins.plugins.is_empty() && plugins.lock_problem.is_none() {
-        return vec![said("no plugins declared", Token::TextMuted)];
+        return Vec::new();
     }
     let mut lines = vec![heading(&[
         ("plugin", 24),
@@ -892,7 +911,7 @@ fn render_workspace(
         if !lines.is_empty() {
             lines.push(blank());
         }
-        lines.push(said(text::small_caps(group), Token::TextDim));
+        lines.push(said(group, Token::TextDim));
         for (position, key) in keys.iter().copied().enumerate() {
             // A line of air between keys: a form read down a column, not a
             // table read across it.
@@ -1074,7 +1093,7 @@ fn render_workspace(
     // What an agent is asked at each moment: prose, so each is a box of
     // as many lines as the instruction runs to.
     lines.push(blank());
-    lines.push(said(text::small_caps("agent actions"), Token::TextDim));
+    lines.push(said("agent actions", Token::TextDim));
     for (position, state) in ActionState::ALL.into_iter().enumerate() {
         if position > 0 {
             lines.push(blank());
@@ -1391,6 +1410,149 @@ fn picker_lines(
     }
 }
 
+/// The Agent section: whose prompts are listed, and the prompts the agent
+/// — or its space — was given, one row each, newest first, under the age
+/// they fall in. What reaches the agent is the drawer's.
+fn render_agent(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    overview: &SpaceOverviewView,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> Vec<(Rect, usize)> {
+    use crate::ui::agent_support::PromptScope;
+    let Some(agent) = &overview.agent else {
+        return Vec::new();
+    };
+    let list = area;
+    let Some(history) = model
+        .remembered
+        .drawer_prompts
+        .as_ref()
+        .filter(|history| history.root == agent.space_root)
+    else {
+        return draw_lines(
+            frame,
+            list,
+            &[said("reading prompts…", Token::TextMuted)],
+            None,
+        );
+    };
+    let prompts = agent.prompts(&history.entries);
+    if prompts.is_empty() {
+        let whose = match agent.scope {
+            PromptScope::Agent => "this agent has been asked nothing yet",
+            PromptScope::Space => "nothing has been asked in this space yet",
+        };
+        return draw_lines(frame, list, &[said(whose, Token::TextMuted)], None);
+    }
+    let live: std::collections::HashMap<&str, &str> = model
+        .tabs()
+        .filter_map(|tab| super::launched_agent_id(tab).map(|id| (id, tab.label.as_str())))
+        .collect();
+    let clock = uze_application::PromptClock::now();
+    let mut header = heading(&[
+        ("harness", PROMPT_HARNESS),
+        ("when", PROMPT_WHEN),
+        ("where", PROMPT_WHERE),
+    ]);
+    header
+        .spans
+        .push(Span::styled("prompt", theme::fg(Token::TextDim)));
+    let mut lines = vec![header];
+    let mut age = None;
+    for (index, entry) in prompts.iter().enumerate() {
+        // A heading where the age changes: the recent ones open the list
+        // and need none.
+        let this_age = entry.age(&clock);
+        if age != Some(this_age) {
+            if let Some(label) = this_age.label() {
+                lines.push(blank());
+                lines.push(said(label.to_lowercase(), Token::TextDim));
+            }
+            age = Some(this_age);
+        }
+        let tab = entry
+            .agent
+            .as_deref()
+            .and_then(|id| live.get(id).copied())
+            .unwrap_or(&entry.tab_label);
+        let place = format!("{}/{tab}", entry.space_label);
+        let when = entry.compact_age(&clock);
+        lines.push(SectionLine {
+            spans: vec![
+                cell(&entry.agent_binary, PROMPT_HARNESS, Token::TextSecondary),
+                Span::styled(
+                    format!("{when:>width$}  ", width = usize::from(PROMPT_WHEN) - 2),
+                    theme::fg(Token::TextMuted),
+                ),
+                cell(&place, PROMPT_WHERE, Token::TextMuted),
+                Span::styled(entry.preview.clone(), theme::fg(Token::TextPrimary)),
+            ],
+            row: Some(index),
+        });
+    }
+    if agent.clearing {
+        let scopes = [
+            uze_keys::Scope::Global,
+            uze_keys::Scope::Workspace,
+            uze_keys::Scope::SpaceOverview,
+        ];
+        let question = Hints::new(&scopes)
+            .named(Action::ClearPromptHistory, "clear the space's prompts")
+            .tone(Token::StateWarning);
+        question.render(
+            frame,
+            Rect::new(list.x, list.bottom().saturating_sub(1), list.width, 1),
+        );
+    }
+    let rows = draw_lines(
+        frame,
+        Rect {
+            height: list.height.saturating_sub(u16::from(agent.clearing)),
+            ..list
+        },
+        &lines,
+        Some(agent.selected),
+    );
+    for (rect, index) in &rows {
+        hits.push((*rect, WorkspaceHit::DrawerPrompt(*index)));
+    }
+    // Whose prompts: two chips at the right end of the table's header,
+    // the one shown pressed, as a header's controls stand.
+    let mut right = list.right();
+    for (scope, word) in [(PromptScope::Space, "space"), (PromptScope::Agent, "agent")] {
+        let offered = scope == PromptScope::Space || agent.agent.is_some();
+        let state = if agent.scope == scope {
+            ChipState::Pressed
+        } else if model.hovered == Some(WorkspaceHit::DrawerScope(scope)) && offered {
+            ChipState::Hovered
+        } else {
+            ChipState::Resting
+        };
+        let hue = if offered {
+            Token::TextSecondary
+        } else {
+            Token::TextFaint
+        };
+        let chip = Chip::new(word, theme::color(hue), state);
+        let rect = chip.rect_ending_at(right, list.y);
+        chip.render(frame, rect);
+        if offered {
+            hits.push((rect, WorkspaceHit::DrawerScope(scope)));
+        }
+        right = rect.x.saturating_sub(1);
+    }
+
+    // The prompts answer clicks through their own hits.
+    Vec::new()
+}
+
+/// The prompts table's columns: who answered, how long ago, where.
+const PROMPT_HARNESS: u16 = 12;
+const PROMPT_WHEN: u16 = 7;
+const PROMPT_WHERE: u16 = 24;
+
 /// A section's closing word: what stands, why, and the buttons that act
 /// on it, each lit when it is the one Enter takes.
 fn render_answer(
@@ -1437,6 +1599,7 @@ fn render_answer(
 fn render_drawer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
+    model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
 ) {
@@ -1467,6 +1630,54 @@ fn render_drawer(
     let report = &project.status.report;
     let row = overview.row();
     match overview.section {
+        // The agent the prompts were asked of: what it runs on, what of
+        // the project reaches it, and the prompt the keys are on, whole.
+        Section::Agent => {
+            let Some(agent) = &overview.agent else {
+                return;
+            };
+            let name = agent
+                .support
+                .as_ref()
+                .map_or("the agent in front", |support| support.display_name());
+            head("harness", name, &mut lines);
+            lines.push(pair("path", agent.path.clone(), Token::TextSecondary));
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                "what reaches it",
+                theme::fg(Token::TextDim),
+            )));
+            match &agent.support {
+                Some(support) => {
+                    lines.extend(crate::ui::agent_support::capability_lines(support, width));
+                }
+                None => lines.push(Line::from(Span::styled(
+                    "reading…",
+                    theme::fg(Token::TextMuted),
+                ))),
+            }
+            let chosen = model
+                .remembered
+                .drawer_prompts
+                .as_ref()
+                .filter(|history| history.root == agent.space_root)
+                .and_then(|history| agent.prompts(&history.entries).get(agent.selected).copied());
+            if let Some(entry) = chosen {
+                lines.push(Line::default());
+                lines.push(Line::from(Span::styled(
+                    "prompt",
+                    theme::fg(Token::TextDim),
+                )));
+                lines.push(pair(
+                    "asked",
+                    entry.compact_age(&uze_application::PromptClock::now()),
+                    Token::TextSecondary,
+                ));
+                lines.push(pair("in", entry.tab_label.clone(), Token::TextSecondary));
+                lines.push(Line::default());
+                paragraph(&entry.preview, Token::TextPrimary, &mut lines);
+            }
+        }
         Section::Context if row == 0 => {
             head("context file", "AGENTS.md", &mut lines);
             lines.push(pair(
@@ -1727,6 +1938,11 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
     }
     let mut keys = vec![(Action::SelectNext, "move")];
     match overview.section {
+        Section::Agent => keys.extend([
+            (Action::Activate, "copy"),
+            (Action::TogglePromptScope, "agent/space"),
+            (Action::ClearPromptHistory, "clear"),
+        ]),
         Section::Settings if overview.editable() => {
             keys.extend([
                 (Action::Activate, "edit"),

@@ -7,55 +7,35 @@ project's workspace.
 
 ## ADDED Requirements
 
-### Requirement: Selecting a space shows its overview
-Selecting a space's row in the sidebar, by pointer or keyboard, SHALL show
-that space's overview where the pane is drawn, with the sidebar live and the
-tab strip showing the space's own tabs: its own shell stands behind the
-overview when it has one. It SHALL NOT create a shell. The overview SHALL
-belong to that space until put away, whatever the server reports about tabs
-meanwhile.
+### Requirement: The space button opens the overview
+A `space` button at the right end of the tab strip, apart from the
+surfaces' buttons, SHALL be drawn in every context of the space, an agent's
+or the space's own, and SHALL show the space's overview where the pane is,
+over the tab in front, or put it away when it is shown. A chord SHALL do the
+same. Selecting a space's row SHALL keep landing on the space's own shell,
+creating one for a space of agents alone.
 
-#### Scenario: Clicking a space row
+#### Scenario: From an agent's tab
+- **WHEN** an agent's tab is in front and the operator clicks the space button
+- **THEN** the space's overview is drawn where the pane was, and the strip keeps the agent's tabs
+
+#### Scenario: A space row
 - **WHEN** the operator clicks a space's row
-- **THEN** the space's overview is drawn where the pane was, and no tab was created
-
-#### Scenario: The server confirms the space
-- **WHEN** the overview opened and the server then confirms the space selection or a tab in it changes
-- **THEN** the overview stays shown
-
-#### Scenario: A double click renames
-- **WHEN** the operator double-clicks a space's row
-- **THEN** the overview is shown and the rename starts, and the overview is not put away by it
+- **THEN** the space's own shell is in front, and no overview is shown
 
 ### Requirement: The overview is put away only by choosing something else
 The overview SHALL be put away when the operator selects a tab or an agent,
-selects another space (whose overview then shows), or presses Esc with
-nothing open inside it over an agent, which returns to that agent. An
-`overview` tab leading the space's own tabs in the strip (never an agent's),
-selected while the overview is shown,
-and a chord SHALL bring the current space's overview back.
+another space, or presses the space button or Esc with nothing open inside
+it; and when the selection the server reports moves off the tab it stands
+in front of, however that came about.
 
 #### Scenario: Back to a tab
 - **WHEN** the overview is shown and the operator selects one of the space's tabs
 - **THEN** the overview is put away and that tab's pane is drawn
 
-#### Scenario: Reopening from the keyboard
-- **WHEN** a pane of a space is in front and the operator presses the overview chord
-- **THEN** that space's overview is shown and the strip's `overview` tab is selected
-
-### Requirement: The space's own context is its overview
-In the space's own context, where no agent is in front, the tab strip SHALL
-show the `overview` tab alone, the overview SHALL stand where the pane is,
-and no shell SHALL be offered there: no shell tabs, no tab to add, no chord
-that opens one. An agent's context SHALL keep its own tabs.
-
-#### Scenario: Back to the space from an agent
-- **WHEN** the operator leaves an agent for the space's row
-- **THEN** the strip shows only the overview tab and the overview is drawn
-
-#### Scenario: A new tab in the space's context
-- **WHEN** the operator presses the new-tab chord with the space's own context in front
-- **THEN** no tab is created
+#### Scenario: A confirming broadcast
+- **WHEN** the overview is shown and the server reports the same tab in front
+- **THEN** the overview stays shown
 
 ### Requirement: The overview is a screen, never a tab
 The overview SHALL be drawn by the client and SHALL own no process. It
@@ -67,8 +47,8 @@ as before.
 - **WHEN** the terminal runtime restores a workspace
 - **THEN** each space comes back with its tabs as they were, and no tab stands for an overview
 
-### Requirement: The overview has four sections, each with its state
-The overview SHALL show four sections, Settings, Plugins, Context and
+### Requirement: The overview has five sections, each with its state
+The overview SHALL show five sections, Agent, Settings, Plugins, Context and
 Memory, in that order, one at a time, chosen from a section bar. Each tab
 SHALL carry the worst state among its section's parts, and each section's
 first line SHALL name the cause of that state. A drawer SHALL show the
@@ -81,6 +61,17 @@ selected row of a section in full.
 #### Scenario: Opening a row
 - **WHEN** the operator selects a plugin in the Plugins section
 - **THEN** the drawer shows that plugin's installation, commit, freshness and its place in the lock
+
+### Requirement: The Agent section reads the agent in front
+The Agent section SHALL list the prompts the agent in front was given,
+newest first, or its whole space's, as the operator chooses, and SHALL say
+what reaches that agent here: the project's instructions and `.agents`, and
+what its harness supports. Activating a prompt SHALL copy it whole. With no
+agent in front it SHALL say so. It replaces the agent drawer.
+
+#### Scenario: Copying a prompt
+- **WHEN** the operator moves onto a prompt in the Agent section and activates it
+- **THEN** the whole prompt is on the clipboard, however it was folded on screen
 
 ### Requirement: The overview reports readiness from the status read model
 The overview SHALL report the project's state from the read model `uze

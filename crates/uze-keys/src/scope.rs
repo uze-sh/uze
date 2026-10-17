@@ -177,9 +177,6 @@ scopes! {
     Rename => "rename", "While renaming", Workspace, seals: true, text: true;
     /// The harness picker a new agent is born from.
     AgentPicker => "agent-picker", "Choosing an agent", Workspace, seals: true, text: false;
-    /// The drawer about the agent in front: what it runs on, and what it
-    /// was asked.
-    AgentDrawer => "agent-drawer", "The agent drawer", Workspace, seals: true, text: false;
     /// The sidebar's recent mode: the agents no pane carries. Named for
     /// the surface it was when released, since keys.json binds by name.
     Recent => "preserved-work", "Recent", Workspace, seals: true, text: false;

@@ -41,7 +41,6 @@ impl Attach<'_> {
             || model.root_picker.is_some()
             || model.agent_picker.is_some()
             || model.context_menu.is_some()
-            || model.support_dropdown.is_some()
             || model.commit_detail_open()
             || model.status_catalog.is_some();
         if !model.recent.open || drawn_over {

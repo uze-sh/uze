@@ -29,9 +29,7 @@ impl Attach<'_> {
             scopes.push(Scope::Confirm);
             return scopes;
         }
-        let surface = if self.model.support_dropdown.is_some() {
-            Scope::AgentDrawer
-        } else if self.model.root_picker.is_some() {
+        let surface = if self.model.root_picker.is_some() {
             Scope::RootPicker
         } else if self.model.renaming.is_some() {
             Scope::Rename
@@ -148,9 +146,6 @@ impl Attach<'_> {
             // the pane behind it, and not an answer.
         } else if self.model.action_index.is_some() {
             self.model.action_index = None;
-            self.model.dirty = true;
-        } else if self.model.support_dropdown.is_some() {
-            self.model.support_dropdown = None;
             self.model.dirty = true;
         } else if self.model.agent_picker.is_some() {
             self.model.agent_picker = None;
@@ -299,10 +294,6 @@ impl Attach<'_> {
             self.interrupt_action(action);
             return Flow::Continue;
         }
-        if self.model.support_dropdown.is_some() {
-            self.drawer_action(action);
-            return Flow::Continue;
-        }
         if self.model.root_picker.is_some() {
             self.root_picker_action(action, viewport);
             return Flow::Continue;
@@ -326,14 +317,7 @@ impl Attach<'_> {
         // The overview's door stands over the surfaces too, as theirs do
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
-            if let Some(space) = self
-                .model
-                .session
-                .as_ref()
-                .map(|session| session.selected_space().id)
-            {
-                self.show_space_overview(space, columns, rows);
-            }
+            self.toggle_space_overview();
             return Flow::Continue;
         }
         if self.model.architect.is_some() {
@@ -353,9 +337,6 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         match action {
-            // A shell opens beside an agent; the space's own context is
-            // its overview, with no tabs of its own to add to.
-            Action::NewShellTab if context_agent(&self.model, &self.identities).is_none() => {}
             Action::NewShellTab => {
                 self.model.put_away_space_overview();
                 let _ = send_request(
@@ -397,8 +378,6 @@ impl Attach<'_> {
             Action::PreviousSpace => self.step_space(-1, columns, rows),
             Action::NextAgent => self.step_agent(1, columns, rows),
             Action::PreviousAgent => self.step_agent(-1, columns, rows),
-            // The space's own context has no tabs on the strip to count.
-            Action::SelectTab(_) if context_agent(&self.model, &self.identities).is_none() => {}
             Action::SelectTab(position) => {
                 let index = usize::from(position).saturating_sub(1);
                 // Counted along the strip, which is what the number on
@@ -498,7 +477,7 @@ impl Attach<'_> {
         }) else {
             return;
         };
-        self.show_space_overview(target, columns, rows);
+        self.land_on_space(target, columns, rows);
     }
 
     /// Walks the agents of the selected space, in the order the sidebar
