@@ -24,7 +24,7 @@ briefing, which is removed with the agent's conversations.
 - **WHEN** an agent has been worked in by two different harnesses
 - **THEN** each harness's conversation is recorded separately and neither is offered to the other
 
-#### Scenario: The record holds only the briefing's text
+#### Scenario: The record holds no conversation text
 - **WHEN** an agent has been switched between harnesses
 - **THEN** its continuity record names its conversations and holds the current briefing's text, and nothing else of any conversation
 

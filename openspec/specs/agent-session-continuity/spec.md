@@ -10,13 +10,12 @@ starting a stranger in the same checkout.
 ## Requirements
 
 ### Requirement: A managed agent's conversation is recorded against its task
-The system SHALL record, for every agent it launches, in the space's root or
-in a checkout of its own, the identifier of the conversation its harness
-started and the harness it belongs to. The record SHALL live in UZE's own
-state beside the agent's record, never inside any checkout, keyed by the
-agent's identity so it survives the checkout being reset, moved or removed
-and the agent being isolated. The system SHALL NOT record any harness
-credential or conversation content.
+The system SHALL record, for every agent it launches, in the space's root
+or in a checkout of its own, the conversation its harness started and the
+harness it belongs to. The record SHALL live in UZE's state beside the
+agent's, never in a checkout, keyed by the agent's identity. It SHALL hold
+no harness credential and no conversation content; a switch's briefing is
+the only place UZE writes conversation text.
 
 #### Scenario: A new agent's conversation is recorded
 - **WHEN** an agent is launched for the first time
@@ -33,6 +32,10 @@ credential or conversation content.
 #### Scenario: A task carries one conversation per harness
 - **WHEN** an agent has been worked in by two different harnesses
 - **THEN** each harness's conversation is recorded separately and neither is offered to the other
+
+#### Scenario: The record holds no conversation text
+- **WHEN** an agent has been switched between harnesses
+- **THEN** its continuity record names conversations and a pending briefing's location, and holds none of their text
 
 ### Requirement: A conversation is keyed by identity, and the record follows the agent
 The system SHALL key a conversation by the identifier its harness resumes
@@ -194,3 +197,18 @@ returns.
 #### Scenario: More conversations than one listing returns
 - **WHEN** an agent is relaunched into a task whose recorded conversation exists in the harness but falls outside the first page of the harness's own listing
 - **THEN** the conversation is continued, not started fresh
+
+### Requirement: A pending briefing is given by the launch it was meant for
+The system SHALL give a pending briefing's first turn only to a launch of
+that agent on the harness it was written for, SHALL clear it in the same
+change that records that launch, and SHALL leave it untouched for a launch
+on any other harness. A launch carrying the operator's own arguments SHALL
+neither give nor clear it.
+
+#### Scenario: A launch on another harness leaves it pending
+- **WHEN** an agent with a briefing pending for one harness is launched on a different harness
+- **THEN** that launch carries no briefing turn and the briefing stays pending
+
+#### Scenario: Given exactly once
+- **WHEN** the harness a briefing was written for is launched for that agent twice
+- **THEN** only the first launch carries the briefing turn
