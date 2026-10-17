@@ -171,8 +171,8 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The overview's Agent section: walk the prompts, switch whose are
-    /// listed, copy the one chosen, or clear the space's.
+    /// The overview's Agent section: walk the space's prompts, copy the one
+    /// chosen, or clear them.
     pub(in crate::ui::orchestrator) fn drawer_action(&mut self, action: Action) {
         let listed = self.drawer_prompt_count();
         let space_has_prompts = self.space_has_prompts();
@@ -185,13 +185,6 @@ impl Attach<'_> {
             Action::SelectPrevious => agent.selected = agent.selected.saturating_sub(1),
             Action::SelectNext => {
                 agent.selected = (agent.selected + 1).min(listed.saturating_sub(1));
-            }
-            Action::TogglePromptScope => {
-                let scope = match agent.scope {
-                    PromptScope::Agent => PromptScope::Space,
-                    PromptScope::Space => PromptScope::Agent,
-                };
-                self.show_drawer_scope(scope);
             }
             // A prompt is read here to be used again: enter takes it.
             Action::Activate => {
@@ -254,23 +247,6 @@ impl Attach<'_> {
             }
             _ => false,
         }
-    }
-
-    /// Switches whose prompts are listed. The agent's own are only
-    /// offered when UZE knows which agent this is.
-    pub(in crate::ui::orchestrator) fn show_drawer_scope(&mut self, scope: PromptScope) {
-        let mut chosen = None;
-        if let Some(agent) = self.agent_panel()
-            && (scope == PromptScope::Space || agent.agent.is_some())
-        {
-            agent.scope = scope;
-            agent.selected = 0;
-            chosen = Some(scope);
-        }
-        if let Some(scope) = chosen {
-            self.model.remembered.drawer_scope = Some(scope);
-        }
-        self.model.dirty = true;
     }
 
     /// Keeps the selection on a prompt that is still listed after the

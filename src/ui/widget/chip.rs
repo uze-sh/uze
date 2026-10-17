@@ -1,5 +1,6 @@
-//! A chip: a short filled label that stands where a control stands, and
-//! the status beside the header's controls, which wears no ground at all.
+//! A chip's skins — resting, under the pointer, pressed — for the controls
+//! the strip draws, and the status beside the header's controls, which
+//! wears no ground at all.
 //!
 //! A ground is what a control is drawn on, so a report never gets one:
 //! told apart by the shade of a fill, a status a click answers and one it
@@ -18,7 +19,6 @@ use ratatui::{
 };
 use uze_theme::Token;
 
-use super::row;
 use crate::ui::theme;
 
 /// The column of air each side of a chip's label. Part of the control: it
@@ -120,52 +120,6 @@ impl Status {
             Span::styled(self.label.clone(), self.style()),
             Span::raw(pad),
         ];
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-    }
-}
-
-/// One header control.
-#[derive(Clone, Debug)]
-pub(crate) struct Chip {
-    label: String,
-    /// Resolved rather than a [`Token`]: a chip's hue is usually the
-    /// answer of a state the caller owns, which has already resolved it.
-    hue: Color,
-    state: ChipState,
-}
-
-impl Chip {
-    pub(crate) fn new(label: impl Into<String>, hue: Color, state: ChipState) -> Self {
-        Self {
-            label: label.into(),
-            hue,
-            state,
-        }
-    }
-
-    /// The columns this chip occupies, label plus its padding.
-    pub(crate) fn width(&self) -> u16 {
-        Span::raw(&self.label).width() as u16 + 2 * PAD
-    }
-
-    /// Where this chip sits when its right edge is `right` — how a header
-    /// lays its controls out, from the edge inward.
-    pub(crate) fn rect_ending_at(&self, right: u16, row: u16) -> Rect {
-        let width = self.width();
-        Rect::new(right.saturating_sub(width), row, width, 1)
-    }
-
-    pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, rect: Rect) {
-        let (label, ground) = self.state.skin(self.hue);
-        let mut spans = vec![
-            Span::raw(" ".repeat(PAD as usize)),
-            Span::styled(
-                self.label.clone(),
-                Style::default().fg(label).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" ".repeat(PAD as usize)),
-        ];
-        row::pad_to(&mut spans, rect.width, ground);
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
 }

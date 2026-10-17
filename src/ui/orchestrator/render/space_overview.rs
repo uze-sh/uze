@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::ui::widget::{
-    Button, Chip, RowState, Scrollbar, drawer,
+    Button, RowState, Scrollbar, drawer,
     hint::Hints,
     row,
     tabs::{self, Tab},
@@ -19,6 +19,14 @@ use uze_application::{
 const SIDE_BY_SIDE: u16 = 110;
 
 const INSET: u16 = 2;
+
+/// Where a section's scroll handle goes: on the drawer's rule when the
+/// drawer stands beside it, lit with it while it is dragged.
+#[derive(Clone, Copy, Default)]
+struct Track {
+    column: Option<u16>,
+    dragging: bool,
+}
 
 /// One option of a choice as drawn on its line: its column and width,
 /// the row it belongs to and its position among the options.
@@ -150,6 +158,7 @@ pub(super) fn render_space_overview(
         )),
         cause,
     );
+    let mut resize_handle = None;
     let body_top = inner.y + 8;
     let body = Rect::new(
         inner.x,
@@ -158,49 +167,51 @@ pub(super) fn render_space_overview(
         foot.y.saturating_sub(body_top + 1),
     );
     let side_by_side = area.width >= SIDE_BY_SIDE;
-    let (section_area, drawer_area) = if side_by_side {
-        let width = drawer::width(None, body.width + 2 * INSET);
+    let dragging = model.dragging_overview_drawer;
+    // The drawer first: it clears its own column, rule included, and the
+    // section's scroll handle is drawn on that rule.
+    let (section_area, track) = if side_by_side {
+        let width = drawer::width(model.overview_drawer_width, body.width + 2 * INSET);
         let column = Rect::new(
             area.right().saturating_sub(width),
             inner.y + 5,
             width,
             foot.y.saturating_sub(inner.y + 5),
         );
+        let (drawer_inner, handle) = drawer::render(frame, column, dragging);
+        render_drawer(frame, drawer_inner, model, overview, project);
+        resize_handle = Some(handle);
         (
             Rect {
                 width: body.width.saturating_sub(width),
                 ..body
             },
-            Some(column),
+            Track {
+                column: Some(handle.x),
+                dragging,
+            },
         )
     } else if overview.drawer {
-        (
-            Rect::default(),
-            Some(Rect::new(area.x, body_top, area.width, body.height)),
-        )
+        let column = Rect::new(area.x, body_top, area.width, body.height);
+        let drawer_inner = Rect {
+            x: column.x + INSET,
+            width: column.width.saturating_sub(2 * INSET),
+            ..column
+        };
+        render_drawer(frame, drawer_inner, model, overview, project);
+        (Rect::default(), Track::default())
     } else {
-        (body, None)
+        (body, Track::default())
     };
     if section_area.width > 0 {
-        let rows = render_section(frame, section_area, model, overview, project, hits);
+        let rows = render_section(frame, section_area, model, overview, project, hits, track);
         for (rect, index) in rows {
             hits.push((rect, WorkspaceHit::OverviewRow(index)));
         }
     }
-    if let Some(column) = drawer_area {
-        let (inner, _) = if side_by_side {
-            drawer::render(frame, column, false)
-        } else {
-            (
-                Rect {
-                    x: column.x + INSET,
-                    width: column.width.saturating_sub(2 * INSET),
-                    ..column
-                },
-                Rect::default(),
-            )
-        };
-        render_drawer(frame, inner, model, overview, project);
+    // Last, so the rule answers the pointer before anything beside it.
+    if let Some(handle) = resize_handle {
+        hits.push((handle, WorkspaceHit::ResizeOverviewDrawer));
     }
     render_foot(
         frame,
@@ -271,22 +282,10 @@ fn render_header(
 fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, Token) {
     let report = &project.status.report;
     match overview.section {
-        Section::Agent => match overview.agent.as_ref() {
-            Some(agent) => {
-                let whose = match agent.scope {
-                    crate::ui::agent_support::PromptScope::Agent => "asked of this agent",
-                    crate::ui::agent_support::PromptScope::Space => "asked in this space",
-                };
-                (
-                    format!("prompts {whose}, newest first"),
-                    Token::TextSecondary,
-                )
-            }
-            None => (
-                "no agent in front: open the space from an agent's tab to read it here".to_owned(),
-                Token::TextMuted,
-            ),
-        },
+        Section::Agent => (
+            "prompts asked in this space, newest first".to_owned(),
+            Token::TextSecondary,
+        ),
         Section::Context => {
             let troubled: Vec<&str> = report
                 .harnesses
@@ -403,17 +402,18 @@ fn render_section(
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
+    track: Track,
 ) -> Vec<(Rect, usize)> {
     let lines = match overview.section {
-        Section::Agent => return render_agent(frame, area, model, overview, hits),
+        Section::Agent => return render_agent(frame, area, model, overview, hits, track),
         Section::Context => context_lines(project),
         Section::Plugins => plugin_lines(project),
         Section::Settings => {
-            return render_workspace(frame, area, model, overview, project, hits);
+            return render_workspace(frame, area, model, overview, project, hits, track);
         }
         Section::Memory => memory_lines(project),
     };
-    draw_lines(frame, area, &lines, Some(overview.row()))
+    draw_lines(frame, area, &lines, Some(overview.row()), track)
 }
 
 /// One line of a section: what it says, and the row it selects, if any.
@@ -706,8 +706,9 @@ fn draw_lines(
     area: Rect,
     lines: &[SectionLine],
     selected: Option<usize>,
+    track: Track,
 ) -> Vec<(Rect, usize)> {
-    draw_scrolled(frame, area, lines, selected).0
+    draw_scrolled(frame, area, lines, selected, track).0
 }
 
 /// [`draw_lines`], answering also with how many lines it scrolled past.
@@ -716,34 +717,48 @@ fn draw_scrolled(
     area: Rect,
     lines: &[SectionLine],
     selected: Option<usize>,
+    track: Track,
 ) -> (Vec<(Rect, usize)>, usize) {
     let height = usize::from(area.height);
     let at = selected
         .and_then(|selected| lines.iter().position(|line| line.row == Some(selected)))
         .unwrap_or(0);
     let offset = at.saturating_sub(height.saturating_sub(1));
-    // The groove takes the list's last column, and only when the lines do
-    // not fit: the rows narrow by it rather than run under it.
-    let groove = Scrollbar::width();
-    let bar = Scrollbar::measure(
-        Rect::new(
-            area.right().saturating_sub(groove),
-            area.y,
-            groove,
-            area.height,
+    // The handle rides the drawer's rule, as every list with a divider
+    // beside it does; with no drawer it takes the list's last column.
+    let (bar, area) = match track.column {
+        Some(column) => (
+            Scrollbar::measure(
+                Rect::new(column, area.y, 1, area.height),
+                height,
+                lines.len(),
+            ),
+            area,
         ),
-        height,
-        lines.len(),
-    );
-    let area = match bar {
-        Some(_) => Rect {
-            width: area.width.saturating_sub(groove + 1),
-            ..area
-        },
-        None => area,
+        None => {
+            let groove = Scrollbar::width();
+            let bar = Scrollbar::measure(
+                Rect::new(
+                    area.right().saturating_sub(groove),
+                    area.y,
+                    groove,
+                    area.height,
+                ),
+                height,
+                lines.len(),
+            );
+            let area = match bar {
+                Some(_) => Rect {
+                    width: area.width.saturating_sub(groove + 1),
+                    ..area
+                },
+                None => area,
+            };
+            (bar, area)
+        }
     };
     if let Some(bar) = bar {
-        bar.render(frame, offset);
+        bar.render_on_draggable(frame, offset, track.dragging);
     }
     let mut rows = Vec::new();
     for (index, line) in lines.iter().skip(offset).take(height).enumerate() {
@@ -769,6 +784,7 @@ fn render_workspace(
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
+    track: Track,
 ) -> Vec<(Rect, usize)> {
     let Some(declaration) = overview.declaration() else {
         let reason = project
@@ -777,7 +793,13 @@ fn render_workspace(
             .err()
             .cloned()
             .unwrap_or_default();
-        return draw_lines(frame, area, &[said(reason, Token::StateWarning)], None);
+        return draw_lines(
+            frame,
+            area,
+            &[said(reason, Token::StateWarning)],
+            None,
+            track,
+        );
     };
     let footer_height = 3;
     let list = Rect {
@@ -812,7 +834,7 @@ fn render_workspace(
                 Token::StateWarning,
             ));
         }
-        draw_lines(frame, list, &lines, None);
+        draw_lines(frame, list, &lines, None, track);
         let created = !declaration.exists;
         let title = if created {
             "Create agents.yaml".to_owned()
@@ -1192,7 +1214,7 @@ fn render_workspace(
             Token::StateDanger,
         ));
     }
-    let (drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected));
+    let (drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected), track);
     let line_y = |line: usize| {
         (line >= offset)
             .then(|| list.y + (line - offset) as u16)
@@ -1419,8 +1441,8 @@ fn render_agent(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
+    track: Track,
 ) -> Vec<(Rect, usize)> {
-    use crate::ui::agent_support::PromptScope;
     let Some(agent) = &overview.agent else {
         return Vec::new();
     };
@@ -1436,15 +1458,13 @@ fn render_agent(
             list,
             &[said("reading prompts…", Token::TextMuted)],
             None,
+            track,
         );
     };
     let prompts = agent.prompts(&history.entries);
     if prompts.is_empty() {
-        let whose = match agent.scope {
-            PromptScope::Agent => "this agent has been asked nothing yet",
-            PromptScope::Space => "nothing has been asked in this space yet",
-        };
-        return draw_lines(frame, list, &[said(whose, Token::TextMuted)], None);
+        let whose = "nothing has been asked in this space yet";
+        return draw_lines(frame, list, &[said(whose, Token::TextMuted)], None, track);
     }
     let live: std::collections::HashMap<&str, &str> = model
         .tabs()
@@ -1514,36 +1534,11 @@ fn render_agent(
         },
         &lines,
         Some(agent.selected),
+        track,
     );
     for (rect, index) in &rows {
         hits.push((*rect, WorkspaceHit::DrawerPrompt(*index)));
     }
-    // Whose prompts: two chips at the right end of the table's header,
-    // the one shown pressed, as a header's controls stand.
-    let mut right = list.right();
-    for (scope, word) in [(PromptScope::Space, "space"), (PromptScope::Agent, "agent")] {
-        let offered = scope == PromptScope::Space || agent.agent.is_some();
-        let state = if agent.scope == scope {
-            ChipState::Pressed
-        } else if model.hovered == Some(WorkspaceHit::DrawerScope(scope)) && offered {
-            ChipState::Hovered
-        } else {
-            ChipState::Resting
-        };
-        let hue = if offered {
-            Token::TextSecondary
-        } else {
-            Token::TextFaint
-        };
-        let chip = Chip::new(word, theme::color(hue), state);
-        let rect = chip.rect_ending_at(right, list.y);
-        chip.render(frame, rect);
-        if offered {
-            hits.push((rect, WorkspaceHit::DrawerScope(scope)));
-        }
-        right = rect.x.saturating_sub(1);
-    }
-
     // The prompts answer clicks through their own hits.
     Vec::new()
 }
@@ -1636,18 +1631,30 @@ fn render_drawer(
             let Some(agent) = &overview.agent else {
                 return;
             };
-            let name = agent
-                .support
-                .as_ref()
-                .map_or("the agent in front", |support| support.display_name());
-            head("harness", name, &mut lines);
-            lines.push(pair("path", agent.path.clone(), Token::TextSecondary));
+            match (&agent.key, &agent.support) {
+                (None, _) => {
+                    head("space", &agent.path, &mut lines);
+                    paragraph(
+                        "No agent in front: open the space from an agent's tab to read what reaches it.",
+                        Token::TextMuted,
+                        &mut lines,
+                    );
+                }
+                (Some(_), support) => {
+                    let name = support
+                        .as_ref()
+                        .map_or("the agent in front", |support| support.display_name());
+                    head("harness", name, &mut lines);
+                    lines.push(pair("path", agent.path.clone(), Token::TextSecondary));
+                }
+            }
             lines.push(Line::default());
             lines.push(Line::from(Span::styled(
                 "what reaches it",
                 theme::fg(Token::TextDim),
             )));
             match &agent.support {
+                _ if agent.key.is_none() => {}
                 Some(support) => {
                     lines.extend(crate::ui::agent_support::capability_lines(support, width));
                 }
@@ -1940,7 +1947,6 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
     match overview.section {
         Section::Agent => keys.extend([
             (Action::Activate, "copy"),
-            (Action::TogglePromptScope, "agent/space"),
             (Action::ClearPromptHistory, "clear"),
         ]),
         Section::Settings if overview.editable() => {

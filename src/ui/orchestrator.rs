@@ -4,7 +4,6 @@
 //! layout conventions (hairline dividers, no filled panels) so the modal
 //! it opens over itself reads as one product, not two.
 
-use super::agent_support::PromptScope;
 use super::tui_application;
 use crate::ui::extension_host::WorkspaceHost;
 use crate::ui::extension_view;
@@ -905,14 +904,14 @@ pub(super) enum WorkspaceHit {
     OverviewStep(usize, bool),
     /// One of the paths a list's field offers, by position.
     OverviewPick(usize),
+    /// The rule along the overview's drawer, dragged to resize it.
+    ResizeOverviewDrawer,
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Saving or dropping the overview's workspace edits; `true` saves.
     OverviewSave(bool),
     /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
-    /// Whose prompts the overview's Agent section lists.
-    DrawerScope(PromptScope),
     /// The task mark on a sidebar agent row — opens the catalog of what
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
@@ -1238,36 +1237,27 @@ fn selected_agent_context(
     Some((identity.integration.to_owned(), tab.pane.cwd.clone()))
 }
 
-/// The drawer for the agent in front: the same agent
-/// [`selected_agent_context`] resolves, with what its prompts are kept
-/// under. Opens on the agent's own prompts when UZE launched it, and on the
-/// space's when nothing identifies it.
-fn selected_agent_drawer(
+/// The overview's Agent section for the space in front: its prompts, and
+/// the agent in front of it when there is one — the same agent
+/// [`selected_agent_context`] resolves — whose support it reads.
+fn space_prompts_panel(
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
 ) -> Option<AgentSupportDropdown> {
-    let key = selected_agent_context(model, identities)?;
     let space = model.session.as_ref()?.selected_space();
-    let tab = context_agent(model, identities)
-        .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))?;
-    let agent = launched_agent_id(tab).map(str::to_owned);
-    // The tab the operator last chose, when this agent can show it.
-    let scope = match model.remembered.drawer_scope {
-        Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
-        _ => PromptScope::Space,
-    };
-    let support = model
-        .remembered
-        .agent_support
-        .as_ref()
-        .filter(|resolution| resolution.key == key)
-        .and_then(|resolution| resolution.support.clone());
+    let key = selected_agent_context(model, identities);
+    let support = key.as_ref().and_then(|key| {
+        model
+            .remembered
+            .agent_support
+            .as_ref()
+            .filter(|resolution| resolution.key == *key)
+            .and_then(|resolution| resolution.support.clone())
+    });
     Some(AgentSupportDropdown {
         support,
-        scope,
-        agent,
         space_root: space.root.clone(),
-        path: crate::ui::display_project_path(&key.1),
+        path: crate::ui::display_project_path(key.as_ref().map_or(&space.root, |key| &key.1)),
         key,
         selected: 0,
         clearing: false,
@@ -1506,8 +1496,6 @@ struct Remembered {
     agent_support_pending: Option<SupportKey>,
     /// The last prompt history the drawer read, tagged with its space.
     drawer_prompts: Option<PromptHistoryResolution>,
-    /// Whose prompts the drawer listed last, so it opens on them again.
-    drawer_scope: Option<PromptScope>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.
@@ -1831,6 +1819,11 @@ struct WorkspaceModel {
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.
     space_overview: Option<SpaceOverviewView>,
+    /// The width the overview's drawer was dragged to, kept across
+    /// openings for the rest of the attach.
+    overview_drawer_width: Option<u16>,
+    /// Whether the drawer's rule is held by the pointer.
+    dragging_overview_drawer: bool,
     /// The diagram held by the pointer. A press on it is not yet a click
     /// or a drag — the first movement says which, as it does for
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here

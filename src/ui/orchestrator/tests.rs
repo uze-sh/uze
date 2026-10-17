@@ -42,7 +42,7 @@ mod workspace_tests {
         AgentGroup, AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach,
         CHIME_COOLDOWN, CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution,
         DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
-        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
+        PendingDrop, PlacementResolution, RootPicker, ScrollDirection, SpecResolution,
         SpecSummaryState, SupportResolution, TabDragGroup, UnspelledGates, UpstreamSync, Viewport,
         WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
         agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
@@ -53,9 +53,9 @@ mod workspace_tests {
             self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
-        scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
-        space_context_agent, space_cwd, space_own_tab, strip_label, strip_tabs,
-        sync_slot_occupancy, tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
+        scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
+        space_own_tab, space_prompts_panel, strip_label, strip_tabs, sync_slot_occupancy,
+        tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
         toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
@@ -5008,24 +5008,21 @@ mod workspace_tests {
     }
 
     fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
-        selected_agent_drawer(model, &identities_fixture()).expect("an agent is in front")
+        space_prompts_panel(model, &identities_fixture()).expect("a space is in front")
     }
 
-    /// The drawer is named after the agent and opens on the prompts the
-    /// operator chose last time, rather than starting over on every open.
+    /// The Agent section reads the agent in front when there is one —
+    /// what its support is read for — and the space's prompts either way.
     #[test]
-    fn the_agent_drawer_opens_on_the_scope_last_chosen() {
-        let mut model = agent_session_in("/repo/.worktrees/a");
-        model.session.as_mut().unwrap().workspace.spaces[0].tabs[0].env = vec![(
-            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-            "a1".to_owned(),
-        )];
-        let drawer = drawer_over(&model);
-        assert_eq!(drawer.agent.as_deref(), Some("a1"));
-        assert_eq!(drawer.scope, PromptScope::Agent);
+    fn the_agent_section_reads_the_agent_in_front_or_the_space_alone() {
+        let model = agent_session_in("/repo/.worktrees/a");
+        let panel = drawer_over(&model);
+        assert!(panel.key.is_some(), "the agent in front is read");
 
-        model.remembered.drawer_scope = Some(PromptScope::Space);
-        assert_eq!(drawer_over(&model).scope, PromptScope::Space);
+        let shells = model_of(session("/repo"));
+        let panel = drawer_over(&shells);
+        assert_eq!(panel.key, None, "a shell has no support to read");
+        assert_eq!(panel.space_root, PathBuf::from("/repo"));
     }
 
     fn support_fixture() -> crate::ui::agent_support::AgentSupport {
@@ -5109,7 +5106,6 @@ mod workspace_tests {
         let mut model = agent_session_in("/repo");
         let mut agent = drawer_over(&model);
         agent.support = Some(support_fixture());
-        agent.scope = PromptScope::Space;
         let root = agent.space_root.clone();
         let (space, behind) = {
             let space = model.session.as_ref().expect("session").selected_space();
@@ -5155,17 +5151,6 @@ mod workspace_tests {
             Some(long.trim()),
             "enter did not copy the whole prompt"
         );
-    }
-
-    /// An agent nothing identifies has no prompts of its own to list, so
-    /// its drawer opens on the space's whatever was chosen last.
-    #[test]
-    fn an_agent_started_by_hand_opens_its_drawer_on_the_space() {
-        let mut model = agent_session_in("/repo");
-        model.remembered.drawer_scope = Some(PromptScope::Agent);
-        let drawer = drawer_over(&model);
-        assert_eq!(drawer.agent, None);
-        assert_eq!(drawer.scope, PromptScope::Space);
     }
 
     /// Two agents in one space, the first of them selected: `Agent` in
@@ -10626,6 +10611,85 @@ mod workspace_tests {
         );
     }
 
+    /// The drawer is resized by dragging its rule, as every drawer is, and
+    /// a section longer than the pane scrolls with its handle on that rule
+    /// rather than in a groove of its own.
+    #[test]
+    fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
+        use uze_application::application::memory::{Entry, Kind, MemoryScope};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-drawer"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let facts: Vec<Entry> = (0..60)
+            .map(|index| Entry {
+                name: format!("fact-{index:02}"),
+                description: String::new(),
+                kind: Kind::Feedback,
+                scope: MemoryScope::Project,
+                origin: "uze".to_owned(),
+                source: None,
+                path: PathBuf::from(format!("/facts/fact-{index:02}.md")),
+                updated: None,
+                writable: true,
+                proposed: false,
+            })
+            .collect();
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
+        overview.answer = Some(Ok(project_space(
+            uze_application::SpaceMemory {
+                project: facts,
+                ..Default::default()
+            },
+            Err("not read here".to_owned()),
+        )));
+        let mut driven = driven(model, &home);
+        driven.area = Rect::new(0, 0, 160, 40);
+        driven.frame();
+        let rule = driven.hit(|hit| *hit == WorkspaceHit::ResizeOverviewDrawer);
+
+        let rows = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 160, 40));
+        let thumb = theme::glyph(crate::ui::theme::Symbol::ScrollThumb);
+        let columns_with_thumb: std::collections::BTreeSet<usize> = rows
+            .iter()
+            .flat_map(|row| {
+                row.chars()
+                    .enumerate()
+                    .filter(|(_, glyph)| thumb.starts_with(*glyph))
+                    .map(|(column, _)| column)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            columns_with_thumb,
+            std::collections::BTreeSet::from([usize::from(rule.x)]),
+            "the scroll handle is not on the drawer's rule"
+        );
+
+        driven.press(rule.x, rule.y + 2);
+        driven.mouse(
+            rule.x - 12,
+            rule.y + 2,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            rule.x - 12,
+            rule.y + 2,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        driven.frame();
+        let moved = driven.hit(|hit| *hit == WorkspaceHit::ResizeOverviewDrawer);
+        assert_eq!(
+            moved.x,
+            rule.x - 12,
+            "dragging the rule did not widen the drawer"
+        );
+        assert!(!driven.attach.model.dragging_overview_drawer);
+    }
+
     fn driven_again<'a>(home: &'a UzeHome, session: &uze_terminal::Session) -> Driven<'a> {
         driven(model_of(session.clone()), home)
     }
@@ -13559,76 +13623,6 @@ fn a_rename_edits_at_the_caret() {
     buffer.right();
     buffer.erase_forward();
     assert_eq!(buffer.text(), "Agent 1é", "edges are where the caret stops");
-}
-
-mod drawer_tests {
-    use super::*;
-
-    fn entry(tab_id: u64, agent: Option<&str>, preview: &str) -> uze_application::PromptEntry {
-        let origin = uze_application::PromptOrigin {
-            space_label: "uze".to_owned(),
-            tab_id,
-            tab_label: "agent".to_owned(),
-            agent_binary: "claude".to_owned(),
-            agent: agent.map(str::to_owned),
-        };
-        uze_application::PromptEntry::new(&origin, preview).unwrap()
-    }
-
-    fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
-        AgentSupportDropdown {
-            key: ("claude-code".to_owned(), PathBuf::from("/repo")),
-            support: None,
-            agent: agent.map(str::to_owned),
-            space_root: PathBuf::from("/repo"),
-            path: "/repo".to_owned(),
-            scope,
-            selected: 0,
-            clearing: false,
-        }
-    }
-
-    /// Tab ids are minted again when the runtime restores a workspace, so
-    /// after a restart another agent's tab can carry the id this one had.
-    /// "This agent's prompts" is therefore matched on the agent, never on
-    /// the tab.
-    #[test]
-    fn an_agents_prompts_are_its_own_whatever_tab_ids_were_reused() {
-        let history = vec![
-            entry(1, Some("mevx3y"), "mine, after the restart"),
-            entry(
-                1,
-                Some("xum3gz"),
-                "another agent's, in a tab with my old id",
-            ),
-            entry(2, Some("mevx3y"), "mine, before the restart"),
-            entry(1, None, "a harness started by hand"),
-        ];
-        let listed: Vec<&str> = drawer(Some("mevx3y"), PromptScope::Agent)
-            .prompts(&history)
-            .iter()
-            .map(|entry| entry.preview.as_str())
-            .collect();
-        assert_eq!(
-            listed,
-            vec!["mine, after the restart", "mine, before the restart"]
-        );
-
-        let space = drawer(Some("mevx3y"), PromptScope::Space).prompts(&history);
-        assert_eq!(space.len(), history.len(), "the space lists every one");
-    }
-
-    /// An agent UZE did not launch has nothing to match its own prompts
-    /// on, so its own listing holds none rather than everyone's.
-    #[test]
-    fn an_agent_nothing_identifies_has_no_listing_of_its_own() {
-        let history = vec![entry(1, None, "a harness started by hand")];
-        assert!(
-            drawer(None, PromptScope::Agent)
-                .prompts(&history)
-                .is_empty()
-        );
-    }
 }
 
 /// A plugin name carrying a right-to-left override draws as its letters:

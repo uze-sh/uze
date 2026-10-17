@@ -226,7 +226,6 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::NextValue
             | Action::PreviousValue
             | Action::SaveFile
-            | Action::TogglePromptScope
             | Action::ClearPromptHistory
             | Action::EraseBack
             | Action::EraseForward
@@ -908,14 +907,12 @@ impl Attach<'_> {
         // re-reads what reaches it and what it was asked: `AGENTS.md` and
         // `.agents/` change under an open workspace, and this is the moment
         // somebody is looking.
-        let agent = selected_agent_drawer(&self.model, &self.identities);
+        let agent = space_prompts_panel(&self.model, &self.identities);
         if let Some(agent) = &agent {
-            self.model.remembered.agent_support_pending = Some(agent.key.clone());
-            spawn_support_refresh(
-                self.home,
-                agent.key.clone(),
-                self.channels.support.sender.clone(),
-            );
+            if let Some(key) = &agent.key {
+                self.model.remembered.agent_support_pending = Some(key.clone());
+                spawn_support_refresh(self.home, key.clone(), self.channels.support.sender.clone());
+            }
             spawn_prompt_history(
                 self.home,
                 agent.space_root.clone(),
@@ -923,9 +920,6 @@ impl Attach<'_> {
             );
         }
         if let Some(overview) = self.model.space_overview.as_mut() {
-            if agent.is_none() {
-                overview.section = Section::Settings;
-            }
             overview.agent = agent;
         }
         self.schedule_space_overview();
@@ -1087,7 +1081,6 @@ impl Attach<'_> {
                 Action::SelectNext
                     | Action::SelectPrevious
                     | Action::Activate
-                    | Action::TogglePromptScope
                     | Action::ClearPromptHistory
             )
         {

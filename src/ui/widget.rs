@@ -107,7 +107,7 @@ pub(crate) mod text;
 pub(crate) mod toast;
 
 pub(crate) use button::{Align, Button, button_row};
-pub(crate) use chip::{Chip, ChipState, Status, StatusKind};
+pub(crate) use chip::{ChipState, Status, StatusKind};
 pub(crate) use field::Field;
 pub(crate) use row::RowState;
 pub(crate) use rule::{Edge, Rule};

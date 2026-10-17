@@ -116,7 +116,14 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             button_group(model, &buttons, Token::SurfaceRaised, (rect.x, rect.y));
         hits.extend(group_hits);
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-        trailing_right = ZoneEdge::Filled.left_of(rect.x);
+        // Its own zone: a hairline sets it apart from the surfaces, which
+        // are about the checkout in front rather than the space.
+        trailing_right = render_zone_hairline(
+            frame,
+            inner,
+            ZoneEdge::Filled.left_of(rect.x),
+            ZoneEdge::Filled,
+        );
     }
 
     // ── actions ────────────────────────────────────────────────────────
