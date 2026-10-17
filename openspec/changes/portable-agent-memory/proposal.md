@@ -4,7 +4,7 @@ What an agent learns about a project lives in its harness and nowhere
 else, and every harness keeps it differently:
 
 - Claude: Markdown under `~/.claude/projects/`.
-- Codex: a consolidated SQLite store, off by default.
+- Codex: consolidated Markdown summaries under `~/.codex/memories/`, off by default.
 - Antigravity: opaque protobufs.
 - OpenCode: nothing at all.
 
@@ -46,7 +46,13 @@ as one more way to reach the same verbs.
   - The agent audience's verbs.
   - They work in any harness that can run a command, so no MCP server is
     involved.
-  - Documented in the region UZE projects into `AGENTS.md`.
+  - Documented in the context of each non-Claude agent, never in
+    `AGENTS.md`, so no model is told two ways to remember.
+- **Claude's own memory is read live as a source.** Claude keeps writing
+  where it always does, inside the workspace or outside it. UZE reads
+  those facts into the shared index at each launch, never copying or
+  redirecting them. Codex's consolidated summary, when it exists, is
+  offered to other harnesses' agents as one entry they read on demand.
 - **Machine-scope facts from agents wait for the operator.**
   - A launched agent's `--machine` fact is a *proposal* the workspace asks
     the operator about.
@@ -57,8 +63,9 @@ as one more way to reach the same verbs.
   harness it is not sent, and status says so.
 - **`uze status` lists memory**: where it lives, each fact with its type
   and provenance, proposals, and unreadable files.
-- **The harness's own memory, kept or turned off per machine.**
-  - Covers Claude auto memory and Codex `memories`.
+- **A harness's own memory, kept or turned off per machine, unless it is how its agents write.**
+  - Covers Codex `memories` today. Claude's memory is a source and is
+    never turned off.
   - Applied only at UZE's launches.
   - The default is to keep it.
 

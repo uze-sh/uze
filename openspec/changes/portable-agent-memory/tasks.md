@@ -11,19 +11,19 @@
 
 ## 2. Agent surface (application + CLI)
 
-- [ ] 2.1 `uze-application` memory service and status read model (directories, facts with type and provenance, proposals, unreadable)
+- [ ] 2.1 `MemoryEntry` in `uze-core` and `IntegrationPort::memory_source` (default none); `uze-application::MemoryService` with `list`/`show`/`remember`/`forget`/`accept`/`discard` and one read model (entries with origin, scope and writability, proposals, unreadable, harnesses without a channel) consumed by the CLI, status and the workspace
 - [ ] 2.2 `uze agent memory remember|forget|list|show` with `-m`/`--machine`, body on stdin, scope reported in every outcome, hidden from `uze --help`
 - [ ] 2.3 Provenance from the launch identity, `operator` without one; a launched agent's `--machine` write lands in `proposed/`
 - [ ] 2.4 Classify the four leaves in `command_performance.rs`
-- [ ] 2.5 Projected `AGENTS.md` region: the verbs, what is worth remembering, facts are notes not instructions, no secrets
+- [ ] 2.5 Memory instruction as an agent-context section for non-Claude harnesses only: the verbs, what is worth remembering, facts are notes not instructions, no secrets; nothing in the projected `AGENTS.md` region
 - [ ] 2.6 `uze status` lists memory per scope
 
-## 3. Claude import
+## 3. Harness memory as a source
 
-- [ ] 3.1 Reader for Claude memory directories: the slug of the primary root and of its checkouts, `type` at the top level or in `metadata`, `metadata.modified`, skip `MEMORY.md`
-- [ ] 3.2 `uze agent memory import claude`: project facts with `claude-import` provenance and an `imported` date, `user`/`feedback` also proposed at machine scope, upsert by name, skip facts edited since import, Claude files read-only; tests against a fixture directory with both front matter shapes
-- [ ] 3.3 Status counts the Claude facts not imported
-- [ ] 3.4 Projected region: how an agent imports Codex's memory with `remember` (read `~/.codex/memories/`, keep what is durable, `source: codex-import`, choose the scope); `source` accepts `codex-import`
+- [ ] 3.1 Live reader for Claude memory directories at composition: the slug of the primary root and of its checkouts, `type` at the top level or in `metadata`, `metadata.modified`, skip `MEMORY.md`, index lines naming the file path, `claude` provenance, UZE wins a shared name; Claude's files are never written; tests against a fixture directory with both front matter shapes
+- [ ] 3.2 Codex source: one machine-scope index entry naming `~/.codex/memories/memory_summary.md` and its size when it exists, for non-Codex agents only
+- [ ] 3.3 Status lists harness-sourced entries with their provenance beside UZE's
+- [ ] 3.4 Agent-context memory instruction (non-Claude): how an agent imports Codex's memory with `remember` (read `~/.codex/memories/`, keep what is durable, `source: codex-import`, choose the scope); `source` accepts `codex-import`
 
 ## 4. Workspace
 

@@ -28,10 +28,9 @@ What exists that this reuses:
 - An operator can find, read and delete any fact without being an agent.
 
 **Non-Goals:**
-- Syncing with a harness's memory, or importing from any store but
-  Claude's. Codex's is private SQLite and off by default, and
-  Antigravity's is protobuf. Claude's is the only one that is readable
-  text, and it is imported once, on request (D6).
+- Writing into, syncing with or redirecting a harness's memory. UZE only
+  reads it as a source, and only where it is text with a known place
+  (D6).
 - Search, embeddings, consolidation, or UZE generating memories from
   transcripts.
 - An MCP server.
@@ -144,74 +143,135 @@ What exists that this reuses:
 
 - `config.toml` gains `memory.harness = "keep" | "off"`, default `keep`.
   It is authored, and an unknown value reads as the default.
-- With `off`, the integration adds its own switch to UZE's launches:
-  - Claude: `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
-  - Codex: `-c features.memories=false`. Codex is already embedded by
-    UZE's `-c agents=`.
+- With `off`, the integration adds its own switch to UZE's launches. Today
+  that is Codex: `-c features.memories=false`, which is already embedded
+  by UZE's `-c agents=`. This applies to the launch only. Codex's existing
+  summary stays readable as a source for other agents.
+- Claude is excluded, because its memory is the only way Claude agents
+  write (D6).
 - OpenCode has nothing to turn off. Antigravity has no documented switch
   and is reported as such.
 
-### D6. Importing Claude's memory once, on request
+### D6. Harness memory is read live as a source; UZE's store holds what no harness keeps
 
-- **Why import.** Claude's memory is already one Markdown file per fact
-  with `name`, `description` and a type from the same four, so the mapping
-  is close to the identity. Without it the feature starts empty for anyone
-  who already uses Claude, and `memory.harness = off` would cut them off
-  from what they have.
-- **Where it reads.** `~/.claude/projects/<slug>/memory/*.md`. The slug is
-  Claude's encoding of a cwd, with `/` replaced by `-`.
-  - The import reads the slug of the primary checkout's root and the slugs
-    of its checkouts under `.worktrees/`.
+- **Why not import or redirect.**
+  - A one-shot import copies Claude's facts and lets the two copies
+    diverge.
+  - Redirecting Claude's `autoMemoryDirectory` into UZE's store for UZE
+    launches would split Claude from itself: what an agent learned inside
+    the workspace would vanish for a `claude` started outside it.
+  - Claude keeps writing where it always does, and UZE reads it.
+- **Where it reads.** `~/.claude/projects/<slug>/memory/*.md` on every
+  composition. The slug is Claude's encoding of a cwd, with `/` replaced
+  by `-`.
+  - It reads the slug of the primary checkout's root and the slugs of its
+    checkouts under `.worktrees/`.
   - Recent Claude versions keep a worktree's memory under the repository's
     slug. Older ones left per-worktree directories, and about a hundred
     exist on the author's machine.
+  - The cost is front matter of a few dozen small files per launch.
 - **Reading.**
   - `type` is read from the top level or from `metadata.type`, since both
     shapes exist.
-  - Claude's `metadata.modified` becomes `updated` when present.
+  - `metadata.modified` is read as `updated`.
   - `MEMORY.md` is skipped, because UZE computes its own index.
-  - Bodies are kept verbatim, `[[links]]` included.
-- **Where facts land.**
-  - Every fact lands at project scope with `source: claude-import`.
-  - `user` and `feedback` facts are also offered as proposed machine
-    facts, which the operator accepts or discards through D3's question.
-    The import cannot tell which of them hold only for that project.
-- **Re-running.** It upserts by name and skips a fact whose `updated` is
-  later than its import date. That date is recorded in the fact as
-  `imported`, so an edit made in UZE is never overwritten.
-- **No sync.** Two memories written in parallel would diverge, and UZE
-  would carry Claude's format changes forever. Status counts the Claude
-  facts not yet in UZE, so the operator knows when to ask for the import
-  again.
-- **Who runs it.** It is an agent verb, not a person's, keeping memory's
-  one audience: the operator asks their agent to import.
+  - The provenance is `claude`.
+  - The body is never copied. The index line names the file's path, and
+    the agent reads it on demand like any body.
+- **Scope.** Claude's facts are project facts in the index. Its `user`
+  facts are kept per project by Claude itself, so they stay there. A fact
+  the operator wants everywhere is remembered at machine scope through
+  UZE.
+- **One write instruction per model.**
+  - Claude's system prompt carries its own memory instruction, which
+    outweighs anything in `AGENTS.md`.
+  - So `uze agent memory` is documented in the agent context, per
+    harness, and never in the projected `AGENTS.md` region.
+  - Claude agents get the index and no UZE write instruction.
+  - Codex, OpenCode and Antigravity agents get both. Codex's own memory
+    is written by a background job from finished conversations, not by
+    the model, so a Codex agent has no competing write instruction even
+    when that memory is on.
+- **Accepted limit.**
+  - A Claude started outside the workspace does not see what Codex,
+    OpenCode or Antigravity agents remembered.
+  - Closing that gap means writing into Claude's directory and its
+    model-maintained `MEMORY.md`, which is copies again.
+  - Memory across harnesses is a workspace feature, and Claude on its own
+    keeps all of its own.
+- **`memory.harness = off` never touches Claude.** Claude's memory is a
+  source and the only way Claude agents write.
 
-**The other harnesses** (read from Codex HEAD source on 2026-10-17, and
-from disk):
+**The other harnesses** (read from Codex HEAD source and from disk on
+2026-10-17):
 
-- **Codex.**
-  - Its consolidated memory is Markdown under `~/.codex/memories/`:
-    - `memory_summary.md`, the narrative injected at session start;
+- **Codex: a live source, as one entry.**
+  - When its memory is on, Codex keeps it as Markdown under
+    `~/.codex/memories/`:
+    - `memory_summary.md`, the consolidated narrative Codex injects at its
+      own session start;
     - `MEMORY.md`;
-    - `rollout_summaries/*.md`;
-    - `skills/`.
-  - The SQLite database only drives the pipeline.
-  - The text is prose consolidated across every project on the machine,
-    not one fact per file, and its layout is mid-migration
-    (`memories_v2`, `consolidation_v2.md`). A deterministic parser would
-    split prose badly and break at the next layout.
-  - So the import is **agent-assisted**. The projected region tells an
-    agent asked to import Codex's memory to read that folder, keep what is
-    durable, and write each fact with `remember`, using `source:
-    codex-import` and choosing the scope.
-  - The machine-scope gate (D3) applies unchanged.
-  - No verb and no parser are added.
-- **Antigravity.** Knowledge items under
-  `~/.gemini/antigravity-cli/knowledge/` and `implicit/*.pb` are
-  undocumented and opaque, and none exist on the author's machine to
-  measure. Not imported. Revisit when the format is documented.
-- **OpenCode.** Keeps no memory of its own, so there is nothing to
-  import.
+    - `rollout_summaries/*.md`.
+  - `memories_1.sqlite` drives the pipeline and also holds per-thread
+    `raw_memory` text.
+  - All of it is readable, but it is prose consolidated across every
+    project on the machine. Codex rewrites the folder on every
+    consolidation, and the layout is mid-migration (`memories_v2`).
+  - So it is neither parsed into facts nor copied. When
+    `memory_summary.md` exists, the index of every non-Codex agent gets
+    one machine-scope entry naming it and its size, and the agent reads it
+    on demand.
+  - Codex agents get no entry, because Codex already injects that summary
+    itself.
+  - The entry depends on one path and nothing inside the file.
+  - Distilling it into UZE facts stays available on request, as an agent
+    task using `remember` with `source: codex-import`. The machine-scope
+    gate (D3) applies.
+- **Antigravity: no source yet.**
+  - `conversation_summaries.db` is readable SQLite, but it is a list of
+    conversations (title, preview, workspace, status), not memory.
+  - `implicit/*.pb` are protobufs of about 400 bytes with no readable
+    text.
+  - Knowledge items, under `knowledge/`, are what would be memory. None
+    exist on the author's machine, and their format is undocumented.
+  - Revisit when one can be measured.
+- **OpenCode.** It keeps no memory of its own, so there is nothing to
+  read.
+
+### D7. One memory service, every consumer; each harness answers as a source
+
+- **`uze-core`.**
+  - `memory` holds UZE's store and a vendor-neutral `MemoryEntry`: name,
+    type, description, scope, provenance, path, and whether it is
+    writable.
+  - Every entry has the same shape, whether it is a UZE fact or a
+    harness's.
+- **`IntegrationPort::memory_source(project_root)`.**
+  - Returns the entries a harness keeps for that project and the machine.
+    The default is none.
+  - It is one more method on the one trait, which AGENTS.md keeps unsplit.
+  - Claude's slug reading and Codex's summary path live in
+    `uze-integrations` and nowhere else, so core and application stay
+    vendor-neutral, as the identity tests require.
+  - Entries from a source are always read-only.
+- **`uze-application::MemoryService`.** The only surface every consumer
+  uses:
+  - `list(scope)`: UZE facts and source entries, merged, UZE winning a
+    shared name.
+  - `show(entry)`: the body, read from either place.
+  - `remember` and `forget`: UZE facts only.
+  - `accept` and `discard`: proposals.
+  - Warnings: unreadable facts, and harnesses without a channel.
+  - Its read model is what `uze agent memory`, `uze status`, the
+    workspace's proposal question, and `uze-workspace`'s index section all
+    consume.
+- **A management screen is a later consumer, not a new API.**
+  - A future per-space screen listing the index, opening bodies, and
+    accepting proposals or deleting UZE facts reads the same read model.
+    That is the reason `src/` reaches the domain only through
+    `uze-application`.
+  - Its reads go through `orchestrator/reads.rs` like any other disk read
+    the client makes.
 
 ## Candidate ADRs
 
@@ -229,7 +289,7 @@ from disk):
     until the operator removes it.
 - **[An agent strips its launch identity to write machine scope
   directly.]**
-  - Residual, stated in the projected region and in the ADR. The gate
+  - Residual, stated in the agent-context memory instruction and in the ADR. The gate
     raises the bar; it is not a sandbox.
 - **[Two memories disagree while `memory.harness = keep`.]**
   - Accepted as the default, because turning off a vendor feature is the
