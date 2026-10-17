@@ -24,12 +24,15 @@ export function CastPlayer({
   posterAt,
   label,
   handle,
+  startAt,
 }: {
   src: string;
   /** The second of the cast shown before it plays, and to reduced motion. */
   posterAt: number;
   label: string;
   handle?: MutableRefObject<CastHandle | null>;
+  /** Where to begin playing, for a player that takes over from another. */
+  startAt?: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
 
@@ -56,6 +59,7 @@ export function CastPlayer({
         fit: 'width',
         controls: false,
         poster: `npt:${posterAt}`,
+        ...(startAt ? { startAt } : {}),
         theme: 'uze',
         terminalFontFamily: "'Uze Terminal', 'JetBrains Mono', monospace",
         terminalLineHeight: 1.22,
@@ -74,7 +78,7 @@ export function CastPlayer({
       player?.dispose();
       if (handle) handle.current = null;
     };
-  }, [src, posterAt, handle]);
+  }, [src, posterAt, handle, startAt]);
 
   return <div ref={host} className="cast-player" role="img" aria-label={label} />;
 }

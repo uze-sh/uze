@@ -50,10 +50,13 @@ embedding; both are yes for everything below.
 
 | Asset | Where it comes from | Licence | Commercial | Web embedding |
 | --- | --- | --- | --- | --- |
-| IBM Plex Sans, IBM Plex Mono | IBM's own hinted release, vendored in `web/app/fonts/` with its licence | OFL-1.1 | yes | yes — the licence permits bundling and redistribution with software |
+| Inter | rsms/inter's own v4.1 release, vendored in `web/app/fonts/` with its licence | OFL-1.1 | yes | yes — the licence permits bundling and redistribution with software |
+| JetBrains Mono | JetBrains' own v2.304 release, vendored in `web/app/fonts/` with its licence | OFL-1.1 | yes | yes — the licence permits bundling and redistribution with software |
+| FiraCode Nerd Font Mono | the Nerd Fonts v3.5.1 release, cut to the glyphs the recordings print by `bun run terminal-font`, in `web/public/fonts/` with its licence | OFL-1.1 | yes | yes — the licence permits bundling and redistribution with software |
 | Lucide icon set (`lucide-react`) | npm, drawn inline as SVG | ISC | yes | yes |
 | Mermaid (`mermaid`) | npm, renders the diagrams in the docs | MIT | yes | yes |
-| `web/public/uze-demo.gif`, `uze-demo-poster.png` | first-party — produced from the spec in `.demo/` | this project's own licence | — | — |
+| asciinema player (`asciinema-player`) | npm, plays the recordings as text | Apache-2.0 | yes | yes |
+| `web/public/casts/*.cast`, `web/public/uze-demo.gif` | first-party — produced from the specs in `.demo/` | this project's own licence | — | — |
 
 No font is used that lacks embedding rights, no icon set is
 attribution-required or non-commercial, and every asset above has determinable

@@ -67,15 +67,20 @@ sandbox:
   # match the shell running it.
   reset:
     # The release the installer downloads, rebuilt from this checkout's
-    # binary every take, in the layout and checksum format release.yml
-    # publishes.
+    # binary every take, in the layout, checksum and signature format
+    # release.yml publishes. It is signed with a key made for the take, never
+    # the release's own, and the install.sh the mirror serves names that key:
+    # the verification on camera is real, against what the mirror holds.
     - |
       mirror={root}/mirror/latest/download
-      rm -rf {root}/mirror && mkdir -p "$mirror" {root}/stage
+      rm -rf {root}/mirror {root}/stage && mkdir -p "$mirror" {root}/stage
       cp {project}/target/release/uze {root}/stage/uze
       tar -C {root}/stage -czf "$mirror/uze-x86_64-linux-gnu.tar.gz" uze
       (cd "$mirror" && sha256sum uze-x86_64-linux-gnu.tar.gz > SHASUMS256.txt)
-      cp {project}/install.sh {root}/mirror/install.sh
+      ssh-keygen -q -t ed25519 -N '' -C uze-release -f {root}/stage/take-key
+      ssh-keygen -q -Y sign -f {root}/stage/take-key -n uze-release "$mirror/SHASUMS256.txt"
+      key=$(cat {root}/stage/take-key.pub)
+      sed "s|^UZE_RELEASE_KEY=.*|UZE_RELEASE_KEY='$key'|" {project}/install.sh > {root}/mirror/install.sh
     - |
       for pid in $(pgrep -x uze 2>/dev/null); do
         cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
@@ -96,10 +101,23 @@ sandbox:
       executable: true
       text: |
         #!/bin/sh
+        # install.sh pins its downloads to HTTPS (`--proto =https`), which
+        # refuses the file:// this answers with: the pin is dropped for the
+        # two URLs served from the mirror, and kept for everything else.
         mirror={root}/mirror
+        mirrored=
+        for arg do
+          case "$arg" in
+            https://uze.sh/i|https://github.com/uze-sh/uze/releases/latest/download/*) mirrored=1 ;;
+          esac
+        done
+        skip=
         for arg do
           shift
+          if [ -n "$skip" ]; then skip=; continue; fi
           case "$arg" in
+            --proto|--proto-redir) [ -n "$mirrored" ] && { skip=1; continue; } ;;
+            --proto=*|--proto-redir=*) [ -n "$mirrored" ] && continue ;;
             https://uze.sh/i) arg="file://$mirror/install.sh" ;;
             https://github.com/uze-sh/uze/releases/latest/download/*)
               arg="file://$mirror/latest/download/${arg##*/}" ;;

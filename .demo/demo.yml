@@ -23,6 +23,14 @@ video:
   # committed (.demo renders are gitignored).
   out: .demo/uze-demo.gif
   poster: .demo/uze-demo-poster.png
+  # The README's GIF is the one picture of uze many people see, so it is
+  # drawn the way a terminal draws: resvg strokes the sidebar's box-drawing
+  # tree heavier and joins it at the corners, and a line height of 1.0 is
+  # the terminal's own spacing (the renderer's default leaves air between
+  # rows). Checked side by side on this take's frames: no seams between
+  # rows at this font size.
+  renderer: resvg
+  line_height: 1.0
   publish:
     - from: cast
       to: web/public/casts/hero.cast
