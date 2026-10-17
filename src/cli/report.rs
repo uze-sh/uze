@@ -277,96 +277,48 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
     };
     let mut text = progress::report_title(&report.plugin.id, Some(&source));
     text.push('\n');
-    // Agents across, capabilities down: there are at most a handful of
-    // agents, and a plugin may carry any number of capabilities.
-    let mut header = vec![String::new()];
-    header.extend(
-        report
-            .deliveries
-            .iter()
-            .map(|delivery| progress::label(&delivery.display_name)),
-    );
-    let mut rows = vec![header];
+    // Narrowed to one agent, each capability gets a row of its own and
+    // says the name a session there sees it under. Across agents there is
+    // a row per agent and a column per capability kind: the agents are as
+    // many as are installed, the kinds are five.
+    match report.deliveries.as_slice() {
+        [only] => text.push_str(&progress::aligned_rows(capability_rows(report, only))),
+        deliveries => {
+            text.push_str(&progress::aligned_rows_wrapped(
+                capability_names(report, deliveries),
+                progress::terminal_width(),
+            ));
+            text.push_str("\n\n");
+            text.push_str(&progress::aligned_rows(harness_rows(report, deliveries)));
+        }
+    }
     let mut notes = String::new();
-    for capability in &report.capabilities {
-        let mut row = vec![format!(
-            "{} {}",
-            progress::label(capability_word(capability.kind)),
-            capability.name
-        )];
-        for delivery in &report.deliveries {
-            let delivered = delivery
-                .capabilities
-                .iter()
-                .find(|delivered| delivered.identity == capability.identity);
-            // Narrowed to one agent, each cell also says the name a session
-            // there sees the capability under.
-            let seen_as = delivered
-                .filter(|_| report.deliveries.len() == 1)
-                .map(|one| {
-                    format!(
-                        " {}",
-                        one.exposed_name.as_deref().unwrap_or(one.identity.as_str())
-                    )
-                })
-                .unwrap_or_default();
-            row.push(
-                match delivered {
-                    None => String::new(),
-                    Some(one) if one.blocked.is_some() => progress::error_icon(),
-                    Some(one) if one.kind == uze_application::CapabilityKind::Instruction => {
-                        progress::success_icon()
-                    }
-                    Some(one) => match one.route {
-                        CompatibilityRoute::Native => progress::success_icon(),
-                        CompatibilityRoute::Adaptable | CompatibilityRoute::Degraded => {
-                            progress::warning_text(progress::glyph(uze_theme::Symbol::MarkAdapted))
-                        }
-                        CompatibilityRoute::Unsupported => {
-                            progress::label(progress::glyph(uze_theme::Symbol::MarkUnsupported))
-                        }
-                    },
-                } + &seen_as,
-            );
-            if let Some(one) = delivered {
-                let lost = match (&one.blocked, one.route) {
-                    (Some(reason), _) => Some(format!("blocked: {reason}")),
-                    (None, CompatibilityRoute::Native) => None,
-                    (None, route) if one.kind != uze_application::CapabilityKind::Instruction => {
-                        Some(format!(
-                            "{}: {}",
-                            route_word(route),
-                            leading_sentence(&one.evidence)
-                        ))
-                    }
-                    _ => None,
-                };
-                if let Some(lost) = lost {
-                    notes.push_str(&progress::change(
-                        progress::Change::Attention,
-                        &delivery.display_name,
-                        Some(&format!(
-                            "{} {} {lost}",
-                            capability_word(capability.kind),
-                            capability.name
-                        )),
-                    ));
-                }
+    for delivery in &report.deliveries {
+        for capability in &report.capabilities {
+            let Some(one) = delivered(delivery, capability) else {
+                continue;
+            };
+            let lost = match (&one.blocked, one.route) {
+                (Some(reason), _) => Some(format!("blocked: {reason}")),
+                (None, CompatibilityRoute::Native) => None,
+                (None, route) if one.kind != uze_application::CapabilityKind::Instruction => Some(
+                    format!("{}: {}", route_word(route), leading_sentence(&one.evidence)),
+                ),
+                _ => None,
+            };
+            if let Some(lost) = lost {
+                notes.push_str(&progress::change(
+                    progress::Change::Attention,
+                    &delivery.display_name,
+                    Some(&format!(
+                        "{} {} {lost}",
+                        capability_word(capability.kind),
+                        capability.name
+                    )),
+                ));
             }
         }
-        rows.push(row);
     }
-    let mut envelope = vec![progress::label("delivery")];
-    envelope.extend(report.deliveries.iter().map(|delivery| {
-        progress::label(match &delivery.route {
-            uze_application::application::DeliveryRoute::Package { .. } => "package",
-            uze_application::application::DeliveryRoute::CapabilityByCapability { .. } => {
-                "per item"
-            }
-        })
-    }));
-    rows.push(envelope);
-    text.push_str(&progress::aligned_rows(rows));
     text.push_str("\n\n");
     for delivery in &report.deliveries {
         for path in &delivery.withheld {
@@ -415,6 +367,179 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
     ));
     text.push_str(&super::status::render_held_back(&report.held_back));
     text
+}
+
+/// How far one capability reaches one harness, ordered so the worst of a
+/// kind is the one its cell shows.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum Reach {
+    Delivered,
+    Adapted,
+    Unsupported,
+    Blocked,
+}
+
+impl Reach {
+    fn of(delivered: Option<&uze_application::application::CapabilityDelivery>) -> Self {
+        use uze_application::CompatibilityRoute;
+        match delivered {
+            None => Reach::Unsupported,
+            Some(one) if one.blocked.is_some() => Reach::Blocked,
+            Some(one) if one.kind == uze_application::CapabilityKind::Instruction => {
+                Reach::Delivered
+            }
+            Some(one) => match one.route {
+                CompatibilityRoute::Native => Reach::Delivered,
+                CompatibilityRoute::Adaptable | CompatibilityRoute::Degraded => Reach::Adapted,
+                CompatibilityRoute::Unsupported => Reach::Unsupported,
+            },
+        }
+    }
+
+    fn mark(self) -> String {
+        match self {
+            Reach::Delivered => progress::success_icon(),
+            Reach::Adapted => {
+                progress::warning_text(progress::glyph(uze_theme::Symbol::MarkAdapted))
+            }
+            Reach::Unsupported => {
+                progress::label(progress::glyph(uze_theme::Symbol::MarkUnsupported))
+            }
+            Reach::Blocked => progress::error_icon(),
+        }
+    }
+}
+
+fn delivered<'a>(
+    delivery: &'a uze_application::application::HarnessDelivery,
+    capability: &uze_application::application::PluginCapability,
+) -> Option<&'a uze_application::application::CapabilityDelivery> {
+    delivery
+        .capabilities
+        .iter()
+        .find(|delivered| delivered.identity == capability.identity)
+}
+
+fn route_label(route: &uze_application::application::DeliveryRoute) -> String {
+    progress::label(match route {
+        uze_application::application::DeliveryRoute::Package { .. } => "package",
+        uze_application::application::DeliveryRoute::CapabilityByCapability { .. } => "per item",
+    })
+}
+
+/// One harness's inspection: a row per capability, its mark and the name a
+/// session there sees it under, closed by the route the package takes.
+fn capability_rows(
+    report: &PluginInspection,
+    delivery: &uze_application::application::HarnessDelivery,
+) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = report
+        .capabilities
+        .iter()
+        .map(|capability| {
+            let one = delivered(delivery, capability);
+            let seen_as = one
+                .map(|one| {
+                    format!(
+                        " {}",
+                        one.exposed_name.as_deref().unwrap_or(one.identity.as_str())
+                    )
+                })
+                .unwrap_or_default();
+            vec![
+                format!(
+                    "{} {}",
+                    progress::label(capability_word(capability.kind)),
+                    capability.name
+                ),
+                Reach::of(one).mark() + &seen_as,
+            ]
+        })
+        .collect();
+    rows.push(vec![
+        progress::label("delivery"),
+        route_label(&delivery.route),
+    ]);
+    rows
+}
+
+/// The plugin's capabilities named once, a line per kind, so the matrix
+/// below can count them. The kind is padded to the widest harness name, so
+/// the names start in the matrix's own second column.
+fn capability_names(
+    report: &PluginInspection,
+    deliveries: &[uze_application::application::HarnessDelivery],
+) -> Vec<Vec<String>> {
+    let lead = deliveries
+        .iter()
+        .map(|delivery| progress::width(&delivery.display_name))
+        .max()
+        .unwrap_or_default();
+    capability_kinds(report)
+        .into_iter()
+        .map(|kind| {
+            let names: Vec<&str> = report
+                .capabilities
+                .iter()
+                .filter(|capability| capability.kind == kind)
+                .map(|capability| capability.name.as_str())
+                .collect();
+            let word = capability_word(kind);
+            vec![progress::label(format!("{word:<lead$}")), names.join(", ")]
+        })
+        .collect()
+}
+
+fn capability_kinds(
+    report: &PluginInspection,
+) -> std::collections::BTreeSet<uze_application::CapabilityKind> {
+    report
+        .capabilities
+        .iter()
+        .map(|capability| capability.kind)
+        .collect()
+}
+
+/// A row per harness: the route the package takes, then for each kind how
+/// many of its capabilities arrive whole, marked by the worst of them.
+fn harness_rows(
+    report: &PluginInspection,
+    deliveries: &[uze_application::application::HarnessDelivery],
+) -> Vec<Vec<String>> {
+    let kinds = capability_kinds(report);
+    let mut header = vec![String::new(), progress::label("delivery")];
+    header.extend(
+        kinds
+            .iter()
+            .map(|kind| progress::label(capability_word(*kind))),
+    );
+    let mut rows = vec![header];
+    for delivery in deliveries {
+        let mut row = vec![
+            progress::title(&delivery.display_name),
+            route_label(&delivery.route),
+        ];
+        for kind in &kinds {
+            let reaches: Vec<Reach> = report
+                .capabilities
+                .iter()
+                .filter(|capability| capability.kind == *kind)
+                .map(|capability| Reach::of(delivered(delivery, capability)))
+                .collect();
+            let whole = reaches
+                .iter()
+                .filter(|reach| **reach == Reach::Delivered)
+                .count();
+            let worst = reaches.iter().copied().max().unwrap_or(Reach::Delivered);
+            row.push(if worst == Reach::Delivered {
+                format!("{} {whole}", worst.mark())
+            } else {
+                format!("{} {whole}/{}", worst.mark(), reaches.len())
+            });
+        }
+        rows.push(row);
+    }
+    rows
 }
 
 /// A capability kind as one short word: the matrix row names it beside
