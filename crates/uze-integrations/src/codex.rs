@@ -257,6 +257,28 @@ impl IntegrationPort for CodexIntegration {
         session::first_turn_args(turn)
     }
 
+    /// A `SessionStart` hook given to this process alone on a `-c` layer,
+    /// trusted on that layer, printing the agent's context. Measured on
+    /// 0.163.0: a developer item the TUI does not draw, no hook review,
+    /// given again on a resume with the earlier copy kept beside it
+    /// (`experiments/codex/agent-context`). Any `-c` also runs the TUI
+    /// embedded rather than on the shared daemon.
+    fn context_channel(&self) -> uze_core::integration::ContextChannel {
+        uze_core::integration::ContextChannel::LaunchHook
+    }
+
+    fn context_accumulates(&self) -> bool {
+        true
+    }
+
+    fn deliver_context(
+        &self,
+        _home: &uze_core::UzeHome,
+        ctx: &uze_core::integration::AgentContext,
+    ) -> Result<uze_core::integration::ContextContribution> {
+        Ok(context_hook(ctx.file))
+    }
+
     fn conversation_digest(
         &self,
         session: &uze_core::session::SessionId,
@@ -725,6 +747,34 @@ fn codex_agent_findings(keys: &[&str], resource: &Resource) -> Findings {
 /// DEL, which JSON leaves raw and TOML refuses to parse; keeping the JSON
 /// spelling for the rest keeps an agent file already on disk byte-identical,
 /// which is what its drift check compares.
+/// Seconds Codex gives the context hook: it prints one small file.
+const CONTEXT_HOOK_TIMEOUT: u64 = 10;
+
+/// The `-c` layer declaring and trusting the hook that prints `file`.
+fn context_hook(file: &Path) -> uze_core::integration::ContextContribution {
+    let command = crate::shared::agent_context::print_line(file);
+    let (key, hash) = trust::session_layer_trust(
+        uze_core::hook::HookEvent::SessionStart,
+        &command,
+        CONTEXT_HOOK_TIMEOUT,
+    );
+    let hooks = format!(
+        "hooks.SessionStart=[{{hooks=[{{type=\"command\",command={},timeout={CONTEXT_HOOK_TIMEOUT}}}]}}]",
+        toml_string(&command)
+    );
+    let state = format!(
+        "hooks.state={{{}={{trusted_hash={}}}}}",
+        toml_string(&key),
+        toml_string(&hash)
+    );
+    uze_core::integration::ContextContribution {
+        args: ["-c", hooks.as_str(), "-c", state.as_str()]
+            .map(std::ffi::OsString::from)
+            .to_vec(),
+        env: Vec::new(),
+    }
+}
+
 fn toml_string(value: &str) -> String {
     serde_json::to_string(value)
         .expect("strings are JSON serializable")

@@ -5067,6 +5067,7 @@ mod workspace_tests {
             publication: uze_core::integration::PublicationStatus::NotApplicable,
             capabilities: Default::default(),
             runtime_shim_active: true,
+            agent_context: None,
             context_support: HarnessContextSupport {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,

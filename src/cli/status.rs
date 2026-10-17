@@ -476,6 +476,12 @@ pub(crate) fn render_harness_detail(harness: &HarnessHealth) -> String {
     if let Some(minimum) = &harness.below_minimum {
         rows.push(vec![progress::label("version"), below_minimum(minimum)]);
     }
+    if let Some(reason) = &harness.agent_context {
+        rows.push(vec![
+            progress::label("agent context"),
+            progress::label(reason),
+        ]);
+    }
     if let Some(provisioning) = &harness.provisioning {
         rows.push(vec![
             progress::label("installed by"),
@@ -698,6 +704,9 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         text.push('\n');
     }
     text.push_str(&render_held_back(&report.held_back));
+    for note in &report.agent_context {
+        text.push_str(&format!("{} {note}\n", progress::label("·")));
+    }
     for issue in &report.issues {
         text.push_str(&format!("{} {issue}\n", progress::warning_icon()));
     }

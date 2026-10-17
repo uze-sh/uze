@@ -154,6 +154,25 @@ pub(crate) fn project_doc_max_bytes(config: Option<&toml_edit::DocumentMut>) -> 
 /// Codex's default `project_doc_max_bytes` (codex-rs `core/src/config`).
 const DEFAULT_PROJECT_DOC_MAX_BYTES: u64 = 32 * 1024;
 
+/// The trust a launch gives one handler it declares on its own `-c` layer:
+/// the key Codex files a session-flags handler under, and the hash of that
+/// exact handler. Answering the review for a handler UZE wrote, for the one
+/// process it was given to, is the single exception to reading the record
+/// and never writing it — nothing is written into the person's
+/// configuration, and `--dangerously-bypass-hook-trust` would trust every
+/// hook of the invocation, theirs included.
+pub(crate) fn session_layer_trust(
+    event: HookEvent,
+    command: &str,
+    timeout: u64,
+) -> (String, String) {
+    let handler = serde_json::json!({ "type": "command", "command": command, "timeout": timeout });
+    (
+        format!("/<session-flags>/config.toml:{}:0:0", event.abi_name()),
+        identity_hash(event, None, &handler),
+    )
+}
+
 /// Codex's identity of one handler of a group: the event, the group's
 /// matcher (none for an event that takes none), and the handler with its
 /// defaults filled in, as JSON with sorted keys and no whitespace, hashed.
@@ -235,6 +254,19 @@ fn write_sorted(value: &Value, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The hash the Lab's `experiments/codex/agent-context` handed Codex on
+    /// the session layer, which it accepted with no review: the same
+    /// canonical JSON, computed independently.
+    #[test]
+    fn a_session_layer_handler_is_trusted_by_codexs_own_identity() {
+        let (key, hash) = session_layer_trust(HookEvent::SessionStart, "cat /x/context.md", 10);
+        assert_eq!(key, "/<session-flags>/config.toml:session_start:0:0");
+        assert_eq!(
+            hash,
+            "sha256:c1acea534e87e0c6e5c0e9f23bfd4512f60eef563a730348aa6f891c54662192"
+        );
+    }
 
     /// A linked worktree has no level of its own and takes its primary
     /// checkout's, as Codex resolves it; a level on the directory itself

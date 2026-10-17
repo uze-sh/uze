@@ -125,6 +125,7 @@ fn model_with_data() -> TuiModel {
                 publication: PublicationStatus::Published,
                 capabilities: HarnessCapabilities::default(),
                 runtime_shim_active: true,
+                agent_context: None,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
                     project_skills: ContextMechanism::RuntimeShim,
@@ -146,6 +147,7 @@ fn model_with_data() -> TuiModel {
                 publication: PublicationStatus::NotApplicable,
                 capabilities: HarnessCapabilities::default(),
                 runtime_shim_active: true,
+                agent_context: None,
                 context_support: HarnessContextSupport {
                     instructions: ContextMechanism::RuntimeShim,
                     project_skills: ContextMechanism::RuntimeShim,

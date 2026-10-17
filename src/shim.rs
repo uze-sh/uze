@@ -176,6 +176,7 @@ pub fn run(shim_name: &str) -> ! {
             .chain(contribution.extra_args)
             .chain(session.trailing)
             .collect();
+        contribution.extra_env.extend(session.env);
     }
 
     exec_or_die(

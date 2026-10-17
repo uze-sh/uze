@@ -937,6 +937,7 @@ mod tests {
             publication: PublicationStatus::NotApplicable,
             capabilities: HarnessCapabilities::default(),
             runtime_shim_active: true,
+            agent_context: None,
             context_support: HarnessContextSupport {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,

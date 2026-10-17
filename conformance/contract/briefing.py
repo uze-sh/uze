@@ -1,57 +1,53 @@
 """What an agent continuing on another harness is told, on every harness.
 
-When an agent moves to another harness, UZE writes it a briefing and leaves
-it pending on the agent's conversation record; the launcher's next launch
-of that harness gives it one first turn pointing at the file. Whether the
-harness accepts that turn on its command line — alone, and behind its own
-resume argument — and sends it to the model is something only the real
-binary can answer:
+When an agent moves to another harness, UZE records a briefing on the
+agent's conversation record, and every launch of that harness is given it
+as part of the agent's context, through the channel the integration
+declares: no turn the operator did not type. Whether the channel places it
+before the model, keeps it out of the pane, and gives the current one again
+on a resume is something only the real binary can answer:
 
-    the first turn reaches the model, on a fresh start and on a resume.
+    the briefing reaches the model, is not shown, and holds on a resume.
 
-The scene is the continuity scene's, with a briefing pending for this
-harness before each launch. The turn names the briefing's path, so a marker
-in the path is in the turn: the request that carries it is the harness
-having taken the line. The second launch resumes the conversation the
-first started, so one request holding both markers is the resumed
-conversation and the new turn together.
+The scene is the continuity scene's, with a briefing recorded for this
+harness before each launch. A marker in the briefing's text is the
+briefing: the request that carries it beside the turn the operator typed is
+the channel having delivered it. Between the launches the record's
+briefing is rewritten with a second marker, so the resumed process carrying
+that one is the channel giving the context composed for its own launch.
 """
 
 from shared.common import check, describe, provider_struct
 
 from . import continuity
 
-#: In the briefing's file name, so the one line pointing at it carries it.
+#: In the briefing's text, first as recorded and then as rewritten.
 FRESH_MARKER = "UZE_CONFORMANCE_PECAN"
 RESUMED_MARKER = "UZE_CONFORMANCE_ALMOND"
-#: Typed into the first process, so the conversation the second resumes
-#: holds a turn whether or not the first launch's line reached the model.
+#: Typed into each process: the turn a briefed model answers.
 TYPED_MARKER = "UZE_CONFORMANCE_CASHEW"
-
-
-def _briefing(marker):
-    return f"/work/briefing-{marker}.md"
 
 
 def _records():
     return f"{continuity.UZE_HOME}/state/projects/{continuity.project_id(continuity.PROJECT)}"
 
 
+def _record():
+    return f"{_records()}/conversations/{continuity.SLOT_NAME}.json"
+
+
 def prelude(bindings):
-    """The continuity scene, plus a briefing pending for this harness's
-    first launch."""
-    record = f"{_records()}/conversations/{continuity.SLOT_NAME}.json"
+    """The continuity scene, plus a briefing recorded for this harness."""
     return (
         continuity.prelude(bindings.launcher_name())
         + f"""
-printf 'What the agent was doing.\\n' > {_briefing(FRESH_MARKER)}
 mkdir -p {_records()}/conversations
-cat > {record} <<'UZE_EOF'
+cat > {_record()} <<'UZE_EOF'
 {{
-  "schema_version": 2,
+  "schema_version": 3,
   "agent": "{continuity.SLOT_NAME}",
   "harnesses": {{}},
-  "briefing": {{ "integration": "{bindings.integration}", "path": "{_briefing(FRESH_MARKER)}" }}
+  "briefing": {{ "integration": "{bindings.integration}", "text": "What the agent was doing: {FRESH_MARKER}." }}
 }}
 UZE_EOF
 """
@@ -59,52 +55,48 @@ UZE_EOF
 
 
 def between(bindings):
-    """Run after the first process ends: a second briefing, pending on the
-    record the first launch rewrote. Edited in place with `sed`, because
-    the image carries neither Python nor jq."""
-    record = f"{_records()}/conversations/{continuity.SLOT_NAME}.json"
-    pending = (
-        f'"briefing": {{ "integration": "{bindings.integration}", '
-        f'"path": "{_briefing(RESUMED_MARKER)}" }},'
-    )
-    return (
-        f"printf 'What happened since.\\n' > {_briefing(RESUMED_MARKER)}; "
-        f'sed -i \'s|"schema_version": 2,|"schema_version": 2, {pending}|\' {record}'
-    )
+    """Run after the first process ends: the briefing on the record the
+    first launch rewrote, changed. Edited in place with `sed`, because the
+    image carries neither Python nor jq."""
+    return f"sed -i 's|{FRESH_MARKER}|{RESUMED_MARKER}|' {_record()}"
 
 
 def assert_contract(cfg, prov_ip, bindings):
     with describe("briefing"):
-        _assert_the_first_turn_reaches_the_model(cfg, prov_ip, bindings)
+        _assert_the_briefing_reaches_the_model(cfg, prov_ip, bindings)
 
 
-def _assert_the_first_turn_reaches_the_model(cfg, prov_ip, bindings):
+def _assert_the_briefing_reaches_the_model(cfg, prov_ip, bindings):
     with bindings.relaunch_in(
         cfg, prov_ip, continuity.SLOT, prelude(bindings), between(bindings)
     ) as tui:
         plain, matched = bindings.prepare(tui)
-        # A session opened on a turn never draws the empty prompt some
-        # harnesses are recognised by: the turn having reached the model
-        # is the process being up just as much.
-        matched = matched or _carried(cfg, FRESH_MARKER)
         check(
             "briefing-first-process-ready",
             bool(matched),
-            f"{bindings.harness} started with a first turn on its command line"
+            f"{bindings.harness} opened waiting for the operator"
             if matched
             else plain[-160:].replace("\n", " "),
         )
         if not matched:
             return
-        check(
-            "briefing-first-turn-reaches-the-model",
-            _arrives(cfg, tui, "briefing-first-turn", FRESH_MARKER),
-            "a request carries the line pointing at the briefing",
-        )
         bindings.await_input(tui)
-        tui.type(f"{TYPED_MARKER}: remember this word")
+        tui.type(f"{TYPED_MARKER}: carry on")
         tui.submit()
-        tui.snapshot("briefing-typed-turn", tui.collect(reads=6))
+        check(
+            "briefing-reaches-the-model",
+            _arrives(cfg, tui, "briefing-first-turn", TYPED_MARKER, FRESH_MARKER),
+            "the request answering the operator's first turn carries the briefing",
+        )
+        seen = tui.collect(reads=4)
+        tui.snapshot("briefing-first-pane", seen)
+        check(
+            "briefing-is-not-shown",
+            FRESH_MARKER not in plain + seen,
+            "the briefing never appeared in the pane"
+            if FRESH_MARKER not in plain + seen
+            else "the pane shows the briefing's text",
+        )
 
         plain, ended = continuity.end_the_process(tui, bindings)
         check(
@@ -128,10 +120,13 @@ def _assert_the_first_turn_reaches_the_model(cfg, prov_ip, bindings):
         )
         if not matched:
             return
+        bindings.await_input(tui)
+        tui.type("and then?")
+        tui.submit()
         check(
-            "briefing-first-turn-follows-a-resume",
+            "briefing-current-on-a-resume",
             _arrives(cfg, tui, "briefing-resumed-turn", TYPED_MARKER, RESUMED_MARKER),
-            "one request carries the resumed conversation and the new line together",
+            "the resumed conversation is given the briefing composed for its own launch",
         )
 
 

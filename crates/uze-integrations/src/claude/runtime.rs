@@ -207,6 +207,24 @@ pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContri
     }
 }
 
+/// The agent's context as a `CLAUDE.md` inline in its own directory, added
+/// to the launch. Inline rather than an `@import`, because an import from
+/// outside the working directory raises Claude's one-time approval dialog.
+/// The variable is set whether or not the project has portable context:
+/// without it Claude reads none of an added directory's `CLAUDE.md`.
+pub(super) fn agent_context(
+    ctx: &uze_core::integration::AgentContext,
+) -> uze_core::Result<uze_core::integration::ContextContribution> {
+    crate::shared::agent_context::write_private(&ctx.dir.join("CLAUDE.md"), ctx.text)?;
+    Ok(uze_core::integration::ContextContribution {
+        args: vec![OsString::from("--add-dir"), ctx.dir.as_os_str().to_owned()],
+        env: vec![(
+            OsString::from(RUNTIME_PROJECTION_ENV_VAR),
+            OsString::from("1"),
+        )],
+    })
+}
+
 #[cfg(test)]
 mod runtime_projection_tests {
     use std::path::PathBuf;

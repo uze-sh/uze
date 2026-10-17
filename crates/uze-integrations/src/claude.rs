@@ -254,6 +254,27 @@ impl IntegrationPort for ClaudeIntegration {
         session::first_turn_args(turn)
     }
 
+    /// A `CLAUDE.md` in the agent's own `--add-dir` directory, which Claude
+    /// loads like the project's instructions and loads again on every
+    /// launch. Measured on 2.1.301: nothing in the pane, present after a
+    /// resume, and each launch's copy kept in the transcript beside the
+    /// earlier ones (`experiments/claude/agent-context`).
+    fn context_channel(&self) -> uze_core::integration::ContextChannel {
+        uze_core::integration::ContextChannel::Directory
+    }
+
+    fn context_accumulates(&self) -> bool {
+        true
+    }
+
+    fn deliver_context(
+        &self,
+        _home: &uze_core::UzeHome,
+        ctx: &uze_core::integration::AgentContext,
+    ) -> Result<uze_core::integration::ContextContribution> {
+        runtime::agent_context(ctx)
+    }
+
     fn conversation_digest(
         &self,
         session: &uze_core::session::SessionId,

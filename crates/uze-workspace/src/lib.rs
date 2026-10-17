@@ -14,6 +14,7 @@
 //! anything here. `uze-terminal`, which owns the panes, is a different crate
 //! and knows nothing of this one.
 
+pub mod agent_context;
 pub mod approval;
 pub mod briefing;
 pub mod checkout;

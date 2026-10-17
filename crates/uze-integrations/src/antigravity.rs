@@ -79,6 +79,7 @@ use uze_core::{
     store::StoredPackage,
 };
 
+mod agent_context;
 mod generate;
 mod hooks;
 mod mcp;
@@ -346,6 +347,26 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn first_turn_args(&self, turn: &str) -> Vec<std::ffi::OsString> {
         session::first_turn_args(turn)
+    }
+
+    fn context_channel(&self) -> uze_core::integration::ContextChannel {
+        uze_core::integration::ContextChannel::LaunchHook
+    }
+
+    fn context_accumulates(&self) -> bool {
+        true
+    }
+
+    fn context_channel_unavailable(&self) -> Option<String> {
+        agent_context::unavailable(&self.cli_root)
+    }
+
+    fn deliver_context(
+        &self,
+        _home: &UzeHome,
+        ctx: &uze_core::integration::AgentContext,
+    ) -> Result<uze_core::integration::ContextContribution> {
+        agent_context::deliver(ctx)
     }
 
     fn session_recorded_for(&self, cwd: &Path) -> Option<uze_core::session::SessionId> {

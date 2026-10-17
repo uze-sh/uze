@@ -558,6 +558,9 @@ pub struct AgentPlacement {
     /// What preparing the checkout could not do — a missing link target, a
     /// failed setup — none of which stops the launch.
     pub warnings: Vec<String>,
+    /// What is worth telling the operator once about a placement that went
+    /// as asked: on a switch, that the agent waits for their next turn.
+    pub told: Option<String>,
     /// The project's commands, when the checkout was placed without them
     /// because the operator has not approved them yet.
     pub awaiting_approval: Option<crate::application::services::CommandsAwaitingApproval>,

@@ -5,15 +5,19 @@ about: |
   When the harness an agent runs on stops being able to work, the operator
   continues the same agent on another one: same identity, same directory,
   same name. The harness taking over cannot read the other vendor's
-  conversation, so UZE writes it a briefing outside every checkout and the
-  new process opens on one line pointing at it, once. The harness left
-  behind keeps its conversation, and switching back resumes it.
+  conversation, so UZE records a briefing beside the agent and gives it to
+  the new process as the agent's context, through the harness's own
+  channel: no turn the operator did not type, and given again when the
+  agent is restored. The harness left behind keeps its conversation, and
+  switching back resumes it.
 
   Read off the machine: the agent record names the harness it runs now;
-  the briefing is a file only its owner can read, outside the project; the
-  incoming harness's argv ends with the line that points at it, and a
-  restart's argv does not; and the harness switched back to is told to
-  resume the conversation its first launch created.
+  the briefing is in the agent's continuity record and in a context file
+  only its owner can read, outside the project; the incoming harness's argv
+  carries the channel that points at that file and never the briefing's
+  text or a first turn, on the first launch and on a restart alike; and the
+  harness switched back to resumes the conversation its first launch
+  created, with its own channel carrying what it missed.
 
 world:
   project: demo-app
@@ -71,28 +75,32 @@ scenes:
       - file: "{uze_home}/state/projects/*/agents.json"
         contains: '"harness": "codex"'
         about: and its record names the harness it runs now
-      - file: "{uze_home}/runtime/projects/*/briefings/*.md"
-        count: 1
-        about: a briefing was written for the harness taking over
+      - file: "{uze_home}/state/projects/*/conversations/*.json"
+        contains: '"briefing"'
+        about: a briefing was recorded beside the agent for the harness taking over
+      - file: "{uze_home}/runtime/projects/*/agents/*/context.md"
+        contains: "## Briefing"
+        about: and composed into the agent's context for this launch
       - cmd:
           run: >
             case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exit 0 ;; esac;
-            test "$(ls -l {uze_home}/runtime/projects/*/briefings/*.md | cut -c1-10)" = "-rw-------"
+            test "$(ls -l {uze_home}/runtime/projects/*/agents/*/context.md | cut -c1-10)" = "-rw-------"
         about: |
           readable by its owner alone — a mode where there are modes; on
           Windows it is an ACL, which uze-platform's own tests hold
       - cmd:
-          run: test -z "$(find {project} -path '*briefings*')"
+          run: test -z "$(find {project} -name 'context.md' -o -path '*briefing*')"
         about: and nothing of it was written into the project
       - cmd:
           run: >
             line=$(tail -1 {world}/bin/.invocations/codex.log);
-            case "$line" in *"briefings"*".md first"*"carry on.") ;; *) exit 1 ;; esac
+            case "$line" in *"hooks.SessionStart"*"context.md"*) ;; *) exit 1 ;; esac;
+            case "$line" in *"carry on."*|*"Agent:"*) exit 1 ;; esac
         about: |
-          the incoming harness's argv ends with the one line pointing at
-          the briefing, where a positional prompt is read
+          the incoming harness is handed the hook that prints the context
+          file — a path, never the briefing's text — and no first turn
 
-  - scene: a restart relaunches the agent without pointing it at the briefing again
+  - scene: a restart relaunches the agent with its context and no turn
     when:
       - kill: "{uze}"
         say: kill everything holding this workspace, the way a reboot does it
@@ -115,8 +123,11 @@ scenes:
         about: the restart launched the agent's harness again
       - cmd:
           run: >
-            test "$(grep -c 'carry on.' {world}/bin/.invocations/codex.log)" = 1
-        about: and the briefing's line was given to the first launch only
+            test "$(grep -c 'hooks.SessionStart' {world}/bin/.invocations/codex.log)" -ge 2 &&
+            test "$(grep -c 'carry on.' {world}/bin/.invocations/codex.log)" = 0
+        about: |
+          the restored launch was given the context again, and no launch was
+          given a turn the operator did not type
 
   - scene: switching back resumes the conversation the first harness left
     when:
@@ -153,6 +164,11 @@ scenes:
       - file: "{home}/.claude/projects/*/*.jsonl"
         count: 1
         about: one Claude conversation, the same one
-      - file: "{uze_home}/runtime/projects/*/briefings/*.md"
+      - cmd:
+          run: >
+            line=$(tail -1 {world}/bin/.invocations/claude.log);
+            case "$line" in *"--add-dir"*"/agents/"*) ;; *) exit 1 ;; esac
+        about: Claude is handed the agent's context directory
+      - file: "{uze_home}/runtime/projects/*/agents/*/CLAUDE.md"
         contains: "You worked on this agent before"
         about: and it was briefed only on what happened while it was away

@@ -529,11 +529,15 @@ impl Attach<'_> {
         if let Some(awaiting) = placement.awaiting_approval.clone() {
             self.model.commands_await(awaiting, true);
         }
-        match first_warning {
-            Some(text) => self
+        match (first_warning, placement.told.clone()) {
+            (Some(text), _) => self
                 .model
                 .raise_toast(ToastKind::Warned, text, label.clone(), None),
-            None => {
+            (None, Some(text)) => {
+                self.model
+                    .raise_toast(ToastKind::Told, text, label.clone(), None)
+            }
+            (None, None) => {
                 self.model.remembered.notice = None;
                 self.model.dirty = true;
             }

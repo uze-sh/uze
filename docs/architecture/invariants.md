@@ -2238,6 +2238,29 @@ only its secret. Refusing the keyless launch would not have made it safer
 > `crates/uze-workspace/src/conversation.rs::a_record_issued_no_key_admits_the_launch_that_names_it`
 > `tests/acceptance/session_continuity.rs::an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation`
 
+### An agent's context reaches its harness as a path, never as text, and only for UZE's launches
+
+The context composed for an agent — its briefing today — reaches the harness
+through the channel its integration declares: an added directory, a hook
+given to that one process, or a plugin that finds it by the conversation UZE
+assigned. No argument and no environment variable of the launch ever holds
+its text, and a launch UZE does not own — the operator's own invocation, or
+a harness an agent starts — is composed nothing and given nothing.
+
+> `crates/uze-workspace/src/continuity.rs::a_channel_gives_the_briefing_on_every_launch_and_never_in_argv`
+> `crates/uze-workspace/src/continuity.rs::an_operators_own_invocation_is_given_no_context`
+> `crates/uze-workspace/src/continuity.rs::nothing_to_give_delivers_nothing`
+> `crates/uze-integrations/src/opencode/agent_context.rs::the_document_is_written_under_the_assigned_conversation`
+
+### A harness without an invisible channel is told so, and pointed at its briefing once
+
+Where a harness declares no channel, or its channel cannot run here, the
+briefing falls back to one first turn given to one launch, and status and
+doctor say the agent context does not reach that harness.
+
+> `crates/uze-workspace/src/continuity.rs::a_degraded_harness_is_pointed_at_its_briefing_by_the_first_launch_only`
+> `crates/uze-workspace/src/continuity.rs::an_unavailable_channel_falls_back_to_the_first_turn`
+
 ### The record follows the agent, not the assignment
 
 An identifier written once at launch goes stale the moment the person
@@ -2252,22 +2275,24 @@ observed for the task, so what resumes is where the work was left.
 Continuing an agent in another harness relaunches the same agent (its
 identity, checkout, branch and label) on a harness this machine registered,
 and the harness recorded is the latest launch's. What it is told is a
-briefing UZE writes once per switch, bounded, owner-only and outside every
-checkout: Git's facts and a digest of the outgoing conversation, or Git
-alone where the harness keeps no transcript UZE reads; a harness coming
-back is told only what happened since it left. The briefing goes to the
-incoming harness's first launch and to no other, and a busy agent is asked
-about before its process is ended.
+briefing UZE records once per switch, bounded, in the agent's continuity
+record and outside every checkout: Git's facts and a digest of the outgoing
+conversation, or Git alone where the harness keeps no transcript UZE reads;
+a harness coming back is told only what happened since it left. The
+briefing is given, as the agent's context, to every launch of the incoming
+harness until the agent commits, and to no other harness; a busy agent is
+asked about before its process is ended.
 
 > `crates/uze-application/src/application/services/tasks/switch.rs::tests::a_switched_agent_runs_the_new_harness_in_the_same_place_with_a_briefing_pending`
 > `crates/uze-application/src/application/services/tasks/switch.rs::tests::an_isolated_agent_continues_in_its_own_checkout_and_is_briefed_on_its_commits`
 > `crates/uze-application/src/application/services/tasks/switch.rs::tests::switching_back_briefs_the_returning_harness_only_on_what_it_missed`
 > `crates/uze-application/src/application/services/tasks/switch.rs::tests::a_harness_nobody_registered_is_refused`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::resuming_on_another_harness_records_that_harness`
-> `crates/uze-workspace/src/briefing.rs::tests::a_briefing_is_written_outside_the_checkout_for_its_owner_alone`
+> `crates/uze-workspace/src/agent_context.rs::tests::a_context_is_written_outside_the_checkout_for_its_owner_alone`
 > `crates/uze-workspace/src/briefing.rs::tests::a_conversation_far_larger_than_the_bound_keeps_the_goal_the_summary_and_the_latest_turns`
-> `crates/uze-workspace/src/continuity.rs::tests::a_pending_briefing_is_given_to_the_first_launch_and_to_no_other`
-> `crates/uze-workspace/src/conversation.rs::tests::a_briefing_is_taken_only_by_the_harness_it_was_written_for`
+> `crates/uze-workspace/src/continuity.rs::tests::a_briefing_for_another_harness_is_neither_given_nor_changed`
+> `crates/uze-workspace/src/conversation.rs::tests::a_briefing_applies_only_to_the_harness_it_was_written_for`
+> `crates/uze-workspace/src/conversation.rs::tests::a_briefing_retires_once_the_checkout_moved_past_its_switch`
 > `src/ui/orchestrator/tests/switch.rs::a_busy_agent_is_asked_before_it_is_interrupted`
 > `conformance/contract/briefing.py` (all four harnesses)
 

@@ -49,7 +49,7 @@ use crate::{
     task::{self, AgentId, now_unix},
 };
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// How the identifier in a record got there, which is what the next launch
 /// needs to know: one that UZE named is minted again for a new task, one
@@ -93,18 +93,27 @@ pub struct ConversationRecord {
     /// Keyed by integration id, so a fifth harness adds a key rather than a
     /// shape.
     pub harnesses: BTreeMap<String, HarnessConversation>,
-    /// A briefing written for the next launch of one harness, given once
-    /// and cleared by that launch. Where it is, never what it says: the
-    /// record holds no conversation text.
+    /// The briefing written for the harness the agent was last switched
+    /// to: the one conversation text the record holds, because the channel
+    /// that gives it on every launch keeps no copy UZE could read back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub briefing: Option<PendingBriefing>,
+    pub briefing: Option<Briefing>,
 }
 
-/// A briefing waiting for the launch it was written for.
+/// What the agent was doing when it was switched, for the harness it was
+/// switched to.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PendingBriefing {
+pub struct Briefing {
     pub integration: String,
-    pub path: PathBuf,
+    pub text: String,
+    /// The checkout's commit when the switch happened. Once the branch has
+    /// moved past it the work has moved on, and the briefing retires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_at_switch: Option<String>,
+    /// Set once a harness with no invisible channel was pointed at the
+    /// briefing by its first turn, which is given only once.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub first_turn_given: bool,
 }
 
 impl ConversationRecord {
@@ -117,13 +126,37 @@ impl ConversationRecord {
         }
     }
 
-    /// Takes the briefing pending for `integration`, leaving one written
-    /// for any other harness where it is.
-    pub fn take_briefing(&mut self, integration: &str) -> Option<PathBuf> {
-        if self.briefing.as_ref()?.integration != integration {
-            return None;
+    /// The briefing written for `integration`, if one applies to it.
+    pub fn briefing_for(&self, integration: &str) -> Option<&Briefing> {
+        self.briefing
+            .as_ref()
+            .filter(|briefing| briefing.integration == integration)
+    }
+
+    /// The briefing for `integration` whose first turn has not been given
+    /// yet, marking it given: a harness without an invisible channel is
+    /// pointed at it by one launch only.
+    pub fn take_first_turn(&mut self, integration: &str) -> Option<String> {
+        let briefing = self
+            .briefing
+            .as_mut()
+            .filter(|briefing| briefing.integration == integration && !briefing.first_turn_given)?;
+        briefing.first_turn_given = true;
+        Some(briefing.text.clone())
+    }
+
+    /// Retires the briefing once the checkout's commit is no longer the
+    /// one it was switched at. Returns whether it did.
+    pub fn retire_briefing_past(&mut self, head: &str) -> bool {
+        let moved_on = self
+            .briefing
+            .as_ref()
+            .and_then(|briefing| briefing.head_at_switch.as_deref())
+            .is_some_and(|at_switch| at_switch != head);
+        if moved_on {
+            self.briefing = None;
         }
-        self.briefing.take().map(|pending| pending.path)
+        moved_on
     }
 
     pub fn get(&self, integration: &str) -> Option<&HarnessConversation> {
@@ -249,6 +282,21 @@ pub fn load(home: &UzeHome, project_root: &Path, agent: &AgentId) -> Conversatio
 impl uze_document::Shaped for ConversationRecord {
     const SHAPE: u32 = SCHEMA_VERSION;
     const KIND: &'static str = "conversation";
+
+    fn ladder() -> uze_document::Ladder {
+        &[uze_document::Step {
+            from: 2,
+            to: 3,
+            // Shape 2's briefing named a generated file under `runtime/`,
+            // which is not carried across; the conversations are.
+            climb: |mut document| {
+                if let Some(fields) = document.as_object_mut() {
+                    fields.remove("briefing");
+                }
+                Ok(document)
+            },
+        }]
+    }
 }
 
 /// Replaces the document atomically, unless a newer build wrote it: [`load`]
@@ -298,8 +346,18 @@ pub(crate) fn claimed_by_others(
 /// Forgets an agent's conversations. Best-effort by construction: a record
 /// that is already gone is the outcome asked for.
 pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
+    // A channel that finds the context by conversation keeps one document
+    // per conversation, outside the agent's own directory.
+    for (integration, entry) in load(home, project_root, agent).harnesses {
+        if let Some(session) = entry.conversation {
+            let _ = fs::remove_file(
+                home.session_context_dir(&integration)
+                    .join(format!("{}.md", session.as_str())),
+            );
+        }
+    }
     let _ = fs::remove_file(store_path(home, project_root, agent));
-    let _ = fs::remove_file(home.briefing_path(&project_id(project_root), agent.as_str()));
+    let _ = fs::remove_dir_all(home.agent_context_dir(&project_id(project_root), agent.as_str()));
 }
 
 /// The agent a verified claim resolved to, which kind of record it is, and
@@ -415,16 +473,82 @@ mod tests {
         );
     }
 
+    fn briefing(integration: &str, head: Option<&str>) -> Briefing {
+        Briefing {
+            integration: integration.into(),
+            text: "the work so far".into(),
+            head_at_switch: head.map(str::to_owned),
+            first_turn_given: false,
+        }
+    }
+
     #[test]
-    fn a_briefing_is_taken_only_by_the_harness_it_was_written_for() {
+    fn a_briefing_applies_only_to_the_harness_it_was_written_for() {
         let mut record = ConversationRecord::new(AgentId::adopted("x"));
-        record.briefing = Some(PendingBriefing {
-            integration: "codex".into(),
-            path: PathBuf::from("/b.md"),
-        });
-        assert_eq!(record.take_briefing("claude"), None);
-        assert_eq!(record.take_briefing("codex"), Some(PathBuf::from("/b.md")));
-        assert_eq!(record.take_briefing("codex"), None);
+        record.briefing = Some(briefing("codex", None));
+        assert!(record.briefing_for("claude").is_none());
+        assert_eq!(
+            record.briefing_for("codex").map(|b| b.text.as_str()),
+            Some("the work so far")
+        );
+        // Given on every launch: reading it leaves it where it is.
+        assert!(record.briefing_for("codex").is_some());
+    }
+
+    #[test]
+    fn a_first_turn_is_given_once() {
+        let mut record = ConversationRecord::new(AgentId::adopted("x"));
+        record.briefing = Some(briefing("codex", None));
+        assert_eq!(record.take_first_turn("claude"), None);
+        assert_eq!(
+            record.take_first_turn("codex").as_deref(),
+            Some("the work so far")
+        );
+        assert_eq!(record.take_first_turn("codex"), None);
+        assert!(record.briefing_for("codex").is_some());
+    }
+
+    #[test]
+    fn a_briefing_retires_once_the_checkout_moved_past_its_switch() {
+        let mut record = ConversationRecord::new(AgentId::adopted("x"));
+        record.briefing = Some(briefing("codex", Some("abc")));
+        assert!(!record.retire_briefing_past("abc"));
+        assert!(record.briefing.is_some());
+        assert!(record.retire_briefing_past("def"));
+        assert!(record.briefing.is_none());
+    }
+
+    #[test]
+    fn a_shape_two_record_is_carried_across_without_its_briefing_path() {
+        let home = home("conversation-shape-two");
+        let root = project("conversation-shape-two-project");
+        let agent = AgentId::generate();
+        let path = store_path(&home, &root, &agent);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            serde_json::json!({
+                "schema_version": 2,
+                "agent": agent.as_str(),
+                "harnesses": {"claude": {
+                    "conversation": "c-1", "origin": "assigned",
+                    "launched_at_unix": 1, "observed_at_unix": null, "preceded_by": null
+                }},
+                "briefing": {"integration": "codex", "path": "/runtime/b.md"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let record = load(&home, &root, &agent);
+        assert_eq!(record.schema_version, SCHEMA_VERSION);
+        assert!(record.briefing.is_none());
+        assert_eq!(
+            record
+                .get("claude")
+                .and_then(|e| e.conversation.as_ref())
+                .map(|c| c.as_str()),
+            Some("c-1")
+        );
     }
 
     #[test]

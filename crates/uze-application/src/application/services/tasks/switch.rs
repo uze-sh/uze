@@ -4,7 +4,7 @@ use uze_core::integration::IntegrationPort;
 use uze_workspace::{
     briefing::{self, GitFacts, Handover},
     continuity,
-    conversation::{ConversationRecord, PendingBriefing},
+    conversation::{Briefing, ConversationRecord},
 };
 
 use super::*;
@@ -119,15 +119,18 @@ impl Workspace<'_> {
             cwd: switched.directory,
             placement: switched.placement,
             warnings: Vec::new(),
+            told: Some(switched_notice(incoming)),
             awaiting_approval: None,
             view,
             launch_key: switched.launch_key,
         })
     }
 
-    /// Writes the agent's briefing and leaves it pending for `incoming`.
-    /// Best-effort: a briefing that cannot be written is an agent that
-    /// starts knowing only what its checkout says, never a switch refused.
+    /// Records the agent's briefing for `incoming`, which every launch on
+    /// that harness is given as part of the agent's context until the work
+    /// moves past the commit it was switched at. Best-effort: a briefing
+    /// that cannot be recorded is an agent that starts knowing only what its
+    /// checkout says, never a switch refused.
     fn brief(
         &self,
         root: &Path,
@@ -166,25 +169,39 @@ impl Workspace<'_> {
             &git,
             digest.as_ref(),
         );
-        let written = briefing::write(&self.0.home, root, switched.id.as_str(), &text)
-            .inspect_err(|error| {
-                tracing::warn!(agent = %switched.id, %error, "the briefing could not be written");
-            })
-            .ok();
-        // Marked whether or not the briefing was written: the next time
-        // the outgoing harness comes back, this is where its delta starts.
+        // The next time the outgoing harness comes back, its delta starts
+        // here.
         let recorded = conversation::update(&self.0.home, root, &switched.id, |stored| {
             if let Some(outgoing) = outgoing {
                 stored.left(outgoing.id());
             }
-            stored.briefing = written.map(|path| PendingBriefing {
+            stored.briefing = Some(Briefing {
                 integration: incoming.id().to_owned(),
-                path,
+                text,
+                head_at_switch: git.head.clone(),
+                first_turn_given: false,
             });
         });
         if let Err(error) = recorded {
             tracing::warn!(agent = %switched.id, %error, "the switch could not be recorded");
         }
+    }
+}
+
+/// What the operator is told once a switch placed the agent: the incoming
+/// harness opens with no turn of its own, so it waits for theirs.
+fn switched_notice(incoming: &dyn IntegrationPort) -> String {
+    if incoming.context_channel().is_degraded() || incoming.context_channel_unavailable().is_some()
+    {
+        format!(
+            "Continued in {}, pointed at its briefing by one first turn.",
+            incoming.display_name()
+        )
+    } else {
+        format!(
+            "Continued in {}. It holds the briefing and waits for your next message.",
+            incoming.display_name()
+        )
     }
 }
 
@@ -321,7 +338,7 @@ mod tests {
         let record = conversation::load(&app.home, &root, &id);
         let pending = record.briefing.clone().expect("a briefing is pending");
         assert_eq!(pending.integration, "right");
-        let text = std::fs::read_to_string(&pending.path).unwrap();
+        let text = pending.text.clone();
         assert!(text.contains("the goal of c1, since None"), "{text}");
         assert!(
             record.get("left").is_some(),
@@ -353,7 +370,7 @@ mod tests {
             Some(SessionId::new("observed")),
             "the observation is recorded, not only used"
         );
-        let text = std::fs::read_to_string(record.briefing.unwrap().path).unwrap();
+        let text = record.briefing.unwrap().text;
         assert!(text.contains("the goal of observed"), "{text}");
         let _ = std::fs::remove_dir_all(project);
     }
@@ -393,7 +410,7 @@ mod tests {
 
     fn briefing_text(app: &UzeApplication, root: &Path, id: &AgentId) -> String {
         let record = conversation::load(&app.home, root, id);
-        std::fs::read_to_string(record.briefing.unwrap().path).unwrap()
+        record.briefing.unwrap().text
     }
 
     #[test]
@@ -483,7 +500,7 @@ mod tests {
         assert_eq!(switched.cwd, placed.cwd);
         assert!(matches!(switched.placement, Placement::Isolated { .. }));
         let record = conversation::load(&app.home, &canonical(&root), &id);
-        let text = std::fs::read_to_string(record.briefing.unwrap().path).unwrap();
+        let text = record.briefing.unwrap().text;
         assert!(text.contains("feat: the work so far"), "{text}");
         assert!(text.contains("work.rs"), "{text}");
     }

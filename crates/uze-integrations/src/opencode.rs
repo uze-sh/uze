@@ -42,6 +42,7 @@ use uze_core::{
     store::PackageId,
 };
 
+mod agent_context;
 mod distribution;
 mod hooks;
 mod mcp;
@@ -255,6 +256,22 @@ impl IntegrationPort for OpenCodeIntegration {
         session::first_turn_args(turn)
     }
 
+    fn context_channel(&self) -> uze_core::integration::ContextChannel {
+        uze_core::integration::ContextChannel::SessionPlugin
+    }
+
+    fn context_channel_unavailable(&self) -> Option<String> {
+        agent_context::unavailable(self.config_root(), &self.session_context_dir())
+    }
+
+    fn deliver_context(
+        &self,
+        _home: &UzeHome,
+        ctx: &uze_core::integration::AgentContext,
+    ) -> Result<uze_core::integration::ContextContribution> {
+        agent_context::deliver(&self.session_context_dir(), ctx)
+    }
+
     fn observe_session(
         &self,
         ctx: &uze_core::integration::ObservationContext,
@@ -343,6 +360,7 @@ impl IntegrationPort for OpenCodeIntegration {
     }
     fn install(&self, home: &UzeHome, detection: &HarnessDetection) -> Result<()> {
         fs::create_dir_all(&self.skills_dir).map_err(UzeError::write(&self.skills_dir))?;
+        agent_context::ensure_plugin(self.config_root(), &self.session_context_dir())?;
         state::record(
             home,
             self.id(),
@@ -635,6 +653,11 @@ impl OpenCodeIntegration {
 
     /// The config root is the parent of `opencode.json` — the physical
     /// anchor for the owned `plugins/` bridge file.
+    /// Where the plugin finds each conversation's document.
+    fn session_context_dir(&self) -> PathBuf {
+        self.uze_home.session_context_dir(self.id())
+    }
+
     fn config_root(&self) -> &Path {
         self.config_path
             .parent()

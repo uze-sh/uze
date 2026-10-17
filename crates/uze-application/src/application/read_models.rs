@@ -686,6 +686,10 @@ pub struct HarnessHealth {
     /// never resolved against a project. Whether one particular directory
     /// is actually being delivered is `AgentContextStatus`'s question.
     pub context_support: HarnessContextSupport,
+    /// Why an agent the workspace launches here is not given its context
+    /// invisibly, when it is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<String>,
 }
 
 impl HarnessHealth {
@@ -1012,6 +1016,10 @@ pub struct StatusReport {
     /// acts in it, with the action. Not an issue of the project's: the
     /// delivery is in place, and only the person can let the harness use it.
     pub held_back: Vec<HeldBackNote>,
+    /// The detected harnesses an agent the workspace launches is not given
+    /// its context invisibly on, and why. Not an issue of the project's:
+    /// it is the harness's, on this machine.
+    pub agent_context: Vec<String>,
 }
 
 /// One delivered capability a harness holds back until the person acts in

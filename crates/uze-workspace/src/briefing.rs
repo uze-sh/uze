@@ -2,47 +2,41 @@
 //!
 //! A harness cannot read another vendor's conversation, so a switch writes
 //! a briefing — Git's account of the work and, where the harness being left
-//! can read its own transcript, the substance of the conversation — and the
-//! incoming harness's first turn points at it. The briefing is the one
-//! place UZE writes conversation text: the continuity record names where it
-//! is and nothing more.
+//! can read its own transcript, the substance of the conversation. It is
+//! kept in the agent's continuity record and given to the incoming harness
+//! as a section of the agent's context ([`crate::agent_context`]), so it
+//! reaches the model without a turn the operator did not type. Only a
+//! harness with no invisible channel is pointed at it by a first turn.
 //!
-//! The first turn is one line rather than the briefing itself, for two
-//! reasons: a process's arguments are readable by anyone who can list it,
-//! and a briefing the size of a conversation is the context exhaustion the
+//! A briefing the size of a conversation is the context exhaustion the
 //! switch was usually made to escape. Hence the bound, and the order things
 //! are cut in when a conversation is larger than it: Git last answers what
 //! the checkout already holds, the goal and the latest summary answer what
 //! nothing else can.
 
-use std::{
-    fs,
-    io::Write as _,
-    path::{Path, PathBuf},
-};
+use std::path::Path;
 
-use crate::{
-    Result, UzeError,
-    harness_runtime::prepare_project_dir,
-    home::UzeHome,
-    session::{ConversationDigest, SessionId, Speaker},
-};
+use crate::session::{ConversationDigest, SessionId, Speaker};
 
-/// The most a briefing holds, so reading it costs the incoming harness a
-/// small, predictable part of its context.
-pub const BOUND: usize = 12 * 1024;
+/// The most a briefing holds: its share of the agent's context, less the
+/// heading the context gives it.
+pub const BOUND: usize = crate::agent_context::BRIEFING_SHARE - 32;
 
-const GOAL_BOUND: usize = 1536;
-const SUMMARY_BOUND: usize = 4096;
-const OPERATOR_TURN_BOUND: usize = 400;
-const OPERATOR_TURNS_BOUND: usize = 2560;
+/// The heading the briefing sits under in the agent's context.
+pub const HEADING: &str = "Briefing";
+
+const GOAL_BOUND: usize = 800;
+const SUMMARY_BOUND: usize = 1600;
+const OPERATOR_TURN_BOUND: usize = 300;
+const OPERATOR_TURNS_BOUND: usize = 900;
 const AGENT_MESSAGES: usize = 3;
-const AGENT_MESSAGES_BOUND: usize = 3072;
-const COMMAND_BOUND: usize = 300;
-const GIT_BOUND: usize = 1536;
+const AGENT_MESSAGES_BOUND: usize = 1200;
+const COMMAND_BOUND: usize = 200;
+const GIT_BOUND: usize = 1000;
 const COMMITS_LISTED: usize = 30;
 
-/// The operator's first message to a harness taking over an agent's work.
+/// The operator's first message to a harness with no invisible channel
+/// taking over an agent's work.
 pub fn first_turn(briefing: &Path) -> String {
     format!(
         "You are continuing work another agent started in this checkout. \
@@ -67,6 +61,9 @@ pub struct Handover<'a> {
 /// Git's account of the work, read from the agent's own directory.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GitFacts {
+    /// The checkout's commit when the facts were read: what the briefing
+    /// is retired against once the work moves past it.
+    pub head: Option<String>,
     pub branch: Option<String>,
     pub base: Option<String>,
     /// Subjects, newest first.
@@ -107,6 +104,7 @@ impl GitFacts {
             .map(|base| lines(&["diff", "--stat", base]).join("\n"))
             .unwrap_or_default();
         Self {
+            head: lines(&["rev-parse", "HEAD"]).into_iter().next(),
             branch: lines(&["branch", "--show-current"]).into_iter().next(),
             base: base.map(str::to_owned),
             commits: lines(&log),
@@ -167,7 +165,7 @@ pub fn render(
 }
 
 fn header(handover: &Handover<'_>, digest: Option<&ConversationDigest>) -> String {
-    let mut lines = vec![format!("# Briefing: {}", handover.label), String::new()];
+    let mut lines = vec![format!("Agent: {}", handover.label), String::new()];
     lines.push(match handover.returning_since {
         Some(_) => format!(
             "You worked on this agent before. It continued in {} since; below is only what \
@@ -298,25 +296,6 @@ fn clip(text: &str, bound: usize) -> String {
     format!("{}{MARK}", text[..end].trim_end())
 }
 
-/// Writes `text` as `agent`'s briefing, readable by its owner alone,
-/// replacing the previous one. The project's runtime directory is marked
-/// for the root it belongs to, so the sweep keeps it as long as the project
-/// is there.
-pub fn write(home: &UzeHome, project_root: &Path, agent: &str, text: &str) -> Result<PathBuf> {
-    let canonical = uze_core::path::Canonical::canonical(project_root)
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    prepare_project_dir(home, &canonical)?;
-    let path = home.briefing_path(&crate::conversation::project_id(project_root), agent);
-    let directory = path.parent().expect("a briefing lives in a directory");
-    uze_platform::fs::create_private_dir_all(directory).map_err(UzeError::write(directory))?;
-    let _ = fs::remove_file(&path);
-    uze_platform::fs::private_file(fs::OpenOptions::new().write(true).create_new(true))
-        .open(&path)
-        .and_then(|mut file| file.write_all(text.as_bytes()))
-        .map_err(UzeError::write(&path))?;
-    Ok(path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,6 +321,7 @@ mod tests {
 
     fn git() -> GitFacts {
         GitFacts {
+            head: Some("def456".into()),
             branch: Some("fix/branch-naming".into()),
             base: Some("abc123".into()),
             commits: vec!["fix: name the branch".into()],
@@ -477,34 +457,5 @@ mod tests {
     #[test]
     fn a_cut_never_splits_a_character() {
         assert_eq!(clip("ééééé", 9), "é […]");
-    }
-
-    #[test]
-    fn a_briefing_is_written_outside_the_checkout_for_its_owner_alone() {
-        let root = uze_testkit::temp::scratch("briefing-write");
-        let project = root.join("repo");
-        fs::create_dir_all(&project).unwrap();
-        let home = UzeHome::at(root.join("uze"));
-
-        let first = write(&home, &project, "agent-1", "first").unwrap();
-        let path = write(&home, &project, "agent-1", "second").unwrap();
-
-        assert_eq!(first, path, "one per agent, replaced");
-        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
-        assert!(!path.starts_with(&project));
-        // A mode is a Unix permission; Windows narrows the file with an
-        // ACL, which `uze-platform`'s own tests cover.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600);
-        }
-        assert!(
-            crate::harness_runtime::projection_root(path.parent().unwrap().parent().unwrap())
-                .is_some(),
-            "the sweep can tell whose it is"
-        );
-        let _ = fs::remove_dir_all(root);
     }
 }

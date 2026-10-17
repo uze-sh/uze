@@ -1,6 +1,6 @@
 ## 0. Preconditions
 
-- [ ] 0.1 Archive `switch-agent-harness` (all tasks done, #258), so `agent-harness-switch` and its `agent-session-continuity` delta exist in `openspec/specs/`
+- [x] 0.1 Archive `switch-agent-harness` (all tasks done, #258), so `agent-harness-switch` and its `agent-session-continuity` delta exist in `openspec/specs/`
 
 ## 1. Measure every channel first (Lab experiments, no Rust)
 
@@ -16,34 +16,34 @@ Measured on 2026-10-17 (decisions.md M1). The experiment files live in the `agen
 
 ## 2. Context and briefing (uze-core + uze-workspace)
 
-- [ ] 2.1 `UzeHome` paths for the agent context directory and the OpenCode session index; the architecture map test passes
-- [ ] 2.2 Compose the context in `continuity::plan`: preamble (≤500 bytes), sections with shares summing to the 9,000-byte bound (briefing 5,000, memory 3,500 reserved), nothing when no section applies; tests for the bound with multi-byte text and the non-JSON opening
-- [ ] 2.3 Briefing into the record: `Briefing{integration, text, head_at_switch}`, the continuity record's shape step and ladder rung, `render` bounded at 5,000 bytes
-- [ ] 2.4 Retire the briefing on the evaluation pass once HEAD moves past `head_at_switch`, and on the next switch; tests for both and for a launch on another harness
-- [ ] 2.5 `LaunchPlan.env`; the shim sets it, and never composes or gives a context on a launch it does not own
+- [x] 2.1 `UzeHome` paths for the agent context directory and the OpenCode session index; the architecture map test passes
+- [x] 2.2 Compose the context in `continuity::plan`: preamble (≤500 bytes), sections with shares summing to the 9,000-byte bound (briefing 5,000, memory 3,500 reserved), nothing when no section applies; tests for the bound with multi-byte text and the non-JSON opening
+- [x] 2.3 Briefing into the record: `Briefing{integration, text, head_at_switch}`, the continuity record's shape step and ladder rung, `render` bounded at 5,000 bytes
+- [x] 2.4 Retire the briefing on the evaluation pass once HEAD moves past `head_at_switch`, and on the next switch; tests for both and for a launch on another harness
+- [x] 2.5 `LaunchPlan.env`; the shim sets it, and never composes or gives a context on a launch it does not own
 
 ## 3. Channels (uze-integrations), per what group 1 measured
 
-- [ ] 3.1 `IntegrationPort::context_channel()` with `Directory`, `LaunchHook`, `SessionPlugin`, `FirstTurn` (default) and an `accumulates` flag
-- [ ] 3.2 Claude `Directory`: per-agent `CLAUDE.md` with the context inline, `--add-dir`, env flag always set
-- [ ] 3.3 Codex `LaunchHook`: `-c` hook and session-layer trust for the exact handler, through `uze-platform`'s shell; shared with `track-touched-repositories` if it landed first
-- [ ] 3.4 OpenCode `SessionPlugin`: `plugins/uze-context.ts` delivered by setup with a receipt; the shim writes the context under the assigned session id in the integration-parameterised `UzeHome` directory; `conversation::forget` removes it
-- [ ] 3.5 Antigravity `LaunchHook`: per-launch `hooks.json` with a nonce, conditional handler (`sh` and PowerShell) printing once per launch, `accumulates`; signed-in as the `json-hooks-enabled` proxy, `FirstTurn` for the briefing when not signed in
-- [ ] 3.6 Status and doctor report a degraded or unavailable channel per harness, with the reason
+- [x] 3.1 `IntegrationPort::context_channel()` with `Directory`, `LaunchHook`, `SessionPlugin`, `FirstTurn` (default) and an `accumulates` flag
+- [x] 3.2 Claude `Directory`: per-agent `CLAUDE.md` with the context inline, `--add-dir`, env flag always set
+- [x] 3.3 Codex `LaunchHook`: `-c` hook and session-layer trust for the exact handler, through `uze-platform`'s shell; shared with `track-touched-repositories` if it landed first
+- [x] 3.4 OpenCode `SessionPlugin`: `plugins/uze-context.ts` delivered by setup with a receipt; the shim writes the context under the assigned session id in the integration-parameterised `UzeHome` directory; `conversation::forget` removes it
+- [x] 3.5 Antigravity `LaunchHook`: per-launch `hooks.json` with a nonce, conditional handler (`sh` and PowerShell) printing once per launch, `accumulates`; signed-in as the `json-hooks-enabled` proxy, `FirstTurn` for the briefing when not signed in
+- [x] 3.6 Status and doctor report a degraded or unavailable channel per harness, with the reason
 
 ## 4. Switch
 
-- [ ] 4.1 `switch_harness` adds no first turn on non-`FirstTurn` channels, and its toast says the agent waits for the operator's next turn
-- [ ] 4.2 Remove the `runtime/.../briefings/` path and its sweep
+- [x] 4.1 `switch_harness` adds no first turn on non-`FirstTurn` channels, and its toast says the agent waits for the operator's next turn
+- [x] 4.2 Remove the `runtime/.../briefings/` path and its sweep
 
 ## 5. Conformance and journeys
 
-- [ ] 5.1 `conformance/contract/agent_context.py`: the four outcomes, bindings per harness, declared limitations where measured
-- [ ] 5.2 Move `briefing-first-turn-*` onto the contract as `briefing-reaches-the-model`, and keep `briefing-first-turn` for `FirstTurn` harnesses
+- [x] 5.1 `conformance/contract/agent_context.py`: the four outcomes, bindings per harness, declared limitations where measured
+- [x] 5.2 Move `briefing-first-turn-*` onto the contract as `briefing-reaches-the-model`, and keep `briefing-first-turn` for `FirstTurn` harnesses
 - [ ] 5.3 A journey in `04-workspace`: switch an agent; the incoming pane holds no turn the operator did not type, and the record on disk holds the briefing; after a commit, a relaunch's context file has no briefing
 
 ## 6. Docs
 
-- [ ] 6.1 Update `agent-lifecycle.mmd` and `workspace-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`
-- [ ] 6.2 Invariants with their tests: no context text in argv or environment; context only for launches UZE owns
+- [x] 6.1 Update `agent-lifecycle.mmd` and `workspace-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`
+- [x] 6.2 Invariants with their tests: no context text in argv or environment; context only for launches UZE owns
 - [ ] 6.3 `make check` green
