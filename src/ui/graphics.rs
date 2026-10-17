@@ -11,7 +11,10 @@
 //! six-pixel columns, and the one thing worth care — choosing the palette —
 //! is a median cut of a few dozen lines.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    Arc, OnceLock,
+    mpsc::{Receiver, Sender},
+};
 use std::time::Duration;
 
 use ratatui::{buffer::Buffer, layout::Rect};
@@ -173,16 +176,47 @@ impl Placement {
 type Identity = (usize, Rect, (u16, u16), u64);
 
 /// What was last sent as pixels, so a frame that changed nothing about
-/// the image sends nothing.
-#[derive(Default)]
+/// the image sends nothing — and the encoding of the one wanted next,
+/// made on a thread of its own.
+///
+/// Resampling and encoding a pane-sized image is tens of milliseconds,
+/// which the frame may not wait for. So a frame only says which image it
+/// left uncovered; the bytes are written when they arrive, if that image
+/// is still the one on screen and uncovered, and dropped otherwise.
 pub(crate) struct Painter {
+    /// What the terminal shows over the half blocks, as far as anything
+    /// written since says.
     shown: Option<Identity>,
+    /// What the last frame left uncovered and the terminal does not show
+    /// yet.
+    wanted: Option<Identity>,
+    /// The encode out, so a frame asking for the same image again does not
+    /// start a second one.
+    encoding: Option<Identity>,
+    /// The last encode that came back, kept so an image covered and then
+    /// uncovered is written again without being made again.
     encoded: Option<(Identity, Arc<Vec<u8>>)>,
+    sender: Sender<(Identity, Arc<Vec<u8>>)>,
+    answers: Receiver<(Identity, Arc<Vec<u8>>)>,
+}
+
+impl Default for Painter {
+    fn default() -> Self {
+        let (sender, answers) = std::sync::mpsc::channel();
+        Self {
+            shown: None,
+            wanted: None,
+            encoding: None,
+            encoded: None,
+            sender,
+            answers,
+        }
+    }
 }
 
 impl Painter {
-    /// The bytes to write after a frame whose image, uncovered, is
-    /// `placement` — `None` when the terminal already shows it.
+    /// Records the image a frame left uncovered, `placement`, and returns
+    /// its bytes at once when they are already made.
     ///
     /// A frame that covered the image or drew none forgets what was
     /// shown, because whatever covered it wrote over those pixels, and
@@ -190,22 +224,56 @@ impl Painter {
     pub(crate) fn after_frame(&mut self, placement: Option<&Placement>) -> Option<Arc<Vec<u8>>> {
         let Some(placement) = placement else {
             self.shown = None;
+            self.wanted = None;
             return None;
         };
         let identity = placement.identity();
         if self.shown == Some(identity) {
             return None;
         }
-        self.shown = Some(identity);
-        let bytes = match &self.encoded {
-            Some((encoded, bytes)) if *encoded == identity => bytes.clone(),
-            _ => {
-                let bytes = Arc::new(positioned(placement));
-                self.encoded = Some((identity, bytes.clone()));
-                bytes
-            }
-        };
-        Some(bytes)
+        self.wanted = Some(identity);
+        if let Some(bytes) = self.ready() {
+            return Some(bytes);
+        }
+        if self.encoding != Some(identity) {
+            self.encoding = Some(identity);
+            let (placement, sender) = (placement.clone(), self.sender.clone());
+            std::thread::spawn(move || {
+                let _ = sender.send((identity, Arc::new(positioned(&placement))));
+            });
+        }
+        None
+    }
+
+    /// The bytes to write now, when an encode has come back for the image
+    /// the last frame left uncovered. Asked between frames.
+    pub(crate) fn take_ready(&mut self) -> Option<Arc<Vec<u8>>> {
+        while let Ok(answer) = self.answers.try_recv() {
+            self.absorb(answer);
+        }
+        self.ready()
+    }
+
+    /// Keeps an answer only when it is for the encode last asked for: one
+    /// that started earlier is for an image already replaced, whichever
+    /// order the two threads finish in.
+    fn absorb(&mut self, (identity, bytes): (Identity, Arc<Vec<u8>>)) {
+        if self.encoding != Some(identity) {
+            return;
+        }
+        self.encoding = None;
+        self.encoded = Some((identity, bytes));
+    }
+
+    fn ready(&mut self) -> Option<Arc<Vec<u8>>> {
+        let wanted = self.wanted?;
+        let (made, bytes) = self.encoded.as_ref()?;
+        if *made != wanted {
+            return None;
+        }
+        self.shown = Some(wanted);
+        self.wanted = None;
+        Some(bytes.clone())
     }
 }
 
@@ -309,11 +377,15 @@ fn lanczos_weights(source: usize, target: usize) -> Vec<(usize, Vec<f32>)> {
 /// the average of the source pixels it covers, or the nearest one when
 /// it covers less than one.
 pub(crate) fn sample(picture: &Picture, column: u16, row: u16, columns: u16, rows: u16) -> [u8; 4] {
+    // At most this many taps a side: a cell standing for a hundred source
+    // pixels is drawn on every frame, and an even sample of them looks the
+    // same as all of them at two pixels a cell.
+    const TAPS: usize = 8;
     let span = |index: u16, target: u16, source: usize| {
         let (index, target) = (usize::from(index), usize::from(target));
         let start = index * source / target;
         let end = ((index + 1) * source / target).clamp(start + 1, source);
-        start..end
+        (start..end).step_by((end - start).div_ceil(TAPS))
     };
     let mut sum = [0u32; 4];
     let mut count = 0u32;
@@ -573,21 +645,61 @@ mod tests {
         assert_eq!(out, b"!5@A");
     }
 
+    /// Waits for the one encode out, by receiving it, never by polling.
+    fn settle(painter: &mut Painter) {
+        let answer = painter.answers.recv().unwrap();
+        painter.absorb(answer);
+    }
+
+    fn placement_of(side: usize, room: Rect) -> Placement {
+        let picture = Picture {
+            width: side,
+            height: side,
+            pixels: vec![[255, 255, 255, 255]; side * side].into(),
+        };
+        Placement::fit(&picture, room, (10, 20)).unwrap()
+    }
+
     #[test]
     fn a_frame_that_changed_nothing_about_the_image_sends_nothing() {
-        let picture = Picture {
-            width: 2,
-            height: 2,
-            pixels: vec![[255, 255, 255, 255]; 4].into(),
-        };
-        let placement = Placement::fit(&picture, Rect::new(0, 0, 4, 4), (10, 20)).unwrap();
+        let placement = placement_of(2, Rect::new(0, 0, 4, 4));
         let mut painter = Painter::default();
-        assert!(painter.after_frame(Some(&placement)).is_some());
+        assert!(painter.after_frame(Some(&placement)).is_none(), "encoding");
+        settle(&mut painter);
+        assert!(painter.take_ready().is_some(), "written once made");
         assert!(painter.after_frame(Some(&placement)).is_none());
+        assert!(painter.take_ready().is_none());
         assert!(painter.after_frame(None).is_none(), "covered");
         assert!(
             painter.after_frame(Some(&placement)).is_some(),
-            "drawn again once uncovered"
+            "written again once uncovered, without being made again"
         );
+    }
+
+    #[test]
+    fn an_encode_for_an_image_no_longer_shown_is_never_written() {
+        let old = placement_of(2, Rect::new(0, 0, 4, 4));
+        let new = placement_of(3, Rect::new(0, 0, 4, 4));
+        let mut painter = Painter::default();
+        painter.after_frame(Some(&old));
+        painter.after_frame(Some(&new));
+        settle(&mut painter);
+        settle(&mut painter);
+        let written = painter
+            .take_ready()
+            .expect("the image on screen is written");
+        assert_eq!(*written, positioned(&new));
+        assert!(painter.take_ready().is_none());
+    }
+
+    #[test]
+    fn an_encode_that_lands_while_the_image_is_covered_waits_for_it_to_be_uncovered() {
+        let placement = placement_of(2, Rect::new(0, 0, 4, 4));
+        let mut painter = Painter::default();
+        painter.after_frame(Some(&placement));
+        painter.after_frame(None);
+        settle(&mut painter);
+        assert!(painter.take_ready().is_none(), "never over what covers it");
+        assert!(painter.after_frame(Some(&placement)).is_some());
     }
 }

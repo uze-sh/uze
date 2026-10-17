@@ -688,6 +688,9 @@ pub(crate) fn attach_workspace(
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
+        if let Some(pixels) = painter.take_ready() {
+            terminal.emit(&pixels);
+        }
         attach
             .model
             .follow_extension_switch(super::extension_switch::disabled());

@@ -22,8 +22,8 @@
 
 ## 3. Off the drawing thread
 
-- [ ] 3.1 Move resampling and Sixel encoding into a thread: the painter asks with the placement's identity and writes the answer on the next frame only if that identity is still the one shown; drop a stale answer
-- [ ] 3.2 Test that a placement replaced while its encode is out never has the old bytes written
+- [x] 3.1 Move resampling and Sixel encoding into a thread: the painter asks with the placement's identity and writes the answer on the next frame only if that identity is still the one shown; drop a stale answer
+- [x] 3.2 Test that a placement replaced while its encode is out never has the old bytes written
 
 ## 4. Verification
 

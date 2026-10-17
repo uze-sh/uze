@@ -2,7 +2,7 @@
 
 - status:   pending
 - task:     2.5
-- commit:
+- commit:   b4103e91
 - trigger:  design.md said paletted BMPs below 8 bits stay "not text"; the
             palette read is the same code for 1, 4 and 8 bits, only the
             index extraction differs.
@@ -16,7 +16,7 @@
 
 - status:   pending
 - task:     2.2, 2.4
-- commit:
+- commit:   b4103e91
 - trigger:  no JPEG encoder is in the tree, and `image-webp` turned out to
             ship a lossless encoder, so task 2.4's committed WebP fixture
             is unnecessary.
@@ -32,7 +32,7 @@
 
 - status:   pending
 - task:     2.2
-- commit:
+- commit:   b4103e91
 - trigger:  task 2.2 named CMYK output; the decoder is asked for RGBA and
             converts CMYK itself, and the code reads whatever colour space
             it reports back, so there is no CMYK path of ours to test.
@@ -47,7 +47,7 @@
 
 - status:   pending
 - task:     2.2–2.6
-- commit:
+- commit:   b4103e91
 - trigger:  the 32 MiB read cap bounds the file, not what it decodes to: a
             small file can declare an image of 100k × 100k.
 - decided:  every decoder reads dimensions first and returns `None` above
@@ -56,3 +56,17 @@
             are absent in ours.
 - blast:    an image larger than that is "not text"; raising the constant
             is the whole revert.
+
+## D5 — Sample at most 8×8 source pixels per half-block cell
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  moving Sixel off the drawing thread left the half blocks there,
+            which averaged every source pixel on every frame: up to 16 Mi
+            reads per redraw for a 4096-pixel image, on each pointer move.
+- decided:  `graphics::sample` takes at most 8 evenly spaced taps per axis
+            of the span a cell stands for. The Sixel path does not use it.
+- rejected: caching the half blocks per placement, which would give the
+            immediate-mode renderer state to keep in step with the view.
+- blast:    none; at two pixels per cell the difference is not visible.
