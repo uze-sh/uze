@@ -9,7 +9,6 @@
     "surface.raised-subtle": "~12",
     "surface.raised-bright": "~24",
     "surface.recessed": "~06",
-    "surface.sunken": "#00000060",
     "surface.hover": "~33",
 
     "text.bright": "#f2f0ea",
