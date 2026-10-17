@@ -137,8 +137,11 @@ level.
   a terminal that ignores the Sixel still shows the image.
 - [Sixel scrolls the screen if it reaches the last row] → a placement is
   always inside the content column, above the footer.
-- [Binary size] → the four decoders; measured before and after in the
-  PR, with default features off.
+- [Binary size] → the four decoders, default features off where that
+  drops an encoder. Measured on x86_64-unknown-linux-gnu, plain
+  `cargo build --release` as `release.yml` builds it: `main` 26,049,744
+  bytes (9,385,084 as `.tar.gz`), this change 26,817,352 (9,717,277):
+  +750 KiB raw, +324 KiB compressed, about 3.5% of the download.
 - [A malicious image] → decoders are pure Rust with bounded sizes; the
   read is capped at 32 MiB and decoded dimensions at 4096 a side after
   decode, and the PNG decoder's own allocation limit applies.

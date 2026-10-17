@@ -27,7 +27,7 @@
 
 ## 4. Verification
 
-- [ ] 4.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`
-- [ ] 4.2 `openspec validate show-images-in-code-surface --strict`
-- [ ] 4.3 Measure the release binary against `main` and record the difference in the PR
+- [x] 4.1 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace --no-fail-fast`
+- [x] 4.2 `openspec validate show-images-in-code-surface --strict`
+- [x] 4.3 Measure the release binary against `main` and record the difference (design.md, Risks)
 - [ ] 4.4 By hand, on Windows Terminal (Sixel) and on a terminal without Sixel: each format in the files half, a changed PNG in the changes half, a menu opened and closed over an image, a theme switch while one is shown
