@@ -107,13 +107,12 @@ fn plan_for(
     owner: &conversation::Owner,
     sections: &dyn Fn(&Path) -> Vec<Section>,
 ) -> LaunchPlan {
-    let owner = owner.clone();
     let continuity = integration.session_continuity();
     // A harness that carries no conversation over can still be told what
     // the one before it was doing.
     if continuity == SessionContinuity::Unsupported {
         let mut plan = LaunchPlan::nothing();
-        give_context(&mut plan, home, &owner, integration, None, sections);
+        give_context(&mut plan, home, owner, integration, None, sections);
         return plan;
     }
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
@@ -127,7 +126,7 @@ fn plan_for(
     // alternative is losing the conversation, and a harness that answers
     // this question expensively is answering it once per relaunch rather
     // than on a clock.
-    resolve_pending(home, &owner, &mut record, claim.cwd, integration);
+    resolve_pending(home, owner, &mut record, claim.cwd, integration);
 
     if let Some(recorded) = record.get(id).and_then(|entry| entry.conversation.clone()) {
         if integration.session_exists(&recorded, claim.cwd) {
@@ -142,7 +141,7 @@ fn plan_for(
             give_context(
                 &mut plan,
                 home,
-                &owner,
+                owner,
                 integration,
                 Some(&recorded),
                 sections,
@@ -156,7 +155,7 @@ fn plan_for(
             cwd = %claim.cwd.display(),
             "the recorded conversation is no longer there; starting a new one"
         );
-        let mut plan = start(home, claim.cwd, integration, &owner, sections);
+        let mut plan = start(home, claim.cwd, integration, owner, sections);
         plan.note = Some(format!(
             "the recorded conversation ({recorded}) is no longer there; starting a new one"
         ));
@@ -169,7 +168,7 @@ fn plan_for(
         cwd = %claim.cwd.display(),
         "no conversation recorded for this agent; starting one"
     );
-    start(home, claim.cwd, integration, &owner, sections)
+    start(home, claim.cwd, integration, owner, sections)
 }
 
 /// Fills in the conversation `integration`'s entry is still waiting to have
