@@ -793,7 +793,7 @@ they are driven from every mention of the host is inside a
 > `tests/architecture/layering.rs::architecture_rules_hold` ("drawing the workspace reaches nothing, by any name")
 > `tests/architecture/layering.rs::the_workspace_client_reaches_for_git_only_from_a_thread`
 > `src/ui/orchestrator/tests.rs::workspace_tests::scheduling_a_git_read_reserves_the_checkout_and_answers_nothing`
-> `src/ui/orchestrator/tests.rs::workspace_tests::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
+> `src/ui/orchestrator/tests/tasks.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
 > `crates/uze-extensions/src/code/tests.rs::selecting_a_file_asks_for_its_diff_rather_than_reading_it`
 
 ### An answer that arrives late is dropped, never drawn
@@ -819,7 +819,7 @@ panic still produces the "nothing found" answer the absorber already
 draws.
 
 > `src/ui/orchestrator/tests/delivery.rs::a_delivery_that_answered_nothing_still_gives_the_task_back`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
+> `src/ui/orchestrator/tests/attach.rs::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
 
 ### An extension describes every surface it has, including a sidebar section
 
@@ -1300,7 +1300,7 @@ never a fallback.
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::three_agents_get_three_distinct_checkouts_and_none_is_the_primary`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::the_operators_uncommitted_work_survives_agents_launching`
 > `crates/uze-application/src/application/services/tasks/tests.rs::placement_tests::a_repository_without_a_commit_refuses_a_slot_and_starts_nothing`
-> `src/ui/orchestrator/tests.rs::workspace_tests::an_agent_in_a_slot_is_left_unmarked_and_says_where_nowhere`
+> `src/ui/orchestrator/tests/agents.rs::an_agent_in_a_slot_is_left_unmarked_and_says_where_nowhere`
 
 ### A project's commands run only once the operator approved those exact lines (ADR-055)
 
@@ -2001,7 +2001,7 @@ the only way back in short of a manual `kill`.
 
 > `crates/uze-terminal/src/runtime/tests.rs::a_client_an_event_cannot_reach_is_disconnected_rather_than_frozen`
 > `crates/uze-terminal/src/runtime/tests.rs::stop_is_heard_as_a_first_frame_by_a_server_nobody_attached_to`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
+> `src/ui/orchestrator/tests/attach.rs::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
 
 ### Liveness is the workspace claim; the kernel names the peer
 
@@ -2430,8 +2430,8 @@ directory under another name, and the work still lands in it.
 
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::work_is_found_in_a_project_this_session_never_opened`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::two_projects_sharing_a_branch_name_stay_distinguishable`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_space_is_matched_by_its_root_whatever_it_is_called`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_space_rooted_above_the_project_does_not_match_it`
+> `src/ui/orchestrator/tests/tasks.rs::a_space_is_matched_by_its_root_whatever_it_is_called`
+> `src/ui/orchestrator/tests/tasks.rs::a_space_rooted_above_the_project_does_not_match_it`
 
 ### Recent lists agents, and offers only what moves each one on
 
@@ -3014,7 +3014,7 @@ pressed by habit on the wrong question.
 
 > `src/ui/tests/plugins.rs::remove_confirmation_flow`
 > `src/ui/tests/overlays.rs::the_arrows_choose_an_answer_and_enter_takes_it`
-> `src/ui/orchestrator/tests.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
+> `src/ui/orchestrator/tests/tasks.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
 > `src/ui/orchestrator/tests/recent.rs::a_question_opens_on_its_way_out_and_the_arrow_reaches_going_ahead`
 
 ### A move with no key is still reachable from the keyboard
