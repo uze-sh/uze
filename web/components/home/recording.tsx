@@ -12,13 +12,14 @@ const CAST = '/casts/landing.cast';
 const SIZE = { cols: 140, rows: 36 };
 const CHAPTERS: { label: string; at: number }[] = [
   { label: 'open the workspace', at: 0 },
-  { label: 'add a plugin', at: 4 },
-  { label: 'agents side by side', at: 16.7 },
-  { label: 'review and deliver', at: 41.4 },
-  { label: 'pick up anywhere', at: 58 },
+  { label: 'add a plugin', at: 3.8 },
+  { label: 'agents side by side', at: 14.3 },
+  { label: 'review and deliver', at: 43.6 },
+  { label: 'pick up anywhere', at: 61.5 },
 ];
-// Three agents named, each in its own worktree, and Claude's commit.
-const POSTER_AT = 39.7;
+// Three agents named, each in its own worktree, and the code surface on
+// the change OpenCode left uncommitted.
+const POSTER_AT = 49.5;
 const FRAME_WIDTH = 'min(calc((100svh - 16rem) * 1.89), calc(100vw - 4rem), 1600px)';
 
 export function HeroRecording() {
