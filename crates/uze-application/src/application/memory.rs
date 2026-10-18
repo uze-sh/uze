@@ -233,7 +233,9 @@ impl Memory<'_> {
     pub fn show(&self, caller: MemoryCaller<'_>, scope: Scope, name: &str) -> Result<Shown> {
         let resolved = self.resolve(caller)?;
         let store = MemoryStore::new(&self.0.home, resolved.primary.as_deref());
-        let report = self.report(resolved.primary.as_deref());
+        // Judged for the facts it links to and from, which carry their marks.
+        let mut report = self.report(resolved.primary.as_deref());
+        judge_citations(&mut report, &resolved.checkout);
         let scopes: &[Scope] = match scope {
             Scope::Project => &[Scope::Project, Scope::Machine],
             Scope::Machine => &[Scope::Machine],

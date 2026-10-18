@@ -787,3 +787,35 @@ fn a_near_duplicate_is_only_a_fact_the_same_write_could_have_updated() {
         "the project fact this write could have updated, never the one a harness keeps"
     );
 }
+
+#[test]
+fn a_linked_fact_citing_what_the_checkout_lacks_carries_its_mark() {
+    let (home, project) = citing_world("app-memory-citations-linked");
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "a",
+        FactKind::Project,
+        "See [[b]].",
+    );
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "b",
+        FactKind::Project,
+        "Fixed in `crates/a/src/gone.rs`, see [[a]].",
+    );
+    let shown = app(&home, Vec::new())
+        .memory()
+        .show(caller(&project), Scope::Project, "a")
+        .unwrap();
+    let linked = shown.links[0].fact.as_ref().unwrap();
+    assert_eq!(linked.missing, ["crates/a/src/gone.rs"], "links to");
+    assert_eq!(
+        shown.linked_from[0].missing,
+        ["crates/a/src/gone.rs"],
+        "linked from"
+    );
+}
