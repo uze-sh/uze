@@ -18,6 +18,11 @@ export type CastHandle = {
 
 // The pace every spec records at: what reads as a person typing.
 const SPEED = 1.2;
+const LINE_HEIGHT = 1.22;
+// A cell's width over its height as the player lays this font out at
+// LINE_HEIGHT, measured: it holds at every width, so a cast's columns and
+// rows are enough to know its height before the player has drawn a row.
+const CELL_ASPECT = 0.4964;
 
 export function CastPlayer({
   src,
@@ -25,6 +30,7 @@ export function CastPlayer({
   label,
   handle,
   startAt,
+  size,
 }: {
   src: string;
   /** The second of the cast shown before it plays, and to reduced motion. */
@@ -33,6 +39,9 @@ export function CastPlayer({
   handle?: MutableRefObject<CastHandle | null>;
   /** Where to begin playing, for a player that takes over from another. */
   startAt?: number;
+  /** The cast's terminal, in cells: given, the player holds its height from
+   *  the first paint instead of growing into it once the cast arrives. */
+  size?: { cols: number; rows: number };
 }) {
   const host = useRef<HTMLDivElement>(null);
 
@@ -62,7 +71,7 @@ export function CastPlayer({
         ...(startAt ? { startAt } : {}),
         theme: 'uze',
         terminalFontFamily: "'Uze Terminal', 'JetBrains Mono', monospace",
-        terminalLineHeight: 1.22,
+        terminalLineHeight: LINE_HEIGHT,
       }) as CastHandle;
       if (handle) handle.current = player;
       if (still) return;
@@ -80,5 +89,13 @@ export function CastPlayer({
     };
   }, [src, posterAt, handle, startAt]);
 
-  return <div ref={host} className="cast-player" role="img" aria-label={label} />;
+  return (
+    <div
+      ref={host}
+      className="cast-player"
+      role="img"
+      aria-label={label}
+      style={size ? { aspectRatio: (size.cols * CELL_ASPECT) / size.rows } : undefined}
+    />
+  );
 }
