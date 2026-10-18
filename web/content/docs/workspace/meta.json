@@ -4,6 +4,7 @@
   "pages": [
     "index",
     "agents",
+    "space",
     "spec",
     "architect",
     "code",

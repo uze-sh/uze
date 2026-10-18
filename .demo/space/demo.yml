@@ -1,0 +1,139 @@
+# The space overview, as a spec, performed by the real binary: two agents
+# start on the project, then the overview (Alt+O) is read section by
+# section, the way the docs page walks it: what the agents were asked and
+# what reaches them, the agents.yaml settings saved as they are edited, the
+# project's plugins, the facts its agents keep, and their worktrees.
+#
+#   tui-record seed   .demo/space   # build the sandbox (first run, or after a /tmp wipe)
+#   tui-record probe  .demo/space   # the app in its sandbox, to try a selector out
+#   tui-record run    .demo/space   # record → cut → leak-check → render → poster
+#
+# Its sandbox is the agent demos' one (.demo/_shared/agents.yml), and so is
+# the tmux session: never run two at once.
+
+extends:
+  - ../_shared/agents.yml
+  - ../_shared/macros.yml
+
+video:
+  title: uze — space
+  out: .demo/space/uze-space.gif
+  poster: .demo/space/uze-space-poster.png
+  publish:
+    - from: cast
+      to: web/public/casts/space.cast
+  # The plugin the Plugins section lists comes from the operator's own
+  # public marketplace, whose owner's name is also this machine's user.
+  allow:
+    - hiukky/ai
+  cast: '{root}/uze-space.cast'
+  speed: 1.2
+  wait_collapse: 1.0
+  # The Agent section, with the prompts and what reaches the agent in front:
+  # the overview's first screen, for reduced motion.
+  poster_when: 'prompts asked in this space'
+sandbox:
+  cwd: '{fixtures}/demo-api'
+  reset:
+    # A plugin for the Plugins section, declared in the project the way a
+    # person would: through uze, from a marketplace.
+    - |
+      U="env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze"
+      cd {fixtures}/demo-api
+      $U market add hiukky/ai >/dev/null 2>&1 || true
+      $U install git@ai >/dev/null 2>&1
+    # The facts the Memory section lists, kept by the operator. The project
+    # memory is under state/projects, which the base reset clears, so each
+    # take starts from these four.
+    - |
+      U="env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze"
+      cd {fixtures}/demo-api
+      echo 'Every route is registered in src/router.rs; a path it does not carry falls through to not_found.' |
+        $U agent memory remember route-table --type reference --description 'Where the routes are declared' >/dev/null
+      echo 'The request budget is read from config.toml under [limits], never hard-coded.' |
+        $U agent memory remember request-budget --type project --description 'Where the rate limit comes from' >/dev/null
+      echo 'cargo test runs every suite; the health check has its own in src/health.rs.' |
+        $U agent memory remember running-tests --type project --description 'How the checks are run' >/dev/null
+      echo 'Commit subjects follow Conventional Commits, with the module as the scope.' |
+        $U agent memory remember commit-style --type feedback --description 'How commits are written here' >/dev/null
+fixtures:
+  - include: ../_shared/demo-api.yml
+beats:
+  - say: the workspace, on a project
+    expect: demo-api
+    expect_in: sidebar
+    expect_timeout: 15
+    pause: 1.0
+  # Two agents, each in a worktree of its own, so the overview has prompts
+  # to list and worktrees to show.
+  - use: launch-claude
+    with: {say: 'an agent on Claude Code', menu_pause: 0.4, pause: 0.5}
+  - type: add a /ping route to src/router.rs that answers pong
+    expect: 'esc to interrupt|for \d+s · done'
+    expect_timeout: 120
+    pause: 0.6
+  - use: launch-codex
+    with: {say: 'a second, on Codex', menu_pause: 0.4, pause: 0.5}
+  - type: cover GET /health with a test in src/health.rs
+    pause: 1.2
+  # ── Agent ───────────────────────────────────────────────────────────────
+  - say: the space's overview, over the tab in front
+    key: M-o
+    expect: prompts asked in this space
+    expect_timeout: 8
+    pause: 3.0
+  # ── Settings ────────────────────────────────────────────────────────────
+  - say: agents.yaml's workspace section, as a form
+    key: '2'
+    expect: saved to agents.yaml as you edit
+    expect_timeout: 6
+    pause: 1.6
+  - say: a change is written as it is made
+    click: Slots
+    in: pane
+    expect: Slots
+    pause: 0.6
+  - key: +
+    expect: saved
+    expect_in: pane
+    expect_timeout: 6
+    pause: 1.8
+  # ── Plugins ─────────────────────────────────────────────────────────────
+  - say: the project's plugins, and where each stands
+    key: '3'
+    expect: agents\.lock in sync
+    expect_timeout: 6
+    pause: 2.4
+  # ── Memory ──────────────────────────────────────────────────────────────
+  - say: what its agents keep for later agents
+    key: '4'
+    expect: route-table
+    expect_timeout: 6
+    pause: 1.4
+  - say: searched as you type
+    key: /
+    expect: 'name, description'
+    expect_timeout: 4
+    pause: 0.3
+  - type: budget
+    submit: false
+    expect: 1 of 4
+    expect_timeout: 4
+    pause: 0.8
+  - say: and read in full
+    key: Enter
+    expect: never hard-coded
+    expect_timeout: 6
+    pause: 2.4
+  # ── Worktrees ───────────────────────────────────────────────────────────
+  - say: the worktrees its agents work in
+    key: '5'
+    expect: worktrees ·
+    expect_timeout: 15
+    pause: 2.6
+  - say: and back to the agent
+    key: Escape
+    refuse: prompts asked in this space
+    pause: 1.0
+  - say: out, the cut stops here, before the screen blanks
+    end: C-q

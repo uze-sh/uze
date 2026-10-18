@@ -1,0 +1,109 @@
+---
+title: Space
+description: One screen for a project in the workspace, covering what its agents were asked, how they work, its plugins, its memory and its worktrees
+---
+
+<Demo
+  cast="/casts/space.cast"
+  posterAt={4}
+  alt="The space overview: the prompts asked in the space with what reaches the agent in front, the agents.yaml settings as a form, the project's plugins, the facts its agents kept, and the worktrees its agents work in."
+  caption="Alt+O opens it over the tab in front, from an agent or a shell."
+/>
+
+`Alt+O`, or the `⋯` button at the right end of the tab strip, opens the
+overview of the space you are in. It stands where the pane is, over the tab
+in front, and `Alt+O` or `Esc` puts it away again. Selecting a tab, starting
+an agent or opening Spec, Architect or Code also puts it away. When you
+open it again it is on the section you left, and it reads the project again.
+
+The top line names the space and its directory, and counts its agents:
+**running** in a tab, **ready** to be delivered, and **preserved**, meaning
+work kept for an agent no tab holds. Under it are five sections. `1` to `5`
+jump to one and `←` `→` move between them. A section with something to look
+at carries a mark, and its first line says what it is. The foot shows the
+keys for the section you are on and, on the right, how many things are left
+to check. Click that count for the whole list.
+
+The detail of the row you are on opens in a drawer on the right. Drag its
+edge to make it wider. On a narrow screen it opens over the list instead,
+with `Enter`, and closes with `Esc`.
+
+## Agent
+
+Every prompt asked in this space, newest first and grouped by age: the
+harness, when it was asked, by which agent, and the prompt itself.
+`Enter` copies the selected prompt. `X` twice clears the space's history.
+
+The drawer shows the agent in front: its harness, its checkout, and what of
+the project reaches it (`AGENTS.md`, project skills and agents) and how it
+receives skills, MCP servers, agents and hooks. Open the overview from an
+agent's tab to see this; from a shell there is no agent in front.
+
+## Settings
+
+The `workspace:` section of `agents.yaml` as a form, in four groups.
+
+| Group | Keys |
+| --- | --- |
+| Checkouts | Worktree, Slots, Idle days, Linked files, Setup |
+| Delivery | Target branch, Delivery, Branch names, Gate |
+| Project | Artifacts |
+| Agent actions | onChange, onPublish, onConflict, onFail |
+
+`Enter` edits the key you are on, `-` and `+` step a number, `a` adds an entry
+to a list and `d` removes one or unsets the key. Pickers offer only what
+makes sense: the repository's branches for the target, files Git ignores for
+linked files, tracked directories for artifacts. An agent action is a text
+box of its own, where `Enter` starts a new line and `Ctrl+S` finishes.
+
+Each change is written to `agents.yaml` as soon as you make it, and the key
+shows **saved**. The file is read again before every write, its comments are
+kept, and the result is checked by the same parser the workspace reads it
+with: a change that would not parse is refused, shown at its key, and nothing
+is written. `x` discards refused changes. When the file uses something the
+form cannot edit safely, such as a YAML anchor, the section is read-only and
+says why.
+
+`Setup` and `Gate` are commands from the repository, so a change to either
+waits for your approval again before anything runs. The drawer's **Review**
+button opens the same approval as `uze workspace allow`; see
+[Approving the commands](/docs/reference/project-files#approving-the-commands).
+
+The drawer explains the key you are on, its default and the value it has now.
+
+## Plugins
+
+The plugins the project declares, with their marketplace, whether they carry
+instructions into `AGENTS.md`, the commit installed and where each stands:
+installed, linked, behind or with an update available, different from
+`agents.lock`, or missing. Below the list, anything that has drifted between
+`agents.yaml`, `agents.lock` and the store is spelled out. `uze install`
+puts it right; see [Plugins](/docs/plugins).
+
+## Memory
+
+The facts this project's agents kept for later agents on any harness: their
+name, kind, origin and when they changed. The line under the list counts the
+facts kept on this machine, which reach agents here too.
+
+`/` searches by name, description, kind and origin as you type, and `Esc`
+clears the search. `Enter` reads the selected fact in the drawer. Nothing is
+changed from here: agents keep and forget facts with `uze agent memory`.
+
+## Worktrees
+
+The checkouts uze made for this space's agents and their subagents, as
+cards: the branch, its size on disk, how long since it changed, and how far
+ahead it is. They are sorted by what they need from you: **ready** to
+deliver, **to join** into the agent that split it, **kept** work nobody
+finished, then those an agent is **working** in, **idle**, and **free** for
+the next agent. A checkout with uncommitted work and no agent is flagged,
+since nothing but you will pick it up. Checkouts you or a tool made by hand
+are not listed.
+
+A free checkout no agent holds can be removed with `d`. uze asks first,
+deletes its directory with its build output, and keeps its branch and every
+commit on it. It refuses if anything is working inside it, if an agent holds
+it or if it has uncommitted work. See
+[Where an agent works](/docs/workspace/agents#where-an-agent-works) for how
+checkouts are reused.
