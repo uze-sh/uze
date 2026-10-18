@@ -2290,7 +2290,10 @@ fn changed_lines_title(changed: usize) -> String {
 
 /// A commit as the Plugins table shows it: its first seven characters.
 fn short_commit(commit: &str) -> &str {
-    &commit[..commit.len().min(7)]
+    commit
+        .char_indices()
+        .nth(7)
+        .map_or(commit, |(end, _)| &commit[..end])
 }
 
 /// A path as the operator would type it: under their home, from `~`.
@@ -2305,7 +2308,15 @@ fn display_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{changed_lines_title, typed_lines};
+    use super::{changed_lines_title, short_commit, typed_lines};
+
+    /// A commit is cut to seven characters, never inside one.
+    #[test]
+    fn a_commit_is_shortened_by_characters() {
+        assert_eq!(short_commit("0123456789abcdef"), "0123456");
+        assert_eq!(short_commit("abc"), "abc");
+        assert_eq!(short_commit("v1.0-ação-final"), "v1.0-aç");
+    }
 
     /// The review's title agrees with its count.
     #[test]
