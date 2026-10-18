@@ -2192,7 +2192,7 @@ fn counted(count: usize, one: &str, many: &str) -> String {
 
 /// The review's title over a diff of `changed` lines.
 fn changed_lines_title(changed: usize) -> String {
-    plural(changed, "line changes").replace("lines changes", "lines change")
+    counted(changed, "line changes", "lines change")
 }
 
 /// A path as the operator would type it: under their home, from `~`.
@@ -2207,7 +2207,14 @@ fn display_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::typed_lines;
+    use super::{changed_lines_title, typed_lines};
+
+    /// The review's title agrees with its count.
+    #[test]
+    fn the_review_title_counts_its_lines() {
+        assert_eq!(changed_lines_title(1), "1 line changes");
+        assert_eq!(changed_lines_title(3), "3 lines change");
+    }
 
     fn spelled(lines: &[Vec<ratatui::text::Span<'static>>]) -> Vec<String> {
         lines
