@@ -688,6 +688,13 @@ mod tests {
         // So does the copy every `${PLUGIN_ROOT}` a harness was handed names.
         let delivered = home.delivered_packages_dir().join("a-plugin");
         fs::create_dir_all(&delivered).unwrap();
+        // And the context of a conversation still running, which its
+        // harness reads on every request.
+        let session = home
+            .session_context_dir("fake-harness")
+            .join("ses_running.md");
+        fs::create_dir_all(session.parent().unwrap()).unwrap();
+        fs::write(&session, b"context").unwrap();
 
         let mut pruned = prune_projections(&home);
         pruned.sort();
@@ -701,6 +708,10 @@ mod tests {
         assert!(
             delivered.is_dir(),
             "a delivered package copy a harness reads must survive the sweep"
+        );
+        assert!(
+            session.is_file(),
+            "a running conversation's context must survive the sweep"
         );
         assert!(
             home.runtime_project_dir(&project_id_for(&project)).is_dir(),

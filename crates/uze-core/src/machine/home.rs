@@ -494,11 +494,15 @@ impl UzeHome {
     /// each swept when its root goes. `attachments` and `packages` live as
     /// long as what was delivered, which the receipt ledger answers for:
     /// sweeping either would delete a live delivery on the next `doctor`.
-    pub fn runtime_tenants(&self) -> [PathBuf; 3] {
+    /// `sessions` holds the context of conversations still running, which a
+    /// harness reads on every request: sweeping it took that context away
+    /// seconds after the launch that wrote it.
+    pub fn runtime_tenants(&self) -> [PathBuf; 4] {
         [
             self.runtime_projects_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
+            self.runtime_sessions_dir(),
         ]
     }
 
@@ -566,7 +570,12 @@ impl UzeHome {
     /// per project, because such a harness serves every project from one
     /// process.
     pub fn session_context_dir(&self, integration: &str) -> PathBuf {
-        self.runtime_dir().join("sessions").join(integration)
+        self.runtime_sessions_dir().join(integration)
+    }
+
+    /// Every integration's [`Self::session_context_dir`].
+    pub fn runtime_sessions_dir(&self) -> PathBuf {
+        self.runtime_dir().join("sessions")
     }
 
     /// Where a project-scoped runtime projection lives for one integration:
