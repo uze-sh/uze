@@ -85,11 +85,15 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     }
 }
 
+/// One line of [`compatibility`]: a name, and its state in words and tone.
+pub(crate) type Compatible = (&'static str, String, Token);
+
 /// What reaches the agent here, as the Harnesses screen lists a harness's
-/// compatibility: the project's instructions and `.agents` halves, then
-/// what the harness supports, each as its name and its state — said for
-/// this project, where that screen says it for the machine.
-pub(crate) fn compatibility(support: &AgentSupport) -> Vec<(&'static str, String, Token)> {
+/// compatibility, in its two groups: what of the project reaches it — its
+/// instructions and `.agents` halves — and what the harness supports, each
+/// as its name and its state, said for this project where that screen says
+/// it for the machine.
+pub(crate) fn compatibility(support: &AgentSupport) -> (Vec<Compatible>, Vec<Compatible>) {
     let delivered = |state: State, label: &str| {
         let (symbol, tone) = match state {
             State::Ready => (Symbol::MarkNative, Token::StateSuccess),
@@ -141,7 +145,7 @@ pub(crate) fn compatibility(support: &AgentSupport) -> Vec<(&'static str, String
         };
         (name, format!("{} {word}", theme::glyph(symbol)), tone)
     });
-    project.chain(harness).collect()
+    (project.collect(), harness.collect())
 }
 
 /// `text` with its first letter upper-cased, as a status reads beside a name.

@@ -398,9 +398,8 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
             if let Some(problem) = &plugins.lock_problem {
                 causes.push(format!("agents.lock malformed: {problem}"));
             }
-            let drift = &plugins.drift;
-            if !drift.unresolved.is_empty() || !drift.surplus.is_empty() {
-                causes.push("drift".to_owned());
+            if !plugins.drift.is_clear() {
+                causes.push("agents.lock drifted".to_owned());
             }
             let missing = plugins
                 .plugins
@@ -413,8 +412,13 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
             if causes.is_empty() && plugins.plugins.is_empty() {
                 ("no plugins declared".to_owned(), Token::TextSecondary)
             } else if causes.is_empty() {
+                let lock = if plugins.plugins.iter().any(|plugin| plugin.locked) {
+                    "agents.lock in sync"
+                } else {
+                    "no agents.lock yet"
+                };
                 (
-                    plural(plugins.plugins.len(), "plugin"),
+                    format!("{} · {lock}", plural(plugins.plugins.len(), "plugin")),
                     Token::TextSecondary,
                 )
             } else {
@@ -458,7 +462,10 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                     Token::TextSecondary,
                 )
             } else {
-                ("every command approved".to_owned(), Token::TextSecondary)
+                (
+                    "how agents work in this project, saved to agents.yaml as you edit".to_owned(),
+                    Token::TextSecondary,
+                )
             }
         }
         Section::Worktrees => worktrees_cause(overview),
@@ -764,101 +771,135 @@ fn freshness_word(state: &FreshnessState) -> (String, Token) {
     }
 }
 
+/// The project's plugins, a table like the Context one: the lock is said
+/// under it only when it has something to say; in sync, the cause line
+/// says it.
 fn plugin_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
     let plugins = &project.plugins;
-    if plugins.plugins.is_empty() && plugins.lock_problem.is_none() {
-        return Vec::new();
-    }
-    let table = Table::fit(&PLUGINS, room);
-    let mut lines = vec![table.heading()];
-    for (index, plugin) in plugins.plugins.iter().enumerate() {
-        let mut spans = vec![
-            cell(&plugin.plugin, PLUGINS[0].width, Token::TextPrimary),
-            cell(
-                if plugin.installed { "yes" } else { "no" },
-                PLUGINS[1].width,
+    let width = usize::from(room);
+    let mut lines = Vec::new();
+    if !plugins.plugins.is_empty() {
+        let table = Table::fit(&PLUGINS, room);
+        lines.push(table.heading());
+        for (index, plugin) in plugins.plugins.iter().enumerate() {
+            let (word, tone) = plugin_state(plugin);
+            let installed = |text: &str| {
                 if plugin.installed {
-                    Token::TextPrimary
+                    text.to_owned()
                 } else {
-                    Token::StateWarning
-                },
-            ),
-        ];
-        if plugin.installed {
-            spans.push(cell(
-                if plugin.contributing { "yes" } else { "idle" },
-                PLUGINS[2].width,
-                if plugin.contributing {
-                    Token::TextPrimary
-                } else {
-                    Token::TextMuted
-                },
-            ));
-            let commit = plugin.commit.as_deref().map_or("—", short_commit);
-            spans.push(cell(commit, PLUGINS[3].width, Token::TextMuted));
-            spans.push(match &plugin.freshness {
-                Some(freshness) => {
-                    let (word, tone) = freshness_word(&freshness.state);
-                    Span::styled(word, theme::fg(tone))
+                    String::new()
                 }
-                None => Span::raw(""),
-            });
-        } else {
-            for width in [PLUGINS[2].width, PLUGINS[3].width] {
-                spans.push(cell("—", width, Token::TextDim));
-            }
-            spans.push(Span::styled("—", theme::fg(Token::TextDim)));
-        }
-        lines.push(SectionLine {
-            spans: table.row(spans),
-            row: Some(index),
-        });
-    }
-    lines.push(blank());
-    let drift = &plugins.drift;
-    let lock_state = if plugins.lock_problem.is_some() {
-        ("malformed", Token::StateDanger)
-    } else if drift.unresolved.is_empty() && drift.surplus.is_empty() && drift.missing.is_empty() {
-        ("in sync", Token::TextPrimary)
-    } else {
-        ("drift", Token::StateWarning)
-    };
-    lines.push(SectionLine {
-        spans: vec![
-            cell("agents.lock", LOCK_LABEL, Token::TextMuted),
-            Span::styled(lock_state.0, theme::fg(lock_state.1)),
-        ],
-        row: None,
-    });
-    for (label, names) in [
-        ("declared, not locked yet", &drift.unresolved),
-        ("locked, no longer declared", &drift.surplus),
-        ("locked, not in the store", &drift.missing),
-    ] {
-        if !names.is_empty() {
+            };
+            let instructions = installed(if plugin.contributing { "yes" } else { "no" });
+            let commit = installed(plugin.commit.as_deref().map_or("", short_commit));
             lines.push(SectionLine {
-                spans: vec![
-                    cell(&format!("  {label}"), LOCK_LABEL, Token::TextMuted),
-                    Span::styled(names.join(", "), theme::fg(Token::TextPrimary)),
-                ],
-                row: None,
+                spans: table.row(vec![
+                    cell(&plugin.plugin, PLUGINS[0].width, Token::TextPrimary),
+                    cell(
+                        marketplace_of(&plugin.package),
+                        PLUGINS[1].width,
+                        Token::TextMuted,
+                    ),
+                    cell(&instructions, PLUGINS[2].width, Token::TextSecondary),
+                    cell(&commit, PLUGINS[3].width, Token::TextMuted),
+                    Span::styled(word, theme::fg(tone)),
+                ]),
+                row: Some(index),
             });
         }
     }
-    if drift.stale_projection {
+    let drift = &plugins.drift;
+    let lock_said = plugins.lock_problem.is_some() || !drift.is_clear();
+    if lock_said {
+        if !lines.is_empty() {
+            lines.push(blank());
+        }
+        lines.push(ruled_heading("agents.lock".to_owned(), width));
+        // Beside its label where there is room for both, beneath it where not.
+        let beside = width >= KEY_INDENT + usize::from(LOCK_LABEL) + 24;
+        let mut line = |label: &str, said: String, tone: Token| {
+            let said = Span::styled(said, theme::fg(tone));
+            if beside {
+                lines.push(SectionLine {
+                    spans: vec![
+                        Span::raw(" ".repeat(KEY_INDENT)),
+                        cell(label, LOCK_LABEL, Token::TextMuted),
+                        said,
+                    ],
+                    row: None,
+                });
+            } else {
+                lines.push(SectionLine {
+                    spans: vec![
+                        Span::raw(" ".repeat(KEY_INDENT)),
+                        Span::styled(label.to_owned(), theme::fg(Token::TextMuted)),
+                    ],
+                    row: None,
+                });
+                lines.push(SectionLine {
+                    spans: vec![Span::raw(" ".repeat(KEY_INDENT * 2)), said],
+                    row: None,
+                });
+            }
+        };
+        if let Some(problem) = &plugins.lock_problem {
+            line("malformed", problem.clone(), Token::StateDanger);
+        }
+        for (label, names) in [
+            ("declared, not locked yet", &drift.unresolved),
+            ("locked, no longer declared", &drift.surplus),
+            ("locked, not in the store", &drift.missing),
+        ] {
+            if !names.is_empty() {
+                line(label, names.join(", "), Token::TextPrimary);
+            }
+        }
+        if drift.stale_projection {
+            line("AGENTS.md", "stale".to_owned(), Token::StateWarning);
+        }
+    }
+    if lock_said || plugins.plugins.iter().any(|plugin| !plugin.installed) {
+        lines.push(blank());
         lines.push(SectionLine {
             spans: vec![
-                cell("  projection", LOCK_LABEL, Token::TextMuted),
-                Span::styled("stale", theme::fg(Token::StateWarning)),
+                Span::styled("uze install", theme::fg(Token::TextCode)),
+                Span::styled(" puts it right", theme::fg(Token::TextMuted)),
             ],
             row: None,
         });
     }
-    if lock_state.0 != "in sync" || plugins.plugins.iter().any(|plugin| !plugin.installed) {
-        lines.push(blank());
-        lines.push(said("uze install", Token::TextCode));
-    }
     lines
+}
+
+/// The marketplace a `<plugin>@<marketplace>` package comes from.
+fn marketplace_of(package: &str) -> &str {
+    package
+        .rsplit_once('@')
+        .map_or(package, |(_, market)| market)
+}
+
+/// What state a plugin is in, said the way the plugin tree says it.
+fn plugin_state(plugin: &SpacePlugin) -> (String, Token) {
+    if !plugin.installed {
+        return ("missing".to_owned(), Token::StateWarning);
+    }
+    if plugin.differs_from_lock {
+        return ("differs from lock".to_owned(), Token::StateWarning);
+    }
+    match plugin.freshness.as_ref().map(|freshness| &freshness.state) {
+        Some(FreshnessState::Behind {
+            commits: Some(commits),
+        }) => (
+            format!("{} {commits} behind", theme::glyph(Symbol::ArrowUp)),
+            Token::StateWarning,
+        ),
+        Some(FreshnessState::Behind { commits: None }) => (
+            format!("{} update available", theme::glyph(Symbol::ArrowUp)),
+            Token::StateWarning,
+        ),
+        Some(FreshnessState::Linked { .. }) => ("linked".to_owned(), Token::Accent),
+        _ => ("installed".to_owned(), Token::StateSuccess),
+    }
 }
 
 fn memory_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
@@ -1625,6 +1666,11 @@ fn group_heading(title: &str, width: usize) -> SectionLine {
         .next()
         .map(|first| first.to_uppercase().chain(letters).collect())
         .unwrap_or_default();
+    ruled_heading(title, width)
+}
+
+/// [`group_heading`] for a title spelled as it is, such as a file's name.
+fn ruled_heading(title: String, width: usize) -> SectionLine {
     let rule = width.saturating_sub(Line::from(title.as_str()).width() + 1);
     SectionLine {
         spans: vec![
@@ -2152,22 +2198,23 @@ const CONTEXT: [Column; 3] = [
     },
 ];
 
-/// The Plugins table, and the label column of the lock's lines under it.
+/// The Plugins table: the plugin, where it comes from, whether
+/// `AGENTS.md` carries its instructions, its commit, and its state.
 const PLUGINS: [Column; 5] = [
     Column {
         heading: "plugin",
-        width: 24,
+        width: 22,
         keep: KEPT,
     },
     Column {
-        heading: "installed",
-        width: 11,
-        keep: 2,
+        heading: "marketplace",
+        width: 14,
+        keep: 3,
     },
     Column {
-        heading: "here",
-        width: 8,
-        keep: 3,
+        heading: "AGENTS.md",
+        width: 11,
+        keep: 2,
     },
     Column {
         heading: "commit",
@@ -2175,12 +2222,14 @@ const PLUGINS: [Column; 5] = [
         keep: 1,
     },
     Column {
-        heading: "freshness",
+        heading: "state",
         width: 12,
-        keep: 4,
+        keep: KEPT,
     },
 ];
-const LOCK_LABEL: u16 = 30;
+
+/// The label column of the lock's lines.
+const LOCK_LABEL: u16 = 28;
 
 /// The Memory table.
 const FACTS: [Column; 4] = [
@@ -2208,6 +2257,10 @@ const FACTS: [Column; 4] = [
 
 /// The label column of the drawer's pairs.
 const DRAWER_LABEL: u16 = 16;
+
+/// The least a drawer's value column is read in before the value goes
+/// beneath its label.
+const DRAWER_VALUE_LEAST: usize = 12;
 
 /// The prompts table: who answered, how long ago, where, and the prompt,
 /// which is what the table is read for.
@@ -2476,19 +2529,43 @@ impl DrawerLines {
     /// What the drawer is about, and its name.
     fn head(&mut self, kind: &str, title: &str) {
         self.said(kind, Token::TextMuted);
-        self.lines.push(Line::from(Span::styled(
-            title.to_owned(),
-            theme::fg_bold(Token::TextBright),
-        )));
+        for folded in text::fold(title, self.width) {
+            self.lines.push(Line::from(Span::styled(
+                folded,
+                theme::fg_bold(Token::TextBright),
+            )));
+        }
         self.blank();
     }
 
     /// A label and its value, side by side.
     fn pair(&mut self, label: &str, value: String, tone: Token) {
+        self.pair_toned(label, Token::TextMuted, &value, tone);
+    }
+
+    /// [`pair`](Self::pair), the label in `label_tone`. The value folds
+    /// within its own column as the drawer narrows, the way the plugin
+    /// panel's fields do; past the point where that column is too thin to
+    /// read, it goes beneath the label instead.
+    fn pair_toned(&mut self, label: &str, label_tone: Token, value: &str, tone: Token) {
+        let label_width = usize::from(DRAWER_LABEL);
+        let room = self.width.saturating_sub(label_width);
+        if room < DRAWER_VALUE_LEAST {
+            self.said(label, label_tone);
+            self.paragraph(value, tone);
+            return;
+        }
+        let mut folded = text::fold(value, room).into_iter();
         self.lines.push(Line::from(vec![
-            Span::styled(pad(label, DRAWER_LABEL), theme::fg(Token::TextMuted)),
-            Span::styled(value, theme::fg(tone)),
+            Span::styled(pad(label, DRAWER_LABEL), theme::fg(label_tone)),
+            Span::styled(folded.next().unwrap_or_default(), theme::fg(tone)),
         ]));
+        for rest in folded {
+            self.lines.push(Line::from(vec![
+                Span::raw(" ".repeat(label_width)),
+                Span::styled(rest, theme::fg(tone)),
+            ]));
+        }
     }
 
     /// `text`, folded at the drawer's width.
@@ -2499,10 +2576,14 @@ impl DrawerLines {
         }
     }
 
-    /// One line, as it is.
+    /// One line, folded only when the drawer is narrower than it.
     fn said(&mut self, text: &str, tone: Token) {
-        self.lines
-            .push(Line::from(Span::styled(text.to_owned(), theme::fg(tone))));
+        if text::columns(text) <= self.width {
+            self.lines
+                .push(Line::from(Span::styled(text.to_owned(), theme::fg(tone))));
+        } else {
+            self.paragraph(text, tone);
+        }
     }
 
     fn blank(&mut self) {
@@ -2534,12 +2615,18 @@ impl DrawerLines {
         self.blank();
         match &agent.support {
             Some(support) => {
-                self.said("compatibility", Token::TextDim);
-                for (name, status, tone) in crate::ui::agent_support::compatibility(support) {
-                    self.lines.push(Line::from(vec![
-                        Span::styled(pad(name, DRAWER_LABEL), theme::fg(Token::TextSecondary)),
-                        Span::styled(status, theme::fg(tone)),
-                    ]));
+                let (project, supports) = crate::ui::agent_support::compatibility(support);
+                for (index, (group, rows)) in [("project", project), ("supports", supports)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if index > 0 {
+                        self.blank();
+                    }
+                    self.said(group, Token::TextDim);
+                    for (name, status, tone) in rows {
+                        self.pair_toned(name, Token::TextSecondary, &status, tone);
+                    }
                 }
             }
             None => self.said("reading…", Token::TextMuted),
@@ -2617,11 +2704,11 @@ impl DrawerLines {
         );
         if plugin.installed {
             self.pair(
-                "here",
+                "AGENTS.md",
                 if plugin.contributing {
-                    "contributes"
+                    "carries its instructions"
                 } else {
-                    "idle"
+                    "no instructions of its own"
                 }
                 .to_owned(),
                 Token::TextPrimary,
@@ -2983,18 +3070,13 @@ mod tests {
     /// never in one the table is not read without.
     #[test]
     fn a_table_gives_way_in_its_least_kept_columns_first() {
-        use super::{PLUGINS, Table};
-        let shown = |room| Table::fit(&PLUGINS, room).shown;
-        assert_eq!(shown(200), vec![true; 5], "room for all");
-        // plugin 24 + installed 11 + here 8 + freshness 12 = 55: the
-        // commit goes first.
-        assert_eq!(shown(55), vec![true, true, true, false, true]);
-        assert_eq!(shown(44), vec![true, false, true, false, true]);
-        assert_eq!(
-            shown(5),
-            vec![true, false, false, false, false],
-            "the name stays"
-        );
+        use super::{FACTS, Table};
+        let shown = |room| Table::fit(&FACTS, room).shown;
+        assert_eq!(shown(200), vec![true; 4], "room for all");
+        // name 34 + kind 12 + origin 14 = 60: the date goes first.
+        assert_eq!(shown(60), vec![true, true, true, false]);
+        assert_eq!(shown(46), vec![true, true, false, false]);
+        assert_eq!(shown(5), vec![true, false, false, false], "the name stays");
     }
 
     /// A setup line is judged by the command, not by how the form shows

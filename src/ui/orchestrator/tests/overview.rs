@@ -68,7 +68,8 @@ fn support_fixture() -> crate::ui::agent_support::AgentSupport {
     crate::ui::agent_support::AgentSupport::resolve(health, &context)
 }
 
-/// The Agent section holds the support answer read for its agent: the
+/// The Agent section holds the support answer read for its agent, listed
+/// in the project's and the harness's groups: the
 /// client's one shared answer moves on with whatever agent comes to the
 /// front, and the section stopped saying what reaches its own agent
 /// the moment that happened.
@@ -95,11 +96,16 @@ fn the_agent_section_keeps_its_own_agents_support() {
     // Wide enough that the drawer, where what reaches the agent is
     // read, stands beside the prompts.
     let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
-    assert!(
-        rows.iter().any(|row| row.contains("AGENTS.md")),
-        "{}",
-        rows.join("\n")
-    );
+    let row_of = |text: &str| {
+        rows.iter()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("no {text}:\n{}", rows.join("\n")))
+    };
+    // In its two groups: what of the project reaches the agent, then what
+    // its harness supports.
+    assert!(row_of("project") < row_of("AGENTS.md"));
+    assert!(row_of("AGENTS.md") < row_of("supports"));
+    assert!(row_of("supports") < row_of("Skills"));
 }
 
 /// Opening the overview reads what reaches the agent in front and the
@@ -2286,4 +2292,66 @@ fn an_empty_section_is_said_in_the_middle_of_its_room() {
     let screen = frame_rows_at(&mut model, Rect::new(0, 0, 160, height)).join("\n");
     assert!(screen.contains("NO WORKTREES"), "{screen}");
     assert!(!screen.contains("0 worktrees"), "said twice:\n{screen}");
+}
+
+/// The plugins are a compact table, the marketplace and the state among
+/// its columns; a lock in sync is said by the cause line,
+/// not by a line of its own. The drawer folds what it says as it narrows
+/// rather than cutting it.
+#[test]
+fn the_plugins_are_a_compact_table_and_the_drawer_folds_as_it_narrows() {
+    use uze_application::application::{Freshness, FreshnessState};
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.section = Section::Plugins;
+    let mut answer = project_space(Default::default(), Err("not read".to_owned()));
+    if let uze_application::SpaceOverview::Project(project) = &mut answer {
+        let plugin = |name: &str, state: FreshnessState| uze_application::SpacePlugin {
+            plugin: name.to_owned(),
+            package: format!("{name}@ai"),
+            locked: true,
+            installed: true,
+            differs_from_lock: false,
+            contributing: true,
+            commit: Some("3605f817abcdef0123".to_owned()),
+            freshness: Some(Freshness {
+                state,
+                established_at_unix: None,
+            }),
+        };
+        project.plugins.plugins = vec![
+            plugin("code", FreshnessState::UpToDate),
+            plugin("git", FreshnessState::Behind { commits: Some(3) }),
+        ];
+    }
+    overview.answer = Some(Ok(answer));
+
+    let screen = frame_rows_at(&mut model, Rect::new(0, 0, 160, 24)).join("\n");
+    assert!(
+        screen.contains("2 plugins · agents.lock in sync"),
+        "{screen}"
+    );
+    let row = |name: &str| {
+        screen
+            .lines()
+            .find(|row| row.contains(&format!(" {name} ")) && row.contains(" ai "))
+            .unwrap_or_else(|| panic!("no row for {name}:\n{screen}"))
+            .to_owned()
+    };
+    assert!(row("code").contains("installed"), "{screen}");
+    assert!(row("git").contains("3 behind"), "{screen}");
+    assert!(
+        !screen.lines().any(|row| row.contains("agents.lock ")
+            && row.contains("in sync")
+            && !row.contains("plugins")),
+        "the lock in sync has a line of its own:\n{screen}"
+    );
+
+    // Narrow, the commit is folded in the drawer rather than cut short.
+    let screen = frame_rows_at(&mut model, Rect::new(0, 0, 100, 24)).join("\n");
+    assert!(screen.contains("3605f817abcdef0123"), "{screen}");
 }
