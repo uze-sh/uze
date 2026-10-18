@@ -143,3 +143,61 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
     alerts.sort_by_key(|alert| alert.severity);
     alerts
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use uze_application::application::MaintenanceReport;
+
+    use super::*;
+
+    #[test]
+    fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
+        use uze_application::application::{ManagedStateSummary, PackageManagedState};
+        let doctor = DoctorReport {
+            uze_home: PathBuf::from("/home"),
+            store: uze_application::application::StoreHealth::Ready,
+            plugins: Vec::new(),
+            harnesses: Vec::new(),
+            attachments: vec![
+                PackageManagedState {
+                    hooks: Vec::new(),
+                    plugin: "acme".to_owned(),
+                    state: ManagedStateSummary {
+                        matched: 0,
+                        missing: 1,
+                        drifted: 0,
+                        conflicts: 1,
+                        blocked: 0,
+                        ledger_error: None,
+                    },
+                },
+                PackageManagedState {
+                    hooks: Vec::new(),
+                    plugin: "example".to_owned(),
+                    state: ManagedStateSummary {
+                        matched: 0,
+                        missing: 1,
+                        drifted: 0,
+                        conflicts: 0,
+                        blocked: 0,
+                        ledger_error: None,
+                    },
+                },
+            ],
+            deliveries: Vec::new(),
+            ledger_error: None,
+            provisioning_state_error: None,
+            leftovers: Default::default(),
+            maintenance: MaintenanceReport::default(),
+            git_found: true,
+            shell_refusal: None,
+            ssh_missing: false,
+            machine_concerns: Vec::new(),
+        };
+        let alerts = actionable_alerts(Some(&doctor));
+        assert_eq!(alerts[0].severity, Severity::High);
+        assert!(alerts.iter().any(|alert| alert.severity == Severity::Low));
+    }
+}

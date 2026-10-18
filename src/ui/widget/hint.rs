@@ -239,3 +239,47 @@ fn run_text(first: Chord, last: Chord) -> String {
         format!("{first_text}–{last_text}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A hint names a key and what it does, and it asks the keymap for both.
+    /// The strings this replaced were typed by hand — which is how the help
+    /// overlay came to omit nine of the keys it was supposed to document.
+    #[test]
+    fn a_hint_line_reads_its_keys_off_the_keymap() {
+        use ratatui::text::Line;
+        use uze_keys::{Action, Scope};
+
+        let scopes = [Scope::Global, Scope::Management, Scope::Plugins];
+        let line: Line<'static> = crate::ui::widget::hint::Hints::new(&scopes)
+            .key(Action::UpdatePlugin)
+            .key(Action::Refresh)
+            .key(Action::OpenActionIndex)
+            .line();
+        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let keymap = uze_keys::active();
+        for action in [Action::UpdatePlugin, Action::Refresh] {
+            let chord = keymap.chord_for(action, &scopes).expect("bound here");
+            assert!(
+                content.contains(&chord.to_string()),
+                "the hint names {action} without its key: {content}"
+            );
+            assert!(
+                content.contains(&action.label().to_lowercase()),
+                "{content}"
+            );
+        }
+        assert_eq!(line.spans[0].style, theme::fg_bold(Token::Accent));
+        assert_eq!(line.spans[1].style, theme::fg(Token::TextMuted));
+
+        // An action with no key here is skipped rather than printed keyless:
+        // a hint is a list of shortcuts, and what has none is offered where a
+        // pointer can reach it.
+        let unbound: Line<'static> = crate::ui::widget::hint::Hints::new(&scopes)
+            .key(Action::NewSpace)
+            .line();
+        assert!(unbound.spans.is_empty());
+    }
+}

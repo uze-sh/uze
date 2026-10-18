@@ -318,4 +318,89 @@ mod tests {
         clip(&mut line, 9);
         assert!(line.width() <= 9, "{line:?}");
     }
+
+    #[test]
+    fn clip_line_truncates_long_status_with_ellipsis() {
+        use ratatui::text::Line;
+
+        let mut line =
+            Line::from("Installed plugin root: /home/user/.codex/plugins/cache/very/long/path");
+        clip(&mut line, 20);
+        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(content, "Installed plugin ro…");
+        assert_eq!(ratatui::text::Span::raw(&content).width(), 20);
+
+        let mut line = Line::from("Installed uze");
+        clip(&mut line, 20);
+        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(content, "Installed uze");
+    }
+
+    /// A row eliding text stays inside the width it was given, whatever the
+    /// active theme's elision marker costs.
+    ///
+    /// The ASCII theme spends three cells on `...` where the default spends one
+    /// on `…`, and the old code reserved a hard-coded `1` — so this is the
+    /// property that says a theme can replace a symbol without shearing every
+    /// row that draws it.
+    #[test]
+    fn eliding_reserves_the_active_themes_own_marker_width() {
+        let marker = theme::glyph(theme::Symbol::Ellipsis);
+        let marker_width = usize::from(theme::width(theme::Symbol::Ellipsis));
+        for width in (marker_width + 1)..12usize {
+            let elided = elide("a subject line long enough to be cut", width);
+            let cells = elided.chars().count() - marker.chars().count() + marker_width;
+            assert!(
+                cells <= width,
+                "elided to {elided:?} ({cells} cells) for a width of {width}"
+            );
+            assert!(
+                elided.ends_with(&marker),
+                "an elided row has to say it was cut: {elided:?}"
+            );
+        }
+    }
+
+    // The sidebar draws the badge into the label column, beside a
+    // right-aligned count, and the workspace tab measures the alias against
+    // the width it has left — so a label that changed length or cell count on
+    // its way to the screen would take a column with it. Cell count holds
+    // because every small capital is East Asian width *neutral*: a terminal
+    // gives each one cell whether or not its font has the glyph.
+    #[test]
+    fn small_caps_preserves_a_labels_length_and_its_cells() {
+        use ratatui::text::Span;
+        for label in ["Beta", "claude", "codex", "antigravity", "Run uze setup"] {
+            let drawn = crate::ui::widget::text::small_caps(label);
+            assert_eq!(
+                drawn.chars().count(),
+                label.chars().count(),
+                "{label:?} changed length as {drawn:?}"
+            );
+            assert_eq!(
+                Span::raw(drawn.clone()).width(),
+                Span::raw(label).width(),
+                "{label:?} changed cell count as {drawn:?}"
+            );
+            assert_eq!(
+                drawn.split(' ').count(),
+                label.split(' ').count(),
+                "{label:?} lost a word boundary as {drawn:?}"
+            );
+        }
+    }
+
+    // Mixed case has to arrive as one even run — a full-height initial next to
+    // small capitals is the thing this exists to avoid. `q` and `x`, which
+    // Unicode has no small capital for, come out lowercase rather than
+    // vanishing or standing up as the one full-height letter in the run.
+    #[test]
+    fn small_caps_levels_mixed_case_and_keeps_what_it_cannot_fold() {
+        assert_eq!(crate::ui::widget::text::small_caps("Beta"), "ʙᴇᴛᴀ");
+        assert_eq!(
+            crate::ui::widget::text::small_caps("PATH shadowed"),
+            "ᴘᴀᴛʜ ꜱʜᴀᴅᴏᴡᴇᴅ"
+        );
+        assert_eq!(crate::ui::widget::text::small_caps("Query X2"), "qᴜᴇʀʏ x2");
+    }
 }

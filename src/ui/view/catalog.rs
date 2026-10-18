@@ -221,4 +221,19 @@ mod tests {
         assert!(rows[1].ends_with(&ellipsis), "{rows:?}");
         assert!(rows.iter().all(|row| text::columns(row) <= 40), "{rows:?}");
     }
+
+    /// A card grid longer than its area scrolls to the selected card instead
+    /// of drawing what fits and leaving the selection off the bottom.
+    #[test]
+    fn a_card_grid_brings_the_selected_card_into_view() {
+        let scroll = std::cell::Cell::new(Default::default());
+        let area = Rect::new(0, 0, 80, 16);
+        let grid = crate::ui::view::catalog::cards(area, 10, 9, &scroll);
+        assert!(
+            grid.cards.iter().any(|(position, _)| *position == 9),
+            "the selected card is not drawn: {:?}",
+            grid.cards
+        );
+        assert!(grid.first > 0 && grid.rows == 5);
+    }
 }

@@ -2968,7 +2968,7 @@ hand-typed list this replaced had already fallen out of step with the
 dispatcher for nine of its bindings.
 
 > `tests/architecture/layering.rs::architecture_rules_hold` (rules: *no surface writes a key down*, *no surface draws its own arrow keys*)
-> `src/ui/tests.rs::a_hint_line_reads_its_keys_off_the_keymap`
+> `src/ui/widget/hint.rs::a_hint_line_reads_its_keys_off_the_keymap`
 
 ### Every chord has something to click; not every control needs a chord
 
