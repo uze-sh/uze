@@ -104,28 +104,33 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     {
         // A quiet "more" rather than a labelled button: it is always there
         // and rarely the errand, so it does not compete with the surfaces
-        // for the eye. Open, it is lit the way a surface's button is; under
-        // the pointer, a ground.
+        // for the eye. At rest it stands on the surfaces' own ground, so it
+        // reads as a region the size it is lit at rather than a glyph
+        // floating off the hairline; open, it is lit the way a surface's
+        // button is; under the pointer, the hover ground.
+        //
+        // It takes the strip's right padding, so its ground reaches the
+        // edge.
         let label = format!(" {} ", theme::glyph(Symbol::MarkMore));
         let width = Span::raw(label.as_str()).width() as u16;
-        let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
+        let right = area.right().min(trailing_right + 1);
+        let rect = Rect::new(right.saturating_sub(width), inner.y, width, 1);
         let style = match chip_state(model, WorkspaceHit::OpenOverview) {
             _ if model.space_overview.is_some() => {
                 theme::fg(Token::SurfaceBackground).bg(theme::color(Token::TextBright))
             }
-            ChipState::Resting => theme::fg(Token::TextMuted),
+            ChipState::Resting => {
+                theme::fg(Token::TextMuted).bg(theme::color(Token::SurfaceRaised))
+            }
             _ => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
         };
         frame.render_widget(Paragraph::new(Span::styled(label, style)), rect);
         hits.push((rect, WorkspaceHit::OpenOverview));
-        // Its own zone: a hairline sets it apart from the surfaces, which
-        // are about the checkout in front rather than the space.
-        trailing_right = render_zone_hairline(
-            frame,
-            inner,
-            ZoneEdge::Filled.left_of(rect.x),
-            ZoneEdge::Filled,
-        );
+        // Its own ground sets it apart from the surfaces, which are about
+        // the checkout in front rather than the space: one column of air
+        // between the two, and no hairline, which beside two grounds read
+        // as a third thing.
+        trailing_right = ZoneEdge::Filled.left_of(rect.x);
     }
 
     // ── actions ────────────────────────────────────────────────────────
