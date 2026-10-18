@@ -14,6 +14,7 @@ use super::imp;
 /// it starts, ended together when the pane closes.
 pub struct Group {
     unit: imp::Group,
+    mark: Mark,
     ended: AtomicBool,
 }
 
@@ -25,6 +26,28 @@ pub struct Grouped {
     /// The group, made before the program starts; `None` where it is taken
     /// once the program runs ([`Group::adopt`]).
     pub group: Option<Group>,
+    /// What the program must be started with in its environment.
+    pub mark: Mark,
+}
+
+/// An environment variable only one unit's processes carry. Every process
+/// inherits its environment, so a process that left the unit (a session of
+/// its own, then orphaned) still carries it, and ending the unit finds it
+/// by it where the platform would otherwise lose it.
+#[derive(Clone, Debug)]
+pub struct Mark {
+    variable: String,
+    value: String,
+}
+
+impl Mark {
+    pub fn variable(&self) -> &str {
+        &self.variable
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
 }
 
 /// How to start `argv` inside a group of its own. On Unix as it is: the
@@ -35,11 +58,22 @@ pub struct Grouped {
 /// started in its place, given the group's name and `argv`, and joins the
 /// group before it starts `argv`. With no `host`, `argv` is started as it
 /// is and adopted after, there too.
-pub fn grouped(argv: Vec<OsString>, host: Option<&[OsString]>) -> io::Result<Grouped> {
+///
+/// The unit's [`Mark`] is `variable`, set to a value no other unit has.
+pub fn grouped(
+    argv: Vec<OsString>,
+    host: Option<&[OsString]>,
+    variable: &str,
+) -> io::Result<Grouped> {
     let (argv, group) = imp::grouped(argv, host)?;
+    let mark = Mark {
+        variable: variable.to_owned(),
+        value: crate::secret::token()?,
+    };
     Ok(Grouped {
         argv,
-        group: group.map(Group::of),
+        group: group.map(|unit| Group::of(unit, mark.clone())),
+        mark,
     })
 }
 
@@ -92,27 +126,31 @@ pub fn belongs(pid: u32, leader: u32, group: Option<&Group>) -> bool {
 }
 
 impl Group {
-    /// Takes `pid` (just spawned) and what it will start as one unit, or
-    /// `None` where it cannot be: on Unix a program that does not lead a
-    /// group of its own, which a group signal would then overreach.
-    pub fn adopt(pid: u32) -> Option<Self> {
-        imp::Group::adopt(pid).map(Self::of)
+    /// Takes `pid` (just spawned with `mark`) and what it will start as
+    /// one unit, or `None` where it cannot be: on Unix a program that does
+    /// not lead a group of its own, which a group signal would then
+    /// overreach.
+    pub fn adopt(pid: u32, mark: &Mark) -> Option<Self> {
+        imp::Group::adopt(pid).map(|unit| Self::of(unit, mark.clone()))
     }
 
-    fn of(unit: imp::Group) -> Self {
+    fn of(unit: imp::Group, mark: Mark) -> Self {
         Self {
             unit,
+            mark,
             ended: AtomicBool::new(false),
         }
     }
 
-    /// Ends every process in the unit, once: call it before the leader is
-    /// reaped. On Unix the unit is named by the leader's pid, which a
-    /// reaped leader with nothing left in its group gives back for reuse,
-    /// and a second signal could then reach a stranger's group.
+    /// Ends every process in the unit, once, and every process that left
+    /// it carrying its [`Mark`]: call it before the leader is reaped. On
+    /// Unix the unit is named by the leader's pid, which a reaped leader
+    /// with nothing left in its group gives back for reuse, and a second
+    /// signal could then reach a stranger's group.
     pub fn end(&self) {
         if !self.ended.swap(true, Ordering::SeqCst) {
-            self.unit.end()
+            self.unit.end();
+            imp::end_strays(&self.mark.variable, &self.mark.value);
         }
     }
 

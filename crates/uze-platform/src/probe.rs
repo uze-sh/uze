@@ -43,6 +43,12 @@ pub(crate) fn group_members(pgid: u32) -> Vec<u32> {
     platform::group_members(pgid)
 }
 
+/// Every other process of this user; empty where the platform lists none.
+#[cfg(unix)]
+pub(crate) fn user_processes() -> Vec<u32> {
+    platform::user_processes()
+}
+
 /// The executable image `pid` is currently running. Stops matching a path
 /// once the binary behind it is replaced underneath a live process (a
 /// `cargo install --force` mid-session), which is exactly what makes it
@@ -281,6 +287,26 @@ mod platform {
         stat_of(process)?.parent()
     }
 
+    pub(super) fn user_processes() -> Vec<u32> {
+        use std::os::unix::fs::MetadataExt;
+
+        let own = std::process::id();
+        // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
+        // memory of ours.
+        let uid = unsafe { libc::getuid() };
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                let pid = entry.file_name().to_str()?.parse::<u32>().ok()?;
+                let mine = entry.metadata().ok()?.uid() == uid;
+                (mine && pid != own).then_some(pid)
+            })
+            .collect()
+    }
+
     pub(super) fn group_members(pgid: u32) -> Vec<u32> {
         let Ok(entries) = std::fs::read_dir("/proc") else {
             return Vec::new();
@@ -433,6 +459,55 @@ mod platform {
 
     pub(super) fn group_members(_pgid: u32) -> Vec<u32> {
         Vec::new()
+    }
+
+    pub(super) fn user_processes() -> Vec<u32> {
+        use std::{
+            ffi::{c_int, c_void},
+            mem::size_of,
+        };
+
+        let own = std::process::id();
+        // SAFETY: `getuid` takes no arguments, cannot fail, and touches no
+        // memory of ours.
+        let uid = unsafe { libc::getuid() };
+        // SAFETY: a null buffer asks only for the number of pids.
+        let estimate = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        if estimate <= 0 {
+            return Vec::new();
+        }
+        // Room for processes started between the two calls.
+        let mut pids = vec![0 as libc::pid_t; estimate as usize + 64];
+        let Ok(capacity) = c_int::try_from(pids.len() * size_of::<libc::pid_t>()) else {
+            return Vec::new();
+        };
+        // SAFETY: the buffer is `capacity` bytes of pids, as the call expects.
+        let listed =
+            unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), capacity) };
+        if listed <= 0 {
+            return Vec::new();
+        }
+        pids.truncate(listed as usize);
+        pids.into_iter()
+            .filter(|pid| *pid > 0)
+            .filter(|&pid| {
+                // SAFETY: plain C data for which all-zero is valid.
+                let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+                let info_size = size_of::<libc::proc_bsdinfo>() as c_int;
+                // SAFETY: `info` is `info_size` bytes, the size this flavor fills.
+                let read = unsafe {
+                    libc::proc_pidinfo(
+                        pid,
+                        libc::PROC_PIDTBSDINFO,
+                        0,
+                        (&raw mut info).cast::<c_void>(),
+                        info_size,
+                    )
+                };
+                read == info_size && info.pbi_uid == uid && info.pbi_pid != own
+            })
+            .map(|pid| pid as u32)
+            .collect()
     }
 
     pub(super) fn parent_of(pid: u32) -> Option<u32> {
@@ -712,6 +787,10 @@ mod platform {
     }
 
     pub(super) fn group_members(_pgid: u32) -> Vec<u32> {
+        Vec::new()
+    }
+
+    pub(super) fn user_processes() -> Vec<u32> {
         Vec::new()
     }
 

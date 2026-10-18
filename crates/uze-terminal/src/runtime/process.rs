@@ -107,7 +107,10 @@ pub(super) fn server_command(
         // inherits its environment: a trace context left here would join
         // everything run in any pane to that one command's trace.
         .env_remove("TRACEPARENT")
-        .env_remove("TRACESTATE");
+        .env_remove("TRACESTATE")
+        // Started from inside a pane, the server would carry that pane's
+        // mark, and closing the pane would end the server with it.
+        .env_remove(crate::launch::PANE_UNIT_VARIABLE);
     command
 }
 

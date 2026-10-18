@@ -964,16 +964,17 @@ impl Server {
     /// only those finished direct-agent panes with a fresh shell; ordinary
     /// shell panes intentionally stay closed when their shell exits.
     pub(super) fn restore_finished_agent_panes(&self) {
-        let finished: Vec<PaneId> = self
+        let finished: Vec<(PaneId, Arc<PaneRuntime>)> = self
             .panes
             .lock()
             .expect("panes poisoned")
             .iter()
             .filter(|(_, runtime)| runtime.finished_agent())
-            .map(|(&pane, _)| pane)
+            .map(|(&pane, runtime)| (pane, Arc::clone(runtime)))
             .collect();
         let mut restored = false;
-        for pane in finished {
+        for (pane, runtime) in finished {
+            runtime.end_what_the_agent_left();
             if self.spawn_pane(pane, Launch::Shell).is_ok() {
                 restored = true;
                 self.broadcast_pane_damage(pane);

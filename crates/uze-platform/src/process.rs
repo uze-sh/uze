@@ -229,6 +229,65 @@ mod tests {
         let _ = leader.wait();
     }
 
+    /// Ending a pane ends what it started that left its process group for a
+    /// session of its own, found by the mark it inherited; a process with
+    /// another pane's mark is that pane's, and is left alone.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ending_a_pane_ends_what_left_its_group_with_its_mark() {
+        use std::io::BufRead;
+        let grouped = pane::grouped(Vec::new(), None, "UZE_TEST_PANE_UNIT").unwrap();
+        let mark = grouped.mark;
+        let mut command = Command::new("/bin/sh");
+        command
+            // Said by the stray itself, once it is in a session of its own:
+            // `$!` is known before `setsid` runs, while a group signal would
+            // still reach it.
+            .args(["-c", "setsid sh -c 'echo $$; exec sleep 30' & wait"])
+            .env(mark.variable(), mark.value())
+            .stdout(std::process::Stdio::piped());
+        let (mut leader, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
+        let stray: u32 = said.next().unwrap().unwrap().trim().parse().unwrap();
+        let mut other = Command::new("sleep")
+            .arg("30")
+            .env(mark.variable(), "another pane's")
+            .spawn()
+            .unwrap();
+        let exited = exit_of(stray);
+
+        pane::Group::adopt(leader.id(), &mark).unwrap().end();
+
+        assert!(
+            exited(),
+            "the process that left the group outlived the pane"
+        );
+        assert_eq!(alive(other.id()), Some(true), "another pane's was ended");
+        let _ = leader.wait();
+        let _ = other.kill();
+        let _ = other.wait();
+    }
+
+    /// Waits for `pid`, not a child of this process, to exit: the kernel
+    /// says so on a pidfd, where polling the process table would be a race.
+    #[cfg(target_os = "linux")]
+    fn exit_of(pid: u32) -> impl FnOnce() -> bool {
+        // SAFETY: `pidfd_open` takes a pid and flags and returns a new fd.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) } as i32;
+        assert!(fd >= 0, "pidfd_open: {}", std::io::Error::last_os_error());
+        move || {
+            let mut poll = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: one pollfd this closure owns, and the fd it opened.
+            let ready = unsafe { libc::poll(&mut poll, 1, 10_000) };
+            unsafe { libc::close(fd) };
+            ready == 1
+        }
+    }
+
     /// What a detached child outlives: the console it was started from,
     /// closed. The launcher here has a console of its own, and closing it is
     /// ending its `conhost`, which takes every process attached to it, as

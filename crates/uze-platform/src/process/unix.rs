@@ -289,6 +289,33 @@ impl Group {
     }
 }
 
+/// Ends every process of this user that inherited `variable=value`: what a
+/// pane started that left its group for a session of its own (`setsid`, a
+/// daemon such as a `tmux` server) and was orphaned to init, where no group
+/// signal and no walk down from the pane's program reaches it. Swept until
+/// a pass finds nobody, since one of them may start another between the
+/// read and the signal; bounded, so a process that keeps forking cannot
+/// hold the pane's close.
+pub(super) fn end_strays(variable: &str, value: &str) {
+    const PASSES: usize = 4;
+    for _ in 0..PASSES {
+        let strays: Vec<libc::pid_t> = crate::probe::user_processes()
+            .into_iter()
+            .filter(|&pid| {
+                crate::probe::environment_value_of(pid, variable).as_deref() == Some(value)
+            })
+            .filter_map(single)
+            .collect();
+        if strays.is_empty() {
+            return;
+        }
+        for stray in strays {
+            // SAFETY: a positive pid naming one process of this user.
+            unsafe { libc::kill(stray, libc::SIGKILL) };
+        }
+    }
+}
+
 pub(super) fn belongs(pid: u32, leader: u32, _group: Option<&Group>) -> bool {
     let (Some(process), Some(leader_pid)) = (single(pid), single(leader)) else {
         return false;

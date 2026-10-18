@@ -1167,6 +1167,7 @@ fn a_finished_agent_takes_what_it_left_in_its_group_with_it() {
         );
         thread::sleep(Duration::from_millis(25));
     }
+    pane.end_what_the_agent_left();
     let leader = pane.leader.expect("the agent has a pid");
     assert_eq!(
         uze_platform::process::alive(leader),
@@ -1531,6 +1532,23 @@ fn the_server_works_in_no_checkout() {
     assert_eq!(
         command.get_current_dir(),
         Some(super::host::server_directory().as_path())
+    );
+}
+
+/// A server a `uze` inside a pane started does not carry that pane's mark,
+/// or closing the pane would end the server with it.
+#[test]
+fn the_server_carries_no_pane_s_mark() {
+    let command = super::server_command(
+        Path::new("/usr/bin/uze"),
+        &seat_at(Path::new("/project")),
+        &Palette::default(),
+    );
+    assert!(
+        command
+            .get_envs()
+            .any(|(name, value)| name == crate::launch::PANE_UNIT_VARIABLE && value.is_none()),
+        "the server inherits the mark of the pane it was started from"
     );
 }
 

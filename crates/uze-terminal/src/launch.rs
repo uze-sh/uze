@@ -31,6 +31,11 @@ pub const AGENT_KEY_VARIABLE: &str = "UZE_AGENT_KEY";
 /// client within a client.
 pub const PANE_VARIABLE: &str = "UZE_PANE";
 
+/// What every process a pane started carries, set to a value no other pane
+/// has: closing the pane ends whatever carries it, even one that left the
+/// pane's process group ([`uze_platform::process::pane::Mark`]).
+pub const PANE_UNIT_VARIABLE: &str = "UZE_PANE_UNIT";
+
 /// The alias uze's shim launched a process under.
 pub const SHIM_NAME_VARIABLE: &str = "UZE_SHIM_NAME";
 

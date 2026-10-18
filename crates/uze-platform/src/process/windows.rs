@@ -531,6 +531,10 @@ fn in_front(
     Some(holder.pid)
 }
 
+/// Nothing to sweep: a process started in a pane is in its Job Object,
+/// whatever it does after, and ends with it.
+pub(super) fn end_strays(_variable: &str, _value: &str) {}
+
 pub(super) fn grouped(
     argv: Vec<std::ffi::OsString>,
     host: Option<&[std::ffi::OsString]>,

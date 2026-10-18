@@ -103,19 +103,31 @@ impl EventListener for ReplySink {
 }
 
 /// What a pane starts, in its directory and its own environment, and the
-/// group made for it before it starts, where the platform makes one then.
+/// group made for it before it starts, where the platform makes one then,
+/// or the mark the group is adopted with once it runs.
 fn pane_command(
     id: PaneId,
     cwd: PathBuf,
     launch: &Launch,
-) -> Result<(CommandBuilder, Option<uze_platform::process::pane::Group>), RuntimeError> {
+) -> Result<
+    (
+        CommandBuilder,
+        Option<uze_platform::process::pane::Group>,
+        uze_platform::process::pane::Mark,
+    ),
+    RuntimeError,
+> {
     let argv: Vec<std::ffi::OsString> = if launch.argv().is_empty() {
         vec![host::default_shell().into()]
     } else {
         launch.argv().iter().map(Into::into).collect()
     };
-    let grouped = uze_platform::process::pane::grouped(argv, host::pane_host().as_deref())
-        .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+    let grouped = uze_platform::process::pane::grouped(
+        argv,
+        host::pane_host().as_deref(),
+        crate::launch::PANE_UNIT_VARIABLE,
+    )
+    .map_err(|error| RuntimeError::Pty(error.to_string()))?;
     let mut command = CommandBuilder::from_argv(grouped.argv);
     command.cwd(cwd);
     // `CommandBuilder` seeds a pane from *this* process's environment,
@@ -138,8 +150,9 @@ fn pane_command(
     // What tells a `uze` started inside this pane that it is inside one,
     // so it opens a space here instead of a client within a client.
     command.env(crate::launch::PANE_VARIABLE, id.0.to_string());
+    command.env(grouped.mark.variable(), grouped.mark.value());
     host::prepare_pane(&mut command);
-    Ok((command, grouped.group))
+    Ok((command, grouped.group, grouped.mark))
 }
 
 /// Feeds the pane's output to its emulator, on a thread of its own, until
@@ -208,14 +221,16 @@ impl PaneRuntime {
                 pixel_height: 0,
             })
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
-        let (command, made_group) = pane_command(id, cwd, &launch)?;
+        let (command, made_group, mark) = pane_command(id, cwd, &launch)?;
         let mut child = pair
             .slave
             .spawn_command(command)
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let leader = child.process_id();
         let group = made_group
-            .or_else(|| leader.and_then(uze_platform::process::pane::Group::adopt))
+            .or_else(|| {
+                leader.and_then(|pid| uze_platform::process::pane::Group::adopt(pid, &mark))
+            })
             .map(Arc::new);
         let endpoints = pair.master.try_clone_reader().and_then(|reader| {
             pair.master
@@ -356,27 +371,31 @@ impl PaneRuntime {
         })
     }
 
-    /// Whether this pane ran an agent that has since exited. What it left
-    /// running in its group is ended, while the leader is still unreaped
-    /// and its group's id cannot have been handed to anybody else: workers
-    /// that ignore the hangup keep the old terminal open, and its reader
-    /// alive. The leader is left for [`PaneRuntime::stop`] to reap, which
-    /// signals it first, and a reaped pid may already be somebody else's.
+    /// Whether this pane ran an agent that has since exited.
     pub(super) fn finished_agent(&self) -> bool {
         if !matches!(self.launch, Launch::Program { .. }) {
             return false;
         }
-        let child = self.child.lock().expect("child poisoned");
-        if !child
+        self.child
+            .lock()
+            .expect("child poisoned")
             .process_id()
             .is_none_or(uze_platform::process::has_exited)
-        {
-            return false;
-        }
+    }
+
+    /// Ends what a finished agent left running, while the leader is still
+    /// unreaped and its group's id cannot have been handed to anybody else:
+    /// workers that ignore the hangup keep the old terminal open, and its
+    /// reader alive. The leader is left for [`PaneRuntime::stop`] to reap,
+    /// which signals it first, and a reaped pid may already be somebody
+    /// else's. Ending reads the process table for what left the group, so
+    /// it is called with the map of panes let go.
+    pub(super) fn end_what_the_agent_left(&self) {
+        // Held so that `stop` cannot reap the leader meanwhile.
+        let _child = self.child.lock().expect("child poisoned");
         if let Some(group) = &self.group {
             group.end();
         }
-        true
     }
 
     /// Best-effort reading of whatever runs in the foreground of this pane:
