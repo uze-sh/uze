@@ -30,6 +30,7 @@ fn status_reports_healthy_with_zero_issues_once_reconciled() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let status = application.health().status(&project).unwrap();
@@ -46,6 +47,7 @@ fn status_surfaces_a_missing_bridge_as_an_issue_before_reconcile() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     let status = application.health().status(&project).unwrap();
     assert!(!status.issues.is_empty());
@@ -65,6 +67,7 @@ fn status_distinguishes_installed_from_contributing_here() {
     );
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let status = application.health().status(&project).unwrap();
@@ -185,6 +188,7 @@ fn context_inspect_never_writes_anything_in_a_populated_project() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     // Reconcile once so there's real managed state to inspect.
     application.context().reconcile(&project).unwrap();
 
@@ -205,6 +209,7 @@ fn context_plan_never_writes_anything() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     // Before any reconcile at all — the state with the most "would create"
     // actions, and therefore the state most tempting to accidentally write.
@@ -226,6 +231,7 @@ fn a_project_with_only_claude_md_is_vendor_locked() {
     let application = app(&root, true);
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(project.join("CLAUDE.md"), "# My Claude-only instructions\n").unwrap();
 
     let before = snapshot(&project);
@@ -248,6 +254,7 @@ fn agents_md_plus_a_bridging_claude_md_is_portable() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let status = application.context().inspect(&project).unwrap();
@@ -268,6 +275,7 @@ fn an_absent_bridge_harness_shows_not_detected_not_a_gap() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let status = application.context().inspect(&project).unwrap();
@@ -288,6 +296,7 @@ fn scenario_a_manual_claude_md_survives_untouched() {
     let application = app(&root, true);
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(
         project.join("CLAUDE.md"),
         "My hand-written Claude instructions.\n",
@@ -316,6 +325,7 @@ fn scenario_c_unrecognized_vendor_file_survives_untouched() {
     let application = app(&root, true);
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(
         project.join("VENDOR-NOTES.md"),
         "Notes, unrelated to UZE.\n",
@@ -362,6 +372,7 @@ fn scenario_e_manual_agents_md_plus_uze_region_coexist() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(
         project.join("AGENTS.md"),
         "# My own conventions\n\nAlways write tests.\n",
@@ -383,7 +394,14 @@ fn scenario_e_manual_agents_md_plus_uze_region_coexist() {
         agents_source.has_user_content,
         "manual conventions are still there"
     );
-    assert_eq!(agents_source.managed_region_identities.len(), 1);
+    assert_eq!(
+        agents_source
+            .managed_region_identities
+            .iter()
+            .filter(|identity| identity.starts_with("package:"))
+            .count(),
+        1
+    );
 }
 
 /// F) CLAUDE.md manual + UZE bridge coexisting.
@@ -394,6 +412,7 @@ fn scenario_f_manual_claude_md_content_plus_bridge_coexist() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(
         project.join("CLAUDE.md"),
         "## My personal Claude workflow notes\n",
@@ -436,6 +455,7 @@ fn all_recognized_files_together_are_fully_portable() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     fs::write(project.join("CLAUDE.md"), "## My Claude workflow notes\n").unwrap();
 
     application.context().reconcile(&project).unwrap();
@@ -469,6 +489,7 @@ fn context_operations_never_alter_the_installed_package_set() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     let before = application.plugins().list().unwrap();
     application.context().inspect(&project).unwrap();
@@ -477,4 +498,16 @@ fn context_operations_never_alter_the_installed_package_set() {
     let after = application.plugins().list().unwrap();
     assert_eq!(before.len(), after.len());
     assert_eq!(before[0].id, after[0].id);
+}
+
+/// Declares both instruction fixtures in the project's `agents.yaml`: a
+/// package's instructions reach a project only when it declares them.
+fn declare_fixtures(project: &Path) {
+    uze_testkit::project::declare(
+        project,
+        &[
+            "uze-instructions-fixture-a@local",
+            "uze-instructions-fixture-b@local",
+        ],
+    );
 }

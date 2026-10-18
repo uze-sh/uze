@@ -117,6 +117,16 @@ Application's, shared by every bridge-needing harness.
 > `tests/memory/inspection.rs` scenarios A–F (stub harness declares its
 > bridge exactly like a real integration)
 
+### A package's instructions reach only a project that declares it
+
+`AGENTS.md` carries a region for a package only when the project's
+`agents.yaml` declares it. The Store is the machine's, so composing from
+everything installed would make a versioned file depend on which machine
+last reconciled it; a package dropped from the declaration loses its region
+on the next reconcile while it stays installed.
+
+> `tests/memory/reconciliation.rs::only_a_declared_package_s_instructions_reach_the_project`
+
 ### Native means preserved semantics, not identical primitives (ADR-030)
 
 A route is **Native** when a harness offers a first-class, officially

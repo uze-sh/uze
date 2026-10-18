@@ -19,6 +19,8 @@
 //! - **Fixtures**: [`fixtures`] resolves `tests/_fixtures/{canonical,foreign,
 //!   scenarios,golden}` at the canonical location no matter which crate's
 //!   test is compiling.
+//! - **Declarations**: [`project::declare`] writes the `agents.yaml` a
+//!   project declares its packages in.
 //! - **Intent**: [`scenario::Scenario`] assembles a deliberate system state
 //!   from a few declarative steps.
 //!
@@ -34,6 +36,7 @@ pub mod forge;
 pub mod git;
 pub mod marketplace;
 pub mod process;
+pub mod project;
 pub mod scenario;
 pub mod temp;
 

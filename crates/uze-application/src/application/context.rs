@@ -264,8 +264,8 @@ impl Context<'_> {
             })?;
         Ok(ContextScope {
             agents_md: canonical.join(AGENTS_MD_FILE_NAME),
+            contributions: self.instruction_contributions(&canonical)?,
             canonical,
-            contributions: self.instruction_contributions()?,
         })
     }
 
@@ -322,9 +322,22 @@ impl Context<'_> {
         })
     }
 
-    fn instruction_contributions(&self) -> Result<Vec<InstructionContribution>> {
+    /// The instructions of the installed packages this project declares in
+    /// `agents.yaml`. The Store is the machine's, so a package installed for
+    /// another project, or for the machine alone, is in it too; composing
+    /// those in would make a versioned `AGENTS.md` say whatever the machine
+    /// that last reconciled it happened to hold.
+    fn instruction_contributions(&self, canonical: &Path) -> Result<Vec<InstructionContribution>> {
+        let manifest = manifest::load(canonical)?.unwrap_or_default();
+        let declared: BTreeSet<String> = manifest
+            .declared_plugins()
+            .map(|(plugin, marketplace)| format!("{plugin}@{marketplace}"))
+            .collect();
         let mut contributions = Vec::new();
         for package_id in self.0.store.package_ids()? {
+            if !declared.contains(package_id.as_str()) {
+                continue;
+            }
             let package = self.0.store.package(&package_id)?;
             let resources = uze_core::engine::package_resources_at(&package_id, &package.root)?;
             for resource in resources {

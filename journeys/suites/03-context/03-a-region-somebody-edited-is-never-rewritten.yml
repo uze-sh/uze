@@ -54,6 +54,14 @@ world:
       # House rules
 
       - Always run `make check` before committing.
+  # The project declares the plugin: what makes its instructions this
+  # project's to carry, since installing it only puts it on the machine.
+  manifest: |
+    marketplaces:
+      demo:
+        path: ../../market
+        plugins:
+          - house-rules
 
 scenes:
   - scene: a contribution composed into the region UZE owns

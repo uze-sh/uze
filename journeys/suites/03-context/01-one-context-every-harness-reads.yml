@@ -2,8 +2,8 @@ journey: one project context, composed once, and never rewriting what the team w
 tags: [gate, cli, context]
 proves: web/content/docs/plugins/context.mdx
 about: |
-  A project states its conventions once, in AGENTS.md. An installed plugin
-  contributes to it in a region UZE owns and can take back; everything else
+  A project states its conventions once, in AGENTS.md. A plugin the project
+  declares contributes to it in a region UZE owns and can take back; everything else
   on the page belongs to the team and is never UZE's to touch. Harnesses that
   read AGENTS.md natively get it for free, and the one that does not gets a
   bridge — generated, marked, and removable.
@@ -51,6 +51,14 @@ world:
       # House rules
 
       - Always run `make check` before committing.
+  # The project declares the plugin: what makes its instructions this
+  # project's to carry, since installing it only puts it on the machine.
+  manifest: |
+    marketplaces:
+      demo:
+        path: ../../market
+        plugins:
+          - house-rules
 
 scenes:
   - scene: a project with its own AGENTS.md, and a plugin with something to say

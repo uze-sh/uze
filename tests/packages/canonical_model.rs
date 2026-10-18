@@ -209,6 +209,7 @@ fn installing_the_skill_package_never_touches_managed_regions_of_other_packages(
         .unwrap();
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
     application.context().reconcile(&project).unwrap();
     let before = fs::read_to_string(project.join("AGENTS.md")).unwrap();
 
@@ -255,6 +256,7 @@ fn drift_is_still_blocked_with_the_skill_package_also_installed() {
         .unwrap();
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
     application.context().reconcile(&project).unwrap();
 
     let agents_md = project.join("AGENTS.md");

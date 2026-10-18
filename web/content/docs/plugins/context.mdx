@@ -37,9 +37,9 @@ If one does not, `uze install` fixes it.
 <!-- uze:end … -->
 ```
 
-They hold what uze needs every agent to know. `uze install` writes the ones
-from your plugins and one on authoring plugins, for any project with an
-`agents.yaml`. The workspace writes its own, on how it isolates the agents it
+They hold what uze needs every agent to know. `uze install` writes one for each
+plugin your `agents.yaml` declares, never for a plugin that is only on your
+machine, and one on authoring plugins, for any project with an `agents.yaml`. The workspace writes its own, on how it isolates the agents it
 launches, only while you use it and only once the project chooses a policy
 ([Agents](/docs/workspace/agents)); `uze install` never touches that one.
 Anything you write outside the blocks is never touched, and a block you edit by

@@ -194,6 +194,13 @@ force:
   machine. Precedence is never a property of a package's content: no harness
   lets a file declare its own rank — every vendor rule is about where the file
   sits.
+- **Only what the project declares.** The Store is the machine's, and
+  holds packages installed for other projects and for the machine alone. A
+  package contributes a region only when the project's `agents.yaml`
+  declares it; otherwise a versioned `AGENTS.md` would say whatever the
+  machine that last reconciled it happened to hold. A package taken out of
+  the declaration leaves its region on the next reconcile, though it stays
+  installed.
 - **Project scope, not global.** A global instructions file is one file per
   user rather than a directory of discrete entries, so several packages meet the
   same region-merge problem project scope already solves; and a global write

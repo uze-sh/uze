@@ -130,6 +130,7 @@ fn a_single_package_composes_agents_md_and_bridges_only_present_harnesses() {
 
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     // A: baseline — before reconciling, UZE has written nothing into the project.
     assert!(!project.join("AGENTS.md").exists());
     assert!(!project.join("CLAUDE.md").exists());
@@ -168,6 +169,7 @@ fn an_absent_bridge_harness_receives_no_bridge_file_at_all() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     let _report = application.context().reconcile(&project).unwrap();
     assert!(
@@ -186,6 +188,7 @@ fn editing_outside_the_managed_region_stays_matched_editing_inside_becomes_drift
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     // F: user prose appended around the managed region.
@@ -229,6 +232,7 @@ fn a_matched_region_can_be_cleanly_removed_preserving_user_content() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     let agents_md = project.join("AGENTS.md");
     fs::write(&agents_md, "user text A\n").unwrap();
     application.context().reconcile(&project).unwrap();
@@ -246,9 +250,59 @@ fn a_matched_region_can_be_cleanly_removed_preserving_user_content() {
     let report = application.context().reconcile(&project).unwrap();
     assert!(report.packages.is_empty());
     assert_eq!(report.removed_orphans.len(), 1);
+    let content = fs::read_to_string(&agents_md).unwrap();
+    assert!(content.starts_with("user text A\n"), "{content}");
+    assert!(content.ends_with("user text B\n"), "{content}");
+    assert!(!content.contains("uze:begin package:"), "{content}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The Store is the machine's: a package installed there for another
+/// project, or for the machine alone, is not this project's to carry. Only
+/// what `agents.yaml` declares reaches its `AGENTS.md`, and a package taken
+/// out of the declaration leaves it on the next reconcile while it stays
+/// installed.
+#[test]
+fn only_a_declared_package_s_instructions_reach_the_project() {
+    let root = temp("declared-only");
+    let application = app(&root, false);
+    install(&application, fixture_a());
+    install(&application, fixture_b());
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    let agents_md = project.join("AGENTS.md");
+    fs::write(&agents_md, "mine\n").unwrap();
+
+    application.context().reconcile(&project).unwrap();
     assert_eq!(
-        fs::read_to_string(&agents_md).unwrap(),
-        "user text A\nuser text B\n"
+        agents_md_content(&project),
+        "mine\n",
+        "nothing declared, nothing carried"
+    );
+
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
+    application.context().reconcile(&project).unwrap();
+    let content = agents_md_content(&project);
+    assert!(
+        content.contains("package:uze-instructions-fixture-a"),
+        "{content}"
+    );
+    assert!(
+        !content.contains("package:uze-instructions-fixture-b"),
+        "{content}"
+    );
+
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-b@local"]);
+    let report = application.context().reconcile(&project).unwrap();
+    assert_eq!(report.removed_orphans.len(), 1);
+    let content = agents_md_content(&project);
+    assert!(
+        !content.contains("package:uze-instructions-fixture-a"),
+        "{content}"
+    );
+    assert!(
+        content.contains("package:uze-instructions-fixture-b"),
+        "{content}"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -263,6 +317,7 @@ fn a_still_installed_packages_drifted_region_is_reported_and_never_rewritten() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let agents_md = project.join("AGENTS.md");
@@ -291,6 +346,7 @@ fn an_orphaned_regions_cleanup_is_structural_not_content_verified_but_still_refu
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     // Even content edited post-hoc inside an about-to-be-orphaned region is
@@ -330,6 +386,7 @@ fn a_drifted_bridge_line_blocks_its_own_removal_even_after_the_last_package_is_g
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
 
     let claude_md = project.join("CLAUDE.md");
@@ -361,6 +418,7 @@ fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
     install(&application, fixture_b());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     let report = application.context().reconcile(&project).unwrap();
     assert_eq!(report.packages.len(), 2);
@@ -439,6 +497,7 @@ fn reconciling_repeatedly_never_duplicates_regions_or_bridges() {
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
 
     application.context().reconcile(&project).unwrap();
     let after_first = fs::read_to_string(project.join("AGENTS.md")).unwrap();
@@ -454,7 +513,7 @@ fn reconciling_repeatedly_never_duplicates_regions_or_bridges() {
         "repeated reconcile must be byte-idempotent"
     );
     assert_eq!(bridge_after_first, bridge_after_repeat);
-    assert_eq!(after_repeat.matches("uze:begin").count(), 1);
+    assert_eq!(after_repeat.matches("uze:begin package:").count(), 1);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -515,4 +574,16 @@ fn a_foreign_looking_managed_region_outside_our_naming_shape_is_left_untouched()
         "<!-- uze:begin some-other-concern -->\nnot ours\n<!-- uze:end some-other-concern -->\n"
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+/// Declares both instruction fixtures in the project's `agents.yaml`: a
+/// package's instructions reach a project only when it declares them.
+fn declare_fixtures(project: &Path) {
+    uze_testkit::project::declare(
+        project,
+        &[
+            "uze-instructions-fixture-a@local",
+            "uze-instructions-fixture-b@local",
+        ],
+    );
 }
