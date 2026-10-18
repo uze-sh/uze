@@ -1,6 +1,7 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { appName, gitConfig } from './shared';
 import { UzeMark } from '@/components/uze-mark';
+import { GitHubStars } from '@/components/github-stars';
 
 // Where the release stands, from the workspace Cargo.toml's version (see
 // next.config.mjs): the major and the pre-release's name, `1.0.0-beta.15`
@@ -39,5 +40,17 @@ export function baseOptions(): BaseLayoutProps {
       { text: 'Changelog', url: '/docs/changelog', on: 'nav' },
     ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+  };
+}
+
+// The home's header, where the repository's link also carries its stars:
+// the icon-only `githubUrl` button has no room for a count. The docs keep
+// that button, in the sidebar's foot where readers already find it.
+export function homeOptions(): BaseLayoutProps {
+  const base = baseOptions();
+  return {
+    ...base,
+    githubUrl: undefined,
+    links: [...(base.links ?? []), { type: 'custom', secondary: true, children: <GitHubStars /> }],
   };
 }
