@@ -30,6 +30,10 @@ macro_rules! actions {
             /// rather than one action carrying a number, because the
             /// keymap binds positions, not a counter.
             SelectTab(u8),
+            /// Show the nth section of a space's overview. Apart from
+            /// [`Action::SelectTab`], whose chords stay live over the
+            /// overview and choose a tab of the strip behind it.
+            SelectSection(u8),
         }
 
         /// Every action this build knows, in vocabulary order — the order
@@ -39,6 +43,9 @@ macro_rules! actions {
             Action::SelectTab(1), Action::SelectTab(2), Action::SelectTab(3),
             Action::SelectTab(4), Action::SelectTab(5), Action::SelectTab(6),
             Action::SelectTab(7), Action::SelectTab(8), Action::SelectTab(9),
+            Action::SelectSection(1), Action::SelectSection(2),
+            Action::SelectSection(3), Action::SelectSection(4),
+            Action::SelectSection(5),
         ];
 
         impl Action {
@@ -47,6 +54,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $name.to_owned(),)*
                     Action::SelectTab(index) => format!("select-tab-{index}"),
+                    Action::SelectSection(index) => format!("select-section-{index}"),
                 }
             }
 
@@ -60,7 +68,14 @@ macro_rules! actions {
                         .strip_prefix("select-tab-")
                         .and_then(|index| index.parse::<u8>().ok())
                         .filter(|index| (1..=9).contains(index))
-                        .map(Action::SelectTab),
+                        .map(Action::SelectTab)
+                        .or_else(|| {
+                            other
+                                .strip_prefix("select-section-")
+                                .and_then(|index| index.parse::<u8>().ok())
+                                .filter(|index| (1..=5).contains(index))
+                                .map(Action::SelectSection)
+                        }),
                 }
             }
 
@@ -70,7 +85,7 @@ macro_rules! actions {
             pub fn destructive(self) -> bool {
                 match self {
                     $(Action::$variant => $destructive,)*
-                    Action::SelectTab(_) => false,
+                    Action::SelectTab(_) | Action::SelectSection(_) => false,
                 }
             }
 
@@ -79,6 +94,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $label.to_owned(),)*
                     Action::SelectTab(index) => format!("Tab {index}"),
+                    Action::SelectSection(index) => format!("Section {index}"),
                 }
             }
 
@@ -93,6 +109,9 @@ macro_rules! actions {
                             "Select tab {index} on the strip in front of you: an agent \
                              and its shells, or a management screen"
                         )
+                    }
+                    Action::SelectSection(index) => {
+                        format!("Show section {index} of the space's overview")
                     }
                 }
             }
@@ -318,6 +337,24 @@ actions! {
     // only by its generated id, which says nothing until asked for.
     ToggleAllWork => "toggle-all-work", false,
         "All", "Show every agent recent holds, not only the named ones";
+
+    // --- The space overview -------------------------------------------
+    OpenSpaceOverview => "open-space-overview", false,
+        "Overview", "Show this space's overview: its context, plugins, workspace and memory";
+    AddItem => "add-item", false,
+        "Add", "Add an entry to the list in focus";
+    // Takes back a value not yet saved: nothing on disk changes until the
+    // diff is confirmed, which is why it may sit on a bare letter.
+    RemoveItem => "remove-item", false,
+        "Remove", "Remove the entry in focus, or unset the key";
+    MoveItemUp => "move-item-up", false,
+        "Move up", "Move the entry in focus up its list";
+    MoveItemDown => "move-item-down", false,
+        "Move down", "Move the entry in focus down its list";
+    SaveChanges => "save-changes", false,
+        "Save", "Show the diff of the edits, to save them";
+    DiscardChanges => "discard-changes", false,
+        "Discard", "Drop every edit not yet saved";
 }
 
 impl fmt::Display for Action {

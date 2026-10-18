@@ -270,8 +270,43 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ToggleAllWork,
         Control("clicking the key beside recent's search"),
     );
+    // --- The space overview ----------------------------------------------
+    put(
+        Action::OpenSpaceOverview,
+        Control("the space button at the strip's right end"),
+    );
+    put(
+        Action::AddItem,
+        Control("the add hint along the overview's foot, in Workspace"),
+    );
+    put(
+        Action::RemoveItem,
+        Control("the remove hint along the overview's foot, in Workspace"),
+    );
+    put(
+        Action::MoveItemUp,
+        Control("the up hint along the overview's foot, on a list's entry"),
+    );
+    put(
+        Action::MoveItemDown,
+        Control("the down hint along the overview's foot, on a list's entry"),
+    );
+    put(
+        Action::SaveChanges,
+        Control("the Save button under the workspace's unsaved edits"),
+    );
+    put(
+        Action::DiscardChanges,
+        Control("the Discard button under the workspace's unsaved edits"),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
+    }
+    for position in 1..=5u8 {
+        put(
+            Action::SelectSection(position),
+            Control("clicking the section in the overview's bar"),
+        );
     }
     map
 }

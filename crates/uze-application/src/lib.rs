@@ -7,10 +7,12 @@ pub mod bootstrap;
 
 pub use application::UzeApplication;
 pub use application::services::{
-    AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView, CheckoutsView,
-    CommandsAwaitingApproval, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
-    DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork,
-    ProjectArtifacts, PullReport, Reconciliation, ReleasedTask, RequestQuestion, ShownCommand,
+    ActionEntry, AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
+    CheckoutsView, CommandsAwaitingApproval, DeclarationChoices, DeclarationEntry,
+    DeclarationPreview, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
+    DeliveryReport, DiffLine, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind,
+    PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation, ReleasedTask,
+    RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin, SpacePlugins,
     SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
     project_artifacts,
 };
@@ -43,6 +45,10 @@ pub use uze_core::{
         SourceOrigin, TrustAuthority, TrustOutcome, TrustRequest,
     },
 };
+
+/// A setup or gate command as a declaration edit carries it: a line, or a
+/// spelling per platform.
+pub use uze_core::shell::ShellCommand;
 
 /// An adaptive theme selection, and the observation it is decided by.
 pub use uze_core::appearance::{ADAPTIVE, Background};
@@ -83,7 +89,7 @@ pub use uze_workspace::{
         ClientLayout, FirstStepsLayout, ManagementLayout, SidebarLayout, WorkspaceLayout,
     },
     conversation::Claim,
-    declaration::ActionState,
+    declaration::{ActionState, DeclarationKey, DeclarationProblem, DeclaredValue, Edit},
     notifications::{Chime, WrittenChime},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},

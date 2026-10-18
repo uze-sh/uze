@@ -184,14 +184,18 @@ pub enum WorkspaceEntry {
 /// for resolving a project root.
 mod artifacts;
 mod checkouts;
+mod declaration;
 mod policy_commands;
 mod policy_region;
+mod space_overview;
 mod tasks;
 mod work;
 
 pub use artifacts::*;
 pub use checkouts::*;
+pub use declaration::*;
 pub use policy_commands::*;
 pub use policy_region::*;
+pub use space_overview::*;
 pub use tasks::*;
 pub use work::*;

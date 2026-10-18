@@ -108,6 +108,10 @@
       "glyph": "",
       "width": 1
     },
+    "dropdown": {
+      "glyph": "",
+      "width": 1
+    },
     "prompt": {
       "glyph": "",
       "width": 1
@@ -130,6 +134,10 @@
     },
     "spec": {
       "glyph": "",
+      "width": 1
+    },
+    "overview": {
+      "glyph": "󰕮",
       "width": 1
     },
     "map": {

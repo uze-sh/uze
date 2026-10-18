@@ -268,10 +268,16 @@ vocabulary! {
         StepPrevious = "step.previous",
         /// Steps a value on to the next of its options.
         StepNext = "step.next",
+        /// Takes one off a number.
+        StepDecrease = "step.decrease",
+        /// Adds one to a number.
+        StepIncrease = "step.increase",
         /// A section that is folded shut.
         ChevronCollapsed = "chevron.collapsed",
         /// A section that is open.
         ChevronExpanded = "chevron.expanded",
+        /// Opens a field's list of choices.
+        Dropdown = "dropdown",
         /// The prompt caret before an input.
         Prompt = "prompt",
         /// Opens a menu.
@@ -286,6 +292,9 @@ vocabulary! {
         /// What a project intends — the changes, designs and tasks the
         /// spec surface opens onto.
         Spec = "spec",
+        /// A space as a whole — its context, plugins, workspace and memory
+        /// — which the overview opens onto.
+        Overview = "overview",
         /// A checkout drawn as where its lines are — one of the code
         /// surface's halves, beside its files and its changes.
         Map = "map",

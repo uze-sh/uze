@@ -83,13 +83,16 @@ impl Surface {
     /// bearing: these cards are chosen from rather than read, and the
     /// corner is what separates "pick one of these" from every framed
     /// region that is merely showing something.
-    pub(crate) fn selectable(selected: bool) -> Self {
+    ///
+    /// The pointer over one lifts its border a step, short of the accent
+    /// the keyboard's choice wears.
+    pub(crate) fn selectable(state: super::RowState) -> Self {
         Self {
             border_type: BorderType::Rounded,
-            tone: if selected {
-                Token::Accent
-            } else {
-                Token::BorderFaint
+            tone: match state {
+                super::RowState::Selected => Token::Accent,
+                super::RowState::Hovered => Token::BorderDefault,
+                super::RowState::Resting => Token::BorderFaint,
             },
             ground: None,
             ..Self::card()
@@ -107,13 +110,6 @@ impl Surface {
     /// answers to, or that its content is longer than the box.
     pub(crate) fn hint(mut self, hint: impl Into<Line<'static>>) -> Self {
         self.hint = Some(hint.into());
-        self
-    }
-
-    /// The ground under the content, when this surface sits apart from the
-    /// one it is drawn on rather than continuing it.
-    pub(crate) fn ground(mut self, ground: Token) -> Self {
-        self.ground = Some(ground);
         self
     }
 

@@ -29,9 +29,7 @@ impl Attach<'_> {
             scopes.push(Scope::Confirm);
             return scopes;
         }
-        let surface = if self.model.support_dropdown.is_some() {
-            Scope::AgentDrawer
-        } else if self.model.root_picker.is_some() {
+        let surface = if self.model.root_picker.is_some() {
             Scope::RootPicker
         } else if self.model.renaming.is_some() {
             Scope::Rename
@@ -54,6 +52,12 @@ impl Attach<'_> {
             Scope::Spec
         } else if self.model.code.is_some() {
             Scope::Code
+        } else if let Some(overview) = &self.model.space_overview {
+            if overview.edit.field.is_some() || overview.edit.text.is_some() {
+                Scope::SpaceOverviewEditing
+            } else {
+                Scope::SpaceOverview
+            }
         } else {
             // Last, and total: anything uze does not claim is the
             // program's in the pane.
@@ -65,7 +69,7 @@ impl Attach<'_> {
         // chord. Innermost, because a surface seals everything behind it.
         if matches!(
             surface,
-            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec
+            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec | Scope::SpaceOverview
         ) {
             scopes.push(Scope::Surfaces);
         }
@@ -143,9 +147,6 @@ impl Attach<'_> {
         } else if self.model.action_index.is_some() {
             self.model.action_index = None;
             self.model.dirty = true;
-        } else if self.model.support_dropdown.is_some() {
-            self.model.support_dropdown = None;
-            self.model.dirty = true;
         } else if self.model.agent_picker.is_some() {
             self.model.agent_picker = None;
             self.model.dirty = true;
@@ -156,6 +157,9 @@ impl Attach<'_> {
             // A key that is not the confirmation withdraws the question.
             self.model.recent.asking = false;
             self.model.dirty = true;
+        } else if self.model.space_overview.is_some() {
+            // Standing where the pane is, it is what a stray key would
+            // have reached: nothing behind it may answer one.
         } else if self.model.no_modal_open() {
             self.pane_key(key, chord);
         }
@@ -172,6 +176,21 @@ impl Attach<'_> {
             buffer.insert(character);
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
             self.model.recent.filter.push(character);
+        } else if let Some((_, buffer)) = self
+            .model
+            .space_overview
+            .as_mut()
+            .and_then(|overview| overview.edit.text.as_mut())
+        {
+            buffer.insert(character);
+        } else if let Some(field) = self
+            .model
+            .space_overview
+            .as_mut()
+            .and_then(|overview| overview.edit.field.as_mut())
+        {
+            field.buffer.insert(character);
+            field.picked = 0;
         } else if self
             .model
             .code
@@ -275,10 +294,6 @@ impl Attach<'_> {
             self.interrupt_action(action);
             return Flow::Continue;
         }
-        if self.model.support_dropdown.is_some() {
-            self.drawer_action(action);
-            return Flow::Continue;
-        }
         if self.model.root_picker.is_some() {
             self.root_picker_action(action, viewport);
             return Flow::Continue;
@@ -299,6 +314,12 @@ impl Attach<'_> {
             self.recent_action(action);
             return Flow::Continue;
         }
+        // The overview's door stands over the surfaces too, as theirs do
+        // over each other: one of them in front must not swallow it.
+        if action == Action::OpenSpaceOverview {
+            self.toggle_space_overview();
+            return Flow::Continue;
+        }
         if self.model.architect.is_some() {
             self.architect_action(action);
             return Flow::Continue;
@@ -311,8 +332,13 @@ impl Attach<'_> {
             self.code_action(action);
             return Flow::Continue;
         }
+        if self.model.space_overview.is_some() && overview_answers(action) {
+            self.space_overview_action(action, viewport);
+            return Flow::Continue;
+        }
         match action {
             Action::NewShellTab => {
+                self.model.put_away_space_overview();
                 let _ = send_request(
                     &mut self.stream,
                     &ClientRequest::CreateTab {
@@ -332,6 +358,7 @@ impl Attach<'_> {
                 }
             }
             Action::NewAgent => {
+                self.model.put_away_space_overview();
                 let anchor = self.new_agent_anchor();
                 self.offer_agents(anchor, None);
             }
@@ -393,7 +420,8 @@ impl Attach<'_> {
     /// Selects a tab and gives its pane the frame's size — the one
     /// sequence every "land somewhere" gesture shares, whether it came
     /// from a click, a position, or walking the sidebar.
-    pub(super) fn land_on_tab(&mut self, tab: TabId, columns: u16, rows: u16) {
+    pub(in crate::ui::orchestrator) fn land_on_tab(&mut self, tab: TabId, columns: u16, rows: u16) {
+        self.model.put_away_space_overview();
         self.asked_for_a_tab = true;
         self.model.acknowledge_completed_agent_tab(tab);
         let _ = send_request(&mut self.stream, &ClientRequest::SelectTab { tab });
@@ -405,7 +433,12 @@ impl Attach<'_> {
     /// Lands on a space the way clicking its header does: on the shell
     /// that belongs to no agent when it has one, since that is the way
     /// back to a space's own shells, and on the space itself otherwise.
-    pub(super) fn land_on_space(&mut self, space: SpaceId, columns: u16, rows: u16) {
+    pub(in crate::ui::orchestrator) fn land_on_space(
+        &mut self,
+        space: SpaceId,
+        columns: u16,
+        rows: u16,
+    ) {
         let landing = self.model.session.as_ref().and_then(|session| {
             let space = session
                 .workspace

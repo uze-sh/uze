@@ -4,7 +4,6 @@
 //! layout conventions (hairline dividers, no filled panels) so the modal
 //! it opens over itself reads as one product, not two.
 
-use super::agent_support::PromptScope;
 use super::tui_application;
 use crate::ui::extension_host::WorkspaceHost;
 use crate::ui::extension_view;
@@ -72,6 +71,7 @@ mod events;
 mod interrupt;
 mod notices;
 mod proposal;
+mod space_overview;
 
 /// Input/redraw cadence. Unlike the pane content itself — which the server
 /// now pushes on PTY output instead of the client polling for it (see
@@ -217,6 +217,7 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 use approval::*;
 use interrupt::*;
 use proposal::*;
+use space_overview::*;
 mod input;
 mod recent;
 mod render;
@@ -682,11 +683,11 @@ pub(crate) fn attach_workspace(
                 attach.model.code_tree_scroll = rendered.navigator_scroll;
                 attach.model.code_scrollbars = rendered;
             }
-            attach.model.drawer_text = metrics.drawer.unwrap_or_default();
             if let Some(frame) = metrics.recent {
                 attach.model.recent.scroll = frame.scroll;
                 attach.model.recent.bar = frame.bar;
             }
+            attach.model.absorb_overview_frame(metrics.overview);
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
@@ -889,14 +890,26 @@ pub(super) enum WorkspaceHit {
     OpenArchitect,
     /// The tab strip's spec button, first of the three.
     OpenSpec,
-    /// Opens contextual support details for the selected agent tab.
-    OpenAgentSupport(Rect),
-    /// A prompt listed in the agent drawer, by position in its list.
+    /// The tab strip's overview button, before the three: the space's
+    /// overview, lit while it stands in the pane.
+    OpenOverview,
+    /// A tab of the overview's section bar, by position.
+    OverviewSection(usize),
+    /// A row of the overview's section in front, by position.
+    OverviewRow(usize),
+    /// A number's − or + in the overview's Workspace section: its row, and
+    /// whether it adds.
+    OverviewStep(usize, bool),
+    /// One of the paths a list's field offers, by position.
+    OverviewPick(usize),
+    /// The rule along the overview's drawer, dragged to resize it.
+    ResizeOverviewDrawer,
+    /// The overview's question about the project's commands.
+    OverviewReview,
+    /// Saving or dropping the overview's workspace edits; `true` saves.
+    OverviewSave(bool),
+    /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
-    /// Whose prompts the agent drawer lists.
-    DrawerScope(PromptScope),
-    /// The rest of the drawer, so a click inside it does not close it.
-    DrawerBody,
     /// The task mark on a sidebar agent row — opens the catalog of what
     /// every glyph in both columns means, anchored to the mark. A status
     /// column is a wordless vocabulary; this is where it is written down.
@@ -1222,36 +1235,27 @@ fn selected_agent_context(
     Some((identity.integration.to_owned(), tab.pane.cwd.clone()))
 }
 
-/// The drawer for the agent in front: the same agent
-/// [`selected_agent_context`] resolves, with what its prompts are kept
-/// under. Opens on the agent's own prompts when UZE launched it, and on the
-/// space's when nothing identifies it.
-fn selected_agent_drawer(
+/// The overview's Agent section for the space in front: its prompts, and
+/// the agent in front of it when there is one — the same agent
+/// [`selected_agent_context`] resolves — whose support it reads.
+fn space_prompts_panel(
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
 ) -> Option<AgentSupportDropdown> {
-    let key = selected_agent_context(model, identities)?;
     let space = model.session.as_ref()?.selected_space();
-    let tab = context_agent(model, identities)
-        .and_then(|tab| space.tabs.iter().find(|candidate| candidate.id == tab))?;
-    let agent = launched_agent_id(tab).map(str::to_owned);
-    // The tab the operator last chose, when this agent can show it.
-    let scope = match model.remembered.drawer_scope {
-        Some(PromptScope::Agent) | None if agent.is_some() => PromptScope::Agent,
-        _ => PromptScope::Space,
-    };
-    let support = model
-        .remembered
-        .agent_support
-        .as_ref()
-        .filter(|resolution| resolution.key == key)
-        .and_then(|resolution| resolution.support.clone());
+    let key = selected_agent_context(model, identities);
+    let support = key.as_ref().and_then(|key| {
+        model
+            .remembered
+            .agent_support
+            .as_ref()
+            .filter(|resolution| resolution.key == *key)
+            .and_then(|resolution| resolution.support.clone())
+    });
     Some(AgentSupportDropdown {
         support,
-        scope,
-        agent,
         space_root: space.root.clone(),
-        path: crate::ui::display_project_path(&key.1),
+        path: crate::ui::display_project_path(key.as_ref().map_or(&space.root, |key| &key.1)),
         key,
         selected: 0,
         clearing: false,
@@ -1448,6 +1452,11 @@ struct Channels {
     proposal_answers: Answers<ProposalAnswerResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
+    /// A space's overview, and what its drawer and its edits ask.
+    space_overviews: Answers<SpaceOverviewResolution>,
+    fact_bodies: Answers<FactBodyResolution>,
+    declaration_previews: Answers<DeclarationPreviewResolution>,
+    declaration_saves: Answers<DeclarationSaveResolution>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -1485,8 +1494,6 @@ struct Remembered {
     agent_support_pending: Option<SupportKey>,
     /// The last prompt history the drawer read, tagged with its space.
     drawer_prompts: Option<PromptHistoryResolution>,
-    /// Whose prompts the drawer listed last, so it opens on them again.
-    drawer_scope: Option<PromptScope>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.
@@ -1764,11 +1771,9 @@ struct WorkspaceModel {
     /// Open state of the "+ new agent" popup; `None` when closed. Same
     /// "click outside discards" rule as `renaming`.
     agent_picker: Option<AgentPicker>,
-    /// Contextual support information for the active harness tab.
-    support_dropdown: Option<AgentSupportDropdown>,
     /// The open status catalog and the glyph it hangs off — the legend for
     /// the two status columns a sidebar agent row carries. Informational
-    /// and anchored, like `support_dropdown`: any click or key dismisses
+    /// and anchored, like the agent picker: any click or key dismisses
     /// it. Just the anchor, since the catalog itself is generated from the
     /// same tables the sidebar draws with and holds no state of its own.
     status_catalog: Option<Rect>,
@@ -1808,6 +1813,19 @@ struct WorkspaceModel {
     /// to the front — however it got there — puts it away rather than
     /// leaving it answering for a checkout nobody is looking at.
     extension_tab: Option<TabId>,
+    /// The overview of a space, standing where the pane is. It belongs to
+    /// its space rather than to [`Self::extension_tab`]: the broadcast that
+    /// confirms the space changes the tab in front.
+    space_overview: Option<SpaceOverviewView>,
+    /// Each space's overview as it was left when put away — its section,
+    /// the rows it was on, edits not yet saved — so opening it again
+    /// returns to it rather than starting over.
+    put_away_overviews: std::collections::BTreeMap<SpaceId, SpaceOverviewView>,
+    /// The width the overview's drawer was dragged to, kept across
+    /// openings for the rest of the attach.
+    overview_drawer_width: Option<u16>,
+    /// Whether the drawer's rule is held by the pointer.
+    dragging_overview_drawer: bool,
     /// The diagram held by the pointer. A press on it is not yet a click
     /// or a drag — the first movement says which, as it does for
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here
@@ -1835,9 +1853,6 @@ struct WorkspaceModel {
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
     code_scrollbars: extension_view::Rendered,
-    /// The text the agent drawer drew last frame, for a drag over it to
-    /// resolve against, and for its release to copy out of.
-    drawer_text: crate::ui::agent_support::DrawerText,
     /// Where the pointer asked for the code surface's row menu, which is
     /// where it opens. `None` when the keyboard asked, and the menu opens
     /// under its row instead.
@@ -2247,7 +2262,6 @@ impl WorkspaceModel {
         self.renaming.is_none()
             && self.root_picker.is_none()
             && self.agent_picker.is_none()
-            && self.support_dropdown.is_none()
             && self.status_catalog.is_none()
             && !self.recent.has_keys()
             && self.context_menu.is_none()

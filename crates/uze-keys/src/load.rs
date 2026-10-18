@@ -422,6 +422,44 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "pagedown", Action::ScrollPageDown),
         bind(Scope::CodeEditing, "backspace", Action::EraseBack),
         bind(Scope::CodeEditing, "delete", Action::EraseForward),
+        // The space overview: a row of sections over a list with a drawer,
+        // so the arrows walk sideways between sections and down the list,
+        // and the digits name a section the way they name a manage screen.
+        bind(Scope::Workspace, "alt+o", Action::OpenSpaceOverview),
+        bind(Scope::SpaceOverview, "esc", Action::Dismiss),
+        bind(Scope::SpaceOverview, "left", Action::FocusPrevious),
+        bind(Scope::SpaceOverview, "right", Action::FocusNext),
+        bind(Scope::SpaceOverview, "down", Action::SelectNext),
+        bind(Scope::SpaceOverview, "up", Action::SelectPrevious),
+        bind(Scope::SpaceOverview, "enter", Action::Activate),
+        bind(Scope::SpaceOverview, "r", Action::Refresh),
+        bind(Scope::SpaceOverview, "a", Action::AddItem),
+        bind(Scope::SpaceOverview, "d", Action::RemoveItem),
+        // Not alt: over a space, alt and the arrows walk its agents.
+        bind(Scope::SpaceOverview, "shift+up", Action::MoveItemUp),
+        bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
+        bind(Scope::SpaceOverview, "s", Action::SaveChanges),
+        bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
+        // Clearing the space's prompts, shifted off the `x` that discards
+        // edits.
+        bind(Scope::SpaceOverview, "X", Action::ClearPromptHistory),
+        // A number steps by one, the way its − and + are clicked.
+        bind(Scope::SpaceOverview, "-", Action::PreviousValue),
+        bind(Scope::SpaceOverview, "+", Action::NextValue),
+        bind(Scope::SpaceOverviewEditing, "enter", Action::Activate),
+        bind(Scope::SpaceOverviewEditing, "esc", Action::Dismiss),
+        bind(Scope::SpaceOverviewEditing, "backspace", Action::EraseBack),
+        bind(Scope::SpaceOverviewEditing, "delete", Action::EraseForward),
+        bind(Scope::SpaceOverviewEditing, "left", Action::CaretLeft),
+        bind(Scope::SpaceOverviewEditing, "right", Action::CaretRight),
+        bind(Scope::SpaceOverviewEditing, "home", Action::CaretLineStart),
+        bind(Scope::SpaceOverviewEditing, "end", Action::CaretLineEnd),
+        // An action's instruction takes enter as a line break, so it is
+        // finished with the save chord the file editor uses.
+        bind(Scope::SpaceOverviewEditing, "ctrl+s", Action::SaveFile),
+        // A list's field offers paths to choose from, walked like a list.
+        bind(Scope::SpaceOverviewEditing, "down", Action::SelectNext),
+        bind(Scope::SpaceOverviewEditing, "up", Action::SelectPrevious),
         // Recent: enter does what moves the selected row on, and the
         // letters are the two things beyond it, each only where it applies.
         bind(Scope::Recent, "esc", Action::Dismiss),
@@ -449,15 +487,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
         bind(Scope::AgentPicker, "esc", Action::Dismiss),
-        bind(Scope::AgentDrawer, "down", Action::SelectNext),
-        bind(Scope::AgentDrawer, "up", Action::SelectPrevious),
-        bind(Scope::AgentDrawer, "enter", Action::Activate),
-        bind(Scope::AgentDrawer, "esc", Action::Dismiss),
-        // Whose prompts: this agent's or the whole space's. Two choices
-        // side by side, walked the way the root picker's chips are.
-        bind(Scope::AgentDrawer, "right", Action::FocusNext),
-        bind(Scope::AgentDrawer, "left", Action::FocusPrevious),
-        bind(Scope::AgentDrawer, "x", Action::ClearPromptHistory),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),
@@ -491,6 +520,13 @@ fn default_bindings() -> Vec<Binding> {
             &format!("alt+{index}"),
             Action::SelectTab(index),
         ));
+        if index <= 5 {
+            bindings.push(bind(
+                Scope::SpaceOverview,
+                &index.to_string(),
+                Action::SelectSection(index),
+            ));
+        }
         // Bare digits: management owns the keyboard, and the screens are
         // numbered on the tab strip that heads the modal.
         bindings.push(bind(
@@ -666,8 +702,8 @@ mod tests {
             vec![
                 "profiles.delete-profile=d",
                 "code.delete-file=d",
+                "space-overview.clear-prompt-history=shift+x",
                 "preserved-work.discard-task=d",
-                "agent-drawer.clear-prompt-history=x",
             ]
         );
     }

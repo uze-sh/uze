@@ -164,15 +164,19 @@ scopes! {
     /// The spec surface: a checkout's changes and specs, read as
     /// documents.
     Spec => "spec", "Spec", Workspace, seals: true, text: false;
+    /// A space's overview, standing where the pane is. It does not seal:
+    /// the sidebar's chords stay live over it, since it is where a space
+    /// is landed on.
+    SpaceOverview => "space-overview", "Space overview", Workspace, seals: false, text: false;
+    /// The overview with a workspace value open for typing.
+    SpaceOverviewEditing => "space-overview-editing", "Editing a workspace value", Workspace,
+        seals: true, text: true;
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
     /// The inline rename buffer over a tab or space label.
     Rename => "rename", "While renaming", Workspace, seals: true, text: true;
     /// The harness picker a new agent is born from.
     AgentPicker => "agent-picker", "Choosing an agent", Workspace, seals: true, text: false;
-    /// The drawer about the agent in front: what it runs on, and what it
-    /// was asked.
-    AgentDrawer => "agent-drawer", "The agent drawer", Workspace, seals: true, text: false;
     /// The sidebar's recent mode: the agents no pane carries. Named for
     /// the surface it was when released, since keys.json binds by name.
     Recent => "preserved-work", "Recent", Workspace, seals: true, text: false;

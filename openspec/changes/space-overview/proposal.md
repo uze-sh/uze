@@ -10,45 +10,56 @@ all:
 - `uze status` is not consumed by the TUI at all.
 - Commands awaiting approval only appear as a toast.
 - Agent memory (`portable-agent-memory`) only reaches the operator through
-  `uze status` and a proposal toast.
-- The manage modal shows some of this, but it is the machine's surface,
-  opened over the client, not the space's.
+  `uze status`.
+- The `workspace:` section of `agents.yaml` is discovered by reading the
+  docs: nothing in the product shows which keys exist, what each defaults
+  to, or what a project set.
 
 A space needs a place of its own: one screen, scoped to the selected
-space, that answers "what is the state of this project" and lets the
-operator act where an action already exists.
+space, that answers "what is the state of this project", lets the operator
+act where an action already exists, and lets them configure the
+workspace without knowing its keys.
 
 ## What Changes
 
-- **A space overview.** A dedicated screen drawn where the pane is, like
-  the code, architect and spec surfaces, scoped to the selected space.
-  - Selecting the space's row shows it instead of focusing the space's
-    shell.
-  - While it is up, the tab strip shows the space's own shells, and an
-    "Open shell" action brings one to the front, or creates one for a
-    space that only has agents.
-- **Readiness.**
-  - The project's state as `uze status` computes it: `AGENTS.md`, the
-    manifest against the lock, each harness's context delivery including
-    agent context, gates this machine cannot run, and commands awaiting
-    approval.
-  - Approval stays the dialog that already exists, opened from here.
-- **Memory.**
-  - The project's and the machine's facts, with each one's kind, scope
-    and provenance (UZE, or the harness that keeps it).
-  - Opening a fact's body.
-  - Proposed machine facts, accepted or discarded with the dialog that
-    already exists.
-- **Plugins.** The plugins the project declares: installed or not,
-  contributing here or not, and whether a newer commit exists.
-- **Workspace policy.** What `agents.yaml`'s `workspace:` section
-  declares, read-only, including where its artifacts live.
-- **Activity.** Counts of the space's agents by state: running, ready to
-  deliver, preserved. The sidebar keeps listing them one by one.
-- **Phase 1 is read-only plus actions that already exist.** Editing
-  `agents.yaml`, installing or removing plugins and forgetting facts from
-  this screen are a later change. Each writes the operator's own files
-  and deserves its own review.
+- **A space overview.** A screen drawn where the pane is, like the code,
+  architect and spec surfaces, scoped to the space in front.
+  - A `space` button at the strip's right end, apart from spec, arch and
+    code, opens it from any context of the space: an agent's or the
+    space's own. It takes the place of the agent drawer's mark.
+  - Selecting a space's row keeps landing on its shells, as before.
+- **An Agent section** takes the agent drawer's place: the prompts the agent
+  in front, or its space, was given, and what reaches that agent. Enter on a
+  prompt copies it. The drawer itself is removed.
+- **Five sections**: the agent in front, then what the project declares
+  and what follows from it, reached from a section bar like the
+  manage modal's header. Each tab carries the worst state of
+  its parts, and the section's first line names the cause.
+  - **Settings.** Every key of `agents.yaml`'s `workspace:` section, set or
+    defaulted, and the state of each `setup` and `gate` line on this
+    machine. The section is **editable**: a key is changed in place, the
+    real parser validates the result, and Save shows the `agents.yaml`
+    diff before writing it.
+  - **Plugins.** The plugins `agents.yaml` declares: installed, contributing
+    here, the commit installed and its freshness; and `agents.lock`'s drift
+    against the declaration.
+  - **Context.** `AGENTS.md` and, per harness, whether it is installed,
+    whether the project context reaches it and what agent context it
+    misses.
+  - **Memory.** The project's facts with their kind, origin and date, and
+    how many machine facts also reach agents here. A fact's body opens in
+    the drawer.
+- **A drawer** beside the section shows the selected row in full: a
+  harness, a plugin, a fact, a workspace key.
+- **Activity.** Counts of the space's agents by state beside the title.
+- **Proposed machine facts stay out.** They are the machine's, not the
+  space's, and the toast that announces one already stays until answered.
+- **`uze status` stops listing every fact.** Its memory block becomes one
+  line per scope (count by provenance) plus what needs the operator
+  (proposals, unreadable files). With fifty facts the listing buried the
+  rest of the report; the facts move to the overview's Memory section and
+  stay in `--json`. This revises `portable-agent-memory`'s open
+  requirement in place.
 - **Naming.** The existing Overview read model calls the `AGENTS.md`
   context state "Memory". It becomes "Context", so "memory" means one
   thing on every screen.
@@ -59,8 +70,8 @@ operator act where an action already exists.
 
 - `space-overview`: the space-scoped screen, covering:
   - when it shows and what selecting a space does;
-  - its sections and the read model behind them;
-  - the actions phase 1 offers;
+  - its sections, the drawer and the read model behind them;
+  - editing the `workspace:` section;
   - how it stays current without blocking a frame.
 
 ### Modified Capabilities
@@ -72,13 +83,25 @@ operator act where an action already exists.
 - **Depends on** `portable-agent-memory` (PR #268) for the memory read
   model.
 - **Code:**
-  - `uze-application`: `uze status`'s project composition moves here from
-    `src/cli/status.rs`, so the CLI and the overview render one
-    computation, plus a `SpaceOverview` read model built on it.
-  - `src/ui/orchestrator`: the surface's model state, its read
-    (`reads.rs` `spawn_*` and an `absorb_*`), its rendering from the
-    `widget/` vocabulary, keys and hits.
+  - `uze-application`:
+    - `uze status`'s project composition moves here from `src/main.rs` and
+      `src/cli/status.rs`, so the CLI and the overview render one
+      computation.
+    - `StatusReport` carries per-harness agent context and the plugins
+      contributing here by name, rather than display-name-prefixed lines
+      and a count. `uze status --json` changes shape accordingly.
+    - A `SpaceOverview` read model, and a workspace declaration view and
+      edit (preview, then save) built on `uze-workspace`'s parser.
+  - `uze-workspace`: the `workspace:` section's validation takes candidate
+    text and collects every problem, instead of reading the file and
+    stopping at the first.
+  - `uze-core`: a public writer for any `workspace:` key on
+    `ManifestDocument`.
+  - `src/ui`: the screen, its read and its edit (`reads.rs` `spawn_*` and
+    `absorb_*`), keys and hits. The manage header's tabs and the drawer
+    move into `src/ui/widget/`, since this is their second file.
   - The Overview read model's rename, and the views that draw it.
 - **No change to `uze-terminal`:** tabs stay PTYs, and the space keeps the
   shell its server opens.
-- **No new dependency, and no persisted format.**
+- **No new dependency, and no persisted format.** The only file the screen
+  writes is the project's `agents.yaml`, through the existing editor.

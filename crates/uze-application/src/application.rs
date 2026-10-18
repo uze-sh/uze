@@ -71,7 +71,7 @@ pub use theme::{GlyphSetSummary, ThemeSummary};
 
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};
 pub use overview::{
-    MarketplaceState, MemoryState, OverviewMarketplace, OverviewWorkspaceSummary,
+    ContextState, MarketplaceState, OverviewMarketplace, OverviewWorkspaceSummary,
     ProjectEnvironmentState, ProjectOverview,
 };
 use project_environment::ProjectEnvironmentPlan;

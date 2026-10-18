@@ -150,8 +150,9 @@ def _assert_long_agents_md(bindings, seen, output):
         status = None
     name = bindings.display_name
     warned = status is not None and any(
-        issue.startswith(f"{name}:") and "AGENTS.md" in issue
-        for issue in status.get("issues", [])
+        harness.get("display_name") == name
+        and "AGENTS.md" in (harness.get("context_unread") or "")
+        for harness in status.get("harnesses", [])
     )
     check(
         "context-long-head-reaches-model",

@@ -97,41 +97,33 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // the strip never draws a divider with nothing on one side of it.
     let mut trailing_right = inner.right();
     let mut surfaces_left: Option<u16> = None;
-    // Outside every zone, on the strip's own edge: it is not about this
-    // checkout the way the other three are, and the one thing at the end
-    // of a row is the one thing nothing else can push around. No fill —
-    // it wears the plain backdrop, white at rest, so a single glyph out
-    // here never reads as a fourth zone of one button. Under the pointer
-    // it takes the hue the sidebar marks the selected agent's caption
-    // with: what it opens is that agent's context, and the accent said
-    // nothing on a theme whose accent is the text's own white.
-    //
-    // Its rect is what the dropdown hangs off, so it is measured before
-    // it is drawn and the hit carries the same rectangle the glyph is
-    // centred in — pad included, since the padding is as much of the
-    // target as the glyph is.
-    if selected_agent_context(model, identities).is_some() {
-        // Air on the leading side only. The strip already insets its own
-        // right edge by a column (see `inner`), and a trailing pad on top
-        // of that left the one glyph at the end of the row floating two
-        // columns off the margin every other row is measured against.
-        let sparkle = theme::glyph(Symbol::MarkSparkle);
-        let width = Span::raw(&sparkle).width() as u16 + chip::PAD;
+    // The space's own door, at the strip's edge and apart from the
+    // surfaces: those are about the checkout in front, this is about the
+    // space as a whole — its settings, plugins, context, memory and the
+    // agent in front — so it stands wherever in the space the operator is.
+    {
+        let buttons = [GroupButton {
+            hit: WorkspaceHit::OpenOverview,
+            label: surface_label(Symbol::Overview, "space"),
+            hue: theme::color(Token::TextSecondary),
+            strong: false,
+            lit: model.space_overview.is_some(),
+            switch: true,
+        }];
+        let width = group_width(&buttons);
         let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
-        let hit = WorkspaceHit::OpenAgentSupport(rect);
-        let hue = match chip_state(model, hit) {
-            ChipState::Resting => theme::color(Token::TextBright),
-            _ => super::sidebar::caption_color(true),
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(sparkle, Style::default().fg(hue)),
-            ])),
-            rect,
+        let (spans, group_hits) =
+            button_group(model, &buttons, Token::SurfaceRaised, (rect.x, rect.y));
+        hits.extend(group_hits);
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        // Its own zone: a hairline sets it apart from the surfaces, which
+        // are about the checkout in front rather than the space.
+        trailing_right = render_zone_hairline(
+            frame,
+            inner,
+            ZoneEdge::Filled.left_of(rect.x),
+            ZoneEdge::Filled,
         );
-        hits.push((rect, hit));
-        trailing_right = ZoneEdge::Bare.left_of(rect.x);
     }
 
     // ── actions ────────────────────────────────────────────────────────

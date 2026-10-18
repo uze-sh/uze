@@ -233,32 +233,29 @@ fn open_or_scaffold(root: &Path) -> Result<(edit::ManifestDocument, bool)> {
     Ok((document, true))
 }
 
-/// Writes one scalar into one of the sections this module carries, creating
-/// the manifest when the project has none, and reports whether it had to. The
-/// owner of the section decides what the value means and re-reads it; this
-/// only patches the document in place, so the comments around it survive.
-pub fn set_scalar(root: &Path, section: Section, key: &str, value: &str) -> Result<bool> {
+/// Declares `key` in one of the sections this module carries, with any value
+/// its owner reads, creating the manifest when the project has none, and
+/// reports whether it had to. The owner decides what the value means and
+/// re-reads it; this only patches the document in place, so the comments
+/// around it survive.
+pub fn set_key(root: &Path, section: Section, key: &str, value: &impl Serialize) -> Result<bool> {
     let (mut document, created) = open_or_scaffold(root)?;
-    document.upsert(
-        section.key(),
-        key,
-        &serde_yaml::Value::String(value.to_owned()),
-    )?;
+    document.set_key(section, key, value)?;
     document.save()?;
     load(root)?;
     Ok(created)
 }
 
-/// Removes one scalar from one of the sections this module carries. A
+/// Removes one key from one of the sections this module carries. A
 /// manifest that does not exist, or never held the key, is left as it is:
 /// taking back a declaration nobody made is not an edit.
-pub fn unset_scalar(root: &Path, section: Section, key: &str) -> Result<()> {
+pub fn unset_key(root: &Path, section: Section, key: &str) -> Result<()> {
     let path = manifest_path_for(root);
     if !path.exists() {
         return Ok(());
     }
     let mut document = edit::ManifestDocument::open(&path)?;
-    document.remove(section.key(), key)?;
+    document.unset_key(section, key)?;
     document.save()?;
     load(root)?;
     Ok(())
@@ -672,7 +669,7 @@ mod tests {
         fs::create_dir_all(&outside).unwrap();
         std::os::unix::fs::symlink("../outside/agents.yaml", manifest_path_for(&root)).unwrap();
 
-        let refused = set_scalar(&root, Section::Workspace, "delivery", "pr");
+        let refused = set_key(&root, Section::Workspace, "delivery", &"pr");
         assert!(
             matches!(refused, Err(UzeError::ProjectFileEscapes { .. })),
             "{refused:?}"
@@ -684,7 +681,7 @@ mod tests {
 
         let authored = "workspace:\n  delivery: pr\n";
         fs::write(outside.join("agents.yaml"), authored).unwrap();
-        let refused = set_scalar(&root, Section::Workspace, "delivery", "push");
+        let refused = set_key(&root, Section::Workspace, "delivery", &"push");
         assert!(
             matches!(refused, Err(UzeError::ProjectFileEscapes { .. })),
             "{refused:?}"

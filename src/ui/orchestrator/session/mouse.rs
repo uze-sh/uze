@@ -240,25 +240,6 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if self.model.support_dropdown.is_some() => {
-                // A click on a record selects it and nothing more: the
-                // drawer is read, so a click inside it never closes it.
-                // Anywhere else dismisses it, and never leaks into the pane
-                // beneath.
-                // A press on its text may yet be a drag, and selecting a
-                // record can scroll the list under it: a record pressed
-                // there is selected when the button comes up still a click.
-                let marking = self.mark_drawer_from(mouse.column, mouse.row);
-                match self.model.hit_at(mouse.column, mouse.row) {
-                    Some(WorkspaceHit::DrawerPrompt(_)) if marking => {}
-                    Some(WorkspaceHit::DrawerPrompt(index)) => self.select_drawer_prompt(index),
-                    Some(WorkspaceHit::DrawerScope(scope)) => self.show_drawer_scope(scope),
-                    Some(WorkspaceHit::DrawerBody) => {}
-                    Some(WorkspaceHit::HintAction(action)) => return self.act(action, viewport),
-                    _ => self.model.support_dropdown = None,
-                }
-                self.model.dirty = true;
-            }
             _ if self.model.commit_detail_open() => {
                 // Informational, like the support dropdown: any click
                 // dismisses it rather than leaking into the pane.
@@ -466,10 +447,6 @@ impl Attach<'_> {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
             }
-            _ if matches!(&self.model.selection, Some(Selection::Drawer(marking)) if marking.held()) =>
-            {
-                self.mark_drawer_to(mouse.column, mouse.row);
-            }
             _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
             {
                 self.mark_text_to(mouse.column, mouse.row);
@@ -504,6 +481,15 @@ impl Attach<'_> {
                     .clamp(1, TIMELINE_COMMITS as u16);
                 if self.model.timeline_rows != Some(wanted) {
                     self.model.timeline_rows = Some(wanted);
+                    self.model.dirty = true;
+                }
+            }
+            // The drawer stands at the pane's right edge: its width is what
+            // lies between the pointer and that edge.
+            _ if self.model.dragging_overview_drawer => {
+                let width = layout.pane.right().saturating_sub(mouse.column);
+                if self.model.overview_drawer_width != Some(width) {
+                    self.model.overview_drawer_width = Some(width);
                     self.model.dirty = true;
                 }
             }
@@ -590,10 +576,6 @@ impl Attach<'_> {
                 self.release_text(mouse.column, mouse.row);
                 return Flow::Continue;
             }
-            Some(Selection::Drawer(marking)) if marking.held() => {
-                self.release_drawer_text(mouse.column, mouse.row);
-                return Flow::Continue;
-            }
             _ => {}
         }
         // A drag this client never owned (no flag was set, no
@@ -644,6 +626,9 @@ impl Attach<'_> {
             self.model.remember_sidebar();
         }
         self.model.dragging_sidebar = false;
+        if std::mem::take(&mut self.model.dragging_overview_drawer) {
+            self.model.dirty = true;
+        }
         // A press that never moved is a click, and a click on the edge
         // asks the list to show that part of itself — the gesture that
         // sharing the column with the divider would otherwise have cost.
@@ -988,16 +973,6 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            // The drawer's prompts are a list over the pane: the wheel walks
-            // them the way the arrows do, and nothing behind it scrolls.
-            _ if self.model.support_dropdown.is_some() => {
-                let action = if mouse.kind == MouseEventKind::ScrollUp {
-                    Action::SelectPrevious
-                } else {
-                    Action::SelectNext
-                };
-                self.drawer_action(action);
-            }
             // The index is nothing but a long list, so the wheel walks it
             // the way the arrows do. It sits ahead of every surface below
             // because it is drawn over all of them.
@@ -1018,6 +993,35 @@ impl Attach<'_> {
                 } else {
                     ScrollDirection::Down
                 });
+            }
+            // An open list of options is walked, as a dropdown is; the
+            // section under it only scrolls, leaving the selection where
+            // the keys put it.
+            _ if self
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.edit.field.is_some())
+                && in_pane =>
+            {
+                let action = if mouse.kind == MouseEventKind::ScrollUp {
+                    Action::SelectPrevious
+                } else {
+                    Action::SelectNext
+                };
+                self.space_overview_action(action, viewport);
+            }
+            _ if self.model.space_overview.is_some() && in_pane => {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    ScrollDirection::Up
+                } else {
+                    ScrollDirection::Down
+                };
+                if let Some(overview) = self.model.space_overview.as_mut() {
+                    let section = overview.section.index();
+                    overview.scroll[section] = overview.scroll[section].scrolled(direction);
+                    self.model.dirty = true;
+                }
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -1258,8 +1262,9 @@ impl Attach<'_> {
             WorkspaceHit::SelectTab(tab) => {
                 // Choosing a tab is choosing to see it, the one already in
                 // front included: that is how the pane is had back from a
-                // surface standing in it.
+                // surface or the overview standing in it.
                 self.model.close_extension();
+                self.model.put_away_space_overview();
                 // Whether this click landed on the tab already
                 // holding its space's selection — read before
                 // `SelectTab` is sent below, since the model
@@ -1347,6 +1352,7 @@ impl Attach<'_> {
             }
             WorkspaceHit::SelectSpace(space) => {
                 self.model.close_extension();
+                self.model.put_away_space_overview();
                 // A space's own row is its own context: it
                 // lands on a shell belonging to no agent, the
                 // way each agent row lands on that agent. That
@@ -1410,6 +1416,20 @@ impl Attach<'_> {
                 self.model.close_architect();
             }
             WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
+            WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
+            WorkspaceHit::OverviewSection(index) => {
+                return self.act(Action::SelectSection(index as u8 + 1), viewport);
+            }
+            WorkspaceHit::OverviewRow(index) => self.click_overview_row(index, viewport),
+            WorkspaceHit::OverviewReview => self.review_overview_commands(),
+            WorkspaceHit::OverviewPick(option) => self.pick_overview_option(option),
+            WorkspaceHit::OverviewStep(row, adds) => {
+                self.step_overview_value(row, if adds { 1 } else { -1 });
+            }
+            WorkspaceHit::OverviewSave(true) => return self.act(Action::SaveChanges, viewport),
+            WorkspaceHit::OverviewSave(false) => {
+                return self.act(Action::DiscardChanges, viewport);
+            }
             // The counts are the changes' door, not the surface's, and
             // keep the keys' toggle.
             WorkspaceHit::OpenChanges => return self.act(Action::ToggleChanges, viewport),
@@ -1467,31 +1487,8 @@ impl Attach<'_> {
             }
             // Answered by the drawer's own arm in `press`, which sees them
             // before any other.
-            WorkspaceHit::DrawerPrompt(_)
-            | WorkspaceHit::DrawerScope(_)
-            | WorkspaceHit::DrawerBody => {}
-            WorkspaceHit::OpenAgentSupport(_) => {
-                self.model.support_dropdown = selected_agent_drawer(&self.model, &self.identities);
-                // Opening always re-reads, even when an answer
-                // for this key is already held: `AGENTS.md` and
-                // `.agents/` can change under an open workspace,
-                // and this is the one moment the user is
-                // actually looking at the answer.
-                if let Some(dropdown) = &self.model.support_dropdown {
-                    self.model.remembered.agent_support_pending = Some(dropdown.key.clone());
-                    spawn_support_refresh(
-                        self.home,
-                        dropdown.key.clone(),
-                        self.channels.support.sender.clone(),
-                    );
-                    spawn_prompt_history(
-                        self.home,
-                        dropdown.space_root.clone(),
-                        self.channels.prompts.sender.clone(),
-                    );
-                }
-                self.model.dirty = true;
-            }
+            // A prompt chosen in the overview's Agent section.
+            WorkspaceHit::DrawerPrompt(index) => self.select_drawer_prompt(index),
             // The extension's own surfaces, in its own vocabulary. The
             // overlay's hits are answered by the guarded arm in `press`
             // — same as `PickAgent`/`ContextMenuAction` above for the
@@ -1551,6 +1548,10 @@ impl Attach<'_> {
             WorkspaceHit::ManageSurface | WorkspaceHit::CloseManage => {}
             WorkspaceHit::ResizeSidebar => {
                 self.model.dragging_sidebar = true;
+            }
+            WorkspaceHit::ResizeOverviewDrawer => {
+                self.model.dragging_overview_drawer = true;
+                self.model.dirty = true;
             }
         }
         Flow::Continue

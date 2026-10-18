@@ -42,7 +42,7 @@ mod workspace_tests {
         AgentGroup, AgentIdentity, AgentSupportDropdown, AgentTabStatus, AgentView, Attach,
         CHIME_COOLDOWN, CHIME_SETTLE, CommitDetailPopup, CommitDetailResolution,
         DeliveryResolution, DraggingTab, ExtensionHit, Flow, GitAnswer, GitBadge, GitResolution,
-        PendingDrop, PlacementResolution, PromptScope, RootPicker, ScrollDirection, SpecResolution,
+        PendingDrop, PlacementResolution, RootPicker, ScrollDirection, SpecResolution,
         SpecSummaryState, SupportResolution, TabDragGroup, UnspelledGates, UpstreamSync, Viewport,
         WorkResolution, WorkStateView, WorkspaceModel, adopt_agent_labels, agent_activity_frame,
         agent_identity_for_tab, answered_or, blank_pane, can_close_tab_from_menu, checkout_lost,
@@ -53,9 +53,9 @@ mod workspace_tests {
             self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_commit_detail,
             render_sidebar, render_status_catalog, render_tab_strip, task_mark, timeline_height,
         },
-        scroll_timeline, scroll_tree, selected_agent_drawer, selected_pane_cwd,
-        space_context_agent, space_cwd, space_own_tab, strip_label, strip_tabs,
-        sync_slot_occupancy, tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
+        scroll_timeline, scroll_tree, selected_pane_cwd, space_context_agent, space_cwd,
+        space_own_tab, space_prompts_panel, strip_label, strip_tabs, sync_slot_occupancy,
+        tab_drag_group, tab_drag_group_members, tab_needs_replacement_shell,
         toggle_space_collapsed, toggle_spec_summary, toggle_timeline,
         workspace_has_active_agent_operation,
     };
@@ -370,21 +370,17 @@ mod workspace_tests {
         assert!(!strip.contains("Agent one"), "{strip}");
     }
 
-    /// The way into an agent's support belongs to the context, not to
-    /// whichever of its tabs is in front of the person. Every chip on the
-    /// strip is contextual to the agent leading it — that is what the
-    /// strip *is* — so stepping into a shell the agent opened is still
-    /// being in the agent's context, and the badge cannot blink out on
-    /// the way. The one row with no agent to support is the space's own,
-    /// which holds shells and nothing else.
+    /// The space button stands in every context of the space: the agent
+    /// leading the strip, a shell it opened, and the space's own shells.
+    /// It is about the space, which every one of them is in.
     #[test]
-    fn the_agent_badge_follows_the_context_and_not_the_selected_tab() {
+    fn the_space_button_stands_in_every_context() {
         let (mut model, first, _second) = two_agents_with_shells();
-        let badge_is_drawn = |model: &WorkspaceModel| {
+        let button_is_drawn = |model: &WorkspaceModel| {
             tab_strip(model)
                 .1
                 .iter()
-                .any(|(_, hit)| matches!(hit, WorkspaceHit::OpenAgentSupport(_)))
+                .any(|(_, hit)| *hit == WorkspaceHit::OpenOverview)
         };
         let (shell, bootstrap) = {
             let space = model.session.as_ref().expect("session").selected_space();
@@ -402,28 +398,10 @@ mod workspace_tests {
                 .id;
             (shell, bootstrap)
         };
-
-        model.session.as_mut().expect("session").select_tab(first);
-        assert!(
-            badge_is_drawn(&model),
-            "the agent itself offers the way into its support"
-        );
-
-        model.session.as_mut().expect("session").select_tab(shell);
-        assert!(
-            badge_is_drawn(&model),
-            "and so does a shell it opened — the same agent is still the context"
-        );
-
-        model
-            .session
-            .as_mut()
-            .expect("session")
-            .select_tab(bootstrap);
-        assert!(
-            !badge_is_drawn(&model),
-            "only the space's own row has no agent to support"
-        );
+        for tab in [first, shell, bootstrap] {
+            model.session.as_mut().expect("session").select_tab(tab);
+            assert!(button_is_drawn(&model), "no space button over {tab:?}");
+        }
     }
 
     /// A tab number means "that chip", so it is counted along the strip —
@@ -615,19 +593,23 @@ mod workspace_tests {
             model.code_tree_scroll = rendered.navigator_scroll;
             model.code_scrollbars = rendered;
         }
-        model.drawer_text = metrics.drawer.unwrap_or_default();
         if let Some(frame) = metrics.recent {
             model.recent.scroll = frame.scroll;
             model.recent.bar = frame.bar;
         }
         model.absorb_manage_frame(metrics.manage);
+        model.absorb_overview_frame(metrics.overview);
         compute_layout(area, model.sidebar_width)
     }
 
     /// The whole frame as text, row by row — for asserting not just that
     /// something was drawn, but where.
     pub(super) fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
-        let area = Rect::new(0, 0, 80, 24);
+        frame_rows_at(model, Rect::new(0, 0, 80, 24))
+    }
+
+    /// [`frame_rows`] on a terminal of `area`'s size.
+    pub(super) fn frame_rows_at(model: &mut WorkspaceModel, area: Rect) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
         terminal
             .draw(|frame| {
@@ -5027,24 +5009,21 @@ mod workspace_tests {
     }
 
     fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
-        selected_agent_drawer(model, &identities_fixture()).expect("an agent is in front")
+        space_prompts_panel(model, &identities_fixture()).expect("a space is in front")
     }
 
-    /// The drawer is named after the agent and opens on the prompts the
-    /// operator chose last time, rather than starting over on every open.
+    /// The Agent section reads the agent in front when there is one —
+    /// what its support is read for — and the space's prompts either way.
     #[test]
-    fn the_agent_drawer_opens_on_the_scope_last_chosen() {
-        let mut model = agent_session_in("/repo/.worktrees/a");
-        model.session.as_mut().unwrap().workspace.spaces[0].tabs[0].env = vec![(
-            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-            "a1".to_owned(),
-        )];
-        let drawer = drawer_over(&model);
-        assert_eq!(drawer.agent.as_deref(), Some("a1"));
-        assert_eq!(drawer.scope, PromptScope::Agent);
+    fn the_agent_section_reads_the_agent_in_front_or_the_space_alone() {
+        let model = agent_session_in("/repo/.worktrees/a");
+        let panel = drawer_over(&model);
+        assert!(panel.key.is_some(), "the agent in front is read");
 
-        model.remembered.drawer_scope = Some(PromptScope::Space);
-        assert_eq!(drawer_over(&model).scope, PromptScope::Space);
+        let shells = model_of(session("/repo"));
+        let panel = drawer_over(&shells);
+        assert_eq!(panel.key, None, "a shell has no support to read");
+        assert_eq!(panel.space_root, PathBuf::from("/repo"));
     }
 
     fn support_fixture() -> crate::ui::agent_support::AgentSupport {
@@ -5086,22 +5065,33 @@ mod workspace_tests {
         crate::ui::agent_support::AgentSupport::resolve(health, &context)
     }
 
-    /// The client keeps one support answer, for whatever agent is in
-    /// front, and replaces it when that agent's harness or directory
-    /// changes. An open drawer holds its own: read from the shared one, it
-    /// stopped being drawn the moment the agent ran something, while it
-    /// still held the keyboard.
+    /// The Agent section holds the support answer read for its agent: the
+    /// client's one shared answer moves on with whatever agent comes to the
+    /// front, and the section stopped saying what reaches its own agent
+    /// the moment that happened.
     #[test]
-    fn an_open_drawer_is_drawn_whatever_the_client_resolved_since() {
+    fn the_agent_section_keeps_its_own_agents_support() {
         let mut model = agent_session_in("/repo/.worktrees/a");
-        let mut drawer = drawer_over(&model);
-        drawer.support = Some(support_fixture());
-        model.support_dropdown = Some(drawer);
+        let mut agent = drawer_over(&model);
+        agent.support = Some(support_fixture());
+        let (space, behind) = {
+            let space = model.session.as_ref().expect("session").selected_space();
+            (space.id, space.selected_tab)
+        };
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.agent = Some(agent);
+        overview.answer = Some(Ok(project_space(
+            Default::default(),
+            Err("not read".to_owned()),
+        )));
         model.remembered.agent_support = Some(SupportResolution {
             key: ("codex".to_owned(), PathBuf::from("/elsewhere")),
             support: None,
         });
-        let rows = frame_rows(&mut model);
+        // Wide enough that the drawer, where what reaches the agent is
+        // read, stands beside the prompts.
+        let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
         assert!(
             rows.iter().any(|row| row.contains("AGENTS.md")),
             "{}",
@@ -5109,19 +5099,26 @@ mod workspace_tests {
         );
     }
 
-    /// The drawer floats over the pane, so the host's selection reaches
-    /// it as it reaches a pane: a drag over a prompt copies it, whole
-    /// however it was elided, and a click on a record still only selects
-    /// it.
+    /// A prompt is read in the Agent section to be used again: enter on it
+    /// copies the whole prompt, however its lines were folded.
     #[test]
-    fn a_drag_over_the_drawer_copies_and_a_click_selects() {
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-drawer-copy"));
+    fn enter_on_a_prompt_copies_it_whole() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-copy"));
         let mut model = agent_session_in("/repo");
-        let mut drawer = drawer_over(&model);
-        drawer.support = Some(support_fixture());
-        drawer.scope = PromptScope::Space;
-        let root = drawer.space_root.clone();
-        model.support_dropdown = Some(drawer);
+        let mut agent = drawer_over(&model);
+        agent.support = Some(support_fixture());
+        let root = agent.space_root.clone();
+        let (space, behind) = {
+            let space = model.session.as_ref().expect("session").selected_space();
+            (space.id, space.selected_tab)
+        };
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.agent = Some(agent);
+        overview.answer = Some(Ok(project_space(
+            Default::default(),
+            Err("not read".to_owned()),
+        )));
         let origin = uze_application::PromptOrigin {
             space_label: "uze".to_owned(),
             tab_id: 1,
@@ -5139,96 +5136,22 @@ mod workspace_tests {
         });
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
-        let row_of = |driven: &Driven<'_>, text: &str| {
-            let text_of = &driven.attach.model.drawer_text;
-            let line = text_of
-                .lines
-                .iter()
-                .position(|line| line == text)
-                .unwrap_or_else(|| panic!("{text} is not drawer text: {:?}", text_of.lines));
-            text_of
-                .rows
-                .iter()
-                .filter(|row| row.line == line)
-                .cloned()
-                .collect::<Vec<_>>()
+        let press = |driven: &mut Driven<'_>, code: crossterm::event::KeyCode| {
+            driven.press_key(crossterm::event::KeyEvent::from(code));
+            driven.frame();
         };
-
-        let first = row_of(&driven, "fix the pipeline")[0].clone();
-        driven.press(first.glyphs[4].x, first.area.y);
-        driven.mouse(
-            first.glyphs[6].x,
-            first.area.y,
-            MouseEventKind::Drag(MouseButton::Left),
-        );
-        driven.mouse(
-            first.glyphs[6].x,
-            first.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard.as_deref(), Some("the"));
-        driven.frame();
-        assert!(
-            matches!(
-                &driven.attach.model.selection,
-                Some(crate::ui::selection::Selection::Drawer(marking)) if !marking.held()
-            ),
-            "what was taken stays drawn"
-        );
-
-        // From the long prompt's first row to past its elided end: the
-        // whole prompt, not the rows it was drawn as.
-        assert!(
-            row_of(&driven, long.trim()).len() > 1,
-            "the prompt is folded"
-        );
-        driven.attach.model.clipboard = None;
-        let rows = row_of(&driven, long.trim());
-        let (top, bottom) = (rows[0].clone(), rows.last().unwrap().clone());
-        driven.press(top.glyphs[0].x, top.area.y);
-        driven.mouse(
-            bottom.area.right() - 1,
-            bottom.area.y,
-            MouseEventKind::Drag(MouseButton::Left),
-        );
-        driven.mouse(
-            bottom.area.right() - 1,
-            bottom.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard.as_deref(), Some(long.trim()));
-
-        // A click is not a drag: it marks nothing and selects the record.
-        driven.attach.model.clipboard = None;
-        driven.press(top.glyphs[0].x, top.area.y);
-        driven.mouse(
-            top.glyphs[0].x,
-            top.area.y,
-            MouseEventKind::Up(MouseButton::Left),
-        );
-        assert_eq!(driven.attach.model.clipboard, None);
-        assert_eq!(driven.attach.model.selection, None);
+        press(&mut driven, crossterm::event::KeyCode::Enter);
         assert_eq!(
-            driven
-                .attach
-                .model
-                .support_dropdown
-                .as_ref()
-                .unwrap()
-                .selected,
-            1
+            driven.attach.model.clipboard.as_deref(),
+            Some("fix the pipeline")
         );
-    }
-
-    /// An agent nothing identifies has no prompts of its own to list, so
-    /// its drawer opens on the space's whatever was chosen last.
-    #[test]
-    fn an_agent_started_by_hand_opens_its_drawer_on_the_space() {
-        let mut model = agent_session_in("/repo");
-        model.remembered.drawer_scope = Some(PromptScope::Agent);
-        let drawer = drawer_over(&model);
-        assert_eq!(drawer.agent, None);
-        assert_eq!(drawer.scope, PromptScope::Space);
+        press(&mut driven, crossterm::event::KeyCode::Down);
+        press(&mut driven, crossterm::event::KeyCode::Enter);
+        assert_eq!(
+            driven.attach.model.clipboard.as_deref(),
+            Some(long.trim()),
+            "enter did not copy the whole prompt"
+        );
     }
 
     /// Two agents in one space, the first of them selected: `Agent` in
@@ -10035,6 +9958,871 @@ mod workspace_tests {
         );
     }
 
+    /// The overview stands in front of one tab and leaves the moment the
+    /// operator chooses another: a tab chord, an agent, or the server
+    /// moving the selection on. What it survives is a broadcast that
+    /// leaves the tab behind it in front.
+    #[test]
+    fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-leaves"));
+        let mut base = session("/repo");
+        let space = base.selected_space().id;
+        let shell = base.selected_tab().id;
+        let agent_pane = base.add_tab(
+            space,
+            "agent 1".into(),
+            None,
+            80,
+            24,
+            PathBuf::from("/repo"),
+        );
+        base.update_pane_status(agent_pane, PathBuf::from("/repo"), "agent".into());
+        let agent = base
+            .selected_space()
+            .tabs
+            .iter()
+            .find(|tab| tab.pane.id == agent_pane)
+            .expect("the agent's tab")
+            .id;
+        base.select_tab(shell);
+        let open_overview = |driven: &mut Driven<'_>| {
+            driven.frame();
+            let button = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| (*hit == WorkspaceHit::OpenOverview).then_some(*rect))
+                .expect("the space button is on the strip");
+            driven.press(button.x + 1, button.y);
+            let session = driven.attach.model.session.clone().expect("session");
+            driven.attach.model.apply(
+                ClientEvent::SessionUpdated { session },
+                &identities_fixture(),
+            );
+            assert!(
+                driven.attach.model.space_overview.is_some(),
+                "the space button did not open the overview, or a broadcast put it away"
+            );
+        };
+
+        // A tab chord chooses a tab of the strip, and the overview leaves.
+        let mut driven = driven_again(&home, &base);
+        open_overview(&mut driven);
+        driven.press_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('1'),
+            crossterm::event::KeyModifiers::ALT,
+        ));
+        assert!(
+            driven.attach.model.space_overview.is_none(),
+            "alt+1 was taken by the overview"
+        );
+
+        // The server moving the selection onto an agent.
+        let mut driven = driven_again(&home, &base);
+        open_overview(&mut driven);
+        let mut moved = driven.attach.model.session.clone().expect("session");
+        moved.select_tab(agent);
+        driven.attach.model.apply(
+            ClientEvent::SessionUpdated { session: moved },
+            &identities_fixture(),
+        );
+        assert!(
+            driven.attach.model.space_overview.is_none(),
+            "the overview stayed over an agent it was not opened in front of"
+        );
+
+        // A section chord stays the overview's.
+        let mut driven = driven_again(&home, &base);
+        open_overview(&mut driven);
+        driven.press_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('4'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.section
+                    == crate::ui::orchestrator::space_overview::Section::Context),
+            "4 did not show the Context section"
+        );
+    }
+
+    /// A section longer than the pane scrolls: its groove is drawn, and
+    /// the wheel over the overview walks the list the way the arrows do,
+    /// carrying the selection past the first screenful.
+    #[test]
+    fn a_long_memory_section_scrolls_with_a_scrollbar_and_the_wheel() {
+        use uze_application::application::memory::{Entry, Kind, MemoryScope};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-scroll"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let facts: Vec<Entry> = (0..40)
+            .map(|index| Entry {
+                name: format!("fact-{index:02}"),
+                description: String::new(),
+                kind: Kind::Feedback,
+                scope: MemoryScope::Project,
+                origin: "uze".to_owned(),
+                source: None,
+                path: PathBuf::from(format!("/facts/fact-{index:02}.md")),
+                updated: None,
+                writable: true,
+                proposed: false,
+            })
+            .collect();
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
+        overview.answer = Some(Ok(project_space(
+            uze_application::SpaceMemory {
+                project: facts,
+                ..Default::default()
+            },
+            Err("not read here".to_owned()),
+        )));
+
+        let rows = frame_rows(&mut model);
+        let thumb = theme::glyph(crate::ui::theme::Symbol::ScrollThumb);
+        assert!(
+            rows.iter().any(|row| row.contains(thumb.as_str())),
+            "forty facts on a 24-row screen drew no scrollbar:\n{}",
+            rows.join("\n")
+        );
+        assert!(
+            !rows.iter().any(|row| row.contains("fact-39")),
+            "the last fact is on screen before scrolling"
+        );
+
+        let mut driven = driven(model, &home);
+        driven.frame();
+        for _ in 0..39 {
+            driven.mouse(40, 12, MouseEventKind::ScrollDown);
+        }
+        let rows = frame_rows(&mut driven.attach.model);
+        assert!(
+            rows.iter().any(|row| row.contains("fact-39")),
+            "the wheel did not reach the last fact:\n{}",
+            rows.join("\n")
+        );
+        // The wheel moved the view, not the selection: the keys find it
+        // where they left it, and moving it brings the window back.
+        let memory = crate::ui::orchestrator::space_overview::Section::Memory.index();
+        let selected = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .expect("open")
+                .rows[memory]
+        };
+        assert_eq!(selected(&driven), 0, "the wheel moved the selection");
+        driven.frame();
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Down,
+        ));
+        driven.frame();
+        assert_eq!(selected(&driven), 1);
+        let rows = frame_rows(&mut driven.attach.model);
+        assert!(
+            rows.iter().any(|row| row.contains("fact-01")),
+            "moving the selection did not bring it into view:\n{}",
+            rows.join("\n")
+        );
+        // The pointer lights the row it is over and chooses nothing.
+        driven.frame();
+        driven.mouse(40, 14, MouseEventKind::Moved);
+        assert!(
+            matches!(
+                driven.attach.model.hovered,
+                Some(WorkspaceHit::OverviewRow(_))
+            ),
+            "the pointer over a fact is not on its row"
+        );
+        assert_eq!(selected(&driven), 1, "hovering moved the selection");
+    }
+
+    /// A project's overview with nothing to report but `memory` and the
+    /// `workspace:` declaration `workspace`.
+    fn project_space(
+        memory: uze_application::SpaceMemory,
+        workspace: std::result::Result<uze_application::DeclarationView, String>,
+    ) -> uze_application::SpaceOverview {
+        let report = uze_application::application::StatusReport {
+            root: PathBuf::from("/repo"),
+            instructions: uze_application::application::InstructionsFile {
+                path: PathBuf::from("/repo/AGENTS.md"),
+                exists: true,
+                managed_regions: 0,
+            },
+            portability: uze_application::application::Portability::Portable,
+            harnesses: Vec::new(),
+            packages_installed: 0,
+            packages_contributing_here: Vec::new(),
+            project_lock: uze_application::application::ProjectLockStatus::Absent,
+            drift: Default::default(),
+            issues: Vec::new(),
+            held_back: Vec::new(),
+            memory: Default::default(),
+        };
+        uze_application::SpaceOverview::Project(Box::new(uze_application::ProjectSpace {
+            status: uze_application::application::ProjectStatus {
+                report,
+                steps_not_spelled_here: Vec::new(),
+                commands_awaiting_approval: None,
+            },
+            plugins: Default::default(),
+            memory,
+            workspace,
+            preserved: Vec::new(),
+        }))
+    }
+
+    /// The Workspace section is a form: a label per key and the control
+    /// its kind takes — a choice in a box that opens its options, a list
+    /// one entry per line — and a click on an option chooses it.
+    #[test]
+    fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-form"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let declared = |key: DeclarationKey| match key {
+            DeclarationKey::Worktree => Some(DeclaredValue::Text("always".to_owned())),
+            DeclarationKey::Artifacts => Some(DeclaredValue::List(vec!["docs".to_owned()])),
+            _ => None,
+        };
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: declared(*key),
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices: uze_application::DeclarationChoices {
+                branches: vec!["main".to_owned(), "develop".to_owned()],
+                ..Default::default()
+            },
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+
+        let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
+        let screen = rows.join("\n");
+        for expected in ["Worktree", "Target branch", "Artifacts", "docs", "always"] {
+            assert!(
+                screen.contains(expected),
+                "{expected} is not on the form:\n{screen}"
+            );
+        }
+        assert!(
+            !screen.contains("workspace:"),
+            "the form is drawn as YAML:\n{screen}"
+        );
+
+        let worktree = rows
+            .iter()
+            .find(|row| row.contains("Worktree"))
+            .expect("worktree is on the form");
+        let form = worktree.split('│').nth(1).unwrap_or_default();
+        assert!(
+            form.contains("always") && !form.contains("manual"),
+            "a choice's other options show before it is opened:\n{screen}"
+        );
+
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let hit = |driven: &Driven, wanted: &dyn Fn(&WorkspaceHit) -> bool| {
+            driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| wanted(hit).then_some(*rect))
+        };
+        let worktree = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewRow(0)))
+            .expect("worktree's row is a target");
+        driven.press(worktree.x, worktree.y);
+        driven.frame();
+        let manual = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewPick(0)))
+            .expect("the opened worktree offers its options");
+        driven.press(manual.x, manual.y);
+        let overview = driven
+            .attach
+            .model
+            .space_overview
+            .as_ref()
+            .expect("still open");
+        assert_eq!(
+            overview.edit.values.get(&DeclarationKey::Worktree),
+            Some(&Some(DeclaredValue::Text("manual".to_owned()))),
+            "the click did not choose manual"
+        );
+
+        let target = overview
+            .workspace_rows()
+            .iter()
+            .position(|row| {
+                *row == crate::ui::orchestrator::space_overview::WorkspaceRow::Key(
+                    DeclarationKey::Target,
+                )
+            })
+            .expect("the target is a row");
+        driven.frame();
+        let target = hit(&driven, &|hit| *hit == WorkspaceHit::OverviewRow(target))
+            .expect("the target's row is a target");
+        driven.press(target.x, target.y);
+        let overview = driven
+            .attach
+            .model
+            .space_overview
+            .as_ref()
+            .expect("still open");
+        assert_eq!(
+            overview.picker_options(),
+            vec!["main".to_owned(), "develop".to_owned()],
+            "the target does not offer the repository's branches"
+        );
+    }
+
+    #[test]
+    fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-form"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let declared = |key: DeclarationKey| match key {
+            DeclarationKey::Worktree => Some(DeclaredValue::Text("always".to_owned())),
+            DeclarationKey::Artifacts => Some(DeclaredValue::List(vec!["docs".to_owned()])),
+            _ => None,
+        };
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: declared(*key),
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices: Default::default(),
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let key = |driven: &mut Driven<'_>, code: crossterm::event::KeyCode| {
+            driven.press_key(crossterm::event::KeyEvent::from(code));
+            driven.frame();
+        };
+        // Enter opens the choice on the option it holds; the one above it
+        // is chosen with another.
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        key(&mut driven, crossterm::event::KeyCode::Up);
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        let values = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .expect("the overview is open")
+                .edit
+                .values
+                .clone()
+        };
+        assert_eq!(
+            values(&driven).get(&DeclarationKey::Worktree),
+            Some(&Some(DeclaredValue::Text("manual".to_owned()))),
+            "the option above was not chosen"
+        );
+        key(&mut driven, crossterm::event::KeyCode::Down);
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        key(&mut driven, crossterm::event::KeyCode::Char('4'));
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        assert_eq!(
+            values(&driven).get(&DeclarationKey::Slots),
+            Some(&Some(DeclaredValue::Number(4))),
+            "a number typed into slots was not taken"
+        );
+
+        // A click on a value's box opens it for typing, as enter does.
+        let target = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter_map(|(rect, hit)| match hit {
+                WorkspaceHit::OverviewRow(row) => Some((*rect, *row)),
+                _ => None,
+            })
+            .find(|(_, row)| {
+                driven
+                    .attach
+                    .model
+                    .space_overview
+                    .as_ref()
+                    .is_some_and(|overview| {
+                        overview.workspace_rows().get(*row)
+                            == Some(&crate::ui::orchestrator::space_overview::WorkspaceRow::Key(
+                                DeclarationKey::Target,
+                            ))
+                    })
+            })
+            .map(|(rect, _)| rect)
+            .expect("target's row is on screen");
+        driven.press(target.x + 20, target.y);
+        assert!(
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.edit.field.is_some()),
+            "a click on target's box did not open it for typing"
+        );
+    }
+
+    /// An answer to an older set of edits ends the check it answers, so
+    /// the one for the edits as they stand is asked next. Leaving it
+    /// pending kept "checking" on screen, and Save out of reach, forever.
+    #[test]
+    fn a_preview_for_older_edits_lets_the_current_one_be_asked() {
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.edit.preview_pending = true;
+        overview.edit.preview_asked = 2;
+        model.absorb_declaration_preview(
+            crate::ui::orchestrator::space_overview::DeclarationPreviewResolution {
+                space,
+                asked: 1,
+                answer: Err("for the older edits".to_owned()),
+            },
+        );
+        let overview = model.space_overview.as_ref().expect("still open");
+        assert!(
+            !overview.edit.preview_pending,
+            "an answer to older edits left the check pending"
+        );
+        assert!(
+            overview.current_preview().is_none(),
+            "an answer to older edits was taken for the current ones"
+        );
+    }
+
+    /// A number steps by its − and +, clicked or pressed: slots climbs
+    /// from no limit and falls back to it, idle days from the three the
+    /// workspace applies.
+    #[test]
+    fn a_number_steps_with_its_minus_and_plus() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-step"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices: Default::default(),
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let step = |driven: &mut Driven<'_>, adds: bool| {
+            let rect = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| match hit {
+                    WorkspaceHit::OverviewStep(row, up) if *up == adds => {
+                        let overview = driven.attach.model.space_overview.as_ref()?;
+                        (overview.workspace_rows().get(*row)
+                            == Some(&crate::ui::orchestrator::space_overview::WorkspaceRow::Key(
+                                DeclarationKey::Slots,
+                            )))
+                        .then_some(*rect)
+                    }
+                    _ => None,
+                })
+                .expect("slots draws its step");
+            driven.press(rect.x + 1, rect.y);
+            driven.frame();
+        };
+        let value = |driven: &Driven<'_>, key: DeclarationKey| {
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .expect("open")
+                .edit
+                .values
+                .get(&key)
+                .cloned()
+        };
+        step(&mut driven, true);
+        step(&mut driven, true);
+        assert_eq!(
+            value(&driven, DeclarationKey::Slots),
+            Some(Some(DeclaredValue::Number(2))),
+            "two clicks on + from no limit"
+        );
+        step(&mut driven, false);
+        step(&mut driven, false);
+        assert_eq!(
+            value(&driven, DeclarationKey::Slots),
+            None,
+            "back below one is no limit, the file as it was"
+        );
+
+        // The key on idle days: down to it, and + from its default.
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Down,
+        ));
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('+'),
+        ));
+        assert_eq!(
+            value(&driven, DeclarationKey::IdleDays),
+            Some(Some(DeclaredValue::Number(4))),
+            "+ on idle days did not add one to its default"
+        );
+    }
+
+    /// A link is chosen from what the repository ignores rather than
+    /// typed: the field offers those paths, typing narrows them, the
+    /// arrows walk them and enter takes the one the keys are on.
+    #[test]
+    fn a_link_is_picked_from_what_the_repository_ignores() {
+        use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-pick"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let choices = uze_application::DeclarationChoices {
+            links: vec![
+                ".env".to_owned(),
+                ".env.local".to_owned(),
+                "node_modules".to_owned(),
+            ],
+            directories: Vec::new(),
+            branches: Vec::new(),
+        };
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices,
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let key = |driven: &mut Driven<'_>, code: crossterm::event::KeyCode| {
+            driven.press_key(crossterm::event::KeyEvent::from(code));
+            driven.frame();
+        };
+        let row_of = |rows: &[String], label: &str| {
+            rows.iter()
+                .position(|row| row.contains(label))
+                .unwrap_or_else(|| panic!("{label} is not on the form"))
+        };
+        let closed = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40));
+        // Down to Linked files, open it, narrow to `.env`, take the second.
+        for _ in 0..3 {
+            key(&mut driven, crossterm::event::KeyCode::Down);
+        }
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        let open = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40));
+        let screen = open.join("\n");
+        assert!(
+            screen.contains("node_modules"),
+            "the ignored paths are not offered:\n{screen}"
+        );
+        // The list floats over the form: what is past it stays put.
+        assert_eq!(
+            row_of(&closed, "Target branch"),
+            row_of(&open, "Target branch"),
+            "opening the list moved the form:\n{screen}"
+        );
+        for typed in ['.', 'e'] {
+            key(&mut driven, crossterm::event::KeyCode::Char(typed));
+        }
+        let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+        assert!(
+            !screen.contains("node_modules"),
+            "typing did not narrow:\n{screen}"
+        );
+        key(&mut driven, crossterm::event::KeyCode::Down);
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        let overview = driven.attach.model.space_overview.as_ref().expect("open");
+        assert_eq!(
+            overview.edit.values.get(&DeclarationKey::Link),
+            Some(&Some(DeclaredValue::List(vec![".env.local".to_owned()]))),
+            "enter did not take the offered path the keys were on"
+        );
+    }
+
+    /// An action's instruction is prose: enter breaks the line rather
+    /// than finishing it, and the save chord takes it as written.
+    #[test]
+    fn an_action_is_written_over_several_lines() {
+        use uze_application::{ActionState, DeclarationEntry, DeclarationKey, DeclarationView};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-action"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let view = DeclarationView {
+            manifest: PathBuf::from("/repo/agents.yaml"),
+            exists: true,
+            entries: DeclarationKey::ALL
+                .iter()
+                .map(|key| DeclarationEntry {
+                    key: *key,
+                    declared: None,
+                    default: key.default_spelled(),
+                    description: key.description(),
+                })
+                .collect(),
+            actions: Vec::new(),
+            editable: Ok(()),
+            problems: Vec::new(),
+            choices: Default::default(),
+        };
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        let first_action = overview
+            .workspace_rows()
+            .iter()
+            .position(|row| {
+                *row == crate::ui::orchestrator::space_overview::WorkspaceRow::Action(
+                    ActionState::OnChange,
+                )
+            })
+            .expect("onChange is a row of the form");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.rows[1] = first_action;
+        overview.answer = Some(Ok(project_space(Default::default(), Ok(view))));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let press = |driven: &mut Driven<'_>, event: crossterm::event::KeyEvent| {
+            driven.press_key(event);
+            driven.frame();
+        };
+        let plain = crossterm::event::KeyEvent::from;
+        press(&mut driven, plain(crossterm::event::KeyCode::Enter));
+        for typed in "Commit".chars() {
+            press(&mut driven, plain(crossterm::event::KeyCode::Char(typed)));
+        }
+        press(&mut driven, plain(crossterm::event::KeyCode::Enter));
+        for typed in "then push".chars() {
+            press(&mut driven, plain(crossterm::event::KeyCode::Char(typed)));
+        }
+        press(
+            &mut driven,
+            crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('s'),
+                crossterm::event::KeyModifiers::CONTROL,
+            ),
+        );
+        let overview = driven.attach.model.space_overview.as_ref().expect("open");
+        assert!(
+            overview.edit.text.is_none(),
+            "ctrl+s left the instruction open"
+        );
+        assert_eq!(
+            overview.edit.actions.get(&ActionState::OnChange),
+            Some(&Some("Commit\nthen push".to_owned())),
+            "the instruction was not taken as written"
+        );
+    }
+
+    /// The drawer is resized by dragging its rule, as every drawer is, and
+    /// a section longer than the pane scrolls with its handle on that rule
+    /// rather than in a groove of its own.
+    /// Put away and opened again, a space's overview returns to where it
+    /// was left — the section, the row it was on, and edits not yet saved
+    /// — and is read again rather than shown as it was.
+    #[test]
+    fn a_space_s_overview_is_found_as_it_was_left() {
+        use uze_application::{DeclarationKey, DeclaredValue};
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.rows[1] = 3;
+        overview.edit.values.insert(
+            DeclarationKey::Delivery,
+            Some(DeclaredValue::Text("merge".to_owned())),
+        );
+        overview.answer = Some(Err("read".to_owned()));
+
+        model.put_away_space_overview();
+        assert!(model.space_overview.is_none());
+        model.open_space_overview(space, behind, true);
+
+        let overview = model.space_overview.as_ref().expect("open again");
+        assert_eq!(
+            overview.section,
+            crate::ui::orchestrator::space_overview::Section::Settings
+        );
+        assert_eq!(overview.rows[1], 3);
+        assert_eq!(
+            overview.edit.values.get(&DeclarationKey::Delivery),
+            Some(&Some(DeclaredValue::Text("merge".to_owned()))),
+            "an unsaved edit was lost"
+        );
+        assert!(overview.stale, "a kept overview is read again");
+    }
+
+    #[test]
+    fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
+        use uze_application::application::memory::{Entry, Kind, MemoryScope};
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-drawer"));
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let facts: Vec<Entry> = (0..60)
+            .map(|index| Entry {
+                name: format!("fact-{index:02}"),
+                description: String::new(),
+                kind: Kind::Feedback,
+                scope: MemoryScope::Project,
+                origin: "uze".to_owned(),
+                source: None,
+                path: PathBuf::from(format!("/facts/fact-{index:02}.md")),
+                updated: None,
+                writable: true,
+                proposed: false,
+            })
+            .collect();
+        let overview = model.space_overview.as_mut().expect("the overview is open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
+        overview.answer = Some(Ok(project_space(
+            uze_application::SpaceMemory {
+                project: facts,
+                ..Default::default()
+            },
+            Err("not read here".to_owned()),
+        )));
+        let mut driven = driven(model, &home);
+        driven.area = Rect::new(0, 0, 160, 40);
+        driven.frame();
+        let rule = driven.hit(|hit| *hit == WorkspaceHit::ResizeOverviewDrawer);
+
+        let rows = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 160, 40));
+        let thumb = theme::glyph(crate::ui::theme::Symbol::ScrollThumb);
+        let columns_with_thumb: std::collections::BTreeSet<usize> = rows
+            .iter()
+            .flat_map(|row| {
+                row.chars()
+                    .enumerate()
+                    .filter(|(_, glyph)| thumb.starts_with(*glyph))
+                    .map(|(column, _)| column)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            columns_with_thumb,
+            std::collections::BTreeSet::from([usize::from(rule.x)]),
+            "the scroll handle is not on the drawer's rule"
+        );
+
+        driven.press(rule.x, rule.y + 2);
+        driven.mouse(
+            rule.x - 12,
+            rule.y + 2,
+            MouseEventKind::Drag(MouseButton::Left),
+        );
+        driven.mouse(
+            rule.x - 12,
+            rule.y + 2,
+            MouseEventKind::Up(MouseButton::Left),
+        );
+        driven.frame();
+        let moved = driven.hit(|hit| *hit == WorkspaceHit::ResizeOverviewDrawer);
+        assert_eq!(
+            moved.x,
+            rule.x - 12,
+            "dragging the rule did not widen the drawer"
+        );
+        assert!(!driven.attach.model.dragging_overview_drawer);
+    }
+
+    fn driven_again<'a>(home: &'a UzeHome, session: &uze_terminal::Session) -> Driven<'a> {
+        driven(model_of(session.clone()), home)
+    }
+
     /// The selected space alone carries "new", at its header's right
     /// edge, and it opens the agent picker under itself: the new agent
     /// lands in the space in front, so no other header offers one.
@@ -12506,64 +13294,6 @@ mod workspace_tests {
         );
     }
 
-    /// A hint's key is clicked only where it would be pressed: with the
-    /// agent drawer open, the surface's footer still shows `m map`, but
-    /// `m` there is the drawer's to answer, and the click does what the
-    /// keystroke does rather than reaching past the drawer.
-    #[test]
-    fn a_hint_click_performs_only_what_its_key_would_here() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use uze_extensions::code;
-        use uze_keys::Action;
-
-        let with_drawer_over_code = || {
-            let (mut model, first, _second) = two_agents_with_shells();
-            model.session.as_mut().expect("session").select_tab(first);
-            let mut view = code::CodeView::opening(
-                PathBuf::from("/repo"),
-                "/repo".to_owned(),
-                code::ContentMode::Contents,
-            );
-            view.take_request();
-            model.code = Some(view);
-            let drawer = drawer_over(&model);
-            model.support_dropdown = Some(drawer);
-            model
-        };
-        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-hint-scope"));
-        let wide = Rect::new(0, 0, 200, 40);
-
-        let mut clicked = driven(with_drawer_over_code(), &home);
-        clicked.area = wide;
-        clicked.frame();
-        let map = clicked.hit(|hit| *hit == WorkspaceHit::HintAction(Action::ToggleMap));
-        clicked.press(map.x, map.y);
-
-        let mut pressed = driven(with_drawer_over_code(), &home);
-        pressed.area = wide;
-        pressed.frame();
-        pressed.press_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
-
-        let showing = |driven: &Driven<'_>| {
-            driven
-                .attach
-                .model
-                .code
-                .as_ref()
-                .map(code::CodeView::showing)
-        };
-        assert_eq!(
-            showing(&clicked),
-            Some(code::ContentMode::Contents),
-            "the map stays shut"
-        );
-        assert_eq!(showing(&clicked), showing(&pressed));
-        assert_eq!(
-            clicked.attach.model.support_dropdown.is_some(),
-            pressed.attach.model.support_dropdown.is_some()
-        );
-    }
-
     /// A key the open surface's footer names is pressed by clicking it,
     /// through the door the keystroke takes, and lights under the pointer.
     #[test]
@@ -13022,76 +13752,6 @@ fn a_rename_edits_at_the_caret() {
     buffer.right();
     buffer.erase_forward();
     assert_eq!(buffer.text(), "Agent 1é", "edges are where the caret stops");
-}
-
-mod drawer_tests {
-    use super::*;
-
-    fn entry(tab_id: u64, agent: Option<&str>, preview: &str) -> uze_application::PromptEntry {
-        let origin = uze_application::PromptOrigin {
-            space_label: "uze".to_owned(),
-            tab_id,
-            tab_label: "agent".to_owned(),
-            agent_binary: "claude".to_owned(),
-            agent: agent.map(str::to_owned),
-        };
-        uze_application::PromptEntry::new(&origin, preview).unwrap()
-    }
-
-    fn drawer(agent: Option<&str>, scope: PromptScope) -> AgentSupportDropdown {
-        AgentSupportDropdown {
-            key: ("claude-code".to_owned(), PathBuf::from("/repo")),
-            support: None,
-            agent: agent.map(str::to_owned),
-            space_root: PathBuf::from("/repo"),
-            path: "/repo".to_owned(),
-            scope,
-            selected: 0,
-            clearing: false,
-        }
-    }
-
-    /// Tab ids are minted again when the runtime restores a workspace, so
-    /// after a restart another agent's tab can carry the id this one had.
-    /// "This agent's prompts" is therefore matched on the agent, never on
-    /// the tab.
-    #[test]
-    fn an_agents_prompts_are_its_own_whatever_tab_ids_were_reused() {
-        let history = vec![
-            entry(1, Some("mevx3y"), "mine, after the restart"),
-            entry(
-                1,
-                Some("xum3gz"),
-                "another agent's, in a tab with my old id",
-            ),
-            entry(2, Some("mevx3y"), "mine, before the restart"),
-            entry(1, None, "a harness started by hand"),
-        ];
-        let listed: Vec<&str> = drawer(Some("mevx3y"), PromptScope::Agent)
-            .prompts(&history)
-            .iter()
-            .map(|entry| entry.preview.as_str())
-            .collect();
-        assert_eq!(
-            listed,
-            vec!["mine, after the restart", "mine, before the restart"]
-        );
-
-        let space = drawer(Some("mevx3y"), PromptScope::Space).prompts(&history);
-        assert_eq!(space.len(), history.len(), "the space lists every one");
-    }
-
-    /// An agent UZE did not launch has nothing to match its own prompts
-    /// on, so its own listing holds none rather than everyone's.
-    #[test]
-    fn an_agent_nothing_identifies_has_no_listing_of_its_own() {
-        let history = vec![entry(1, None, "a harness started by hand")];
-        assert!(
-            drawer(None, PromptScope::Agent)
-                .prompts(&history)
-                .is_empty()
-        );
-    }
 }
 
 /// A plugin name carrying a right-to-left override draws as its letters:

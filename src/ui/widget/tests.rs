@@ -6,8 +6,8 @@ use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 use uze_theme::Token;
 
 use super::{
-    Align, Button, Chip, ChipState, Edge, Field, RowState, Rule, Surface, Toast, ToastKind,
-    action_index, button_row, field, hint::Hints, mark, row, surface::fill, text, toast,
+    Align, Button, ChipState, Edge, Field, RowState, Rule, Surface, Toast, ToastKind, action_index,
+    button_row, field, hint::Hints, mark, row, surface::fill, text, toast,
 };
 use crate::ui::theme;
 
@@ -78,11 +78,11 @@ fn a_surface_draws_its_border_and_grounds_its_inside() {
 fn a_selectable_card_states_selection_in_its_border_alone() {
     let area = Rect::new(0, 0, 12, 4);
     let selected = drawn(12, 4, |frame| {
-        let inner = Surface::selectable(true).render(frame, area);
+        let inner = Surface::selectable(RowState::Selected).render(frame, area);
         assert_eq!(inner, Rect::new(1, 1, 10, 2));
     });
     let resting = drawn(12, 4, |frame| {
-        let inner = Surface::selectable(false).render(frame, area);
+        let inner = Surface::selectable(RowState::Resting).render(frame, area);
         assert_eq!(inner, Rect::new(1, 1, 10, 2), "selection moves no content");
     });
 
@@ -295,24 +295,6 @@ fn a_status_says_by_weight_and_hue_whether_a_click_answers_it() {
     for style in [report, resting, hovered] {
         assert_eq!(style.bg, None, "no ground of its own");
     }
-}
-
-/// A chip's padding is part of the control — filled, hovered and clicked
-/// like the glyphs are — so the rect it is measured into covers it.
-#[test]
-fn a_chip_is_measured_with_its_padding_and_sits_against_its_right_edge() {
-    let chip = Chip::new("deliver", theme::color(Token::Accent), ChipState::Resting);
-
-    assert_eq!(chip.width(), 9, "seven columns and one of air each side");
-    let rect = chip.rect_ending_at(40, 3);
-    assert_eq!(rect, Rect::new(31, 3, 9, 1));
-
-    let buffer = drawn(40, 4, |frame| chip.render(frame, rect));
-    assert_eq!(
-        buffer[(31, 3)].bg,
-        theme::color(Token::SurfaceRaised),
-        "the padding cell carries the fill, not just the label"
-    );
 }
 
 /// The mark's own width comes from the theme: a set spelling the ellipsis
@@ -1310,4 +1292,97 @@ fn a_hovered_hint_lights_its_label_and_no_other() {
         style_of(&label(Action::Refresh)),
         theme::fg(Token::TextMuted)
     );
+}
+
+fn row_text(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
+    (0..buffer.area.width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect()
+}
+
+/// A strip with room says everything; one without gives up the badges,
+/// then the names of the tabs that are not open — never the open one's,
+/// and never a tab's mark.
+#[test]
+fn a_tab_bar_gives_up_badges_then_the_closed_tabs_names() {
+    use super::tabs::{Tab, tab_bar};
+    let strip = [
+        (Tab::new("Context").lead("!", Token::StateWarning), 'c'),
+        (
+            Tab::new("Plugins").badge(Some("beta"), Token::StateWarning),
+            'p',
+        ),
+    ];
+    let at = |width: u16| {
+        let mut placed = Vec::new();
+        let buffer = drawn(width, 1, |frame| {
+            placed = tab_bar(frame, Rect::new(0, 0, width, 1), &strip, Some(1), false);
+        });
+        (row_text(&buffer, 0), placed)
+    };
+
+    let (wide, placed) = at(40);
+    assert!(
+        wide.contains(" 1 ! Context ") && wide.contains("Plugins ʙᴇᴛᴀ"),
+        "{wide}"
+    );
+    assert_eq!(
+        placed.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+        ['c', 'p']
+    );
+    assert_eq!(placed[1].0.x, placed[0].0.right() + super::tabs::GAP);
+
+    let (named, _) = at(26);
+    assert!(
+        named.contains("Context") && !named.contains("ʙᴇᴛᴀ"),
+        "{named}"
+    );
+
+    let (narrow, _) = at(18);
+    assert!(
+        narrow.starts_with(" 1 ! ") && !narrow.contains("Context"),
+        "{narrow}"
+    );
+    assert!(
+        narrow.contains("2 Plugins"),
+        "the open tab keeps its name: {narrow}"
+    );
+}
+
+/// The drawer is handed its width and drag state; it answers with the
+/// padded content rect and the one-column handle on its rule.
+#[test]
+fn a_drawer_answers_with_its_content_and_its_handle() {
+    use super::drawer;
+    assert_eq!(drawer::width(None, 100), drawer::DEFAULT_WIDTH);
+    assert_eq!(drawer::width(Some(80), 100), 50, "never more than half");
+    assert_eq!(drawer::width(Some(10), 100), 24, "never under the minimum");
+    assert_eq!(drawer::width(None, 160), 56);
+
+    drawn(60, 10, |frame| {
+        let (inner, handle) = drawer::render(frame, Rect::new(20, 0, 40, 10), true);
+        assert_eq!(handle, Rect::new(20, 0, 1, 10));
+        assert_eq!(inner, Rect::new(24, 0, 33, 10));
+    });
+}
+
+/// A selected row that holds a control takes the row's ground everywhere
+/// but on the control, which keeps its own.
+#[test]
+fn a_selected_row_keeps_its_controls_grounds() {
+    use ratatui::text::Span;
+    let boxed = theme::color(Token::SurfaceRecessed);
+    let mut spans = vec![
+        Span::raw("Worktree  "),
+        Span::styled(" always ", theme::fg(Token::TextPrimary).bg(boxed)),
+    ];
+    super::row::fill_under(&mut spans, 30, RowState::Selected);
+    let selected = theme::color(Token::SurfaceSelected);
+    assert_eq!(spans[0].style.bg, Some(selected));
+    assert_eq!(
+        spans[1].style.bg,
+        Some(boxed),
+        "the control's box was painted over"
+    );
+    assert_eq!(spans.last().map(|span| span.style.bg), Some(Some(selected)));
 }
