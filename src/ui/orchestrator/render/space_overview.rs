@@ -1798,13 +1798,15 @@ fn render_agent(
     Vec::new()
 }
 
-/// What a worktree card is: a title line, the owner, the facts, and the
-/// path with its age, inside a rounded border.
-const CARD_HEIGHT: u16 = 6;
+/// What a worktree card is: its branch and state, its size and age, and
+/// what in it is not yet anywhere else, inside a rounded border. Who holds
+/// it and where it lives are the drawer's: a card is read across a row of
+/// them, for what differs.
+const CARD_HEIGHT: u16 = 5;
 
 /// The least a card is wide, and the most cards a row holds: past four the
 /// eye stops reading a row as one.
-const CARD_LEAST: u16 = 32;
+const CARD_LEAST: u16 = 36;
 const CARD_MOST: u16 = 4;
 
 /// A branch-less `HEAD`, as a card titles it.
@@ -1961,29 +1963,22 @@ fn render_worktree_card(
             .unwrap_or_else(|| DETACHED.to_owned()),
         theme::fg_bold(title_tone),
     );
-    let mut facts = vec![
-        Span::styled(bytes_to_say(checkout.bytes), theme::fg(Token::TextPrimary)),
-        Span::styled(
-            format!(" · {} ahead", checkout.ahead),
-            theme::fg(Token::TextSecondary),
-        ),
-    ];
-    facts.push(if checkout.dirty {
-        Span::styled(" · uncommitted", theme::fg(Token::StateWarning))
-    } else {
-        Span::styled(" · clean", theme::fg(Token::TextMuted))
-    });
+    let mut facts = vec![Span::styled(
+        format!("{} ahead", checkout.ahead),
+        theme::fg(Token::TextMuted),
+    )];
+    if checkout.dirty {
+        facts.push(Span::styled(
+            " · uncommitted",
+            theme::fg(Token::StateWarning),
+        ));
+    }
     let lines = [
         ends(vec![title], standing, width),
-        Line::from(Span::styled(
-            text::elide(&owner_words(card), width),
-            theme::fg(Token::TextMuted),
-        )),
-        Line::from(facts),
         ends(
             vec![Span::styled(
-                short_checkout_path(&checkout.path),
-                theme::fg(Token::TextDim),
+                bytes_to_say(checkout.bytes),
+                theme::fg_bold(Token::TextPrimary),
             )],
             vec![Span::styled(
                 age_to_say(checkout.last_changed),
@@ -1991,6 +1986,7 @@ fn render_worktree_card(
             )],
             width,
         ),
+        Line::from(facts),
     ];
     for (index, mut line) in lines.into_iter().enumerate() {
         if index as u16 >= inner.height {
@@ -2053,26 +2049,6 @@ fn worktree_tone(state: WorktreeState) -> Token {
         WorktreeState::Kept => Token::TextSecondary,
         WorktreeState::Idle | WorktreeState::Free => Token::TextDim,
         WorktreeState::Unreadable => Token::StateWarning,
-    }
-}
-
-/// `~/…/.worktrees/abc`: where a checkout is, by the two names that tell
-/// it from its siblings, from home when it is under it.
-fn short_checkout_path(path: &Path) -> String {
-    let shown = display_path(path);
-    let mut names = path.iter().rev().take(2).collect::<Vec<_>>();
-    names.reverse();
-    let tail = names
-        .iter()
-        .map(|name| name.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
-    let lead = if shown.starts_with('~') { "~" } else { "" };
-    let short = format!("{lead}/{}/{tail}", theme::glyph(Symbol::Ellipsis));
-    if text::columns(&short) < text::columns(&shown) {
-        short
-    } else {
-        shown
     }
 }
 

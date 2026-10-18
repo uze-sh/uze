@@ -1739,7 +1739,7 @@ fn the_wheel_scrolls_the_cards_without_selecting() {
     );
     let pane = driven.area;
     for (index, rect) in card_rects(&driven) {
-        assert_eq!(rect.height, 6, "card {index} is cut: {rect:?}");
+        assert_eq!(rect.height, 5, "card {index} is cut: {rect:?}");
         assert!(
             rect.y > 8 && rect.bottom() < pane.bottom(),
             "{index}: {rect:?}"
@@ -1918,4 +1918,55 @@ fn uncommitted_work_nobody_attends_warns() {
         .worktrees
         .answer = Some(Some(view));
     assert_eq!(health(&model), Health::Warning);
+}
+
+/// The cards stand by where each worktree stands — a free slot behind the
+/// ones an agent holds — and the selection follows its worktree when a
+/// new answer reorders them.
+#[test]
+fn worktrees_are_ordered_by_where_they_stand_and_the_selection_follows() {
+    use uze_application::CheckoutOwner;
+    let mut view = worktrees(3);
+    // The first slot is free: it goes last.
+    view.checkouts[0].owner = CheckoutOwner::Agent {
+        holder: None,
+        live: false,
+    };
+    view.checkouts[0].task = None;
+    let mut model = worktrees_over(Some(view.clone()));
+    let order = |model: &WorkspaceModel| -> Vec<PathBuf> {
+        let overview = model.space_overview.as_ref().expect("open");
+        let project = overview.project().expect("answered");
+        model
+            .worktree_cards(overview, project)
+            .iter()
+            .map(|card| card.checkout.path.clone())
+            .collect()
+    };
+    let slot = |index: usize| PathBuf::from(format!("/repo/.worktrees/slot-{index:02}"));
+    assert_eq!(order(&model), vec![slot(1), slot(2), slot(0)]);
+
+    // On the free one, then it is taken: it moves up, the keys with it.
+    let section = Section::Worktrees.index();
+    model.space_overview.as_mut().expect("open").rows[section] = 2;
+    view.checkouts[0].owner = CheckoutOwner::Agent {
+        holder: Some("agent-00".to_owned()),
+        live: true,
+    };
+    view.checkouts[0].task = Some("task-00".to_owned());
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.worktrees.asked += 1;
+    let asked = overview.worktrees.asked;
+    let space = overview.space;
+    model.absorb_space_worktrees(WorktreesResolution {
+        space,
+        asked,
+        view: Some(view),
+    });
+    let at = model.space_overview.as_ref().expect("open").rows[section];
+    assert_eq!(
+        order(&model)[at],
+        slot(0),
+        "the selection stayed on its place"
+    );
 }

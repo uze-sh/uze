@@ -166,6 +166,22 @@ pub(super) enum WorktreeState {
 }
 
 impl WorktreeState {
+    /// Where a card of this state stands among the others: what asks
+    /// something of the operator first, what only takes disk last.
+    fn rank(self) -> u8 {
+        match self {
+            Self::Ready => 0,
+            Self::ToJoin => 1,
+            Self::Kept => 2,
+            Self::Unreadable => 3,
+            Self::Working => 4,
+            Self::Idle => 5,
+            Self::Free => 6,
+        }
+    }
+}
+
+impl WorktreeState {
     pub(super) fn words(self) -> &'static str {
         match self {
             Self::Ready => "ready",
@@ -1070,7 +1086,8 @@ impl WorkspaceModel {
 
     /// The space's worktrees as cards: each with where its work stands and
     /// the tab working there, from the tabs this client holds and its last
-    /// evaluation, so a card moves with the sidebar.
+    /// evaluation, so a card moves with the sidebar. Ordered by where they
+    /// stand, which is the order the keys walk them in.
     pub(super) fn worktree_cards<'a>(
         &'a self,
         overview: &'a SpaceOverviewView,
@@ -1097,7 +1114,7 @@ impl WorkspaceModel {
             .iter()
             .map(|work| work.id.as_str())
             .collect();
-        overview
+        let mut cards = overview
             .worktrees()
             .into_iter()
             .map(|checkout| {
@@ -1122,7 +1139,15 @@ impl WorkspaceModel {
                     tab,
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        // By where each stands, the most recently changed first within one.
+        cards.sort_by_key(|card| {
+            (
+                card.state.rank(),
+                std::cmp::Reverse(card.checkout.last_changed),
+            )
+        });
+        cards
     }
 
     /// A click on a row of the section in front.
@@ -1192,6 +1217,10 @@ impl WorkspaceModel {
     /// The space's worktrees, measured: kept only while they answer the
     /// last read the overview open now asked.
     pub(super) fn absorb_space_worktrees(&mut self, resolution: WorktreesResolution) -> bool {
+        let section = Section::Worktrees.index();
+        // The cards are ordered by where each stands, which a new answer
+        // can change: the selection follows its worktree, not its place.
+        let chosen = self.selected_worktree();
         let Some(overview) = self
             .space_overview
             .as_mut()
@@ -1206,9 +1235,32 @@ impl WorkspaceModel {
         read.pending = false;
         read.answer = Some(resolution.view);
         let count = overview.worktrees().len();
-        let section = Section::Worktrees.index();
         overview.rows[section] = overview.rows[section].min(count.saturating_sub(1));
+        if let Some(path) = chosen
+            && let Some(at) = self.worktree_position(&path)
+            && let Some(overview) = self.space_overview.as_mut()
+        {
+            overview.rows[section] = at;
+        }
         true
+    }
+
+    /// The path of the worktree card the keys are on.
+    fn selected_worktree(&self) -> Option<PathBuf> {
+        let overview = self.space_overview.as_ref()?;
+        let project = overview.project()?;
+        self.worktree_cards(overview, project)
+            .get(overview.rows[Section::Worktrees.index()])
+            .map(|card| card.checkout.path.clone())
+    }
+
+    /// Where the card for the worktree at `path` stands now.
+    fn worktree_position(&self, path: &Path) -> Option<usize> {
+        let overview = self.space_overview.as_ref()?;
+        let project = overview.project()?;
+        self.worktree_cards(overview, project)
+            .iter()
+            .position(|card| card.checkout.path == path)
     }
 
     pub(super) fn absorb_fact_body(&mut self, resolution: FactBodyResolution) -> bool {
