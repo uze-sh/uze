@@ -17,7 +17,8 @@ use uze_core::{
     home::UzeHome,
     integration::IntegrationPort,
     memory::{
-        Fact, FactKind, MemoryEntry, MemoryStore, Remember, Scope, Source, Unreadable, render_index,
+        Fact, FactKind, MemoryEntry, MemoryStore, Remember, Remembered, Scope, Source, Unreadable,
+        render_index,
     },
 };
 use uze_workspace::{
@@ -85,12 +86,13 @@ const SIMILAR_SHARE: f64 = 0.25;
 
 /// The fact the written name and description most resemble among those
 /// the same write could have updated instead: UZE's own, in the scope
-/// written to, proposals included. A harness's fact or one in the other
-/// scope is never offered, since remembering under its name would only
-/// make one more.
+/// written to, and a proposal only for a write that proposes. A harness's
+/// fact, one in the other scope, or a proposal beside an applied fact is
+/// never offered, since remembering under its name would only make one
+/// more.
 fn most_similar(
     report: &MemoryReport,
-    written: (&str, Scope),
+    written: &Remembered,
     name: &str,
     description: &str,
 ) -> Option<MemoryEntry> {
@@ -99,7 +101,12 @@ fn most_similar(
         .entries
         .iter()
         .chain(&report.proposals)
-        .filter(|entry| entry.writable && entry.scope == written.1 && entry.name != written.0)
+        .filter(|entry| {
+            entry.writable
+                && entry.scope == written.scope
+                && entry.proposed == written.proposed
+                && entry.name != name
+        })
         .filter_map(|entry| {
             let theirs = words::telling(&format!("{} {}", entry.name, entry.description));
             let (shared, share) = words::overlap(&words, &theirs);
@@ -209,7 +216,7 @@ impl Memory<'_> {
         let similar = (!kept.updated)
             .then(|| {
                 let report = self.report(resolved.primary.as_deref());
-                most_similar(&report, (name, kept.scope), name, description)
+                most_similar(&report, &kept, name, description)
             })
             .flatten();
         Ok(Written {

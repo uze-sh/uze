@@ -819,3 +819,44 @@ fn a_linked_fact_citing_what_the_checkout_lacks_carries_its_mark() {
         "linked from"
     );
 }
+
+#[test]
+fn a_proposal_and_an_applied_fact_are_never_offered_for_each_other() {
+    let (home, project) = world("app-memory-similar-proposal");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    let app = app(&home, Vec::new());
+    let description = "Reply to the operator in Brazilian Portuguese always";
+    let agent = MemoryCaller::Agent(uze_workspace::conversation::Claim {
+        id: "not-recorded",
+        key: "k",
+        cwd: &project,
+    });
+    let proposal = app
+        .memory()
+        .remember(
+            agent,
+            Scope::Machine,
+            "reply-in-ptbr",
+            FactKind::Feedback,
+            description,
+            "",
+        )
+        .unwrap();
+    assert!(proposal.proposed);
+    let applied = app
+        .memory()
+        .remember(
+            caller(&project),
+            Scope::Machine,
+            "portuguese-replies",
+            FactKind::Feedback,
+            description,
+            "",
+        )
+        .unwrap();
+    assert!(
+        applied.similar.is_none(),
+        "remembering under a proposal's name writes beside it, never over it: {:?}",
+        applied.similar
+    );
+}
