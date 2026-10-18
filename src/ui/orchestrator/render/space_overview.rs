@@ -488,6 +488,28 @@ fn render_section(
     let lines = match overview.section {
         Section::Agent => return render_agent(frame, area, model, overview, hits, track),
         Section::Context => context_lines(project, room),
+        Section::Plugins
+            if project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none() =>
+        {
+            return empty(
+                frame,
+                area,
+                "No plugins declared",
+                Some("`uze <plugin>@<market>` adds one to this project."),
+            );
+        }
+        Section::Memory
+            if project.memory.project.is_empty() && project.memory.unreadable.is_empty() =>
+        {
+            let machine = match project.memory.machine {
+                0 => "What its agents learn about this project is kept here.".to_owned(),
+                facts => format!(
+                    "What its agents learn about this project is kept here; {} reach them already.",
+                    plural(facts, "machine fact")
+                ),
+            };
+            return empty(frame, area, "No facts kept", Some(&machine));
+        }
         Section::Plugins => plugin_lines(project, room),
         Section::Settings => {
             return render_workspace(frame, area, overview, project, hits, track);
@@ -498,6 +520,19 @@ fn render_section(
         }
     };
     draw_lines(frame, area, &lines, Some(overview.row()), track)
+}
+
+/// A section with nothing to list, said the way an empty surface says it
+/// everywhere: what is the matter, centred where the list would stand, and
+/// what to do about it beneath when there is something to do.
+fn empty(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    title: &str,
+    hint: Option<&str>,
+) -> Vec<(Rect, usize)> {
+    widget::message::render_message(frame, area, title, hint, theme::color(Token::TextSecondary));
+    Vec::new()
 }
 
 /// One line of a section: what it says, and the row it selects, if any.
@@ -1696,8 +1731,12 @@ fn render_agent(
     };
     let prompts = &history.entries;
     if prompts.is_empty() {
-        let whose = "nothing has been asked in this space yet";
-        return draw_lines(frame, list, &[said(whose, Token::TextMuted)], None, track);
+        return empty(
+            frame,
+            list,
+            "No prompts yet",
+            Some("What this space's agents are asked is listed here, newest first."),
+        );
     }
     let live: std::collections::HashMap<&str, &str> = model
         .tabs()
@@ -1868,15 +1907,19 @@ fn render_worktrees(
     project: &ProjectSpace,
     track: Track,
 ) -> Vec<(Rect, usize)> {
-    let message = match &overview.worktrees.answer {
-        None => Some("measuring…"),
-        Some(None) => Some("not inside a repository"),
-        Some(Some(_)) if overview.worktrees().is_empty() => Some(EMPTY_WORKTREES),
-        Some(Some(_)) => None,
+    let (title, hint) = match &overview.worktrees.answer {
+        None => ("Measuring worktrees…", None),
+        Some(None) => ("Not inside a repository", None),
+        Some(Some(_)) if overview.worktrees().is_empty() => (
+            "No worktrees",
+            Some(
+                "Every agent works in this checkout; one isolated in a checkout of its own appears here.",
+            ),
+        ),
+        Some(Some(_)) => ("", None),
     };
-    if let Some(message) = message {
-        draw_lines(frame, area, &[said(message, Token::TextMuted)], None, track);
-        return Vec::new();
+    if !title.is_empty() {
+        return empty(frame, area, title, hint);
     }
     let cards = model.worktree_cards(overview, project);
     let selected = overview.row().min(cards.len().saturating_sub(1));

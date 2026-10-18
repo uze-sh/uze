@@ -2224,3 +2224,36 @@ fn a_removed_worktree_says_what_it_freed_and_is_read_again() {
 }
 
 use crate::ui::orchestrator::worktree_removal::RemovalResolution;
+
+/// A section with nothing to list says so as every empty surface does:
+/// its title centred where the list would stand, what to do beneath.
+#[test]
+fn an_empty_section_is_said_in_the_middle_of_its_room() {
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.section = Section::Plugins;
+    overview.answer = Some(Ok(project_space(
+        Default::default(),
+        Err("not read".to_owned()),
+    )));
+    let height = 40;
+    let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, height));
+    let title = rows
+        .iter()
+        .position(|row| row.contains("NO PLUGINS DECLARED"))
+        .unwrap_or_else(|| panic!("the empty plugins say nothing:\n{}", rows.join("\n")));
+    assert!(
+        title > usize::from(height) / 3,
+        "the title stands at the top rather than in the middle: row {title}"
+    );
+    assert!(
+        rows[title + 1..]
+            .iter()
+            .any(|row| row.contains("<plugin>@<market>")),
+        "no hint under the title"
+    );
+}

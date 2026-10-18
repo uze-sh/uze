@@ -95,6 +95,7 @@ pub(crate) mod grid;
 pub(crate) mod hint;
 pub(crate) mod mark;
 pub(crate) mod menu;
+pub(crate) mod message;
 pub(crate) mod modal;
 pub(crate) mod row;
 pub(crate) mod rule;

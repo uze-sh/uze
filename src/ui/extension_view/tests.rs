@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::widget::message::{MESSAGE_MEASURE, hint_line, hint_rows};
 use ratatui::{Terminal, backend::TestBackend};
 use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
 
