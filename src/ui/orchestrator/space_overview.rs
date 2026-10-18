@@ -731,6 +731,17 @@ impl WorkspaceModel {
         }
     }
 
+    /// Forgets the overviews put away for spaces the session no longer
+    /// has: a space's id is never given to another, so nothing could open
+    /// them again.
+    pub(super) fn forget_overviews_of_closed_spaces(&mut self) {
+        let Some(session) = &self.session else {
+            return;
+        };
+        self.put_away_overviews
+            .retain(|space, _| session.space(*space).is_some());
+    }
+
     /// How many of the space's agents are at work, ready to deliver, and
     /// kept with no pane: from what the client holds live — its tabs and
     /// its last evaluation — so the figures move with the sidebar rather
@@ -1632,7 +1643,28 @@ enum Items {
 
 #[cfg(test)]
 mod tests {
-    use super::Section;
+    use super::{Section, SpaceOverviewView, WorkspaceModel};
+    use std::path::PathBuf;
+    use uze_terminal::{ClientEvent, Session, SpaceId, SpaceSeat, TabId};
+
+    /// An overview put away for a space that has since closed can never be
+    /// opened again: the session's word that the space is gone forgets it,
+    /// and the one of a space still open is kept.
+    #[test]
+    fn a_closed_space_takes_its_put_away_overview_with_it() {
+        let root = PathBuf::from("/project");
+        let session = Session::new(SpaceSeat { root: root.clone() }, 80, 24);
+        let open = session.selected_space().id;
+        let closed = SpaceId(open.0 + 1);
+        let mut model = WorkspaceModel::default();
+        for space in [open, closed] {
+            let overview = SpaceOverviewView::new(space, root.clone(), TabId(0), true);
+            model.put_away_overviews.insert(space, overview);
+        }
+        model.apply(ClientEvent::SessionUpdated { session }, &[]);
+        assert!(model.put_away_overviews.contains_key(&open));
+        assert!(!model.put_away_overviews.contains_key(&closed));
+    }
 
     /// Back from any section is the one before it on the bar, wrapping
     /// from the first to the last, and forward undoes it.
