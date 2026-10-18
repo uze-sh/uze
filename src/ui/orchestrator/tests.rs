@@ -10148,8 +10148,8 @@ mod workspace_tests {
     }
 
     /// The Workspace section is a form: a label per key and the control
-    /// its kind takes — a choice's options side by side, a value in a box,
-    /// a list one entry per line — and a click on an option chooses it.
+    /// its kind takes — a choice in a box that opens its options, a list
+    /// one entry per line — and a click on an option chooses it.
     #[test]
     fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
         use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
@@ -10179,7 +10179,10 @@ mod workspace_tests {
             actions: Vec::new(),
             editable: Ok(()),
             problems: Vec::new(),
-            choices: Default::default(),
+            choices: uze_application::DeclarationChoices {
+                branches: vec!["main".to_owned(), "develop".to_owned()],
+                ..Default::default()
+            },
         };
         let overview = model.space_overview.as_mut().expect("the overview is open");
         overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
@@ -10187,14 +10190,7 @@ mod workspace_tests {
 
         let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
         let screen = rows.join("\n");
-        for expected in [
-            "Worktree",
-            "Target branch",
-            "Artifacts",
-            "docs",
-            "manual",
-            "always",
-        ] {
+        for expected in ["Worktree", "Target branch", "Artifacts", "docs", "always"] {
             assert!(
                 screen.contains(expected),
                 "{expected} is not on the form:\n{screen}"
@@ -10205,17 +10201,32 @@ mod workspace_tests {
             "the form is drawn as YAML:\n{screen}"
         );
 
+        let worktree = rows
+            .iter()
+            .find(|row| row.contains("Worktree"))
+            .expect("worktree is on the form");
+        let form = worktree.split('│').nth(1).unwrap_or_default();
+        assert!(
+            form.contains("always") && !form.contains("manual"),
+            "a choice's other options show before it is opened:\n{screen}"
+        );
+
         let mut driven = driven(model, &home).on_a_roomy_terminal();
         driven.frame();
-        let manual = driven
-            .attach
-            .model
-            .hits
-            .iter()
-            .find_map(|(rect, hit)| {
-                matches!(hit, WorkspaceHit::OverviewChoice(_, 0)).then_some(*rect)
-            })
-            .expect("worktree's first option is a target");
+        let hit = |driven: &Driven, wanted: &dyn Fn(&WorkspaceHit) -> bool| {
+            driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find_map(|(rect, hit)| wanted(hit).then_some(*rect))
+        };
+        let worktree = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewRow(0)))
+            .expect("worktree's row is a target");
+        driven.press(worktree.x, worktree.y);
+        driven.frame();
+        let manual = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewPick(0)))
+            .expect("the opened worktree offers its options");
         driven.press(manual.x, manual.y);
         let overview = driven
             .attach
@@ -10227,6 +10238,31 @@ mod workspace_tests {
             overview.edit.values.get(&DeclarationKey::Worktree),
             Some(&Some(DeclaredValue::Text("manual".to_owned()))),
             "the click did not choose manual"
+        );
+
+        let target = overview
+            .workspace_rows()
+            .iter()
+            .position(|row| {
+                *row == crate::ui::orchestrator::space_overview::WorkspaceRow::Key(
+                    DeclarationKey::Target,
+                )
+            })
+            .expect("the target is a row");
+        driven.frame();
+        let target = hit(&driven, &|hit| *hit == WorkspaceHit::OverviewRow(target))
+            .expect("the target's row is a target");
+        driven.press(target.x, target.y);
+        let overview = driven
+            .attach
+            .model
+            .space_overview
+            .as_ref()
+            .expect("still open");
+        assert_eq!(
+            overview.picker_options(),
+            vec!["main".to_owned(), "develop".to_owned()],
+            "the target does not offer the repository's branches"
         );
     }
 
@@ -10271,6 +10307,10 @@ mod workspace_tests {
             driven.press_key(crossterm::event::KeyEvent::from(code));
             driven.frame();
         };
+        // Enter opens the choice on the option it holds; the one above it
+        // is chosen with another.
+        key(&mut driven, crossterm::event::KeyCode::Enter);
+        key(&mut driven, crossterm::event::KeyCode::Up);
         key(&mut driven, crossterm::event::KeyCode::Enter);
         let values = |driven: &Driven<'_>| {
             driven
@@ -10286,11 +10326,9 @@ mod workspace_tests {
         assert_eq!(
             values(&driven).get(&DeclarationKey::Worktree),
             Some(&Some(DeclaredValue::Text("manual".to_owned()))),
-            "enter on a choice did not move it on"
+            "the option above was not chosen"
         );
-        for _ in 0..3 {
-            key(&mut driven, crossterm::event::KeyCode::Down);
-        }
+        key(&mut driven, crossterm::event::KeyCode::Down);
         key(&mut driven, crossterm::event::KeyCode::Enter);
         key(&mut driven, crossterm::event::KeyCode::Char('4'));
         key(&mut driven, crossterm::event::KeyCode::Enter);
@@ -10483,6 +10521,7 @@ mod workspace_tests {
                 "node_modules".to_owned(),
             ],
             directories: Vec::new(),
+            branches: Vec::new(),
         };
         let view = DeclarationView {
             manifest: PathBuf::from("/repo/agents.yaml"),
@@ -10510,13 +10549,28 @@ mod workspace_tests {
             driven.press_key(crossterm::event::KeyEvent::from(code));
             driven.frame();
         };
+        let row_of = |rows: &[String], label: &str| {
+            rows.iter()
+                .position(|row| row.contains(label))
+                .unwrap_or_else(|| panic!("{label} is not on the form"))
+        };
+        let closed = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40));
         // Down to Linked files, open it, narrow to `.env`, take the second.
-        key(&mut driven, crossterm::event::KeyCode::Down);
+        for _ in 0..3 {
+            key(&mut driven, crossterm::event::KeyCode::Down);
+        }
         key(&mut driven, crossterm::event::KeyCode::Enter);
-        let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+        let open = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40));
+        let screen = open.join("\n");
         assert!(
             screen.contains("node_modules"),
             "the ignored paths are not offered:\n{screen}"
+        );
+        // The list floats over the form: what is past it stays put.
+        assert_eq!(
+            row_of(&closed, "Target branch"),
+            row_of(&open, "Target branch"),
+            "opening the list moved the form:\n{screen}"
         );
         for typed in ['.', 'e'] {
             key(&mut driven, crossterm::event::KeyCode::Char(typed));
@@ -10614,6 +10668,44 @@ mod workspace_tests {
     /// The drawer is resized by dragging its rule, as every drawer is, and
     /// a section longer than the pane scrolls with its handle on that rule
     /// rather than in a groove of its own.
+    /// Put away and opened again, a space's overview returns to where it
+    /// was left — the section, the row it was on, and edits not yet saved
+    /// — and is read again rather than shown as it was.
+    #[test]
+    fn a_space_s_overview_is_found_as_it_was_left() {
+        use uze_application::{DeclarationKey, DeclaredValue};
+        let session = session("/repo");
+        let space = session.selected_space().id;
+        let behind = session.selected_tab().id;
+        let mut model = model_of(session);
+        model.open_space_overview(space, behind, true);
+        let overview = model.space_overview.as_mut().expect("open");
+        overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+        overview.rows[1] = 3;
+        overview.edit.values.insert(
+            DeclarationKey::Delivery,
+            Some(DeclaredValue::Text("merge".to_owned())),
+        );
+        overview.answer = Some(Err("read".to_owned()));
+
+        model.put_away_space_overview();
+        assert!(model.space_overview.is_none());
+        model.open_space_overview(space, behind, true);
+
+        let overview = model.space_overview.as_ref().expect("open again");
+        assert_eq!(
+            overview.section,
+            crate::ui::orchestrator::space_overview::Section::Settings
+        );
+        assert_eq!(overview.rows[1], 3);
+        assert_eq!(
+            overview.edit.values.get(&DeclarationKey::Delivery),
+            Some(&Some(DeclaredValue::Text("merge".to_owned()))),
+            "an unsaved edit was lost"
+        );
+        assert!(overview.stale, "a kept overview is read again");
+    }
+
     #[test]
     fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
         use uze_application::application::memory::{Entry, Kind, MemoryScope};

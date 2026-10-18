@@ -896,9 +896,6 @@ pub(super) enum WorkspaceHit {
     OverviewSection(usize),
     /// A row of the overview's section in front, by position.
     OverviewRow(usize),
-    /// One option of a choice in the overview's Workspace section: its
-    /// row, and the option's position.
-    OverviewChoice(usize, usize),
     /// A number's − or + in the overview's Workspace section: its row, and
     /// whether it adds.
     OverviewStep(usize, bool),
@@ -1819,6 +1816,10 @@ struct WorkspaceModel {
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.
     space_overview: Option<SpaceOverviewView>,
+    /// Each space's overview as it was left when put away — its section,
+    /// the rows it was on, edits not yet saved — so opening it again
+    /// returns to it rather than starting over.
+    put_away_overviews: std::collections::BTreeMap<SpaceId, SpaceOverviewView>,
     /// The width the overview's drawer was dragged to, kept across
     /// openings for the rest of the attach.
     overview_drawer_width: Option<u16>,

@@ -276,6 +276,8 @@ vocabulary! {
         ChevronCollapsed = "chevron.collapsed",
         /// A section that is open.
         ChevronExpanded = "chevron.expanded",
+        /// Opens a field's list of choices.
+        Dropdown = "dropdown",
         /// The prompt caret before an input.
         Prompt = "prompt",
         /// Opens a menu.

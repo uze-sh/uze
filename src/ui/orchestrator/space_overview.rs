@@ -243,10 +243,12 @@ pub(super) const GROUPS: [(&str, &[DeclarationKey]); 3] = [
         "checkouts",
         &[
             DeclarationKey::Worktree,
-            DeclarationKey::Link,
-            DeclarationKey::Setup,
             DeclarationKey::Slots,
             DeclarationKey::IdleDays,
+            // Lists last: they grow by an entry a line, and push down only
+            // what follows the group.
+            DeclarationKey::Link,
+            DeclarationKey::Setup,
         ],
     ),
     (
@@ -503,25 +505,36 @@ impl SpaceOverviewView {
         self.set(key, value);
     }
 
-    /// The paths the field being typed offers to choose from: for a link,
-    /// what the repository ignores; for artifacts, the directories it
-    /// tracks. Those already in the list are left out, those the typed
-    /// text heads first, then those it appears in.
+    /// What the field being typed offers to choose from: for a link, what
+    /// the repository ignores; for artifacts, the directories it tracks;
+    /// for the target, its branches; for a choice, its options. Those
+    /// already in a list are left out, those the typed text heads first,
+    /// then those it appears in.
     pub(super) fn picker_options(&self) -> Vec<String> {
         let Some(field) = &self.edit.field else {
             return Vec::new();
         };
-        let Some(choices) = self.declaration().map(|declaration| &declaration.choices) else {
+        let Some(offered) = self.declaration().map(|declaration| &declaration.choices) else {
             return Vec::new();
         };
+        let options: Vec<String>;
         let source = match field.key {
-            DeclarationKey::Link => &choices.links,
-            DeclarationKey::Artifacts => &choices.directories,
+            DeclarationKey::Link => &offered.links,
+            DeclarationKey::Artifacts => &offered.directories,
+            DeclarationKey::Target => &offered.branches,
+            key if is_combo(key) => {
+                options = choices(key)
+                    .iter()
+                    .map(|option| (*option).to_owned())
+                    .collect();
+                &options
+            }
             _ => return Vec::new(),
         };
         let taken = self
             .effective(field.key)
             .as_ref()
+            .filter(|_| field.item.is_some())
             .map(items)
             .unwrap_or_default();
         let editing = field.item.and_then(|item| taken.get(item));
@@ -620,6 +633,12 @@ impl SpaceOverviewView {
     }
 }
 
+/// A key chosen from a list it offers rather than typed: its options, or
+/// the repository's branches.
+pub(super) fn is_combo(key: DeclarationKey) -> bool {
+    !choices(key).is_empty() || key == DeclarationKey::Target
+}
+
 /// `branch` is a list once it holds the project's own types.
 fn listed_branch(key: DeclarationKey, view: &SpaceOverviewView) -> bool {
     key == DeclarationKey::Branch && matches!(view.effective(key), Some(DeclaredValue::List(_)))
@@ -650,7 +669,19 @@ impl WorkspaceModel {
             return;
         };
         self.close_extension();
-        self.space_overview = Some(SpaceOverviewView::new(space, root, behind, settled));
+        let overview = match self.put_away_overviews.remove(&space) {
+            // Its answer is read again on opening; what was drawn from the
+            // last one stands until the new one arrives.
+            Some(mut kept) if kept.root == root => {
+                kept.behind = behind;
+                kept.settled = settled;
+                kept.drawer = false;
+                kept.stale = true;
+                kept
+            }
+            _ => SpaceOverviewView::new(space, root, behind, settled),
+        };
+        self.space_overview = Some(overview);
         self.dirty = true;
     }
 
@@ -728,7 +759,13 @@ impl WorkspaceModel {
     }
 
     pub(super) fn put_away_space_overview(&mut self) {
-        if self.space_overview.take().is_some() {
+        if let Some(mut overview) = self.space_overview.take() {
+            // An answer in flight is for the overview open now; one opened
+            // again asks afresh.
+            overview.pending = false;
+            overview.edit.field = None;
+            overview.edit.text = None;
+            self.put_away_overviews.insert(overview.space, overview);
             self.dirty = true;
         }
     }
@@ -920,7 +957,17 @@ impl Attach<'_> {
             );
         }
         if let Some(overview) = self.model.space_overview.as_mut() {
+            // The prompt it was on stays chosen when the space is the same.
+            let selected = overview
+                .agent
+                .as_ref()
+                .zip(agent.as_ref())
+                .filter(|(kept, now)| kept.space_root == now.space_root)
+                .map(|(kept, _)| kept.selected);
             overview.agent = agent;
+            if let (Some(agent), Some(selected)) = (overview.agent.as_mut(), selected) {
+                agent.selected = selected;
+            }
         }
         self.schedule_space_overview();
     }
@@ -1166,8 +1213,8 @@ impl Attach<'_> {
     }
 
     /// A click on a row: it is selected, and in the Workspace form a value,
-    /// an entry or a list's add is opened for typing, as Enter would. A
-    /// choice's row waits for a click on one of its options.
+    /// an entry, a list's add or a choice's list is opened, as Enter would.
+    /// A number's row waits for a click on its − or +.
     pub(super) fn click_overview_row(&mut self, index: usize, viewport: &Viewport) {
         self.model.select_overview_row(index);
         let Some(overview) = self.model.space_overview.as_ref() else {
@@ -1179,11 +1226,11 @@ impl Attach<'_> {
         {
             return;
         }
-        let choice = matches!(
+        let stepped = matches!(
             overview.selected_workspace_row(),
-            Some(WorkspaceRow::Key(key)) if !choices(key).is_empty() || is_number(key)
+            Some(WorkspaceRow::Key(key)) if is_number(key)
         );
-        if !choice {
+        if !stepped {
             self.space_overview_action(Action::Activate, viewport);
         }
     }
@@ -1221,23 +1268,6 @@ impl Attach<'_> {
         }
         overview.rows[Section::Settings.index()] = row;
         overview.step(key, delta);
-        self.model.dirty = true;
-        self.schedule_declaration_preview();
-    }
-
-    /// A click on one of a choice's options: selects its row and sets it.
-    pub(super) fn choose_overview_option(&mut self, row: usize, option: usize) {
-        let Some(overview) = self.model.space_overview.as_mut() else {
-            return;
-        };
-        if !overview.editable() {
-            return;
-        }
-        let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
-            return;
-        };
-        overview.rows[Section::Settings.index()] = row;
-        overview.choose(key, option);
         self.model.dirty = true;
         self.schedule_declaration_preview();
     }
@@ -1284,14 +1314,27 @@ impl Attach<'_> {
                     picked: 0,
                 });
             }
-            WorkspaceRow::Key(key) if !choices(key).is_empty() => {
-                let current = chosen(key, value.as_ref());
-                let options = choices(key);
-                let at = options
+            // Opened on the value it holds, with nothing typed: every
+            // option is on offer until typing narrows them.
+            WorkspaceRow::Key(key) if is_combo(key) => {
+                let current = match choices(key) {
+                    [] => value.as_ref().map(scalar).unwrap_or_default(),
+                    _ => chosen(key, value.as_ref()).to_owned(),
+                };
+                overview.edit.field = Some(EditField {
+                    key,
+                    item: None,
+                    buffer: RenameBuffer::new(String::new()),
+                    picked: 0,
+                });
+                let picked = overview
+                    .picker_options()
                     .iter()
                     .position(|option| *option == current)
                     .unwrap_or(0);
-                overview.choose(key, (at + 1) % options.len());
+                if let Some(field) = overview.edit.field.as_mut() {
+                    field.picked = picked;
+                }
             }
             WorkspaceRow::Key(key) if is_listed(key, overview) => {
                 let len = value.as_ref().map_or(0, |value| items(value).len());
@@ -1333,6 +1376,13 @@ impl Attach<'_> {
             .cloned()
             .unwrap_or_else(|| field.buffer.text().trim().to_owned());
         let key = field.key;
+        if !choices(key).is_empty() && field.item.is_none() {
+            if let Some(index) = choices(key).iter().position(|option| *option == typed) {
+                overview.choose(key, index);
+                self.schedule_declaration_preview();
+            }
+            return;
+        }
         let value = match field.item {
             None if typed.is_empty() => None,
             None => Some(match key {
