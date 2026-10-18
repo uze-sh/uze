@@ -334,6 +334,16 @@ fn is_list(key: DeclarationKey) -> bool {
     )
 }
 
+/// How many lines a list's items take: [`items`]' length, counted
+/// without spelling them.
+pub(super) fn item_count(value: &DeclaredValue) -> usize {
+    match value {
+        DeclaredValue::List(items) => items.len(),
+        DeclaredValue::Commands(commands) => commands.len(),
+        DeclaredValue::Text(_) | DeclaredValue::Number(_) => 1,
+    }
+}
+
 /// A list's items as the section shows them, one line each.
 pub(super) fn items(value: &DeclaredValue) -> Vec<String> {
     match value {
@@ -410,14 +420,19 @@ impl SpaceOverviewView {
     /// A key's value as it would be saved: the edit when there is one,
     /// else what the file declares.
     pub(super) fn effective(&self, key: DeclarationKey) -> Option<DeclaredValue> {
+        self.value(key).cloned()
+    }
+
+    /// [`Self::effective`], borrowed.
+    pub(super) fn value(&self, key: DeclarationKey) -> Option<&DeclaredValue> {
         if let Some(edited) = self.edit.values.get(&key) {
-            return edited.clone();
+            return edited.as_ref();
         }
         self.declaration()?
             .entries
             .iter()
             .find(|entry| entry.key == key)
-            .and_then(|entry| entry.declared.clone())
+            .and_then(|entry| entry.declared.as_ref())
     }
 
     pub(super) fn editable(&self) -> bool {
@@ -430,13 +445,9 @@ impl SpaceOverviewView {
         let mut rows = Vec::new();
         for key in GROUPS.iter().flat_map(|(_, keys)| keys.iter().copied()) {
             rows.push(WorkspaceRow::Key(key));
-            if let Some(value) = self
-                .effective(key)
-                .filter(|_| is_list(key) || listed_branch(key, self))
-            {
-                for index in 0..items(&value).len() {
-                    rows.push(WorkspaceRow::Item(key, index));
-                }
+            if is_listed(key, self) {
+                let count = self.value(key).map_or(0, item_count);
+                rows.extend((0..count).map(|index| WorkspaceRow::Item(key, index)));
             }
         }
         rows.extend(ActionState::ALL.into_iter().map(WorkspaceRow::Action));
@@ -490,7 +501,7 @@ impl SpaceOverviewView {
         let Some(option) = choices(key).get(index) else {
             return;
         };
-        if chosen(key, self.effective(key).as_ref()) == *option {
+        if chosen(key, self.value(key)) == *option {
             return;
         }
         let value = match (key, *option) {
@@ -508,8 +519,8 @@ impl SpaceOverviewView {
     /// below one is no limit, and idle days start from the three the
     /// workspace applies.
     pub(super) fn step(&mut self, key: DeclarationKey, delta: i64) {
-        let current = match self.effective(key) {
-            Some(DeclaredValue::Number(number)) => number as i64,
+        let current = match self.value(key) {
+            Some(DeclaredValue::Number(number)) => *number as i64,
             Some(DeclaredValue::Text(text)) => text.trim().parse().unwrap_or(0),
             _ if key == DeclarationKey::IdleDays => 3,
             _ => 0,
@@ -549,8 +560,7 @@ impl SpaceOverviewView {
             _ => return Vec::new(),
         };
         let taken = self
-            .effective(field.key)
-            .as_ref()
+            .value(field.key)
             .filter(|_| field.item.is_some())
             .map(items)
             .unwrap_or_default();
@@ -658,7 +668,7 @@ pub(super) fn is_combo(key: DeclarationKey) -> bool {
 
 /// `branch` is a list once it holds the project's own types.
 fn listed_branch(key: DeclarationKey, view: &SpaceOverviewView) -> bool {
-    key == DeclarationKey::Branch && matches!(view.effective(key), Some(DeclaredValue::List(_)))
+    key == DeclarationKey::Branch && matches!(view.value(key), Some(DeclaredValue::List(_)))
 }
 
 impl WorkspaceModel {
@@ -1360,7 +1370,7 @@ impl Attach<'_> {
                 }
             }
             WorkspaceRow::Key(key) if is_listed(key, overview) => {
-                let len = value.as_ref().map_or(0, |value| items(value).len());
+                let len = value.as_ref().map_or(0, item_count);
                 overview.edit.field = Some(EditField {
                     key,
                     item: Some(len),
@@ -1452,13 +1462,10 @@ impl Attach<'_> {
         else {
             return;
         };
-        if !is_list(key) && !listed_branch(key, overview) {
+        if !is_listed(key, overview) {
             return;
         }
-        let len = overview
-            .effective(key)
-            .as_ref()
-            .map_or(0, |value| items(value).len());
+        let len = overview.value(key).map_or(0, item_count);
         overview.edit.field = Some(EditField {
             key,
             item: Some(len),

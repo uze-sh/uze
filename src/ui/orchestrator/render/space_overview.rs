@@ -964,15 +964,15 @@ fn render_workspace(
         }
         lines.push(said(group, Token::TextDim));
         for key in keys.iter().copied() {
-            let value = overview.effective(key);
+            let value = overview.value(key);
             let edited = overview.edit.values.contains_key(&key);
             let focused = index == selected;
             let mut spans = vec![label_cell(key, focused)];
             if field.is_some_and(|field| field.key == key && field.item.is_none()) {
                 field_at = Some((lines.len(), LABEL));
             } else if is_combo(key) {
-                let (shown, tone) = match (&value, choices(key)) {
-                    (_, [_, ..]) => (chosen(key, value.as_ref()), Token::TextPrimary),
+                let (shown, tone) = match (value, choices(key)) {
+                    (_, [_, ..]) => (chosen(key, value), Token::TextPrimary),
                     (Some(value), _) => (scalar(value), Token::TextPrimary),
                     (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
                 };
@@ -982,7 +982,7 @@ fn render_workspace(
             {
                 // Slots left out is no bound at all: an empty count says so
                 // where a number stands, and the drawer names it.
-                let shown = match &value {
+                let shown = match value {
                     Some(value) => (scalar(value), Token::TextBright),
                     None if key == DeclarationKey::Slots => (String::new(), Token::TextDim),
                     None => (key.default_spelled().to_owned(), Token::TextDim),
@@ -1019,9 +1019,9 @@ fn render_workspace(
                 }
             } else if is_listed(key, overview) {
                 // A new entry is typed where its add stood.
-                let adding = field.filter(|field| field.key == key).is_some_and(|field| {
-                    field.item == Some(value.as_ref().map_or(0, |value| items(value).len()))
-                });
+                let adding = field
+                    .filter(|field| field.key == key)
+                    .is_some_and(|field| field.item == Some(value.map_or(0, item_count)));
                 if adding {
                     field_at = Some((lines.len(), LABEL));
                 }
@@ -1034,7 +1034,7 @@ fn render_workspace(
                     }),
                 ));
             } else {
-                match &value {
+                match value {
                     Some(value) => spans.push(boxed(&scalar(value), Token::TextPrimary)),
                     None => spans.push(boxed(key.default_spelled(), Token::TextDim)),
                 }
@@ -1048,7 +1048,7 @@ fn render_workspace(
             });
             index += 1;
             if is_listed(key, overview) {
-                let entries = value.as_ref().map(items).unwrap_or_default();
+                let entries = value.map(items).unwrap_or_default();
                 for (item, entry) in entries.iter().enumerate() {
                     let indent = Span::raw(" ".repeat(usize::from(LABEL)));
                     if field.is_some_and(|field| field.key == key && field.item == Some(item)) {
@@ -2002,10 +2002,10 @@ fn render_drawer(
                 entry.default.to_owned(),
                 Token::TextSecondary,
             ));
-            let value = overview.effective(key);
+            let value = overview.value(key);
             lines.push(pair(
                 "value",
-                match &value {
+                match value {
                     None => "not declared".to_owned(),
                     Some(DeclaredValue::List(items)) => {
                         plural(items.len(), "entry").replace("entrys", "entries")
