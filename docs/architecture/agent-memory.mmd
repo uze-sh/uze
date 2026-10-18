@@ -1,0 +1,49 @@
+---
+title: Agent memory
+---
+flowchart TD
+  click remember href "crates/uze-application/src/application/memory.rs"
+  click projectFacts href "crates/uze-core/src/project/memory.rs"
+  click proposals href "crates/uze-core/src/project/memory.rs"
+  click review href "src/ui/orchestrator/proposal.rs"
+  click claudeMemory href "crates/uze-integrations/src/claude/memory.rs"
+  click codexSummary href "crates/uze-integrations/src/codex.rs"
+  click gather href "crates/uze-application/src/application/memory.rs"
+  click rank href "crates/uze-core/src/project/memory.rs"
+  click compose href "crates/uze-workspace/src/agent_context.rs"
+  click memoryOff href "src/shim.rs"
+  click viaClaude href "crates/uze-integrations/src/claude.rs"
+  click viaCodex href "crates/uze-integrations/src/codex.rs"
+  click viaOpencode href "crates/uze-integrations/src/opencode.rs"
+  click viaAntigravity href "crates/uze-integrations/src/antigravity.rs"
+
+  remember([uze agent memory remember name<br/>the fact on stdin]) --> caller{Who asks?}
+  caller -->|an agent UZE launched| agentScope{-m?}
+  caller -->|the operator| operatorScope{-m?}
+  agentScope -->|no| projectFacts[(Project facts<br/>state/projects/id/memory)]
+  agentScope -->|yes| proposals[(Proposed machine facts<br/>state/memory/proposed)]
+  operatorScope -->|no| projectFacts
+  operatorScope -->|yes| machineFacts[(Machine facts<br/>state/memory)]
+  proposals --> review{The operator reviews it<br/>in the workspace}
+  review -->|Accept| machineFacts
+  review -->|Discard| discarded[Deleted]
+  claudeAgent([A Claude agent]) -->|writes its own memory| claudeMemory[(Claude's memory<br/>read live, never written)]
+  codexAgent([A Codex agent]) -->|its background job consolidates| codexSummary[(Codex's memory_summary.md<br/>offered as one reference entry)]
+
+  launch([An agent is launched on harness H]) --> gather[Gather the index:<br/>project facts, machine facts,<br/>then every other harness's memory]
+  projectFacts --> gather
+  machineFacts --> gather
+  claudeMemory -->|unless H is Claude| gather
+  codexSummary -->|unless H is Codex| gather
+  proposals -.->|never listed| gather
+  gather --> rank[A name already taken is dropped<br/>feedback and user first, then newest<br/>cut to the memory share]
+  rank --> writesOwn{Does H keep its own memory?}
+  writesOwn -->|yes, Claude| indexOnly[The index alone]
+  writesOwn -->|no| indexAndHow[The index and how to<br/>remember through UZE]
+  indexOnly --> compose[The agent's composed context<br/>preamble, briefing, memory, 9 KB bound]
+  indexAndHow --> compose
+  memoryOff[memory.harness = off] -.->|Codex launches only| viaCodex
+  compose --> viaClaude[Claude: CLAUDE.md<br/>in a per-agent --add-dir]
+  compose --> viaCodex[Codex: SessionStart hook<br/>on a -c layer]
+  compose --> viaOpencode[OpenCode: uze-agent-context.ts<br/>keyed by the session id]
+  compose --> viaAntigravity[Antigravity: PreInvocation hook<br/>in a per-agent --add-dir]
