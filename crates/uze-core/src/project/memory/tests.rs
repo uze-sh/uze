@@ -438,3 +438,61 @@ fn a_pasted_credential_is_refused_without_repeating_it() {
         .unwrap();
     assert_eq!(documented.secret_looking, None);
 }
+
+#[test]
+fn a_secret_looking_assignment_is_written_with_where_it_is() {
+    let (home, project) = home("memory-secret-looking");
+    let store = MemoryStore::new(&home, Some(&project));
+    // Assembled here: the repository's secret scanning reads the source.
+    let assigned = format!("DEPLOY_TOKEN={}", "f00ba4".repeat(4));
+    let in_body = store
+        .remember(
+            Scope::Project,
+            &fact(
+                "deploy",
+                "how it deploys",
+                &format!("Run with\n{assigned}\n"),
+            ),
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        in_body.secret_looking,
+        Some(Spot {
+            field: "body",
+            line: 2
+        })
+    );
+    let in_description = store
+        .remember(
+            Scope::Project,
+            &fact("deploy", &format!("run with {assigned}"), ""),
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        in_description.secret_looking,
+        Some(Spot {
+            field: "description",
+            line: 1
+        }),
+        "the description reaches every agent's index"
+    );
+}
+
+#[test]
+fn a_credential_in_the_description_is_refused_too() {
+    let (home, project) = home("memory-credential-description");
+    let store = MemoryStore::new(&home, Some(&project));
+    let secret = format!("gh{}_{}", "p", "Z9y8".repeat(9));
+    let refused = store
+        .remember(
+            Scope::Project,
+            &fact("deploy", &format!("uses {secret}"), ""),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("line 1 of the description"), "{refused}");
+    assert!(store.list(Scope::Project).unwrap().entries.is_empty());
+}

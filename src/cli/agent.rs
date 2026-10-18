@@ -671,7 +671,7 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                 path: &kept.path,
                 updated: kept.updated,
                 proposed: kept.proposed,
-                secret_looking_line: kept.secret_looking,
+                secret_looking: kept.secret_looking,
                 similar: kept.similar.as_ref().map(|fact| fact.name.as_str()),
             };
             emit(format, &report, |report| {
@@ -696,11 +696,13 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                         report.path.display()
                     )
                 };
-                if let Some(line) = report.secret_looking_line {
+                if let Some(spot) = report.secret_looking {
                     said.push_str(&format!(
-                        "{} line {line} assigns what looks like a secret; if it is one, \
+                        "{} line {} of the {} assigns what looks like a secret; if it is one, \
                          remember the fact again without it\n",
-                        progress::warning_icon()
+                        progress::warning_icon(),
+                        spot.line,
+                        spot.field
                     ));
                 }
                 if let Some(similar) = report.similar {
@@ -766,7 +768,7 @@ struct MemoryWrite<'a> {
     updated: bool,
     proposed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    secret_looking_line: Option<usize>,
+    secret_looking: Option<uze_application::application::memory::Spot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     similar: Option<&'a str>,
 }

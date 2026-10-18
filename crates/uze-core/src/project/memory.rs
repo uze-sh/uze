@@ -258,9 +258,18 @@ pub struct Remembered {
     pub updated: bool,
     /// It waits for the operator rather than applying.
     pub proposed: bool,
-    /// The body line that assigns what looks like a secret, written all
-    /// the same: documentation names such variables legitimately.
-    pub secret_looking: Option<usize>,
+    /// Where the fact assigns what looks like a secret, written all the
+    /// same: documentation names such variables legitimately.
+    pub secret_looking: Option<Spot>,
+}
+
+/// A line of one of a fact's fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct Spot {
+    /// `description` or `body`.
+    pub field: &'static str,
+    /// Counted from 1.
+    pub line: usize,
 }
 
 /// What `remember` is asked to write.
@@ -448,7 +457,11 @@ impl<'a> MemoryStore<'a> {
             scope,
             updated: existing.is_some(),
             proposed: propose && scope == Scope::Machine,
-            secret_looking: credentials::secret_assignment(fact.body),
+            secret_looking: [("description", fact.description), ("body", fact.body)]
+                .into_iter()
+                .find_map(|(field, text)| {
+                    credentials::secret_assignment(text).map(|line| Spot { field, line })
+                }),
         })
     }
 

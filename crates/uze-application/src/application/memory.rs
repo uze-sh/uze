@@ -37,7 +37,7 @@ pub use links::Link;
 
 /// The vocabulary the memory read models are made of, for presentation.
 pub use uze_core::memory::{
-    FactKind as Kind, MemoryEntry as Entry, Scope as MemoryScope, Source as Provenance,
+    FactKind as Kind, MemoryEntry as Entry, Scope as MemoryScope, Source as Provenance, Spot,
     Unreadable as UnreadableFact,
 };
 
@@ -70,8 +70,8 @@ pub struct Written {
     pub updated: bool,
     /// It waits for the operator rather than applying.
     pub proposed: bool,
-    /// The body line that assigns what looks like a secret.
-    pub secret_looking: Option<usize>,
+    /// Where the fact assigns what looks like a secret.
+    pub secret_looking: Option<uze_core::memory::Spot>,
     /// A fact by another name, in the scope written to, saying much the
     /// same: remembering under its name would have updated it instead.
     pub similar: Option<MemoryEntry>,
