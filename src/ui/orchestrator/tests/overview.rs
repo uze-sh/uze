@@ -480,6 +480,50 @@ fn the_memory_search_narrows_the_facts_and_reads_the_one_selected() {
     assert_eq!(overview.memory_facts().len(), 3);
 }
 
+/// A fact's body is read as the Markdown it is written in: emphasis is
+/// drawn, not spelled out in asterisks.
+#[test]
+fn a_fact_body_is_drawn_as_markdown() {
+    use uze_application::application::memory::{Entry, Kind, MemoryScope};
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
+    overview.answer = Some(Ok(project_space(
+        uze_application::SpaceMemory {
+            project: vec![Entry {
+                name: "reply-in-ptbr".to_owned(),
+                description: "reply in pt-BR".to_owned(),
+                kind: Kind::Feedback,
+                scope: MemoryScope::Project,
+                origin: "claude-code".to_owned(),
+                source: None,
+                path: PathBuf::from("/facts/reply-in-ptbr.md"),
+                updated: None,
+                writable: false,
+                proposed: false,
+            }],
+            ..Default::default()
+        },
+        Err("not read here".to_owned()),
+    )));
+    overview.drawer = true;
+    overview.fact = Some((
+        "reply-in-ptbr".to_owned(),
+        Some(Ok("Reply in Portuguese.\n\n**Why:** they asked.".to_owned())),
+    ));
+
+    let screen = frame_rows_at(&mut model, Rect::new(0, 0, 80, 40)).join("\n");
+    assert!(screen.contains("Why:"), "the body is not drawn:\n{screen}");
+    assert!(
+        !screen.contains("**Why"),
+        "the emphasis is spelled out:\n{screen}"
+    );
+}
+
 /// A project's overview with nothing to report but `memory` and the
 /// `workspace:` declaration `workspace`.
 fn project_space(

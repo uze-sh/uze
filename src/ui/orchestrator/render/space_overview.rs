@@ -2451,6 +2451,47 @@ fn render_drawer(
     frame.render_widget(Paragraph::new(drawer.lines), area);
 }
 
+/// The last fact body drawn, and what it was drawn from.
+struct RenderedFactBody {
+    body: String,
+    theme: String,
+    width: usize,
+    rows: Vec<Line<'static>>,
+}
+
+thread_local! {
+    static RENDERED_FACT_BODY: std::cell::RefCell<Option<RenderedFactBody>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A fact's body read as the Markdown it is written in, folded to the
+/// drawer's width. Rendered once per body, theme and width: the drawer is
+/// drawn on every frame, and a fenced block costs a syntect pass.
+fn rendered_fact_body(body: &str, width: usize) -> Vec<Line<'static>> {
+    let theme = uze_theme::active().syntax_theme().to_owned();
+    RENDERED_FACT_BODY.with_borrow_mut(|cached| {
+        let current = cached.as_ref().is_some_and(|cached| {
+            cached.body == body && cached.theme == theme && cached.width == width
+        });
+        if !current {
+            let rows = uze_extensions::code::markdown(body, &theme, width)
+                .iter()
+                .flat_map(|line| crate::ui::extension_view::prose_rows(line, width))
+                .collect();
+            *cached = Some(RenderedFactBody {
+                body: body.to_owned(),
+                theme,
+                width,
+                rows,
+            });
+        }
+        cached
+            .as_ref()
+            .map(|cached| cached.rows.clone())
+            .unwrap_or_default()
+    })
+}
+
 /// The drawer's text: the row in front read in full, folded at `width`.
 struct DrawerLines {
     lines: Vec<Line<'static>>,
@@ -2694,9 +2735,7 @@ impl DrawerLines {
         self.blank();
         match read {
             Some((name, Some(Ok(body)))) if *name == entry.name => {
-                for line in body.lines() {
-                    self.paragraph(line, Token::TextPrimary);
-                }
+                self.lines.extend(rendered_fact_body(body, self.width));
             }
             Some((name, Some(Err(reason)))) if *name == entry.name => {
                 self.paragraph(reason, Token::StateDanger);
