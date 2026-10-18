@@ -215,26 +215,59 @@ fn entry(name: &str, kind: FactKind, updated: &str) -> MemoryEntry {
         updated: Some(updated.into()),
         writable: true,
         proposed: false,
+        cites: Vec::new(),
+        missing: Vec::new(),
     }
 }
 
 #[test]
-fn guidance_is_given_a_line_and_every_other_fact_a_name() {
+fn every_fact_is_given_a_line_when_it_fits_guidance_first() {
+    let entries = vec![
+        entry("dashboards", FactKind::Reference, "2026-10-03"),
+        entry("secret-phrase", FactKind::User, "2026-10-18"),
+        entry("reply-in-ptbr", FactKind::Feedback, "2026-10-01"),
+        entry("lab-image", FactKind::Project, "2026-10-02"),
+    ];
+    let index = render_index(&entries, 2_000);
+    let lines: Vec<&str> = index.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            "- reply-in-ptbr (feedback): about reply-in-ptbr",
+            "- secret-phrase (user): about secret-phrase",
+            "- lab-image (project): about lab-image",
+            "- dashboards (reference): about dashboards",
+        ],
+        "{index}"
+    );
+}
+
+#[test]
+fn past_the_room_lines_follow_the_ranking_and_the_rest_are_named() {
     let entries = vec![
         entry("reply-in-ptbr", FactKind::Feedback, "2026-10-01"),
         entry("secret-phrase", FactKind::User, "2026-10-18"),
         entry("lab-image", FactKind::Project, "2026-10-02"),
         entry("dashboards", FactKind::Reference, "2026-10-03"),
     ];
-    let index = render_index(&entries, 2_000);
-    assert!(
-        index.starts_with("- reply-in-ptbr (feedback): about reply-in-ptbr\n"),
-        "{index}"
-    );
-    assert!(index.contains("- user: secret-phrase"), "{index}");
-    assert!(index.contains("- project: lab-image"), "{index}");
+    let index = render_index(&entries, 180);
+    assert!(index.len() <= 180, "{} bytes", index.len());
+    assert!(index.starts_with("- reply-in-ptbr (feedback): "), "{index}");
     assert!(index.contains("- reference: dashboards"), "{index}");
-    assert!(!index.contains("about secret-phrase"), "{index}");
+    for name in ["secret-phrase", "lab-image", "dashboards"] {
+        assert!(index.contains(name), "{name} is at least named: {index}");
+    }
+}
+
+#[test]
+fn one_long_description_never_ends_the_lines_after_it() {
+    let mut long = entry("long", FactKind::Feedback, "2026-10-02");
+    long.description = "word ".repeat(200);
+    let short = entry("short", FactKind::Feedback, "2026-10-01");
+    let index = render_index(&[long, short], 600);
+    let first = index.lines().next().unwrap();
+    assert!(first.ends_with('…') && first.len() < 220, "{first}");
+    assert!(index.contains("- short (feedback): about short"), "{index}");
 }
 
 /// The case that left an operator's fact out of every agent but Claude:
@@ -309,4 +342,79 @@ fn a_foreign_front_matter_shape_reads_its_kind_and_date() {
 fn a_date_is_civil() {
     assert_eq!(civil_from_days(0), (1970, 1, 1));
     assert_eq!(civil_from_days(20_743), (2026, 10, 17));
+}
+
+#[test]
+fn citations_are_paths_and_nothing_that_only_looks_like_one() {
+    let body = "\
+Fixed in `crates/uze-core/src/subprocess.rs:42`, see `docs/adr/` and
+`.github/workflows/ci.yml#L10`; built into `target/debug/uze`.
+Not paths: `openspec/changes/<name>/`, `src/ui/*.rs`, `docs/readme`,
+`platform`, `/etc/hosts`, `~/.uze/state`, `$HOME/x.rs`, `./run.sh`,
+`a/../b.rs`, `https://example.com/a.rs`, `KEY=a/b.rs`, `user@host/a.rs`.
+```
+`crates/in/a/fence.rs`
+```
+Twice: `docs/adr/`.";
+    assert_eq!(
+        cited_paths(body),
+        [
+            "crates/uze-core/src/subprocess.rs",
+            "docs/adr/",
+            ".github/workflows/ci.yml",
+        ],
+        "a file with no extension (`target/debug/uze`) could be a branch, and is left out"
+    );
+}
+
+#[test]
+fn the_index_closes_naming_the_facts_that_cite_what_is_gone() {
+    let mut stale = entry("moved-file", FactKind::Project, "2026-10-01");
+    stale.missing = vec!["crates/a/b.rs".into()];
+    let current = entry("still-there", FactKind::Project, "2026-10-02");
+    let index = render_index(&[stale, current], 1_000);
+    let last = index.lines().last().unwrap();
+    assert!(
+        last.starts_with("Cite paths this checkout does not have"),
+        "{index}"
+    );
+    assert!(last.ends_with(": moved-file."), "{last}");
+    assert!(
+        !index.contains("crates/a/b.rs"),
+        "no index line carries a path"
+    );
+}
+
+#[test]
+fn a_pasted_credential_is_refused_without_repeating_it() {
+    let (home, project) = home("memory-credential");
+    let store = MemoryStore::new(&home, Some(&project));
+    // Assembled here: the repository's secret scanning reads the source.
+    let secret = format!("gh{}_{}", "p", "Z9y8".repeat(9));
+    let body = format!("Deploys with\n{secret}\n");
+    let refused = store
+        .remember(
+            Scope::Project,
+            &fact("deploy", "how it deploys", &body),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("line 2 of the body"), "{refused}");
+    assert!(refused.contains("a GitHub token"), "{refused}");
+    assert!(!refused.contains(&secret), "never repeated: {refused}");
+    assert!(store.list(Scope::Project).unwrap().entries.is_empty());
+
+    let documented = store
+        .remember(
+            Scope::Project,
+            &fact(
+                "deploy",
+                "how it deploys",
+                "Set `DEPLOY_TOKEN=<token>` first.",
+            ),
+            false,
+        )
+        .unwrap();
+    assert_eq!(documented.secret_looking, None);
 }

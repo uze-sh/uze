@@ -166,7 +166,7 @@ pub fn run(shim_name: &str) -> ! {
                 cwd: &cwd,
             },
             *integration,
-            &|primary| memory::context_sections(&home, primary, *integration, &integrations),
+            &|ask| memory::context_sections(&home, ask, *integration, &integrations),
         );
         if let Some(note) = &session.note {
             eprintln!("uze: {}.", uze_core::authored::inert(note));

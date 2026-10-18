@@ -148,9 +148,92 @@ pub struct MemoryEntry {
     pub writable: bool,
     /// A machine fact waiting for the operator.
     pub proposed: bool,
+    /// The paths its body cites ([`cited_paths`]), read where the body was.
+    #[serde(skip)]
+    pub cites: Vec<String>,
+    /// The cited paths the reader's checkout does not have, once judged.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<String>,
 }
 
 pub const UZE_ORIGIN: &str = "uze";
+
+/// The paths `body` cites: spans in backticks that name a file, or a
+/// directory by a trailing `/`, relative to a checkout. What is not
+/// plainly that is left out rather than guessed at — placeholders, globs,
+/// assignments, absolute or home paths, URLs, branch names — because a
+/// mark on a citation that was never a path is a false alarm, and one
+/// false alarm teaches an agent to ignore every mark.
+pub fn cited_paths(body: &str) -> Vec<String> {
+    let mut cited: Vec<String> = Vec::new();
+    let mut fenced = false;
+    for line in body.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        for span in line.split('`').skip(1).step_by(2) {
+            if let Some(path) = citation(span)
+                && !cited.contains(&path)
+            {
+                cited.push(path);
+            }
+        }
+    }
+    cited
+}
+
+fn citation(span: &str) -> Option<String> {
+    if !span.contains('/')
+        || span.contains(char::is_whitespace)
+        || span.contains(['<', '>', '*', '?', '{', '}', '=', '@', '\\'])
+        || span.contains("://")
+        || span.starts_with(['/', '~', '$', '-'])
+        || span.starts_with("./")
+        || span.starts_with("../")
+    {
+        return None;
+    }
+    let path = span.split('#').next()?;
+    let path = path.split(':').next()?;
+    let (components, directory) = match path.strip_suffix('/') {
+        Some(directory) => (directory, true),
+        None => (path, false),
+    };
+    let parts: Vec<&str> = components.split('/').collect();
+    if parts.len() < 2
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || *part == "." || *part == "..")
+    {
+        return None;
+    }
+    let last = parts[parts.len() - 1];
+    let has_extension = last
+        .rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty());
+    (directory || has_extension).then(|| path.to_owned())
+}
+
+/// `entries` in the order an index gives them: standing guidance first,
+/// then who the operator is, the work, and where to look, most recently
+/// updated first within each.
+pub fn ranked(entries: &[MemoryEntry]) -> Vec<&MemoryEntry> {
+    let mut ranked: Vec<&MemoryEntry> = entries.iter().filter(|entry| !entry.proposed).collect();
+    ranked.sort_by(|left, right| by_rank(left, right));
+    ranked
+}
+
+/// The order [`ranked`] gives.
+pub fn by_rank(left: &MemoryEntry, right: &MemoryEntry) -> std::cmp::Ordering {
+    left.kind
+        .cmp(&right.kind)
+        .then_with(|| right.updated.cmp(&left.updated))
+        .then_with(|| left.name.cmp(&right.name))
+}
 
 /// A document that sits where a fact would, and cannot be read as one.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -175,6 +258,9 @@ pub struct Remembered {
     pub updated: bool,
     /// It waits for the operator rather than applying.
     pub proposed: bool,
+    /// The body line that assigns what looks like a secret, written all
+    /// the same: documentation names such variables legitimately.
+    pub secret_looking: Option<usize>,
 }
 
 /// What `remember` is asked to write.
@@ -313,6 +399,15 @@ impl<'a> MemoryStore<'a> {
     /// keeping its creation date. `propose` keeps a machine fact out of
     /// every index until the operator accepts it.
     pub fn remember(&self, scope: Scope, fact: &Remember, propose: bool) -> Result<Remembered> {
+        for (field, text) in [("description", fact.description), ("body", fact.body)] {
+            if let Some(found) = credentials::credential(text) {
+                return Err(UzeError::Memory(format!(
+                    "line {} of the {field} holds what looks like {}; nothing was written. \
+                     Memory never holds a secret: leave the value out, or say where it is kept",
+                    found.line, found.shape
+                )));
+            }
+        }
         let base = self.dir(scope)?;
         let dir = if propose && scope == Scope::Machine {
             self.home.proposed_memory_dir()
@@ -353,6 +448,7 @@ impl<'a> MemoryStore<'a> {
             scope,
             updated: existing.is_some(),
             proposed: propose && scope == Scope::Machine,
+            secret_looking: credentials::secret_assignment(fact.body),
         })
     }
 
@@ -473,6 +569,8 @@ fn read_listing(dir: &Path, scope: Scope, proposed: bool) -> Listing {
             .and_then(|(head, body)| fact_from(head, body));
         match read {
             Ok(fact) => listing.entries.push(MemoryEntry {
+                cites: cited_paths(&fact.body),
+                missing: Vec::new(),
                 name: fact.name,
                 description: fact.description,
                 kind: fact.kind,
@@ -514,27 +612,19 @@ pub fn render(fact: &Fact) -> String {
     )
 }
 
-/// The index of `entries` within `bound` bytes. Standing guidance
-/// (`feedback`) is given a line each, description included, because it
-/// changes what an agent does without being asked; every other fact, and
-/// guidance past the room, is given by name alone, grouped by kind, for an
-/// agent to look up when a question calls for it. Names are placed before
+/// The index of `entries` within `bound` bytes. Names are placed before
 /// lines: a fact not even named is one no agent knows to ask for, and what
-/// does not fit as a name is counted. Empty when there is nothing to list.
+/// does not fit as a name is counted. Lines, description included, are then
+/// given in rank order while every fact without one still fits as a name,
+/// so standing guidance (`feedback`) is described first: it changes what an
+/// agent does without being asked. Empty when there is nothing to list.
 pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
-    let mut ranked: Vec<&MemoryEntry> = entries.iter().filter(|entry| !entry.proposed).collect();
-    ranked.sort_by(|left, right| {
-        left.kind
-            .cmp(&right.kind)
-            .then_with(|| right.updated.cmp(&left.updated))
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    let ranked = ranked(entries);
+    let stale = stale_line(&ranked).filter(|line| line.len() < bound);
+    let bound = bound - stale.as_ref().map_or(0, |line| line.len() + 1);
     let mut lines: Vec<String> = Vec::new();
     let mut named = ranked.clone();
-    for entry in ranked
-        .iter()
-        .filter(|entry| entry.kind == FactKind::Feedback)
-    {
+    for entry in &ranked {
         let line = index_line(entry);
         let rest: Vec<&MemoryEntry> = named
             .iter()
@@ -553,7 +643,25 @@ pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
     if !names.is_empty() {
         lines.push(names);
     }
+    lines.extend(stale);
     lines.join("\n")
+}
+
+/// The line naming the facts that cite a path the reader's checkout does
+/// not have, when any do.
+fn stale_line(ranked: &[&MemoryEntry]) -> Option<String> {
+    let stale: Vec<&str> = ranked
+        .iter()
+        .filter(|entry| !entry.missing.is_empty())
+        .map(|entry| entry.name.as_str())
+        .collect();
+    (!stale.is_empty()).then(|| {
+        format!(
+            "Cite paths this checkout does not have, so may describe an older layout; verify \
+             before relying on them: {}.",
+            stale.join(", ")
+        )
+    })
 }
 
 /// The facts not given a line, by name and grouped by kind, within
@@ -612,8 +720,23 @@ fn index_line(entry: &MemoryEntry) -> String {
         "- {} ({}): {}",
         entry.name,
         qualifiers.join(", "),
-        one_line(&entry.description)
+        capped(&one_line(&entry.description), LINE_DESCRIPTION)
     )
+}
+
+/// The most of a description one index line carries: a single long one
+/// must not take the room every fact ranked after it would have had.
+const LINE_DESCRIPTION: usize = 160;
+
+fn capped(text: &str, bound: usize) -> String {
+    if text.len() <= bound {
+        return text.to_owned();
+    }
+    let mut end = bound;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", text[..end].trim_end())
 }
 
 fn one_line(text: &str) -> String {
@@ -649,6 +772,8 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     (year, month, day)
 }
+
+mod credentials;
 
 #[cfg(test)]
 mod tests;

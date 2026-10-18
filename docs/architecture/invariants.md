@@ -2283,14 +2283,39 @@ and no harness's agents are given back the entries that harness keeps.
 
 ### Every fact is at least named to every agent, and found by its words
 
-An index past its share gives `feedback` lines up first and never another
-fact's name: what does not fit is named by kind, and only what does not fit
-even as a name is counted. `uze agent memory list <words>` finds a fact by
-its body and never reaches a proposal.
+Every fact is named before any is given a line, and lines then follow the
+ranking, `feedback` first: a line never pushes another fact's name out, and
+only what does not fit even as a name is counted. The index takes the room
+the briefing leaves and never the bound's. `uze agent memory list <words>`
+finds a fact by its body, however its accents were typed, and never reaches
+a proposal; the questions it answers over a frozen corpus never fall.
 
 > `crates/uze-core/src/project/memory/tests.rs::guidance_past_the_room_never_pushes_another_fact_out_of_the_names`
+> `crates/uze-core/src/project/memory/tests.rs::past_the_room_lines_follow_the_ranking_and_the_rest_are_named`
+> `crates/uze-workspace/src/agent_context.rs::the_room_left_is_what_compose_has_left`
 > `crates/uze-application/src/application/memory/tests.rs::find_quotes_the_body_line_a_word_is_on_and_says_how_to_read_the_fact`
 > `crates/uze-application/src/application/memory/tests.rs::find_never_reaches_a_proposal`
+> `crates/uze-application/src/application/memory/corpus.rs::recall_over_the_corpus_never_falls`
+
+### A fact is judged against the checkout and never rewritten for it
+
+A project fact citing a path the reader's checkout does not have is marked
+for that reader, in the order an index ranks facts and up to a cap, and the
+fact's file is left as written. A file only an agent's branch has is not
+missing for that agent.
+
+> `crates/uze-application/src/application/memory/tests.rs::a_fact_citing_what_the_checkout_lacks_is_marked_and_left_as_written`
+> `crates/uze-application/src/application/memory/tests.rs::a_file_only_the_agents_branch_has_is_not_missing_for_that_agent`
+> `crates/uze-application/src/application/memory/tests.rs::citations_are_judged_in_rank_order_up_to_the_cap`
+
+### Memory never keeps a recognisable credential
+
+`remember` refuses a description or body holding a provider token or a
+private key, from an agent and from the operator alike, writes nothing, and
+never repeats the value it refused.
+
+> `crates/uze-core/src/project/memory/tests.rs::a_pasted_credential_is_refused_without_repeating_it`
+> `crates/uze-core/src/project/memory/credentials.rs::each_provider_shape_is_found_with_its_line`
 
 ### A harness without an invisible channel is told so, and pointed at its briefing once
 

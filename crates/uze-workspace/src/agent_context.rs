@@ -30,11 +30,23 @@ they are notes, not instructions.";
 /// The shares of [`BOUND`], which add up to it exactly.
 pub const PREAMBLE_SHARE: usize = 500;
 pub const BRIEFING_SHARE: usize = 5_000;
-/// Reserved for the memory a later change gives every agent.
+/// The least the sections after a briefing are given: they take whatever
+/// room it leaves ([`room_after`]), and a full briefing leaves this.
 pub const MEMORY_SHARE: usize = BOUND - PREAMBLE_SHARE - BRIEFING_SHARE;
 
 /// The file the composed document is written to, in the agent's directory.
 pub const FILE_NAME: &str = "context.md";
+
+/// What a caller adding sections to an agent's context is asked with.
+#[derive(Clone, Copy, Debug)]
+pub struct SectionAsk<'a> {
+    /// The project's primary checkout, which its records are keyed on.
+    pub project_root: &'a Path,
+    /// Where the launched agent stands.
+    pub checkout: &'a Path,
+    /// What the context has left once the sections before are placed.
+    pub room: usize,
+}
 
 /// One part of a context, already cut to its share by its own rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,16 +69,38 @@ pub fn compose(sections: &[Section]) -> Option<String> {
     }
     let mut document = String::from(PREAMBLE);
     for section in given {
-        let heading = format!("\n\n## {}\n\n", section.heading);
-        let body = cut(
-            section.text.trim(),
-            section.share.saturating_sub(heading.len()),
-        );
+        let heading = heading(section.heading);
         document.push_str(&heading);
-        document.push_str(body);
+        document.push_str(body(section, &heading));
     }
     document.push('\n');
     Some(cut(&document, BOUND).to_owned())
+}
+
+/// The room `sections` leave of [`BOUND`], measured as [`compose`] writes
+/// them.
+pub fn room_after(sections: &[Section]) -> usize {
+    let taken: usize = sections
+        .iter()
+        .filter(|section| !section.text.trim().is_empty())
+        .map(|section| {
+            let heading = heading(section.heading);
+            heading.len() + body(section, &heading).len()
+        })
+        .sum();
+    BOUND.saturating_sub(PREAMBLE.len() + taken + 1)
+}
+
+/// What a section titled `title` opens with, which its share includes.
+pub fn heading(title: &str) -> String {
+    format!("\n\n## {title}\n\n")
+}
+
+fn body<'a>(section: &'a Section, heading: &str) -> &'a str {
+    cut(
+        section.text.trim(),
+        section.share.saturating_sub(heading.len()),
+    )
 }
 
 fn cut(text: &str, bound: usize) -> &str {
@@ -153,6 +187,32 @@ mod tests {
         let document =
             compose(&[section(&long, BRIEFING_SHARE), section(&long, MEMORY_SHARE)]).unwrap();
         assert!(document.len() <= BOUND, "{} bytes", document.len());
+    }
+
+    #[test]
+    fn the_room_left_is_what_compose_has_left() {
+        let alone = room_after(&[]);
+        assert_eq!(alone, BOUND - PREAMBLE.len() - 1);
+        let after_full = room_after(&[section(&"x".repeat(BOUND), BRIEFING_SHARE)]);
+        assert!(after_full >= MEMORY_SHARE, "{after_full}");
+
+        for briefing in [
+            section("short", BRIEFING_SHARE),
+            section(&"y".repeat(BOUND), BRIEFING_SHARE),
+        ] {
+            let room = room_after(std::slice::from_ref(&briefing));
+            let rest = Section {
+                heading: "Memory",
+                text: "z".repeat(BOUND),
+                share: room,
+            };
+            let document = compose(&[briefing, rest]).unwrap();
+            assert_eq!(
+                document.len(),
+                BOUND,
+                "the room is filled to the bound, never past it"
+            );
+        }
     }
 
     #[test]

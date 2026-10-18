@@ -303,6 +303,8 @@ impl IntegrationPort for CodexIntegration {
             updated: None,
             writable: false,
             proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
         }]
     }
 

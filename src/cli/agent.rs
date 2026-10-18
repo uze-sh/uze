@@ -671,9 +671,11 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                 path: &kept.path,
                 updated: kept.updated,
                 proposed: kept.proposed,
+                secret_looking_line: kept.secret_looking,
+                similar: kept.similar.as_ref().map(|fact| fact.name.as_str()),
             };
             emit(format, &report, |report| {
-                if report.proposed {
+                let mut said = if report.proposed {
                     format!(
                         "{} proposed `{}` for every project; the operator accepts it before any \
                          agent is given it\n",
@@ -693,7 +695,23 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                         report.scope,
                         report.path.display()
                     )
+                };
+                if let Some(line) = report.secret_looking_line {
+                    said.push_str(&format!(
+                        "{} line {line} assigns what looks like a secret; if it is one, \
+                         remember the fact again without it\n",
+                        progress::warning_icon()
+                    ));
                 }
+                if let Some(similar) = report.similar {
+                    said.push_str(&format!(
+                        "{} `{similar}` says much the same; remembering under that name \
+                         updates it, and `uze agent memory forget {}` removes this one\n",
+                        progress::warning_icon(),
+                        report.name
+                    ));
+                }
+                said
             });
         }
         AgentMemoryAction::Forget { name, machine } => {
@@ -728,22 +746,13 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
             let found = app.memory().find(caller, &words, kind)?;
             emit(format, &found, render_found);
         }
-        AgentMemoryAction::Show { name, machine } => {
+        AgentMemoryAction::Show {
+            name,
+            machine,
+            format,
+        } => {
             let shown = app.memory().show(caller, scope(machine), &name)?;
-            println!(
-                "{} ({}, {} memory{}): {}\n{}\n\n{}",
-                shown.entry.name,
-                shown.entry.kind.label(),
-                shown.entry.scope.label(),
-                if shown.entry.writable {
-                    String::new()
-                } else {
-                    format!(", kept by {}", shown.entry.origin)
-                },
-                uze_application::inert(&shown.entry.description),
-                shown.entry.path.display(),
-                uze_application::inert(shown.body.trim())
-            );
+            emit(format, &shown, render_shown);
         }
     }
     Ok(())
@@ -756,6 +765,10 @@ struct MemoryWrite<'a> {
     path: &'a std::path::Path,
     updated: bool,
     proposed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secret_looking_line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    similar: Option<&'a str>,
 }
 
 /// The memory as the agent and the operator read it: where each scope
@@ -850,14 +863,70 @@ fn render_found(found: &uze_application::application::memory::Found) -> String {
     text
 }
 
+/// One fact in full, then the facts around it.
+fn render_shown(shown: &uze_application::application::memory::Shown) -> String {
+    let entry = &shown.entry;
+    let mut text = format!(
+        "{} ({}, {} memory{}): {}\n{}\n\n{}\n",
+        entry.name,
+        entry.kind.label(),
+        entry.scope.label(),
+        if entry.writable {
+            String::new()
+        } else {
+            format!(", kept by {}", entry.origin)
+        },
+        uze_application::inert(&entry.description),
+        entry.path.display(),
+        uze_application::inert(shown.body.trim())
+    );
+    if !entry.missing.is_empty() {
+        text.push_str(&format!(
+            "\n{}",
+            progress::report_section("Cites what this checkout does not have")
+        ));
+        for cited in &entry.missing {
+            text.push_str(&format!("  {}\n", uze_application::inert(cited)));
+        }
+    }
+    if !shown.links.is_empty() {
+        text.push_str(&format!("\n{}", progress::report_section("Links to")));
+        for link in &shown.links {
+            text.push_str(&match &link.fact {
+                Some(fact) => memory_line(fact),
+                None => format!(
+                    "  {}  {}\n",
+                    uze_application::inert(&link.written),
+                    progress::label("no fact by that name")
+                ),
+            });
+        }
+    }
+    if !shown.linked_from.is_empty() {
+        text.push_str(&format!("\n{}", progress::report_section("Linked from")));
+        for fact in &shown.linked_from {
+            text.push_str(&memory_line(fact));
+        }
+    }
+    text
+}
+
 fn memory_line(entry: &uze_application::application::memory::Entry) -> String {
     let by = match (&entry.source, entry.writable) {
         (_, false) => format!("kept by {}", entry.origin),
         (Some(source), true) => format!("by {}", source.describe()),
         (None, true) => String::new(),
     };
+    let stale = if entry.missing.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "  {}",
+            progress::label("cites a path this checkout does not have")
+        )
+    };
     format!(
-        "  {} ({})  {}  {}\n",
+        "  {} ({})  {}  {}{stale}\n",
         entry.name,
         entry.kind.label(),
         uze_application::inert(&entry.description),

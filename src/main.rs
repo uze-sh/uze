@@ -978,6 +978,8 @@ mod status_output_tests {
             updated: None,
             writable: origin == "uze",
             proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
         }
     }
 

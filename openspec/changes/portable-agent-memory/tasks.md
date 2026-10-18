@@ -55,3 +55,16 @@
 - [x] 7.1 `crate-layering.mmd`: `memory` under `uze-core`'s project concern; run `make artifacts` and `cargo test -p uze-extensions`
 - [x] 7.2 Invariants: memory never in a checkout; an agent's machine fact is never in an index before acceptance; each with its test
 - [x] 7.3 `make check` green
+
+## 8. Recall
+
+- [x] 8.1 The corpus test (D14) first, against today's matching: about 30 facts (partly anonymised real ones, fixed dates, no harness source) and about 30 frozen questions with negative cases; the count answered today recorded as the ratchet later tasks may only raise
+- [x] 8.2 Room (D8): `agent_context` answers the room sections leave (preamble as written, each section as `compose` emits it) and exposes the heading length; `give_context` hands the closure a request with the primary root, the launching checkout and the room; the memory section's `share` is the room, `MEMORY_SHARE` the floor; `plan()` and the shim updated; tests for no briefing, a full briefing, and the composed context within `BOUND`
+- [x] 8.3 Lines in rank order (D9): `render_index` gives lines over the whole ranking while the remaining names fit, descriptions capped at 160 bytes; tests for every kind given a line when it fits, names before lines past the room, and one long description not ending the lines after it
+- [x] 8.4 Folding and ranking (D11) in `find`: diacritics and separators, more words in the name then the description first; the accent and name-over-body scenarios; the ratchet rises or holds
+- [x] 8.5 Links (D12): resolution by name, stem, then unique folded match; `show` lists both directions with descriptions and unresolved links; `show --format json` with `Shown` serialized; tests for the stem and kind-prefix cases and an ambiguous link
+- [x] 8.6 Missing citations (D10): `memory::cited_paths` in core, filled by UZE's listing and each source where the body is read; judged in `gather` against the reader's checkout, 64 in rank order, plain root `.gitignore` entries skipped; the index's closing line reserved inside `render_index`'s bound; `show`, JSON, and the Memory tab's mark through a new theme symbol; tests for a moved file, a fragment, a placeholder, a glob, an ignored directory, a file only an agent's branch has, a machine fact, and the cap's order
+- [x] 8.7 Credentials and near duplicates (D13): provider shapes refused in core `remember` naming the shape and line, never the value, fixtures built by concatenation; the assignment caution; near duplicates in `uze-application` over UZE facts, sources and proposals, on the CLI's outcome and JSON; tests for each shape, the documented-variable scenario and the paraphrase
+- [x] 8.8 The space overview's drawer scrolls (wheel, keys and scrollbar) the way the management screen's detail drawer does: today `render_drawer` draws its lines as one unscrolled `Paragraph` (`src/ui/orchestrator/render/space_overview.rs`), so a long fact body is cut at the drawer's foot; `TestBackend` test for a body longer than the drawer
+- [x] 8.9 Budget: the memory budget test's `World` holds a realistic memory (dozens of facts, citations, links) and measures `show`, `remember`, `list` and the context section; D2's wording matches
+- [x] 8.10 `make check` green

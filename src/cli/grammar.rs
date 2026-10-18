@@ -382,11 +382,13 @@ pub(crate) enum AgentMemoryAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// One fact in full
+    /// One fact in full, with the facts it links to and those linking to it
     Show {
         name: String,
         #[arg(short = 'm', long)]
         machine: bool,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
     },
 }
 

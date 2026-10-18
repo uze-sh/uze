@@ -91,8 +91,11 @@ What exists that this reuses:
   - `remember <name> --type <t> --description <d> [-m]` takes the body
     from stdin and upserts by name.
   - `forget`, `list` and `show` complete the set.
-  - All four are `Budgeted` in `command_performance`: one small file read
-    or write under a lock.
+  - All four are `Budgeted` in `command_performance`: small files read
+    under a lock, a write touching one. `show` reads the scope's facts to
+    find what links to one (D12) and `remember` reads the index's entries
+    to name a near duplicate (D13); the budget test holds them against a
+    memory of realistic size.
 - **Provenance.**
   - It comes from the launch identity. Without one it is `operator`.
   - An agent can unset or forge its environment, so provenance is shown as
@@ -155,23 +158,25 @@ What exists that this reuses:
   words, in English and in the operator's language, and `show <name>`
   reads one. Words, not a pattern: the line is typed into whichever
   shell the harness gives, PowerShell 5.1 included.
-- **Lines and names.** `feedback` facts get a line each,
-  `- <name> (<type>[, machine][, kept by <harness>]): <description>`,
-  because they change what an agent does without being asked. Every
-  other fact, and guidance past the room, is named alone, grouped by
-  kind. The names are placed first: a fact not named is one no agent
-  knows to ask for, while a name lets the model match a question by
-  meaning across languages, which a word search cannot. What does not fit
-  even as a name is counted. No line carries a path: `show` reads any
-  entry by name.
-- **Share.** Memory takes the 3,500 bytes `deliver-agent-context`
-  reserves: the read instruction, the write instruction (non-Claude
-  agents only, at most 700 bytes), and the index in the rest.
+- **Lines and names.** A line is
+  `- <name> (<type>[, machine][, kept by <harness>]): <description>`.
+  The names are placed first: a fact not named is one no agent knows to
+  ask for, while a name lets the model match a question by meaning across
+  languages, which a word search cannot. Lines are then given in rank
+  order, `feedback` first, while every fact not given one still fits as a
+  name (D9). Every fact without a line is named alone, grouped by kind.
+  What does not fit even as a name is counted. No line carries a path:
+  `show` reads any entry by name.
+- **Share.** Memory takes the room the context has left (D8), never less
+  than the 3,500 bytes `deliver-agent-context` reserves: the read
+  instruction, the write instruction (non-Claude agents only, at most 700
+  bytes), and the index in the rest.
 - **Finding.** `uze agent memory list <words> [--kind <kind>]` searches
   every source the index reads and nothing it leaves out: proposals are
   never searched, unreadable documents are counted. A fact matches when
-  any word is in its name, description or body; facts holding more of
-  the words rank first, then by kind and recency. At most 20 are listed,
+  any word is in its name, description or body, compared as D11 folds
+  them; facts holding more of the words rank first, then by where they
+  were found, then by kind and recency. At most 20 are listed,
   each with the lines the words were found on (at most three from the
   body, each at most 200 bytes) and the `show` command that reads it.
   `show` without `-m` looks among the machine's facts when the project
@@ -329,6 +334,166 @@ What exists that this reuses:
     `uze-application`.
   - Its reads go through `orchestrator/reads.rs` like any other disk read
     the client makes.
+
+### D8. Memory takes the room the context has left
+
+- **Why.** The context's shares are fixed: 500 bytes of preamble, 5,000
+  for a briefing, 3,500 for memory. A briefing exists only after a switch
+  to another harness, and the preamble is under 200 bytes, so on most
+  launches more than half of the 9,000 bytes go unused while the index is
+  cut.
+- **Rule.** `agent_context` answers how much room a set of sections
+  leaves: `BOUND` less the preamble as written, less each section as
+  `compose` emits it (heading plus text trimmed and cut to its share). It
+  also exposes the heading's length, so no caller copies `compose`'s
+  format. `continuity::give_context` asks it after placing the briefing
+  and hands the sections closure the room, and the memory section's
+  `share` is that room, so `compose` does not cut it back. `MEMORY_SHARE`
+  stays as the floor a briefing never reaches below.
+- **What the closure receives.** A small request carrying the project's
+  primary root, the launching checkout (D10) and the room: two paths and
+  a number, so `uze-workspace` still names nothing of memory.
+- **What does not change.** The bound, the briefing's share and its
+  cutting rule, and degraded channels, where `give_context` returns before
+  asking for sections at all.
+
+### D9. Every fact earns a line in rank order, once every name is placed
+
+- **Why.** Only `feedback` facts were ever given a line. A `project` or
+  `reference` fact reached the model as a name like
+  `perf-read-paths-change-2026-09`, which rarely says whether it is worth
+  reading, even when the room had space for its description.
+- **Rule.** The loop that gives `feedback` lines while the remaining names
+  still fit runs over the whole ranking instead. The order (`feedback`,
+  `user`, `project`, `reference`, recency within each) and the
+  names-before-lines guarantee are unchanged.
+- **A line's description is capped** at 160 bytes, ended with `…`, so one
+  long description cannot end the lines for every fact after it. `show`
+  still reads it whole.
+
+### D10. A fact citing a path its checkout does not have is marked
+
+- **Why.** Facts cite files, and files move. A fact pointing at a path
+  that is gone reads as current to an agent, which then reasons from a
+  layout that no longer exists. The checkout can answer this
+  deterministically, at the cost of a few `stat`s.
+- **Which checkout.** The one the reader stands in: the launching agent's
+  checkout at launch, the caller's for `list` and `show`, the primary for
+  the space overview. Judging against the primary would mark a fact about
+  a file an agent's branch added as missing for everyone until it lands.
+- **What counts as a citation** (`memory::cited_paths`, in core, vendor
+  neutral): a span in backticks that
+  - contains `/` and none of whitespace, `<`, `>`, `*`, `?`, `{`, `}`,
+    `=`, `@` (placeholders, globs and assignments are not paths);
+  - does not start with `/`, `~`, `$`, `./`, `../` or a URL scheme, and
+    has no `..` component;
+  - ends in a component with an extension, or in `/` (a branch name like
+    `docs/readme` is not a path);
+  - has a trailing `:<line>` or `#<anchor>` removed.
+- **What counts as missing.** The citation's parent directory exists in
+  the checkout and the path does not. A first component listed as a plain
+  entry of the root `.gitignore` is never judged (build output comes and
+  goes). A fragment whose parent is not there (`platform/unix.rs`) is not
+  judged: a false alarm costs more trust than a missed one.
+- **Where it is computed.** Each reader fills a fact's citations where it
+  already holds the body (UZE's listing, and each source through the same
+  helper); `uze-application`'s `gather` judges them. At most 64 citations
+  are checked per gather, taken in index rank order, so a mark never
+  appears or vanishes because an unrelated fact was added. Project facts
+  only: machine facts may cite any project.
+- **Where it shows.**
+  - The index ends with one line naming the facts that cite a path this
+    checkout does not have, telling the agent to verify before relying on
+    them. `render_index` reserves that line's room before placing names.
+  - `show` lists each missing citation. `list --format json` and the
+    space overview's Memory tab carry the mark per entry, the tab through
+    a theme symbol, never an inline glyph.
+- **Nothing is rewritten.** A mark is computed on each read, kept nowhere,
+  and the fact stays the operator's text.
+
+### D11. Words match as a person spells them, and where they are found ranks
+
+- **Folding.** Before comparing, both the words and the text are
+  lowercased, stripped of Latin diacritics (`decisão` matches `decisao`),
+  and stripped of `-` and `_` (`pt-br` matches `ptbr`). The table is a
+  small hand-written mapping of the Latin-1 and Latin Extended-A letters,
+  in `uze-application`'s memory module, shared with D13; no new
+  dependency. Quoted hits show the text as written.
+- **Ranking.** Facts holding more of the words rank first. Among equals,
+  the fact holding more of them in its name ranks first, then more in its
+  description, then kind and recency as before.
+- **Still words, not patterns,** for the reason D4 gives.
+
+### D12. Facts link to each other by `[[name]]`
+
+- **Why.** Facts already write `[[name]]` to point at a related fact; no
+  reader followed it.
+- **Resolving.** A link resolves to the fact whose name it is; failing
+  that, to the fact whose file stem it is; failing that, to the one fact
+  whose name matches once both are folded (D11) and a leading kind
+  (`feedback`, `user`, `project`, `reference`) is dropped. A link more
+  than one fact matches, or none, is listed as unresolved, never an error.
+  Measured on a real memory of 58 links, exact names alone resolve 35.
+- **Rule.** `show` lists the facts a fact links to and the facts that link
+  to it, each with its description. `show` gains `--format json`, whose
+  `Shown` carries both directions. `list` does not compute links: it
+  would read every body on every listing, status and overview read.
+
+### D13. `remember` refuses a credential and points at a near duplicate
+
+- **Credentials** (in core `MemoryStore::remember`, so the operator's and
+  a proposal's writes are held too). The write refuses a description or
+  body holding a provider-specific shape, each anchored at a word boundary
+  with its full token body: a PEM private-key block; `ghp_`/`gho_`/`ghu_`/
+  `ghs_`/`ghr_` and 36 characters; `github_pat_`; `glpat-`; `xox[abprs]-`;
+  `AKIA` and 16 uppercase letters or digits; `sk-` (optionally `ant-` or
+  `proj-`) and 20 or more token characters. The refusal names the shape
+  and the line, never the value.
+- **An assignment that looks secret** (a name ending in `KEY`, `TOKEN`,
+  `SECRET` or `PASSWORD`, assigned 16 or more characters mixing letters
+  and digits, not a placeholder such as `<…>`, `$X`, `${…}`, `xxx` or
+  `***`) is written, with a caution in the outcome: documentation names
+  such variables legitimately.
+- **Stated limits.** Best effort: it catches what an agent pastes by
+  accident, not every secret. Claude agents write Claude's own memory
+  (D6), which this never sees. Test fixtures build tokens by
+  concatenation, so the repository's secret scanning stays clean.
+- **Near duplicates** (in `uze-application`, the only layer that sees the
+  sources). Writing a *new* name whose name and description, folded and
+  without words under three letters or a short English and Portuguese
+  stopword list, share at least two words and a Jaccard similarity of at
+  least 0.25 with an existing fact (UZE's, a source's or a proposal) still
+  writes. The outcome names the existing fact and says remembering under
+  that name updates it. The agent decides; nothing is merged. On a real
+  memory of 53 facts the rule caught a paraphrase and raised no false
+  pair.
+
+### D14. Recall is held by a corpus test
+
+- A test in `uze-application` builds about 30 facts of every kind, in
+  English and Portuguese, partly drawn from real facts with their names
+  and details anonymised, with fixed dates and no harness source, and
+  asks about 30 questions as the words an agent would type.
+- Each question names the fact that must be among the first three
+  matches; some name a fact that must *not* be (negative cases).
+- The questions are frozen when the test lands (task 8.1), before
+  matching changes. A recorded count of answered questions may only rise:
+  a change to matching is measured against it, never the questions
+  against the change.
+- Links (D12) are not held here, since `list` does not follow them; they
+  have tests of their own.
+
+### Deferred
+
+- **Ranking the index by the task.** The launch path is the shim, which
+  reads only a few files before `exec`, and a new agent has no name and no
+  changes yet. The index does still overflow for a large memory (53 real
+  facts take about 10 KB as lines, against about 7 KB of room), so this is
+  the next lever once the launch can answer what the agent is working on
+  without a Git call.
+- **Cold facts.** Counting lookups would call a `feedback` fact the agent
+  reads every launch, without ever running `show`, unused. A signal that
+  lies about the most important facts is worse than none.
 
 ## Candidate ADRs
 

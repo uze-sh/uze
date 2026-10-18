@@ -61,6 +61,15 @@ as one more way to reach the same verbs.
 - **The memory index is a section of the agent context**, ranked so
   standing guidance (`feedback`, `user`) survives the bound. On a degraded
   harness it is not sent, and status says so.
+- **Recall without a service.** Everything stays deterministic: files,
+  the launch's context and the verbs, with no LLM and no index on disk.
+  - Memory takes the context room a briefing leaves, and every fact
+    earns a line in rank order once every name is placed.
+  - A project fact citing a path the repository no longer has is marked,
+    so an agent reads it as history.
+  - Words match without regard to accents, a match in a name outranks
+    one in a body, and `show` follows `[[name]]` links both ways.
+  - `remember` refuses credential shapes and names a near duplicate.
 - **`uze status` lists memory**: where it lives, each fact with its type
   and provenance, proposals, and unreadable files.
 - **A harness's own memory, kept or turned off per machine, unless it is how its agents write.**

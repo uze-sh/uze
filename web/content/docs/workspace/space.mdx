@@ -91,8 +91,10 @@ shared by every agent launched in it, and the **machine**, shared by every
 project.
 
 Every agent uze launches is given an index of that memory in its context,
-whatever its harness: each piece of feedback with its description, the
-rest by name, and how to read one in full. Agents write facts with
+whatever its harness: every fact by name, then as many with their
+description as there is room for, feedback first, and how to read one in
+full. A fact that cites a file this checkout no longer has is marked, so an
+agent checks it before relying on it. Agents write facts with
 `uze agent memory`. A harness that keeps memory of its own, like Claude
 Code, goes on writing it there, and uze reads it where it is rather than
 copying it. A machine fact an agent proposes waits for your approval before
@@ -105,7 +107,8 @@ they changed. The line
 under the list counts the machine facts that reach agents here too. `/`
 searches by name, description, kind and origin as you type, and `Esc`
 clears the search. `Enter` reads the selected fact in the drawer, which also
-shows the file it lives in. Nothing is changed from here: a fact is a file,
+shows the file it lives in; the wheel or `PageUp`/`PageDown` scrolls a long
+one. Nothing is changed from here: a fact is a file,
 and you can edit it by hand.
 
 ## Worktrees

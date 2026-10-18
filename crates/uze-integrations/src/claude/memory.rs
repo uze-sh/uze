@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use uze_core::memory::{FOREIGN_INDEX, FactKind, MemoryEntry, Scope, read_document};
+use uze_core::memory::{FOREIGN_INDEX, FactKind, MemoryEntry, Scope, cited_paths, read_document};
 
 /// The directories Claude may keep this project's memory in: the primary
 /// checkout's, then each of its checkouts under `.worktrees/`.
@@ -69,7 +69,7 @@ pub(super) fn source(projects_root: &Path, project_root: &Path, origin: &str) ->
 /// business and is passed over rather than reported as UZE's.
 fn read_entry(path: &Path, origin: &str) -> Option<MemoryEntry> {
     let text = fs::read_to_string(path).ok()?;
-    let (head, _) = read_document(&text).ok()?;
+    let (head, body) = read_document(&text).ok()?;
     let name = head
         .name
         .clone()
@@ -85,6 +85,8 @@ fn read_entry(path: &Path, origin: &str) -> Option<MemoryEntry> {
         path: path.to_path_buf(),
         writable: false,
         proposed: false,
+        cites: cited_paths(&body),
+        missing: Vec::new(),
     })
 }
 

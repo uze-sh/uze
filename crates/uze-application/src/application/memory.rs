@@ -17,12 +17,11 @@ use uze_core::{
     home::UzeHome,
     integration::IntegrationPort,
     memory::{
-        Fact, FactKind, MemoryEntry, MemoryStore, Remember, Remembered, Scope, Source, Unreadable,
-        render_index,
+        Fact, FactKind, MemoryEntry, MemoryStore, Remember, Scope, Source, Unreadable, render_index,
     },
 };
 use uze_workspace::{
-    agent_context::{MEMORY_SHARE, Section},
+    agent_context::{self, MEMORY_SHARE, Section, SectionAsk},
     conversation::{self, Claim},
     task,
 };
@@ -30,13 +29,16 @@ use uze_workspace::{
 use super::UzeApplication;
 
 mod find;
+mod links;
+mod words;
 
 pub use find::{Found, Hit, Match};
+pub use links::Link;
 
 /// The vocabulary the memory read models are made of, for presentation.
 pub use uze_core::memory::{
-    FactKind as Kind, MemoryEntry as Entry, Remembered as Kept, Scope as MemoryScope,
-    Source as Provenance, Unreadable as UnreadableFact,
+    FactKind as Kind, MemoryEntry as Entry, Scope as MemoryScope, Source as Provenance,
+    Unreadable as UnreadableFact,
 };
 
 /// Who is asking: an agent UZE launched, proven by its claim, or the
@@ -59,11 +61,60 @@ pub struct MemoryReport {
     pub unreadable: Vec<Unreadable>,
 }
 
-/// One fact or entry, read in full.
-#[derive(Clone, Debug)]
+/// What a write did, and the fact already kept that it most resembles.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Written {
+    pub path: PathBuf,
+    pub scope: Scope,
+    /// It replaced a fact of the same name.
+    pub updated: bool,
+    /// It waits for the operator rather than applying.
+    pub proposed: bool,
+    /// The body line that assigns what looks like a secret.
+    pub secret_looking: Option<usize>,
+    /// A fact by another name saying much the same: remembering under
+    /// its name would have updated it instead.
+    pub similar: Option<MemoryEntry>,
+}
+
+/// The fewest telling words a near duplicate shares, and the least share
+/// of all their words: measured on a real memory of 53 facts, where it
+/// caught a paraphrase and paired no two unrelated facts.
+const SIMILAR_SHARED: usize = 2;
+const SIMILAR_SHARE: f64 = 0.25;
+
+/// The fact among `report`'s entries and proposals, other than the one
+/// just written, that the written name and description most resemble.
+fn most_similar(
+    report: &MemoryReport,
+    written: (&str, Scope),
+    name: &str,
+    description: &str,
+) -> Option<MemoryEntry> {
+    let words = words::telling(&format!("{name} {description}"));
+    report
+        .entries
+        .iter()
+        .chain(&report.proposals)
+        .filter(|entry| !(entry.name == written.0 && entry.scope == written.1))
+        .filter_map(|entry| {
+            let theirs = words::telling(&format!("{} {}", entry.name, entry.description));
+            let (shared, share) = words::overlap(&words, &theirs);
+            (shared >= SIMILAR_SHARED && share >= SIMILAR_SHARE).then_some((share, entry))
+        })
+        .max_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, entry)| entry.clone())
+}
+
+/// One fact or entry, read in full, with the facts around it.
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct Shown {
     pub entry: MemoryEntry,
     pub body: String,
+    /// What its `[[name]]` links name, resolved where a fact answers.
+    pub links: Vec<Link>,
+    /// The facts whose links resolve to it.
+    pub linked_from: Vec<MemoryEntry>,
 }
 
 /// The memory, as presentation and the agent surface reach it.
@@ -79,6 +130,8 @@ impl UzeApplication {
 /// Where a caller's project memory is, and who it is.
 struct Resolved {
     primary: Option<PathBuf>,
+    /// Where the caller stands, which citations are judged against.
+    checkout: PathBuf,
     source: Source,
     launched: bool,
 }
@@ -94,6 +147,7 @@ impl Memory<'_> {
                 let Some(owner) = conversation::owner_of(home, claim) else {
                     return Ok(Resolved {
                         primary: primary_of(home, claim.cwd),
+                        checkout: claim.cwd.to_path_buf(),
                         source: Source::Agent {
                             harness: String::new(),
                             task: claim.id.to_owned(),
@@ -107,6 +161,7 @@ impl Memory<'_> {
                     .unwrap_or_default();
                 Ok(Resolved {
                     primary: Some(owner.project_root),
+                    checkout: claim.cwd.to_path_buf(),
                     source: Source::Agent {
                         harness,
                         task: owner.agent.as_str().to_owned(),
@@ -116,6 +171,7 @@ impl Memory<'_> {
             }
             MemoryCaller::Operator { cwd } => Ok(Resolved {
                 primary: primary_of(home, cwd),
+                checkout: cwd.to_path_buf(),
                 source: Source::Operator,
                 launched: false,
             }),
@@ -123,6 +179,8 @@ impl Memory<'_> {
     }
 
     /// Records a fact. A machine fact from a launched agent is a proposal.
+    /// A new name that says much what another fact says is still written,
+    /// and the answer names that fact.
     pub fn remember(
         &self,
         caller: MemoryCaller<'_>,
@@ -131,10 +189,10 @@ impl Memory<'_> {
         kind: FactKind,
         description: &str,
         body: &str,
-    ) -> Result<Remembered> {
+    ) -> Result<Written> {
         let resolved = self.resolve(caller)?;
         let store = MemoryStore::new(&self.0.home, resolved.primary.as_deref());
-        store.remember(
+        let kept = store.remember(
             scope,
             &Remember {
                 name,
@@ -144,7 +202,21 @@ impl Memory<'_> {
                 source: resolved.source,
             },
             resolved.launched,
-        )
+        )?;
+        let similar = (!kept.updated)
+            .then(|| {
+                let report = self.report(resolved.primary.as_deref());
+                most_similar(&report, (name, kept.scope), name, description)
+            })
+            .flatten();
+        Ok(Written {
+            path: kept.path,
+            scope: kept.scope,
+            updated: kept.updated,
+            proposed: kept.proposed,
+            secret_looking: kept.secret_looking,
+            similar,
+        })
     }
 
     pub fn forget(&self, caller: MemoryCaller<'_>, scope: Scope, name: &str) -> Result<bool> {
@@ -158,30 +230,61 @@ impl Memory<'_> {
     pub fn show(&self, caller: MemoryCaller<'_>, scope: Scope, name: &str) -> Result<Shown> {
         let resolved = self.resolve(caller)?;
         let store = MemoryStore::new(&self.0.home, resolved.primary.as_deref());
+        let mut report = self.report(resolved.primary.as_deref());
+        judge_citations(&mut report, &resolved.checkout);
         let scopes: &[Scope] = match scope {
             Scope::Project => &[Scope::Project, Scope::Machine],
             Scope::Machine => &[Scope::Machine],
         };
-        for scope in scopes {
-            if let Ok(fact) = store.show(*scope, name) {
-                let path = store.dir(*scope)?.join(format!("{name}.md"));
-                return Ok(shown_fact(fact, *scope, path));
+        let found = scopes.iter().find_map(|scope| {
+            let fact = store.show(*scope, name).ok()?;
+            let path = store.dir(*scope).ok()?.join(format!("{name}.md"));
+            Some((uze_entry(fact.clone(), *scope, path), fact.body))
+        });
+        let (entry, body) = match found {
+            Some(found) => found,
+            None => {
+                let entry = report
+                    .entries
+                    .iter()
+                    .find(|entry| {
+                        entry.name == name && entry.origin != uze_core::memory::UZE_ORIGIN
+                    })
+                    .cloned()
+                    .ok_or_else(|| {
+                        UzeError::Memory(format!("no fact named `{name}` is kept here"))
+                    })?;
+                let body =
+                    std::fs::read_to_string(&entry.path).map_err(UzeError::read(&entry.path))?;
+                (entry, body)
             }
-        }
-        let report = self.report(resolved.primary.as_deref());
-        let entry = report
+        };
+        let mut entry = entry;
+        entry.missing = report
             .entries
-            .into_iter()
-            .find(|entry| entry.name == name && entry.origin != uze_core::memory::UZE_ORIGIN)
-            .ok_or_else(|| UzeError::Memory(format!("no fact named `{name}` is kept here")))?;
-        let body = std::fs::read_to_string(&entry.path).map_err(UzeError::read(&entry.path))?;
-        Ok(Shown { entry, body })
+            .iter()
+            .find(|judged| {
+                judged.name == entry.name
+                    && judged.scope == entry.scope
+                    && judged.origin == entry.origin
+            })
+            .map(|judged| judged.missing.clone())
+            .unwrap_or_default();
+        let (links, linked_from) = links::around(&entry, &body, &report.entries);
+        Ok(Shown {
+            entry,
+            body,
+            links,
+            linked_from,
+        })
     }
 
     /// Everything kept for the caller's project and the machine.
     pub fn list(&self, caller: MemoryCaller<'_>) -> Result<MemoryReport> {
         let resolved = self.resolve(caller)?;
-        Ok(self.report(resolved.primary.as_deref()))
+        let mut report = self.report(resolved.primary.as_deref());
+        judge_citations(&mut report, &resolved.checkout);
+        Ok(report)
     }
 
     /// The facts holding any of `words` in their name, description or
@@ -199,7 +302,9 @@ impl Memory<'_> {
     /// primary checkout so every checkout of it reads one memory.
     pub fn report_at(&self, dir: &Path) -> MemoryReport {
         let primary = primary_of(&self.0.home, dir).unwrap_or_else(|| dir.to_path_buf());
-        self.report(Some(&primary))
+        let mut report = self.report(Some(&primary));
+        judge_citations(&mut report, &primary);
+        report
     }
 
     /// Everything kept for `primary` (the project's primary checkout) and
@@ -231,21 +336,20 @@ fn primary_of(home: &UzeHome, dir: &Path) -> Option<PathBuf> {
     })
 }
 
-fn shown_fact(fact: Fact, scope: Scope, path: PathBuf) -> Shown {
-    Shown {
-        body: fact.body.clone(),
-        entry: MemoryEntry {
-            name: fact.name,
-            description: fact.description,
-            kind: fact.kind,
-            scope,
-            origin: uze_core::memory::UZE_ORIGIN.to_owned(),
-            source: Some(fact.source),
-            path,
-            updated: Some(fact.updated),
-            writable: true,
-            proposed: false,
-        },
+fn uze_entry(fact: Fact, scope: Scope, path: PathBuf) -> MemoryEntry {
+    MemoryEntry {
+        cites: uze_core::memory::cited_paths(&fact.body),
+        missing: Vec::new(),
+        name: fact.name,
+        description: fact.description,
+        kind: fact.kind,
+        scope,
+        origin: uze_core::memory::UZE_ORIGIN.to_owned(),
+        source: Some(fact.source),
+        path,
+        updated: Some(fact.updated),
+        writable: true,
+        proposed: false,
     }
 }
 
@@ -294,6 +398,64 @@ fn gather(
     report
 }
 
+/// The most citations one read judges: each costs a `stat` or two, and a
+/// launch pays for them.
+const CITATION_CHECKS: usize = 64;
+
+/// Marks each project fact citing a path `checkout` does not have. Judged
+/// in the order an index ranks facts, so a mark never appears or vanishes
+/// because an unrelated fact was added. A machine fact may cite any
+/// project, so it is never judged.
+fn judge_citations(report: &mut MemoryReport, checkout: &Path) {
+    let checkout = uze_core::project_root::resolve_project_root(checkout)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| checkout.to_path_buf());
+    let ignored = ignored_roots(&checkout);
+    let mut order: Vec<usize> = (0..report.entries.len())
+        .filter(|&index| {
+            let entry = &report.entries[index];
+            entry.scope == Scope::Project && !entry.proposed
+        })
+        .collect();
+    order.sort_by(|&left, &right| {
+        uze_core::memory::by_rank(&report.entries[left], &report.entries[right])
+    });
+    let mut checks = 0;
+    for index in order {
+        let entry = &mut report.entries[index];
+        entry.missing.clear();
+        for cited in &entry.cites {
+            let first = cited.split('/').next().unwrap_or_default();
+            if ignored.iter().any(|root| root == first) {
+                continue;
+            }
+            if checks == CITATION_CHECKS {
+                return;
+            }
+            checks += 1;
+            let path = checkout.join(cited.trim_end_matches('/'));
+            if path.parent().is_some_and(Path::is_dir) && !path.exists() {
+                entry.missing.push(cited.clone());
+            }
+        }
+    }
+}
+
+/// The top-level names the checkout's `.gitignore` lists plainly: build
+/// output comes and goes, so a citation under one is never judged.
+fn ignored_roots(checkout: &Path) -> Vec<String> {
+    let text = std::fs::read_to_string(checkout.join(".gitignore")).unwrap_or_default();
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with(['#', '!']))
+        .filter(|line| !line.contains(['*', '?', '[']))
+        .map(|line| line.trim_start_matches('/').trim_end_matches('/'))
+        .filter(|line| !line.is_empty() && !line.contains('/'))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The most the write instruction takes of memory's share.
 const INSTRUCTION_SHARE: usize = 700;
 
@@ -312,22 +474,30 @@ memory remember <kebab-name> --type feedback|user|project|reference --descriptio
 with the fact on stdin; add `-m` for one about the operator that holds in every project, which \
 the operator approves first. `uze agent memory forget <name>` removes one. Never record a secret.";
 
-/// The memory section of an agent's context: how to read memory and the
-/// index of what is kept, and, for an agent whose harness does not keep
-/// its own, how to add to it. Empty when there is nothing to say.
+/// The memory section of an agent's context, within the room it is asked
+/// with: how to read memory and the index of what is kept, and, for an
+/// agent whose harness does not keep its own, how to add to it. Empty when
+/// there is nothing to say.
 pub fn context_sections(
     home: &UzeHome,
-    primary: &Path,
+    ask: &SectionAsk<'_>,
     launching: &dyn IntegrationPort,
     integrations: &[&dyn IntegrationPort],
 ) -> Vec<Section> {
-    let report = gather(home, Some(primary), integrations, Some(launching.id()));
+    let mut report = gather(
+        home,
+        Some(ask.project_root),
+        integrations,
+        Some(launching.id()),
+    );
+    judge_citations(&mut report, ask.checkout);
+    let share = ask.room.max(MEMORY_SHARE);
     let write = (!launching.writes_own_memory()).then_some(MEMORY_INSTRUCTION);
     let instructions_len =
         READ_INSTRUCTION.len() + 2 + write.map_or(0, |text| text.len().min(INSTRUCTION_SHARE) + 2);
-    let index_share = MEMORY_SHARE
+    let index_share = share
         .saturating_sub(instructions_len)
-        .saturating_sub("\n\n## Memory\n\n".len() + INDEX_HEADING.len() + 1);
+        .saturating_sub(agent_context::heading(HEADING).len() + INDEX_HEADING.len() + 1);
     let index = render_index(&report.entries, index_share);
     let text = match (write, index.is_empty()) {
         (None, true) => return Vec::new(),
@@ -345,13 +515,17 @@ pub fn context_sections(
         }
     };
     vec![Section {
-        heading: "Memory",
+        heading: HEADING,
         text,
-        share: MEMORY_SHARE,
+        share,
     }]
 }
 
+const HEADING: &str = "Memory";
+
 const INDEX_HEADING: &str = "Facts kept for this project and this machine:";
 
+#[cfg(test)]
+mod corpus;
 #[cfg(test)]
 mod tests;

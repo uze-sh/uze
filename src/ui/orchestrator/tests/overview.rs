@@ -316,6 +316,8 @@ fn a_long_memory_section_scrolls_with_a_scrollbar_and_the_wheel() {
             updated: None,
             writable: true,
             proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
         })
         .collect();
     let overview = model.space_overview.as_mut().expect("the overview is open");
@@ -416,6 +418,8 @@ fn the_memory_search_narrows_the_facts_and_reads_the_one_selected() {
         updated: None,
         writable: true,
         proposed: false,
+        cites: Vec::new(),
+        missing: Vec::new(),
     };
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
@@ -501,6 +505,8 @@ fn machine_facts_are_listed_beside_the_projects() {
         updated: None,
         writable: true,
         proposed: false,
+        cites: Vec::new(),
+        missing: Vec::new(),
     };
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
@@ -549,6 +555,8 @@ fn memory_facts_are_listed_newest_first() {
         updated: updated.map(str::to_owned),
         writable: true,
         proposed: false,
+        cites: Vec::new(),
+        missing: Vec::new(),
     };
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.answer = Some(Ok(project_space(
@@ -597,6 +605,8 @@ fn a_fact_body_is_drawn_as_markdown() {
                 updated: None,
                 writable: false,
                 proposed: false,
+                cites: Vec::new(),
+                missing: Vec::new(),
             }],
             ..Default::default()
         },
@@ -638,6 +648,8 @@ fn memory_overview(names: &[&str]) -> WorkspaceModel {
             updated: None,
             writable: true,
             proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
         })
         .collect();
     let overview = model.space_overview.as_mut().expect("the overview is open");
@@ -1579,6 +1591,8 @@ fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
             updated: None,
             writable: true,
             proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
         })
         .collect();
     let overview = model.space_overview.as_mut().expect("the overview is open");

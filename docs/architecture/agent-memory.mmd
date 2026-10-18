@@ -37,13 +37,13 @@ flowchart TD
   claudeMemory -->|unless H is Claude| gather
   codexSummary -->|unless H is Codex| gather
   proposals -.->|never listed| gather
-  gather --> rank[A name already taken is dropped<br/>feedback given a line each while room remains<br/>every other fact named, grouped by kind]
+  gather --> rank[A name already taken is dropped<br/>every fact named, then lines in rank order<br/>feedback first, within the room left<br/>facts citing paths the checkout lacks marked]
   rank --> writesOwn{Does H keep its own memory?}
   writesOwn -->|yes, Claude| indexOnly[How to look facts up<br/>and the index]
   writesOwn -->|no| indexAndHow[How to look facts up, how to<br/>remember through UZE, and the index]
   indexOnly --> compose[The agent's composed context<br/>preamble, briefing, memory, 9 KB bound]
   indexAndHow --> compose
-  compose -.->|a question memory may answer| lookup[uze agent memory list words<br/>name, description and body, best first<br/>then show name]
+  compose -.->|a question memory may answer| lookup[uze agent memory list words<br/>name, description and body, accents folded<br/>then show name, with its links both ways]
   projectFacts -.-> lookup
   machineFacts -.-> lookup
   claudeMemory -.-> lookup

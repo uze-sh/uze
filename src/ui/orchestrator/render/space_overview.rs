@@ -914,7 +914,15 @@ fn memory_lines(
         for (index, entry) in facts.into_iter().enumerate() {
             lines.push(SectionLine {
                 spans: table.row(vec![
-                    cell(&entry.name, FACTS[0].width, Token::TextPrimary),
+                    if entry.missing.is_empty() {
+                        cell(&entry.name, FACTS[0].width, Token::TextPrimary)
+                    } else {
+                        cell(
+                            &format!("{} {}", theme::glyph(Symbol::MarkAttention), entry.name),
+                            FACTS[0].width,
+                            Token::StateWarning,
+                        )
+                    },
                     cell(entry.kind.label(), FACTS[1].width, Token::TextSecondary),
                     cell(entry.scope.label(), FACTS[2].width, Token::TextSecondary),
                     cell(&entry.origin, FACTS[3].width, Token::TextSecondary),
@@ -2799,6 +2807,17 @@ impl DrawerLines {
         self.blank();
         self.paragraph(&entry.description, Token::TextSecondary);
         self.blank();
+        if !entry.missing.is_empty() {
+            self.paragraph(
+                &format!(
+                    "{} cites what this checkout does not have: {}",
+                    theme::glyph(Symbol::MarkAttention),
+                    entry.missing.join(", ")
+                ),
+                Token::StateWarning,
+            );
+            self.blank();
+        }
         match read {
             Some((name, Some(Ok(body)))) if *name == entry.name => {
                 self.lines.extend(rendered_fact_body(body, self.width));

@@ -106,26 +106,107 @@ reach that harness.
 - **WHEN** an agent is launched on a harness whose context delivery is degraded
 - **THEN** no memory is shown as a turn, and status reports that memory does not reach that harness
 
-### Requirement: The index gives guidance a line and names every other fact
-The index SHALL give each `feedback` fact a line with its description
-while room remains, and SHALL name every other fact, grouped by kind,
-before giving any further line. Names that do not fit SHALL be counted.
-No index line SHALL carry a file path.
+### Requirement: Memory takes the context room a briefing leaves
+The memory section SHALL be given the room of the agent's context that
+the preamble and the briefing do not take, and never less than its
+reserved share. The context's total bound SHALL NOT change.
+
+#### Scenario: No briefing
+- **WHEN** an agent is launched with no briefing and its facts' lines would not fit the reserved share
+- **THEN** its index holds more lines than the reserved share allows, and the context stays within its bound
+
+#### Scenario: A briefing
+- **WHEN** an agent is launched with a briefing
+- **THEN** the briefing is given as before, and memory is given at least its reserved share
+
+### Requirement: The index names every fact, then gives lines in rank order
+The index SHALL name every fact that fits, grouped by kind, before giving
+any line. It SHALL then give lines with descriptions in rank order,
+`feedback` first, while every fact without a line still fits as a name.
+Names that do not fit SHALL be counted. No index line SHALL carry a file
+path.
 
 #### Scenario: A large memory
 - **WHEN** a project's facts would not fit the share as one line each
 - **THEN** every fact that fits is at least named, `feedback` lines come first, and the context states how many could not be named
 
+#### Scenario: Room for every line
+- **WHEN** a project's facts fit the share as one line each
+- **THEN** every fact, of every kind, is given its line with its description
+
 ### Requirement: Agents find facts by words
 `uze agent memory list <words>` SHALL list the facts whose name,
-description or body holds any of the words, ignoring case, best first and
-at most 20, each with the lines the words were found on and the command
-that reads it. Proposals SHALL NOT be searched. Every launched agent SHALL
-be told how to look facts up before answering what memory may hold.
+description or body holds any of the words, ignoring case, Latin
+diacritics and word separators, best first and at most 20, each with the
+lines the words were found on and the command that reads it. Proposals
+SHALL NOT be searched. Every launched agent given a memory index SHALL be
+told how to look facts up before answering what memory may hold.
+
+#### Scenario: A name outranks a body
+- **WHEN** two facts hold the same searched words, one in its name and the other only in its body
+- **THEN** the fact holding them in its name is listed first
 
 #### Scenario: A fact named but not described
 - **WHEN** an agent is asked about something only a fact's body says
 - **THEN** `uze agent memory list` with a word from the question finds the fact, quotes the line, and names `uze agent memory show <name>`
+
+#### Scenario: A word typed without its accent
+- **WHEN** an agent searches for `decisao` and a fact's body holds `decisão`
+- **THEN** that fact is found
+
+### Requirement: A fact citing a path its checkout does not have is marked
+A project fact citing in backticks a file path whose parent directory
+exists in the reader's checkout, while the path does not, SHALL be marked
+in the index, in `show` and in the read models. Placeholders, globs,
+ignored build output and fragments whose parent is absent SHALL NOT be
+judged. The fact SHALL NOT be changed. Machine facts SHALL NOT be judged.
+
+#### Scenario: A file moved
+- **WHEN** a project fact cites `crates/a/src/b.rs` and that file no longer exists while `crates/a/src/` does
+- **THEN** the next agent's index names the fact as citing a path its checkout does not have, `show` lists the citation, and the fact file is unchanged
+
+#### Scenario: A fragment is not judged
+- **WHEN** a fact cites `platform/unix.rs` and the checkout has no `platform/`
+- **THEN** the fact is not marked
+
+#### Scenario: A file only an agent's branch has
+- **WHEN** a fact cites a file that exists in the launching agent's checkout but not in the primary
+- **THEN** that agent's index does not mark the fact
+
+### Requirement: Facts link to each other by name
+`show` SHALL list the facts a fact links to with `[[name]]` and the facts
+that link to it, each with its description. A link SHALL resolve by the
+fact's name, then its file stem, then a unique match once separators and
+a leading kind are folded away. A link matching no fact, or several, SHALL
+be listed as unresolved and SHALL NOT fail the command.
+
+#### Scenario: Following a link
+- **WHEN** fact `a` holds `[[b]]` and the agent runs `show a`
+- **THEN** the answer lists `b` with its description, and `show b` lists `a` as linking to it
+
+#### Scenario: A link written as a file stem
+- **WHEN** a fact holds `[[feedback_reply_in_ptbr]]` and the fact named `reply-in-ptbr` is kept in `feedback_reply_in_ptbr.md`
+- **THEN** `show` lists `reply-in-ptbr` as linked
+
+### Requirement: Remembering refuses a secret and points at a near duplicate
+`remember` SHALL refuse a description or body holding a provider
+credential shape, naming the shape and the line and never the value. An
+assignment that only looks secret SHALL be written with a caution. A new
+name whose name and description share enough words with an existing fact
+SHALL be written, and the outcome SHALL name that fact and say that
+remembering under its name updates it.
+
+#### Scenario: A pasted token
+- **WHEN** an agent remembers a body holding a GitHub personal access token
+- **THEN** nothing is written, and the error names the shape and line without the token
+
+#### Scenario: Documentation of a variable
+- **WHEN** an agent remembers a body holding `OPENAI_API_KEY=<your key>`
+- **THEN** the fact is written with no caution
+
+#### Scenario: A near duplicate
+- **WHEN** an agent remembers a new name whose description repeats an existing fact's
+- **THEN** the fact is written, and the outcome names the existing fact
 
 ### Requirement: Each launched agent is given exactly one way to write memory
 The `uze agent memory` verbs SHALL be excluded from the help a person

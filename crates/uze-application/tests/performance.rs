@@ -393,17 +393,41 @@ fn the_agent_surface_meets_the_budget() {
     });
 }
 
-/// `uze agent memory` writes one small file under a lock and reads the front
-/// matter of the facts a scope keeps — never a repository, never a
-/// harness's process.
+/// `uze agent memory` writes one small file under a lock and reads the
+/// facts a scope keeps — never a repository, never a harness's process.
+/// Measured against a memory of the size one operator keeps: `show` reads
+/// every fact to find what links to one, `remember` the index to name a
+/// near duplicate, and every read judges the paths the facts cite.
 #[test]
 fn the_memory_surface_meets_the_budget() {
     use uze_application::application::memory::MemoryCaller;
-    use uze_core::memory::{FactKind, Scope};
+    use uze_core::memory::{FactKind, MemoryStore, Remember, Scope, Source};
     let world = World::build("budget-memory-surface");
     let caller = MemoryCaller::Operator {
         cwd: &world.project,
     };
+    fs::create_dir_all(world.project.join("crates/a/src")).unwrap();
+    let store = MemoryStore::new(&world.home, Some(&world.project));
+    for index in 0..60 {
+        let body = format!(
+            "Decided while fixing `crates/a/src/module_{index}.rs`; see [[fact-{}]].\n\n{}",
+            (index + 1) % 60,
+            "A paragraph of the reasoning behind it, as facts carry. ".repeat(8)
+        );
+        store
+            .remember(
+                Scope::Project,
+                &Remember {
+                    name: &format!("fact-{index}"),
+                    kind: FactKind::Project,
+                    description: &format!("what was decided about module {index} and why"),
+                    body: &body,
+                    source: Source::Operator,
+                },
+                false,
+            )
+            .unwrap();
+    }
     world.within_budget("agent memory remember", |app| {
         app.memory()
             .remember(
@@ -426,6 +450,22 @@ fn the_memory_surface_meets_the_budget() {
     });
     world.within_budget("agent memory forget", |app| {
         app.memory().forget(caller, Scope::Project, "budget").ok()
+    });
+    // What every launch composes, on the shim's path to `exec`.
+    let launching = SlowProbeIntegration {
+        probes: world.probes.clone(),
+    };
+    world.within_budget("agent context memory section", |_| {
+        uze_application::application::memory::context_sections(
+            &world.home,
+            &uze_workspace::agent_context::SectionAsk {
+                project_root: &world.project,
+                checkout: &world.project,
+                room: uze_workspace::agent_context::BOUND,
+            },
+            &launching,
+            &[&launching],
+        )
     });
 }
 

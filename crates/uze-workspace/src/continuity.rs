@@ -23,7 +23,7 @@
 use std::{ffi::OsString, path::Path};
 
 use crate::{
-    agent_context::{self, Section},
+    agent_context::{self, Section, SectionAsk},
     briefing,
     conversation::{self, Claim, ConversationOrigin, ConversationRecord, SessionId},
     home::UzeHome,
@@ -76,14 +76,14 @@ pub fn plan(home: &UzeHome, claim: Claim<'_>, integration: &dyn IntegrationPort)
 }
 
 /// [`plan`], with the sections a caller adds to the agent's context beside
-/// its briefing, asked for the project's primary checkout once the launch
-/// is known to be UZE's. The workspace composes sections and knows nothing
+/// its briefing, asked with the room the briefing leaves once the launch is
+/// known to be UZE's. The workspace composes sections and knows nothing
 /// of what they hold.
 pub fn plan_with(
     home: &UzeHome,
     claim: Claim<'_>,
     integration: &dyn IntegrationPort,
-    sections: &dyn Fn(&Path) -> Vec<Section>,
+    sections: &dyn Fn(&SectionAsk<'_>) -> Vec<Section>,
 ) -> LaunchPlan {
     // Not an agent UZE launched, or not where its record put it: an
     // ordinary invocation stays ordinary.
@@ -105,14 +105,22 @@ fn plan_for(
     claim: Claim<'_>,
     integration: &dyn IntegrationPort,
     owner: &conversation::Owner,
-    sections: &dyn Fn(&Path) -> Vec<Section>,
+    sections: &dyn Fn(&SectionAsk<'_>) -> Vec<Section>,
 ) -> LaunchPlan {
     let continuity = integration.session_continuity();
     // A harness that carries no conversation over can still be told what
     // the one before it was doing.
     if continuity == SessionContinuity::Unsupported {
         let mut plan = LaunchPlan::nothing();
-        give_context(&mut plan, home, owner, integration, None, sections);
+        give_context(
+            &mut plan,
+            home,
+            owner,
+            claim.cwd,
+            integration,
+            None,
+            sections,
+        );
         return plan;
     }
     let mut record = conversation::load(home, &owner.project_root, &owner.agent);
@@ -142,6 +150,7 @@ fn plan_for(
                 &mut plan,
                 home,
                 owner,
+                claim.cwd,
                 integration,
                 Some(&recorded),
                 sections,
@@ -229,7 +238,7 @@ fn start(
     cwd: &Path,
     integration: &dyn IntegrationPort,
     owner: &conversation::Owner,
-    sections: &dyn Fn(&Path) -> Vec<Section>,
+    sections: &dyn Fn(&SectionAsk<'_>) -> Vec<Section>,
 ) -> LaunchPlan {
     let id = integration.id();
     let (plan, origin, session, preceded_by) = match integration.session_continuity() {
@@ -265,6 +274,7 @@ fn start(
         &mut plan,
         home,
         owner,
+        cwd,
         integration,
         session.as_ref(),
         sections,
@@ -282,9 +292,10 @@ fn give_context(
     plan: &mut LaunchPlan,
     home: &UzeHome,
     owner: &conversation::Owner,
+    cwd: &Path,
     integration: &dyn IntegrationPort,
     session: Option<&SessionId>,
-    extra: &dyn Fn(&Path) -> Vec<Section>,
+    extra: &dyn Fn(&SectionAsk<'_>) -> Vec<Section>,
 ) {
     let id = integration.id();
     let agent = owner.agent.as_str();
@@ -295,7 +306,7 @@ fn give_context(
         return;
     }
     let record = conversation::load(home, &owner.project_root, &owner.agent);
-    let sections: Vec<Section> = record
+    let mut sections: Vec<Section> = record
         .briefing_for(id)
         .map(|briefing| Section {
             heading: briefing::HEADING,
@@ -303,8 +314,13 @@ fn give_context(
             share: agent_context::BRIEFING_SHARE,
         })
         .into_iter()
-        .chain(extra(&owner.project_root))
         .collect();
+    let room = agent_context::room_after(&sections).max(agent_context::MEMORY_SHARE);
+    sections.extend(extra(&SectionAsk {
+        project_root: &owner.project_root,
+        checkout: cwd,
+        room,
+    }));
     let Some(text) = agent_context::compose(&sections) else {
         // A context an earlier launch was given must not outlive what it
         // said: a retired briefing is no longer the agent's to be told.

@@ -14,7 +14,7 @@ use std::fs;
 use uze_core::memory::{FactKind, MemoryEntry, Scope, UZE_ORIGIN, Unreadable};
 use uze_core::skill::split_frontmatter;
 
-use super::MemoryReport;
+use super::{MemoryReport, words::fold};
 
 /// The most facts one answer lists: past it, the words are too broad to
 /// be worth reading through.
@@ -28,8 +28,9 @@ const HIT_BYTES: usize = 200;
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Found {
     pub words: Vec<String>,
-    /// Best first: the facts holding the most of the words, then by kind
-    /// and recency as the index ranks them.
+    /// Best first: the facts holding the most of the words, then the most
+    /// of them in the name, then in the description, then by kind and
+    /// recency as the index ranks them.
     pub matches: Vec<Match>,
     /// How many facts matched, listed or not.
     pub total: usize,
@@ -64,7 +65,7 @@ pub(super) fn find(report: &MemoryReport, words: &[String], kind: Option<FactKin
         .flat_map(|word| word.split_whitespace())
         .map(str::to_lowercase)
         .collect();
-    let mut scored: Vec<(usize, Match)> = report
+    let mut scored: Vec<(Score, Match)> = report
         .entries
         .iter()
         .filter(|entry| kind.is_none_or(|kind| entry.kind == kind))
@@ -91,19 +92,29 @@ pub(super) fn find(report: &MemoryReport, words: &[String], kind: Option<FactKin
     }
 }
 
-/// The fact, its hits and how many of the words it holds, when it holds
-/// any. No words lists every fact, with no hits.
-fn matched(entry: &MemoryEntry, words: &[String]) -> Option<(usize, Match)> {
-    let found = |text: &str| -> Vec<&String> {
-        let text = text.to_lowercase();
-        words
-            .iter()
-            .filter(|word| text.contains(word.as_str()))
+/// How well a fact holds the words: how many it holds, then how many of
+/// those its name holds, then its description. Compared highest first.
+type Score = (usize, usize, usize);
+
+/// The fact, its hits and its score, when it holds any of the words. No
+/// words lists every fact, with no hits.
+fn matched(entry: &MemoryEntry, words: &[String]) -> Option<(Score, Match)> {
+    let folded: Vec<String> = words
+        .iter()
+        .map(|word| fold(word))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let found = |text: &str| -> Vec<usize> {
+        let text = fold(text);
+        (0..folded.len())
+            .filter(|&index| text.contains(folded[index].as_str()))
             .collect()
     };
-    let mut held: Vec<&String> = Vec::new();
+    let mut held: Vec<usize> = Vec::new();
+    let mut in_name: Vec<usize> = Vec::new();
+    let mut in_description: Vec<usize> = Vec::new();
     let mut hits = Vec::new();
-    if !words.is_empty() {
+    if !folded.is_empty() {
         for (field, text) in [("name", &entry.name), ("description", &entry.description)] {
             let in_field = found(text);
             if !in_field.is_empty() {
@@ -112,7 +123,11 @@ fn matched(entry: &MemoryEntry, words: &[String]) -> Option<(usize, Match)> {
                     line: None,
                     text: quoted(text),
                 });
-                held.extend(in_field);
+                held.extend(&in_field);
+                match field {
+                    "name" => in_name = in_field,
+                    _ => in_description = in_field,
+                }
             }
         }
         let text = fs::read_to_string(&entry.path).unwrap_or_default();
@@ -134,10 +149,10 @@ fn matched(entry: &MemoryEntry, words: &[String]) -> Option<(usize, Match)> {
             return None;
         }
     }
-    held.sort();
+    held.sort_unstable();
     held.dedup();
     Some((
-        held.len(),
+        (held.len(), in_name.len(), in_description.len()),
         Match {
             entry: entry.clone(),
             hits,
