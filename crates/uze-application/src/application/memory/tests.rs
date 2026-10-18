@@ -681,6 +681,19 @@ fn citations_are_judged_in_rank_order_up_to_the_cap() {
         !missing_of(&report, "guidance").is_empty(),
         "the fact ranked first is judged, whatever order the files sort in"
     );
+    assert!(
+        missing_of(&report, "reference-63").is_empty(),
+        "past the cap"
+    );
+    let shown = app(&home, Vec::new())
+        .memory()
+        .show(caller(&project), Scope::Project, "reference-63")
+        .unwrap();
+    assert_eq!(
+        shown.entry.missing,
+        ["crates/a/src/gone-63.rs"],
+        "one fact asked for is judged whole, whatever the cap left of the rest"
+    );
 }
 
 #[test]

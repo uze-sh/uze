@@ -233,8 +233,7 @@ impl Memory<'_> {
     pub fn show(&self, caller: MemoryCaller<'_>, scope: Scope, name: &str) -> Result<Shown> {
         let resolved = self.resolve(caller)?;
         let store = MemoryStore::new(&self.0.home, resolved.primary.as_deref());
-        let mut report = self.report(resolved.primary.as_deref());
-        judge_citations(&mut report, &resolved.checkout);
+        let report = self.report(resolved.primary.as_deref());
         let scopes: &[Scope] = match scope {
             Scope::Project => &[Scope::Project, Scope::Machine],
             Scope::Machine => &[Scope::Machine],
@@ -263,16 +262,10 @@ impl Memory<'_> {
             }
         };
         let mut entry = entry;
-        entry.missing = report
-            .entries
-            .iter()
-            .find(|judged| {
-                judged.name == entry.name
-                    && judged.scope == entry.scope
-                    && judged.origin == entry.origin
-            })
-            .map(|judged| judged.missing.clone())
-            .unwrap_or_default();
+        if entry.scope == Scope::Project {
+            let mut unbounded = usize::MAX;
+            entry.missing = Checkout::at(&resolved.checkout).missing(&entry.cites, &mut unbounded);
+        }
         let (links, linked_from) = links::around(&entry, &body, &report.entries);
         Ok(Shown {
             entry,
@@ -410,11 +403,7 @@ const CITATION_CHECKS: usize = 64;
 /// because an unrelated fact was added. A machine fact may cite any
 /// project, so it is never judged.
 fn judge_citations(report: &mut MemoryReport, checkout: &Path) {
-    let checkout = uze_core::project_root::resolve_project_root(checkout)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| checkout.to_path_buf());
-    let ignored = ignored_roots(&checkout);
+    let checkout = Checkout::at(checkout);
     let mut order: Vec<usize> = (0..report.entries.len())
         .filter(|&index| {
             let entry = &report.entries[index];
@@ -424,24 +413,50 @@ fn judge_citations(report: &mut MemoryReport, checkout: &Path) {
     order.sort_by(|&left, &right| {
         uze_core::memory::by_rank(&report.entries[left], &report.entries[right])
     });
-    let mut checks = 0;
+    let mut checks = CITATION_CHECKS;
     for index in order {
         let entry = &mut report.entries[index];
-        entry.missing.clear();
-        for cited in &entry.cites {
+        entry.missing = checkout.missing(&entry.cites, &mut checks);
+    }
+}
+
+/// The checkout citations are judged against.
+struct Checkout {
+    root: PathBuf,
+    ignored: Vec<String>,
+}
+
+impl Checkout {
+    fn at(dir: &Path) -> Self {
+        let root = uze_core::project_root::resolve_project_root(dir)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| dir.to_path_buf());
+        Self {
+            ignored: ignored_roots(&root),
+            root,
+        }
+    }
+
+    /// The paths of `cites` this checkout does not have, spending one of
+    /// `checks` on each path judged.
+    fn missing(&self, cites: &[String], checks: &mut usize) -> Vec<String> {
+        let mut missing = Vec::new();
+        for cited in cites {
             let first = cited.split('/').next().unwrap_or_default();
-            if ignored.iter().any(|root| root == first) {
+            if self.ignored.iter().any(|root| root == first) {
                 continue;
             }
-            if checks == CITATION_CHECKS {
-                return;
+            if *checks == 0 {
+                break;
             }
-            checks += 1;
-            let path = checkout.join(cited.trim_end_matches('/'));
+            *checks -= 1;
+            let path = self.root.join(cited.trim_end_matches('/'));
             if path.parent().is_some_and(Path::is_dir) && !path.exists() {
-                entry.missing.push(cited.clone());
+                missing.push(cited.clone());
             }
         }
+        missing
     }
 }
 
