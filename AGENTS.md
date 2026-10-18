@@ -338,7 +338,7 @@ need to).
   drag handle),
   `dialog` (a question the operator answers, or a notice they dismiss),
   `modal` (a titled card over a frame the scrim pushed back) and its
-  `footer`, `menu` (a short list of actions, opened on the thing they act
+  `footer`, `alerts` (what to check, worst first, in a dialog), `menu` (a short list of actions, opened on the thing they act
   on), `stat` (a row of summary figures), `row` (a list line's ground, its trailing caption, its title), `text`
   (fitting text to the room there is, and the small-caps forms), `mark`
   (the disclosure chevron), `hint` (the keys that act here),

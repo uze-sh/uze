@@ -341,51 +341,16 @@ pub(crate) fn render_health(
     area: Rect,
     alerts: &[crate::ui::view::health::Alert],
 ) {
-    use crate::ui::view::health::Severity;
-    const WIDTH: u16 = 72;
-    let measure = usize::from(WIDTH.saturating_sub(dialog::shell_chrome_width()));
-    let mut sorted: Vec<_> = alerts.iter().collect();
-    sorted.sort_by_key(|alert| alert.severity);
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    if sorted.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Nothing needs attention.",
-            theme::fg(Token::TextMuted),
-        )));
-    }
-    for alert in sorted {
-        let (symbol, hue) = match alert.severity {
-            Severity::High => (Symbol::MarkClose, Token::StateDanger),
-            Severity::Medium => (Symbol::MarkAttention, Token::StateWarning),
-            Severity::Low => (Symbol::MarkDot, Token::Accent),
-        };
-        let lead = format!("{} ", theme::glyph(symbol));
-        let indent = text::columns(&lead);
-        // What it is about on the first row, what to do folded under it,
-        // past the mark, so every alert starts at the same column.
-        lines.push(Line::from(vec![
-            Span::styled(lead, theme::fg(hue)),
-            Span::styled(alert.label.clone(), theme::fg(Token::TextBright)),
-        ]));
-        for row in text::fold(&alert.detail, measure.saturating_sub(indent).max(1)) {
-            lines.push(Line::from(vec![
-                Span::raw(" ".repeat(indent)),
-                Span::styled(row, theme::fg(Token::TextMuted)),
-            ]));
-        }
-    }
-    let shell = dialog::shell(
+    crate::ui::widget::alerts::render(
         frame,
         area,
-        WIDTH,
-        lines.len() as u16,
         "Health",
+        alerts,
         dialog::border_hint(
             &[uze_keys::Scope::Global, uze_keys::Scope::Management],
             &[(Action::Dismiss, "close")],
         ),
     );
-    frame.render_widget(Paragraph::new(lines), shell.body);
 }
 
 /// What a dialog asking for one line of text says: its heading, what

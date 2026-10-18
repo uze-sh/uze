@@ -274,6 +274,8 @@ pub(crate) fn border_hint(
 /// title.
 pub(crate) struct Shell {
     pub(crate) body: Rect,
+    /// The whole dialog, border included.
+    pub(crate) popup: Rect,
 }
 
 /// Rows a [`shell`] spends around its body: the two borders, the air
@@ -319,7 +321,7 @@ pub(crate) fn shell(
         inner.width,
         inner.height.saturating_sub(4),
     );
-    Shell { body }
+    Shell { body, popup }
 }
 
 /// The columns a [`shell`] keeps between its border and its content, on

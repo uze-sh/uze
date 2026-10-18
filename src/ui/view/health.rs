@@ -4,19 +4,7 @@
 use uze_application::AttachmentState;
 use uze_application::application::DoctorReport;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum Severity {
-    High,
-    Medium,
-    Low,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Alert {
-    pub(crate) severity: Severity,
-    pub(crate) label: String,
-    pub(crate) detail: String,
-}
+pub(crate) use crate::ui::widget::alerts::{Alert, Severity};
 
 /// Projects the current health snapshot into only the problems an operator
 /// can act on. Passing checks stay out of the Overview: their detailed state

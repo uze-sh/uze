@@ -85,6 +85,7 @@ pub(crate) const POPUP_H_PAD: u16 = 2;
 pub(crate) const POPUP_V_PAD: u16 = 1;
 
 pub(crate) mod action_index;
+pub(crate) mod alerts;
 pub(crate) mod button;
 pub(crate) mod chip;
 pub(crate) mod dialog;
