@@ -722,3 +722,54 @@ fn a_new_name_saying_what_another_fact_says_is_written_and_named() {
     let unrelated = write("squash-at-merge", "Squash with the merge button");
     assert!(unrelated.similar.is_none());
 }
+
+#[test]
+fn a_near_duplicate_is_only_a_fact_the_same_write_could_have_updated() {
+    let (home, project) = world("app-memory-similar-scope");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    let mut claude_kept = kept("answer-in-portuguese", "claude-code");
+    claude_kept.description = "Answer the operator in Brazilian Portuguese".into();
+    let claude: Box<dyn IntegrationPort> = Box::new(Harness {
+        id: "claude-code",
+        writes_own: true,
+        keeps: vec![claude_kept],
+    });
+    let app = app(&home, vec![claude]);
+    let write = |scope, name: &str, description: &str| {
+        app.memory()
+            .remember(
+                caller(&project),
+                scope,
+                name,
+                FactKind::Feedback,
+                description,
+                "",
+            )
+            .unwrap()
+    };
+    write(
+        Scope::Project,
+        "reply-in-ptbr",
+        "Reply to the operator in Brazilian Portuguese always",
+    );
+    let machine = write(
+        Scope::Machine,
+        "reply-in-ptbr",
+        "Reply to the operator in Brazilian Portuguese always",
+    );
+    assert!(
+        machine.similar.is_none(),
+        "the project fact is not one a machine write updates: {:?}",
+        machine.similar
+    );
+    let paraphrase = write(
+        Scope::Project,
+        "portuguese-replies",
+        "Answer the operator in Brazilian Portuguese",
+    );
+    assert_eq!(
+        paraphrase.similar.map(|fact| fact.name).as_deref(),
+        Some("reply-in-ptbr"),
+        "the project fact this write could have updated, never the one a harness keeps"
+    );
+}

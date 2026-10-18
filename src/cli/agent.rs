@@ -705,10 +705,10 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                 }
                 if let Some(similar) = report.similar {
                     said.push_str(&format!(
-                        "{} `{similar}` says much the same; remembering under that name \
-                         updates it, and `uze agent memory forget {}` removes this one\n",
+                        "{} `{similar}` says much the same in the {} memory; remembering \
+                         under that name updates it instead\n",
                         progress::warning_icon(),
-                        report.name
+                        report.scope
                     ));
                 }
                 said

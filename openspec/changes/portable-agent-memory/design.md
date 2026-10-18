@@ -458,13 +458,15 @@ What exists that this reuses:
   accident, not every secret. Claude agents write Claude's own memory
   (D6), which this never sees. Test fixtures build tokens by
   concatenation, so the repository's secret scanning stays clean.
-- **Near duplicates** (in `uze-application`, the only layer that sees the
-  sources). Writing a *new* name whose name and description, folded and
+- **Near duplicates** (in `uze-application`, beside the folding D11
+  defines). Writing a *new* name whose name and description, folded and
   without words under three letters or a short English and Portuguese
   stopword list, share at least two words and a Jaccard similarity of at
-  least 0.25 with an existing fact (UZE's, a source's or a proposal) still
-  writes. The outcome names the existing fact and says remembering under
-  that name updates it. The agent decides; nothing is merged. On a real
+  least 0.25 with a fact the same write could have updated (UZE's own, in
+  the scope written to, proposals included) still writes. The outcome
+  names that fact and says remembering under its name updates it. A
+  harness's fact or one in the other scope is never offered: remembering
+  under its name would only make one more. The agent decides; nothing is merged. On a real
   memory of 53 facts the rule caught a paraphrase and raised no false
   pair.
 

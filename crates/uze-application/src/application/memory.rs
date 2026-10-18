@@ -72,8 +72,8 @@ pub struct Written {
     pub proposed: bool,
     /// The body line that assigns what looks like a secret.
     pub secret_looking: Option<usize>,
-    /// A fact by another name saying much the same: remembering under
-    /// its name would have updated it instead.
+    /// A fact by another name, in the scope written to, saying much the
+    /// same: remembering under its name would have updated it instead.
     pub similar: Option<MemoryEntry>,
 }
 
@@ -83,8 +83,11 @@ pub struct Written {
 const SIMILAR_SHARED: usize = 2;
 const SIMILAR_SHARE: f64 = 0.25;
 
-/// The fact among `report`'s entries and proposals, other than the one
-/// just written, that the written name and description most resemble.
+/// The fact the written name and description most resemble among those
+/// the same write could have updated instead: UZE's own, in the scope
+/// written to, proposals included. A harness's fact or one in the other
+/// scope is never offered, since remembering under its name would only
+/// make one more.
 fn most_similar(
     report: &MemoryReport,
     written: (&str, Scope),
@@ -96,7 +99,7 @@ fn most_similar(
         .entries
         .iter()
         .chain(&report.proposals)
-        .filter(|entry| !(entry.name == written.0 && entry.scope == written.1))
+        .filter(|entry| entry.writable && entry.scope == written.1 && entry.name != written.0)
         .filter_map(|entry| {
             let theirs = words::telling(&format!("{} {}", entry.name, entry.description));
             let (shared, share) = words::overlap(&words, &theirs);
