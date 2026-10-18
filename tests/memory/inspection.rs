@@ -89,6 +89,7 @@ fn the_space_overview_agrees_with_status() {
     let (name, market) = installed.id.split_once('@').expect("a qualified id");
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
+    declare_fixtures(&project);
     application.context().reconcile(&project).unwrap();
     fs::write(
         project.join("agents.lock"),
