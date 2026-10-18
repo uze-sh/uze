@@ -1134,73 +1134,21 @@ impl Attach<'_> {
         );
     }
 
-    /// One action, while the overview has the keyboard.
+    /// One action, while the overview has the keyboard: the instruction or
+    /// the value being typed takes it first, then the review of the edits,
+    /// then the section in front.
     pub(super) fn space_overview_action(&mut self, action: Action) {
-        let Some(overview) = self.model.space_overview.as_mut() else {
+        let Some(overview) = self.model.space_overview.as_ref() else {
             return;
         };
         self.model.dirty = true;
-        if let Some((state, buffer)) = overview.edit.text.as_mut() {
-            let state = *state;
-            match action {
-                Action::Dismiss => overview.edit.text = None,
-                // Enter is a line break here: an instruction runs to as
-                // many lines as it needs, and is done with the save chord.
-                Action::Activate => buffer.insert('\n'),
-                Action::SaveFile => {
-                    let text = buffer.text().to_owned();
-                    overview.edit.text = None;
-                    overview.set_action(state, Some(text));
-                    self.schedule_declaration_preview();
-                }
-                Action::EraseBack => buffer.erase_back(),
-                Action::EraseForward => buffer.erase_forward(),
-                Action::CaretLeft => buffer.left(),
-                Action::CaretRight => buffer.right(),
-                Action::CaretLineStart => buffer.home(),
-                Action::CaretLineEnd => buffer.end(),
-                _ => {}
-            }
-            return;
-        }
-        let offered = overview.picker_options().len();
-        if let Some(field) = overview.edit.field.as_mut() {
-            match action {
-                Action::Dismiss => overview.edit.field = None,
-                Action::SelectNext if offered > 0 => {
-                    field.picked = (field.picked + 1).min(offered - 1);
-                }
-                Action::SelectPrevious => field.picked = field.picked.saturating_sub(1),
-                Action::Activate => self.commit_field(),
-                Action::EraseBack => {
-                    field.buffer.erase_back();
-                    field.picked = 0;
-                }
-                Action::EraseForward => field.buffer.erase_forward(),
-                Action::CaretLeft => field.buffer.left(),
-                Action::CaretRight => field.buffer.right(),
-                Action::CaretLineStart => field.buffer.home(),
-                Action::CaretLineEnd => field.buffer.end(),
-                _ => {}
-            }
-            return;
-        }
-        if overview.edit.reviewing {
-            match action {
-                Action::Dismiss => overview.edit.reviewing = false,
-                Action::FocusNext | Action::FocusPrevious => {
-                    overview.edit.on_discard = !overview.edit.on_discard;
-                }
-                Action::Activate if overview.edit.on_discard => {
-                    overview.edit = WorkspaceEdit::default();
-                }
-                Action::Activate | Action::SaveChanges => self.save_declaration(),
-                Action::DiscardChanges => overview.edit = WorkspaceEdit::default(),
-                _ => {}
-            }
-            return;
-        }
-        if overview.section == Section::Agent
+        if overview.edit.text.is_some() {
+            self.instruction_action(action);
+        } else if overview.edit.field.is_some() {
+            self.field_action(action);
+        } else if overview.edit.reviewing {
+            self.review_action(action);
+        } else if overview.section == Section::Agent
             && matches!(
                 action,
                 Action::SelectNext
@@ -1210,8 +1158,98 @@ impl Attach<'_> {
             )
         {
             self.drawer_action(action);
-            return;
+        } else {
+            self.section_action(action);
         }
+    }
+
+    /// An action's instruction being written.
+    fn instruction_action(&mut self, action: Action) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        let Some((state, buffer)) = overview.edit.text.as_mut() else {
+            return;
+        };
+        let state = *state;
+        match action {
+            Action::Dismiss => overview.edit.text = None,
+            // Enter is a line break here: an instruction runs to as
+            // many lines as it needs, and is done with the save chord.
+            Action::Activate => buffer.insert('\n'),
+            Action::SaveFile => {
+                let text = buffer.text().to_owned();
+                overview.edit.text = None;
+                overview.set_action(state, Some(text));
+                self.schedule_declaration_preview();
+            }
+            Action::EraseBack => buffer.erase_back(),
+            Action::EraseForward => buffer.erase_forward(),
+            Action::CaretLeft => buffer.left(),
+            Action::CaretRight => buffer.right(),
+            Action::CaretLineStart => buffer.home(),
+            Action::CaretLineEnd => buffer.end(),
+            _ => {}
+        }
+    }
+
+    /// A value being typed, and the options it narrows.
+    fn field_action(&mut self, action: Action) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        let offered = if action == Action::SelectNext {
+            overview.picker_options().len()
+        } else {
+            0
+        };
+        let Some(field) = overview.edit.field.as_mut() else {
+            return;
+        };
+        match action {
+            Action::Dismiss => overview.edit.field = None,
+            Action::SelectNext if offered > 0 => {
+                field.picked = (field.picked + 1).min(offered - 1);
+            }
+            Action::SelectPrevious => field.picked = field.picked.saturating_sub(1),
+            Action::Activate => self.commit_field(),
+            Action::EraseBack => {
+                field.buffer.erase_back();
+                field.picked = 0;
+            }
+            Action::EraseForward => field.buffer.erase_forward(),
+            Action::CaretLeft => field.buffer.left(),
+            Action::CaretRight => field.buffer.right(),
+            Action::CaretLineStart => field.buffer.home(),
+            Action::CaretLineEnd => field.buffer.end(),
+            _ => {}
+        }
+    }
+
+    /// The diff of the edits, asking Save or Discard.
+    fn review_action(&mut self, action: Action) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        match action {
+            Action::Dismiss => overview.edit.reviewing = false,
+            Action::FocusNext | Action::FocusPrevious => {
+                overview.edit.on_discard = !overview.edit.on_discard;
+            }
+            Action::Activate if overview.edit.on_discard => {
+                overview.edit = WorkspaceEdit::default();
+            }
+            Action::Activate | Action::SaveChanges => self.save_declaration(),
+            Action::DiscardChanges => overview.edit = WorkspaceEdit::default(),
+            _ => {}
+        }
+    }
+
+    /// The section in front, its rows and the bar over it.
+    fn section_action(&mut self, action: Action) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
         match action {
             Action::Dismiss if overview.drawer => overview.drawer = false,
             Action::Dismiss if overview.fact.is_some() => overview.fact = None,
