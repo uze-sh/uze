@@ -598,6 +598,7 @@ mod workspace_tests {
             model.recent.bar = frame.bar;
         }
         model.absorb_manage_frame(metrics.manage);
+        model.absorb_overview_frame(metrics.overview);
         compute_layout(area, model.sidebar_width)
     }
 
@@ -10109,6 +10110,42 @@ mod workspace_tests {
             "the wheel did not reach the last fact:\n{}",
             rows.join("\n")
         );
+        // The wheel moved the view, not the selection: the keys find it
+        // where they left it, and moving it brings the window back.
+        let memory = crate::ui::orchestrator::space_overview::Section::Memory.index();
+        let selected = |driven: &Driven<'_>| {
+            driven
+                .attach
+                .model
+                .space_overview
+                .as_ref()
+                .expect("open")
+                .rows[memory]
+        };
+        assert_eq!(selected(&driven), 0, "the wheel moved the selection");
+        driven.frame();
+        driven.press_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Down,
+        ));
+        driven.frame();
+        assert_eq!(selected(&driven), 1);
+        let rows = frame_rows(&mut driven.attach.model);
+        assert!(
+            rows.iter().any(|row| row.contains("fact-01")),
+            "moving the selection did not bring it into view:\n{}",
+            rows.join("\n")
+        );
+        // The pointer lights the row it is over and chooses nothing.
+        driven.frame();
+        driven.mouse(40, 14, MouseEventKind::Moved);
+        assert!(
+            matches!(
+                driven.attach.model.hovered,
+                Some(WorkspaceHit::OverviewRow(_))
+            ),
+            "the pointer over a fact is not on its row"
+        );
+        assert_eq!(selected(&driven), 1, "hovering moved the selection");
     }
 
     /// A project's overview with nothing to report but `memory` and the

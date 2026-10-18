@@ -21,6 +21,7 @@ use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
+use crate::ui::widget::RowState;
 use crate::ui::{content_area, render_screen_header};
 
 /// Two states, because there are two answers a person can act on: UZE has
@@ -152,6 +153,8 @@ pub(crate) fn render_harnesses(
 
     let mut y = content.y;
     let bottom = content.y + content.height;
+    // The cards' window, kept for the scrollbar drawn on the drawer's rule.
+    let mut window = None;
 
     if y + 2 <= bottom {
         let filter_area = Rect::new(content.x, y, content.width, 1);
@@ -192,16 +195,19 @@ pub(crate) fn render_harnesses(
                 }
             } else {
                 let area = Rect::new(content.x, y, content.width, bottom.saturating_sub(y));
-                for (position, (rect, &raw_index)) in super::catalog::cards(area, visible.len())
-                    .zip(&visible)
-                    .enumerate()
-                {
-                    let selected = position == model.remembered.harness_screen.selected;
-                    let harness = &doctor.harnesses[raw_index];
-                    render_harness_card(frame, rect, harness, selected);
+                let screen = &model.remembered.harness_screen;
+                let grid =
+                    super::catalog::cards(area, visible.len(), screen.selected, &screen.scroll);
+                for &(position, rect) in &grid.cards {
+                    let state = RowState::of(
+                        position == screen.selected,
+                        model.hovered == Some(Hit::HarnessRow(position)),
+                    );
+                    render_harness_card(frame, rect, &doctor.harnesses[visible[position]], state);
                     hits.push((rect, Hit::HarnessRow(position)));
                 }
-                y += super::catalog::height(content.width, visible.len());
+                y = grid.bottom;
+                window = Some((area, grid));
             }
             if let Some(status) = &model.remembered.context_status
                 && !status.warnings.is_empty()
@@ -227,6 +233,17 @@ pub(crate) fn render_harnesses(
 
     if let Some(harness) = model.selected_harness() {
         render_harness_drawer(frame, area, model, harness, hits);
+        if let Some((rows, grid)) = window {
+            super::scrollbar_on_drawer_rule(
+                frame,
+                area,
+                model,
+                rows,
+                (grid.visible, grid.rows, grid.first),
+                hits,
+                None,
+            );
+        }
     }
 }
 
@@ -234,7 +251,7 @@ fn render_harness_card(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
     harness: &HarnessHealth,
-    selected: bool,
+    state: RowState,
 ) {
     // The state sits at the foot beside the id, where the Extensions
     // cards say theirs, rather than as a badge beside the name.
@@ -252,7 +269,7 @@ fn render_harness_card(
                 Style::default().fg(status.color()),
             )),
         },
-        selected,
+        state,
     );
 }
 

@@ -54,6 +54,9 @@ pub(crate) fn render_keys(
     );
 
     let rows = model.key_rows();
+    // The list's window, kept for the scrollbar drawn on the drawer's rule
+    // once the drawer is down.
+    let mut window = None;
     if rows.is_empty() {
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -100,45 +103,17 @@ pub(crate) fn render_keys(
             entries.push(Entry::Row(index, *row));
         }
 
-        // The window follows the selection rather than being scrolled on
-        // its own: this list is long enough that everything past the first
-        // screenful used to be invisible and unreachable at the same time
-        // — the selection walked off the bottom and nothing followed it.
-        // It stays at the top until the selection passes the middle, so
-        // reading down from the first row does not move the page.
-        // A column for the track, but only when there is more list than
-        // screen: a scrollbar on a list that fits says the opposite of
-        // what it is for.
-        let track_width = crate::ui::widget::Scrollbar::width()
-            .max(theme::width(Symbol::BarThin))
-            .max(1);
         let height = usize::from(list_area.height);
-        let track = (entries.len() > height).then(|| {
-            Rect::new(
-                list_area.right().saturating_sub(track_width),
-                list_area.y,
-                track_width,
-                list_area.height,
-            )
-        });
-        let list_area = match track {
-            Some(_) => Rect::new(
-                list_area.x,
-                list_area.y,
-                list_area.width.saturating_sub(track_width + 1),
-                list_area.height,
-            ),
-            None => list_area,
-        };
-        let anchor = entries
-            .iter()
-            .position(
-                |entry| matches!(entry, Entry::Row(index, _) if *index == model.key_screen.selected),
-            )
-            .unwrap_or(0);
-        let first = anchor
-            .saturating_sub(height.saturating_sub(1) / 2)
-            .min(entries.len().saturating_sub(height));
+        let selected = entries.iter().position(
+            |entry| matches!(entry, Entry::Row(index, _) if *index == model.key_screen.selected),
+        );
+        let first = super::settle(
+            &model.key_screen.scroll,
+            selected.map(|line| (line, line)),
+            entries.len(),
+            height,
+        );
+        window = Some((list_area, entries.len(), first));
 
         for (offset, entry) in entries.iter().skip(first).take(height).enumerate() {
             let y = list_area.y + offset as u16;
@@ -168,17 +143,21 @@ pub(crate) fn render_keys(
                 }
             }
         }
-
-        if let Some(track) = track
-            && let Some(bar) = crate::ui::widget::Scrollbar::measure(track, height, entries.len())
-        {
-            bar.render(frame, first);
-            hits.push((track, Hit::KeysTrack(track)));
-        }
     }
 
     if let Some(row) = model.selected_key_row() {
         render_drawer(frame, area, model, &row, hits);
+    }
+    if let Some((rows, total, first)) = window {
+        super::scrollbar_on_drawer_rule(
+            frame,
+            area,
+            model,
+            rows,
+            (usize::from(rows.height), total, first),
+            hits,
+            Some(Hit::KeysTrack),
+        );
     }
 }
 
@@ -282,7 +261,8 @@ fn row_line(model: &TuiModel, row: &KeyRow, index: usize, columns: Columns) -> L
     // brighter word inside it — the same treatment every other list in
     // this mode gives its selection, and the reason one is findable
     // without reading it.
-    row::fill(&mut spans, columns.width, RowState::of(selected, false));
+    let hovered = model.hovered == Some(Hit::KeyRow(index));
+    row::fill(&mut spans, columns.width, RowState::of(selected, hovered));
     Line::from(spans)
 }
 

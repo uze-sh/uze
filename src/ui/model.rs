@@ -304,6 +304,10 @@ pub(crate) struct ListScreen {
     pub(crate) filter: String,
     /// A position in the list as it is filtered now.
     pub(crate) selected: usize,
+    /// Where the list is scrolled to, in its drawn lines. The wheel moves
+    /// it and only the keys moving the selection pull it back; a cell
+    /// because the frame is what settles it, and the frame reads the model.
+    pub(crate) scroll: std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
 }
 
 impl ListScreen {
@@ -697,6 +701,16 @@ pub(crate) struct TuiModel {
     pub(crate) health_hovered: bool,
     /// The detail drawer's button under the pointer, if any.
     pub(crate) hovered_offer: Option<uze_keys::Action>,
+    /// What the pointer is over, so a list lights the row under it
+    /// without choosing it.
+    pub(crate) hovered: Option<Hit>,
+    /// The frame row the pointer is on, for a list whose lines share a
+    /// target — a group's blank lines answer for its heading — and so
+    /// cannot tell the line under the pointer by its target alone.
+    pub(crate) pointer_row: Option<u16>,
+    /// Where the Settings catalogue is scrolled to — see
+    /// [`ListScreen::scroll`].
+    pub(crate) settings_scroll: std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
 
     /// Frame counter for spinner animation while background work is pending.
     pub(crate) tick: usize,
@@ -896,6 +910,9 @@ impl TuiModel {
             version_hovered: false,
             health_hovered: false,
             hovered_offer: None,
+            hovered: None,
+            pointer_row: None,
+            settings_scroll: Default::default(),
             tick: 0,
             hits: Vec::new(),
             profile_columns_width: layout.profile_columns_width,
@@ -1536,26 +1553,29 @@ impl TuiModel {
         }
     }
 
-    /// Where in the Keys list a point on its scroll track lands.
-    ///
-    /// The track is a picture of the whole list, so a position on it is a
-    /// position in the list — the top row is the first key, the bottom row
-    /// the last. The window itself is derived from the selection rather
-    /// than stored, so moving the selection is how the track moves the
-    /// page; there is no second notion of "where the page is" that could
-    /// disagree with the first.
+    /// Scrolls the Keys list to where a point on its track puts the window,
+    /// leaving the selection where it is.
     pub(crate) fn scroll_keys_to(&mut self, track: Rect, row: u16) {
-        let rows = self.key_rows().len();
+        // In drawn lines, as the window is: every group after the first
+        // opens with a blank, and each with its heading.
+        let rows = self.key_rows();
+        let groups = rows
+            .windows(2)
+            .filter(|pair| pair[0].scope != pair[1].scope)
+            .count()
+            + usize::from(!rows.is_empty());
+        let rows = rows.len() + groups * 2 - usize::from(groups > 0);
         let Some(bar) = super::widget::Scrollbar::measure(track, usize::from(track.height), rows)
         else {
             return;
         };
-        // `item_at`, not `first_at`: this list's window is derived from
-        // its selection, so a position on the track is a position in the
-        // whole list — see `super::scrollbar`.
-        self.key_screen.selected = bar.item_at(row);
-        self.keys_capture = false;
-        self.keys_problem = None;
+        let scroll = self.key_screen.scroll.get();
+        self.key_screen
+            .scroll
+            .set(crate::ui::extension_view::NavigatorScroll {
+                first: bar.first_at(row),
+                ..scroll
+            });
     }
 
     /// Takes a keystroke as the new binding for the selected line.

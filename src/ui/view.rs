@@ -34,6 +34,58 @@ pub(crate) fn drawer_width(panel: ResizablePanel, model: &TuiModel, content: Rec
     drawer::width(panel.width(model), content.width)
 }
 
+/// The first line a list of `total` lines shows in `visible`, settled in
+/// `scroll`: wherever the wheel left it, until the selection — the lines
+/// `selected` spans — moves, which pulls the window just far enough to
+/// show all of it. The keys move the selection and the page follows; the
+/// wheel moves the page and the selection stays.
+pub(crate) fn settle(
+    scroll: &std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
+    selected: Option<(usize, usize)>,
+    total: usize,
+    visible: usize,
+) -> usize {
+    let previous = scroll.get();
+    let mut settled = previous.settled(selected.map(|(_, last)| last), total, visible);
+    if let Some((first, _)) = selected
+        && settled.revealed != previous.revealed
+        && first < settled.first
+    {
+        settled.first = first;
+    }
+    scroll.set(settled);
+    settled.first
+}
+
+/// A list's scrollbar on the rule of the detail drawer over `content`, the
+/// line the list already ends at, rather than a second line beside it.
+/// Drawn after the drawer, which paints its rule. A list that can be
+/// dragged registers only the handle, as `grab`, ahead of the rule's
+/// resize handle, so grabbing it scrolls and the rest of the rule still
+/// moves the drawer.
+pub(crate) fn scrollbar_on_drawer_rule(
+    frame: &mut ratatui::Frame<'_>,
+    content: Rect,
+    model: &TuiModel,
+    rows: Rect,
+    (visible, total, first): (usize, usize, usize),
+    hits: &mut Vec<(Rect, Hit)>,
+    grab: Option<fn(Rect) -> Hit>,
+) {
+    let panel = ResizablePanel::Drawer;
+    let column = content
+        .right()
+        .saturating_sub(drawer_width(panel, model, content));
+    let track = Rect::new(column, rows.y, 1, rows.height);
+    let Some(bar) = crate::ui::widget::Scrollbar::measure(track, visible, total) else {
+        return;
+    };
+    bar.render_on_draggable(frame, first, model.dragging_panel == Some(panel));
+    if let Some(grab) = grab {
+        hits.insert(0, (bar.thumb(first), grab(track)));
+    }
+}
+
 /// `panel`'s detail drawer off the right of `content`, its rule lit while
 /// it is dragged and registered first as `panel`'s resize handle. Returns
 /// the padded rectangle its content goes in.

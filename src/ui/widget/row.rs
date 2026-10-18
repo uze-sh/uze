@@ -84,6 +84,23 @@ pub(crate) fn fill(spans: &mut Vec<Span<'_>>, width: u16, state: RowState) {
     pad_to(spans, width, theme::color(ground));
 }
 
+/// [`fill`], for a row that holds controls: a span with a ground of its
+/// own — a field's box, a button — keeps it, and only the bare text and
+/// the air between take the row's. Painted over, a control on the
+/// selected row reads as a hole in it.
+pub(crate) fn fill_under(spans: &mut Vec<Span<'_>>, width: u16, state: RowState) {
+    let Some(ground) = state.ground() else {
+        return;
+    };
+    let bg = theme::color(ground);
+    for span in spans.iter_mut().filter(|span| span.style.bg.is_none()) {
+        span.style = span.style.bg(bg);
+    }
+    let used: usize = spans.iter().map(Span::width).sum();
+    let gap = (width as usize).saturating_sub(used);
+    spans.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
+}
+
 /// [`push_trailing`], with the text slid sideways by the clock (see
 /// [`marquee`]) when it is too long for the room: a caption that cannot be
 /// shortened without losing the end of it — a branch name is read from

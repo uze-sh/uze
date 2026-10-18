@@ -46,7 +46,7 @@ impl Section {
         }
     }
 
-    fn index(self) -> usize {
+    pub(super) fn index(self) -> usize {
         Self::ALL
             .iter()
             .position(|section| *section == self)
@@ -75,6 +75,9 @@ pub(super) struct SpaceOverviewView {
     settled: bool,
     pub(super) section: Section,
     /// The selected row of each section, by section index.
+    /// Where each section's list is scrolled to: moved by the wheel, and
+    /// pulled to the selection only when the keys move it.
+    pub(super) scroll: [crate::ui::extension_view::NavigatorScroll; 5],
     pub(super) rows: [usize; 5],
     /// Whether the drawer stands over the section, where there is no room
     /// for both side by side.
@@ -364,6 +367,7 @@ impl SpaceOverviewView {
             settled,
             section: Section::Agent,
             rows: [0; 5],
+            scroll: Default::default(),
             drawer: false,
             asked: 0,
             pending: false,
@@ -755,6 +759,16 @@ impl WorkspaceModel {
             }
             overview.rows[section] = index;
             self.dirty = true;
+        }
+    }
+
+    /// Keeps where the section in front settled on the frame just drawn.
+    pub(super) fn absorb_overview_frame(
+        &mut self,
+        scroll: Option<crate::ui::extension_view::NavigatorScroll>,
+    ) {
+        if let (Some(scroll), Some(overview)) = (scroll, self.space_overview.as_mut()) {
+            overview.scroll[overview.section.index()] = scroll;
         }
     }
 

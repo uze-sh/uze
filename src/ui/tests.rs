@@ -783,8 +783,10 @@ fn mouse_click_on_extension_row_selects_and_opens_drawer_without_fetch() {
     assert_eq!(intent, Intent::None);
 }
 
+/// The wheel moves the page, not the selection, and never mutates: the
+/// keyboard's row and the detail it asked for stay where they were.
 #[test]
-fn scroll_moves_selection_without_mutating_anything() {
+fn the_wheel_scrolls_the_plugins_without_moving_or_mutating() {
     let mut model = model_with_plugins(&["one", "two", "three"]);
     let intent = model.apply_mouse(
         MouseEvent {
@@ -795,16 +797,10 @@ fn scroll_moves_selection_without_mutating_anything() {
         },
         Rect::new(0, 0, 100, 40),
     );
-    // Scroll on the Plugins tree is read-only navigation: it moves the
-    // selection and leaves the detail to the per-frame check once the
-    // selection rests — never a mutation.
     assert_eq!(intent, Intent::None);
-    assert_eq!(model.remembered.plugin_screen.selected, 1);
-    assert!(model.selection_settling(std::time::Instant::now()));
-    assert_eq!(
-        model.drawer_inspect_intent(),
-        Intent::InspectPlugin("two".to_owned())
-    );
+    assert_eq!(model.remembered.plugin_screen.selected, 0);
+    assert_eq!(model.remembered.plugin_screen.scroll.get().first, 1);
+    assert!(!model.selection_settling(std::time::Instant::now()));
 }
 
 #[test]
@@ -1866,6 +1862,48 @@ fn enter_switches_an_extension_whichever_way_it_is_not() {
             .selected_offers()
             .iter()
             .any(|offer| offer.action == uze_keys::Action::EnableExtension && offer.is_available())
+    );
+}
+
+/// Walking the list — by arrow or by wheel — only moves the selection: a
+/// switch is Enter's, and passing over an extension never changes it.
+#[test]
+fn walking_the_extensions_never_switches_one() {
+    use crate::ui::worker::Intent;
+
+    let mut model = TuiModel {
+        route: Route::Extensions,
+        focus: Focus::Content,
+        extensions: uze_extensions::registry::ExtensionRegistry::builtin()
+            .all()
+            .to_vec(),
+        ..TuiModel::default()
+    };
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+        Intent::None
+    );
+    let walked_to = model.selected_extension().expect("a selection").id;
+    let wheel = |model: &mut TuiModel, kind| {
+        model.apply_mouse(
+            MouseEvent {
+                kind,
+                column: 60,
+                row: 10,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 40),
+        )
+    };
+    assert_eq!(wheel(&mut model, MouseEventKind::ScrollUp), Intent::None);
+    assert_eq!(
+        model.selected_extension().expect("a selection").id,
+        walked_to,
+        "the wheel moved the selection"
+    );
+    assert!(
+        model.disabled_extensions.is_empty(),
+        "walking switched an extension"
     );
 }
 
@@ -3884,11 +3922,11 @@ fn the_selected_key_is_a_band_across_the_list() {
     );
 }
 
-/// The track looks like a scrollbar, so it answers like one: a click jumps
-/// there and a drag keeps jumping. Something drawn as a control that does
-/// nothing is worse than not drawing it.
+/// The handle on the drawer's rule answers like a scrollbar: taken hold
+/// of and dragged, it moves the page — never the selection — and lets go
+/// when the button does.
 #[test]
-fn the_track_can_be_dragged() {
+fn the_keys_handle_can_be_dragged() {
     let _turn = KEYBOARD
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -3899,23 +3937,20 @@ fn the_track_can_be_dragged() {
     };
     let (_terminal, hits) = drawn_at(&model, 140, 30);
     model.hits = hits;
-    let track = model
+    let (handle, track) = model
         .hits
         .iter()
-        .find_map(|(rect, hit)| matches!(hit, Hit::KeysTrack(_)).then_some(*rect))
-        .expect("the track is a target");
+        .find_map(|(rect, hit)| match hit {
+            Hit::KeysTrack(track) => Some((*rect, *track)),
+            _ => None,
+        })
+        .expect("the handle is a target");
+    assert_eq!(handle.width, 1, "the handle, not the whole rule");
 
-    // The bottom of the track is the bottom of the list, whatever it is.
-    let last = model.key_rows().len() - 1;
-    model.click(track.x, track.bottom() - 1);
-    assert_eq!(model.key_screen.selected, last);
-
-    // And it keeps answering while the button is held, without the row
-    // under the pointer having to be a target of its own.
-    let drag = |model: &mut TuiModel, row| {
+    let drag = |model: &mut TuiModel, kind, row| {
         model.apply_mouse(
             MouseEvent {
-                kind: MouseEventKind::Drag(MouseButton::Left),
+                kind,
                 column: track.x,
                 row,
                 modifiers: KeyModifiers::NONE,
@@ -3923,28 +3958,26 @@ fn the_track_can_be_dragged() {
             Rect::new(0, 0, 140, 40),
         );
     };
-    drag(&mut model, track.y);
-    assert_eq!(model.key_screen.selected, 0, "back to the top");
-    drag(&mut model, track.y + track.height / 2);
-    assert!(
-        model.key_screen.selected > 0 && model.key_screen.selected < last,
-        "and to the middle: {}",
-        model.key_screen.selected
+    let first = |model: &TuiModel| model.key_screen.scroll.get().first;
+    model.click(handle.x, handle.y);
+    drag(
+        &mut model,
+        MouseEventKind::Drag(MouseButton::Left),
+        track.bottom() - 1,
     );
+    let bottom = first(&model);
+    assert!(bottom > 0, "dragging down scrolled nothing");
+    assert_eq!(model.key_screen.selected, 0, "the drag moved the selection");
+    drag(&mut model, MouseEventKind::Drag(MouseButton::Left), track.y);
+    assert_eq!(first(&model), 0, "back to the top");
 
-    // Releasing ends the gesture — a later move must not still scroll.
-    model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Up(MouseButton::Left),
-            column: track.x,
-            row: track.y,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 140, 40),
+    drag(&mut model, MouseEventKind::Up(MouseButton::Left), track.y);
+    drag(
+        &mut model,
+        MouseEventKind::Drag(MouseButton::Left),
+        track.bottom() - 1,
     );
-    let settled = model.key_screen.selected;
-    drag(&mut model, track.bottom() - 1);
-    assert_eq!(model.key_screen.selected, settled, "the drag was let go of");
+    assert_eq!(first(&model), 0, "the drag was let go of");
 }
 
 /// A long list that gives no sign of being long is a list nobody scrolls.
@@ -4006,11 +4039,10 @@ fn a_list_taller_than_the_screen_says_where_the_window_is() {
     assert!(column(&terminal).is_empty());
 }
 
-/// The wheel reaches this list too. It is the longest one uze draws, and
-/// a screen you scroll with the keyboard alone is the thing this whole
-/// change exists to stop shipping.
+/// The wheel moves the Keys page and leaves the selection where the keys
+/// put it; the next key brings the page back to it.
 #[test]
-fn the_wheel_walks_the_keys_list_and_the_window_follows() {
+fn the_wheel_scrolls_the_keys_page_and_the_keys_bring_it_back() {
     let _turn = KEYBOARD
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -4030,29 +4062,28 @@ fn the_wheel_walks_the_keys_list_and_the_window_follows() {
             Rect::new(0, 0, 100, 40),
         );
     };
+    let shows = |model: &TuiModel, index: usize| {
+        let wanted = model.key_rows()[index].action.label();
+        let (terminal, _hits) = drawn_at(model, 140, 30);
+        // The list's half: the drawer names the selected action too.
+        buffer_rows(&terminal)
+            .iter()
+            .any(|row| row.chars().take(70).collect::<String>().contains(&wanted))
+    };
 
+    drawn_at(&model, 140, 30);
     for _ in 0..40 {
         wheel(&mut model, MouseEventKind::ScrollDown);
     }
-    assert_eq!(model.key_screen.selected, 40, "the wheel walks the list");
-
-    let rows = model.key_rows();
-    let wanted = rows[40].action.label();
-    let (terminal, _hits) = drawn_at(&model, 140, 30);
-    assert!(
-        buffer_rows(&terminal)
-            .iter()
-            .any(|row| row.contains(&wanted)),
-        "and what it walked to is on screen"
-    );
-
-    for _ in 0..80 {
-        wheel(&mut model, MouseEventKind::ScrollUp);
-    }
     assert_eq!(
         model.key_screen.selected, 0,
-        "and back, stopping at the top"
+        "the wheel moved the selection"
     );
+    assert!(!shows(&model, 0), "the page did not move");
+
+    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(model.key_screen.selected, 1);
+    assert!(shows(&model, 1), "the key did not bring the page back");
 
     // Profiles was the other screen the wheel could not move, for the same
     // reason: its selection is three panels rather than one list, and the
@@ -5831,4 +5862,95 @@ fn a_hint_beneath_a_dialog_is_no_target() {
             .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::StartFilter)),
         "no hint key is registered while a dialog is open"
     );
+}
+
+/// A card grid longer than its area scrolls to the selected card instead
+/// of drawing what fits and leaving the selection off the bottom.
+#[test]
+fn a_card_grid_brings_the_selected_card_into_view() {
+    let scroll = std::cell::Cell::new(Default::default());
+    let area = Rect::new(0, 0, 80, 16);
+    let grid = crate::ui::view::catalog::cards(area, 10, 9, &scroll);
+    assert!(
+        grid.cards.iter().any(|(position, _)| *position == 9),
+        "the selected card is not drawn: {:?}",
+        grid.cards
+    );
+    assert!(grid.first > 0 && grid.rows == 5);
+}
+
+/// The pointer lights the Keys row it is over and chooses nothing.
+#[test]
+fn hovering_a_key_lights_its_row_without_selecting_it() {
+    let _turn = KEYBOARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut model = TuiModel {
+        route: Route::Keys,
+        focus: Focus::Content,
+        ..TuiModel::default()
+    };
+    let (_terminal, hits) = drawn_at(&model, 140, 30);
+    model.hits = hits;
+    let (row, index) = model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            Hit::KeyRow(index) if *index == 2 => Some((*rect, *index)),
+            _ => None,
+        })
+        .expect("the third key is drawn");
+    model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: row.x + 2,
+            row: row.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 140, 30),
+    );
+    assert_eq!(model.key_screen.selected, 0, "hovering selected the row");
+    let (terminal, _) = drawn_at(&model, 140, 30);
+    assert_eq!(
+        terminal.backend().buffer()[(row.x + 1, row.y)].bg,
+        theme::color(Token::SurfaceHover),
+        "the row under the pointer is not lit (key {index})"
+    );
+}
+
+/// A marketplace's blank lines answer for its heading when clicked, but
+/// the pointer on the heading lights the heading alone — never every line
+/// that shares its target.
+#[test]
+fn hovering_a_marketplace_lights_only_the_line_under_the_pointer() {
+    let mut model = model_with_plugins(&["one", "two", "three"]);
+    let (_terminal, hits) = drawn_at(&model, 140, 30);
+    model.hits = hits;
+    let market_lines: Vec<Rect> = model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, Hit::PluginMarket(Some(_))))
+        .map(|(rect, _)| *rect)
+        .collect();
+    assert!(market_lines.len() > 1, "the group has lines of its own");
+    let heading = market_lines[0];
+    model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: heading.x + 1,
+            row: heading.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 140, 30),
+    );
+    let (terminal, _) = drawn_at(&model, 140, 30);
+    let lit: Vec<u16> = market_lines
+        .iter()
+        .filter(|rect| {
+            terminal.backend().buffer()[(rect.x + 1, rect.y)].bg
+                == theme::color(Token::SurfaceHover)
+        })
+        .map(|rect| rect.y)
+        .collect();
+    assert_eq!(lit, vec![heading.y], "the heading alone should light up");
 }

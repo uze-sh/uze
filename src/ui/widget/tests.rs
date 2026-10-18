@@ -78,11 +78,11 @@ fn a_surface_draws_its_border_and_grounds_its_inside() {
 fn a_selectable_card_states_selection_in_its_border_alone() {
     let area = Rect::new(0, 0, 12, 4);
     let selected = drawn(12, 4, |frame| {
-        let inner = Surface::selectable(true).render(frame, area);
+        let inner = Surface::selectable(RowState::Selected).render(frame, area);
         assert_eq!(inner, Rect::new(1, 1, 10, 2));
     });
     let resting = drawn(12, 4, |frame| {
-        let inner = Surface::selectable(false).render(frame, area);
+        let inner = Surface::selectable(RowState::Resting).render(frame, area);
         assert_eq!(inner, Rect::new(1, 1, 10, 2), "selection moves no content");
     });
 
@@ -1364,4 +1364,25 @@ fn a_drawer_answers_with_its_content_and_its_handle() {
         assert_eq!(handle, Rect::new(20, 0, 1, 10));
         assert_eq!(inner, Rect::new(24, 0, 33, 10));
     });
+}
+
+/// A selected row that holds a control takes the row's ground everywhere
+/// but on the control, which keeps its own.
+#[test]
+fn a_selected_row_keeps_its_controls_grounds() {
+    use ratatui::text::Span;
+    let boxed = theme::color(Token::SurfaceRecessed);
+    let mut spans = vec![
+        Span::raw("Worktree  "),
+        Span::styled(" always ", theme::fg(Token::TextPrimary).bg(boxed)),
+    ];
+    super::row::fill_under(&mut spans, 30, RowState::Selected);
+    let selected = theme::color(Token::SurfaceSelected);
+    assert_eq!(spans[0].style.bg, Some(selected));
+    assert_eq!(
+        spans[1].style.bg,
+        Some(boxed),
+        "the control's box was painted over"
+    );
+    assert_eq!(spans.last().map(|span| span.style.bg), Some(Some(selected)));
 }

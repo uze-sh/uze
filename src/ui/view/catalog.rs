@@ -22,26 +22,59 @@ fn columns(width: u16) -> u16 {
     if width >= 110 { 3 } else { 2 }
 }
 
-/// The rects of the first `count` cards laid out over `area`, row by row,
-/// ending at the last card that fits whole.
-pub(crate) fn cards(area: Rect, count: usize) -> impl Iterator<Item = Rect> {
-    let columns = columns(area.width);
-    let width = area.width.saturating_sub(GAP * (columns - 1)) / columns;
-    (0..count as u16)
-        .map(move |position| {
-            Rect::new(
-                area.x + position % columns * (width + GAP),
-                area.y + position / columns * (CARD_HEIGHT + GAP),
-                width,
-                CARD_HEIGHT,
-            )
-        })
-        .take_while(move |rect| rect.bottom() <= area.bottom())
+/// The cards of a list laid out over an area: which are drawn and where,
+/// and the window of card rows they were drawn from, for its scrollbar.
+pub(crate) struct Grid {
+    /// Each card on screen, by its position in the list.
+    pub(crate) cards: Vec<(usize, Rect)>,
+    /// How many rows of cards the whole list takes, and how many fit.
+    pub(crate) rows: usize,
+    pub(crate) visible: usize,
+    /// The first row drawn.
+    pub(crate) first: usize,
+    /// The line under the last card drawn.
+    pub(crate) bottom: u16,
 }
 
-/// The rows `count` cards take over `width`, gaps included.
-pub(crate) fn height(width: u16, count: usize) -> u16 {
-    (count as u16).div_ceil(columns(width)) * (CARD_HEIGHT + GAP)
+/// `count` cards laid out over `area` a row at a time, from the row
+/// `scroll` settles at: wherever the wheel left it, until the `selected`
+/// card moves, which brings its row into view. Only whole cards: a row is
+/// drawn when all of it fits.
+pub(crate) fn cards(
+    area: Rect,
+    count: usize,
+    selected: usize,
+    scroll: &std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
+) -> Grid {
+    let columns = columns(area.width);
+    let width = area.width.saturating_sub(GAP * (columns - 1)) / columns;
+    let pitch = CARD_HEIGHT + GAP;
+    let rows = count.div_ceil(usize::from(columns));
+    let visible = usize::from((area.height + GAP) / pitch).max(1);
+    let row = selected / usize::from(columns);
+    let first = super::settle(scroll, (count > 0).then_some((row, row)), rows, visible);
+    let mut grid = Grid {
+        cards: Vec::new(),
+        rows,
+        visible,
+        first,
+        bottom: area.y,
+    };
+    for position in first * usize::from(columns)..count {
+        let shown_row = (position / usize::from(columns) - first) as u16;
+        let rect = Rect::new(
+            area.x + (position % usize::from(columns)) as u16 * (width + GAP),
+            area.y + shown_row * pitch,
+            width,
+            CARD_HEIGHT,
+        );
+        if rect.bottom() > area.bottom() {
+            break;
+        }
+        grid.bottom = rect.bottom() + GAP;
+        grid.cards.push((position, rect));
+    }
+    grid
 }
 
 /// What sits right of a card's name: the word with its mark where the
@@ -66,13 +99,10 @@ pub(crate) fn render_card(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
     card: Card<'_>,
-    selected: bool,
+    state: RowState,
 ) {
-    let background = theme::color(
-        RowState::of(selected, false)
-            .ground()
-            .unwrap_or(Token::SurfaceRecessed),
-    );
+    let selected = state == RowState::Selected;
+    let background = theme::color(state.ground().unwrap_or(Token::SurfaceRecessed));
     frame.render_widget(
         Paragraph::new("").style(Style::default().bg(background)),
         rect,

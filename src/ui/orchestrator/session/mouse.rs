@@ -994,15 +994,34 @@ impl Attach<'_> {
                     ScrollDirection::Down
                 });
             }
-            // The overview's sections are lists, so the wheel walks them
-            // the way the arrows do, scrolling the one in front.
-            _ if self.model.space_overview.is_some() && in_pane => {
+            // An open list of options is walked, as a dropdown is; the
+            // section under it only scrolls, leaving the selection where
+            // the keys put it.
+            _ if self
+                .model
+                .space_overview
+                .as_ref()
+                .is_some_and(|overview| overview.edit.field.is_some())
+                && in_pane =>
+            {
                 let action = if mouse.kind == MouseEventKind::ScrollUp {
                     Action::SelectPrevious
                 } else {
                     Action::SelectNext
                 };
                 self.space_overview_action(action, viewport);
+            }
+            _ if self.model.space_overview.is_some() && in_pane => {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    ScrollDirection::Up
+                } else {
+                    ScrollDirection::Down
+                };
+                if let Some(overview) = self.model.space_overview.as_mut() {
+                    let section = overview.section.index();
+                    overview.scroll[section] = overview.scroll[section].scrolled(direction);
+                    self.model.dirty = true;
+                }
             }
             _ if self.model.architect.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
