@@ -13,27 +13,16 @@ use ratatui::{
 };
 
 use crate::ui::theme::{self, Token};
-use crate::ui::widget::{RowState, text};
+use crate::ui::widget::{
+    RowState,
+    grid::{Grid, Shape},
+    text,
+};
 
-const GAP: u16 = 1;
 const CARD_HEIGHT: u16 = 7;
 
 fn columns(width: u16) -> u16 {
     if width >= 110 { 3 } else { 2 }
-}
-
-/// The cards of a list laid out over an area: which are drawn and where,
-/// and the window of card rows they were drawn from, for its scrollbar.
-pub(crate) struct Grid {
-    /// Each card on screen, by its position in the list.
-    pub(crate) cards: Vec<(usize, Rect)>,
-    /// How many rows of cards the whole list takes, and how many fit.
-    pub(crate) rows: usize,
-    pub(crate) visible: usize,
-    /// The first row drawn.
-    pub(crate) first: usize,
-    /// The line under the last card drawn.
-    pub(crate) bottom: u16,
 }
 
 /// `count` cards laid out over `area` a row at a time, from the row
@@ -46,35 +35,18 @@ pub(crate) fn cards(
     selected: usize,
     scroll: &std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
 ) -> Grid {
-    let columns = columns(area.width);
-    let width = area.width.saturating_sub(GAP * (columns - 1)) / columns;
-    let pitch = CARD_HEIGHT + GAP;
-    let rows = count.div_ceil(usize::from(columns));
-    let visible = usize::from((area.height + GAP) / pitch).max(1);
-    let row = selected / usize::from(columns);
-    let first = super::settle(scroll, (count > 0).then_some((row, row)), rows, visible);
-    let mut grid = Grid {
-        cards: Vec::new(),
-        rows,
-        visible,
-        first,
-        bottom: area.y,
+    let shape = Shape {
+        columns: columns(area.width),
+        height: CARD_HEIGHT,
     };
-    for position in first * usize::from(columns)..count {
-        let shown_row = (position / usize::from(columns) - first) as u16;
-        let rect = Rect::new(
-            area.x + (position % usize::from(columns)) as u16 * (width + GAP),
-            area.y + shown_row * pitch,
-            width,
-            CARD_HEIGHT,
-        );
-        if rect.bottom() > area.bottom() {
-            break;
-        }
-        grid.bottom = rect.bottom() + GAP;
-        grid.cards.push((position, rect));
-    }
-    grid
+    let row = shape.row_of(selected);
+    let first = super::settle(
+        scroll,
+        (count > 0).then_some((row, row)),
+        shape.rows(count),
+        shape.visible(area.height),
+    );
+    shape.lay(area, count, first)
 }
 
 /// What sits right of a card's name: the word with its mark where the

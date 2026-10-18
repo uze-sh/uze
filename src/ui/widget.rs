@@ -91,6 +91,7 @@ pub(crate) mod dialog;
 pub(crate) mod drawer;
 pub(crate) mod field;
 pub(crate) mod footer;
+pub(crate) mod grid;
 pub(crate) mod hint;
 pub(crate) mod mark;
 pub(crate) mod menu;
