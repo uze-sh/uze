@@ -1521,15 +1521,13 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
         let title = if created {
             "Create agents.yaml".to_owned()
         } else {
-            plural(
+            changed_lines_title(
                 preview
                     .diff
                     .iter()
                     .filter(|line| !matches!(line, DiffLine::Context(_)))
                     .count(),
-                "line changes",
             )
-            .replace("lines changes", "lines change")
         };
         let detail = if created {
             "Only the keys you set are written."
@@ -2007,9 +2005,7 @@ fn render_drawer(
                 "value",
                 match value {
                     None => "not declared".to_owned(),
-                    Some(DeclaredValue::List(items)) => {
-                        plural(items.len(), "entry").replace("entrys", "entries")
-                    }
+                    Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
                     Some(DeclaredValue::Commands(commands)) => plural(commands.len(), "command"),
                     Some(value) => scalar(value),
                 },
@@ -2182,11 +2178,21 @@ fn render_foot(
 }
 
 fn plural(count: usize, noun: &str) -> String {
+    counted(count, noun, &format!("{noun}s"))
+}
+
+/// `count` with the noun it takes: `one` for a single one, else `many`.
+fn counted(count: usize, one: &str, many: &str) -> String {
     if count == 1 {
-        format!("1 {noun}")
+        format!("1 {one}")
     } else {
-        format!("{count} {noun}s")
+        format!("{count} {many}")
     }
+}
+
+/// The review's title over a diff of `changed` lines.
+fn changed_lines_title(changed: usize) -> String {
+    plural(changed, "line changes").replace("lines changes", "lines change")
 }
 
 /// A path as the operator would type it: under their home, from `~`.
