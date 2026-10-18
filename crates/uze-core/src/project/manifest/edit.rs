@@ -345,9 +345,7 @@ impl ManifestDocument {
             let bare = line.trim_end_matches(['\n', '\r']);
             let at_margin = !bare.is_empty() && !bare.starts_with([' ', '#']);
             if at_margin {
-                inside = bare
-                    .strip_prefix(key)
-                    .is_some_and(|rest| rest.starts_with(':'));
+                inside = opens_root_key(bare, key);
             } else if bare.starts_with('#') {
                 inside = false;
             }
@@ -455,6 +453,17 @@ fn is_block(value: &serde_yaml::Value) -> bool {
         value,
         serde_yaml::Value::Mapping(_) | serde_yaml::Value::Sequence(_)
     )
+}
+
+/// `line`, at column zero, opens `key`'s block: the key spelled plain or
+/// quoted either way, then its colon.
+fn opens_root_key(line: &str, key: &str) -> bool {
+    ["", "\"", "'"].into_iter().any(|quote| {
+        line.strip_prefix(quote)
+            .and_then(|rest| rest.strip_prefix(key))
+            .and_then(|rest| rest.strip_prefix(quote))
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
 }
 
 /// `line` is `key:` at column zero with nothing after it but a comment.
@@ -691,6 +700,15 @@ marketplaces:
         let mut document = open("# kept\nworkspace:\n  slots: 2\n");
         document.unset_key(Section::Workspace, "slots").unwrap();
         assert_eq!(document.source().trim_end(), "# kept");
+    }
+
+    #[test]
+    fn a_quoted_section_goes_with_its_last_key_like_a_plain_one() {
+        for spelled in ["\"workspace\"", "'workspace'"] {
+            let mut document = open(&format!("# kept\n{spelled}:\n  slots: 2\n"));
+            document.unset_key(Section::Workspace, "slots").unwrap();
+            assert_eq!(document.source().trim_end(), "# kept", "{spelled}");
+        }
     }
 
     #[test]
