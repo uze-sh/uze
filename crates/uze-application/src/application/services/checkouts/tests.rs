@@ -135,3 +135,54 @@ fn every_checkout_is_listed_under_its_owner_with_its_facts() {
         "reading changes nothing"
     );
 }
+
+#[test]
+fn a_free_checkout_is_removed_on_request_and_a_held_one_is_refused() {
+    let repository = Repository::new("checkouts-remove");
+    let root = primary(&repository);
+    let app = application("checkouts-remove-home");
+    let held = app
+        .workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
+        .unwrap()
+        .cwd;
+
+    let refused = app.workspace().remove_free_checkout(&root, &held, &[]);
+    assert!(
+        refused.is_err(),
+        "a live agent's checkout stays: {refused:?}"
+    );
+    assert!(held.is_dir());
+
+    app.workspace().release_abandoned_tasks(&root, &[], &[]);
+    let removed = app.workspace().remove_free_checkout(&root, &held, &[]);
+
+    assert_eq!(removed, Ok(()));
+    assert!(!held.exists());
+    let view = app.workspace().checkouts(&root).unwrap();
+    assert!(
+        view.checkouts
+            .iter()
+            .all(|checkout| !same(&checkout.path, &held))
+    );
+}
+
+#[test]
+fn a_free_checkout_a_process_stands_in_is_refused() {
+    let repository = Repository::new("checkouts-remove-occupied");
+    let root = primary(&repository);
+    let app = application("checkouts-remove-occupied-home");
+    let slot = app
+        .workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
+        .unwrap()
+        .cwd;
+    app.workspace().release_abandoned_tasks(&root, &[], &[]);
+
+    let refused = app
+        .workspace()
+        .remove_free_checkout(&root, &slot, std::slice::from_ref(&slot));
+
+    assert_eq!(refused, Err("a process is working inside it".to_owned()));
+    assert!(slot.is_dir());
+}

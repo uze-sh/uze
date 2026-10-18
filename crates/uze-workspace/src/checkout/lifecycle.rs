@@ -499,6 +499,82 @@ pub fn empty_trash(primary: &Path) {
     }
 }
 
+/// Why a slot the operator asked to remove was left where it stands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KeptSlot {
+    /// No checkout UZE made stands there any more.
+    Gone,
+    /// A task still names it as its checkout.
+    Held { label: String },
+    /// An agent is working in it.
+    Occupied,
+    /// Something keeps it, a process inside it included.
+    Pinned(Pin),
+    /// It holds changes nobody committed.
+    Dirty,
+    /// Git did not let it go, or the repository could not be locked.
+    Failed(String),
+}
+
+impl fmt::Display for KeptSlot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Gone => formatter.write_str("it is no longer a checkout UZE made here"),
+            Self::Held { label } => write!(formatter, "{label} holds it"),
+            Self::Occupied => formatter.write_str("an agent is working in it"),
+            Self::Pinned(pin) => pin.fmt(formatter),
+            Self::Dirty => formatter.write_str("it holds uncommitted work"),
+            Self::Failed(reason) => formatter.write_str(reason),
+        }
+    }
+}
+
+/// Removes the one free slot at `slot` because the operator asked, its
+/// branch kept, leaving its bytes for [`empty_trash`].
+///
+/// What the operator saw was read before they answered, so it is read
+/// again here, under the repository's write lock and the caller's hold of
+/// `store`, right before anything moves: a slot taken, written in or
+/// entered since is left as it is, and the answer says why. Any process
+/// inside counts, attended or not, since a directory moved from under a
+/// daemon is followed by it without a word.
+pub fn remove_free_slot(
+    primary: &Path,
+    store: &AgentStore,
+    slot: &Path,
+    observe: &dyn Fn() -> Presence,
+) -> Result<CheckoutId, KeptSlot> {
+    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        let presence = observe();
+        let found = slots(primary, store, &presence)
+            .into_iter()
+            .find(|candidate| same_directory(&candidate.path, slot))
+            .ok_or(KeptSlot::Gone)?;
+        if presence.anyone_inside(&found.path) {
+            return Err(KeptSlot::Pinned(Pin::InUse));
+        }
+        if let Some(holder) = store.slot_owner(&found.id) {
+            return Err(KeptSlot::Held {
+                label: holder.label.clone(),
+            });
+        }
+        if holds_uncommitted_work(&found.path) {
+            return Err(KeptSlot::Dirty);
+        }
+        match found.state {
+            SlotState::Free => {}
+            SlotState::Occupied { .. } => return Err(KeptSlot::Occupied),
+            SlotState::Pinned { reason } => return Err(KeptSlot::Pinned(reason)),
+        }
+        if set_aside(primary, &found.path) {
+            Ok(found.id)
+        } else {
+            Err(KeptSlot::Failed("Git did not remove it".to_owned()))
+        }
+    })
+    .map_err(|error| KeptSlot::Failed(error.to_string()))?
+}
+
 /// What releasing an agent's checkout did.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Released {
@@ -826,7 +902,6 @@ pub fn discard(primary: &Path, task: &str, isolation: &Isolation) -> Result<(), 
     .map_err(|error| error.to_string())?
 }
 
-#[cfg(test)]
 pub(super) fn same_directory(left: &Path, right: &Path) -> bool {
     use uze_core::path::Canonical as _;
     let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());

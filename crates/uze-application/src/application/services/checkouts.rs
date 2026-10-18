@@ -58,6 +58,30 @@ impl Workspace<'_> {
         Some(CheckoutsView { primary, checkouts })
     }
 
+    /// Removes the free slot at `slot` in the repository `cwd` belongs to,
+    /// its branch kept, once the operator has answered for it. Judged
+    /// again under the locks, so a slot taken, written in or entered since
+    /// it was shown is refused with the reason rather than removed.
+    /// `occupied` is every checkout a pane of the caller stands in.
+    #[tracing::instrument(name = "workspace.remove_free_checkout", skip_all, fields(slot = %slot.display()))]
+    pub fn remove_free_checkout(
+        &self,
+        cwd: &Path,
+        slot: &Path,
+        occupied: &[PathBuf],
+    ) -> std::result::Result<(), String> {
+        let primary = worktree::primary_checkout(cwd)
+            .ok_or_else(|| "it is not in a repository any more".to_owned())?;
+        let removed = task::locked(&self.0.home, &primary, |store| {
+            Ok(checkout::remove_free_slot(&primary, store, slot, &|| {
+                checkout::Presence::observe_with(occupied)
+            }))
+        })
+        .map_err(|error| error.to_string())?;
+        checkout::empty_trash(&primary);
+        removed.map(|_| ()).map_err(|kept| kept.to_string())
+    }
+
     /// The repository `cwd` belongs to, and what it delivers onto. A
     /// manifest that does not parse answers nothing rather than judging
     /// work against a branch the project may not deliver into.

@@ -1843,3 +1843,106 @@ fn a_checkouts_change_stamp_moves_with_what_git_records_and_only_then() {
 
     assert_eq!(change_stamp(&slot.join("missing"), None), None);
 }
+
+/// A slot whose agent left it, released and held by no task.
+fn released_slot(
+    repository: &Repository,
+    store: &mut AgentStore,
+    label: &str,
+) -> (Agent, Acquired) {
+    let (agent, slot) = launch(repository, store, label);
+    let released = release(
+        repository.root(),
+        store.get_mut(&agent.id).unwrap(),
+        TARGET,
+        &nobody,
+    );
+    assert_eq!(released, Released::Freed { shelved: false });
+    (store.get(&agent.id).unwrap().clone(), slot)
+}
+
+#[test]
+fn a_free_slot_the_operator_removes_goes_and_its_branch_stays() {
+    let repository = repository("slots-remove-free");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (agent, slot) = released_slot(&repository, &mut store, "done");
+    fs::create_dir_all(slot.path.join("target")).unwrap();
+    fs::write(slot.path.join("target").join("artifact"), b"ignored output").unwrap();
+
+    let removed = remove_free_slot(primary, &store, &slot.path, &nobody);
+
+    assert_eq!(removed, Ok(slot.id));
+    assert!(!slot.path.exists());
+    assert!(slots(primary, &store, &nobody()).is_empty());
+    assert!(branch_exists(primary, &agent.isolation().unwrap().branch));
+    empty_trash(primary);
+    assert!(
+        trash_directory(primary)
+            .read_dir()
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_slot_a_task_still_holds_is_never_removed_on_request() {
+    let repository = repository("slots-remove-held");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (first, slot) = launch(&repository, &mut store, "holder");
+    set_state(&mut store, &first.id, WorkState::Integrated);
+    assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
+
+    let removed = remove_free_slot(primary, &store, &slot.path, &nobody);
+
+    assert_eq!(
+        removed,
+        Err(KeptSlot::Held {
+            label: "holder".to_owned()
+        })
+    );
+    assert!(slot.path.is_dir());
+}
+
+/// Read free when the operator was asked, and entered or written in
+/// before they answered: what stands now is what is judged.
+#[test]
+fn a_free_slot_entered_or_written_in_since_it_was_read_is_kept() {
+    let repository = repository("slots-remove-changed");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = released_slot(&repository, &mut store, "left");
+    let daemon = Presence::Known(vec![Occupant::daemon(slot.path.join("src"))]);
+
+    let entered = remove_free_slot(primary, &store, &slot.path, &|| daemon.clone());
+    assert_eq!(entered, Err(KeptSlot::Pinned(Pin::InUse)));
+    assert!(slot.path.is_dir());
+
+    fs::write(slot.path.join("late.rs"), b"written after the read").unwrap();
+    let written = remove_free_slot(primary, &store, &slot.path, &nobody);
+    assert_eq!(written, Err(KeptSlot::Dirty));
+    assert!(slot.path.join("late.rs").is_file());
+}
+
+#[test]
+fn a_checkout_uze_did_not_make_is_never_removed_on_request() {
+    let repository = repository("slots-remove-foreign");
+    let primary = repository.root();
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "by-hand",
+        ".worktrees/by-hand",
+        "HEAD",
+    ]);
+    let by_hand = primary.join(".worktrees/by-hand");
+
+    let removed = remove_free_slot(primary, &AgentStore::default(), &by_hand, &nobody);
+
+    assert_eq!(removed, Err(KeptSlot::Gone));
+    assert!(by_hand.is_dir());
+}
