@@ -56,6 +56,8 @@ struct Track<'a> {
     /// The lines say where the keyboard is themselves, so no row takes a
     /// ground: a form's boxes and buttons would sit in a band of it.
     bare: bool,
+    /// Set when a line was drawn sliding, which needs the next frame.
+    sliding: Option<&'a std::cell::Cell<bool>>,
 }
 
 /// A number's − and + as drawn: its line, its row, and the column and
@@ -83,10 +85,11 @@ pub(super) fn render_space_overview(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) -> Option<NavigatorScroll> {
+) -> (Option<NavigatorScroll>, bool) {
     let scroll = std::cell::Cell::new(overview.scroll[overview.section.index()]);
-    render_overview_frame(frame, area, model, overview, hits, &scroll);
-    Some(scroll.get())
+    let sliding = std::cell::Cell::new(false);
+    render_overview_frame(frame, area, model, overview, hits, (&scroll, &sliding));
+    (Some(scroll.get()), sliding.get())
 }
 
 fn render_overview_frame(
@@ -95,7 +98,7 @@ fn render_overview_frame(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-    scroll: &std::cell::Cell<NavigatorScroll>,
+    (scroll, sliding): (&std::cell::Cell<NavigatorScroll>, &std::cell::Cell<bool>),
 ) {
     widget::fill(frame, area, Token::SurfaceBackground);
     let inner = Rect {
@@ -239,6 +242,7 @@ fn render_overview_frame(
     if section_area.width > 0 {
         let track = Track {
             scroll: Some(scroll),
+            sliding: Some(sliding),
             hovered: match model.hovered {
                 Some(WorkspaceHit::OverviewRow(row)) => Some(row),
                 _ => None,
@@ -1024,6 +1028,9 @@ impl Form {
             form.lines
                 .push(said(failed(&problem.reason), Token::StateDanger));
         }
+        // Air under the last box, so the form does not end flush against
+        // the frame's foot when scrolled to its end.
+        form.lines.extend([blank(), blank()]);
         form
     }
 
@@ -1595,6 +1602,14 @@ fn render_agent(
         .spans
         .push(Span::styled("prompt", theme::fg(Token::TextDim)));
     let mut lines = vec![header];
+    // What the prompt column has once the others and, with no drawer
+    // beside the list, the scrollbar's groove are taken.
+    let groove = match track.column {
+        Some(_) => 0,
+        None => usize::from(Scrollbar::width()) + 1,
+    };
+    let prompt_room = usize::from(list.width)
+        .saturating_sub(usize::from(PROMPT_HARNESS + PROMPT_WHEN + PROMPT_WHERE) + groove);
     let mut age = None;
     for (index, entry) in prompts.iter().enumerate() {
         // A heading where the age changes: the recent ones open the list
@@ -1622,10 +1637,25 @@ fn render_agent(
                     theme::fg(Token::TextMuted),
                 ),
                 cell(&place, PROMPT_WHERE, Token::TextMuted),
-                Span::styled(entry.preview.clone(), theme::fg(Token::TextPrimary)),
             ],
             row: Some(index),
         });
+        let prompt = &mut lines.last_mut().expect("just pushed").spans;
+        let style = theme::fg(Token::TextPrimary);
+        // The selected prompt slides through what does not fit, the way a
+        // long caption does under the pointer; the rest stay cut.
+        match (index == agent.selected)
+            .then(|| row::marquee(&[(&entry.preview, style)], prompt_room, model.tick))
+            .flatten()
+        {
+            Some(window) => {
+                prompt.extend(window);
+                if let Some(sliding) = track.sliding {
+                    sliding.set(true);
+                }
+            }
+            None => prompt.push(Span::styled(entry.preview.clone(), style)),
+        }
     }
     if agent.clearing {
         let scopes = [

@@ -175,8 +175,10 @@ pub(super) fn render(
         None => {
             match &model.space_overview {
                 Some(overview) => {
-                    metrics.overview =
+                    let (scroll, sliding) =
                         render_space_overview(frame, layout.pane, model, overview, hits);
+                    metrics.overview = scroll;
+                    metrics.marquee |= sliding;
                 }
                 None => render_pane(frame, layout.pane, model),
             }

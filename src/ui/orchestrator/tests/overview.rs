@@ -1487,3 +1487,87 @@ fn a_click_on_nothing_closes_an_open_combobox() {
         "closing it chose an option"
     );
 }
+
+/// The selected prompt slides through what its column cannot show, and
+/// asks for the next frame to keep sliding; the others stay cut.
+#[test]
+fn the_selected_prompt_slides_and_the_others_hold_still() {
+    let mut model = agent_session_in("/repo");
+    let agent = drawer_over(&model);
+    let root = agent.space_root.clone();
+    let (space, behind) = {
+        let space = model.session.as_ref().expect("session").selected_space();
+        (space.id, space.selected_tab)
+    };
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.agent = Some(agent);
+    overview.answer = Some(Ok(project_space(
+        Default::default(),
+        Err("not read".to_owned()),
+    )));
+    let origin = uze_application::PromptOrigin {
+        space_label: "uze".to_owned(),
+        tab_id: 1,
+        tab_label: "Agent".to_owned(),
+        agent_binary: "claude".to_owned(),
+        agent: None,
+    };
+    let long = format!("start {} end", "of a long prompt ".repeat(12));
+    model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
+        root,
+        entries: vec![
+            uze_application::PromptEntry::new(&origin, &long).unwrap(),
+            uze_application::PromptEntry::new(&origin, &format!("other {long}")).unwrap(),
+        ],
+    });
+    let frame_at = |model: &mut WorkspaceModel, tick: usize| {
+        model.tick = tick;
+        let area = Rect::new(0, 0, 140, 30);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))
+                .unwrap();
+        let mut metrics = super::render::FrameMetrics::default();
+        terminal
+            .draw(|frame| {
+                super::render::render(
+                    frame,
+                    model,
+                    &identities_fixture(),
+                    &mut Vec::new(),
+                    &mut metrics,
+                )
+            })
+            .unwrap();
+        let rows: Vec<String> = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol().to_owned())
+                    .collect()
+            })
+            .collect();
+        (rows, metrics.marquee)
+    };
+    let line = |rows: &[String], needle: &str| {
+        rows.iter()
+            .find(|row| row.contains(needle))
+            .cloned()
+            .unwrap_or_else(|| panic!("no line holds {needle:?}:\n{}", rows.join("\n")))
+    };
+    let (before, sliding) = frame_at(&mut model, 0);
+    assert!(
+        sliding,
+        "a selected prompt that does not fit asked for no next frame"
+    );
+    let (after, _) = frame_at(&mut model, 200);
+    assert_ne!(
+        line(&before, "uze/Agent"),
+        line(&after, "uze/Agent"),
+        "the selected prompt did not slide"
+    );
+    assert_eq!(
+        line(&before, "other"),
+        line(&after, "other"),
+        "a prompt not selected moved"
+    );
+}
