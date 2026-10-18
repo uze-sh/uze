@@ -1493,6 +1493,9 @@ struct Remembered {
     agent_support_pending: Option<SupportKey>,
     /// The last prompt history the drawer read, tagged with its space.
     drawer_prompts: Option<PromptHistoryResolution>,
+    /// The space root a prompt history read is out for, so opening the
+    /// overview again before it answers does not queue another.
+    prompt_history_pending: Option<PathBuf>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.

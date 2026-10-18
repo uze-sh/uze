@@ -1144,15 +1144,21 @@ impl Attach<'_> {
         // somebody is looking.
         let agent = space_prompts_panel(&self.model, &self.identities);
         if let Some(agent) = &agent {
-            if let Some(key) = &agent.key {
-                self.model.remembered.agent_support_pending = Some(key.clone());
+            let remembered = &mut self.model.remembered;
+            if let Some(key) = &agent.key
+                && remembered.agent_support_pending.as_ref() != Some(key)
+            {
+                remembered.agent_support_pending = Some(key.clone());
                 spawn_support_refresh(self.home, key.clone(), self.channels.support.sender.clone());
             }
-            spawn_prompt_history(
-                self.home,
-                agent.space_root.clone(),
-                self.channels.prompts.sender.clone(),
-            );
+            if remembered.prompt_history_pending.as_ref() != Some(&agent.space_root) {
+                remembered.prompt_history_pending = Some(agent.space_root.clone());
+                spawn_prompt_history(
+                    self.home,
+                    agent.space_root.clone(),
+                    self.channels.prompts.sender.clone(),
+                );
+            }
         }
         if let Some(overview) = self.model.space_overview.as_mut() {
             // The prompt it was on stays chosen when the space is the same.

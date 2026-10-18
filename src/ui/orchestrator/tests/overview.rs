@@ -102,6 +102,42 @@ fn the_agent_section_keeps_its_own_agents_support() {
     );
 }
 
+/// Opening the overview reads what reaches the agent in front and the
+/// space's prompts once: opened again before they answer, it waits for
+/// the reads already out, and their answers free it to read again.
+#[test]
+fn opening_the_overview_again_waits_for_the_reads_already_out() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-reads-once",
+    ));
+    let mut driven = driven(agent_session_in("/repo/.worktrees/a"), &home);
+    driven.attach.toggle_space_overview();
+    let pending = |driven: &Driven<'_>| {
+        let remembered = &driven.attach.model.remembered;
+        (
+            remembered.agent_support_pending.clone(),
+            remembered.prompt_history_pending.clone(),
+        )
+    };
+    let (support, prompts) = pending(&driven);
+    assert!(support.is_some(), "what reaches the agent was not read");
+    assert_eq!(prompts, Some(PathBuf::from("/repo")));
+    driven.attach.toggle_space_overview();
+    driven.attach.toggle_space_overview();
+    assert_eq!(pending(&driven), (support, prompts));
+
+    let channels = &driven.attach.channels;
+    let wait = std::time::Duration::from_secs(60);
+    let answer = channels.prompts.receiver.recv_timeout(wait).unwrap();
+    channels.prompts.sender.send(answer).unwrap();
+    let answer = channels.support.receiver.recv_timeout(wait).unwrap();
+    channels.support.sender.send(answer).unwrap();
+    driven.pump();
+    let remembered = &driven.attach.model.remembered;
+    assert_eq!(remembered.prompt_history_pending, None);
+    assert_eq!(remembered.agent_support_pending, None);
+}
+
 /// A prompt is read in the Agent section to be used again: enter on it
 /// copies the whole prompt, however its lines were folded.
 #[test]

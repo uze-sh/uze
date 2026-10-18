@@ -281,6 +281,9 @@ impl Attach<'_> {
             self.model.dirty = true;
         }
         while let Ok(resolution) = self.channels.prompts.receiver.try_recv() {
+            if self.model.remembered.prompt_history_pending.as_ref() == Some(&resolution.root) {
+                self.model.remembered.prompt_history_pending = None;
+            }
             self.model.remembered.drawer_prompts = Some(resolution);
             self.keep_drawer_selection();
             self.model.dirty = true;
