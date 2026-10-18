@@ -275,7 +275,7 @@ fn render_overview_frame(
         foot,
         model,
         overview,
-        &foot_keys(overview, side_by_side),
+        &foot_keys(model, overview, side_by_side),
         hits,
     );
 }
@@ -2244,6 +2244,17 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
     Some(answer)
 }
 
+/// What the drawer of a free worktree ends in: the button that asks about
+/// removing it.
+fn removal_answer() -> Answer {
+    Answer::new(
+        "No agent holds it",
+        "Removing it keeps its branch.",
+        Token::TextMuted,
+        vec![("Remove", WorkspaceHit::OverviewRemoveWorktree, false)],
+    )
+}
+
 /// A title, what it means, and the buttons that answer it.
 struct Answer {
     title: String,
@@ -2354,6 +2365,9 @@ fn render_drawer(
                 return;
             };
             drawer.worktree(card);
+            let answer = model.offers_worktree_removal(overview).then(removal_answer);
+            draw_with_answer(frame, area, drawer.lines, answer, hits);
+            return;
         }
         Section::Settings => {
             if drawer.setting(overview).is_none() {
@@ -2612,6 +2626,10 @@ impl DrawerLines {
                 Token::StateWarning,
             );
         }
+        if let Some(why) = kept_because(card) {
+            self.blank();
+            self.paragraph(why, Token::TextMuted);
+        }
     }
 
     /// A fact, and its body once Enter has read it.
@@ -2720,7 +2738,11 @@ fn draw_with_answer(
     );
 }
 
-fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &'static str)> {
+fn foot_keys(
+    model: &WorkspaceModel,
+    overview: &SpaceOverviewView,
+    side_by_side: bool,
+) -> Vec<(Action, &'static str)> {
     if overview.edit.text.is_some() {
         return vec![
             (Action::Activate, "new line"),
@@ -2764,6 +2786,9 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
             keys.push((Action::Activate, "details"))
         }
         _ => {}
+    }
+    if model.offers_worktree_removal(overview) {
+        keys.push((Action::RemoveItem, "remove"));
     }
     keys.push((Action::Refresh, "refresh"));
     keys.push((Action::Dismiss, "back"));

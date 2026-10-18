@@ -120,6 +120,11 @@ pub(super) struct SpaceOverviewView {
     /// The agent in front when the overview opened, and its prompts' state.
     pub(super) agent: Option<AgentSupportDropdown>,
     pub(super) worktrees: WorktreesRead,
+    /// The question about removing a free worktree, while it stands.
+    pub(super) removal: Option<WorktreeRemoval>,
+    /// A removal is out: one at a time, since a second would judge a slot
+    /// the first is taking away.
+    pub(super) removing: bool,
 }
 
 /// The space's worktrees as last measured. Measuring walks every file of
@@ -576,6 +581,8 @@ impl SpaceOverviewView {
             edit: WorkspaceEdit::default(),
             agent: None,
             worktrees: WorktreesRead::default(),
+            removal: None,
+            removing: false,
         }
     }
 
@@ -1180,6 +1187,7 @@ impl WorkspaceModel {
             // again asks afresh.
             overview.pending = false;
             overview.worktrees.pending = false;
+            overview.removal = None;
             overview.edit.field = None;
             overview.edit.text = None;
             self.put_away_overviews.insert(overview.space, overview);
@@ -1453,6 +1461,7 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.space_worktrees.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_space_worktrees(resolution);
         }
+        self.absorb_worktree_removals();
         while let Ok(resolution) = self.channels.fact_bodies.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_fact_body(resolution);
         }
@@ -1609,6 +1618,9 @@ impl Attach<'_> {
             Action::Refresh => self.refresh_space_overview(),
             Action::Activate => self.activate_overview_row(),
             Action::AddItem => self.add_workspace_item(),
+            Action::RemoveItem if overview.section == Section::Worktrees => {
+                self.ask_worktree_removal();
+            }
             Action::RemoveItem => self.remove_workspace_row(),
             Action::MoveItemUp => self.move_workspace_item(-1),
             Action::MoveItemDown => self.move_workspace_item(1),

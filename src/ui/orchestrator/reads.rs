@@ -1473,6 +1473,58 @@ pub(super) fn spawn_space_worktrees(
     });
 }
 
+/// What removing a free worktree is asked with.
+pub(super) struct WorktreeRemovalRequest {
+    pub(super) space: SpaceId,
+    pub(super) root: PathBuf,
+    pub(super) path: PathBuf,
+    pub(super) name: String,
+    pub(super) bytes: u64,
+    /// Every checkout a pane of this client stands in.
+    pub(super) occupied: Vec<PathBuf>,
+}
+
+/// Removes a free worktree the operator answered for: a rename under the
+/// repository's lock, then a recursive deletion of what may be gigabytes
+/// of build output. Answers either way, since the overview takes no
+/// second removal until this one does.
+pub(super) fn spawn_worktree_removal(
+    home: &UzeHome,
+    request: WorktreeRemovalRequest,
+    sender: mpsc::Sender<RemovalResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.worktree_removal").entered();
+        let WorktreeRemovalRequest {
+            space,
+            root,
+            path,
+            name,
+            bytes,
+            occupied,
+        } = request;
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .map_err(|error| error.to_string())
+                    .and_then(|app| {
+                        app.workspace()
+                            .remove_free_checkout(&root, &path, &occupied)
+                    })
+            },
+            Err("removing the worktree failed".to_owned()),
+        );
+        let _ = sender.send(RemovalResolution {
+            space,
+            name,
+            bytes,
+            outcome,
+        });
+    });
+}
+
 /// Reads one of the project's facts, for the overview's drawer.
 pub(super) fn spawn_fact_body(
     home: &UzeHome,

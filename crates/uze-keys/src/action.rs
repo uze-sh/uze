@@ -346,8 +346,12 @@ actions! {
     // Written at once, as every Settings edit is, and still not
     // destructive: it takes one entry out of a file Git holds, and the
     // toast that follows names it, which is why it may sit on a bare letter.
+    // On a worktree card it only asks, and what it removes when answered
+    // is a free slot's directory: the workspace refuses one that holds any
+    // work or that anybody stands in, and keeps its branch, so all that
+    // goes is output a build makes again.
     RemoveItem => "remove-item", false,
-        "Remove", "Remove the entry in focus, or unset the key";
+        "Remove", "Remove the entry in focus or unset the key, or remove the free worktree selected";
     MoveItemUp => "move-item-up", false,
         "Move up", "Move the entry in focus up its list";
     MoveItemDown => "move-item-down", false,

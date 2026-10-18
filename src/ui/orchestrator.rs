@@ -72,6 +72,7 @@ mod interrupt;
 mod notices;
 mod proposal;
 mod space_overview;
+mod worktree_removal;
 
 /// Input/redraw cadence. Unlike the pane content itself — which the server
 /// now pushes on PTY output instead of the client polling for it (see
@@ -218,6 +219,7 @@ use approval::*;
 use interrupt::*;
 use proposal::*;
 use space_overview::*;
+use worktree_removal::*;
 mod input;
 mod recent;
 mod render;
@@ -911,6 +913,13 @@ pub(super) enum WorkspaceHit {
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
     OverviewDiscard,
+    /// The Remove button under a free worktree in the overview's drawer.
+    OverviewRemoveWorktree,
+    /// One of the answers to whether to remove a free worktree: `true`
+    /// removes it.
+    OverviewRemovalAnswer(bool),
+    /// The removal question itself, which a click on answers nothing.
+    OverviewRemovalBody,
     /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
     /// The task mark on a sidebar agent row — opens the catalog of what
@@ -1461,6 +1470,8 @@ struct Channels {
     space_worktrees: Answers<WorktreesResolution>,
     fact_bodies: Answers<FactBodyResolution>,
     declaration_saves: Answers<DeclarationSaveResolution>,
+    /// Removing a free worktree the operator answered for.
+    worktree_removals: Answers<RemovalResolution>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -2275,6 +2286,7 @@ impl WorkspaceModel {
             && self.approval.is_none()
             && self.interrupt.is_none()
             && self.proposal.is_none()
+            && !self.asks_worktree_removal()
             && self.action_index.is_none()
             && self.release_notes.is_none()
             && self.manage.is_none()

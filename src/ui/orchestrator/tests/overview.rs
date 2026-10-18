@@ -1970,3 +1970,257 @@ fn worktrees_are_ordered_by_where_they_stand_and_the_selection_follows() {
         "the selection stayed on its place"
     );
 }
+
+/// Two worktrees: the first an agent works in, the second a free slot no
+/// task holds.
+fn with_a_free_one() -> uze_application::CheckoutsView {
+    let mut view = worktrees(2);
+    view.checkouts[1].owner = uze_application::CheckoutOwner::Agent {
+        holder: None,
+        live: false,
+    };
+    view.checkouts[1].task = None;
+    view
+}
+
+/// The overview on its Worktrees section, the free worktree selected.
+fn on_the_free_worktree(home: &UzeHome) -> Driven<'_> {
+    let mut driven = driven(worktrees_over(Some(with_a_free_one())), home);
+    driven.area = Rect::new(0, 0, 160, 40);
+    driven.frame();
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Down,
+    ));
+    driven.frame();
+    driven
+}
+
+fn removal_asked(driven: &Driven<'_>) -> bool {
+    driven.attach.model.asks_worktree_removal()
+}
+
+fn press_char(driven: &mut Driven<'_>, character: char) {
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Char(character),
+    ));
+}
+
+/// Only a free worktree offers removal: its drawer's button and the key.
+/// A worktree an agent works in offers neither.
+#[test]
+fn only_a_free_worktree_offers_removal() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-removal-offered",
+    ));
+    let mut driven = driven(worktrees_over(Some(with_a_free_one())), &home);
+    driven.area = Rect::new(0, 0, 160, 40);
+    driven.frame();
+    let offered = |driven: &Driven<'_>| {
+        let hits = &driven.attach.model.hits;
+        (
+            hits.iter()
+                .any(|(_, hit)| *hit == WorkspaceHit::OverviewRemoveWorktree),
+            hits.iter()
+                .any(|(_, hit)| *hit == WorkspaceHit::HintAction(uze_keys::Action::RemoveItem)),
+        )
+    };
+    assert_eq!(offered(&driven), (false, false), "a working one is offered");
+    press_char(&mut driven, 'd');
+    assert!(!removal_asked(&driven), "the key asked about a working one");
+
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Down,
+    ));
+    driven.frame();
+    assert_eq!(
+        offered(&driven),
+        (true, true),
+        "the free one is not offered"
+    );
+    let (button, _) = *driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| *hit == WorkspaceHit::OverviewRemoveWorktree)
+        .expect("the drawer's button");
+    driven.press(button.x, button.y);
+    assert!(removal_asked(&driven), "the button did not ask");
+}
+
+/// The question names the worktree and its size, and esc withdraws it
+/// with nothing sent.
+#[test]
+fn the_removal_question_names_the_worktree_and_esc_withdraws_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-removal-asked",
+    ));
+    let mut driven = on_the_free_worktree(&home);
+    press_char(&mut driven, 'd');
+    assert!(removal_asked(&driven));
+    let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
+    assert!(
+        screen.contains("Remove this worktree?") && screen.contains(".worktrees/slot-01 (6.0 MB)"),
+        "the question does not name what it removes:\n{screen}"
+    );
+
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Esc,
+    ));
+    assert!(!removal_asked(&driven));
+    let overview = driven.attach.model.space_overview.as_ref();
+    assert!(
+        overview.is_some_and(|overview| !overview.removing),
+        "esc put the overview away or removed something"
+    );
+    assert!(
+        driven
+            .attach
+            .channels
+            .worktree_removals
+            .receiver
+            .try_recv()
+            .is_err()
+    );
+}
+
+/// Confirming sends one removal off the frame and says so in the header;
+/// no second is asked while it is out. A refusal is toasted, the card
+/// stays, and the section is read again.
+#[test]
+fn a_confirmed_removal_runs_off_the_frame_and_a_refusal_is_said() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-removal-sent",
+    ));
+    let mut driven = on_the_free_worktree(&home);
+    press_char(&mut driven, 'd');
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Enter,
+    ));
+    assert!(!removal_asked(&driven), "enter on cancel did not withdraw");
+    assert!(
+        !driven
+            .attach
+            .model
+            .space_overview
+            .as_ref()
+            .unwrap()
+            .removing,
+        "enter on cancel removed it"
+    );
+
+    press_char(&mut driven, 'd');
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Right,
+    ));
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Enter,
+    ));
+    assert!(!removal_asked(&driven));
+    assert!(
+        driven
+            .attach
+            .model
+            .space_overview
+            .as_ref()
+            .unwrap()
+            .removing
+    );
+    let notice = driven
+        .attach
+        .model
+        .remembered
+        .notice
+        .as_ref()
+        .map(|notice| notice.text.clone());
+    assert_eq!(
+        notice.as_deref(),
+        Some("removing worktree .worktrees/slot-01")
+    );
+    press_char(&mut driven, 'd');
+    assert!(!removal_asked(&driven), "a second removal was asked");
+
+    let channels = &driven.attach.channels;
+    let answered = channels
+        .worktree_removals
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the removal answers");
+    assert_eq!(answered.name, ".worktrees/slot-01");
+    channels
+        .worktree_removals
+        .sender
+        .send(RemovalResolution {
+            outcome: Err("a process is working inside it".to_owned()),
+            ..answered
+        })
+        .unwrap();
+    let asked_before = driven
+        .attach
+        .model
+        .space_overview
+        .as_ref()
+        .unwrap()
+        .worktrees
+        .asked;
+    driven.attach.absorb_space_overview_answers();
+
+    let model = &driven.attach.model;
+    assert!(
+        model.remembered.notice.is_none(),
+        "the header still says it"
+    );
+    let toast = model.remembered.toasts.back().expect("the outcome is said");
+    assert_eq!(toast.text, "worktree kept");
+    assert_eq!(
+        toast.detail,
+        ".worktrees/slot-01: a process is working inside it"
+    );
+    let overview = model.space_overview.as_ref().unwrap();
+    assert!(!overview.removing);
+    assert_eq!(overview.worktrees().len(), 2, "the card went");
+    assert!(
+        overview.worktrees.pending && overview.worktrees.asked > asked_before,
+        "the section was not read again"
+    );
+}
+
+/// A removal that went says what it freed, and the section is read again.
+#[test]
+fn a_removed_worktree_says_what_it_freed_and_is_read_again() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-removal-done",
+    ));
+    let mut driven = on_the_free_worktree(&home);
+    let space = driven.attach.model.space_overview.as_ref().unwrap().space;
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .unwrap()
+        .removing = true;
+    driven
+        .attach
+        .channels
+        .worktree_removals
+        .sender
+        .send(RemovalResolution {
+            space,
+            name: ".worktrees/slot-01".to_owned(),
+            bytes: 6 * 1024 * 1024,
+            outcome: Ok(()),
+        })
+        .unwrap();
+    driven.attach.absorb_space_overview_answers();
+
+    let model = &driven.attach.model;
+    let toast = model.remembered.toasts.back().expect("the outcome is said");
+    assert_eq!(toast.text, "worktree removed");
+    assert_eq!(toast.detail, ".worktrees/slot-01 · 6.0 MB freed");
+    let overview = model.space_overview.as_ref().unwrap();
+    assert!(!overview.removing);
+    assert!(overview.worktrees.pending, "the section was not read again");
+}
+
+use crate::ui::orchestrator::worktree_removal::RemovalResolution;

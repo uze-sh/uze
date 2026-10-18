@@ -281,7 +281,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::RemoveItem,
-        Control("the remove hint along the overview's foot, in Workspace"),
+        Control(
+            "the remove hint along the overview's foot, in Workspace, and the Remove \
+             button in a free worktree's drawer",
+        ),
     );
     put(
         Action::MoveItemUp,

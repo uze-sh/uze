@@ -170,6 +170,9 @@ impl Attach<'_> {
             _ if self.model.interrupt.is_some() => {
                 self.interrupt_press(mouse.column, mouse.row);
             }
+            _ if self.model.asks_worktree_removal() => {
+                self.worktree_removal_press(mouse.column, mouse.row);
+            }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
                     self.model.hit_at(mouse.column, mouse.row),
@@ -1408,7 +1411,9 @@ impl Attach<'_> {
             | WorkspaceHit::ProposalAnswer(_)
             | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)
-            | WorkspaceHit::InterruptBody => {}
+            | WorkspaceHit::InterruptBody
+            | WorkspaceHit::OverviewRemovalAnswer(_)
+            | WorkspaceHit::OverviewRemovalBody => {}
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already
@@ -1442,6 +1447,7 @@ impl Attach<'_> {
                 self.step_overview_value(row, if adds { 1 } else { -1 });
             }
             WorkspaceHit::OverviewDiscard => return self.act(Action::DiscardChanges, viewport),
+            WorkspaceHit::OverviewRemoveWorktree => return self.act(Action::RemoveItem, viewport),
             // The counts are the changes' door, not the surface's, and
             // keep the keys' toggle.
             WorkspaceHit::OpenChanges => return self.act(Action::ToggleChanges, viewport),
