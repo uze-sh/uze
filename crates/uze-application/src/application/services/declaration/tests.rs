@@ -197,7 +197,10 @@ fn an_edit_keeps_every_comment_and_changes_only_the_edited_keys() {
         set(DeclarationKey::Delivery, text("push")),
         set(
             DeclarationKey::Gate,
-            DeclaredValue::Commands(vec!["cargo test".into(), "cargo clippy".into()]),
+            DeclaredValue::Commands(vec![
+                ShellCommand::spelled("cargo test", "cargo test"),
+                ShellCommand::spelled("cargo clippy", "cargo clippy"),
+            ]),
         ),
         Edit::Unset {
             key: DeclarationKey::Worktree,
@@ -207,7 +210,9 @@ fn an_edit_keeps_every_comment_and_changes_only_the_edited_keys() {
         apply(&app, &repository, &edits),
         DeclarationApplied::Written {
             created: false,
-            // The gate is new, and nobody approved it.
+            // The gate is new, and nobody approved it. It is spelled for
+            // both shells because a plain line never runs on Windows, and
+            // what never runs awaits no approval.
             awaits_approval_again: true
         }
     );
