@@ -446,6 +446,9 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "-", Action::PreviousValue),
         bind(Scope::SpaceOverview, "+", Action::NextValue),
         bind(Scope::SpaceOverview, "/", Action::StartFilter),
+        // The drawer's text, paged as a resource's preview is.
+        bind(Scope::SpaceOverview, "pagedown", Action::ScrollPageDown),
+        bind(Scope::SpaceOverview, "pageup", Action::ScrollPageUp),
         // Like recent's: the arrows walk the facts it lets through, enter
         // keeps the words and reads the fact.
         bind(Scope::SpaceOverviewFilter, "esc", Action::Dismiss),

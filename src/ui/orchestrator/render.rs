@@ -126,7 +126,7 @@ pub(super) struct FrameMetrics {
     pub(super) recent: Option<RecentFrame>,
     /// Where the space overview's section in front settled, when it was
     /// drawn.
-    pub(super) overview: Option<crate::ui::extension_view::NavigatorScroll>,
+    pub(super) overview: Option<OverviewScroll>,
 }
 
 /// One frame of the management modal: where it was drawn, and the hit

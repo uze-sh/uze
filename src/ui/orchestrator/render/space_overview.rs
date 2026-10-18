@@ -93,11 +93,31 @@ pub(super) fn render_space_overview(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) -> (Option<NavigatorScroll>, bool) {
+) -> (Option<OverviewScroll>, bool) {
     let scroll = std::cell::Cell::new(overview.scroll[overview.section.index()]);
+    let drawer_scroll = std::cell::Cell::new(overview.drawer_scroll());
     let sliding = std::cell::Cell::new(false);
-    render_overview_frame(frame, area, model, overview, hits, (&scroll, &sliding));
-    (Some(scroll.get()), sliding.get())
+    let cells = Scrolled {
+        section: &scroll,
+        drawer: &drawer_scroll,
+        sliding: &sliding,
+    };
+    render_overview_frame(frame, area, model, overview, hits, cells);
+    let settled = OverviewScroll {
+        section: scroll.get(),
+        drawer: drawer_scroll.get(),
+    };
+    (Some(settled), sliding.get())
+}
+
+/// What a frame of the overview settles for the next event: where its
+/// section and its drawer scrolled to, and whether a line was drawn
+/// sliding.
+#[derive(Clone, Copy)]
+struct Scrolled<'a> {
+    section: &'a std::cell::Cell<NavigatorScroll>,
+    drawer: &'a std::cell::Cell<u16>,
+    sliding: &'a std::cell::Cell<bool>,
 }
 
 fn render_overview_frame(
@@ -106,7 +126,7 @@ fn render_overview_frame(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-    (scroll, sliding): (&std::cell::Cell<NavigatorScroll>, &std::cell::Cell<bool>),
+    scrolled: Scrolled<'_>,
 ) {
     widget::fill(frame, area, Token::SurfaceBackground);
     let inner = Rect {
@@ -229,7 +249,15 @@ fn render_overview_frame(
             foot.y.saturating_sub(top),
         );
         let (drawer_inner, handle) = drawer::render(frame, column, dragging);
-        render_drawer(frame, drawer_inner, model, overview, project, hits);
+        render_drawer(
+            frame,
+            drawer_inner,
+            model,
+            overview,
+            project,
+            scrolled.drawer,
+            hits,
+        );
         resize_handle = Some(handle);
         (
             Rect {
@@ -249,15 +277,23 @@ fn render_overview_frame(
             width: column.width.saturating_sub(2 * INSET),
             ..column
         };
-        render_drawer(frame, drawer_inner, model, overview, project, hits);
+        render_drawer(
+            frame,
+            drawer_inner,
+            model,
+            overview,
+            project,
+            scrolled.drawer,
+            hits,
+        );
         (Rect::default(), Track::default())
     } else {
         (body, Track::default())
     };
     if section_area.width > 0 {
         let track = Track {
-            scroll: Some(scroll),
-            sliding: Some(sliding),
+            scroll: Some(scrolled.section),
+            sliding: Some(scrolled.sliding),
             hovered: match model.hovered {
                 Some(WorkspaceHit::OverviewRow(row)) => Some(row),
                 _ => None,
@@ -2400,6 +2436,7 @@ fn render_drawer(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
+    scroll: &std::cell::Cell<u16>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let mut drawer = DrawerLines {
@@ -2433,25 +2470,50 @@ fn render_drawer(
             };
             drawer.worktree(card);
             let answer = model.offers_worktree_removal(overview).then(removal_answer);
-            draw_with_answer(frame, area, drawer.lines, answer, model.hovered, hits);
+            let body = draw_answer(frame, area, answer, model.hovered, hits);
+            draw_drawer_text(frame, body, drawer.lines, scroll, hits);
             return;
         }
         Section::Settings => {
             if drawer.setting(overview).is_none() {
                 return;
             }
-            draw_with_answer(
-                frame,
-                area,
-                drawer.lines,
-                settings_answer(overview, project),
-                model.hovered,
-                hits,
-            );
+            let answer = settings_answer(overview, project);
+            let body = draw_answer(frame, area, answer, model.hovered, hits);
+            draw_drawer_text(frame, body, drawer.lines, scroll, hits);
             return;
         }
     }
-    frame.render_widget(Paragraph::new(drawer.lines), area);
+    draw_drawer_text(frame, area, drawer.lines, scroll, hits);
+}
+
+/// The drawer's text in `area`, `scroll` rows down and settled there so
+/// its last line stops at the foot, with a handle in the drawer's right
+/// margin when it does not all fit.
+fn draw_drawer_text(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    scroll: &std::cell::Cell<u16>,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let visible = usize::from(area.height);
+    let first = usize::from(scroll.get()).min(lines.len().saturating_sub(visible));
+    scroll.set(u16::try_from(first).unwrap_or(u16::MAX));
+    // Past the text's last column, in the margin the drawer keeps on its
+    // right: the text is already folded to the full width.
+    let track = Rect::new(
+        area.right().saturating_add(1),
+        area.y,
+        Scrollbar::width(),
+        area.height,
+    );
+    if let Some(bar) = Scrollbar::measure(track, visible, lines.len()) {
+        bar.render(frame, first);
+    }
+    let shown: Vec<_> = lines.into_iter().skip(first).take(visible).collect();
+    frame.render_widget(Paragraph::new(shown), area);
+    hits.push((area, WorkspaceHit::OverviewDrawer));
 }
 
 /// The last fact body drawn, and what it was drawn from.
@@ -2800,22 +2862,21 @@ impl DrawerLines {
     }
 }
 
-/// The drawer's lines, and the answer at its foot.
-fn draw_with_answer(
+/// The answer at the drawer's foot, answering with the room left above
+/// it for the drawer's text: the foot stays put while the text scrolls.
+fn draw_answer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
-    lines: Vec<Line<'static>>,
     answer: Option<Answer>,
     hovered: Option<WorkspaceHit>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
+) -> Rect {
     let Some(answer) = answer else {
-        frame.render_widget(Paragraph::new(lines), area);
-        return;
+        return area;
     };
     let (body, foot) = drawer::split(area, !answer.buttons.is_empty());
-    frame.render_widget(Paragraph::new(lines), body);
     answer.render(frame, foot, hovered, hits);
+    body
 }
 
 fn foot_keys(

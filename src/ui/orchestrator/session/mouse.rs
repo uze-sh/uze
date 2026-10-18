@@ -1031,6 +1031,19 @@ impl Attach<'_> {
                 };
                 self.space_overview_action(action);
             }
+            _ if self.model.space_overview.is_some()
+                && self.model.hit_at(mouse.column, mouse.row)
+                    == Some(WorkspaceHit::OverviewDrawer) =>
+            {
+                let rows = match mouse.kind {
+                    MouseEventKind::ScrollUp => -crate::ui::input::PREVIEW_WHEEL,
+                    _ => crate::ui::input::PREVIEW_WHEEL,
+                };
+                if let Some(overview) = self.model.space_overview.as_mut() {
+                    overview.scroll_drawer(rows);
+                    self.model.dirty = true;
+                }
+            }
             _ if self.model.space_overview.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -1418,6 +1431,7 @@ impl Attach<'_> {
             | WorkspaceHit::OverviewRemovalAnswer(_)
             | WorkspaceHit::OverviewRemovalBody
             | WorkspaceHit::OverviewIssuesBody => {}
+            WorkspaceHit::OverviewDrawer => {}
             WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is

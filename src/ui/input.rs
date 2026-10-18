@@ -21,9 +21,10 @@ use super::model::{
 };
 use super::worker::Intent;
 
-/// How far one wheel notch and one page key move a resource's preview.
-const PREVIEW_WHEEL: i16 = 3;
-const PREVIEW_PAGE: i16 = 12;
+/// How far one wheel notch and one page key move a drawer's text: a
+/// resource's preview here, and the space overview's drawer.
+pub(super) const PREVIEW_WHEEL: i16 = 3;
+pub(super) const PREVIEW_PAGE: i16 = 12;
 
 impl TuiModel {
     /// What is open, outermost first — the value that replaced an ordering

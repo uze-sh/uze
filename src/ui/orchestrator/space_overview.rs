@@ -98,6 +98,8 @@ pub(super) struct SpaceOverviewView {
     /// Where each section's list is scrolled to: moved by the wheel, and
     /// pulled to the selection only when the keys move it.
     pub(super) scroll: [crate::ui::extension_view::NavigatorScroll; Section::COUNT],
+    /// Where the drawer's text is scrolled to: see [`DrawerScroll`].
+    drawer_scroll: DrawerScroll,
     /// The selected row of each section, by section index: a card, in the
     /// Worktrees section.
     pub(super) rows: [usize; Section::COUNT],
@@ -130,6 +132,27 @@ pub(super) struct SpaceOverviewView {
     pub(super) memory_filter: String,
     /// Whether that search is taking what is typed.
     pub(super) filtering: bool,
+}
+
+/// How far the drawer is scrolled, and the row that was in it then.
+///
+/// Kept with the row as well as reset where the keys move: the selection
+/// moves from a dozen places, a read that shrinks the list among them,
+/// and any of them forgetting the reset would open the next row's text
+/// partway down.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DrawerScroll {
+    /// The section's index and its row.
+    on: (usize, usize),
+    rows: u16,
+}
+
+/// Where the overview's two scrolled parts settled on the frame just
+/// drawn: the section in front, and the drawer beside it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct OverviewScroll {
+    pub(super) section: crate::ui::extension_view::NavigatorScroll,
+    pub(super) drawer: u16,
 }
 
 /// The space's worktrees as last measured. Measuring walks every file of
@@ -451,6 +474,8 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::CaretRight
             | Action::CaretLineStart
             | Action::CaretLineEnd
+            | Action::ScrollPageDown
+            | Action::ScrollPageUp
     )
 }
 
@@ -593,6 +618,7 @@ impl SpaceOverviewView {
             section: Section::Agent,
             rows: [0; Section::COUNT],
             scroll: Default::default(),
+            drawer_scroll: DrawerScroll::default(),
             drawer: false,
             asked: 0,
             pending: false,
@@ -637,6 +663,28 @@ impl SpaceOverviewView {
         self.rows[self.section.index()]
     }
 
+    /// The rows the drawer is scrolled past: none on a row other than the
+    /// one it was scrolled on.
+    pub(super) fn drawer_scroll(&self) -> u16 {
+        match self.drawer_scroll.on == self.drawer_row() {
+            true => self.drawer_scroll.rows,
+            false => 0,
+        }
+    }
+
+    /// Scrolls the drawer by `rows`, past its end only until the next
+    /// frame settles it on its last screenful.
+    pub(super) fn scroll_drawer(&mut self, rows: i16) {
+        self.drawer_scroll = DrawerScroll {
+            on: self.drawer_row(),
+            rows: self.drawer_scroll().saturating_add_signed(rows),
+        };
+    }
+
+    fn drawer_row(&self) -> (usize, usize) {
+        (self.section.index(), self.row())
+    }
+
     /// The facts the Memory search lets through, the most recently
     /// updated first. One with no date goes last, and a tie keeps the
     /// order they are kept in: the project's, then the machine's.
@@ -662,6 +710,8 @@ impl SpaceOverviewView {
     fn narrowed(&mut self) {
         self.rows[Section::Memory.index()] = 0;
         self.scroll[Section::Memory.index()] = Default::default();
+        // Row 0 again may be another fact.
+        self.drawer_scroll = DrawerScroll::default();
         self.fact = None;
     }
 
@@ -779,12 +829,16 @@ impl SpaceOverviewView {
             return;
         }
         let next = (self.rows[index] as isize + delta).clamp(0, count as isize - 1);
+        if self.rows[index] != next as usize {
+            self.drawer_scroll = DrawerScroll::default();
+        }
         self.rows[index] = next as usize;
         self.fact = None;
     }
 
     fn switch(&mut self, section: Section) {
         self.section = section;
+        self.drawer_scroll = DrawerScroll::default();
         self.filtering = false;
         self.drawer = false;
         self.fact = None;
@@ -1353,12 +1407,13 @@ impl WorkspaceModel {
     }
 
     /// Keeps where the section in front settled on the frame just drawn.
-    pub(super) fn absorb_overview_frame(
-        &mut self,
-        scroll: Option<crate::ui::extension_view::NavigatorScroll>,
-    ) {
+    pub(super) fn absorb_overview_frame(&mut self, scroll: Option<OverviewScroll>) {
         if let (Some(scroll), Some(overview)) = (scroll, self.space_overview.as_mut()) {
-            overview.scroll[overview.section.index()] = scroll;
+            overview.scroll[overview.section.index()] = scroll.section;
+            overview.drawer_scroll = DrawerScroll {
+                on: overview.drawer_row(),
+                rows: scroll.drawer,
+            };
         }
     }
 
@@ -1852,6 +1907,8 @@ impl Attach<'_> {
                 }
             }
             Action::DiscardChanges => overview.discard_refused(),
+            Action::ScrollPageDown => overview.scroll_drawer(crate::ui::input::PREVIEW_PAGE),
+            Action::ScrollPageUp => overview.scroll_drawer(-crate::ui::input::PREVIEW_PAGE),
             _ => {}
         }
     }

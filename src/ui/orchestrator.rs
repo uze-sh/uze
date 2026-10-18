@@ -913,6 +913,9 @@ pub(super) enum WorkspaceHit {
     OverviewPick(usize),
     /// The rule along the overview's drawer, dragged to resize it.
     ResizeOverviewDrawer,
+    /// The text of the overview's drawer: the wheel scrolls it rather than
+    /// the section, and a click on it does nothing.
+    OverviewDrawer,
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
