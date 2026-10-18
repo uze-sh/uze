@@ -21,7 +21,7 @@ use uze_core::{
     },
 };
 use uze_workspace::{
-    agent_context::{self, MEMORY_SHARE, Section, SectionAsk},
+    agent_context::{self, Section, SectionAsk},
     conversation::{self, Claim},
     task,
 };
@@ -510,7 +510,7 @@ pub fn context_sections(
         Some(launching.id()),
     );
     judge_citations(&mut report, ask.checkout);
-    let share = ask.room.max(MEMORY_SHARE);
+    let share = ask.room;
     let write = (!launching.writes_own_memory()).then_some(MEMORY_INSTRUCTION);
     let instructions_len =
         READ_INSTRUCTION.len() + 2 + write.map_or(0, |text| text.len().min(INSTRUCTION_SHARE) + 2);

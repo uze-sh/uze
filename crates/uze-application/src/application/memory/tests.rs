@@ -2,6 +2,7 @@ use super::*;
 use uze_core::{
     Resource, exposure::ExposurePlan, integration::HarnessDetection, router::HarnessCapabilities,
 };
+use uze_workspace::agent_context::MEMORY_SHARE;
 
 /// A harness whose memory the test decides.
 struct Harness {

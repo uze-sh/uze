@@ -315,7 +315,7 @@ fn give_context(
         })
         .into_iter()
         .collect();
-    let room = agent_context::room_after(&sections).max(agent_context::MEMORY_SHARE);
+    let room = agent_context::room_after(&sections);
     sections.extend(extra(&SectionAsk {
         project_root: &owner.project_root,
         checkout: cwd,
