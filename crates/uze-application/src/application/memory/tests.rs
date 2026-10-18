@@ -641,7 +641,7 @@ fn a_file_only_the_agents_branch_has_is_not_missing_for_that_agent() {
     assert!(!in_slot.contains("does not have"), "{in_slot}");
     let in_primary = &context_sections(&home, &reserved(&project), &codex, &[])[0].text;
     assert!(
-        in_primary.contains("verify before relying on them: new-module."),
+        in_primary.contains("- new-module (project, cites a path this checkout does not have): "),
         "{in_primary}"
     );
 }

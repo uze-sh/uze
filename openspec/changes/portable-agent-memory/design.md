@@ -402,9 +402,10 @@ What exists that this reuses:
   appears or vanishes because an unrelated fact was added. Project facts
   only: machine facts may cite any project.
 - **Where it shows.**
-  - The index ends with one line naming the facts that cite a path this
-    checkout does not have, telling the agent to verify before relying on
-    them. `render_index` reserves that line's room before placing names.
+  - The index marks such a fact where it already names it: its line
+    carries the qualifier, and a fact named alone sits in a group of its
+    own telling the agent to verify it first. Each is named once, so a
+    mark never costs another fact its name.
   - `show` lists each missing citation. `list --format json` and the
     space overview's Memory tab carry the mark per entry, the tab through
     a theme symbol, never an inline glyph.

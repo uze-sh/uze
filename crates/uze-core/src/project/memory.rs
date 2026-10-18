@@ -620,8 +620,6 @@ pub fn render(fact: &Fact) -> String {
 /// agent does without being asked. Empty when there is nothing to list.
 pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
     let ranked = ranked(entries);
-    let stale = stale_line(&ranked).filter(|line| line.len() < bound);
-    let bound = bound - stale.as_ref().map_or(0, |line| line.len() + 1);
     let mut lines: Vec<String> = Vec::new();
     let mut named = ranked.clone();
     for entry in &ranked {
@@ -643,49 +641,42 @@ pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
     if !names.is_empty() {
         lines.push(names);
     }
-    lines.extend(stale);
     lines.join("\n")
 }
 
-/// The line naming the facts that cite a path the reader's checkout does
-/// not have, when any do.
-fn stale_line(ranked: &[&MemoryEntry]) -> Option<String> {
-    let stale: Vec<&str> = ranked
-        .iter()
-        .filter(|entry| !entry.missing.is_empty())
-        .map(|entry| entry.name.as_str())
-        .collect();
-    (!stale.is_empty()).then(|| {
-        format!(
-            "Cite paths this checkout does not have, so may describe an older layout; verify \
-             before relying on them: {}.",
-            stale.join(", ")
-        )
-    })
-}
+/// What marks a fact citing a path the reader's checkout does not have,
+/// wherever it is named: it may describe an older layout.
+const STALE: &str = "citing paths this checkout does not have (verify them first)";
 
-/// The facts not given a line, by name and grouped by kind, within
-/// `bound` bytes: the lowest ranked are counted rather than named when
-/// they do not fit.
+/// The facts not given a line, by name and grouped by kind (those citing
+/// what the checkout lacks in a group of their own), within `bound` bytes:
+/// the lowest ranked are counted rather than named when they do not fit.
 fn names_block(entries: &[&MemoryEntry], bound: usize) -> String {
     if entries.is_empty() {
         return String::new();
     }
     let render = |shown: &[&MemoryEntry], left_out: usize| {
         let mut text = String::from(NAMES_HEADING);
-        for kind in [
+        let groups = [
             FactKind::Feedback,
             FactKind::User,
             FactKind::Project,
             FactKind::Reference,
-        ] {
+        ]
+        .map(|kind| (Some(kind), kind.label()))
+        .into_iter()
+        .chain([(None, STALE)]);
+        for (kind, label) in groups {
             let names: Vec<&str> = shown
                 .iter()
-                .filter(|entry| entry.kind == kind)
+                .filter(|entry| match kind {
+                    Some(kind) => entry.kind == kind && entry.missing.is_empty(),
+                    None => !entry.missing.is_empty(),
+                })
                 .map(|entry| entry.name.as_str())
                 .collect();
             if !names.is_empty() {
-                text.push_str(&format!("\n- {}: {}", kind.label(), names.join(", ")));
+                text.push_str(&format!("\n- {label}: {}", names.join(", ")));
             }
         }
         if left_out > 0 {
@@ -715,6 +706,9 @@ fn index_line(entry: &MemoryEntry) -> String {
     }
     if entry.origin != UZE_ORIGIN {
         qualifiers.push(format!("kept by {}", entry.origin));
+    }
+    if !entry.missing.is_empty() {
+        qualifiers.push("cites a path this checkout does not have".to_owned());
     }
     format!(
         "- {} ({}): {}",

@@ -368,20 +368,40 @@ Twice: `docs/adr/`.";
 }
 
 #[test]
-fn the_index_closes_naming_the_facts_that_cite_what_is_gone() {
-    let mut stale = entry("moved-file", FactKind::Project, "2026-10-01");
-    stale.missing = vec!["crates/a/b.rs".into()];
+fn a_fact_citing_what_is_gone_is_marked_where_it_is_named_and_named_once() {
+    let mut described = entry("moved-file", FactKind::Feedback, "2026-10-03");
+    described.missing = vec!["crates/a/b.rs".into()];
     let current = entry("still-there", FactKind::Project, "2026-10-02");
-    let index = render_index(&[stale, current], 1_000);
-    let last = index.lines().last().unwrap();
+    let index = render_index(&[described, current], 1_000);
     assert!(
-        last.starts_with("Cite paths this checkout does not have"),
+        index.contains("- moved-file (feedback, cites a path this checkout does not have): "),
         "{index}"
     );
-    assert!(last.ends_with(": moved-file."), "{last}");
     assert!(
         !index.contains("crates/a/b.rs"),
         "no index line carries a path"
+    );
+
+    let stale: Vec<MemoryEntry> = (0..12)
+        .map(|n| {
+            let mut fact = entry(&format!("moved-{n:02}"), FactKind::Project, "2026-10-01");
+            fact.description = "a file that moved".into();
+            fact.missing = vec!["crates/a/b.rs".into()];
+            fact
+        })
+        .collect();
+    let index = render_index(&stale, 400);
+    assert!(index.len() <= 400, "{} bytes", index.len());
+    for n in 0..12 {
+        let name = format!("moved-{n:02}");
+        assert!(
+            index.matches(&name).count() <= 1,
+            "{name} named twice: {index}"
+        );
+    }
+    assert!(
+        index.contains("- citing paths this checkout does not have (verify them first): moved-02"),
+        "{index}"
     );
 }
 
