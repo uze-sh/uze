@@ -4,6 +4,30 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.17](https://github.com/uze-sh/uze/compare/v1.0.0-beta.16...v1.0.0-beta.17) - 2026-10-18
+
+### Features
+
+- **ui:** Resize the sidebar timeline by dragging any section header at the foot ([#269](https://github.com/uze-sh/uze/pull/269)) ([5293cf1](https://github.com/uze-sh/uze/commit/5293cf1b40549acab943f0808bbce611852085bc))
+- **workspace:** Add per-harness agent context for memory and briefings ([#268](https://github.com/uze-sh/uze/pull/268)) ([22b9d49](https://github.com/uze-sh/uze/commit/22b9d4917309be4e0b63682d5d06842ef3bf0dad))
+- **workspace:** Add the space overview with an editable settings form ([#270](https://github.com/uze-sh/uze/pull/270)) ([74d325c](https://github.com/uze-sh/uze/commit/74d325c029bc643df77f849d3879b10abad3b9bd))
+- **memory:** Add word search to agent memory and the space overview ([#272](https://github.com/uze-sh/uze/pull/272)) ([cc4cdb3](https://github.com/uze-sh/uze/commit/cc4cdb34d6e535545d13584935e21bbd036ccecc))
+- **web:** Add the home Features section rendered from captured TUI takes ([#274](https://github.com/uze-sh/uze/pull/274)) ([f9f836e](https://github.com/uze-sh/uze/commit/f9f836e8dca8771bde66c0e1b21b725e15b27ef2))
+- **memory:** Mark facts citing paths missing from the checkout ([#277](https://github.com/uze-sh/uze/pull/277)) ([98a87d7](https://github.com/uze-sh/uze/commit/98a87d7c5606fc1be953937f0cb2a143eb593401))
+
+### Fixes
+
+- **telemetry:** Bound the OTLP flush at exit to 500ms ([#265](https://github.com/uze-sh/uze/pull/265)) ([d53457f](https://github.com/uze-sh/uze/commit/d53457f04aeee8989d0195267154910d7f338434))
+- **context:** Compose only plugins declared in agents.yaml into AGENTS.md ([#271](https://github.com/uze-sh/uze/pull/271)) ([916fb3a](https://github.com/uze-sh/uze/commit/916fb3a581ce7b2c0895e50bdf805eb674f74061))
+- **workspace:** Reclaim orphaned Integrating tasks with a per-project delivery lock ([#273](https://github.com/uze-sh/uze/pull/273)) ([342f6d7](https://github.com/uze-sh/uze/commit/342f6d711dce23c07d827770bbce813875ea33c1))
+- **ui:** List machine facts in the space overview's Memory tab ([#275](https://github.com/uze-sh/uze/pull/275)) ([bc0c7f8](https://github.com/uze-sh/uze/commit/bc0c7f83a9bd5bfd3bbce99c0c94dd7529bbfb43))
+- **terminal:** End processes that left a pane's group when it closes ([#276](https://github.com/uze-sh/uze/pull/276)) ([8fa99c2](https://github.com/uze-sh/uze/commit/8fa99c2dafca24b297a3961ce449258de6a21952))
+
+### Refactor
+
+- **cli:** Render uze inspect with a row per harness ([#266](https://github.com/uze-sh/uze/pull/266)) ([327baf8](https://github.com/uze-sh/uze/commit/327baf8c7b9f73ddb01f4611026fc7bd544439d1))
+- **home:** Move per-project locks into the project's record directory ([#267](https://github.com/uze-sh/uze/pull/267)) ([5d4fefa](https://github.com/uze-sh/uze/commit/5d4fefaf7f8f79028bb8eec83c0ccd2660bfd7c3))
+
 ## [1.0.0-beta.16](https://github.com/uze-sh/uze/compare/v1.0.0-beta.15...v1.0.0-beta.16) - 2026-10-17
 
 ### Features
