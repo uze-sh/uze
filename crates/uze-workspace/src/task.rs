@@ -834,7 +834,9 @@ pub fn locked_reporting<T>(
 /// nothing behind it, and every pass leaves such a task alone — its
 /// checkout was never given back. This is what tells the two apart.
 ///
-/// Taken before [`locked`], never inside it: the same order everywhere.
+/// Acquired before [`locked`], never inside it: inside, it is only probed
+/// with [`DeliveryLock::idle`], which never waits, so no order of the two
+/// can deadlock.
 pub struct DeliveryLock {
     _held: crate::file_lock::Held,
 }
