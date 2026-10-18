@@ -129,6 +129,9 @@ vocabulary! {
         MarkFailed = "mark.failed",
         /// A list bullet in running text.
         MarkDot = "mark.dot",
+        /// More to do with the thing it sits on than the strip has room
+        /// to name — the space's own door.
+        MarkMore = "mark.more",
         /// Multiplication/removal in a count or a label, not a button.
         MarkCross = "mark.cross",
         /// Something the reader has already done once. Its own meaning

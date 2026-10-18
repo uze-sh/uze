@@ -102,20 +102,22 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // space as a whole — its settings, plugins, context, memory and the
     // agent in front — so it stands wherever in the space the operator is.
     {
-        let buttons = [GroupButton {
-            hit: WorkspaceHit::OpenOverview,
-            label: surface_label(Symbol::Overview, "space"),
-            hue: theme::color(Token::TextSecondary),
-            strong: false,
-            lit: model.space_overview.is_some(),
-            switch: true,
-        }];
-        let width = group_width(&buttons);
+        // A quiet "more" rather than a labelled button: it is always there
+        // and rarely the errand, so it does not compete with the surfaces
+        // for the eye. Open, it is lit the way a surface's button is; under
+        // the pointer, a ground.
+        let label = format!(" {} ", theme::glyph(Symbol::MarkMore));
+        let width = Span::raw(label.as_str()).width() as u16;
         let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
-        let (spans, group_hits) =
-            button_group(model, &buttons, Token::SurfaceRaised, (rect.x, rect.y));
-        hits.extend(group_hits);
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        let style = match chip_state(model, WorkspaceHit::OpenOverview) {
+            _ if model.space_overview.is_some() => {
+                theme::fg(Token::SurfaceBackground).bg(theme::color(Token::TextBright))
+            }
+            ChipState::Resting => theme::fg(Token::TextMuted),
+            _ => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
+        };
+        frame.render_widget(Paragraph::new(Span::styled(label, style)), rect);
+        hits.push((rect, WorkspaceHit::OpenOverview));
         // Its own zone: a hairline sets it apart from the surfaces, which
         // are about the checkout in front rather than the space.
         trailing_right = render_zone_hairline(

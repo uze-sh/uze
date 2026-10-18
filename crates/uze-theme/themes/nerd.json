@@ -36,6 +36,10 @@
       "glyph": "󰧞",
       "width": 1
     },
+    "mark.more": {
+      "glyph": "󰇘",
+      "width": 1
+    },
     "mark.done": {
       "glyph": "",
       "width": 1

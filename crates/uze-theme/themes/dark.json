@@ -73,6 +73,7 @@
     "mark.close": "✕",
     "mark.failed": "✕",
     "mark.dot": "•",
+    "mark.more": "⋯",
     "mark.cross": "×",
     "mark.done": "✓",
     "mark.sparkle": "✦",

@@ -13,6 +13,7 @@
     "mark.failed": "x",
     "mark.done": "v",
     "mark.dot": "-",
+    "mark.more": "...",
     "mark.cross": "x",
     "mark.sparkle": "+",
     "mark.toggle-off": "o",
