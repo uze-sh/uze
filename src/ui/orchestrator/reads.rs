@@ -1530,6 +1530,7 @@ pub(super) fn spawn_fact_body(
     home: &UzeHome,
     space: SpaceId,
     root: PathBuf,
+    scope: uze_application::application::memory::MemoryScope,
     name: String,
     sender: mpsc::Sender<FactBodyResolution>,
 ) {
@@ -1537,16 +1538,13 @@ pub(super) fn spawn_fact_body(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _span = tracing::info_span!(parent: &parent, "tui.fact_body").entered();
-        use uze_application::application::memory::{MemoryCaller, MemoryScope};
+        use uze_application::application::memory::MemoryCaller;
         let body = answered_or(
             || {
                 tui_application(home)
                     .and_then(|app| {
-                        app.memory().show(
-                            MemoryCaller::Operator { cwd: &root },
-                            MemoryScope::Project,
-                            &name,
-                        )
+                        app.memory()
+                            .show(MemoryCaller::Operator { cwd: &root }, scope, &name)
                     })
                     .map(|shown| shown.body)
                     .map_err(|error| error.to_string())

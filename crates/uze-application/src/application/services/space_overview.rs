@@ -73,8 +73,9 @@ pub struct SpacePlugin {
 pub struct SpaceMemory {
     /// The project's facts and its harnesses' entries, as an index sees them.
     pub project: Vec<Entry>,
-    /// How many facts the machine keeps for every project.
-    pub machine: usize,
+    /// The facts the machine keeps for every project, which reach this
+    /// project's agents as much as its own do.
+    pub machine: Vec<Entry>,
     /// Machine facts agents proposed, waiting for the operator.
     pub proposals: usize,
     pub unreadable: Vec<UnreadableFact>,
@@ -192,7 +193,8 @@ fn space_memory(status: &ProjectStatus) -> SpaceMemory {
             .entries
             .iter()
             .filter(|entry| entry.scope == MemoryScope::Machine)
-            .count(),
+            .cloned()
+            .collect(),
         proposals: memory.proposals.len(),
         unreadable: memory.unreadable.clone(),
     }

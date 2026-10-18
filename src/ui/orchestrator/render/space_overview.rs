@@ -456,12 +456,15 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                     format!(
                         "{} of {}",
                         overview.memory_facts().len(),
-                        plural(memory.project.len(), "fact")
+                        plural(memory.project.len() + memory.machine.len(), "fact")
                     ),
                     Token::TextSecondary,
                 )
             } else {
-                (plural(memory.project.len(), "fact"), Token::TextSecondary)
+                (
+                    plural(memory.project.len() + memory.machine.len(), "fact"),
+                    Token::TextSecondary,
+                )
             }
         }
     }
@@ -495,17 +498,13 @@ fn render_section(
                 Some("`uze <plugin>@<market>` adds one to this project."),
             );
         }
-        Section::Memory
-            if project.memory.project.is_empty() && project.memory.unreadable.is_empty() =>
-        {
-            let machine = match project.memory.machine {
-                0 => "What its agents learn about this project is kept here.".to_owned(),
-                facts => format!(
-                    "What its agents learn about this project is kept here; {} reach them already.",
-                    plural(facts, "machine fact")
-                ),
-            };
-            return empty(frame, area, "No facts kept", Some(&machine));
+        Section::Memory if no_facts(project) => {
+            return empty(
+                frame,
+                area,
+                "No facts kept",
+                Some("What its agents learn, about this project or about you, is kept here."),
+            );
         }
         Section::Plugins => plugin_lines(project, room),
         Section::Settings => {
@@ -541,9 +540,7 @@ fn nothing_to_list(
         Section::Plugins => {
             project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none()
         }
-        Section::Memory => {
-            project.memory.project.is_empty() && project.memory.unreadable.is_empty()
-        }
+        Section::Memory => no_facts(project),
         Section::Worktrees => {
             !matches!(&overview.worktrees.answer, Some(Some(_))) || overview.worktrees().is_empty()
         }
@@ -820,6 +817,13 @@ fn plugin_state(plugin: &SpacePlugin) -> (String, Token) {
     }
 }
 
+/// Whether the Memory section has neither a fact nor a file it could not
+/// read as one.
+fn no_facts(project: &ProjectSpace) -> bool {
+    let memory = &project.memory;
+    memory.project.is_empty() && memory.machine.is_empty() && memory.unreadable.is_empty()
+}
+
 /// The Memory section: its search over the table of facts it lets
 /// through.
 fn render_memory(
@@ -864,8 +868,8 @@ fn memory_lines(
     let memory = &project.memory;
     let facts = overview.memory_facts();
     let mut lines = Vec::new();
-    if memory.project.is_empty() {
-        lines.push(said("no facts kept for this project", Token::TextMuted));
+    if memory.project.is_empty() && memory.machine.is_empty() {
+        lines.push(said("no facts kept", Token::TextMuted));
     } else if facts.is_empty() {
         lines.push(said("nothing matches", Token::TextMuted));
     } else {
@@ -876,7 +880,8 @@ fn memory_lines(
                 spans: table.row(vec![
                     cell(&entry.name, FACTS[0].width, Token::TextPrimary),
                     cell(entry.kind.label(), FACTS[1].width, Token::TextSecondary),
-                    cell(&entry.origin, FACTS[2].width, Token::TextSecondary),
+                    cell(entry.scope.label(), FACTS[2].width, Token::TextSecondary),
+                    cell(&entry.origin, FACTS[3].width, Token::TextSecondary),
                     Span::styled(
                         entry.updated.clone().unwrap_or_default(),
                         theme::fg(Token::TextMuted),
@@ -886,16 +891,9 @@ fn memory_lines(
             });
         }
     }
-    lines.push(blank());
-    let machine = if memory.machine == 0 {
-        "no machine facts reach agents here".to_owned()
-    } else {
-        format!(
-            "{} also reach agents here",
-            plural(memory.machine, "machine fact")
-        )
-    };
-    lines.push(said(machine, Token::TextMuted));
+    if !memory.unreadable.is_empty() {
+        lines.push(blank());
+    }
     for unreadable in &memory.unreadable {
         lines.push(said(
             format!("{} · {}", display_path(&unreadable.path), unreadable.reason),
@@ -2176,7 +2174,7 @@ const PLUGINS: [Column; 5] = [
 const LOCK_LABEL: u16 = 28;
 
 /// The Memory table.
-const FACTS: [Column; 4] = [
+const FACTS: [Column; 5] = [
     Column {
         heading: "name",
         width: 34,
@@ -2185,6 +2183,11 @@ const FACTS: [Column; 4] = [
     Column {
         heading: "kind",
         width: 12,
+        keep: 4,
+    },
+    Column {
+        heading: "scope",
+        width: 10,
         keep: 3,
     },
     Column {
@@ -2723,6 +2726,7 @@ impl DrawerLines {
     ) {
         self.head("memory · read-only", &entry.name);
         self.pair("kind", entry.kind.label().to_owned(), Token::TextPrimary);
+        self.pair("scope", entry.scope.label().to_owned(), Token::TextPrimary);
         self.pair("origin", entry.origin.clone(), Token::TextPrimary);
         self.pair(
             "updated",
@@ -2989,11 +2993,16 @@ mod tests {
     fn a_table_gives_way_in_its_least_kept_columns_first() {
         use super::{FACTS, Table};
         let shown = |room| Table::fit(&FACTS, room).shown;
-        assert_eq!(shown(200), vec![true; 4], "room for all");
-        // name 34 + kind 12 + origin 14 = 60: the date goes first.
-        assert_eq!(shown(60), vec![true, true, true, false]);
-        assert_eq!(shown(46), vec![true, true, false, false]);
-        assert_eq!(shown(5), vec![true, false, false, false], "the name stays");
+        assert_eq!(shown(200), vec![true; 5], "room for all");
+        // name 34 + kind 12 + scope 10 + origin 14 = 70: the date goes first.
+        assert_eq!(shown(70), vec![true, true, true, true, false]);
+        assert_eq!(shown(56), vec![true, true, true, false, false]);
+        assert_eq!(shown(46), vec![true, true, false, false, false]);
+        assert_eq!(
+            shown(5),
+            vec![true, false, false, false, false],
+            "the name stays"
+        );
     }
 
     /// A setup line is judged by the command, not by how the form shows

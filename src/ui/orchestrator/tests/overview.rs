@@ -480,6 +480,54 @@ fn the_memory_search_narrows_the_facts_and_reads_the_one_selected() {
     assert_eq!(overview.memory_facts().len(), 3);
 }
 
+/// A fact the machine keeps reaches this project's agents as much as the
+/// project's own do, so it is listed beside them, saying which it is.
+#[test]
+fn machine_facts_are_listed_beside_the_projects() {
+    use uze_application::application::memory::{Entry, Kind, MemoryScope};
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let fact = |name: &str, scope| Entry {
+        name: name.to_owned(),
+        description: String::new(),
+        kind: Kind::User,
+        scope,
+        origin: "uze".to_owned(),
+        source: None,
+        path: PathBuf::from(format!("/facts/{name}.md")),
+        updated: None,
+        writable: true,
+        proposed: false,
+    };
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
+    overview.answer = Some(Ok(project_space(
+        uze_application::SpaceMemory {
+            project: vec![fact("reply-in-ptbr", MemoryScope::Project)],
+            machine: vec![fact("user-favorite-anime", MemoryScope::Machine)],
+            ..Default::default()
+        },
+        Err("not read here".to_owned()),
+    )));
+
+    let screen = frame_rows_at(&mut model, Rect::new(0, 0, 200, 30)).join("\n");
+    let anime = screen
+        .lines()
+        .find(|row| row.contains("user-favorite-anime"))
+        .unwrap_or_else(|| panic!("the machine fact is not listed:\n{screen}"));
+    assert!(
+        anime.contains("machine"),
+        "its scope is not said:\n{screen}"
+    );
+    assert!(
+        screen.contains("2 facts"),
+        "the count leaves it out:\n{screen}"
+    );
+}
+
 /// A fact's body is read as the Markdown it is written in: emphasis is
 /// drawn, not spelled out in asterisks.
 #[test]

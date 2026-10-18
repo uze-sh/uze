@@ -407,12 +407,14 @@ pub(super) struct DeclarationSaveResolution {
 }
 
 /// Whether `needle`, already lowercased, is in anything the fact's row or
-/// drawer says of it: its name, its description, its kind or its origin.
+/// drawer says of it: its name, its description, its kind, its scope or
+/// its origin.
 fn fact_matches(entry: &MemoryEntry, needle: &str) -> bool {
     [
         entry.name.as_str(),
         entry.description.as_str(),
         entry.kind.label(),
+        entry.scope.label(),
         entry.origin.as_str(),
     ]
     .into_iter()
@@ -635,8 +637,8 @@ impl SpaceOverviewView {
         self.rows[self.section.index()]
     }
 
-    /// The project's facts the Memory search lets through, in the order
-    /// they are kept.
+    /// The facts the Memory search lets through: the project's, then the
+    /// machine's, each in the order they are kept.
     pub(super) fn memory_facts(&self) -> Vec<&MemoryEntry> {
         let Some(project) = self.project() else {
             return Vec::new();
@@ -646,6 +648,7 @@ impl SpaceOverviewView {
             .memory
             .project
             .iter()
+            .chain(&project.memory.machine)
             .filter(|entry| needle.is_empty() || fact_matches(entry, &needle))
             .collect()
     }
@@ -1866,10 +1869,10 @@ impl Attach<'_> {
                 self.edit_workspace_row(row);
             }
             Section::Memory => {
-                let Some(name) = overview
+                let Some((scope, name)) = overview
                     .memory_facts()
                     .get(overview.row())
-                    .map(|entry| entry.name.clone())
+                    .map(|entry| (entry.scope, entry.name.clone()))
                 else {
                     return;
                 };
@@ -1879,6 +1882,7 @@ impl Attach<'_> {
                     self.home,
                     overview.space,
                     overview.root.clone(),
+                    scope,
                     name,
                     self.channels.fact_bodies.sender.clone(),
                 );
