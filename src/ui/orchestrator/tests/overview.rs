@@ -810,6 +810,43 @@ fn a_drawer_opened_reads_from_its_top_after_page_keys_while_closed() {
     assert_eq!(overview.drawer_scroll(), 0, "the drawer opened scrolled");
 }
 
+/// A fact citing what the checkout lacks is marked in the Memory tab, and
+/// its drawer says which paths; a fact citing nothing carries no mark.
+#[test]
+fn a_fact_citing_what_the_checkout_lacks_is_marked_in_the_tab_and_the_drawer() {
+    let mut model = memory_overview(&["moved-file", "still-there"]);
+    let overview = model.space_overview.as_mut().expect("open");
+    if let Some(Ok(uze_application::SpaceOverview::Project(project))) = overview.answer.as_mut() {
+        project.memory.project[0].missing = vec!["crates/a/gone.rs".to_owned()];
+    }
+    overview.drawer = false;
+    let mark = theme::glyph(crate::ui::theme::Symbol::MarkAttention);
+    let rows = frame_rows(&mut model);
+    let screen = rows.join("\n");
+    assert!(
+        rows.iter()
+            .any(|row| row.contains(&format!("{mark} moved-file"))),
+        "the stale fact is not marked:\n{screen}"
+    );
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.contains(&format!("{mark} still-there"))),
+        "a fact citing nothing is marked:\n{screen}"
+    );
+
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.drawer = true;
+    // The mark sits under the fact's details, past a drawer this short.
+    overview.scroll_drawer(6);
+    let screen = frame_rows(&mut model).join("\n");
+    assert!(
+        screen.contains("cites what this checkout does not have")
+            && screen.contains("crates/a/gone.rs"),
+        "the drawer does not name the missing path:\n{screen}"
+    );
+}
+
 /// A project's overview with nothing to report but `memory` and the
 /// `workspace:` declaration `workspace`.
 fn project_space(
