@@ -103,13 +103,19 @@ impl Workspace<'_> {
             // Named from the work or renamed by hand on this pass: the
             // subagents follow, since they were skipped above.
             store.follow_parent_branches();
+            // Without the tabs this client launched, which only the
+            // release knows: it is asked, and decides with them.
+            let unheld = store
+                .agents
+                .iter()
+                .any(|agent| is_abandoned(&primary, store, agent, occupied, &[]));
             // The views are built from this copy once the lock is released:
             // they read Git for every recorded agent, closed ones included,
             // and inside the lock that held every placement and delivery in
             // the project behind a pass that only reads.
-            Ok(store.clone())
+            Ok((store.clone(), unheld))
         });
-        let (recorded, recovery) = match evaluated {
+        let ((recorded, unheld), recovery) = match evaluated {
             Ok(answered) => answered,
             Err(error) => {
                 return Evaluation {
@@ -130,6 +136,7 @@ impl Workspace<'_> {
                 );
                 format!("unreadable record kept as {kept}")
             }),
+            unheld,
             requests: RequestQuestion {
                 asked: ask_the_remote,
                 primary,

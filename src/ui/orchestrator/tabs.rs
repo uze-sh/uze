@@ -865,6 +865,21 @@ impl OccupancyRetry {
     const FIRST: Duration = Duration::from_secs(2);
     const LONGEST: Duration = Duration::from_secs(60);
 
+    /// Releases asked about in `look_in` now, beside whatever a pending
+    /// retry already waits on — whose clock it keeps, so a checkout still
+    /// in use is not asked about again on every evaluation.
+    pub(super) fn asked(previous: Option<Self>, look_in: PathBuf, now: Instant) -> Self {
+        let mut retry = previous.unwrap_or(Self {
+            due: now,
+            wait: Self::FIRST,
+            look_in: Vec::new(),
+        });
+        if !retry.look_in.contains(&look_in) {
+            retry.look_in.push(look_in);
+        }
+        retry
+    }
+
     /// The retry after `previous`, for `waiting`: sooner when nothing was
     /// waiting before, later when it still is.
     pub(super) fn after(previous: Option<&Self>, waiting: Vec<PathBuf>, now: Instant) -> Self {
@@ -1136,5 +1151,24 @@ mod tests {
         let owed = OccupancyRetry::after(None, vec![PathBuf::from("/a")], now);
         let next = OccupancyRetry::after(Some(&owed), vec![PathBuf::from("/b")], now);
         assert_eq!(next.look_in, vec![PathBuf::from("/b"), PathBuf::from("/a")]);
+    }
+
+    /// A checkout an evaluation found held by no pane is asked about at
+    /// once; one already waiting out a checkout in use keeps its clock, so
+    /// every evaluation does not ask again.
+    #[test]
+    fn a_release_asked_for_is_due_now_unless_one_is_already_waiting() {
+        let now = Instant::now();
+        let asked = OccupancyRetry::asked(None, PathBuf::from("/a"), now);
+        assert_eq!(asked.due, now);
+        assert_eq!(asked.look_in, vec![PathBuf::from("/a")]);
+
+        let waiting = OccupancyRetry::after(None, vec![PathBuf::from("/a")], now);
+        let asked = OccupancyRetry::asked(Some(waiting.clone()), PathBuf::from("/b"), now);
+        assert_eq!(asked.due, waiting.due, "the wait it was serving stands");
+        assert_eq!(
+            asked.look_in,
+            vec![PathBuf::from("/a"), PathBuf::from("/b")]
+        );
     }
 }

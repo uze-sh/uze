@@ -1765,8 +1765,12 @@ mod task_service_tests {
 
         // Nothing new: the delivery is the last thing that happened, and
         // an evaluation must not talk it back down to `running`.
-        app.workspace().evaluate_tasks(&root, &[]);
+        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
         assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrated);
+        assert!(
+            evaluation.unheld,
+            "no pane moved, so the evaluation is what asks for the release"
+        );
 
         // The same agent carries on in the same checkout.
         std::fs::write(slot.join("second.rs"), "fn second() {}").unwrap();
@@ -2709,12 +2713,13 @@ mod task_service_tests {
         })
         .unwrap();
 
-        app.workspace().evaluate_tasks(&root, &[]);
+        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
         assert_eq!(
             state_of(&app, &root, &id),
             WorkStateView::Integrating,
             "an evaluation neither revives it nor writes over it"
         );
+        assert!(!evaluation.unheld, "nor asks for its checkout back");
         assert!(
             app.workspace()
                 .release_abandoned_tasks(&root, &[], &[])

@@ -454,6 +454,13 @@ pub struct Evaluation {
     /// What the pass left to ask the remote, for
     /// [`crate::Workspace::ask_about_requests`].
     pub requests: RequestQuestion,
+    /// A checkout no pane holds is still recorded as taken: the client
+    /// asks for the releases, which otherwise run only when a pane leaves.
+    /// A task can become releasable with no pane moving at all — a
+    /// delivery that died given back, one that finished after its tab
+    /// closed — and its checkout then stayed taken until some unrelated
+    /// pane happened to leave.
+    pub unheld: bool,
 }
 
 /// The remote's half of an evaluation, carried from the pass that found

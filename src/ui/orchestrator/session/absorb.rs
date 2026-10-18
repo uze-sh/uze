@@ -175,6 +175,14 @@ impl Attach<'_> {
                     .ignored_actions
                     .insert(primary.clone(), evaluation.ignored_actions);
             }
+            if evaluation.unheld {
+                let retry = &mut self.model.remembered.occupancy_retry;
+                *retry = Some(OccupancyRetry::asked(
+                    retry.take(),
+                    primary.clone(),
+                    Instant::now(),
+                ));
+            }
             let arrived: Vec<AgentView> = evaluation
                 .tasks
                 .iter()
