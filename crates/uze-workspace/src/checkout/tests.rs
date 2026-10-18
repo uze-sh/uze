@@ -940,6 +940,10 @@ fn a_legacy_checkout_is_adopted_under_its_branch_name() {
         WorkState::Closed,
         "clean and nothing ahead: free to reuse, and no delivery to claim"
     );
+    assert!(
+        !adopted.is_live(),
+        "nothing launched it, so nothing reads it as at work"
+    );
     assert_eq!(slots(primary, &store, &nobody())[0].state, SlotState::Free);
 }
 

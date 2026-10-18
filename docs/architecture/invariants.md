@@ -913,7 +913,11 @@ still the one that was claimed. `Integrating` is what the other passes
 already read as "a delivery owns this": the evaluation skips it and so
 does the release of abandoned tasks, so a pass that overlaps a delivery
 neither reports the task as ready nor writes back the state it read before
-the delivery began. The same rule covers the evaluation's one question
+the delivery began. It means that only while a delivery is running: the
+project's delivery lock is held from the claim to the record, and a task
+found `Integrating` with that lock free names a delivery that died — killed
+during its gate, its outcome unwritten — and is evaluated again, so its
+checkout is not kept for good. The same rule covers the evaluation's one question
 that leaves the machine — the `git ls-remote` behind an open request is
 asked with the document unlocked and adopted under it, onto the record it
 was asked about.
@@ -929,7 +933,8 @@ or `git ls-remote` never holds the status back.
 
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_gate_that_runs_long_does_not_hold_the_tasks_document`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_delivery_that_could_not_claim_its_task_says_why`
-> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_task_a_delivery_claimed_and_never_answered_for_is_left_alone`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_task_a_running_delivery_claimed_is_left_alone`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_task_whose_delivery_died_is_evaluated_and_released_again`
 > `crates/uze-workspace/src/landing/tests.rs::following_the_target_never_waits_for_a_write_in_progress`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::states_are_read_before_the_remote_is_asked_about_requests`
 

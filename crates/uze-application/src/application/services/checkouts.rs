@@ -50,7 +50,7 @@ impl Workspace<'_> {
                 task: slot_holder(&store, &found.path).map(|agent| agent.id.to_string()),
                 branch: found.branch.clone(),
                 dirty: checkout::holds_uncommitted_work(&found.path),
-                ahead: ahead_of(&target, found),
+                ahead: ahead_of(&judged_against(&store, &found.path, &target), found),
                 last_changed,
                 bytes,
             })
@@ -137,8 +137,16 @@ impl Workspace<'_> {
                     parent: agent.map_or_else(|| parent.to_string(), |agent| agent.label.clone()),
                     parent_id: parent.to_string(),
                     topic: child.map(|child| child.label.clone()),
+                    // What the join itself asks: an unfinished agent that
+                    // still keeps a checkout to join into. One released
+                    // without it was offered here and refused when pressed.
                     joinable: child.is_some()
-                        && agent.is_some_and(|agent| agent.state == WorkState::Shelved),
+                        && agent.is_some_and(|agent| {
+                            agent.state == WorkState::Shelved
+                                && agent
+                                    .isolation()
+                                    .is_some_and(|isolation| isolation.checkout.is_some())
+                        }),
                 }
             }
             Owner::Harness { harness } => CheckoutOwner::Harness {
@@ -158,6 +166,19 @@ fn ahead_of(target: &str, found: &AccountedCheckout) -> usize {
     } else {
         checkout::commits_ahead(&found.path, target, "HEAD")
     }
+}
+
+/// The branch a checkout's commits are counted ahead of: the one its
+/// holder delivers into — its agent's branch, for a subagent, whose work
+/// counted against the project's target read as undelivered for as long
+/// as the squash it reached the target in matched none of its patches.
+fn judged_against(store: &AgentStore, path: &Path, project_target: &str) -> String {
+    slot_holder(store, path)
+        .and_then(task::Agent::isolation)
+        .map_or_else(
+            || project_target.to_owned(),
+            |isolation| isolation.target.clone(),
+        )
 }
 
 fn slot_holder<'a>(store: &'a AgentStore, path: &Path) -> Option<&'a task::Agent> {

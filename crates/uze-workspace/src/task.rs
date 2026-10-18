@@ -545,6 +545,32 @@ impl AgentStore {
         })
     }
 
+    /// Points every subagent at its agent's branch as it is now. A
+    /// subagent delivers into its agent's branch by definition, and that
+    /// branch is renamed by more than one pass — asked by name, named from
+    /// the first commit, renamed by hand. A child left naming the old one
+    /// was judged against a ref that no longer exists: its work counted as
+    /// unjoined however empty it was, refusing its agent's delivery and
+    /// shelving both on release.
+    pub fn follow_parent_branches(&mut self) {
+        let branches: Vec<(AgentId, String)> = self
+            .agents
+            .iter()
+            .filter_map(|agent| Some((agent.id.clone(), agent.isolation()?.branch.clone())))
+            .collect();
+        for child in &mut self.agents {
+            let Some(parent) = child.parent.clone() else {
+                continue;
+            };
+            if let Some((_, branch)) = branches.iter().find(|(id, _)| *id == parent)
+                && let Some(isolation) = child.isolation_mut()
+                && isolation.target != *branch
+            {
+                isolation.target = branch.clone();
+            }
+        }
+    }
+
     /// Every agent that is the [`slot_owner`](Self::slot_owner) of its own
     /// checkout.
     pub fn slot_owners(&self) -> BTreeSet<AgentId> {
@@ -796,6 +822,64 @@ pub fn locked_reporting<T>(
         save(home, project_root, &store)?;
     }
     Ok((outcome, recovery))
+}
+
+/// Proof that no other delivery in the project is running: held from the
+/// claim that marks a task [`WorkState::Integrating`] until the outcome is
+/// written over it, and released by the kernel however its holder ends.
+///
+/// The record alone cannot say whether a delivery is still alive. A
+/// process killed during a gate of half an hour, a panic, or an outcome
+/// that could not be written each leave the task `Integrating` with
+/// nothing behind it, and every pass leaves such a task alone — its
+/// checkout was never given back. This is what tells the two apart.
+///
+/// Taken before [`locked`], never inside it: the same order everywhere.
+pub struct DeliveryLock {
+    _held: crate::file_lock::Held,
+}
+
+impl DeliveryLock {
+    /// Waits for the delivery running in the project to finish, as long as
+    /// the repository write lock every delivery takes next: a second one
+    /// already waited that long for the first, only after claiming its task.
+    pub fn acquire(home: &UzeHome, project_root: &Path) -> Result<Self> {
+        Self::waiting(home, project_root, uze_git::DEFAULT_WRITE_TIMEOUT)
+    }
+
+    /// The lock when no delivery holds it, `None` when one does — or when
+    /// the platform could not say, which must never read as "nobody".
+    pub fn idle(home: &UzeHome, project_root: &Path) -> Option<Self> {
+        Self::waiting(home, project_root, Duration::ZERO).ok()
+    }
+
+    fn waiting(home: &UzeHome, project_root: &Path, patience: Duration) -> Result<Self> {
+        Ok(Self {
+            _held: crate::file_lock::Held::acquire(
+                &home.delivery_lock_path(&project_id(project_root)),
+                patience,
+            )?,
+        })
+    }
+}
+
+/// Gives a task back to evaluation when the delivery its record names is
+/// gone: `lock` is the proof that none is running. Returns the tasks that
+/// were given back.
+pub fn reclaim_orphaned_deliveries(store: &mut AgentStore, _lock: &DeliveryLock) -> Vec<AgentId> {
+    store
+        .agents
+        .iter_mut()
+        .filter(|agent| agent.state == WorkState::Integrating)
+        .map(|agent| {
+            // `Ready` is only where the evaluation starts from: it is
+            // the state every delivery claims, and the pass that follows
+            // reads where the work actually stands — delivered on the
+            // forge, rebased, or still to go.
+            agent.state = WorkState::Ready;
+            agent.id.clone()
+        })
+        .collect()
 }
 
 thread_local! {

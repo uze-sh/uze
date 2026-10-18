@@ -429,6 +429,33 @@ fn a_subagent_released_after_its_agent_is_judged_against_its_agents_branch() {
     assert_eq!(child.state, WorkState::Closed);
 }
 
+/// A subagent delivers into its agent's branch, whatever renamed it. Asked
+/// by name, the children followed; renamed by hand, or named from the
+/// first commit, they kept the old name, a ref that no longer existed —
+/// and an empty subagent then read as unjoined work, refusing its agent's
+/// delivery and shelving both on release.
+#[test]
+fn a_subagent_follows_its_agents_branch_renamed_by_hand() {
+    let world = World::new("work-renamed-parent");
+    let agent = world.agent();
+    world.commit(&agent.1, "plan.md", "the plan\n");
+    world.split(&agent, "parser").unwrap();
+    world
+        .repository
+        .git_in(&agent.1, &["branch", "-m", "feat/parser"]);
+
+    world.app.workspace().evaluate_tasks(world.root(), &[]);
+
+    let primary = worktree::primary_checkout(world.root()).unwrap();
+    let store = task::load(&world.app.home, &primary).unwrap();
+    let child = store
+        .agents
+        .iter()
+        .find(|recorded| recorded.parent.is_some())
+        .unwrap();
+    assert_eq!(child.isolation().unwrap().target, "feat/parser");
+}
+
 /// Splits of one topic asked at once make one subagent: each is told the
 /// same checkout, and the agent has one child on that topic.
 #[test]

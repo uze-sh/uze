@@ -44,7 +44,19 @@ impl Workspace<'_> {
         let mut arrived = Vec::new();
         let mut ask_the_remote: Vec<(AgentId, Isolation)> = Vec::new();
         let completion = policy.completion;
+        let no_delivery_running = task::DeliveryLock::idle(&self.0.home, &primary);
         let evaluated = task::locked_reporting(&self.0.home, &primary, |store| {
+            // Let go once the orphans are reclaimed: no delivery can claim
+            // while this document is held, and one waiting to start should
+            // not also wait for the rest of the pass.
+            if let Some(lock) = no_delivery_running {
+                for id in task::reclaim_orphaned_deliveries(store, &lock) {
+                    tracing::warn!(
+                        agent = %id.as_str(),
+                        "a delivery ended without recording its outcome; the task is evaluated again"
+                    );
+                }
+            }
             checkout::reconcile(&primary, store, &target);
             let pass = EvaluationPass {
                 primary: &primary,
@@ -88,6 +100,9 @@ impl Workspace<'_> {
                     );
                 }
             }
+            // Named from the work or renamed by hand on this pass: the
+            // subagents follow, since they were skipped above.
+            store.follow_parent_branches();
             // The views are built from this copy once the lock is released:
             // they read Git for every recorded agent, closed ones included,
             // and inside the lock that held every placement and delivery in

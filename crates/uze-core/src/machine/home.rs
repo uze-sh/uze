@@ -292,6 +292,14 @@ impl UzeHome {
         self.project_dir(project_id).join("agents.lock")
     }
 
+    /// Held by a delivery from the moment it claims a task until it has
+    /// written down what came of it. A task recorded `integrating` while
+    /// nobody holds this names a delivery that died, and the record is the
+    /// only thing left saying otherwise. A lock, not a record.
+    pub fn delivery_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("delivery.lock")
+    }
+
     /// The guard both owners of a project's `AGENTS.md` take before they
     /// rewrite it (see [`crate::project_context::AgentsMdGuard`]). A lock,
     /// not a record, keyed on the project so two projects never wait on

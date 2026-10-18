@@ -205,6 +205,7 @@ mod tests {
         let id = project_id_for(&project.canonical().unwrap());
         let locks = [
             home.agents_lock_path(&id),
+            home.delivery_lock_path(&id),
             home.agents_md_lock_path(&id),
             home.conversations_lock_path(&id),
             home.prompt_history_lock_path(&id),

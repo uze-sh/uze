@@ -109,6 +109,10 @@ pub fn reconcile(primary: &Path, store: &mut AgentStore, target: &str) -> Reconc
             WorkState::Closed
         };
         agent.isolation = Some(isolation);
+        // Ended as it is adopted: nothing launched it, so nothing is at
+        // work in it until a pane is seen there — and born live, the slot
+        // read as taken by an agent until a release pass happened by.
+        agent.end();
         report.adopted.push(agent.id.clone());
         store.upsert(agent);
     }

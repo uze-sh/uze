@@ -68,11 +68,13 @@ impl Workspace<'_> {
     /// the outcome is written onto the record only while it is still the
     /// one that was claimed.
     ///
-    /// A process that dies between the two leaves the record
-    /// `Integrating`, which is the state every pass reads as "a delivery
-    /// owns this" — the delivery it names is gone, and the operator's way
-    /// out is the one they already have for a task nothing is doing:
-    /// finish it, or discard it.
+    /// The project's [`task::DeliveryLock`] is held from before the claim
+    /// until after the outcome is written. A process that dies between the
+    /// two, or an outcome that could not be written, leaves the record
+    /// `Integrating` with the lock free, and the next evaluation reads
+    /// that as the delivery gone and gives the task back
+    /// ([`task::reclaim_orphaned_deliveries`]). Without it the record said
+    /// "a delivery owns this" for good, and its checkout was never freed.
     pub(super) fn deliver_claimed(
         &self,
         primary: &Path,
@@ -98,6 +100,17 @@ impl Workspace<'_> {
             ));
             return Some(report);
         }
+        let _delivering = match task::DeliveryLock::acquire(&self.0.home, primary) {
+            Ok(lock) => lock,
+            Err(error) => {
+                return self.refused_delivery(
+                    primary,
+                    policy,
+                    task_id,
+                    format!("could not start: {error}"),
+                );
+            }
+        };
         let claimed = task::locked(&self.0.home, primary, |store| {
             let Some(agent) = task_mut(store, task_id).filter(|agent| agent.is_isolated()) else {
                 return Ok(DeliveryClaim::Missing);

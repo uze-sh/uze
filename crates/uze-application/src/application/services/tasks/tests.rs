@@ -2690,38 +2690,29 @@ mod task_service_tests {
         assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrated);
     }
 
-    /// What a delivery that never answered leaves behind, and what every
-    /// other pass does with it.
-    ///
-    /// `Integrating` means "a delivery owns this task": the evaluation
-    /// skips it, the release of abandoned tasks skips it, and no surface
-    /// offers to deliver it. A process killed between the claim and the
-    /// record leaves exactly that record, and this is what it costs —
-    /// nothing is lost and nothing is delivered twice, and the way out is
-    /// the one the operator already has for a task nobody is working on.
+    /// `Integrating` means "a delivery owns this task" only while one is
+    /// running: the evaluation skips it, the release of abandoned tasks
+    /// skips it, and no surface offers to deliver it a second time.
     #[test]
-    fn a_task_a_delivery_claimed_and_never_answered_for_is_left_alone() {
-        let repository = repository("svc-abandoned-claim");
+    fn a_task_a_running_delivery_claimed_is_left_alone() {
+        let repository = repository("svc-running-claim");
         declare(&repository, "  delivery: merge\n");
         let root = repository.root().to_path_buf();
-        let app = application("svc-abandoned-claim-home");
+        let app = application("svc-running-claim-home");
         let (id, slot) = launched(&app, &root);
         agent_commits(&repository, &slot, "work.rs", "");
         app.workspace().evaluate_tasks(&root, &[]);
+        let _delivering = task::DeliveryLock::acquire(&app.home, &root).unwrap();
         task::locked(&app.home, &root, |store| {
             task_mut(store, &id).expect("the agent is recorded").state = WorkState::Integrating;
             Ok(())
         })
         .unwrap();
 
-        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
+        app.workspace().evaluate_tasks(&root, &[]);
         assert_eq!(
-            evaluation
-                .tasks
-                .iter()
-                .find(|task| task.id == id)
-                .map(|task| task.state.clone()),
-            Some(WorkStateView::Integrating),
+            state_of(&app, &root, &id),
+            WorkStateView::Integrating,
             "an evaluation neither revives it nor writes over it"
         );
         assert!(
@@ -2730,15 +2721,49 @@ mod task_service_tests {
                 .is_empty(),
             "and no pane in its checkout does not make it abandoned"
         );
-        assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrating);
         assert_eq!(
             WorkStateView::Integrating.undeliverable_reason(),
             Some("already delivering"),
             "which is what the operator is told if they press it"
         );
+    }
+
+    /// A delivery that died between its claim and its record — killed
+    /// during a long gate, or its client closed — left the task
+    /// `Integrating` for good: shown as working, never released, its
+    /// checkout never given back, though the work had long been merged on
+    /// the forge. With no delivery running, the claim is nobody's, and the
+    /// task is read again from where its work stands.
+    #[test]
+    fn a_task_whose_delivery_died_is_evaluated_and_released_again() {
+        let repository = repository("svc-orphaned-claim");
+        declare(&repository, "  delivery: push\n");
+        let root = repository.root().to_path_buf();
+        let app = application("svc-orphaned-claim-home");
+        let (id, slot) = launched(&app, &root);
+        agent_commits(&repository, &slot, "work.rs", "");
+        app.workspace().evaluate_tasks(&root, &[]);
+        task::locked(&app.home, &root, |store| {
+            task_mut(store, &id).expect("the agent is recorded").state = WorkState::Integrating;
+            Ok(())
+        })
+        .unwrap();
+        repository.git(&["merge", "--squash", &repository.branch_of(&slot)]);
+        repository.git(&["commit", "-qm", "the work (#7)"]);
+
+        app.workspace().evaluate_tasks(&root, &[]);
+        assert_eq!(state_of(&app, &root, &id), WorkStateView::Integrated);
+
+        app.workspace().release_abandoned_tasks(&root, &[], &[]);
+        assert_eq!(
+            view_of(&app, &root, &id).checkout,
+            None,
+            "its checkout goes back to the pool"
+        );
+        let record = task::load(&app.home, &root).unwrap();
         assert!(
-            app.workspace().deliver_ready(&root).is_empty(),
-            "and delivering everything ready passes it by"
+            !record.agent(&id).expect("the agent is recorded").is_live(),
+            "and nothing reads it as at work any more"
         );
     }
 

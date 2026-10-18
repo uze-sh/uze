@@ -87,13 +87,7 @@ impl Workspace<'_> {
             }
             agent.take_name(branch.clone());
             let agent_id = agent.id.clone();
-            for child in store.agents.iter_mut() {
-                if child.parent.as_ref() == Some(&agent_id)
-                    && let Some(isolation) = child.isolation_mut()
-                {
-                    isolation.target = branch.clone();
-                }
-            }
+            store.follow_parent_branches();
             let agent = store.get(&agent_id).ok_or_else(not_an_agent)?;
             Ok(NamedTask {
                 task: agent.id.as_str().to_owned(),
