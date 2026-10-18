@@ -10,6 +10,7 @@ use crate::ui::widget::{
     row,
     tabs::{self, Tab},
 };
+use uze_application::ShellCommand;
 use uze_application::application::{
     FreshnessState, HarnessContextDelivery, StatusHarness, StatusReport,
     memory::Entry as MemoryEntry,
@@ -1079,7 +1080,11 @@ impl Form {
                 let mut spans = vec![indent()];
                 if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
                     spans.push(boxed(entry, Token::TextCode, self.box_width));
-                    let (word, tone) = commands.state_of(entry, edited);
+                    let command = match value {
+                        Some(DeclaredValue::Commands(declared)) => declared.get(item),
+                        _ => None,
+                    };
+                    let (word, tone) = commands.state_of(command, edited);
                     spans.push(Span::styled(format!("  {word}"), theme::fg(tone)));
                 } else {
                     spans.push(Span::styled(
@@ -1147,7 +1152,6 @@ impl Form {
 /// What `uze status` says about the project's commands, by their line.
 struct CommandStates<'a> {
     awaiting: Vec<&'a str>,
-    unspelled: Vec<&'a str>,
 }
 
 impl<'a> CommandStates<'a> {
@@ -1160,27 +1164,20 @@ impl<'a> CommandStates<'a> {
                 .flat_map(|awaiting| &awaiting.commands)
                 .map(|command| command.line.as_str())
                 .collect(),
-            unspelled: project
-                .status
-                .steps_not_spelled_here
-                .iter()
-                .map(|step| step.command.as_str())
-                .collect(),
         }
     }
 
-    /// The word beside a setup or gate entry, as [`command_line`] spells
-    /// it, and its tone.
-    fn state_of(&self, entry: &str, edited: bool) -> (&'static str, Token) {
-        let posix = entry.split(" | windows: ").next().unwrap_or_default();
-        if self.unspelled.contains(&posix) || entry.starts_with("windows: ") {
-            ("never runs here", Token::StateDanger)
-        } else if self.awaiting.contains(&posix) {
-            ("waiting for approval", Token::StateWarning)
-        } else if edited {
-            ("not saved", Token::StateInfo)
-        } else {
-            ("approved", Token::TextMuted)
+    /// The word beside a setup or gate entry, and its tone: judged on the
+    /// command itself — the spelling this platform runs is what approval
+    /// names — never on the line the form shows for it.
+    fn state_of(&self, command: Option<&ShellCommand>, edited: bool) -> (&'static str, Token) {
+        match command.and_then(ShellCommand::here) {
+            None => ("never runs here", Token::StateDanger),
+            Some(line) if self.awaiting.contains(&line) => {
+                ("waiting for approval", Token::StateWarning)
+            }
+            Some(_) if edited => ("not saved", Token::StateInfo),
+            Some(_) => ("approved", Token::TextMuted),
         }
     }
 }
@@ -2308,6 +2305,24 @@ fn display_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A setup line is judged by the command, not by how the form shows
+    /// it: a POSIX line that happens to read like the two-spelling form is
+    /// still the line approval names.
+    #[test]
+    fn a_command_s_state_is_judged_on_the_command_not_its_shown_line() {
+        use uze_application::ShellCommand;
+        let line = "echo a | windows: b";
+        let states = super::CommandStates {
+            awaiting: vec![line],
+        };
+        let command = ShellCommand::Line(line.to_owned());
+        assert_eq!(
+            states.state_of(Some(&command), false).0,
+            "waiting for approval"
+        );
+        assert_eq!(states.state_of(None, false).0, "never runs here");
+    }
+
     use super::{changed_lines_title, short_commit, typed_lines};
 
     /// A commit is cut to seven characters, never inside one.
