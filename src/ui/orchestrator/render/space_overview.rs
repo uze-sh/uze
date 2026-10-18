@@ -1595,7 +1595,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             "Your comments stay in place."
         };
         return Some(Answer::new(
-            &title,
+            title,
             detail,
             Token::TextMuted,
             vec![
@@ -1617,21 +1617,27 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
     let answer = if let Err(reason) = &declaration.editable {
         Answer::new(
             "Read-only",
-            &format!("edit agents.yaml by hand: {reason}"),
+            format!("edit agents.yaml by hand: {reason}"),
             Token::TextMuted,
             Vec::new(),
         )
     } else if let Some(refusal) = &overview.edit.refusal {
-        Answer::new("Not saved", refusal, Token::StateDanger, Vec::new())
+        Answer::new(
+            "Not saved",
+            refusal.as_str(),
+            Token::StateDanger,
+            Vec::new(),
+        )
     } else if pending > 0 {
-        let failed = match overview.current_preview() {
-            Some(Err(reason)) => Some(reason.clone()),
+        let preview = overview.current_preview();
+        let failed = match preview {
+            Some(Err(reason)) => Some(reason.as_str()),
             _ => None,
         };
         let blocked = !problems.is_empty() || failed.is_some();
-        let checking = overview.current_preview().is_none();
-        let detail = if let Some(reason) = &failed {
-            reason.as_str()
+        let checking = preview.is_none();
+        let detail = if let Some(reason) = failed {
+            reason
         } else if blocked {
             "Fix the errors to save."
         } else if checking {
@@ -1639,9 +1645,8 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
         } else {
             "Save shows the agents.yaml diff first."
         };
-        let title = plural(pending, "unsaved change");
         Answer::new(
-            &title,
+            plural(pending, "unsaved change"),
             detail,
             if blocked {
                 Token::StateDanger
@@ -1663,7 +1668,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             plural(awaiting.commands.len(), "command")
         );
         Answer::new(
-            &title,
+            title,
             "Nothing runs until you approve it.",
             Token::TextMuted,
             vec![("Review", WorkspaceHit::OverviewReview, true)],
@@ -1691,76 +1696,56 @@ struct Answer {
 
 impl Answer {
     fn new(
-        title: &str,
-        detail: &str,
+        title: impl Into<String>,
+        detail: impl Into<String>,
         tone: Token,
         buttons: Vec<(&'static str, WorkspaceHit, bool)>,
     ) -> Self {
         Self {
-            title: title.to_owned(),
-            detail: detail.to_owned(),
+            title: title.into(),
+            detail: detail.into(),
             tone,
             buttons,
         }
     }
 
+    /// Drawn as a section's closing word: what stands, why, and the
+    /// buttons that act on it, each lit when it is the one Enter takes.
     fn render(
         &self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
         hits: &mut Vec<(Rect, WorkspaceHit)>,
     ) {
-        render_answer(
-            frame,
-            area,
-            &self.title,
-            &self.detail,
-            self.tone,
-            &self.buttons,
-            hits,
-        );
-    }
-}
-
-/// A section's closing word: what stands, why, and the buttons that act
-/// on it, each lit when it is the one Enter takes.
-fn render_answer(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    title: &str,
-    detail: &str,
-    detail_tone: Token,
-    buttons: &[(&str, WorkspaceHit, bool)],
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    if area.height == 0 {
-        return;
-    }
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            title.to_owned(),
-            theme::fg_bold(Token::TextPrimary),
-        )),
-        Rect { height: 1, ..area },
-    );
-    if area.height > 1 {
+        if area.height == 0 {
+            return;
+        }
         frame.render_widget(
             Paragraph::new(Span::styled(
-                text::elide(detail, usize::from(area.width)),
-                theme::fg(detail_tone),
+                self.title.clone(),
+                theme::fg_bold(Token::TextPrimary),
             )),
-            Rect::new(area.x, area.y + 1, area.width, 1),
+            Rect { height: 1, ..area },
         );
-    }
-    if area.height > 2 {
-        let mut x = area.x;
-        for (label, hit, lit) in buttons {
-            let button = Button::new(*label, Token::TextPrimary).strong(*lit);
-            let width = button.width();
-            let rect = Rect::new(x, area.y + 2, width.min(area.right().saturating_sub(x)), 1);
-            button.render(frame, rect);
-            hits.push((rect, *hit));
-            x += width + 1;
+        if area.height > 1 {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    text::elide(&self.detail, usize::from(area.width)),
+                    theme::fg(self.tone),
+                )),
+                Rect::new(area.x, area.y + 1, area.width, 1),
+            );
+        }
+        if area.height > 2 {
+            let mut x = area.x;
+            for (label, hit, lit) in &self.buttons {
+                let button = Button::new(*label, Token::TextPrimary).strong(*lit);
+                let width = button.width();
+                let rect = Rect::new(x, area.y + 2, width.min(area.right().saturating_sub(x)), 1);
+                button.render(frame, rect);
+                hits.push((rect, *hit));
+                x += width + 1;
+            }
         }
     }
 }
