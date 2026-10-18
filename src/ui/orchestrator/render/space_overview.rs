@@ -73,6 +73,14 @@ type SegmentCells = (usize, usize, Vec<(u16, u16)>);
 const LABEL: u16 = 18;
 const BOX: u16 = 48;
 
+/// What a key's line keeps right of its box: the "edited" or "saved"
+/// beside it.
+const MARK_ROOM: u16 = 10;
+
+/// What a setup or gate line keeps right of its box: the word saying
+/// whether it runs here, the longest of which waits for approval.
+const STATE_ROOM: u16 = 24;
+
 /// How far a key's label sits in under its group's heading.
 const KEY_INDENT: usize = 2;
 
@@ -1037,8 +1045,11 @@ struct Form {
     /// The width a group's heading rule runs to.
     width: usize,
     /// The room a value's box takes: what the row leaves after its label
-    /// and a word of state beside it, never wider than a value needs.
+    /// and the "edited" beside it, never wider than a value needs.
     box_width: usize,
+    /// The room a setup or gate line's box takes, which leaves a longer
+    /// word of state beside it.
+    entry_width: usize,
     /// The row the next line pushed selects.
     index: usize,
 }
@@ -1057,7 +1068,8 @@ impl Form {
             segments: Vec::new(),
             hovered,
             width: usize::from(width),
-            box_width: usize::from(width.saturating_sub(LABEL + 22).clamp(12, BOX)),
+            box_width: usize::from(width.saturating_sub(LABEL + MARK_ROOM).clamp(16, BOX)),
+            entry_width: usize::from(width.saturating_sub(LABEL + STATE_ROOM).clamp(12, BOX)),
             index: 0,
         };
         let commands = CommandStates::of(project);
@@ -1136,7 +1148,7 @@ impl Form {
                 } else {
                     SegmentState::Resting
                 };
-                let cell = segment(word, state, self.control() / options.len());
+                let cell = segment(word, state, self.segment_width(options));
                 cells.push((at, cell.width() as u16));
                 at += cell.width() as u16;
                 spans.push(cell);
@@ -1205,7 +1217,7 @@ impl Form {
                 }
                 let mut spans = vec![indent()];
                 if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
-                    spans.push(boxed(entry, Token::TextCode, self.box_width));
+                    spans.push(boxed(entry, Token::TextCode, self.entry_width));
                     let command = match value {
                         Some(DeclaredValue::Commands(declared)) => declared.get(item),
                         _ => None,
@@ -1271,6 +1283,17 @@ impl Form {
     /// what a value's box has on a narrow screen.
     fn control(&self) -> usize {
         CONTROL.min(self.box_width)
+    }
+
+    /// Each option's share of the control, never less than its word with
+    /// a column of air either side: options read run together otherwise.
+    fn segment_width(&self, options: &[&str]) -> usize {
+        let widest = options
+            .iter()
+            .map(|option| Line::from(*option).width() + 2)
+            .max()
+            .unwrap_or(0);
+        (self.control() / options.len().max(1)).max(widest)
     }
 
     /// How the next row's label is drawn: the keyboard's, under the
