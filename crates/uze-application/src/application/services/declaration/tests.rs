@@ -1,6 +1,6 @@
 use std::fs;
 
-use uze_core::UzeHome;
+use uze_core::{UzeHome, shell::ShellCommand};
 use uze_testkit::git::Repository;
 
 use super::*;
@@ -302,7 +302,15 @@ fn a_project_without_a_manifest_gets_one_holding_only_the_keys_set() {
 #[test]
 fn changing_setup_says_the_commands_wait_for_approval_again() {
     let app = application("declaration-approval");
-    let repository = project("declaration-approval", Some(AUTHORED));
+    // A plain line is only the POSIX spelling, so the setup is spelled for
+    // both shells to await approval wherever the suite runs.
+    let repository = project(
+        "declaration-approval",
+        Some(&AUTHORED.replace(
+            "  setup: pnpm install\n",
+            "  setup:\n    posix: pnpm install\n    windows: pnpm install\n",
+        )),
+    );
     let awaiting = app
         .workspace()
         .commands_awaiting_approval(repository.root())
@@ -324,7 +332,10 @@ fn changing_setup_says_the_commands_wait_for_approval_again() {
             repository.root(),
             &[set(
                 DeclarationKey::Setup,
-                DeclaredValue::Commands(vec!["pnpm install --frozen-lockfile".into()]),
+                DeclaredValue::Commands(vec![ShellCommand::spelled(
+                    "pnpm install --frozen-lockfile",
+                    "pnpm install --frozen-lockfile",
+                )]),
             )],
         )
         .unwrap();
