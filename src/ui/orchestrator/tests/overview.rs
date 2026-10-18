@@ -1829,7 +1829,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     );
     let rows = frame_rows(&mut driven.attach.model);
     assert!(
-        rows.iter().any(|row| row.contains("measuring")),
+        rows.iter().any(|row| row.contains("Measuring worktrees")),
         "the section does not say it is measuring:\n{}",
         rows.join("\n")
     );
@@ -1884,8 +1884,10 @@ fn no_worktrees_says_every_agent_works_here() {
     }));
     let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 40));
     assert!(
-        rows.iter()
-            .any(|row| row.contains("no worktrees: every agent works in this checkout")),
+        rows.iter().any(|row| row.contains("NO WORKTREES"))
+            && rows
+                .iter()
+                .any(|row| row.contains("Every agent works in this checkout")),
         "{}",
         rows.join("\n")
     );
@@ -2256,4 +2258,32 @@ fn an_empty_section_is_said_in_the_middle_of_its_room() {
             .any(|row| row.contains("<plugin>@<market>")),
         "no hint under the title"
     );
+    // Said once: no cause line repeating it, and no drawer about nothing.
+    let screen = rows.join("\n");
+    assert!(
+        !screen.contains("no plugins declared"),
+        "said twice:\n{screen}"
+    );
+    // With no drawer, the title is centred on the whole pane, right of
+    // the sidebar, rather than on the half a drawer would leave.
+    let column = rows[title].chars().collect::<Vec<_>>();
+    let start = rows[title].find("NO PLUGINS DECLARED").expect("the title");
+    let start = rows[title][..start].chars().count();
+    let middle = start + "NO PLUGINS DECLARED".len() / 2;
+    let pane_middle = (column.len() + 31) / 2;
+    assert!(
+        middle.abs_diff(pane_middle) <= 4,
+        "the title is centred on {middle}, not on the pane's {pane_middle}:\n{screen}"
+    );
+
+    // The same for a space with no worktrees.
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.section = Section::Worktrees;
+    overview.worktrees.answer = Some(Some(uze_application::CheckoutsView {
+        primary: PathBuf::from("/repo"),
+        checkouts: Vec::new(),
+    }));
+    let screen = frame_rows_at(&mut model, Rect::new(0, 0, 160, height)).join("\n");
+    assert!(screen.contains("NO WORKTREES"), "{screen}");
+    assert!(!screen.contains("0 worktrees"), "said twice:\n{screen}");
 }

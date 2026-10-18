@@ -192,15 +192,20 @@ fn render_overview_frame(
         );
         return;
     };
+    // A section with nothing to list says so once, in the middle of the
+    // whole body: no cause line repeating it, no drawer about nothing.
+    let empty = nothing_to_list(model, overview, project);
     let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
-    let (cause_text, cause_tone) = cause_line(overview, project);
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            text::elide(&cause_text, usize::from(cause.width)),
-            theme::fg(cause_tone),
-        )),
-        cause,
-    );
+    if !empty {
+        let (cause_text, cause_tone) = cause_line(overview, project);
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                text::elide(&cause_text, usize::from(cause.width)),
+                theme::fg(cause_tone),
+            )),
+            cause,
+        );
+    }
     let mut resize_handle = None;
     let body_top = inner.y + BODY_ROW;
     let body = Rect::new(
@@ -213,7 +218,9 @@ fn render_overview_frame(
     let dragging = model.dragging_overview_drawer;
     // The drawer first: it clears its own column, rule included, and the
     // section's scroll handle is drawn on that rule.
-    let (section_area, track) = if side_by_side {
+    let (section_area, track) = if empty {
+        (body, Track::default())
+    } else if side_by_side {
         let width = drawer::width(model.overview_drawer_width, body.width + 2 * INSET);
         // The drawer's column starts under the rule, its own top margin
         // inside it.
@@ -520,6 +527,36 @@ fn render_section(
         }
     };
     draw_lines(frame, area, &lines, Some(overview.row()), track)
+}
+
+/// Whether the section in front has nothing to list, and says so in place
+/// of its rows.
+fn nothing_to_list(
+    model: &WorkspaceModel,
+    overview: &SpaceOverviewView,
+    project: &ProjectSpace,
+) -> bool {
+    match overview.section {
+        Section::Agent => overview.agent.as_ref().is_some_and(|agent| {
+            model
+                .remembered
+                .drawer_prompts
+                .as_ref()
+                .is_some_and(|history| {
+                    history.root == agent.space_root && history.entries.is_empty()
+                })
+        }),
+        Section::Plugins => {
+            project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none()
+        }
+        Section::Memory => {
+            project.memory.project.is_empty() && project.memory.unreadable.is_empty()
+        }
+        Section::Worktrees => {
+            !matches!(&overview.worktrees.answer, Some(Some(_))) || overview.worktrees().is_empty()
+        }
+        Section::Context | Section::Settings => false,
+    }
 }
 
 /// A section with nothing to list, said the way an empty surface says it
