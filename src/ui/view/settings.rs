@@ -39,7 +39,7 @@ use crate::ui::chime;
 use crate::ui::hit::Hit;
 use crate::ui::model::{ResizablePanel, Route, SettingsRow, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{self, Scrollbar, Surface};
+use crate::ui::widget::{self, Surface};
 use crate::ui::{content_area, render_screen_header};
 
 /// The marks a preview shows. Chosen to be the ones that differ most
@@ -70,11 +70,20 @@ pub(crate) fn render_settings(
     let list_width = content.width.saturating_sub(drawer_width);
     let list_area = Rect::new(content.x, content.y, list_width, content.height);
 
-    render_catalog(frame, list_area, model, hits);
+    let (total, first) = render_catalog(frame, list_area, model, hits);
     // The whole content area, not what the header left: a drawer runs the
     // frame's full height on every other screen, and one that starts below
     // the title reads as a panel that failed to open.
     render_drawer(frame, area, model, hits);
+    super::scrollbar_on_drawer_rule(
+        frame,
+        area,
+        model,
+        list_area,
+        (usize::from(list_area.height), total, first),
+        hits,
+        None,
+    );
 }
 
 /// A card in the catalogue. Wide enough for a glyph set's whole preview
@@ -106,37 +115,45 @@ fn render_catalog(
     area: Rect,
     model: &TuiModel,
     hits: &mut Vec<(Rect, Hit)>,
-) {
+) -> (usize, usize) {
     let bands = bands_of(model, area.width);
     let total: u16 = bands.iter().map(Band::height).sum();
-    // A column for the track, and only when there is more catalogue than
-    // screen: a scrollbar on a page that fits says the opposite of what
-    // it is for. Taken before the cards are placed, so the width they are
-    // laid out against is the width they are drawn in.
-    let track_width = Scrollbar::width().max(1);
-    let track = (total > area.height).then(|| {
-        Rect::new(
-            area.right().saturating_sub(track_width),
-            area.y,
-            track_width,
-            area.height,
+    let starts: Vec<u16> = bands
+        .iter()
+        .scan(0, |at, band| {
+            let start = *at;
+            *at += band.height();
+            Some(start)
+        })
+        .collect();
+    let selected = bands
+        .iter()
+        .position(
+            |band| matches!(band, Band::Cards(cards) if cards.contains(&model.settings_selected)),
         )
-    });
-    let area = match track {
-        Some(_) => Rect::new(
-            area.x,
-            area.y,
-            area.width.saturating_sub(track_width + 1),
-            area.height,
-        ),
-        None => area,
-    };
-    let bands = bands_of(model, area.width);
-    let total: u16 = bands.iter().map(Band::height).sum();
-
-    // The window stays at the top until the selection passes the middle,
-    // so reading down from the first card does not move the page.
-    let first = first_band(&bands, model.settings_selected, area.height);
+        .map(|band| {
+            let start = usize::from(starts[band]);
+            (start, start + usize::from(bands[band].height()) - 1)
+        });
+    let line = super::settle(
+        &model.settings_scroll,
+        selected,
+        usize::from(total),
+        usize::from(area.height),
+    );
+    // Whole bands only: a window stopping inside a card would clip it, so
+    // it starts at the first band beginning at or after the line.
+    let first = starts
+        .iter()
+        .position(|start| usize::from(*start) >= line)
+        .unwrap_or(bands.len());
+    let scroll = model.settings_scroll.get();
+    model
+        .settings_scroll
+        .set(crate::ui::extension_view::NavigatorScroll {
+            first: starts.get(first).map_or(line, |start| usize::from(*start)),
+            ..scroll
+        });
     let mut y = area.y;
     let skipped: u16 = bands.iter().take(first).map(Band::height).sum();
     for band in bands.iter().skip(first) {
@@ -161,11 +178,7 @@ fn render_catalog(
         }
         y += band.height();
     }
-    if let Some(track) = track
-        && let Some(bar) = Scrollbar::measure(track, usize::from(area.height), usize::from(total))
-    {
-        bar.render(frame, usize::from(skipped));
-    }
+    (usize::from(total), usize::from(skipped))
 }
 
 /// One stretch of the catalogue that moves as a unit: a group heading,
@@ -213,40 +226,6 @@ fn bands_of(model: &TuiModel, width: u16) -> Vec<Band<'_>> {
     bands
 }
 
-/// The first band to draw so the `selected` card is on screen, held so the
-/// last page ends on the last band rather than on empty rows.
-fn first_band(bands: &[Band<'_>], selected: usize, height: u16) -> usize {
-    let anchor = bands
-        .iter()
-        .position(|band| matches!(band, Band::Cards(cards) if cards.contains(&selected)))
-        .unwrap_or(0);
-    // Back off from the anchor until half the screen is filled behind it,
-    // then forward again while the tail still fits: two walks over a list
-    // of bands, because their heights differ and no arithmetic on indices
-    // answers where a variable-height window starts.
-    let fits_from = |first: usize| -> bool {
-        let mut used = 0;
-        for band in bands.iter().skip(first) {
-            used += band.height();
-        }
-        used <= height
-    };
-    let mut first = anchor;
-    let mut behind = 0;
-    while first > 0 {
-        let candidate = first - 1;
-        behind += bands[candidate].height();
-        if behind > height / 2 {
-            break;
-        }
-        first = candidate;
-    }
-    while first > 0 && fits_from(first - 1) {
-        first -= 1;
-    }
-    first
-}
-
 /// One card of the catalogue, by its index into `settings_rows`: which
 /// kind it is decides what is drawn under the name and what the preview
 /// line shows.
@@ -255,7 +234,10 @@ fn render_row(frame: &mut ratatui::Frame<'_>, rect: Rect, model: &TuiModel, inde
     let Some(row) = rows.get(index) else {
         return;
     };
-    let selected = index == model.settings_selected;
+    let state = widget::RowState::of(
+        index == model.settings_selected,
+        model.hovered == Some(Hit::SettingsRow(index)),
+    );
     match row {
         SettingsRow::Theme { id, active, path } => {
             let source = match path {
@@ -273,7 +255,7 @@ fn render_row(frame: &mut ratatui::Frame<'_>, rect: Rect, model: &TuiModel, inde
                 rect,
                 id,
                 *active,
-                selected,
+                state,
                 &source,
                 swatch_spans(model, id),
             );
@@ -285,7 +267,7 @@ fn render_row(frame: &mut ratatui::Frame<'_>, rect: Rect, model: &TuiModel, inde
                 rect,
                 id,
                 *active,
-                selected,
+                state,
                 glyph_set_tagline(id),
                 preview_spans(id, room),
             );
@@ -295,7 +277,7 @@ fn render_row(frame: &mut ratatui::Frame<'_>, rect: Rect, model: &TuiModel, inde
             rect,
             chime::label(*chime),
             *active,
-            selected,
+            state,
             chime::tagline(*chime),
             Vec::new(),
         ),
@@ -317,7 +299,7 @@ fn render_card(
     rect: Rect,
     id: &str,
     active: bool,
-    selected: bool,
+    state: widget::RowState,
     note: &str,
     body: Vec<Span<'static>>,
 ) {
@@ -339,7 +321,7 @@ fn render_card(
     ));
     title.push(Span::raw(" "));
 
-    let inner = Surface::selectable(selected)
+    let inner = Surface::selectable(state)
         .title(Line::from(title))
         .render(frame, rect);
     // Inside the frame, never over it: a fill that covered the border cells

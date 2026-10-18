@@ -13,22 +13,12 @@
 //! has seen a scrollbar tries first. Drawing something that looks like a
 //! control and does nothing is worse than not drawing it.
 //!
-//! # Two questions, one control
+//! # Where the window can go
 //!
-//! A pointer on the track means different things to different lists, and
-//! the difference is real rather than an inconsistency to iron out:
-//!
-//! - A list whose window is *derived from the selection* — the Keys
-//!   screen — asks [`Scrollbar::item_at`]: the track is a picture of the
-//!   whole list, so its top row is the first item and its bottom row the
-//!   last.
-//! - A list that keeps a scroll offset of its own — the code surface —
-//!   asks [`Scrollbar::first_at`]: the track is a picture of where the
-//!   *window* can go, so its bottom is the last screenful rather than the
-//!   last line.
-//!
-//! Naming both keeps each screen honest about which it is, instead of one
-//! of them quietly scrolling a line short.
+//! Every list keeps a scroll offset of its own, apart from its selection,
+//! so a pointer on the track asks [`Scrollbar::first_at`]: the track is a
+//! picture of where the *window* can go, so its bottom is the last
+//! screenful rather than the last line.
 
 use ratatui::{Frame, layout::Rect, text::Span, widgets::Paragraph};
 
@@ -84,22 +74,6 @@ impl Scrollbar {
         let travel = usize::from(self.track.height.saturating_sub(thumb)).max(1);
         let offset = usize::from(row.saturating_sub(self.track.y).saturating_sub(thumb / 2));
         (offset * scrollable).div_ceil(travel).min(scrollable)
-    }
-
-    /// The item a pointer at `row` is pointing at, for a list whose window
-    /// follows its selection.
-    ///
-    /// The whole list, not the scrollable range: the top of the track is
-    /// the first item and the bottom is the last, which is what a picture
-    /// of the whole list means.
-    pub(crate) fn item_at(self, row: u16) -> usize {
-        let last = self.total.saturating_sub(1);
-        let travel = usize::from(self.track.height.saturating_sub(1));
-        if travel == 0 {
-            return 0;
-        }
-        let offset = usize::from(row.saturating_sub(self.track.y)).min(travel);
-        offset * last / travel
     }
 
     /// Draws the handle, with `first` the row at the top of the window.
@@ -228,16 +202,6 @@ mod tests {
             (30..=50).contains(&middle),
             "halfway down is about halfway through, was {middle}"
         );
-    }
-
-    /// A list whose window follows its selection asks the other question:
-    /// the bottom of the track is the last *item*.
-    #[test]
-    fn dragging_a_selection_reaches_the_last_item() {
-        let bar = Scrollbar::measure(Rect::new(0, 0, 1, 10), 10, 100).expect("it scrolls");
-
-        assert_eq!(bar.item_at(bar.track.y), 0);
-        assert_eq!(bar.item_at(bar.track.bottom()), 99, "the last item, not 90");
     }
 
     /// The handle is the share of the whole on screen, and never nothing.

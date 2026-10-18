@@ -124,6 +124,9 @@ pub(super) struct FrameMetrics {
     /// Where recent's list settled and the scrollbar it drew, when it was
     /// open.
     pub(super) recent: Option<RecentFrame>,
+    /// Where the space overview's section in front settled, when it was
+    /// drawn.
+    pub(super) overview: Option<crate::ui::extension_view::NavigatorScroll>,
 }
 
 /// One frame of the management modal: where it was drawn, and the hit
@@ -172,7 +175,8 @@ pub(super) fn render(
         None => {
             match &model.space_overview {
                 Some(overview) => {
-                    render_space_overview(frame, layout.pane, model, overview, hits);
+                    metrics.overview =
+                        render_space_overview(frame, layout.pane, model, overview, hits);
                 }
                 None => render_pane(frame, layout.pane, model),
             }

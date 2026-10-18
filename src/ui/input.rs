@@ -356,18 +356,31 @@ impl TuiModel {
     /// Where the selection goes, which depends on what the screen is a
     /// list *of* — screens on the tab strip, prompts on the Overview, a
     /// profile's three panels, or the ordinary content rows.
+    /// Scrolls the screen in front a line, leaving its selection be. A
+    /// screen with no page of its own to move walks its selection, as the
+    /// keys do.
+    fn scroll_page(&mut self, direction: uze_extensions::view::ScrollDirection) -> Intent {
+        let scroll = match self.route {
+            Route::Settings => Some(&self.settings_scroll),
+            route => self.list(route).map(|list| &list.scroll),
+        };
+        match scroll {
+            Some(scroll) => {
+                scroll.set(scroll.get().scrolled(direction));
+                Intent::None
+            }
+            None => self.move_by(match direction {
+                uze_extensions::view::ScrollDirection::Down => 1,
+                uze_extensions::view::ScrollDirection::Up => -1,
+            }),
+        }
+    }
+
     fn move_by(&mut self, delta: isize) -> Intent {
         if self.focus == Focus::Sidebar {
             return self.set_route(self.route.neighbour(delta));
         }
         match self.route {
-            // Enter switches an extension whichever way it is not.
-            Route::Extensions => match self.selected_extension() {
-                Some(extension) => {
-                    self.switch_selected_extension(!self.extension_enabled(extension.id))
-                }
-                None => Intent::None,
-            },
             Route::Profiles if self.profile_preview_open => {
                 self.move_profile_preview_cursor(delta);
                 Intent::None
@@ -652,13 +665,18 @@ impl TuiModel {
                 });
                 Intent::None
             }
-            MouseEventKind::ScrollDown if self.overlay == Overlay::None => {
+            // Over a screen, the wheel moves the page and leaves the
+            // selection where the keys put it.
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                if self.overlay == Overlay::None =>
+            {
                 self.focus = Focus::Content;
-                self.move_by(1)
-            }
-            MouseEventKind::ScrollUp if self.overlay == Overlay::None => {
-                self.focus = Focus::Content;
-                self.move_by(-1)
+                let direction = if event.kind == MouseEventKind::ScrollDown {
+                    uze_extensions::view::ScrollDirection::Down
+                } else {
+                    uze_extensions::view::ScrollDirection::Up
+                };
+                self.scroll_page(direction)
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome
@@ -673,6 +691,8 @@ impl TuiModel {
                     Some(Hit::OfferedAction(action)) => Some(action),
                     _ => None,
                 };
+                self.hovered = hovered;
+                self.pointer_row = Some(event.row);
                 Intent::None
             }
             _ => Intent::None,

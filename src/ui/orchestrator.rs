@@ -687,6 +687,7 @@ pub(crate) fn attach_workspace(
                 attach.model.recent.scroll = frame.scroll;
                 attach.model.recent.bar = frame.bar;
             }
+            attach.model.absorb_overview_frame(metrics.overview);
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }

@@ -34,7 +34,7 @@ use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, screen_header, text};
+use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, row, screen_header, text};
 
 /// Below this many columns the panel goes and the tree takes the width.
 const NARROW: u16 = 88;
@@ -96,10 +96,13 @@ pub(crate) fn render_plugins(
         cursor: model.plugin_tree_cursor(),
         focused: model.focus == Focus::Content,
     };
-    render_tree(frame, tree, &screen, &markets, hits);
+    let window = render_tree(frame, tree, &screen, &markets, hits);
     if panel_width > 0 {
         let panel = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
         render_panel(frame, panel, &screen, hits);
+        if let Some((list, window)) = window {
+            super::scrollbar_on_drawer_rule(frame, content, model, list, window, hits, None);
+        }
     }
 }
 
@@ -346,7 +349,7 @@ fn render_tree(
     screen: &Screen<'_>,
     markets: &[String],
     hits: &mut Vec<(Rect, Hit)>,
-) {
+) -> Option<(Rect, (usize, usize, usize))> {
     let model = screen.model;
     let text_area = Rect {
         x: area.x + PAD,
@@ -398,9 +401,7 @@ fn render_tree(
         );
     }
     rows.gap();
-    let Some(list_top) = rows.next(1).map(|rect| rect.y) else {
-        return;
-    };
+    let list_top = rows.next(1).map(|rect| rect.y)?;
     let list = Rect::new(
         group_area.x,
         list_top,
@@ -424,28 +425,56 @@ fn render_tree(
                 ..list
             },
         );
-        return;
+        return None;
     }
 
     let lines = tree_lines(screen, markets, &columns, list.width);
-    let selected_line = lines.iter().position(|line| line.selected).unwrap_or(0);
-    // Scrolled only as far as keeps the keyboard's row in view, with the
-    // row after it when there is one: nothing else here moves the list, so
-    // there is no offset to remember.
-    let offset = (selected_line + 2).saturating_sub(list.height as usize);
+    let selected = lines
+        .iter()
+        .position(|line| line.selected)
+        .zip(lines.iter().rposition(|line| line.selected));
+    let total = lines.len();
+    let offset = super::settle(
+        &model.remembered.plugin_screen.scroll,
+        selected,
+        total,
+        usize::from(list.height),
+    );
     for (index, entry) in lines.into_iter().skip(offset).enumerate() {
         let y = list.y + index as u16;
         if y >= list.bottom() {
             break;
         }
+        // The pointer lights the line it is over, short of the
+        // keyboard's ground, and chooses nothing. By its row rather than
+        // its target, which a group's blank lines share with its heading;
+        // and never a line with nothing on it, which is no row to choose.
+        let blank = entry
+            .line
+            .spans
+            .iter()
+            .all(|span| span.content.trim().is_empty());
+        let hovered = !entry.selected
+            && !blank
+            && model.pointer_row == Some(y)
+            && entry
+                .hits
+                .iter()
+                .any(|(_, _, hit)| model.hovered.as_ref() == Some(hit));
+        let mut line = entry.line;
+        if hovered {
+            row::pad_to(
+                &mut line.spans,
+                list.width,
+                theme::color(Token::SurfaceHover),
+            );
+        }
         for (x, width, hit) in entry.hits {
             hits.push((Rect::new(list.x + x, y, width.min(list.width), 1), hit));
         }
-        frame.render_widget(
-            Paragraph::new(entry.line),
-            Rect::new(list.x, y, list.width, 1),
-        );
+        frame.render_widget(Paragraph::new(line), Rect::new(list.x, y, list.width, 1));
     }
+    Some((list, (usize::from(list.height), total, offset)))
 }
 
 /// The tree's own header: the screen's name and what it holds, and the

@@ -23,6 +23,7 @@ use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
+use crate::ui::widget::RowState;
 use crate::ui::{content_area, render_screen_header};
 
 pub(crate) fn render_extensions(
@@ -82,24 +83,35 @@ pub(crate) fn render_extensions(
             catalog_area,
         );
     }
-    for (position, (rect, &extension_index)) in super::catalog::cards(catalog_area, visible.len())
-        .zip(&visible)
-        .enumerate()
-    {
-        let selected = position == model.remembered.extension_screen.selected;
-        let extension = &model.extensions[extension_index];
+    let screen = &model.remembered.extension_screen;
+    let grid = super::catalog::cards(catalog_area, visible.len(), screen.selected, &screen.scroll);
+    for &(position, rect) in &grid.cards {
+        let extension = &model.extensions[visible[position]];
+        let state = RowState::of(
+            position == screen.selected,
+            model.hovered == Some(Hit::ExtensionRow(position)),
+        );
         render_extension_card(
             frame,
             rect,
             extension,
             model.extension_enabled(extension.id),
-            selected,
+            state,
         );
         hits.push((rect, Hit::ExtensionRow(position)));
     }
 
     if let Some(extension) = model.selected_extension() {
         render_extension_drawer(frame, outer, model, extension, hits);
+        super::scrollbar_on_drawer_rule(
+            frame,
+            outer,
+            model,
+            catalog_area,
+            (grid.visible, grid.rows, grid.first),
+            hits,
+            None,
+        );
     }
 }
 
@@ -122,7 +134,7 @@ fn render_extension_card(
     rect: Rect,
     extension: &uze_extensions::registry::BuiltinExtension,
     enabled: bool,
-    selected: bool,
+    state: RowState,
 ) {
     render_card(
         frame,
@@ -142,7 +154,7 @@ fn render_extension_card(
                 Span::styled("Disabled", theme::fg(Token::TextDim))
             }),
         },
-        selected,
+        state,
     );
 }
 

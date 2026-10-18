@@ -18,14 +18,22 @@ use uze_application::{
 /// beside it.
 const SIDE_BY_SIDE: u16 = 110;
 
+use crate::ui::extension_view::NavigatorScroll;
+
 const INSET: u16 = 2;
 
 /// Where a section's scroll handle goes: on the drawer's rule when the
 /// drawer stands beside it, lit with it while it is dragged.
 #[derive(Clone, Copy, Default)]
-struct Track {
+struct Track<'a> {
     column: Option<u16>,
     dragging: bool,
+    /// Where the section was scrolled to, handed in and settled in place:
+    /// the wheel moves it, and only the keys moving the selection pull it
+    /// back to show the row they land on.
+    scroll: Option<&'a std::cell::Cell<NavigatorScroll>>,
+    /// The row under the pointer, lit without being chosen.
+    hovered: Option<usize>,
 }
 
 /// A number's − and + as drawn: its line, its row, and the column and
@@ -45,6 +53,19 @@ pub(super) fn render_space_overview(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> Option<NavigatorScroll> {
+    let scroll = std::cell::Cell::new(overview.scroll[overview.section.index()]);
+    render_overview_frame(frame, area, model, overview, hits, &scroll);
+    Some(scroll.get())
+}
+
+fn render_overview_frame(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    overview: &SpaceOverviewView,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+    scroll: &std::cell::Cell<NavigatorScroll>,
 ) {
     widget::fill(frame, area, Token::SurfaceBackground);
     let inner = Rect {
@@ -188,6 +209,7 @@ pub(super) fn render_space_overview(
             Track {
                 column: Some(handle.x),
                 dragging,
+                ..Track::default()
             },
         )
     } else if overview.drawer {
@@ -203,6 +225,14 @@ pub(super) fn render_space_overview(
         (body, Track::default())
     };
     if section_area.width > 0 {
+        let track = Track {
+            scroll: Some(scroll),
+            hovered: match model.hovered {
+                Some(WorkspaceHit::OverviewRow(row)) => Some(row),
+                _ => None,
+            },
+            ..track
+        };
         let rows = render_section(frame, section_area, model, overview, project, hits, track);
         for (rect, index) in rows {
             hits.push((rect, WorkspaceHit::OverviewRow(index)));
@@ -719,10 +749,25 @@ fn draw_scrolled(
     track: Track,
 ) -> (Vec<(Rect, usize)>, usize) {
     let height = usize::from(area.height);
-    let at = selected
-        .and_then(|selected| lines.iter().position(|line| line.row == Some(selected)))
-        .unwrap_or(0);
-    let offset = at.saturating_sub(height.saturating_sub(1));
+    // Scrolled the way recent's list is: wherever the wheel left it, until
+    // the selection moves, which pulls the window just far enough to show
+    // the whole selected row.
+    let first_line =
+        selected.and_then(|selected| lines.iter().position(|line| line.row == Some(selected)));
+    let last_line =
+        selected.and_then(|selected| lines.iter().rposition(|line| line.row == Some(selected)));
+    let previous = track.scroll.map(std::cell::Cell::get).unwrap_or_default();
+    let mut scroll = previous.settled(last_line, lines.len(), height);
+    if let Some(first) = first_line
+        && scroll.revealed != previous.revealed
+        && first < scroll.first
+    {
+        scroll.first = first;
+    }
+    if let Some(cell) = track.scroll {
+        cell.set(scroll);
+    }
+    let offset = scroll.first;
     // The handle rides the drawer's rule, as every list with a divider
     // beside it does; with no drawer it takes the list's last column.
     let (bar, area) = match track.column {
@@ -763,11 +808,14 @@ fn draw_scrolled(
     for (index, line) in lines.iter().skip(offset).take(height).enumerate() {
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
         let mut spans = line.spans.clone();
-        let state = RowState::of(line.row.is_some() && line.row == selected, false);
+        let state = RowState::of(
+            line.row.is_some() && line.row == selected,
+            line.row.is_some() && line.row == track.hovered,
+        );
         let mut shown = Line::from(std::mem::take(&mut spans));
         text::clip(&mut shown, usize::from(area.width));
         let mut spans = shown.spans;
-        row::fill(&mut spans, area.width, state);
+        row::fill_under(&mut spans, area.width, state);
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
         if let Some(row) = line.row {
             rows.push((rect, row));
