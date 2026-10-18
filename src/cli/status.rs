@@ -660,12 +660,13 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         let delivery = harness.context.as_ref()?;
         Some(render_status_harness(&harness.display_name, delivery))
     }));
-    text.push_str(&progress::aligned_rows(rows));
+    let label = status_label_width(report, &rows);
+    text.push_str(&progress::aligned_rows_from(rows, label));
     text.push('\n');
     text.push_str(&render_portability_gaps(&report.portability));
 
-    let plugins = render_project_lock_status(&report.project_lock);
-    let drift = render_drift(&report.drift);
+    let plugins = render_project_lock_status(&report.project_lock, label);
+    let drift = render_drift(&report.drift, label);
     if !plugins.is_empty() || !drift.is_empty() {
         text.push('\n');
         text.push_str(&progress::report_section("Plugins"));
@@ -698,7 +699,7 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         || !report.memory.unreadable.is_empty()
     {
         text.push('\n');
-        text.push_str(&render_status_memory(report));
+        text.push_str(&render_status_memory(report, label));
     }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {
@@ -750,6 +751,39 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
     text
 }
 
+/// The widest label of the sections that list one thing per row, so
+/// Context, Plugins and Memory put their values in one column. Sources and
+/// proposals are left out: a path or a fact's name would push every other
+/// section's values off to the right.
+fn status_label_width(report: &StatusReport, context: &[Vec<String>]) -> usize {
+    use uze_application::application::ProjectLockStatus;
+    let plugins = match &report.project_lock {
+        ProjectLockStatus::Present { plugins } => plugins
+            .iter()
+            .map(|plugin| progress::width(&plugin.plugin))
+            .max()
+            .unwrap_or_default(),
+        _ => 0,
+    };
+    let drift = [
+        &report.drift.unresolved,
+        &report.drift.surplus,
+        &report.drift.missing,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|plugin| progress::width(plugin))
+    .max()
+    .unwrap_or_default();
+    context
+        .iter()
+        .filter_map(|row| row.first())
+        .map(|cell| progress::width(cell))
+        .chain([plugins, drift, progress::width("machine")])
+        .max()
+        .unwrap_or_default()
+}
+
 pub(crate) fn status_headline(status: &ProjectStatus) -> String {
     let report = &status.report;
     let missing = locked_plugin_count(&report.project_lock);
@@ -793,7 +827,10 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
 /// What `agents.yaml` asks for that the rest of the chain has not caught
 /// up to. Silent when there is nothing owed — a clean project says nothing
 /// rather than saying "no drift", which is a sentence nobody needs.
-pub(crate) fn render_drift(drift: &uze_application::application::EnvironmentDrift) -> String {
+pub(crate) fn render_drift(
+    drift: &uze_application::application::EnvironmentDrift,
+    label: usize,
+) -> String {
     let mut rows = Vec::new();
     let mut attention = |plugins: &[String], what: &str| {
         for plugin in plugins {
@@ -809,7 +846,7 @@ pub(crate) fn render_drift(drift: &uze_application::application::EnvironmentDrif
     if rows.is_empty() {
         String::new()
     } else {
-        format!("{}\n", progress::aligned_rows(rows))
+        format!("{}\n", progress::aligned_rows_from(rows, label))
     }
 }
 
@@ -894,7 +931,7 @@ pub(crate) fn status_issues(report: &StatusReport) -> Vec<String> {
 /// What memory holds, one line per scope counted by who keeps it, and only
 /// what waits on the operator by name: the facts themselves are the space
 /// overview's and `--json`'s, and fifty of them would bury the report.
-pub(crate) fn render_status_memory(report: &StatusReport) -> String {
+pub(crate) fn render_status_memory(report: &StatusReport, label: usize) -> String {
     use uze_application::application::memory::MemoryScope;
     let memory = &report.memory;
     let keeper = |origin: &str| {
@@ -926,10 +963,13 @@ pub(crate) fn render_status_memory(report: &StatusReport) -> String {
         vec![progress::label(label), summary]
     };
     let mut text = progress::report_section("Memory");
-    text.push_str(&progress::aligned_rows(vec![
-        scope_row("project", MemoryScope::Project),
-        scope_row("machine", MemoryScope::Machine),
-    ]));
+    text.push_str(&progress::aligned_rows_from(
+        vec![
+            scope_row("project", MemoryScope::Project),
+            scope_row("machine", MemoryScope::Machine),
+        ],
+        label,
+    ));
     text.push('\n');
     if !memory.proposals.is_empty() {
         text.push_str(&format!(
@@ -1021,6 +1061,7 @@ pub(crate) fn status_next_step(status: &ProjectStatus) -> Option<&'static str> {
 
 pub(crate) fn render_project_lock_status(
     status: &uze_application::application::ProjectLockStatus,
+    label: usize,
 ) -> String {
     use uze_application::application::ProjectLockStatus;
     match status {
@@ -1061,7 +1102,7 @@ pub(crate) fn render_project_lock_status(
                     vec![plugin.plugin.clone(), state]
                 })
                 .collect();
-            format!("{}\n", progress::aligned_rows(rows))
+            format!("{}\n", progress::aligned_rows_from(rows, label))
         }
     }
 }

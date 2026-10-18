@@ -1039,6 +1039,30 @@ mod status_output_tests {
         }
     }
 
+    /// Every section that lists one thing per row starts its values in one
+    /// column, a mark included.
+    #[test]
+    fn the_sections_of_status_share_one_value_column() {
+        use uze_application::application::memory::MemoryScope;
+        let mut status = report(present(), Portability::Portable);
+        status.report.memory.entries = vec![fact("first", MemoryScope::Project, "uze")];
+
+        let rendered = super::progress::unpainted(&render_status(&status));
+        let value_at = |label: &str| {
+            let line = rendered
+                .lines()
+                .find(|line| line.starts_with(&format!("  {label}")))
+                .unwrap_or_else(|| panic!("no {label} line: {rendered}"));
+            let gap = line
+                .chars()
+                .skip(2 + label.len())
+                .take_while(|c| c.is_whitespace())
+                .count();
+            2 + label.len() + gap
+        };
+        assert_eq!(value_at("AGENTS.md"), value_at("project"), "{rendered}");
+    }
+
     /// What concerns one harness is carried on it, and read back as the
     /// line it always was.
     #[test]

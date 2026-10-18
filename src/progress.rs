@@ -260,14 +260,26 @@ pub fn clap_styles() -> clap::builder::Styles {
 /// and a plain one line up. One construction path means every list in the
 /// CLI lines up the same way.
 pub fn aligned_rows(rows: Vec<Vec<String>>) -> String {
+    aligned_rows_from(rows, 0)
+}
+
+/// [`aligned_rows`], with the first column at least `label` wide, so the
+/// sections of one report put their values in one column.
+pub fn aligned_rows_from(rows: Vec<Vec<String>>, label: usize) -> String {
     let columns = rows.iter().map(Vec::len).max().unwrap_or_default();
     let widths: Vec<usize> = (0..columns)
         .map(|column| {
-            rows.iter()
+            let widest = rows
+                .iter()
                 .filter_map(|row| row.get(column))
                 .map(|cell| width(cell))
                 .max()
-                .unwrap_or_default()
+                .unwrap_or_default();
+            if column == 0 {
+                widest.max(label)
+            } else {
+                widest
+            }
         })
         .collect();
     rows.iter()
