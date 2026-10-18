@@ -8,7 +8,7 @@
 
 use std::{fs, path::Path};
 
-use uze_core::memory::MemoryEntry;
+use uze_core::memory::{FactKind, MemoryEntry};
 
 use super::words::fold;
 
@@ -105,11 +105,11 @@ fn stem(path: &Path) -> Option<&str> {
 /// A spelling with its separators and the kind it was filed under gone.
 fn loose(name: &str) -> String {
     let lower = name.to_lowercase();
-    let unfiled = ["feedback", "user", "project", "reference"]
+    let unfiled = FactKind::ALL
         .iter()
         .find_map(|kind| {
             lower
-                .strip_prefix(kind)
+                .strip_prefix(kind.label())
                 .and_then(|rest| rest.strip_prefix(['-', '_']))
         })
         .unwrap_or(&lower);

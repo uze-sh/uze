@@ -74,9 +74,7 @@ pub(super) fn find(report: &MemoryReport, words: &[String], kind: Option<FactKin
     scored.sort_by(|(left_score, left), (right_score, right)| {
         right_score
             .cmp(left_score)
-            .then_with(|| left.entry.kind.cmp(&right.entry.kind))
-            .then_with(|| right.entry.updated.cmp(&left.entry.updated))
-            .then_with(|| left.entry.name.cmp(&right.entry.name))
+            .then_with(|| uze_core::memory::by_rank(&left.entry, &right.entry))
     });
     let total = scored.len();
     Found {

@@ -76,6 +76,9 @@ pub enum FactKind {
 }
 
 impl FactKind {
+    /// Every kind, in rank order.
+    pub const ALL: [Self; 4] = [Self::Feedback, Self::User, Self::Project, Self::Reference];
+
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim() {
             "feedback" => Some(Self::Feedback),
@@ -670,15 +673,10 @@ fn names_block(entries: &[&MemoryEntry], bound: usize) -> String {
     }
     let render = |shown: &[&MemoryEntry], left_out: usize| {
         let mut text = String::from(NAMES_HEADING);
-        let groups = [
-            FactKind::Feedback,
-            FactKind::User,
-            FactKind::Project,
-            FactKind::Reference,
-        ]
-        .map(|kind| (Some(kind), kind.label()))
-        .into_iter()
-        .chain([(None, STALE)]);
+        let groups = FactKind::ALL
+            .map(|kind| (Some(kind), kind.label()))
+            .into_iter()
+            .chain([(None, STALE)]);
         for (kind, label) in groups {
             let names: Vec<&str> = shown
                 .iter()
