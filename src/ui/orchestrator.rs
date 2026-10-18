@@ -1457,6 +1457,8 @@ struct Channels {
     launchers: Answers<Vec<String>>,
     /// A space's overview, and what its drawer and its edits ask.
     space_overviews: Answers<SpaceOverviewResolution>,
+    /// The worktrees its Worktrees section shows, measured.
+    space_worktrees: Answers<WorktreesResolution>,
     fact_bodies: Answers<FactBodyResolution>,
     declaration_saves: Answers<DeclarationSaveResolution>,
 }

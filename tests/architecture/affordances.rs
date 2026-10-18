@@ -298,7 +298,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
-    for position in 1..=5u8 {
+    for position in 1..=6u8 {
         put(
             Action::SelectSection(position),
             Control("clicking the section in the overview's bar"),

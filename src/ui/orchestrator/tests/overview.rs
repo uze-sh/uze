@@ -477,7 +477,7 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
 
     let worktree = rows
         .iter()
-        .find(|row| row.contains("Worktree"))
+        .find(|row| row.contains("Worktree") && !row.contains("Worktrees"))
         .expect("worktree is on the form");
     let form = worktree.split('│').nth(1).unwrap_or_default();
     assert!(
@@ -764,7 +764,7 @@ fn an_edit_is_written_without_any_save() {
     let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 160, 45)).join("\n");
     let worktree = screen
         .lines()
-        .find(|line| line.contains("Worktree"))
+        .find(|line| line.contains("Worktree") && !line.contains("Worktrees"))
         .expect("worktree is on the form");
     assert!(
         worktree.contains("saved"),
@@ -1570,4 +1570,352 @@ fn the_selected_prompt_slides_and_the_others_hold_still() {
         "the selected prompt did not slide"
     );
     assert_eq!(other_before, other_after, "a prompt not selected moved");
+}
+
+/// `count` worktrees UZE made for agents, each on its own branch and of
+/// its own size, plus one a person made, which the section leaves out.
+fn worktrees(count: usize) -> uze_application::CheckoutsView {
+    use uze_application::{CheckoutOwner, CheckoutView};
+    let mut checkouts: Vec<CheckoutView> = (0..count)
+        .map(|index| CheckoutView {
+            path: PathBuf::from(format!("/repo/.worktrees/slot-{index:02}")),
+            owner: CheckoutOwner::Agent {
+                holder: Some(format!("agent-{index:02}")),
+                live: true,
+            },
+            task: Some(format!("task-{index:02}")),
+            branch: Some(format!("feat/w-{index:02}")),
+            dirty: false,
+            ahead: index,
+            last_changed: None,
+            bytes: (index as u64 + 1) * 3 * 1024 * 1024,
+        })
+        .collect();
+    checkouts.push(CheckoutView {
+        path: PathBuf::from("/elsewhere/by-hand"),
+        owner: CheckoutOwner::Operator,
+        task: None,
+        branch: Some("someone/by-hand".to_owned()),
+        dirty: true,
+        ahead: 0,
+        last_changed: None,
+        bytes: 1,
+    });
+    uze_application::CheckoutsView {
+        primary: PathBuf::from("/repo"),
+        checkouts,
+    }
+}
+
+/// A model with the overview open on its Worktrees section, answered
+/// with `view`.
+fn worktrees_over(view: Option<uze_application::CheckoutsView>) -> WorkspaceModel {
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.section = Section::Worktrees;
+    overview.answer = Some(Ok(project_space(
+        Default::default(),
+        Err("not read here".to_owned()),
+    )));
+    overview.worktrees.answer = Some(view);
+    model
+}
+
+use crate::ui::orchestrator::space_overview::{Section, WorktreesResolution};
+
+fn worktree_selected(driven: &Driven<'_>) -> usize {
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_ref()
+        .expect("open")
+        .rows[Section::Worktrees.index()]
+}
+
+fn card_rects(driven: &Driven<'_>) -> Vec<(usize, Rect)> {
+    driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter_map(|(rect, hit)| match hit {
+            WorkspaceHit::OverviewRow(index) => Some((*index, *rect)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A card per worktree UZE made, with its branch and its size, and the
+/// cause line adding them up; a checkout a person made is not one.
+#[test]
+fn the_worktrees_section_draws_a_card_per_worktree() {
+    let mut model = worktrees_over(Some(worktrees(3)));
+    let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 40));
+    let screen = rows.join("\n");
+    for (branch, size) in [
+        ("feat/w-00", "3.0 MB"),
+        ("feat/w-01", "6.0 MB"),
+        ("feat/w-02", "9.0 MB"),
+    ] {
+        assert!(screen.contains(branch), "{branch} has no card:\n{screen}");
+        assert!(
+            screen.contains(size),
+            "{branch}'s size is missing:\n{screen}"
+        );
+    }
+    assert!(
+        !screen.contains("someone/by-hand"),
+        "a person's checkout is drawn as the space's:\n{screen}"
+    );
+    assert!(
+        screen.contains("3 worktrees · 18.0 MB on disk"),
+        "the cause line does not add them up:\n{screen}"
+    );
+    assert!(screen.contains("working"), "no card says where it stands");
+}
+
+/// The keys walk the cards one at a time, and a click selects one.
+#[test]
+fn the_keys_and_a_click_select_a_worktree() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-keys",
+    ));
+    let mut driven = driven(worktrees_over(Some(worktrees(4))), &home);
+    driven.area = Rect::new(0, 0, 160, 40);
+    driven.frame();
+    let down = || crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Down);
+    driven.press_key(down());
+    driven.press_key(down());
+    assert_eq!(worktree_selected(&driven), 2);
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Up,
+    ));
+    assert_eq!(worktree_selected(&driven), 1);
+    driven.frame();
+    let (_, rect) = card_rects(&driven)
+        .into_iter()
+        .find(|(index, _)| *index == 3)
+        .expect("the fourth card is drawn");
+    driven.press(rect.x + 2, rect.y + 2);
+    assert_eq!(worktree_selected(&driven), 3, "the click did not select it");
+}
+
+/// The wheel scrolls the grid a row of cards at a time and leaves the
+/// selection where it was; only whole cards are ever drawn.
+#[test]
+fn the_wheel_scrolls_the_cards_without_selecting() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-wheel",
+    ));
+    let mut driven = driven(worktrees_over(Some(worktrees(24))), &home);
+    driven.area = Rect::new(0, 0, 120, 30);
+    driven.frame();
+    let first_drawn = |driven: &Driven<'_>| {
+        card_rects(driven)
+            .iter()
+            .map(|(index, _)| *index)
+            .min()
+            .expect("cards are drawn")
+    };
+    assert_eq!(first_drawn(&driven), 0);
+    let (_, over) = card_rects(&driven)[0];
+    for _ in 0..3 {
+        driven.mouse(over.x + 2, over.y + 2, MouseEventKind::ScrollDown);
+    }
+    driven.frame();
+    assert!(
+        first_drawn(&driven) > 0,
+        "the wheel did not scroll the cards"
+    );
+    assert_eq!(
+        worktree_selected(&driven),
+        0,
+        "the wheel moved the selection"
+    );
+    let pane = driven.area;
+    for (index, rect) in card_rects(&driven) {
+        assert_eq!(rect.height, 6, "card {index} is cut: {rect:?}");
+        assert!(
+            rect.y > 8 && rect.bottom() < pane.bottom(),
+            "{index}: {rect:?}"
+        );
+    }
+}
+
+/// The pointer over a card lifts its border, short of the accent the
+/// selected card wears, and selects nothing.
+#[test]
+fn a_worktree_card_lifts_under_the_pointer() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-lift",
+    ));
+    let mut driven = driven(worktrees_over(Some(worktrees(3))), &home);
+    driven.area = Rect::new(0, 0, 160, 40);
+    driven.frame();
+    let rect_of = |driven: &Driven<'_>, wanted: usize| {
+        card_rects(driven)
+            .into_iter()
+            .find(|(index, _)| *index == wanted)
+            .expect("the card is drawn")
+            .1
+    };
+    let border = |driven: &Driven<'_>, rect: Rect| {
+        let area = driven.area;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))
+                .unwrap();
+        terminal
+            .draw(|frame| {
+                super::render::render(
+                    frame,
+                    &driven.attach.model,
+                    &identities_fixture(),
+                    &mut Vec::new(),
+                    &mut super::render::FrameMetrics::default(),
+                )
+            })
+            .unwrap();
+        terminal.backend().buffer()[(rect.x, rect.y)].fg
+    };
+    let tone = |token| theme::color(token);
+    use crate::ui::theme::Token;
+    let resting = rect_of(&driven, 2);
+    assert_eq!(border(&driven, resting), tone(Token::BorderFaint));
+    assert_eq!(border(&driven, rect_of(&driven, 0)), tone(Token::Accent));
+    driven.mouse(resting.x + 2, resting.y + 2, MouseEventKind::Moved);
+    assert_eq!(
+        border(&driven, resting),
+        tone(Token::BorderDefault),
+        "the card under the pointer did not lift"
+    );
+    assert_eq!(worktree_selected(&driven), 0, "hovering selected the card");
+}
+
+/// Bringing the section to front asks for the measure off the frame,
+/// which says it is measuring meanwhile; an answer to an earlier read, or
+/// to an overview put away, is dropped.
+#[test]
+fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-read",
+    ));
+    let mut model = worktrees_over(None);
+    let overview = model.space_overview.as_mut().expect("open");
+    overview.section = Section::Agent;
+    overview.worktrees.answer = None;
+    let space = overview.space;
+    let mut driven = driven(model, &home);
+    driven.frame();
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Char('6'),
+    ));
+    let read = |driven: &Driven<'_>| {
+        let overview = driven.attach.model.space_overview.as_ref().expect("open");
+        (
+            overview.section,
+            overview.worktrees.pending,
+            overview.worktrees.asked,
+        )
+    };
+    assert_eq!(
+        read(&driven),
+        (Section::Worktrees, true, 1),
+        "no read was asked"
+    );
+    let rows = frame_rows(&mut driven.attach.model);
+    assert!(
+        rows.iter().any(|row| row.contains("measuring")),
+        "the section does not say it is measuring:\n{}",
+        rows.join("\n")
+    );
+
+    let model = &mut driven.attach.model;
+    let stale = WorktreesResolution {
+        space,
+        asked: 0,
+        view: Some(worktrees(2)),
+    };
+    assert!(
+        !model.absorb_space_worktrees(stale),
+        "an earlier read was kept"
+    );
+    let elsewhere = WorktreesResolution {
+        space: uze_terminal::SpaceId(space.0 + 1),
+        asked: 1,
+        view: Some(worktrees(2)),
+    };
+    assert!(
+        !model.absorb_space_worktrees(elsewhere),
+        "another space's read was kept"
+    );
+    let current = WorktreesResolution {
+        space,
+        asked: 1,
+        view: Some(worktrees(2)),
+    };
+    assert!(model.absorb_space_worktrees(current));
+    let overview = model.space_overview.as_ref().expect("open");
+    assert!(!overview.worktrees.pending);
+    assert_eq!(overview.worktrees().len(), 2);
+
+    model.put_away_space_overview();
+    let late = WorktreesResolution {
+        space,
+        asked: 1,
+        view: Some(worktrees(5)),
+    };
+    assert!(
+        !model.absorb_space_worktrees(late),
+        "an overview put away took an answer"
+    );
+}
+
+/// With no worktree, the section says every agent works in this checkout.
+#[test]
+fn no_worktrees_says_every_agent_works_here() {
+    let mut model = worktrees_over(Some(uze_application::CheckoutsView {
+        primary: PathBuf::from("/repo"),
+        checkouts: Vec::new(),
+    }));
+    let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 40));
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("no worktrees: every agent works in this checkout")),
+        "{}",
+        rows.join("\n")
+    );
+}
+
+/// Uncommitted work with no agent there warns on the section's tab; a
+/// worktree whose agent is working there does not.
+#[test]
+fn uncommitted_work_nobody_attends_warns() {
+    use crate::ui::orchestrator::space_overview::Health;
+    let mut view = worktrees(2);
+    let mut model = worktrees_over(Some(view.clone()));
+    let health = |model: &WorkspaceModel| {
+        model
+            .space_overview
+            .as_ref()
+            .expect("open")
+            .health(Section::Worktrees)
+    };
+    assert_eq!(health(&model), Health::Fine);
+    view.checkouts[0].dirty = true;
+    view.checkouts[0].owner = uze_application::CheckoutOwner::Agent {
+        holder: Some("gone".to_owned()),
+        live: false,
+    };
+    model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .worktrees
+        .answer = Some(Some(view));
+    assert_eq!(health(&model), Health::Warning);
 }

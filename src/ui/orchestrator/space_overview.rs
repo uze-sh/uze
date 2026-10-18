@@ -10,9 +10,9 @@
 use super::*;
 use uze_application::application::StatusHarness;
 use uze_application::{
-    ActionEntry, ActionState, DeclarationApplied, DeclarationEntry, DeclarationKey,
-    DeclarationProblem, DeclarationView, DeclaredValue, Edit, ProjectSpace, ShellCommand,
-    SpaceOverview,
+    ActionEntry, ActionState, CheckoutOwner, CheckoutView, CheckoutsView, DeclarationApplied,
+    DeclarationEntry, DeclarationKey, DeclarationProblem, DeclarationView, DeclaredValue, Edit,
+    ProjectSpace, ShellCommand, SpaceOverview,
 };
 
 /// The overview's sections, in the order the bar shows them.
@@ -25,18 +25,25 @@ pub(super) enum Section {
     Plugins,
     Context,
     Memory,
+    /// The checkouts UZE made for the space's agents and their subagents.
+    Worktrees,
 }
 
 impl Section {
     // The agent in front first, then what the project declares, then what
-    // follows from it.
-    pub(super) const ALL: [Self; 5] = [
+    // follows from it. Worktrees close the bar: they are what the agents
+    // left on disk, and last keeps the number each earlier section is
+    // reached by.
+    pub(super) const ALL: [Self; 6] = [
         Self::Agent,
         Self::Settings,
         Self::Plugins,
         Self::Context,
         Self::Memory,
+        Self::Worktrees,
     ];
+
+    pub(super) const COUNT: usize = Self::ALL.len();
 
     pub(super) fn label(self) -> &'static str {
         match self {
@@ -45,6 +52,7 @@ impl Section {
             Self::Plugins => "Plugins",
             Self::Settings => "Settings",
             Self::Memory => "Memory",
+            Self::Worktrees => "Worktrees",
         }
     }
 
@@ -91,9 +99,10 @@ pub(super) struct SpaceOverviewView {
     pub(super) section: Section,
     /// Where each section's list is scrolled to: moved by the wheel, and
     /// pulled to the selection only when the keys move it.
-    pub(super) scroll: [crate::ui::extension_view::NavigatorScroll; 5],
-    /// The selected row of each section, by section index.
-    pub(super) rows: [usize; 5],
+    pub(super) scroll: [crate::ui::extension_view::NavigatorScroll; Section::COUNT],
+    /// The selected row of each section, by section index: a card, in the
+    /// Worktrees section.
+    pub(super) rows: [usize; Section::COUNT],
     /// Whether the drawer stands over the section, where there is no room
     /// for both side by side.
     pub(super) drawer: bool,
@@ -110,6 +119,92 @@ pub(super) struct SpaceOverviewView {
     pub(super) edit: WorkspaceEdit,
     /// The agent in front when the overview opened, and its prompts' state.
     pub(super) agent: Option<AgentSupportDropdown>,
+    pub(super) worktrees: WorktreesRead,
+}
+
+/// The space's worktrees as last measured. Measuring walks every file of
+/// every checkout, so it is asked only while the section is in front, and
+/// read again on a refresh.
+#[derive(Default)]
+pub(super) struct WorktreesRead {
+    /// The read whose answer is awaited: an answer to any earlier one is
+    /// dropped.
+    pub(super) asked: u64,
+    pub(super) pending: bool,
+    /// The answer held is older than what is on disk: read again, drawing
+    /// it meanwhile.
+    pub(super) stale: bool,
+    /// `Some(None)` outside a repository.
+    pub(super) answer: Option<Option<CheckoutsView>>,
+}
+
+pub(super) struct WorktreesResolution {
+    pub(super) space: SpaceId,
+    pub(super) asked: u64,
+    pub(super) view: Option<CheckoutsView>,
+}
+
+/// Where a worktree's work stands, from what the client knows of it: its
+/// record, a tab working there and the last evaluation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WorktreeState {
+    /// Its work waits to be delivered.
+    Ready,
+    /// An agent works there: a tab of this workspace, or one its record
+    /// says is live.
+    Working,
+    /// A subagent's work, its agent gone, waiting to be joined.
+    ToJoin,
+    /// Work its agent left unfinished, kept for it.
+    Kept,
+    /// Held by an agent that is neither working nor kept.
+    Idle,
+    /// No agent holds it: a slot waiting for the next.
+    Free,
+    /// UZE's, with a record this build cannot read.
+    Unreadable,
+}
+
+impl WorktreeState {
+    pub(super) fn words(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Working => "working",
+            Self::ToJoin => "to join",
+            Self::Kept => "kept",
+            Self::Idle => "idle",
+            Self::Free => "free",
+            Self::Unreadable => "unreadable",
+        }
+    }
+}
+
+/// One worktree as its card shows it.
+pub(super) struct WorktreeCard<'a> {
+    pub(super) checkout: &'a CheckoutView,
+    pub(super) state: WorktreeState,
+    /// The label of the tab working there, in this workspace.
+    pub(super) tab: Option<&'a str>,
+}
+
+/// Whether UZE made `checkout` for an agent: a person's and a harness's
+/// own are theirs, and not the space's worktrees.
+fn made_for_an_agent(checkout: &CheckoutView) -> bool {
+    matches!(
+        checkout.owner,
+        CheckoutOwner::Agent { .. } | CheckoutOwner::Subagent { .. } | CheckoutOwner::Unreadable
+    )
+}
+
+/// Uncommitted work no agent is there to commit: what the section warns
+/// about, since nothing but the operator will pick it up.
+pub(super) fn left_unattended(checkout: &CheckoutView) -> bool {
+    let attended = match &checkout.owner {
+        CheckoutOwner::Agent { live, .. } => *live,
+        CheckoutOwner::Subagent { topic, .. } => topic.is_some(),
+        _ => false,
+    };
+    checkout.dirty && !attended
 }
 
 /// The `workspace:` edits not yet in `agents.yaml`. Each is written as
@@ -454,7 +549,7 @@ impl SpaceOverviewView {
             behind,
             settled,
             section: Section::Agent,
-            rows: [0; 5],
+            rows: [0; Section::COUNT],
             scroll: Default::default(),
             drawer: false,
             asked: 0,
@@ -464,7 +559,20 @@ impl SpaceOverviewView {
             fact: None,
             edit: WorkspaceEdit::default(),
             agent: None,
+            worktrees: WorktreesRead::default(),
         }
+    }
+
+    /// The worktrees UZE made for the space's agents, in the order Git
+    /// lists them.
+    pub(super) fn worktrees(&self) -> Vec<&CheckoutView> {
+        let Some(Some(view)) = &self.worktrees.answer else {
+            return Vec::new();
+        };
+        view.checkouts
+            .iter()
+            .filter(|checkout| made_for_an_agent(checkout))
+            .collect()
     }
 
     pub(super) fn project(&self) -> Option<&ProjectSpace> {
@@ -572,6 +680,7 @@ impl SpaceOverviewView {
             Section::Plugins => project.plugins.plugins.len(),
             Section::Settings => self.workspace_rows().len(),
             Section::Memory => project.memory.project.len(),
+            Section::Worktrees => self.worktrees().len(),
             // Its prompts are counted where they are held, by the session.
             Section::Agent => 0,
         }
@@ -757,6 +866,18 @@ impl SpaceOverviewView {
                 }
             }
             Section::Agent => Health::Fine,
+            Section::Worktrees => {
+                let worktrees = self.worktrees();
+                if self.worktrees.answer.is_none() && self.worktrees.pending {
+                    Health::Loading
+                } else if worktrees.iter().any(|checkout| {
+                    left_unattended(checkout) || checkout.owner == CheckoutOwner::Unreadable
+                }) {
+                    Health::Warning
+                } else {
+                    Health::Fine
+                }
+            }
             Section::Memory => {
                 if project.memory.unreadable.is_empty() {
                     Health::Fine
@@ -868,6 +989,7 @@ impl WorkspaceModel {
                 kept.settled = settled;
                 kept.drawer = false;
                 kept.stale = true;
+                kept.worktrees.stale = true;
                 kept
             }
             _ => SpaceOverviewView::new(space, root, behind, settled),
@@ -946,6 +1068,63 @@ impl WorkspaceModel {
         }
     }
 
+    /// The space's worktrees as cards: each with where its work stands and
+    /// the tab working there, from the tabs this client holds and its last
+    /// evaluation, so a card moves with the sidebar.
+    pub(super) fn worktree_cards<'a>(
+        &'a self,
+        overview: &'a SpaceOverviewView,
+        project: &ProjectSpace,
+    ) -> Vec<WorktreeCard<'a>> {
+        let tabs: BTreeMap<&str, &str> = self
+            .tabs()
+            .filter_map(|tab| launched_agent_id(tab).map(|id| (id, tab.label.as_str())))
+            .collect();
+        let primary = evaluation_key(&project.status.report.root);
+        let ready: BTreeSet<&str> =
+            self.remembered
+                .tasks
+                .get(&primary)
+                .map_or_else(BTreeSet::new, |tasks| {
+                    tasks
+                        .iter()
+                        .filter(|task| matches!(task.state, uze_application::WorkStateView::Ready))
+                        .map(|task| task.id.as_str())
+                        .collect()
+                });
+        let kept: BTreeSet<&str> = project
+            .preserved
+            .iter()
+            .map(|work| work.id.as_str())
+            .collect();
+        overview
+            .worktrees()
+            .into_iter()
+            .map(|checkout| {
+                let task = checkout.task.as_deref();
+                let tab = task.and_then(|id| tabs.get(id).copied());
+                let state = match &checkout.owner {
+                    CheckoutOwner::Unreadable => WorktreeState::Unreadable,
+                    _ if task.is_some_and(|id| ready.contains(id)) => WorktreeState::Ready,
+                    _ if tab.is_some() => WorktreeState::Working,
+                    CheckoutOwner::Agent { live: true, .. } => WorktreeState::Working,
+                    CheckoutOwner::Subagent { joinable: true, .. } => WorktreeState::ToJoin,
+                    CheckoutOwner::Subagent { topic: Some(_), .. } => WorktreeState::Working,
+                    _ if task.is_some_and(|id| kept.contains(id)) => WorktreeState::Kept,
+                    CheckoutOwner::Agent {
+                        holder: Some(_), ..
+                    } => WorktreeState::Idle,
+                    _ => WorktreeState::Free,
+                };
+                WorktreeCard {
+                    checkout,
+                    state,
+                    tab,
+                }
+            })
+            .collect()
+    }
+
     /// A click on a row of the section in front.
     pub(super) fn select_overview_row(&mut self, index: usize) {
         if let Some(overview) = self.space_overview.as_mut()
@@ -975,6 +1154,7 @@ impl WorkspaceModel {
             // An answer in flight is for the overview open now; one opened
             // again asks afresh.
             overview.pending = false;
+            overview.worktrees.pending = false;
             overview.edit.field = None;
             overview.edit.text = None;
             self.put_away_overviews.insert(overview.space, overview);
@@ -1005,6 +1185,28 @@ impl WorkspaceModel {
         }
         let count = overview.row_count();
         let section = overview.section.index();
+        overview.rows[section] = overview.rows[section].min(count.saturating_sub(1));
+        true
+    }
+
+    /// The space's worktrees, measured: kept only while they answer the
+    /// last read the overview open now asked.
+    pub(super) fn absorb_space_worktrees(&mut self, resolution: WorktreesResolution) -> bool {
+        let Some(overview) = self
+            .space_overview
+            .as_mut()
+            .filter(|overview| overview.space == resolution.space)
+        else {
+            return false;
+        };
+        let read = &mut overview.worktrees;
+        if resolution.asked != read.asked {
+            return false;
+        }
+        read.pending = false;
+        read.answer = Some(resolution.view);
+        let count = overview.worktrees().len();
+        let section = Section::Worktrees.index();
         overview.rows[section] = overview.rows[section].min(count.saturating_sub(1));
         true
     }
@@ -1137,6 +1339,7 @@ impl Attach<'_> {
 
     /// Reads the overview open now, unless its answer is awaited already.
     pub(super) fn schedule_space_overview(&mut self) {
+        self.schedule_space_worktrees();
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -1155,10 +1358,36 @@ impl Attach<'_> {
         );
     }
 
+    /// Measures the space's worktrees while their section is in front,
+    /// unless a measure is out or the one held is current.
+    fn schedule_space_worktrees(&mut self) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        let read = &mut overview.worktrees;
+        if overview.section != Section::Worktrees
+            || read.pending
+            || read.answer.is_some() && !read.stale
+        {
+            return;
+        }
+        read.asked += 1;
+        read.pending = true;
+        read.stale = false;
+        spawn_space_worktrees(
+            self.home,
+            overview.space,
+            read.asked,
+            overview.root.clone(),
+            self.channels.space_worktrees.sender.clone(),
+        );
+    }
+
     /// Reads it again, drawing the last answer until the new one lands.
     pub(super) fn refresh_space_overview(&mut self) {
         if let Some(overview) = self.model.space_overview.as_mut() {
             overview.stale = true;
+            overview.worktrees.stale = true;
         }
         self.schedule_space_overview();
     }
@@ -1168,6 +1397,9 @@ impl Attach<'_> {
     pub(super) fn absorb_space_overview_answers(&mut self) {
         while let Ok(resolution) = self.channels.space_overviews.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_space_overview(resolution);
+        }
+        while let Ok(resolution) = self.channels.space_worktrees.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_space_worktrees(resolution);
         }
         while let Ok(resolution) = self.channels.fact_bodies.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_fact_body(resolution);
@@ -1236,6 +1468,8 @@ impl Attach<'_> {
             self.drawer_action(action);
         } else {
             self.section_action(action);
+            // A section just brought to front may have its own read to ask.
+            self.schedule_space_worktrees();
         }
     }
 
@@ -1372,7 +1606,7 @@ impl Attach<'_> {
                     self.channels.fact_bodies.sender.clone(),
                 );
             }
-            Section::Context | Section::Plugins => overview.drawer = true,
+            Section::Context | Section::Plugins | Section::Worktrees => overview.drawer = true,
             // Its keys are the prompts', answered before this.
             Section::Agent => {}
         }
@@ -1806,7 +2040,7 @@ mod tests {
     /// from the first to the last, and forward undoes it.
     #[test]
     fn stepping_back_lands_on_the_section_before() {
-        assert_eq!(Section::Agent.previous(), Section::Memory);
+        assert_eq!(Section::Agent.previous(), Section::Worktrees);
         for section in Section::ALL {
             assert_eq!(section.next().previous(), section);
         }

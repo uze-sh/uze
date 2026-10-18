@@ -5,7 +5,8 @@
 use super::*;
 use crate::ui::extension_view::NavigatorScroll;
 use crate::ui::widget::{
-    Button, RowState, Scrollbar, drawer,
+    Button, RowState, Scrollbar, Surface, drawer,
+    grid::Shape,
     hint::Hints,
     row,
     tabs::{self, Tab},
@@ -16,7 +17,8 @@ use uze_application::application::{
     memory::Entry as MemoryEntry,
 };
 use uze_application::{
-    ActionState, DeclarationKey, DeclaredValue, ProjectSpace, SpaceOverview, SpacePlugin,
+    ActionState, CheckoutOwner, DeclarationKey, DeclaredValue, ProjectSpace, SpaceOverview,
+    SpacePlugin,
 };
 
 /// The width under which the drawer stands over the section instead of
@@ -223,7 +225,7 @@ fn render_overview_frame(
             foot.y.saturating_sub(top),
         );
         let (drawer_inner, handle) = drawer::render(frame, column, dragging);
-        render_drawer(frame, drawer_inner, overview, project, hits);
+        render_drawer(frame, drawer_inner, model, overview, project, hits);
         resize_handle = Some(handle);
         (
             Rect {
@@ -243,7 +245,7 @@ fn render_overview_frame(
             width: column.width.saturating_sub(2 * INSET),
             ..column
         };
-        render_drawer(frame, drawer_inner, overview, project, hits);
+        render_drawer(frame, drawer_inner, model, overview, project, hits);
         (Rect::default(), Track::default())
     } else {
         (body, Track::default())
@@ -452,6 +454,7 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 ("every command approved".to_owned(), Token::TextSecondary)
             }
         }
+        Section::Worktrees => worktrees_cause(overview),
         Section::Memory => {
             let memory = &project.memory;
             if !memory.unreadable.is_empty() {
@@ -490,6 +493,9 @@ fn render_section(
             return render_workspace(frame, area, overview, project, hits, track);
         }
         Section::Memory => memory_lines(project, room),
+        Section::Worktrees => {
+            return render_worktrees(frame, area, model, overview, project, track);
+        }
     };
     draw_lines(frame, area, &lines, Some(overview.row()), track)
 }
@@ -1792,6 +1798,284 @@ fn render_agent(
     Vec::new()
 }
 
+/// What a worktree card is: a title line, the owner, the facts, and the
+/// path with its age, inside a rounded border.
+const CARD_HEIGHT: u16 = 6;
+
+/// The least a card is wide, and the most cards a row holds: past four the
+/// eye stops reading a row as one.
+const CARD_LEAST: u16 = 32;
+const CARD_MOST: u16 = 4;
+
+/// A branch-less `HEAD`, as a card titles it.
+const DETACHED: &str = "detached";
+
+/// The Worktrees section's cause line: how many, what they take on disk,
+/// and what in them nobody is attending to.
+fn worktrees_cause(overview: &SpaceOverviewView) -> (String, Token) {
+    match &overview.worktrees.answer {
+        None => (
+            "measuring the space's worktrees".to_owned(),
+            Token::TextSecondary,
+        ),
+        Some(None) => ("not inside a repository".to_owned(), Token::TextSecondary),
+        Some(Some(_)) => {
+            let worktrees = overview.worktrees();
+            if worktrees.is_empty() {
+                return (EMPTY_WORKTREES.to_owned(), Token::TextSecondary);
+            }
+            let bytes: u64 = worktrees.iter().map(|checkout| checkout.bytes).sum();
+            let mut causes = vec![format!(
+                "{} · {} on disk",
+                plural(worktrees.len(), "worktree"),
+                bytes_to_say(bytes)
+            )];
+            let unattended = worktrees
+                .iter()
+                .filter(|checkout| left_unattended(checkout))
+                .count();
+            let unreadable = worktrees
+                .iter()
+                .filter(|checkout| checkout.owner == CheckoutOwner::Unreadable)
+                .count();
+            if unattended > 0 {
+                causes.push(format!("{unattended} with uncommitted work and no agent"));
+            }
+            if unreadable > 0 {
+                causes.push(format!("{unreadable} with an unreadable record"));
+            }
+            let tone = if unattended + unreadable > 0 {
+                Token::StateWarning
+            } else {
+                Token::TextSecondary
+            };
+            (causes.join(" · "), tone)
+        }
+    }
+}
+
+const EMPTY_WORKTREES: &str = "no worktrees: every agent works in this checkout";
+
+/// The Worktrees section: a card per worktree, as many to a row as the
+/// room holds, scrolled by whole rows of cards.
+fn render_worktrees(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    overview: &SpaceOverviewView,
+    project: &ProjectSpace,
+    track: Track,
+) -> Vec<(Rect, usize)> {
+    let message = match &overview.worktrees.answer {
+        None => Some("measuring…"),
+        Some(None) => Some("not inside a repository"),
+        Some(Some(_)) if overview.worktrees().is_empty() => Some(EMPTY_WORKTREES),
+        Some(Some(_)) => None,
+    };
+    if let Some(message) = message {
+        draw_lines(frame, area, &[said(message, Token::TextMuted)], None, track);
+        return Vec::new();
+    }
+    let cards = model.worktree_cards(overview, project);
+    let selected = overview.row().min(cards.len().saturating_sub(1));
+    let groove = Scrollbar::width() + 1;
+    let mut room = area;
+    let mut shape = Shape::fitting(room.width, CARD_LEAST, CARD_MOST, CARD_HEIGHT);
+    // With no drawer's rule to carry the handle, a list that overflows
+    // gives up a groove for it, and is laid out again in what is left.
+    if track.column.is_none() && shape.rows(cards.len()) > shape.visible(area.height) {
+        room.width = area.width.saturating_sub(groove);
+        shape = Shape::fitting(room.width, CARD_LEAST, CARD_MOST, CARD_HEIGHT);
+    }
+    let rows = shape.rows(cards.len());
+    let visible = shape.visible(room.height);
+    let row = shape.row_of(selected);
+    let unkept = std::cell::Cell::default();
+    let first = crate::ui::view::settle(
+        track.scroll.unwrap_or(&unkept),
+        Some((row, row)),
+        rows,
+        visible,
+    );
+    let grid = shape.lay(room, cards.len(), first);
+    let bar_track = match track.column {
+        Some(column) => Rect::new(column, area.y, 1, area.height),
+        None => Rect::new(
+            area.right().saturating_sub(Scrollbar::width()),
+            area.y,
+            Scrollbar::width(),
+            area.height,
+        ),
+    };
+    if let Some(bar) = Scrollbar::measure(bar_track, visible, rows) {
+        bar.render_on_draggable(frame, first, track.dragging);
+    }
+    let mut drawn = Vec::new();
+    for (position, rect) in grid.cards {
+        let state = RowState::of(position == selected, track.hovered == Some(position));
+        render_worktree_card(frame, rect, &cards[position], state);
+        drawn.push((rect, position));
+    }
+    drawn
+}
+
+/// One worktree's card: its branch and where its work stands, who holds
+/// it, what it takes and carries, and where it is and how long ago it
+/// last changed.
+fn render_worktree_card(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    card: &WorktreeCard<'_>,
+    state: RowState,
+) {
+    let inner = Surface::selectable(state).render(frame, rect);
+    let inner = Rect {
+        x: inner.x + 1,
+        width: inner.width.saturating_sub(2),
+        ..inner
+    };
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let width = usize::from(inner.width);
+    let checkout = card.checkout;
+    let title_tone = if state == RowState::Selected {
+        Token::TextBright
+    } else {
+        Token::TextPrimary
+    };
+    let standing = vec![
+        Span::styled(
+            theme::glyph(Symbol::MarkStanding),
+            theme::fg(worktree_tone(card.state)),
+        ),
+        Span::styled(
+            format!(" {}", card.state.words()),
+            theme::fg(Token::TextSecondary),
+        ),
+    ];
+    let title = Span::styled(
+        checkout
+            .branch
+            .clone()
+            .unwrap_or_else(|| DETACHED.to_owned()),
+        theme::fg_bold(title_tone),
+    );
+    let mut facts = vec![
+        Span::styled(bytes_to_say(checkout.bytes), theme::fg(Token::TextPrimary)),
+        Span::styled(
+            format!(" · {} ahead", checkout.ahead),
+            theme::fg(Token::TextSecondary),
+        ),
+    ];
+    facts.push(if checkout.dirty {
+        Span::styled(" · uncommitted", theme::fg(Token::StateWarning))
+    } else {
+        Span::styled(" · clean", theme::fg(Token::TextMuted))
+    });
+    let lines = [
+        ends(vec![title], standing, width),
+        Line::from(Span::styled(
+            text::elide(&owner_words(card), width),
+            theme::fg(Token::TextMuted),
+        )),
+        Line::from(facts),
+        ends(
+            vec![Span::styled(
+                short_checkout_path(&checkout.path),
+                theme::fg(Token::TextDim),
+            )],
+            vec![Span::styled(
+                age_to_say(checkout.last_changed),
+                theme::fg(Token::TextMuted),
+            )],
+            width,
+        ),
+    ];
+    for (index, mut line) in lines.into_iter().enumerate() {
+        if index as u16 >= inner.height {
+            break;
+        }
+        text::clip(&mut line, width);
+        frame.render_widget(
+            Paragraph::new(line),
+            Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
+        );
+    }
+}
+
+/// `left` with `right` pinned to the far edge, the left cut first: what
+/// stands at the right — a state, an age — is what a row of cards is
+/// scanned for, in one column.
+fn ends(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: usize) -> Line<'static> {
+    let right_width: usize = right.iter().map(Span::width).sum();
+    let room = width.saturating_sub(right_width + 1);
+    let mut left = Line::from(left);
+    text::clip(&mut left, room);
+    let gap = width.saturating_sub(left.width() + right_width);
+    let mut spans = left.spans;
+    spans.push(Span::raw(" ".repeat(gap)));
+    spans.extend(right);
+    Line::from(spans)
+}
+
+/// Who a worktree is for: the agent holding it and the tab it works in,
+/// or the agent a subagent's work joins.
+fn owner_words(card: &WorktreeCard<'_>) -> String {
+    let owner = match &card.checkout.owner {
+        CheckoutOwner::Agent {
+            holder: Some(label),
+            ..
+        } if !label.is_empty() => label.clone(),
+        CheckoutOwner::Agent {
+            holder: Some(_), ..
+        } => "an unnamed agent".to_owned(),
+        CheckoutOwner::Agent { holder: None, .. } => "no agent".to_owned(),
+        CheckoutOwner::Subagent { parent, topic, .. } => match topic {
+            Some(topic) => format!("{topic}, subagent of {parent}"),
+            None => format!("subagent of {parent}"),
+        },
+        CheckoutOwner::Unreadable => "a record this build cannot read".to_owned(),
+        CheckoutOwner::Harness { harness } => harness.clone(),
+        CheckoutOwner::Operator => "yours".to_owned(),
+    };
+    match card.tab {
+        Some(tab) => format!("{owner} · tab {tab}"),
+        None => owner,
+    }
+}
+
+fn worktree_tone(state: WorktreeState) -> Token {
+    match state {
+        WorktreeState::Ready => Token::StateLanded,
+        WorktreeState::Working => Token::StateInFlight,
+        WorktreeState::ToJoin => Token::StateInfo,
+        WorktreeState::Kept => Token::TextSecondary,
+        WorktreeState::Idle | WorktreeState::Free => Token::TextDim,
+        WorktreeState::Unreadable => Token::StateWarning,
+    }
+}
+
+/// `~/…/.worktrees/abc`: where a checkout is, by the two names that tell
+/// it from its siblings, from home when it is under it.
+fn short_checkout_path(path: &Path) -> String {
+    let shown = display_path(path);
+    let mut names = path.iter().rev().take(2).collect::<Vec<_>>();
+    names.reverse();
+    let tail = names
+        .iter()
+        .map(|name| name.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    let lead = if shown.starts_with('~') { "~" } else { "" };
+    let short = format!("{lead}/{}/{tail}", theme::glyph(Symbol::Ellipsis));
+    if text::columns(&short) < text::columns(&shown) {
+        short
+    } else {
+        shown
+    }
+}
+
 /// The Context table: the harness, whether it is installed, and how the
 /// context reaches it.
 const CONTEXT: [Column; 3] = [
@@ -2051,6 +2335,7 @@ impl Answer {
 fn render_drawer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
+    model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
@@ -2086,6 +2371,13 @@ fn render_drawer(
                 return;
             };
             drawer.fact(entry, overview.fact.as_ref());
+        }
+        Section::Worktrees => {
+            let cards = model.worktree_cards(overview, project);
+            let Some(card) = cards.get(row) else {
+                return;
+            };
+            drawer.worktree(card);
         }
         Section::Settings => {
             if drawer.setting(overview).is_none() {
@@ -2292,6 +2584,60 @@ impl DrawerLines {
         }
     }
 
+    /// A worktree read in full. Nothing here acts on it: freeing or
+    /// discarding a checkout is the sidebar's, where the work is.
+    fn worktree(&mut self, card: &WorktreeCard<'_>) {
+        let checkout = card.checkout;
+        self.head("worktree", checkout.branch.as_deref().unwrap_or(DETACHED));
+        self.pair(
+            "state",
+            card.state.words().to_owned(),
+            worktree_tone(card.state),
+        );
+        self.pair("owner", owner_words(card), Token::TextPrimary);
+        if let Some(task) = &checkout.task {
+            self.pair("task", task.clone(), Token::TextSecondary);
+        }
+        if let Some(tab) = card.tab {
+            self.pair("tab", tab.to_owned(), Token::TextPrimary);
+        }
+        self.pair("size", bytes_to_say(checkout.bytes), Token::TextPrimary);
+        self.pair(
+            "ahead",
+            plural(checkout.ahead, "commit"),
+            Token::TextPrimary,
+        );
+        self.pair(
+            "uncommitted",
+            if checkout.dirty { "yes" } else { "no" }.to_owned(),
+            if checkout.dirty {
+                Token::StateWarning
+            } else {
+                Token::TextPrimary
+            },
+        );
+        let age = age_to_say(checkout.last_changed);
+        self.pair(
+            "last changed",
+            if age.is_empty() {
+                "—".to_owned()
+            } else {
+                age
+            },
+            Token::TextMuted,
+        );
+        self.blank();
+        self.said("path", Token::TextMuted);
+        self.paragraph(&display_path(&checkout.path), Token::TextCode);
+        if left_unattended(checkout) {
+            self.blank();
+            self.paragraph(
+                "Uncommitted work and no agent working here: nothing but you will pick it up.",
+                Token::StateWarning,
+            );
+        }
+    }
+
     /// A fact, and its body once Enter has read it.
     fn fact(
         &mut self,
@@ -2438,7 +2784,7 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
             }
         }
         Section::Memory => keys.push((Action::Activate, "read")),
-        Section::Context | Section::Plugins if !side_by_side => {
+        Section::Context | Section::Plugins | Section::Worktrees if !side_by_side => {
             keys.push((Action::Activate, "details"))
         }
         _ => {}

@@ -19,6 +19,13 @@ pub(crate) struct Shape {
 }
 
 impl Shape {
+    /// As many columns at least `least` wide as `width` holds, never fewer
+    /// than one nor more than `most`.
+    pub(crate) fn fitting(width: u16, least: u16, most: u16, height: u16) -> Self {
+        let columns = ((width + GAP) / (least + GAP)).clamp(1, most.max(1));
+        Self { columns, height }
+    }
+
     /// The rows `count` cards take.
     pub(crate) fn rows(self, count: usize) -> usize {
         count.div_ceil(usize::from(self.columns.max(1)))
@@ -85,6 +92,14 @@ pub(crate) struct Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Columns follow the room: as many of the least width as fit, capped.
+    #[test]
+    fn columns_follow_the_room() {
+        assert_eq!(Shape::fitting(20, 30, 4, 6).columns, 1, "never none");
+        assert_eq!(Shape::fitting(61, 30, 4, 6).columns, 2);
+        assert_eq!(Shape::fitting(500, 30, 4, 6).columns, 4, "capped");
+    }
 
     /// A row the area cannot hold whole is left out rather than cut.
     #[test]

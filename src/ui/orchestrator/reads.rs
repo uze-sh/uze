@@ -1446,6 +1446,33 @@ pub(super) fn spawn_space_overview(
     });
 }
 
+/// Measures the worktrees of the space rooted at `root`, for the
+/// overview's Worktrees section: [`spawn_checkouts`]' read, a walk of every
+/// directory of every checkout, answered by space so an overview put away
+/// meanwhile drops it.
+pub(super) fn spawn_space_worktrees(
+    home: &UzeHome,
+    space: SpaceId,
+    asked: u64,
+    root: PathBuf,
+    sender: mpsc::Sender<WorktreesResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.space_worktrees", parent: &parent);
+        let view = answered_or(
+            || {
+                tui_application(home)
+                    .ok()
+                    .and_then(|app| app.workspace().checkouts(&root))
+            },
+            None,
+        );
+        let _ = sender.send(WorktreesResolution { space, asked, view });
+    });
+}
+
 /// Reads one of the project's facts, for the overview's drawer.
 pub(super) fn spawn_fact_body(
     home: &UzeHome,
