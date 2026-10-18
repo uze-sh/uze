@@ -26,6 +26,19 @@ const SIDE_BY_SIDE: u16 = 110;
 /// The overview's margin either side, inside the pane.
 const INSET: u16 = 2;
 
+/// The rows the overview's parts stand on, from the top of the pane: the
+/// space's name, the section bar and the rule under it, the section's
+/// cause, then the section and its drawer down to the foot.
+const HEADER_ROW: u16 = 1;
+const BAR_ROW: u16 = 3;
+const RULE_ROW: u16 = 4;
+const CAUSE_ROW: u16 = 6;
+const BODY_ROW: u16 = 8;
+
+/// Under this much room the overview draws nothing at all.
+const MIN_WIDTH: u16 = 20;
+const MIN_HEIGHT: u16 = 8;
+
 /// Where a section's scroll handle goes: on the drawer's rule when the
 /// drawer stands beside it, lit with it while it is dragged.
 #[derive(Clone, Copy, Default)]
@@ -77,7 +90,7 @@ fn render_overview_frame(
         width: area.width.saturating_sub(2 * INSET),
         ..area
     };
-    if inner.width < 20 || inner.height < 8 {
+    if inner.width < MIN_WIDTH || inner.height < MIN_HEIGHT {
         return;
     }
     let name = model
@@ -93,7 +106,7 @@ fn render_overview_frame(
     render_header(
         frame,
         model,
-        Rect::new(inner.x, inner.y + 1, inner.width, 1),
+        Rect::new(inner.x, inner.y + HEADER_ROW, inner.width, 1),
         &name,
         overview,
         project,
@@ -112,7 +125,7 @@ fn render_overview_frame(
         let line = Line::from(Span::styled(message, theme::fg(Token::TextPrimary)));
         frame.render_widget(
             Paragraph::new(line),
-            Rect::new(inner.x, inner.y + 3, inner.width, 1),
+            Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1),
         );
         render_foot(
             frame,
@@ -124,31 +137,12 @@ fn render_overview_frame(
         );
         return;
     }
-    let bar = Rect::new(inner.x, inner.y + 3, inner.width, 1);
-    let sections: Vec<(Tab, usize)> = Section::ALL
-        .iter()
-        .enumerate()
-        .map(|(index, section)| {
-            let tab = Tab::new(section.label());
-            let tab = match WorkspaceModel::section_health(overview, *section) {
-                Health::Fine => tab,
-                Health::Loading => tab.lead(
-                    theme::frame(Symbol::StatusWorking, model.tick),
-                    Token::StateInFlight,
-                ),
-                Health::Warning => {
-                    tab.lead(theme::glyph(Symbol::MarkAttention), Token::StateWarning)
-                }
-                Health::Failing => tab.lead(theme::glyph(Symbol::MarkFailed), Token::StateDanger),
-            };
-            (tab, index)
-        })
-        .collect();
+    let bar = Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1);
     let open = Some(overview.section.index());
-    for (rect, index) in tabs::tab_bar(frame, bar, &sections, open, false) {
+    for (rect, index) in tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false) {
         hits.push((rect, WorkspaceHit::OverviewSection(index)));
     }
-    Rule::new(Edge::Top).render(frame, Rect::new(area.x, inner.y + 4, area.width, 1));
+    Rule::new(Edge::Top).render(frame, Rect::new(area.x, inner.y + RULE_ROW, area.width, 1));
     let Some(project) = project else {
         let loading = Line::from(vec![
             Span::styled(
@@ -159,7 +153,7 @@ fn render_overview_frame(
         ]);
         frame.render_widget(
             Paragraph::new(loading),
-            Rect::new(inner.x, inner.y + 6, inner.width, 1),
+            Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1),
         );
         render_foot(
             frame,
@@ -171,7 +165,7 @@ fn render_overview_frame(
         );
         return;
     };
-    let cause = Rect::new(inner.x, inner.y + 6, inner.width, 1);
+    let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
     let (cause_text, cause_tone) = cause_line(overview, project);
     frame.render_widget(
         Paragraph::new(Span::styled(
@@ -181,7 +175,7 @@ fn render_overview_frame(
         cause,
     );
     let mut resize_handle = None;
-    let body_top = inner.y + 8;
+    let body_top = inner.y + BODY_ROW;
     let body = Rect::new(
         inner.x,
         body_top,
@@ -194,11 +188,14 @@ fn render_overview_frame(
     // section's scroll handle is drawn on that rule.
     let (section_area, track) = if side_by_side {
         let width = drawer::width(model.overview_drawer_width, body.width + 2 * INSET);
+        // The drawer's column starts under the rule, its own top margin
+        // inside it.
+        let top = inner.y + RULE_ROW + 1;
         let column = Rect::new(
             area.right().saturating_sub(width),
-            inner.y + 5,
+            top,
             width,
-            foot.y.saturating_sub(inner.y + 5),
+            foot.y.saturating_sub(top),
         );
         let (drawer_inner, handle) = drawer::render(frame, column, dragging);
         render_drawer(frame, drawer_inner, overview, project, hits);
@@ -252,6 +249,29 @@ fn render_overview_frame(
         &foot_keys(overview, side_by_side),
         hits,
     );
+}
+
+/// The section bar's tabs, each marked with how its section stands.
+fn section_tabs(model: &WorkspaceModel, overview: &SpaceOverviewView) -> Vec<(Tab, usize)> {
+    Section::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, section)| {
+            let tab = Tab::new(section.label());
+            let tab = match WorkspaceModel::section_health(overview, *section) {
+                Health::Fine => tab,
+                Health::Loading => tab.lead(
+                    theme::frame(Symbol::StatusWorking, model.tick),
+                    Token::StateInFlight,
+                ),
+                Health::Warning => {
+                    tab.lead(theme::glyph(Symbol::MarkAttention), Token::StateWarning)
+                }
+                Health::Failing => tab.lead(theme::glyph(Symbol::MarkFailed), Token::StateDanger),
+            };
+            (tab, index)
+        })
+        .collect()
 }
 
 fn render_header(
