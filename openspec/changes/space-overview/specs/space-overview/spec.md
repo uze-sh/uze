@@ -47,9 +47,9 @@ as before.
 - **WHEN** the terminal runtime restores a workspace
 - **THEN** each space comes back with its tabs as they were, and no tab stands for an overview
 
-### Requirement: The overview has five sections, each with its state
-The overview SHALL show five sections, Agent, Settings, Plugins, Context and
-Memory, in that order, one at a time, chosen from a section bar. Each tab
+### Requirement: The overview has six sections, each with its state
+The overview SHALL show six sections, Agent, Settings, Plugins, Context,
+Memory and Worktrees, in that order, one at a time, chosen from a section bar. Each tab
 SHALL carry the worst state among its section's parts, and each section's
 first line SHALL name the cause of that state. A drawer SHALL show the
 selected row of a section in full.
@@ -61,6 +61,30 @@ selected row of a section in full.
 #### Scenario: Opening a row
 - **WHEN** the operator selects a plugin in the Plugins section
 - **THEN** the drawer shows that plugin's installation, commit, freshness and its place in the lock
+
+### Requirement: The Worktrees section shows the space's worktrees as cards
+The Worktrees section SHALL show one card per checkout UZE made for the
+space's agents and subagents, in a grid as wide as the room and only whole
+cards: its branch, state, owner and working tab, size on disk, commits
+ahead, uncommitted work, path and age. Its tab SHALL warn on uncommitted
+work no agent attends. It SHALL be measured off the frame only while in
+front or refreshed, and SHALL offer nothing destructive.
+
+#### Scenario: A card per worktree
+- **WHEN** the space has three slots of UZE's and a checkout a person made
+- **THEN** three cards are drawn, each with its branch and size, and the cause line sums them
+
+#### Scenario: Scrolling the cards
+- **WHEN** the operator turns the wheel over a grid longer than the section
+- **THEN** it scrolls a row of whole cards at a time and the selected card stays selected
+
+#### Scenario: A measure that lands late
+- **WHEN** an answer arrives for an earlier measure or for an overview put away
+- **THEN** it is dropped and the section keeps drawing what it holds
+
+#### Scenario: No worktrees
+- **WHEN** every agent of the space works in its own checkout
+- **THEN** the section says there are no worktrees
 
 ### Requirement: The Agent section reads the agent in front
 The Agent section SHALL list the prompts the agent in front was given,

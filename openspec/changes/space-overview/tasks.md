@@ -40,6 +40,9 @@
 - [x] 5.7 `Scope::SpaceOverview` and `Scope::SpaceOverviewEditing` in `uze-keys`, `Action::OpenSpaceOverview` in `Scope::Workspace`, default bindings
 - [ ] 5.8 `TestBackend` tests: the space button opens it in every context; the confirming broadcast keeps it; a tab selection puts it away; a space row lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an edit written with no Save; a refused edit kept with its problem and discarded; edits made while a save is out written after it
 
+- [x] 5.9 A Worktrees section: the catalog's grid moved to `widget::grid`; cards from `Workspace::checkouts` read by `spawn_space_worktrees` while the section is in front and on refresh, stale answers dropped; state, owner and live tab per card; drawer; `SelectSection(6)`
+- [x] 5.10 `TestBackend` tests: a card per worktree with branch and size; keys and a click select; the wheel scrolls whole cards without selecting; hover lifts a card; the measure is off the frame and a stale answer dropped; the empty state; the warning
+
 ## 6. Journey
 
 - [ ] 6.1 A journey in `04-workspace`: selecting the space shows its overview and the process table gains no shell; a workspace edit made in the overview changes `agents.yaml` on disk with its comments kept

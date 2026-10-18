@@ -95,8 +95,10 @@ What the code holds today (2026-10-17):
   ("● 2 running · 1 ready · 3 preserved"), shortened to numbers when
   narrow.
 - **Section bar.** One tab per section, in a fixed order: `1 Agent`,
-  `2 Settings`, `3 Plugins`, `4 Context`, `5 Memory`: the agent in front,
-  then what the project declares, then what follows from it. The overview
+  `2 Settings`, `3 Plugins`, `4 Context`, `5 Memory`, `6 Worktrees`: the
+  agent in front, then what the project declares, then what follows from
+  it. Worktrees came last (D10) so the numbers the first five are reached
+  by did not move. The overview
   opens on Agent when an agent is in front, on Settings otherwise.
   - A tab carries a glyph only when its section warns, fails or is
     loading. Its state is the worst among the section's parts.
@@ -281,7 +283,7 @@ What the code holds today (2026-10-17):
   pushed where the code, architect and spec scopes are, before
   `Scope::Surfaces`.
 - **Chords:**
-  - `1`-`5` (`Action::SelectSection`) and ←→ switch section; ↑↓ move
+  - `1`-`6` (`Action::SelectSection`) and ←→ switch section; ↑↓ move
     within it. `SelectTab`'s chords stay the strip's over the overview,
     so `alt+n` still chooses a tab and puts the overview away;
   - Enter opens the drawer or edits; Esc closes the innermost thing open
@@ -292,6 +294,38 @@ What the code holds today (2026-10-17):
   `Scope::Workspace` opens the current space's overview.
 - **One adapter.** No chord is hard-coded in the view; `src/ui/keys.rs`
   stays the one file that names a physical key.
+
+### D10. Worktrees as cards, measured only while shown
+
+- **What is listed.** `Workspace::checkouts(root)`, the read the sidebar's
+  recent mode already makes, filtered to the checkouts UZE made for an
+  agent or a subagent (and its own whose record is unreadable). A
+  person's and a harness's own checkouts are theirs.
+- **Last on the bar.** The checkouts are what the agents left on disk:
+  what follows from everything before. Last also keeps `1`-`5` where they
+  were.
+- **Cards, not a table.** A worktree is read as a whole thing to act on
+  elsewhere, as the manage catalogs' cards are. The catalog's grid moved
+  to `widget::grid` (its second file); the card is `Surface::selectable`,
+  so selection and hover read as on every card the keys land on. Columns
+  follow the width (at least 32 wide, at most four), and a row is drawn
+  only whole. The wheel scrolls rows of cards; the keys walk them one at
+  a time, in reading order.
+- **State, from what the client holds.** Ready when the last evaluation
+  says so; working when a tab of this workspace or the record says an
+  agent is there (the card names the tab); to join for a subagent whose
+  agent ended; kept for preserved work; idle when held otherwise; free
+  when no agent holds it.
+- **Cost.** The measure walks every file of every checkout, in parallel per
+  checkout. It runs off the frame when the section comes to front and on a
+  refresh, never on open or a tick; one per overview at a time, and an
+  answer to an earlier measure or to an overview put away is dropped.
+- **Health.** The tab warns on uncommitted work no agent attends (a slot
+  whose agent is not live, a subagent's with no topic) and on an
+  unreadable record. Size alone never warns: no threshold is honest for
+  every project.
+- **Nothing destructive.** The drawer reads the worktree in full and offers
+  no action; freeing and discarding stay in the sidebar, beside the work.
 
 ## Risks / Trade-offs
 

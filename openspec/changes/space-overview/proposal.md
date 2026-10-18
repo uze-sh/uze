@@ -31,7 +31,7 @@ workspace without knowing its keys.
 - **An Agent section** takes the agent drawer's place: the prompts the agent
   in front, or its space, was given, and what reaches that agent. Enter on a
   prompt copies it. The drawer itself is removed.
-- **Five sections**: the agent in front, then what the project declares
+- **Six sections**: the agent in front, then what the project declares
   and what follows from it, reached from a section bar like the
   manage modal's header. Each tab carries the worst state of
   its parts, and the section's first line names the cause.
@@ -50,6 +50,10 @@ workspace without knowing its keys.
   - **Memory.** The project's facts with their kind, origin and date, and
     how many machine facts also reach agents here. A fact's body opens in
     the drawer.
+  - **Worktrees.** The checkouts UZE made for the space's agents and
+    subagents, one card each: branch, state, owner and the tab working
+    there, size on disk, commits ahead, uncommitted work, path and age.
+    Read-only: freeing or discarding stays where the work is.
 - **A drawer** beside the section shows the selected row in full: a
   harness, a plugin, a fact, a workspace key.
 - **Activity.** Counts of the space's agents by state beside the title.
