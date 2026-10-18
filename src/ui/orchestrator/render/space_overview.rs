@@ -501,11 +501,11 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     let report = &project.status.report;
     let mut lines = vec![SectionLine {
         spans: vec![
-            cell("AGENTS.md", 18, Token::TextPrimary),
+            cell("AGENTS.md", CONTEXT_NAME, Token::TextPrimary),
             if report.instructions.exists {
-                cell("present", 14, Token::TextPrimary)
+                cell("present", CONTEXT_INSTALLED, Token::TextPrimary)
             } else {
-                cell("absent", 14, Token::TextMuted)
+                cell("absent", CONTEXT_INSTALLED, Token::TextMuted)
             },
             Span::styled(
                 if report.instructions.exists {
@@ -520,9 +520,9 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     }];
     lines.push(blank());
     lines.push(heading(&[
-        ("harness", 18),
-        ("installed", 14),
-        ("context", 20),
+        ("harness", CONTEXT_NAME),
+        ("installed", CONTEXT_INSTALLED),
+        ("context", CONTEXT_STATE),
     ]));
     for (index, harness) in report.harnesses.iter().enumerate() {
         let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
@@ -539,7 +539,7 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         };
         lines.push(SectionLine {
             spans: vec![
-                cell(&harness.display_name, 18, Token::TextPrimary),
+                cell(&harness.display_name, CONTEXT_NAME, Token::TextPrimary),
                 cell(
                     if installed { "yes" } else { "no" },
                     14,
@@ -589,18 +589,18 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         return Vec::new();
     }
     let mut lines = vec![heading(&[
-        ("plugin", 24),
-        ("installed", 11),
-        ("here", 8),
-        ("commit", 10),
-        ("freshness", 16),
+        ("plugin", PLUGIN_NAME),
+        ("installed", PLUGIN_INSTALLED),
+        ("here", PLUGIN_HERE),
+        ("commit", PLUGIN_COMMIT),
+        ("freshness", PLUGIN_FRESHNESS),
     ])];
     for (index, plugin) in plugins.plugins.iter().enumerate() {
         let mut spans = vec![
-            cell(&plugin.plugin, 24, Token::TextPrimary),
+            cell(&plugin.plugin, PLUGIN_NAME, Token::TextPrimary),
             cell(
                 if plugin.installed { "yes" } else { "no" },
-                11,
+                PLUGIN_INSTALLED,
                 if plugin.installed {
                     Token::TextPrimary
                 } else {
@@ -611,24 +611,21 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         if plugin.installed {
             spans.push(cell(
                 if plugin.contributing { "yes" } else { "idle" },
-                8,
+                PLUGIN_HERE,
                 if plugin.contributing {
                     Token::TextPrimary
                 } else {
                     Token::TextMuted
                 },
             ));
-            let commit = plugin
-                .commit
-                .as_deref()
-                .map_or("—", |commit| &commit[..commit.len().min(7)]);
-            spans.push(cell(commit, 10, Token::TextMuted));
+            let commit = plugin.commit.as_deref().map_or("—", short_commit);
+            spans.push(cell(commit, PLUGIN_COMMIT, Token::TextMuted));
             if let Some(freshness) = &plugin.freshness {
                 let (word, tone) = freshness_word(&freshness.state);
                 spans.push(Span::styled(word, theme::fg(tone)));
             }
         } else {
-            for width in [8, 10] {
+            for width in [PLUGIN_HERE, PLUGIN_COMMIT] {
                 spans.push(cell("—", width, Token::TextDim));
             }
             spans.push(Span::styled("—", theme::fg(Token::TextDim)));
@@ -649,7 +646,7 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     };
     lines.push(SectionLine {
         spans: vec![
-            cell("agents.lock", 30, Token::TextMuted),
+            cell("agents.lock", LOCK_LABEL, Token::TextMuted),
             Span::styled(lock_state.0, theme::fg(lock_state.1)),
         ],
         row: None,
@@ -662,7 +659,7 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         if !names.is_empty() {
             lines.push(SectionLine {
                 spans: vec![
-                    cell(&format!("  {label}"), 30, Token::TextMuted),
+                    cell(&format!("  {label}"), LOCK_LABEL, Token::TextMuted),
                     Span::styled(names.join(", "), theme::fg(Token::TextPrimary)),
                 ],
                 row: None,
@@ -672,7 +669,7 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     if drift.stale_projection {
         lines.push(SectionLine {
             spans: vec![
-                cell("  projection", 30, Token::TextMuted),
+                cell("  projection", LOCK_LABEL, Token::TextMuted),
                 Span::styled("stale", theme::fg(Token::StateWarning)),
             ],
             row: None,
@@ -692,17 +689,17 @@ fn memory_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         lines.push(said("no facts kept for this project", Token::TextMuted));
     } else {
         lines.push(heading(&[
-            ("name", 34),
-            ("kind", 12),
-            ("origin", 14),
-            ("updated", 12),
+            ("name", FACT_NAME),
+            ("kind", FACT_KIND),
+            ("origin", FACT_ORIGIN),
+            ("updated", FACT_UPDATED),
         ]));
         for (index, entry) in memory.project.iter().enumerate() {
             lines.push(SectionLine {
                 spans: vec![
-                    cell(&entry.name, 34, Token::TextPrimary),
-                    cell(entry.kind.label(), 12, Token::TextSecondary),
-                    cell(&entry.origin, 14, Token::TextSecondary),
+                    cell(&entry.name, FACT_NAME, Token::TextPrimary),
+                    cell(entry.kind.label(), FACT_KIND, Token::TextSecondary),
+                    cell(&entry.origin, FACT_ORIGIN, Token::TextSecondary),
                     Span::styled(
                         entry.updated.clone().unwrap_or_default(),
                         theme::fg(Token::TextMuted),
@@ -1549,6 +1546,30 @@ fn render_agent(
     Vec::new()
 }
 
+/// The Context table's columns: the harness, whether it is installed,
+/// and how the context reaches it.
+const CONTEXT_NAME: u16 = 18;
+const CONTEXT_INSTALLED: u16 = 14;
+const CONTEXT_STATE: u16 = 20;
+
+/// The Plugins table's columns, and the label column of the lock's lines
+/// under it.
+const PLUGIN_NAME: u16 = 24;
+const PLUGIN_INSTALLED: u16 = 11;
+const PLUGIN_HERE: u16 = 8;
+const PLUGIN_COMMIT: u16 = 10;
+const PLUGIN_FRESHNESS: u16 = 16;
+const LOCK_LABEL: u16 = 30;
+
+/// The Memory table's columns.
+const FACT_NAME: u16 = 34;
+const FACT_KIND: u16 = 12;
+const FACT_ORIGIN: u16 = 14;
+const FACT_UPDATED: u16 = 12;
+
+/// The label column of the drawer's pairs.
+const DRAWER_LABEL: u16 = 16;
+
 /// The prompts table's columns: who answered, how long ago, where.
 const PROMPT_HARNESS: u16 = 12;
 const PROMPT_WHEN: u16 = 7;
@@ -1849,7 +1870,7 @@ impl DrawerLines {
     /// A label and its value, side by side.
     fn pair(&mut self, label: &str, value: String, tone: Token) {
         self.lines.push(Line::from(vec![
-            Span::styled(pad(label, 16), theme::fg(Token::TextMuted)),
+            Span::styled(pad(label, DRAWER_LABEL), theme::fg(Token::TextMuted)),
             Span::styled(value, theme::fg(tone)),
         ]));
     }
@@ -1900,7 +1921,7 @@ impl DrawerLines {
                 self.said("compatibility", Token::TextDim);
                 for (name, status, tone) in crate::ui::agent_support::compatibility(support) {
                     self.lines.push(Line::from(vec![
-                        Span::styled(pad(name, 16), theme::fg(Token::TextSecondary)),
+                        Span::styled(pad(name, DRAWER_LABEL), theme::fg(Token::TextSecondary)),
                         Span::styled(status, theme::fg(tone)),
                     ]));
                 }
@@ -2265,6 +2286,11 @@ fn counted(count: usize, one: &str, many: &str) -> String {
 /// The review's title over a diff of `changed` lines.
 fn changed_lines_title(changed: usize) -> String {
     counted(changed, "line changes", "lines change")
+}
+
+/// A commit as the Plugins table shows it: its first seven characters.
+fn short_commit(commit: &str) -> &str {
+    &commit[..commit.len().min(7)]
 }
 
 /// A path as the operator would type it: under their home, from `~`.
