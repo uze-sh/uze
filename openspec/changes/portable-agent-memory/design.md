@@ -398,8 +398,10 @@ What exists that this reuses:
 - **Where it is computed.** Each reader fills a fact's citations where it
   already holds the body (UZE's listing, and each source through the same
   helper); `uze-application`'s `gather` judges them. At most 64 citations
-  are checked per gather, taken in index rank order, so a mark never
-  appears or vanishes because an unrelated fact was added. Project facts
+  are checked per gather, taken in index rank order, so the cap leaves out
+  the facts an index would name last rather than whichever files sort
+  last; a higher-ranked fact added later can still take a lower one's
+  checks, and `show` judges the one fact it reads whole. Project facts
   only: machine facts may cite any project.
 - **Where it shows.**
   - The index marks such a fact where it already names it: its line

@@ -399,9 +399,10 @@ fn gather(
 const CITATION_CHECKS: usize = 64;
 
 /// Marks each project fact citing a path `checkout` does not have. Judged
-/// in the order an index ranks facts, so a mark never appears or vanishes
-/// because an unrelated fact was added. A machine fact may cite any
-/// project, so it is never judged.
+/// in the order an index ranks facts, so the cap leaves out the facts an
+/// index would name last, never whichever files happen to sort last; a
+/// fact asked for by name is judged whole (`show`). A machine fact may
+/// cite any project, so it is never judged.
 fn judge_citations(report: &mut MemoryReport, checkout: &Path) {
     let checkout = Checkout::at(checkout);
     let mut order: Vec<usize> = (0..report.entries.len())
