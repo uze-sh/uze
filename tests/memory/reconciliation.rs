@@ -587,3 +587,31 @@ fn declare_fixtures(project: &Path) {
         ],
     );
 }
+
+/// An `agents.yaml` that does not parse says nothing about which regions
+/// are owed: reading the context still answers, and reconciling refuses
+/// rather than taking back the regions already there over a typo.
+#[test]
+fn a_manifest_that_does_not_parse_never_costs_the_project_its_regions() {
+    let root = temp("unreadable-manifest");
+    let application = app(&root, false);
+    install(&application, fixture_a());
+    let project = root.join("project");
+    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
+    application.context().reconcile(&project).unwrap();
+    let reconciled = agents_md_content(&project);
+    assert!(reconciled.contains("package:uze-instructions-fixture-a"));
+
+    fs::write(project.join("agents.yaml"), "marketplaces: [oops\n").unwrap();
+    application
+        .context()
+        .inspect(&project)
+        .expect("reading the context still answers");
+    application
+        .context()
+        .reconcile(&project)
+        .expect_err("a write refuses a declaration it cannot read");
+    assert_eq!(agents_md_content(&project), reconciled);
+    fs::remove_dir_all(root).unwrap();
+}

@@ -47,6 +47,7 @@ impl Context<'_> {
             canonical,
             agents_md: agents_md_path,
             contributions,
+            ..
         } = self.scope(project_root)?;
         let observation = instruction_context::inspect_agents_md(&agents_md_path, &contributions);
         let agents_md_exists = agents_md_path.is_file();
@@ -137,6 +138,7 @@ impl Context<'_> {
             canonical,
             agents_md,
             contributions,
+            ..
         } = self.scope(project_root)?;
         let agents_md_plan = instruction_context::plan_agents_md(&agents_md, &contributions);
 
@@ -191,7 +193,14 @@ impl Context<'_> {
             canonical,
             agents_md,
             contributions,
+            unreadable_manifest,
         } = self.scope(project_root)?;
+        // A declaration that does not parse says nothing about which
+        // regions are owed, and taking them back on that silence would
+        // cost the project its context over a typo.
+        if let Some(error) = unreadable_manifest {
+            return Err(error);
+        }
         // Two owners rewrite this file (the package manager here, the
         // workspace its policy region), each as a whole-file read-modify-write.
         let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
@@ -262,10 +271,18 @@ impl Context<'_> {
                     hint: "context is a project's; stand inside one".to_owned(),
                 }
             })?;
+        // Read anyway, as declaring nothing, so `status` still answers
+        // about a project whose `agents.yaml` does not parse; only a write
+        // refuses it.
+        let (manifest, unreadable_manifest) = match manifest::load(&canonical) {
+            Ok(manifest) => (manifest.unwrap_or_default(), None),
+            Err(error) => (Default::default(), Some(error)),
+        };
         Ok(ContextScope {
             agents_md: canonical.join(AGENTS_MD_FILE_NAME),
-            contributions: self.instruction_contributions(&canonical)?,
+            contributions: self.instruction_contributions(&manifest)?,
             canonical,
+            unreadable_manifest,
         })
     }
 
@@ -327,8 +344,10 @@ impl Context<'_> {
     /// another project, or for the machine alone, is in it too; composing
     /// those in would make a versioned `AGENTS.md` say whatever the machine
     /// that last reconciled it happened to hold.
-    fn instruction_contributions(&self, canonical: &Path) -> Result<Vec<InstructionContribution>> {
-        let manifest = manifest::load(canonical)?.unwrap_or_default();
+    fn instruction_contributions(
+        &self,
+        manifest: &manifest::ProjectManifest,
+    ) -> Result<Vec<InstructionContribution>> {
         let declared: BTreeSet<String> = manifest
             .declared_plugins()
             .map(|(plugin, marketplace)| format!("{plugin}@{marketplace}"))
@@ -360,6 +379,8 @@ struct ContextScope {
     canonical: PathBuf,
     agents_md: PathBuf,
     contributions: Vec<InstructionContribution>,
+    /// Why `agents.yaml` could not be read, when it could not.
+    unreadable_manifest: Option<UzeError>,
 }
 
 /// A vendor-specific instructions file carrying content of its own.
