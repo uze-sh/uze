@@ -2893,8 +2893,9 @@ mod tests {
     }
 
     /// A setup line is judged by the command, not by how the form shows
-    /// it: a POSIX line that happens to read like the two-spelling form is
-    /// still the line approval names.
+    /// it: a line that happens to read like the two-spelling form is still
+    /// the line approval names. It is spelled for both shells so the line
+    /// runs, and so awaits approval, wherever the suite runs.
     #[test]
     fn a_command_s_state_is_judged_on_the_command_not_its_shown_line() {
         use uze_application::ShellCommand;
@@ -2902,7 +2903,7 @@ mod tests {
         let states = super::CommandStates {
             awaiting: vec![line],
         };
-        let command = ShellCommand::Line(line.to_owned());
+        let command = ShellCommand::spelled(line, line);
         assert_eq!(
             states.state_of(Some(&command), false).0,
             "waiting for approval"
