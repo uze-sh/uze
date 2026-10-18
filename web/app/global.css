@@ -311,6 +311,23 @@ html > body[data-scroll-locked] {
     transform: translateY(-10px) rotate(calc(var(--tilt, 0deg) * 0.6));
   }
 }
+/* What a tile holds changes while the tile stays: the outgoing face sinks
+   and blurs as the next one rises into focus, each tile a beat after the one
+   before it so the change travels around the claim instead of blinking. */
+.orbit-face {
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(6px);
+  transition:
+    opacity 520ms ease,
+    scale 620ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 520ms ease;
+}
+.orbit-face[data-active='true'] {
+  opacity: 1;
+  scale: 1;
+  filter: blur(0);
+}
 @media (prefers-reduced-motion: reduce) {
   .harness-float {
     animation: none;
