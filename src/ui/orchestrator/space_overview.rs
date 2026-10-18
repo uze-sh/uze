@@ -89,10 +89,10 @@ pub(super) struct SpaceOverviewView {
     /// other selection is the operator going somewhere else.
     settled: bool,
     pub(super) section: Section,
-    /// The selected row of each section, by section index.
     /// Where each section's list is scrolled to: moved by the wheel, and
     /// pulled to the selection only when the keys move it.
     pub(super) scroll: [crate::ui::extension_view::NavigatorScroll; 5],
+    /// The selected row of each section, by section index.
     pub(super) rows: [usize; 5],
     /// Whether the drawer stands over the section, where there is no room
     /// for both side by side.
@@ -152,6 +152,18 @@ pub(super) struct EditField {
     /// The offered path the keys are on, when the key offers paths to
     /// choose from rather than to type.
     pub(super) picked: usize,
+}
+
+impl EditField {
+    /// A field over `key`, or over item `item` of its list, holding `text`.
+    fn new(key: DeclarationKey, item: Option<usize>, text: String) -> Self {
+        Self {
+            key,
+            item,
+            buffer: RenameBuffer::new(text),
+            picked: 0,
+        }
+    }
 }
 
 /// The overview's count of the space's agents.
@@ -863,11 +875,8 @@ impl WorkspaceModel {
         overview.pending = false;
         overview.answer = Some(resolution.answer);
         let count = overview.row_count();
-        for (index, row) in overview.rows.iter_mut().enumerate() {
-            if index == overview.section.index() {
-                *row = (*row).min(count.saturating_sub(1));
-            }
-        }
+        let section = overview.section.index();
+        overview.rows[section] = overview.rows[section].min(count.saturating_sub(1));
         true
     }
 
@@ -1419,26 +1428,16 @@ impl Attach<'_> {
                     .map(items)
                     .and_then(|items| items.get(index).cloned())
                     .unwrap_or_default();
-                overview.edit.field = Some(EditField {
-                    key,
-                    item: Some(index),
-                    buffer: RenameBuffer::new(text),
-                    picked: 0,
-                });
+                overview.edit.field = Some(EditField::new(key, Some(index), text));
             }
             // Opened on the value it holds, with nothing typed: every
             // option is on offer until typing narrows them.
             WorkspaceRow::Key(key) if is_combo(key) => {
                 let current = match choices(key) {
                     [] => value.as_ref().map(scalar).unwrap_or_default(),
-                    _ => chosen(key, value.as_ref()).to_owned(),
+                    _ => chosen(key, value.as_ref()),
                 };
-                overview.edit.field = Some(EditField {
-                    key,
-                    item: None,
-                    buffer: RenameBuffer::new(String::new()),
-                    picked: 0,
-                });
+                overview.edit.field = Some(EditField::new(key, None, String::new()));
                 let picked = overview
                     .picker_options()
                     .iter()
@@ -1450,21 +1449,11 @@ impl Attach<'_> {
             }
             WorkspaceRow::Key(key) if is_listed(key, overview) => {
                 let len = value.as_ref().map_or(0, item_count);
-                overview.edit.field = Some(EditField {
-                    key,
-                    item: Some(len),
-                    buffer: RenameBuffer::new(String::new()),
-                    picked: 0,
-                });
+                overview.edit.field = Some(EditField::new(key, Some(len), String::new()));
             }
             WorkspaceRow::Key(key) => {
                 let text = value.as_ref().map(scalar).unwrap_or_default();
-                overview.edit.field = Some(EditField {
-                    key,
-                    item: None,
-                    buffer: RenameBuffer::new(text),
-                    picked: 0,
-                });
+                overview.edit.field = Some(EditField::new(key, None, text));
             }
             // Answered above, before the key was read.
             WorkspaceRow::Action(_) => {}
@@ -1511,16 +1500,11 @@ impl Attach<'_> {
         };
         overview.set(key, value);
         if let Some(index) = field.item {
-            let row = overview
-                .workspace_rows()
+            let rows = overview.workspace_rows();
+            let row = rows
                 .iter()
                 .position(|row| *row == WorkspaceRow::Item(key, index))
-                .or_else(|| {
-                    overview
-                        .workspace_rows()
-                        .iter()
-                        .position(|row| *row == WorkspaceRow::Key(key))
-                });
+                .or_else(|| rows.iter().position(|row| *row == WorkspaceRow::Key(key)));
             if let Some(row) = row {
                 overview.rows[Section::Settings.index()] = row;
             }
@@ -1545,12 +1529,7 @@ impl Attach<'_> {
             return;
         }
         let len = overview.value(key).map_or(0, item_count);
-        overview.edit.field = Some(EditField {
-            key,
-            item: Some(len),
-            buffer: RenameBuffer::new(String::new()),
-            picked: 0,
-        });
+        overview.edit.field = Some(EditField::new(key, Some(len), String::new()));
     }
 
     fn remove_workspace_row(&mut self) {
