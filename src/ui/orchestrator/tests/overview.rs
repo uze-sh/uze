@@ -749,15 +749,27 @@ fn an_edit_is_written_without_any_save() {
         Some(&DeclaredValue::Text("always".to_owned())),
         "the form went back to the old value before the file was read again"
     );
-    let toast = driven
-        .attach
-        .model
-        .remembered
-        .toasts
-        .back()
-        .expect("a toast says what was written");
-    assert_eq!(toast.text, "agents.yaml created");
-    assert_eq!(toast.detail, "worktree: always");
+    // Said beside the key, not in a toast.
+    assert!(
+        driven.attach.model.remembered.toasts.is_empty(),
+        "a write raised a toast"
+    );
+    assert!(
+        overview
+            .edit
+            .saved
+            .values
+            .contains_key(&DeclarationKey::Worktree)
+    );
+    let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 160, 45)).join("\n");
+    let worktree = screen
+        .lines()
+        .find(|line| line.contains("Worktree"))
+        .expect("worktree is on the form");
+    assert!(
+        worktree.contains("saved"),
+        "the key is not marked saved:\n{screen}"
+    );
 }
 
 /// A value the workspace would refuse is never written: the edit stays
@@ -1314,19 +1326,22 @@ fn a_click_elsewhere_keeps_the_prose_and_moves_the_focus() {
     );
 
     driven.frame();
-    let worktree = driven
+    let (other, rect) = driven
         .attach
         .model
         .hits
         .iter()
-        .find_map(|(rect, hit)| (*hit == WorkspaceHit::OverviewRow(0)).then_some(*rect))
-        .expect("worktree's row is a target");
-    driven.press(worktree.x, worktree.y);
+        .find_map(|(rect, hit)| match hit {
+            WorkspaceHit::OverviewRow(row) if *row != action => Some((*row, *rect)),
+            _ => None,
+        })
+        .expect("another row is on screen");
+    driven.press(rect.x, rect.y);
 
     let overview = overview_of(&driven);
     assert!(overview.edit.text.is_none(), "the text area kept the keys");
     assert_eq!(
-        overview.rows[1], 0,
+        overview.rows[1], other,
         "the clicked row did not take the focus"
     );
     let sent = overview
@@ -1395,4 +1410,80 @@ fn delivery_draws_its_three_options_side_by_side() {
                 .cloned()
         });
     assert_eq!(chosen, Some(Some(DeclaredValue::Text("push".to_owned()))));
+}
+
+/// A segmented choice changes only on a click on one of its options: the
+/// rest of its line selects it and leaves the value as it was.
+#[test]
+fn a_click_beside_a_segmented_choice_selects_it_without_changing_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-label"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-label");
+    let mut driven = settings_over(&home, &repository);
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .rows[1] = 1;
+    driven.frame();
+    let row = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::OverviewRow(0)).then_some(*rect))
+        .expect("worktree's row is a target");
+    driven.press(row.x + 2, row.y);
+    let overview = overview_of(&driven);
+    assert_eq!(overview.rows[1], 0, "the click did not select the row");
+    assert!(
+        overview.edit.values.is_empty() && overview.edit.saving.is_none(),
+        "a click on the label changed the choice"
+    );
+}
+
+/// A click on no target at all — here the group heading above — still
+/// leaves an open list of options, closing it without choosing.
+#[test]
+fn a_click_on_nothing_closes_an_open_combobox() {
+    use crate::ui::orchestrator::space_overview::WorkspaceRow;
+    use crossterm::event::KeyCode;
+    use uze_application::DeclarationKey;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-outside"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-outside");
+    let mut driven = settings_over(&home, &repository);
+    let target = overview_of(&driven)
+        .workspace_rows()
+        .iter()
+        .position(|row| *row == WorkspaceRow::Key(DeclarationKey::Target))
+        .expect("the target is a row");
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .rows[1] = target;
+    driven.frame();
+    let row = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::OverviewRow(target)).then_some(*rect))
+        .expect("the target's row is drawn");
+    key(&mut driven, KeyCode::Enter);
+    assert!(
+        overview_of(&driven).edit.field.is_some(),
+        "the combobox did not open"
+    );
+
+    driven.press(row.x + 2, row.y - 1);
+    let overview = overview_of(&driven);
+    assert!(overview.edit.field.is_none(), "the combobox stayed open");
+    assert!(
+        overview.edit.values.is_empty(),
+        "closing it chose an option"
+    );
 }

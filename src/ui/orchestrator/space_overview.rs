@@ -137,6 +137,9 @@ pub(super) struct WorkspaceEdit {
     pub(super) refused: Vec<DeclarationProblem>,
     /// Why the last save failed outright.
     pub(super) refusal: Option<String>,
+    /// What the last write put in the file, marked beside each key until
+    /// the next edit: the form says it was kept rather than a toast.
+    pub(super) saved: SentEdits,
 }
 
 impl WorkspaceEdit {
@@ -170,14 +173,6 @@ impl WorkspaceEdit {
     }
 }
 
-fn counted(count: usize, one: &str, many: &str) -> String {
-    if count == 1 {
-        format!("1 {one}")
-    } else {
-        format!("{count} {many}")
-    }
-}
-
 /// The edits one save carries.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct SentEdits {
@@ -202,34 +197,6 @@ impl SentEdits {
                 text: text.clone(),
             }))
             .collect()
-    }
-
-    /// What they changed, in a few words: the one edit with its value, or
-    /// how many there were.
-    fn summary(&self) -> String {
-        let count = self.values.len() + self.actions.len();
-        if count != 1 {
-            return counted(count, "setting", "settings");
-        }
-        if let Some((key, value)) = self.values.iter().next() {
-            let shown = match value {
-                None => key.default_spelled().to_owned(),
-                Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
-                Some(DeclaredValue::Commands(commands)) => {
-                    counted(commands.len(), "command", "commands")
-                }
-                Some(value) => scalar(value),
-            };
-            return format!("{}: {shown}", key.name());
-        }
-        self.actions
-            .iter()
-            .next()
-            .map(|(state, text)| {
-                let done = if text.is_some() { "written" } else { "removed" };
-                format!("{} {done}", action_label(*state))
-            })
-            .unwrap_or_default()
     }
 }
 
@@ -727,6 +694,7 @@ impl SpaceOverviewView {
     // An edit back to what the file holds is no edit, unless a save in
     // flight is about to write something else there.
     fn set_action(&mut self, state: ActionState, text: Option<String>) {
+        self.edit.saved = SentEdits::default();
         let text = text.filter(|text| !text.trim().is_empty());
         let in_flight =
             (self.edit.saving.as_ref()).is_some_and(|sent| sent.actions.contains_key(&state));
@@ -800,6 +768,7 @@ impl SpaceOverviewView {
     }
 
     fn set(&mut self, key: DeclarationKey, value: Option<DeclaredValue>) {
+        self.edit.saved = SentEdits::default();
         let value = value.filter(|value| {
             !items(value).iter().all(String::is_empty) || matches!(value, DeclaredValue::Number(_))
         });
@@ -1077,11 +1046,8 @@ impl WorkspaceModel {
         self.dirty = true;
         let edit = &mut overview.edit;
         edit.saving = None;
-        let (created, awaits_approval_again) = match resolution.outcome {
-            Ok(DeclarationApplied::Written {
-                created,
-                awaits_approval_again,
-            }) => (created, awaits_approval_again),
+        match resolution.outcome {
+            Ok(DeclarationApplied::Written { .. }) => {}
             Ok(DeclarationApplied::Refused { problems }) => {
                 edit.refused = problems;
                 edit.refusal = None;
@@ -1109,22 +1075,10 @@ impl WorkspaceModel {
         landed.1.values.extend(sent.values.clone());
         landed.1.actions.extend(sent.actions.clone());
         overview.stale = true;
-        let root = overview.root.clone();
-        let title = if created {
-            "agents.yaml created"
-        } else {
-            "agents.yaml"
-        };
-        let (kind, detail) = if awaits_approval_again {
-            (
-                crate::ui::widget::ToastKind::Warned,
-                format!("{} · setup or gate waits for approval", sent.summary()),
-            )
-        } else {
-            (crate::ui::widget::ToastKind::Done, sent.summary())
-        };
-        self.raise_toast(kind, title, detail, None);
-        Some(root)
+        // Commands waiting for approval again are said where they always
+        // are: the cause line and the drawer's Review.
+        overview.edit.saved = sent;
+        Some(overview.root.clone())
     }
 }
 
@@ -1426,8 +1380,16 @@ impl Attach<'_> {
 
     /// A click on a row: it is selected, and in the Workspace form a value,
     /// an entry, a list's add or a choice's list is opened, as Enter would.
-    /// A number's row waits for a click on its − or +.
+    /// A number's or a segmented choice's row waits for a click on one of
+    /// its buttons.
     pub(super) fn click_overview_row(&mut self, index: usize) {
+        // On the row being typed into, the click is the typing's own.
+        if self.model.space_overview.as_ref().is_some_and(|overview| {
+            (overview.edit.field.is_some() || overview.edit.text.is_some())
+                && overview.row() == index
+        }) {
+            return;
+        }
         // Known by what it is rather than where: finishing what is open
         // can add a line above it.
         let clicked = self
@@ -1454,11 +1416,13 @@ impl Attach<'_> {
         if overview.section != Section::Settings {
             return;
         }
-        let stepped = matches!(
+        // A number and a segmented choice answer only on their own
+        // buttons: the rest of their line selects them and nothing more.
+        let own_buttons = matches!(
             overview.selected_workspace_row(),
-            Some(WorkspaceRow::Key(key)) if is_number(key)
+            Some(WorkspaceRow::Key(key)) if is_number(key) || is_segmented(key)
         );
-        if !stepped {
+        if !own_buttons {
             self.space_overview_action(Action::Activate);
         }
     }
@@ -1467,7 +1431,7 @@ impl Attach<'_> {
     /// does: prose is kept and saved, a typed entry is taken, and a list
     /// of options closes without choosing — the one highlighted was never
     /// picked.
-    fn finish_editing(&mut self) {
+    pub(in crate::ui::orchestrator) fn finish_editing(&mut self) {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };

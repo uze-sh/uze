@@ -993,7 +993,11 @@ impl Form {
                 form.lines.push(blank());
             }
             form.lines.push(group_heading(group, form.width));
-            for key in keys.iter().copied() {
+            for (position, key) in keys.iter().copied().enumerate() {
+                // A line of air between keys, so each reads as its own.
+                if position > 0 {
+                    form.lines.push(blank());
+                }
                 form.push_key(overview, key, &commands);
             }
         }
@@ -1105,6 +1109,8 @@ impl Form {
         }
         if edited {
             spans.push(edited_mark());
+        } else if overview.edit.saved.values.contains_key(&key) {
+            spans.push(saved_mark());
         }
         self.push_row(spans);
         if is_listed(key, overview) {
@@ -1168,6 +1174,8 @@ impl Form {
             row_spans.append(&mut spans);
             if line == 0 && edited {
                 row_spans.push(edited_mark());
+            } else if line == 0 && overview.edit.saved.actions.contains_key(&state) {
+                row_spans.push(saved_mark());
             }
             self.lines.push(SectionLine {
                 spans: row_spans,
@@ -1318,6 +1326,10 @@ fn failed(reason: &str) -> String {
 
 fn edited_mark() -> Span<'static> {
     Span::styled("  edited", theme::fg(Token::StateInfo))
+}
+
+fn saved_mark() -> Span<'static> {
+    Span::styled("  saved", theme::fg(Token::TextMuted))
 }
 
 /// A value in its box, `width` columns wide.

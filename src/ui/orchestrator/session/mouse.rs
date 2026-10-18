@@ -138,6 +138,20 @@ impl Attach<'_> {
         // A key a hint names is the host's wherever it is drawn: what it
         // performs is an action, which the surface beneath never sees.
         let over = self.model.hit_at(mouse.column, mouse.row);
+        // A click anywhere outside the overview's form leaves what is
+        // being typed there; the form's own targets leave it themselves,
+        // knowing which row they land on.
+        if !matches!(
+            over,
+            Some(
+                WorkspaceHit::OverviewPick(_)
+                    | WorkspaceHit::OverviewRow(_)
+                    | WorkspaceHit::OverviewStep(..)
+                    | WorkspaceHit::OverviewChoice(..)
+            )
+        ) {
+            self.finish_editing();
+        }
         let on_hint = matches!(over, Some(WorkspaceHit::HintAction(_)));
         let on_surface = !on_hint
             && (layout
