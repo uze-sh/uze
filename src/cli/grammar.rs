@@ -6,7 +6,7 @@ use crate::*;
 #[command(
     name = "uze",
     version,
-    about = "Agents come and go. Your work stays.",
+    about = env!("CARGO_PKG_DESCRIPTION"),
     after_help = "Scope: a project is the nearest agents.yaml, repository root or AGENTS.md. \
                   Project verbs maintain this project's agents.yaml when one is here, and \
                   act on this machine only when there is none — they always say which they \

@@ -202,10 +202,7 @@ pub(crate) fn print_root_help() {
         progress::title("uze"),
         progress::label(env!("CARGO_PKG_VERSION"))
     );
-    println!(
-        "{}",
-        progress::label("Agents come and go. Your work stays.")
-    );
+    println!("{}", progress::label(env!("CARGO_PKG_DESCRIPTION")));
     println!();
     println!(
         "{}  uze <command> [args] [options]",
