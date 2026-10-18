@@ -333,7 +333,7 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         if self.model.space_overview.is_some() && overview_answers(action) {
-            self.space_overview_action(action, viewport);
+            self.space_overview_action(action);
             return Flow::Continue;
         }
         match action {

@@ -1071,7 +1071,7 @@ impl Attach<'_> {
     }
 
     /// One action, while the overview has the keyboard.
-    pub(super) fn space_overview_action(&mut self, action: Action, viewport: &Viewport) {
+    pub(super) fn space_overview_action(&mut self, action: Action) {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -1165,7 +1165,7 @@ impl Attach<'_> {
             Action::SelectNext => overview.select(1),
             Action::SelectPrevious => overview.select(-1),
             Action::Refresh => self.refresh_space_overview(),
-            Action::Activate => self.activate_overview_row(viewport),
+            Action::Activate => self.activate_overview_row(),
             Action::AddItem => self.add_workspace_item(),
             Action::RemoveItem => self.remove_workspace_row(),
             Action::MoveItemUp => self.move_workspace_item(-1),
@@ -1187,7 +1187,7 @@ impl Attach<'_> {
 
     /// Enter on the row in focus: the drawer where it stands over the
     /// section, a fact's body, the approval question, or an edit.
-    fn activate_overview_row(&mut self, viewport: &Viewport) {
+    fn activate_overview_row(&mut self) {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -1223,13 +1223,12 @@ impl Attach<'_> {
             // Its keys are the prompts', answered before this.
             Section::Agent => {}
         }
-        let _ = viewport;
     }
 
     /// A click on a row: it is selected, and in the Workspace form a value,
     /// an entry, a list's add or a choice's list is opened, as Enter would.
     /// A number's row waits for a click on its − or +.
-    pub(super) fn click_overview_row(&mut self, index: usize, viewport: &Viewport) {
+    pub(super) fn click_overview_row(&mut self, index: usize) {
         self.model.select_overview_row(index);
         let Some(overview) = self.model.space_overview.as_ref() else {
             return;
@@ -1245,7 +1244,7 @@ impl Attach<'_> {
             Some(WorkspaceRow::Key(key)) if is_number(key)
         );
         if !stepped {
-            self.space_overview_action(Action::Activate, viewport);
+            self.space_overview_action(Action::Activate);
         }
     }
 

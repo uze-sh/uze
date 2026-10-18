@@ -438,7 +438,7 @@ fn render_section(
         Section::Context => context_lines(project),
         Section::Plugins => plugin_lines(project),
         Section::Settings => {
-            return render_workspace(frame, area, model, overview, project, hits, track);
+            return render_workspace(frame, area, overview, project, hits, track);
         }
         Section::Memory => memory_lines(project),
     };
@@ -827,7 +827,6 @@ fn draw_scrolled(
 fn render_workspace(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
-    model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
@@ -1251,7 +1250,6 @@ fn render_workspace(
     if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
         answer.render(frame, footer, hits);
     }
-    let _ = model;
     drawn
 }
 

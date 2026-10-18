@@ -1009,7 +1009,7 @@ impl Attach<'_> {
                 } else {
                     Action::SelectNext
                 };
-                self.space_overview_action(action, viewport);
+                self.space_overview_action(action);
             }
             _ if self.model.space_overview.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -1420,7 +1420,7 @@ impl Attach<'_> {
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
             }
-            WorkspaceHit::OverviewRow(index) => self.click_overview_row(index, viewport),
+            WorkspaceHit::OverviewRow(index) => self.click_overview_row(index),
             WorkspaceHit::OverviewReview => self.review_overview_commands(),
             WorkspaceHit::OverviewPick(option) => self.pick_overview_option(option),
             WorkspaceHit::OverviewStep(row, adds) => {
