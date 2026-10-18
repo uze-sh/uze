@@ -51,18 +51,28 @@ struct Track<'a> {
     scroll: Option<&'a std::cell::Cell<NavigatorScroll>>,
     /// The row under the pointer, lit without being chosen.
     hovered: Option<usize>,
+    /// Whatever the pointer is over, for a control that lifts under it.
+    pointer: Option<WorkspaceHit>,
 }
 
 /// A number's − and + as drawn: its line, its row, and the column and
 /// width of each.
 type StepCells = (usize, usize, (u16, u16), (u16, u16));
 
+/// A pair's two options as drawn: its line, its row, and each option's
+/// column and width.
+type PairCells = (usize, usize, [(u16, u16); 2]);
+
 /// The Workspace form's label column, and the width of a value's box.
 const LABEL: u16 = 18;
 const BOX: u16 = 48;
 
-/// The places a stepped number's value takes between its − and +.
-const STEP_PLACES: usize = 2;
+/// How far a key's label sits in under its group's heading.
+const KEY_INDENT: usize = 2;
+
+/// The width a pair's options and a number's − value + share, so the two
+/// kinds of control end in the same column.
+const CONTROL: usize = 20;
 
 pub(super) fn render_space_overview(
     frame: &mut ratatui::Frame<'_>,
@@ -230,6 +240,7 @@ fn render_overview_frame(
                 Some(WorkspaceHit::OverviewRow(row)) => Some(row),
                 _ => None,
             },
+            pointer: model.hovered,
             ..track
         };
         let rows = render_section(frame, section_area, model, overview, project, hits, track);
@@ -859,13 +870,23 @@ fn render_workspace(
         area.width,
         footer_height,
     );
-    let form = Form::of(overview, project, list.width);
+    let form = Form::of(overview, project, list.width, track.pointer);
     let (mut drawn, offset) = draw_scrolled(frame, list, &form.lines, Some(overview.row()), track);
     let line_y = |line: usize| {
         (line >= offset)
             .then(|| list.y + (line - offset) as u16)
             .filter(|y| *y < list.bottom())
     };
+    for (line, row, options) in form.pairs {
+        if let Some(y) = line_y(line) {
+            for (option, (x, width)) in options.into_iter().enumerate() {
+                hits.push((
+                    Rect::new(list.x + x, y, width, 1),
+                    WorkspaceHit::OverviewChoice(row, option),
+                ));
+            }
+        }
+    }
     for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in form.steps {
         if let Some(y) = line_y(line) {
             hits.push((
@@ -923,6 +944,11 @@ struct Form {
     /// The line and column the field being typed is drawn at.
     field_at: Option<(usize, u16)>,
     steps: Vec<StepCells>,
+    pairs: Vec<PairCells>,
+    /// What the pointer is over, so a control under it lifts.
+    hovered: Option<WorkspaceHit>,
+    /// The width a group's heading rule runs to.
+    width: usize,
     /// The room a value's box takes: what the row leaves after its label
     /// and a word of state beside it, never wider than a value needs.
     box_width: usize,
@@ -931,11 +957,19 @@ struct Form {
 }
 
 impl Form {
-    fn of(overview: &SpaceOverviewView, project: &ProjectSpace, width: u16) -> Self {
+    fn of(
+        overview: &SpaceOverviewView,
+        project: &ProjectSpace,
+        width: u16,
+        hovered: Option<WorkspaceHit>,
+    ) -> Self {
         let mut form = Self {
             lines: Vec::new(),
             field_at: None,
             steps: Vec::new(),
+            pairs: Vec::new(),
+            hovered,
+            width: usize::from(width),
             box_width: usize::from(width.saturating_sub(LABEL + 22).clamp(12, BOX)),
             index: 0,
         };
@@ -944,7 +978,7 @@ impl Form {
             if !form.lines.is_empty() {
                 form.lines.push(blank());
             }
-            form.lines.push(said(group, Token::TextDim));
+            form.lines.push(group_heading(group, form.width));
             for key in keys.iter().copied() {
                 form.push_key(overview, key, &commands);
             }
@@ -952,7 +986,7 @@ impl Form {
         // What an agent is asked at each moment: prose, so each is a box of
         // as many lines as the instruction runs to.
         form.lines.push(blank());
-        form.lines.push(said("agent actions", Token::TextDim));
+        form.lines.push(group_heading("agent actions", form.width));
         for (position, state) in ActionState::ALL.into_iter().enumerate() {
             if position > 0 {
                 form.lines.push(blank());
@@ -995,6 +1029,27 @@ impl Form {
         let mut spans = vec![form_label(key_label(key), focused)];
         if field.is_some_and(|field| field.item.is_none()) {
             self.field_at = Some((self.lines.len(), LABEL));
+        } else if is_pair(key) {
+            let current = chosen(key, value);
+            let options = choices(key);
+            let mut cells = [(0, 0); 2];
+            let mut at = LABEL;
+            for (option, word) in options.iter().enumerate() {
+                let state = if *word == current {
+                    PairState::Chosen
+                } else if self.hovered == Some(WorkspaceHit::OverviewChoice(self.index, option)) {
+                    PairState::Hovered
+                } else {
+                    PairState::Resting
+                };
+                let cell = pair_cell(word, state, CONTROL / 2);
+                cells[option] = (at, cell.width() as u16);
+                at += cell.width() as u16;
+                spans.push(cell);
+            }
+            if editable {
+                self.pairs.push((self.lines.len(), self.index, cells));
+            }
         } else if is_combo(key) {
             let (shown, tone) = match (value, choices(key)) {
                 (_, [_, ..]) => (chosen(key, value), Token::TextPrimary),
@@ -1003,14 +1058,12 @@ impl Form {
             };
             spans.extend(combo(&shown, tone, self.box_width));
         } else if is_number(key) {
-            // Slots left out is no bound at all: an empty count says so
-            // where a number stands, and the drawer names it.
             let (shown, tone) = match value {
                 Some(value) => (scalar(value), Token::TextBright),
-                None if key == DeclarationKey::Slots => (String::new(), Token::TextDim),
                 None => (key.default_spelled().to_owned(), Token::TextDim),
             };
-            let (stepper, minus, plus) = stepper(&shown, tone, editable);
+            let lit = |adds| self.hovered == Some(WorkspaceHit::OverviewStep(self.index, adds));
+            let (stepper, minus, plus) = stepper(&shown, tone, editable, [lit(false), lit(true)]);
             spans.extend(stepper);
             if editable {
                 self.steps.push((self.lines.len(), self.index, minus, plus));
@@ -1214,7 +1267,11 @@ fn action_boxes(
 /// A form row's label, bright on the row the keys are on.
 fn form_label(text: &str, focused: bool) -> Span<'static> {
     Span::styled(
-        pad(text, LABEL),
+        format!(
+            "{}{}",
+            " ".repeat(KEY_INDENT),
+            pad(text, LABEL - KEY_INDENT as u16)
+        ),
         if focused {
             theme::fg_bold(Token::TextBright)
         } else {
@@ -1272,37 +1329,86 @@ fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     spans
 }
 
-/// A number between its − and +, and where each of those two stands on
-/// the line: its column and its width.
+/// A number between its − and +, [`CONTROL`] wide with the number in the
+/// middle, and where each of those two stands on the line: its column and
+/// its width. `lit` says which of the two the pointer is over.
 fn stepper(
     shown: &str,
     tone: Token,
     editable: bool,
+    lit: [bool; 2],
 ) -> (Vec<Span<'static>>, (u16, u16), (u16, u16)) {
-    let step_tone = if editable {
-        Token::TextSecondary
-    } else {
-        Token::TextFaint
-    };
-    let step = |symbol: Symbol| {
+    let step = |symbol: Symbol, lit: bool| {
+        let (fg, ground) = match (editable, lit) {
+            (false, _) => (Token::TextFaint, Token::SurfaceRaised),
+            (true, true) => (Token::TextBright, Token::SurfaceHover),
+            (true, false) => (Token::TextSecondary, Token::SurfaceRaised),
+        };
         Span::styled(
             format!(" {} ", theme::glyph(symbol)),
-            theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
+            theme::fg_bold(fg).bg(theme::color(ground)),
         )
     };
-    let minus = step(Symbol::StepDecrease);
-    // Two places for every count, so the − and + of each line stand in
-    // the same columns.
-    let middle = Span::styled(format!("  {shown:>STEP_PLACES$}  "), theme::fg_bold(tone));
-    let plus = step(Symbol::StepIncrease);
+    let minus = step(Symbol::StepDecrease, lit[0]);
+    let plus = step(Symbol::StepIncrease, lit[1]);
     let minus_width = minus.width() as u16;
-    let middle_width = middle.width() as u16;
     let plus_width = plus.width() as u16;
+    let room = CONTROL.saturating_sub(usize::from(minus_width + plus_width));
+    let middle = Span::styled(
+        format!("{:^room$}", text::elide(shown, room)),
+        theme::fg_bold(tone).bg(theme::color(Token::SurfaceRecessed)),
+    );
+    let middle_width = middle.width() as u16;
     (
         vec![minus, middle, plus],
         (LABEL, minus_width),
         (LABEL + minus_width + middle_width, plus_width),
     )
+}
+
+/// How one of a pair's options is drawn.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PairState {
+    Chosen,
+    Hovered,
+    Resting,
+}
+
+/// One option of a pair, `width` columns with its word in the middle: the
+/// chosen one filled with the accent, the other on a raised ground that
+/// lifts under the pointer.
+fn pair_cell(word: &str, state: PairState, width: usize) -> Span<'static> {
+    let style = match state {
+        PairState::Chosen => {
+            theme::fg_bold(Token::SurfaceBackground).bg(theme::color(Token::Accent))
+        }
+        PairState::Hovered => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
+        PairState::Resting => {
+            theme::fg(Token::TextSecondary).bg(theme::color(Token::SurfaceRaised))
+        }
+    };
+    Span::styled(format!("{:^width$}", text::elide(word, width)), style)
+}
+
+/// A group's heading: its name, then a rule to the edge of the form.
+fn group_heading(title: &str, width: usize) -> SectionLine {
+    let mut letters = title.chars();
+    let title: String = letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default();
+    let rule = width.saturating_sub(Line::from(title.as_str()).width() + 1);
+    SectionLine {
+        spans: vec![
+            Span::styled(title, theme::fg_bold(Token::TextPrimary)),
+            Span::raw(" "),
+            Span::styled(
+                theme::glyph(Symbol::TreeDivider).repeat(rule),
+                theme::fg(Token::BorderFaint),
+            ),
+        ],
+        row: None,
+    }
 }
 
 /// What the field at `field` offers, floating under it — or over it, when

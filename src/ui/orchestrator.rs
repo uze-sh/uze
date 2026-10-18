@@ -900,6 +900,9 @@ pub(super) enum WorkspaceHit {
     /// A number's − or + in the overview's Workspace section: its row, and
     /// whether it adds.
     OverviewStep(usize, bool),
+    /// One option of a pair in the overview's Settings form: its row, and
+    /// the option's position.
+    OverviewChoice(usize, usize),
     /// One of the paths a list's field offers, by position.
     OverviewPick(usize),
     /// The rule along the overview's drawer, dragged to resize it.

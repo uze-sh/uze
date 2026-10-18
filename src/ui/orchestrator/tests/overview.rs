@@ -481,8 +481,8 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
         .expect("worktree is on the form");
     let form = worktree.split('│').nth(1).unwrap_or_default();
     assert!(
-        form.contains("always") && !form.contains("manual"),
-        "a choice's other options show before it is opened:\n{screen}"
+        form.contains("always") && form.contains("manual"),
+        "a pair shows both its options:\n{screen}"
     );
 
     let mut driven = driven(model, &home).on_a_roomy_terminal();
@@ -495,12 +495,10 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
             .iter()
             .find_map(|(rect, hit)| wanted(hit).then_some(*rect))
     };
-    let worktree = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewRow(0)))
-        .expect("worktree's row is a target");
-    driven.press(worktree.x, worktree.y);
-    driven.frame();
-    let manual = hit(&driven, &|hit| matches!(hit, WorkspaceHit::OverviewPick(0)))
-        .expect("the opened worktree offers its options");
+    let manual = hit(&driven, &|hit| {
+        matches!(hit, WorkspaceHit::OverviewChoice(0, 0))
+    })
+    .expect("worktree's first option is a target");
     driven.press(manual.x, manual.y);
     let overview = driven
         .attach
@@ -583,10 +581,7 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
         driven.press_key(crossterm::event::KeyEvent::from(code));
         driven.frame();
     };
-    // Enter opens the choice on the option it holds; the one above it
-    // is chosen with another.
-    key(&mut driven, crossterm::event::KeyCode::Enter);
-    key(&mut driven, crossterm::event::KeyCode::Up);
+    // Both of a pair's options are on screen: enter takes the other one.
     key(&mut driven, crossterm::event::KeyCode::Enter);
     let values = |driven: &Driven<'_>| {
         driven
@@ -602,7 +597,7 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
     assert_eq!(
         values(&driven).get(&DeclarationKey::Worktree),
         Some(&Some(DeclaredValue::Text("manual".to_owned()))),
-        "the option above was not chosen"
+        "enter did not take the other option"
     );
     key(&mut driven, crossterm::event::KeyCode::Down);
     key(&mut driven, crossterm::event::KeyCode::Enter);
@@ -817,8 +812,6 @@ fn edits_made_while_a_save_is_out_are_written_after_it() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-queued"));
     let repository = uze_testkit::git::Repository::new("orchestrator-overview-queued");
     let mut driven = settings_over(&home, &repository);
-    key(&mut driven, KeyCode::Enter);
-    key(&mut driven, KeyCode::Down);
     key(&mut driven, KeyCode::Enter);
     key(&mut driven, KeyCode::Down);
     key(&mut driven, KeyCode::Char('+'));
@@ -1235,4 +1228,56 @@ fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
 
 fn driven_again<'a>(home: &'a UzeHome, session: &uze_terminal::Session) -> Driven<'a> {
     driven(model_of(session.clone()), home)
+}
+
+/// The pointer lifts the − or + it is over, and a pair's option it is
+/// over, without choosing either.
+#[test]
+fn a_stepper_s_button_and_a_pair_s_option_lift_under_the_pointer() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-lift"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-lift");
+    let mut driven = settings_over(&home, &repository);
+    driven.frame();
+    let rect_of = |driven: &Driven<'_>, wanted: WorkspaceHit| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| (*hit == wanted).then_some(*rect))
+            .unwrap_or_else(|| panic!("{wanted:?} is not drawn"))
+    };
+    let hover = theme::color(crate::ui::theme::Token::SurfaceHover);
+    for wanted in [
+        WorkspaceHit::OverviewStep(1, false),
+        // `always`: `manual` is the default, so already chosen.
+        WorkspaceHit::OverviewChoice(0, 1),
+    ] {
+        let rect = rect_of(&driven, wanted);
+        driven.mouse(rect.x, rect.y, MouseEventKind::Moved);
+        let area = driven.area;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))
+                .unwrap();
+        terminal
+            .draw(|frame| {
+                super::render::render(
+                    frame,
+                    &driven.attach.model,
+                    &identities_fixture(),
+                    &mut Vec::new(),
+                    &mut super::render::FrameMetrics::default(),
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            terminal.backend().buffer()[(rect.x, rect.y)].bg,
+            hover,
+            "{wanted:?} did not lift"
+        );
+    }
+    assert!(
+        overview_of(&driven).edit.values.is_empty(),
+        "hovering chose something"
+    );
 }

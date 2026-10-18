@@ -1423,6 +1423,7 @@ impl Attach<'_> {
             WorkspaceHit::OverviewRow(index) => self.click_overview_row(index),
             WorkspaceHit::OverviewReview => self.review_overview_commands(),
             WorkspaceHit::OverviewPick(option) => self.pick_overview_option(option),
+            WorkspaceHit::OverviewChoice(row, option) => self.choose_overview_option(row, option),
             WorkspaceHit::OverviewStep(row, adds) => {
                 self.step_overview_value(row, if adds { 1 } else { -1 });
             }

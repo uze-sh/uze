@@ -846,6 +846,11 @@ pub(super) fn offers_choices(key: DeclarationKey) -> bool {
     matches!(key, DeclarationKey::Link | DeclarationKey::Artifacts) || is_combo(key)
 }
 
+/// A choice of two, both drawn side by side rather than behind a list.
+pub(super) fn is_pair(key: DeclarationKey) -> bool {
+    choices(key).len() == 2
+}
+
 /// A key chosen from a list it offers rather than typed: its options, or
 /// the repository's branches.
 pub(super) fn is_combo(key: DeclarationKey) -> bool {
@@ -1475,6 +1480,26 @@ impl Attach<'_> {
         self.schedule_declaration_save();
     }
 
+    /// A click on one of a pair's options: selects its row and sets it.
+    pub(super) fn choose_overview_option(&mut self, row: usize, option: usize) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        if !overview.editable() {
+            return;
+        }
+        let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
+            return;
+        };
+        if !is_pair(key) {
+            return;
+        }
+        overview.rows[Section::Settings.index()] = row;
+        overview.choose(key, option);
+        self.model.dirty = true;
+        self.schedule_declaration_save();
+    }
+
     /// Opens the approval question about this project's commands.
     pub(super) fn review_overview_commands(&mut self) {
         let Some(project) = self
@@ -1514,6 +1539,12 @@ impl Attach<'_> {
             }
             // Opened on the value it holds, with nothing typed: every
             // option is on offer until typing narrows them.
+            // Both options are on screen, so enter takes the other one.
+            WorkspaceRow::Key(key) if is_pair(key) => {
+                let other = usize::from(choices(key)[0] == chosen(key, value.as_ref()));
+                overview.choose(key, other);
+                self.schedule_declaration_save();
+            }
             WorkspaceRow::Key(key) if is_combo(key) => {
                 let current = match choices(key) {
                     [] => value.as_ref().map(scalar).unwrap_or_default(),
