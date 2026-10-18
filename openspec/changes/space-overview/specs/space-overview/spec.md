@@ -121,29 +121,30 @@ description in the drawer. `actions` SHALL be shown by name and read-only.
 - **WHEN** the project declares no `workspace:` section
 - **THEN** every key is shown with its default, marked as such
 
-### Requirement: The Settings section edits agents.yaml after a diff
+### Requirement: The Settings section saves each change to agents.yaml
 The operator SHALL be able to change, add, remove and reorder workspace
-values in place. Edits SHALL be validated by the parser that reads the
-section, every problem shown at its key, and Save refused while any
-remains. Save SHALL show the `agents.yaml` diff, keeping the operator's
-comments, and write only on confirmation. It SHALL NOT write over a file
-changed since the diff was made.
+values in place, and each committed change SHALL be written to
+`agents.yaml` as it is made, keeping the operator's comments, with no
+Save and no diff to confirm. Nothing SHALL be written while a value is
+still being typed. Edits SHALL be validated by the parser that reads the
+section; a refused edit SHALL NOT be written, and SHALL stay marked with
+each problem shown at its key until it is changed or discarded.
+
+#### Scenario: A change is saved as it is made
+- **WHEN** the operator chooses `merge` for `delivery`
+- **THEN** `agents.yaml` holds `delivery: merge` and a toast names the change
 
 #### Scenario: An invalid value
 - **WHEN** the operator sets `slots` to 0
-- **THEN** the key shows the parser's reason and Save is refused
-
-#### Scenario: Saving shows the diff
-- **WHEN** the operator changes `delivery` and saves
-- **THEN** the diff of `agents.yaml` is shown, and the file changes only when the operator confirms it
+- **THEN** nothing is written, and the key stays edited with the parser's reason under it
 
 #### Scenario: Changing a command asks for approval again
-- **WHEN** the operator saves a change to a `setup` line
-- **THEN** the diff says the line will wait for approval, and after the save it does
+- **WHEN** the operator changes a `setup` line
+- **THEN** it is written, the toast says it waits for approval, and it does until approved
 
 #### Scenario: A file changed meanwhile
-- **WHEN** `agents.yaml` changes on disk between the diff and the confirmation
-- **THEN** nothing is written and the operator is asked to review again
+- **WHEN** `agents.yaml` changes on disk before the operator's next change
+- **THEN** that change is written over the file as it is, keeping what else changed
 
 #### Scenario: A file UZE will not edit
 - **WHEN** `agents.yaml` uses a YAML anchor
@@ -160,7 +161,7 @@ sidebar does.
 
 ### Requirement: Every action is reachable from the keyboard
 The overview SHALL switch sections, move between rows, open the drawer,
-edit, save and open the shell from the keyboard alone, through chords
+edit and open the shell from the keyboard alone, through chords
 declared in a scope of its own.
 
 #### Scenario: Reviewing commands by keyboard
@@ -171,7 +172,7 @@ declared in a scope of its own.
 Every read and validation behind the overview SHALL run off the frame and
 answer through a channel, one at a time per space, and an answer for a
 space no longer shown SHALL be dropped. Status SHALL be read again only
-when the overview opens, when asked, after a save, or when the project's
+when the overview opens, when asked, after a written change, or when the project's
 manifest, lock or instructions change.
 
 #### Scenario: A slow read

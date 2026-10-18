@@ -1426,10 +1426,7 @@ impl Attach<'_> {
             WorkspaceHit::OverviewStep(row, adds) => {
                 self.step_overview_value(row, if adds { 1 } else { -1 });
             }
-            WorkspaceHit::OverviewSave(true) => return self.act(Action::SaveChanges, viewport),
-            WorkspaceHit::OverviewSave(false) => {
-                return self.act(Action::DiscardChanges, viewport);
-            }
+            WorkspaceHit::OverviewDiscard => return self.act(Action::DiscardChanges, viewport),
             // The counts are the changes' door, not the surface's, and
             // keep the keys' toggle.
             WorkspaceHit::OpenChanges => return self.act(Action::ToggleChanges, viewport),

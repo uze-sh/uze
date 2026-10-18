@@ -1478,63 +1478,33 @@ pub(super) fn spawn_fact_body(
     });
 }
 
-/// Applies the overview's `workspace:` edits to `agents.yaml` in memory
-/// and checks them the way the workspace would read them, off the frame:
-/// a link is checked by asking Git whether it is ignored.
-pub(super) fn spawn_declaration_preview(
-    home: &UzeHome,
-    space: SpaceId,
-    asked: u64,
-    root: PathBuf,
-    edits: Vec<uze_application::Edit>,
-    sender: mpsc::Sender<DeclarationPreviewResolution>,
-) {
-    let home = home.clone();
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.declaration_preview").entered();
-        let answer = answered_or(
-            || {
-                tui_application(home)
-                    .and_then(|app| app.workspace().preview_declaration(&root, &edits))
-                    .map_err(|error| error.to_string())
-            },
-            Err("checking the edits failed".to_owned()),
-        );
-        let _ = sender.send(DeclarationPreviewResolution {
-            space,
-            asked,
-            answer,
-        });
-    });
-}
-
-/// Writes the overview's `workspace:` edits, refused when `agents.yaml`
-/// changed since the diff the operator confirmed was made from it.
+/// Writes the overview's `workspace:` edits into `agents.yaml`, or has
+/// them refused with every problem the workspace finds, off the frame: a
+/// link is checked by asking Git whether it is ignored.
 pub(super) fn spawn_declaration_save(
     home: &UzeHome,
     space: SpaceId,
     root: PathBuf,
-    edits: Vec<uze_application::Edit>,
-    expected: Option<String>,
+    sent: SentEdits,
     sender: mpsc::Sender<DeclarationSaveResolution>,
 ) {
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _span = tracing::info_span!(parent: &parent, "tui.declaration_save").entered();
+        let edits = sent.edits();
         let outcome = answered_or(
             || {
                 tui_application(home)
-                    .and_then(|app| {
-                        app.workspace()
-                            .save_declaration(&root, &edits, expected.as_deref())
-                    })
-                    .map(|_| ())
+                    .and_then(|app| app.workspace().apply_declaration(&root, &edits))
                     .map_err(|error| error.to_string())
             },
             Err("saving failed".to_owned()),
         );
-        let _ = sender.send(DeclarationSaveResolution { space, outcome });
+        let _ = sender.send(DeclarationSaveResolution {
+            space,
+            sent,
+            outcome,
+        });
     });
 }

@@ -10,7 +10,7 @@
 use super::*;
 use uze_application::application::StatusHarness;
 use uze_application::{
-    ActionEntry, ActionState, DeclarationEntry, DeclarationKey, DeclarationPreview,
+    ActionEntry, ActionState, DeclarationApplied, DeclarationEntry, DeclarationKey,
     DeclarationProblem, DeclarationView, DeclaredValue, Edit, ProjectSpace, ShellCommand,
     SpaceOverview,
 };
@@ -112,7 +112,9 @@ pub(super) struct SpaceOverviewView {
     pub(super) agent: Option<AgentSupportDropdown>,
 }
 
-/// The `workspace:` edits not yet saved, and where saving them stands.
+/// The `workspace:` edits not yet in `agents.yaml`. Each is written as
+/// soon as it is made, so one stays here only while its save is out, or
+/// once the file refused it.
 #[derive(Default)]
 pub(super) struct WorkspaceEdit {
     /// A key's new value; `None` unsets it.
@@ -123,16 +125,17 @@ pub(super) struct WorkspaceEdit {
     /// An action's instruction being written, over as many lines as it
     /// takes.
     pub(super) text: Option<(ActionState, RenameBuffer)>,
-    /// The preview of `values`, once read, for the edits it was made of.
-    pub(super) preview: Option<(u64, std::result::Result<DeclarationPreview, String>)>,
-    pub(super) preview_asked: u64,
-    pub(super) preview_pending: bool,
-    /// The diff stands in the section, asking Save or Discard.
-    pub(super) reviewing: bool,
-    /// Which of the two the keyboard is on.
-    pub(super) on_discard: bool,
-    pub(super) saving: bool,
-    /// Why the last save was refused.
+    /// An edit was made since the last save was sent.
+    pub(super) unsent: bool,
+    /// The edits the save in flight carries.
+    pub(super) saving: Option<SentEdits>,
+    /// Edits written, standing for the file until the overview read after
+    /// them answers, with the overview read that was last asked when they
+    /// landed: an answer to that one may have been read before them.
+    pub(super) landed: Option<(u64, SentEdits)>,
+    /// What the file refused in the edits last sent, each under its key.
+    pub(super) refused: Vec<DeclarationProblem>,
+    /// Why the last save failed outright.
     pub(super) refusal: Option<String>,
 }
 
@@ -140,6 +143,93 @@ impl WorkspaceEdit {
     /// How many keys and actions the edits change.
     pub(super) fn pending(&self) -> usize {
         self.values.len() + self.actions.len()
+    }
+
+    /// The edits are held back by the file's refusal rather than on their
+    /// way to it.
+    pub(super) fn is_refused(&self) -> bool {
+        self.pending() > 0
+            && self.saving.is_none()
+            && (!self.refused.is_empty() || self.refusal.is_some())
+    }
+
+    fn snapshot(&self) -> SentEdits {
+        SentEdits {
+            values: self.values.clone(),
+            actions: self.actions.clone(),
+        }
+    }
+
+    /// Drops the edits `sent` carried that still read as they were sent:
+    /// one changed since is the operator's newer word, and goes next.
+    fn written(&mut self, sent: &SentEdits) {
+        self.values
+            .retain(|key, value| sent.values.get(key) != Some(value));
+        self.actions
+            .retain(|state, text| sent.actions.get(state) != Some(text));
+    }
+}
+
+fn counted(count: usize, one: &str, many: &str) -> String {
+    if count == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{count} {many}")
+    }
+}
+
+/// The edits one save carries.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct SentEdits {
+    pub(super) values: BTreeMap<DeclarationKey, Option<DeclaredValue>>,
+    pub(super) actions: BTreeMap<ActionState, Option<String>>,
+}
+
+impl SentEdits {
+    /// The edits as the application takes them.
+    pub(super) fn edits(&self) -> Vec<Edit> {
+        self.values
+            .iter()
+            .map(|(key, value)| match value {
+                Some(value) => Edit::Set {
+                    key: *key,
+                    value: value.clone(),
+                },
+                None => Edit::Unset { key: *key },
+            })
+            .chain(self.actions.iter().map(|(state, text)| Edit::Action {
+                state: *state,
+                text: text.clone(),
+            }))
+            .collect()
+    }
+
+    /// What they changed, in a few words: the one edit with its value, or
+    /// how many there were.
+    fn summary(&self) -> String {
+        let count = self.values.len() + self.actions.len();
+        if count != 1 {
+            return counted(count, "setting", "settings");
+        }
+        if let Some((key, value)) = self.values.iter().next() {
+            let shown = match value {
+                None => key.default_spelled().to_owned(),
+                Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
+                Some(DeclaredValue::Commands(commands)) => {
+                    counted(commands.len(), "command", "commands")
+                }
+                Some(value) => scalar(value),
+            };
+            return format!("{}: {shown}", key.name());
+        }
+        self.actions
+            .iter()
+            .next()
+            .map(|(state, text)| {
+                let done = if text.is_some() { "written" } else { "removed" };
+                format!("{} {done}", action_label(*state))
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -222,15 +312,10 @@ pub(super) struct FactBodyResolution {
     pub(super) body: std::result::Result<String, String>,
 }
 
-pub(super) struct DeclarationPreviewResolution {
-    pub(super) space: SpaceId,
-    pub(super) asked: u64,
-    pub(super) answer: std::result::Result<DeclarationPreview, String>,
-}
-
 pub(super) struct DeclarationSaveResolution {
     pub(super) space: SpaceId,
-    pub(super) outcome: std::result::Result<(), String>,
+    pub(super) sent: SentEdits,
+    pub(super) outcome: std::result::Result<DeclarationApplied, String>,
 }
 
 /// Whether the overview answers `action` itself. Everything else is the
@@ -251,7 +336,6 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::RemoveItem
             | Action::MoveItemUp
             | Action::MoveItemDown
-            | Action::SaveChanges
             | Action::DiscardChanges
             | Action::NextValue
             | Action::PreviousValue
@@ -442,7 +526,28 @@ impl SpaceOverviewView {
         if let Some(edited) = self.edit.values.get(&key) {
             return edited.as_ref();
         }
+        self.held(key)
+    }
+
+    /// What the file holds for `key`: an edit just written to it, until
+    /// the overview reads it back, else what the overview read.
+    fn held(&self, key: DeclarationKey) -> Option<&DeclaredValue> {
+        if let Some((_, landed)) = &self.edit.landed
+            && let Some(written) = landed.values.get(&key)
+        {
+            return written.as_ref();
+        }
         self.entry(key)?.declared.as_ref()
+    }
+
+    /// [`Self::held`], for an action's instruction.
+    fn held_action(&self, state: ActionState) -> Option<String> {
+        if let Some((_, landed)) = &self.edit.landed
+            && let Some(written) = landed.actions.get(&state)
+        {
+            return written.clone();
+        }
+        self.action_entry(state)?.declared.clone()
     }
 
     /// What the file declares about `key`.
@@ -461,15 +566,14 @@ impl SpaceOverviewView {
             .find(|entry| entry.state == state)
     }
 
-    /// What the workspace would refuse: in the edits once their preview
-    /// has arrived, else in the file as it is.
+    /// What the workspace refuses: in the edits the file last refused,
+    /// while they stand, else in the file as it is.
     pub(super) fn problems(&self) -> &[DeclarationProblem] {
-        match self.current_preview() {
-            Some(Ok(preview)) if self.edit.pending() > 0 => &preview.problems,
-            _ => self
-                .declaration()
-                .map_or(&[], |declaration| &declaration.problems),
+        if self.edit.pending() > 0 && !self.edit.refused.is_empty() {
+            return &self.edit.refused;
         }
+        self.declaration()
+            .map_or(&[], |declaration| &declaration.problems)
     }
 
     pub(super) fn editable(&self) -> bool {
@@ -529,7 +633,6 @@ impl SpaceOverviewView {
         self.drawer = false;
         self.fact = None;
         self.edit.field = None;
-        self.edit.reviewing = false;
     }
 
     /// Sets a choice key to its option at `index`. Choosing the project's
@@ -617,56 +720,26 @@ impl SpaceOverviewView {
         heads.chain(inside).map(|path| (*path).clone()).collect()
     }
 
-    /// The edits as the application takes them.
-    pub(super) fn edits(&self) -> Vec<Edit> {
-        self.edit
-            .values
-            .iter()
-            .map(|(key, value)| match value {
-                Some(value) => Edit::Set {
-                    key: *key,
-                    value: value.clone(),
-                },
-                None => Edit::Unset { key: *key },
-            })
-            .chain(self.edit.actions.iter().map(|(state, text)| Edit::Action {
-                state: *state,
-                text: text.clone(),
-            }))
-            .collect()
-    }
-
     /// An action's instruction as it would be saved.
     pub(super) fn effective_action(&self, state: ActionState) -> Option<String> {
         if let Some(edited) = self.edit.actions.get(&state) {
             return edited.clone();
         }
-        self.action_entry(state)?.declared.clone()
+        self.held_action(state)
     }
 
+    // An edit back to what the file holds is no edit, unless a save in
+    // flight is about to write something else there.
     fn set_action(&mut self, state: ActionState, text: Option<String>) {
         let text = text.filter(|text| !text.trim().is_empty());
-        let declared = self
-            .action_entry(state)
-            .and_then(|entry| entry.declared.clone());
-        if text == declared {
+        let in_flight =
+            (self.edit.saving.as_ref()).is_some_and(|sent| sent.actions.contains_key(&state));
+        if text == self.held_action(state) && !in_flight {
             self.edit.actions.remove(&state);
         } else {
             self.edit.actions.insert(state, text);
         }
-        self.edit.preview_asked += 1;
-        self.edit.refusal = None;
-    }
-
-    /// The preview read for the edits as they stand, if it has arrived.
-    pub(super) fn current_preview(
-        &self,
-    ) -> Option<&std::result::Result<DeclarationPreview, String>> {
-        self.edit
-            .preview
-            .as_ref()
-            .filter(|(asked, _)| *asked == self.edit.preview_asked)
-            .map(|(_, preview)| preview)
+        self.edit.unsent = true;
     }
 
     /// The health of each section, from the answer as it stands.
@@ -731,17 +804,30 @@ impl SpaceOverviewView {
     }
 
     fn set(&mut self, key: DeclarationKey, value: Option<DeclaredValue>) {
-        let declared = self.entry(key).and_then(|entry| entry.declared.clone());
         let value = value.filter(|value| {
             !items(value).iter().all(String::is_empty) || matches!(value, DeclaredValue::Number(_))
         });
-        if value == declared {
+        let in_flight =
+            (self.edit.saving.as_ref()).is_some_and(|sent| sent.values.contains_key(&key));
+        if value.as_ref() == self.held(key) && !in_flight {
             self.edit.values.remove(&key);
         } else {
             self.edit.values.insert(key, value);
         }
-        self.edit.preview_asked += 1;
+        self.edit.unsent = true;
+    }
+
+    /// Drops the edits the file refused, and why; edits on their way to it
+    /// are not the operator's to take back.
+    fn discard_refused(&mut self) {
+        if !self.edit.is_refused() {
+            return;
+        }
+        self.edit.values.clear();
+        self.edit.actions.clear();
+        self.edit.refused.clear();
         self.edit.refusal = None;
+        self.edit.unsent = false;
     }
 }
 
@@ -935,6 +1021,14 @@ impl WorkspaceModel {
         }
         overview.pending = false;
         overview.answer = Some(resolution.answer);
+        if overview
+            .edit
+            .landed
+            .as_ref()
+            .is_some_and(|(asked, _)| resolution.asked > *asked)
+        {
+            overview.edit.landed = None;
+        }
         let count = overview.row_count();
         let section = overview.section.index();
         overview.rows[section] = overview.rows[section].min(count.saturating_sub(1));
@@ -958,57 +1052,74 @@ impl WorkspaceModel {
         }
     }
 
-    pub(super) fn absorb_declaration_preview(
-        &mut self,
-        resolution: DeclarationPreviewResolution,
-    ) -> bool {
-        let Some(overview) = self
-            .space_overview
-            .as_mut()
-            .filter(|overview| overview.space == resolution.space)
-        else {
-            return false;
-        };
-        // Whichever edits it was for, the read is over: an answer to older
-        // edits is kept only until the one for the current edits, which
-        // the next pass asks for, replaces it.
-        overview.edit.preview_pending = false;
-        overview.edit.preview = Some((resolution.asked, resolution.answer));
-        true
-    }
-
-    /// A save answered: the edits are the file now, so the overview is
-    /// read again; a refusal keeps them and says why.
+    /// A save answered. Written, the edits it carried leave the pending
+    /// ones, the overview is read again and a toast says what changed, and
+    /// the project's root is returned for its approvals to be asked about
+    /// again. Refused, they stay, each problem under its key. Answered for
+    /// an overview put away meanwhile, it is that one's.
     pub(super) fn absorb_declaration_save(
         &mut self,
         resolution: DeclarationSaveResolution,
-    ) -> bool {
-        let Some(overview) = self
+    ) -> Option<PathBuf> {
+        let open = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space)
-        else {
-            return false;
+            .filter(|overview| overview.space == resolution.space);
+        let overview = match open {
+            Some(overview) => overview,
+            None => self.put_away_overviews.get_mut(&resolution.space)?,
         };
-        overview.edit.saving = false;
-        match resolution.outcome {
-            Ok(()) => {
-                overview.edit = WorkspaceEdit::default();
-                overview.stale = true;
-                self.raise_toast(
-                    crate::ui::widget::ToastKind::Done,
-                    "Workspace saved",
-                    "agents.yaml was written",
-                    None,
-                );
+        self.dirty = true;
+        let edit = &mut overview.edit;
+        edit.saving = None;
+        let (created, awaits_approval_again) = match resolution.outcome {
+            Ok(DeclarationApplied::Written {
+                created,
+                awaits_approval_again,
+            }) => (created, awaits_approval_again),
+            Ok(DeclarationApplied::Refused { problems }) => {
+                edit.refused = problems;
+                edit.refusal = None;
+                return None;
             }
             Err(reason) => {
-                overview.edit.reviewing = false;
-                overview.edit.refusal = Some(reason);
-                overview.edit.preview_asked += 1;
+                edit.refusal = Some(reason.clone());
+                self.raise_toast(
+                    crate::ui::widget::ToastKind::Failed,
+                    "agents.yaml not saved",
+                    reason,
+                    None,
+                );
+                return None;
             }
-        }
-        true
+        };
+        let sent = resolution.sent;
+        edit.written(&sent);
+        edit.refused.clear();
+        edit.refusal = None;
+        let landed = edit
+            .landed
+            .get_or_insert_with(|| (overview.asked, SentEdits::default()));
+        landed.0 = overview.asked;
+        landed.1.values.extend(sent.values.clone());
+        landed.1.actions.extend(sent.actions.clone());
+        overview.stale = true;
+        let root = overview.root.clone();
+        let title = if created {
+            "agents.yaml created"
+        } else {
+            "agents.yaml"
+        };
+        let (kind, detail) = if awaits_approval_again {
+            (
+                crate::ui::widget::ToastKind::Warned,
+                format!("{} · setup or gate waits for approval", sent.summary()),
+            )
+        } else {
+            (crate::ui::widget::ToastKind::Done, sent.summary())
+        };
+        self.raise_toast(kind, title, detail, None);
+        Some(root)
     }
 }
 
@@ -1096,56 +1207,49 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.fact_bodies.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_fact_body(resolution);
         }
-        while let Ok(resolution) = self.channels.declaration_previews.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_declaration_preview(resolution);
-        }
         while let Ok(resolution) = self.channels.declaration_saves.receiver.try_recv() {
-            let saved = resolution.outcome.is_ok();
-            self.model.dirty |= self.model.absorb_declaration_save(resolution);
-            // What waits for approval is a digest of the lines, so a saved
-            // edit to them is asked about again.
-            if saved && let Some(overview) = &self.model.space_overview {
+            // What waits for approval is a digest of the lines, so a
+            // written edit to them is asked about again.
+            if let Some(root) = self.model.absorb_declaration_save(resolution) {
                 spawn_commands_awaiting(
                     self.home,
-                    vec![overview.root.clone()],
+                    vec![root],
                     self.channels.commands_awaiting.sender.clone(),
                 );
             }
         }
         self.schedule_space_overview();
-        self.schedule_declaration_preview();
+        self.schedule_declaration_save();
     }
 
-    /// Asks for the preview of the edits as they stand, when it is not
-    /// already out or in.
-    pub(super) fn schedule_declaration_preview(&mut self) {
+    /// Sends the edits made since the last save, unless one is out: what
+    /// is made meanwhile goes once it answers, so two saves never race for
+    /// the file.
+    pub(super) fn schedule_declaration_save(&mut self) {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        let edit = &overview.edit;
-        if edit.pending() == 0
-            || edit.preview_pending
-            || edit
-                .preview
-                .as_ref()
-                .is_some_and(|(asked, _)| *asked == edit.preview_asked)
-        {
+        let edit = &mut overview.edit;
+        if !edit.unsent || edit.saving.is_some() {
             return;
         }
-        overview.edit.preview_pending = true;
-        spawn_declaration_preview(
+        edit.unsent = false;
+        if edit.pending() == 0 {
+            return;
+        }
+        let sent = edit.snapshot();
+        edit.saving = Some(sent.clone());
+        spawn_declaration_save(
             self.home,
             overview.space,
-            overview.edit.preview_asked,
             overview.root.clone(),
-            overview.edits(),
-            self.channels.declaration_previews.sender.clone(),
+            sent,
+            self.channels.declaration_saves.sender.clone(),
         );
     }
 
     /// One action, while the overview has the keyboard: the instruction or
-    /// the value being typed takes it first, then the review of the edits,
-    /// then the section in front.
+    /// the value being typed takes it first, then the section in front.
     pub(super) fn space_overview_action(&mut self, action: Action) {
         let Some(overview) = self.model.space_overview.as_ref() else {
             return;
@@ -1155,8 +1259,6 @@ impl Attach<'_> {
             self.instruction_action(action);
         } else if overview.edit.field.is_some() {
             self.field_action(action);
-        } else if overview.edit.reviewing {
-            self.review_action(action);
         } else if overview.section == Section::Agent
             && matches!(
                 action,
@@ -1190,7 +1292,7 @@ impl Attach<'_> {
                 let text = buffer.text().to_owned();
                 overview.edit.text = None;
                 overview.set_action(state, Some(text));
-                self.schedule_declaration_preview();
+                self.schedule_declaration_save();
             }
             Action::EraseBack => buffer.erase_back(),
             Action::EraseForward => buffer.erase_forward(),
@@ -1235,25 +1337,6 @@ impl Attach<'_> {
         }
     }
 
-    /// The diff of the edits, asking Save or Discard.
-    fn review_action(&mut self, action: Action) {
-        let Some(overview) = self.model.space_overview.as_mut() else {
-            return;
-        };
-        match action {
-            Action::Dismiss => overview.edit.reviewing = false,
-            Action::FocusNext | Action::FocusPrevious => {
-                overview.edit.on_discard = !overview.edit.on_discard;
-            }
-            Action::Activate if overview.edit.on_discard => {
-                overview.edit = WorkspaceEdit::default();
-            }
-            Action::Activate | Action::SaveChanges => self.save_declaration(),
-            Action::DiscardChanges => overview.edit = WorkspaceEdit::default(),
-            _ => {}
-        }
-    }
-
     /// The section in front, its rows and the bar over it.
     fn section_action(&mut self, action: Action) {
         let Some(overview) = self.model.space_overview.as_mut() else {
@@ -1278,7 +1361,6 @@ impl Attach<'_> {
             Action::RemoveItem => self.remove_workspace_row(),
             Action::MoveItemUp => self.move_workspace_item(-1),
             Action::MoveItemDown => self.move_workspace_item(1),
-            Action::SaveChanges => self.review_declaration(),
             Action::NextValue | Action::PreviousValue => {
                 let delta = if action == Action::NextValue { 1 } else { -1 };
                 let row = overview.rows[Section::Settings.index()];
@@ -1286,9 +1368,7 @@ impl Attach<'_> {
                     self.step_overview_value(row, delta);
                 }
             }
-            Action::DiscardChanges => {
-                overview.edit = WorkspaceEdit::default();
-            }
+            Action::DiscardChanges => overview.discard_refused(),
             _ => {}
         }
     }
@@ -1390,7 +1470,7 @@ impl Attach<'_> {
         overview.rows[Section::Settings.index()] = row;
         overview.step(key, delta);
         self.model.dirty = true;
-        self.schedule_declaration_preview();
+        self.schedule_declaration_save();
     }
 
     /// Opens the approval question about this project's commands.
@@ -1458,7 +1538,6 @@ impl Attach<'_> {
             // Answered above, before the key was read.
             WorkspaceRow::Action(_) => {}
         }
-        self.schedule_declaration_preview();
     }
 
     /// The typed value, taken: into the key, or into its list.
@@ -1480,7 +1559,7 @@ impl Attach<'_> {
         if !choices(key).is_empty() && field.item.is_none() {
             if let Some(index) = choices(key).iter().position(|option| *option == typed) {
                 overview.choose(key, index);
-                self.schedule_declaration_preview();
+                self.schedule_declaration_save();
             }
             return;
         }
@@ -1509,7 +1588,7 @@ impl Attach<'_> {
                 overview.rows[Section::Settings.index()] = row;
             }
         }
-        self.schedule_declaration_preview();
+        self.schedule_declaration_save();
     }
 
     fn add_workspace_item(&mut self) {
@@ -1557,7 +1636,7 @@ impl Attach<'_> {
         let count = overview.row_count();
         let index = Section::Settings.index();
         overview.rows[index] = overview.rows[index].min(count.saturating_sub(1));
-        self.schedule_declaration_preview();
+        self.schedule_declaration_save();
     }
 
     fn move_workspace_item(&mut self, delta: isize) {
@@ -1593,46 +1672,7 @@ impl Attach<'_> {
         overview.set(key, Some(value));
         let selected = &mut overview.rows[Section::Settings.index()];
         *selected = (*selected as isize + delta) as usize;
-        self.schedule_declaration_preview();
-    }
-
-    /// `s`: the diff, once the preview of these edits says nothing stops
-    /// them.
-    fn review_declaration(&mut self) {
-        let Some(overview) = self.model.space_overview.as_mut() else {
-            return;
-        };
-        if overview.section != Section::Settings || overview.edit.pending() == 0 {
-            return;
-        }
-        if let Some(Ok(preview)) = overview.current_preview()
-            && preview.problems.is_empty()
-        {
-            overview.edit.reviewing = true;
-            overview.edit.on_discard = false;
-        }
-    }
-
-    fn save_declaration(&mut self) {
-        let Some(overview) = self.model.space_overview.as_mut() else {
-            return;
-        };
-        let Some(Ok(preview)) = overview.current_preview() else {
-            return;
-        };
-        if overview.edit.saving {
-            return;
-        }
-        let expected = preview.expected.clone();
-        overview.edit.saving = true;
-        spawn_declaration_save(
-            self.home,
-            overview.space,
-            overview.root.clone(),
-            overview.edits(),
-            expected,
-            self.channels.declaration_saves.sender.clone(),
-        );
+        self.schedule_declaration_save();
     }
 }
 

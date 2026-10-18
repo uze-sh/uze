@@ -221,11 +221,6 @@ pub enum UzeError {
     /// author can fix.
     #[error("malformed agents.yaml at {path}: {reason}")]
     MalformedManifest { path: PathBuf, reason: String },
-    /// An edit reviewed against one `agents.yaml` met another when it was
-    /// saved: somebody wrote the file in between, and what they wrote is
-    /// theirs to keep.
-    #[error("{path} changed since it was reviewed; review the edit again")]
-    ManifestChangedSince { path: PathBuf },
     #[error(
         "marketplace source conflict for `{marketplace}`: lock has {lock_source}, global has {global_source}"
     )]

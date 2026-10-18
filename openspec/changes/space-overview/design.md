@@ -51,8 +51,8 @@ What the code holds today (2026-10-17):
   read models that already exist, with no second computation of anything
   `uze status` computes.
 - The `workspace:` section discoverable and editable without reading the
-  docs, validated by the parser that reads it, and never written without
-  the operator seeing the diff.
+  docs, validated by the parser that reads it, and saved as each change
+  is made, with nothing to confirm and nothing the parser refuses written.
 - No change to the terminal runtime: tabs stay PTYs and spaces keep their
   shell.
 
@@ -179,7 +179,7 @@ What the code holds today (2026-10-17):
 
 - **When it is read.** `spawn_space_overview(home, space, root)` in
   `reads.rs` runs when the overview opens, when the operator asks for a
-  refresh (`r`), after a workspace save, and when the space's
+  refresh (`r`), after each written workspace change, and when the space's
   `agents.yaml`, `agents.lock` or `AGENTS.md` changes, seen through the
   stamps the client already polls (`CHECKOUT_WATCH`).
 - **Not on the evaluation clock.** Status re-runs vendor CLIs whenever
@@ -217,11 +217,22 @@ What the code holds today (2026-10-17):
 - **The edit, in the client.** Pending edits live on the screen. Enter
   edits the key in place (a choice advances; text and numbers open a
   `Field`; a list opens its items), `a` adds an item, `d` removes one or
-  unsets a key, alt+↑↓ reorders, `x` discards everything. An edited key is
+  unsets a key, alt+↑↓ reorders. A key edited and not yet in the file is
   marked "edited".
-- **Validation is the parser's.** `Workspace::preview_declaration(root,
-  edits)`, on the read thread, applies the edits to the file's text in
-  memory through `ManifestDocument::from_source`, and runs the same
+- **Each change is saved as it is made.** Choosing an option, a stepper's
+  − or +, committing a list item, removing or moving one, unsetting a
+  key and finishing an action's text with its save chord each write the
+  file; nothing is written while a field or text area is still being
+  typed, and there is no Save and no diff to confirm. Pending edits are
+  only those not yet written, or refused. One save is out at a time, on
+  the read thread; edits made meanwhile are sent once it answers. A
+  written answer drops exactly the edits it carried, unless changed
+  since, re-reads the overview and raises a toast naming what changed
+  ("delivery: merge", or "3 settings"), "agents.yaml created" when it
+  started the file.
+- **Validation is the parser's.** `Workspace::apply_declaration(root,
+  edits)`, on the read thread, applies the edits to the file's current
+  text through `ManifestDocument::from_source`, and runs the same
   checks `declaration::declared` runs on that text, collecting every
   problem keyed by the key it concerns:
   - `uze-workspace` gains a validation that takes the candidate text and
@@ -229,22 +240,19 @@ What the code holds today (2026-10-17):
     misplaced links, links Git does not ignore, unknown keys);
   - the artifact check (`project_artifacts`'s inside-the-project rule)
     runs on the candidate too.
-  - A problem is shown under its key, and Save stays disabled while any
-    remains.
-- **Save shows the diff first.** `s` asks the preview for the diff of
-  `agents.yaml`: only the lines that change, with the key line as context
-  and the operator's comments untouched. When `setup` or `gate` changed,
-  it says those lines go back to waiting for approval, since approval is a
-  digest of the lines. Save or Discard answers it.
-- **Writing.** `Workspace::save_declaration(root, edits, expected)` holds
-  `MutationLock`, re-reads the file, refuses when it no longer matches the
-  text the preview was made from ("agents.yaml changed since; review
-  again"), applies the edits through `ManifestDocument` and saves
-  atomically. `uze-core` gains a public `workspace:` key writer on
+  - With any problem, nothing is written: the refused edits stay
+    pending and marked, each problem is shown under its key, editing the
+    value again saves again, and `x` drops the refused edits.
+- **Writing.** `apply_declaration` holds `MutationLock`, reads the file as
+  it is now, applies the edits and saves atomically. An edit names a key,
+  so it lands on whatever the file holds, and nothing is compared with an
+  earlier reading. When `setup` or `gate` changed, the answer says those
+  lines wait for approval again, since approval is a digest of the lines;
+  saving never approves them, and the toast says so. `uze-core` gains a public `workspace:` key writer on
   `ManifestDocument` (any value, set or removed), which `set_completion`
   then uses too.
-- **No `agents.yaml` yet.** Every key shows its default, and the first Save
-  creates the file with only the keys set.
+- **No `agents.yaml` yet.** Every key shows its default, and the first
+  change creates the file with only the keys set.
 - **A file UZE will not edit.** The section is read-only and says why
   ("edit agents.yaml by hand: uses a YAML anchor").
 
@@ -255,7 +263,7 @@ What the code holds today (2026-10-17):
   Settings section's Review uses.
 - **A fact's body** is read through `memory().show` on the read thread
   and shown in the drawer.
-- Nothing else writes but D6's Save. `health().status` writes `cache/`
+- Nothing else writes but D6's changes. `health().status` writes `cache/`
   (detection, inspection), which is remembered state.
 
 ### D8. "Memory" means agent memory everywhere
@@ -277,9 +285,9 @@ What the code holds today (2026-10-17):
     within it. `SelectTab`'s chords stay the strip's over the overview,
     so `alt+n` still chooses a tab and puts the overview away;
   - Enter opens the drawer or edits; Esc closes the innermost thing open
-    (field, diff, drawer) and, at the top, puts the screen away;
+    (field, drawer) and, at the top, puts the screen away;
   - `o` opens the shell; `r` refreshes;
-  - in Settings: `a`, `d`, alt+↑↓, `s`, `x` (D6).
+  - in Settings: `a`, `d`, alt+↑↓, and `x` over refused edits (D6).
 - **Reopening from a pane.** `Action::OpenSpaceOverview` in
   `Scope::Workspace` opens the current space's overview.
 - **One adapter.** No chord is hard-coded in the view; `src/ui/keys.rs`
@@ -292,14 +300,15 @@ What the code holds today (2026-10-17):
     the row keeps leading to the shells.
   - The release notes say it.
 - **[Status cost on a drifted project.]** A drifted project re-runs vendor
-  CLIs on every status read. The overview reads it on open, on refresh, on
-  save and on a manifest, lock or instructions change only (D5).
-- **[A write from the TUI to the operator's file.]** The diff is shown
-  before every save, the editor keeps comments and refuses shapes it
-  cannot keep, and a file changed since the preview is never written
-  over.
-- **[`git check-ignore` per preview.]** Validating links asks Git; the
-  preview runs on the read thread, and only when the edits change.
+  CLIs on every status read. The overview reads it on open, on refresh,
+  after a written change and on a manifest, lock or instructions change
+  only (D5).
+- **[A write from the TUI to the operator's file, with no confirmation.]**
+  Each write changes only the keys edited, keeps comments, refuses shapes
+  the editor cannot keep and anything the parser refuses, and a toast
+  names what changed; the file is the operator's, under Git.
+- **[`git check-ignore` per save.]** Validating links asks Git; the save
+  runs on the read thread, once per committed change.
 - **[Two overviews for one project while the manage modal keeps its
   project half.]** Accepted for one release; the follow-up removes the
   project half from the modal.

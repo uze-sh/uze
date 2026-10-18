@@ -8,12 +8,12 @@ pub mod bootstrap;
 pub use application::UzeApplication;
 pub use application::services::{
     ActionEntry, AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
-    CheckoutsView, CommandsAwaitingApproval, DeclarationChoices, DeclarationEntry,
-    DeclarationPreview, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
-    DeliveryReport, DiffLine, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind,
-    PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation, ReleasedTask,
-    RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin, SpacePlugins,
-    SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
+    CheckoutsView, CommandsAwaitingApproval, DeclarationApplied, DeclarationChoices,
+    DeclarationEntry, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
+    DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork,
+    ProjectArtifacts, ProjectSpace, PullReport, Reconciliation, ReleasedTask, RequestQuestion,
+    ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin, SpacePlugins, SplitWork,
+    SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
     project_artifacts,
 };
 

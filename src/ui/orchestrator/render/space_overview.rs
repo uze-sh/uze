@@ -16,8 +16,7 @@ use uze_application::application::{
     memory::Entry as MemoryEntry,
 };
 use uze_application::{
-    ActionState, DeclarationKey, DeclarationPreview, DeclaredValue, DiffLine, ProjectSpace,
-    SpaceOverview, SpacePlugin,
+    ActionState, DeclarationKey, DeclaredValue, ProjectSpace, SpaceOverview, SpacePlugin,
 };
 
 /// The width under which the drawer stands over the section instead of
@@ -405,8 +404,10 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 return (causes.join(" · "), Token::StateWarning);
             }
             let edited = overview.edit.pending();
-            if edited > 0 {
-                (format!("{edited} edited"), Token::StateInfo)
+            if overview.edit.is_refused() {
+                (format!("{edited} not saved"), Token::StateDanger)
+            } else if edited > 0 {
+                ("saving".to_owned(), Token::StateInfo)
             } else if overview
                 .declaration()
                 .is_some_and(|declaration| declaration.editable.is_err())
@@ -830,7 +831,7 @@ fn render_workspace(
     // A drawer beside the form ends in the answer about the edits; with
     // none, the form's own foot carries it.
     let answer_in_drawer = track.column.is_some();
-    let Some(declaration) = overview.declaration() else {
+    if overview.declaration().is_none() {
         let reason = project
             .workspace
             .as_ref()
@@ -844,7 +845,7 @@ fn render_workspace(
             None,
             track,
         );
-    };
+    }
     let footer_height = if answer_in_drawer { 0 } else { 3 };
     let list = Rect {
         height: area
@@ -858,74 +859,44 @@ fn render_workspace(
         area.width,
         footer_height,
     );
-    let mut drawn = Vec::new();
-    if overview.edit.reviewing
-        && let Some(Ok(preview)) = overview.current_preview()
+    let form = Form::of(overview, project, list.width);
+    let (mut drawn, offset) = draw_scrolled(frame, list, &form.lines, Some(overview.row()), track);
+    let line_y = |line: usize| {
+        (line >= offset)
+            .then(|| list.y + (line - offset) as u16)
+            .filter(|y| *y < list.bottom())
+    };
+    for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in form.steps {
+        if let Some(y) = line_y(line) {
+            hits.push((
+                Rect::new(list.x + minus_x, y, minus_width, 1),
+                WorkspaceHit::OverviewStep(row, false),
+            ));
+            hits.push((
+                Rect::new(list.x + plus_x, y, plus_width, 1),
+                WorkspaceHit::OverviewStep(row, true),
+            ));
+        }
+    }
+    if let (Some(field), Some((line, column))) = (&overview.edit.field, form.field_at)
+        && let Some(y) = line_y(line)
     {
-        let lines = review_lines(&declaration.manifest, preview);
-        draw_lines(frame, list, &lines, None, track);
-    } else {
-        let form = Form::of(overview, project, list.width);
-        let offset;
-        (drawn, offset) = draw_scrolled(frame, list, &form.lines, Some(overview.row()), track);
-        let line_y = |line: usize| {
-            (line >= offset)
-                .then(|| list.y + (line - offset) as u16)
-                .filter(|y| *y < list.bottom())
-        };
-        for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in form.steps {
-            if let Some(y) = line_y(line) {
-                hits.push((
-                    Rect::new(list.x + minus_x, y, minus_width, 1),
-                    WorkspaceHit::OverviewStep(row, false),
-                ));
-                hits.push((
-                    Rect::new(list.x + plus_x, y, plus_width, 1),
-                    WorkspaceHit::OverviewStep(row, true),
-                ));
-            }
-        }
-        if let (Some(field), Some((line, column))) = (&overview.edit.field, form.field_at)
-            && let Some(y) = line_y(line)
-        {
-            let rect = Rect::new(
-                list.x + column,
-                y,
-                BOX.min(list.width.saturating_sub(column)),
-                1,
-            );
-            render_field(frame, field, rect);
-            // Over the form rather than in it: the rows under the field stay
-            // where they are, and a click lands on the list before them.
-            let picker = render_picker(frame, overview, rect, list, hits);
-            drawn.retain(|(row, _)| row.intersection(picker).is_empty());
-        }
+        let rect = Rect::new(
+            list.x + column,
+            y,
+            BOX.min(list.width.saturating_sub(column)),
+            1,
+        );
+        render_field(frame, field, rect);
+        // Over the form rather than in it: the rows under the field stay
+        // where they are, and a click lands on the list before them.
+        let picker = render_picker(frame, overview, rect, list, hits);
+        drawn.retain(|(row, _)| row.intersection(picker).is_empty());
     }
     if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
         answer.render(frame, footer, hits);
     }
     drawn
-}
-
-/// The diff a save would make to `manifest`, under its path.
-fn review_lines(manifest: &Path, preview: &DeclarationPreview) -> Vec<SectionLine> {
-    let mut lines = vec![said(display_path(manifest), Token::TextMuted), blank()];
-    for line in &preview.diff {
-        let (mark, text, tone) = match line {
-            DiffLine::Context(text) => (" ", text, Token::TextSecondary),
-            DiffLine::Removed(text) => ("-", text, Token::StateDiffRemoved),
-            DiffLine::Added(text) => ("+", text, Token::StateDiffAdded),
-        };
-        lines.push(said(format!("{mark} {text}"), tone));
-    }
-    if preview.awaits_approval_again {
-        lines.push(blank());
-        lines.push(said(
-            "setup or gate changed: those lines wait for approval again after Save",
-            Token::StateWarning,
-        ));
-    }
-    lines
 }
 
 /// The field being typed, over the line it edits. One row: the box itself
@@ -1615,46 +1586,6 @@ fn typed_lines(before: &str, after: &str, width: usize) -> Vec<Vec<Span<'static>
 /// no drawer beside it.
 fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Option<Answer> {
     let declaration = overview.declaration()?;
-    if overview.edit.reviewing
-        && let Some(Ok(preview)) = overview.current_preview()
-    {
-        let created = !declaration.exists;
-        let title = if created {
-            "Create agents.yaml".to_owned()
-        } else {
-            changed_lines_title(
-                preview
-                    .diff
-                    .iter()
-                    .filter(|line| !matches!(line, DiffLine::Context(_)))
-                    .count(),
-            )
-        };
-        let detail = if created {
-            "Only the keys you set are written."
-        } else {
-            "Your comments stay in place."
-        };
-        return Some(Answer::new(
-            title,
-            detail,
-            Token::TextMuted,
-            vec![
-                (
-                    "Save",
-                    WorkspaceHit::OverviewSave(true),
-                    !overview.edit.on_discard,
-                ),
-                (
-                    "Discard",
-                    WorkspaceHit::OverviewSave(false),
-                    overview.edit.on_discard,
-                ),
-            ],
-        ));
-    }
-    let problems = overview.problems();
-    let pending = overview.edit.pending();
     let answer = if let Err(reason) = &declaration.editable {
         Answer::new(
             "Read-only",
@@ -1662,46 +1593,21 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             Token::TextMuted,
             Vec::new(),
         )
-    } else if let Some(refusal) = &overview.edit.refusal {
+    } else if overview.edit.is_refused() {
+        let refused = overview.edit.pending();
+        let them = if refused == 1 { "it" } else { "them" };
+        let detail = match &overview.edit.refusal {
+            Some(reason) => reason.clone(),
+            None => format!(
+                "agents.yaml refused {}: change {them} or discard {them}.",
+                plural(refused, "edit"),
+            ),
+        };
         Answer::new(
             "Not saved",
-            refusal.as_str(),
-            Token::StateDanger,
-            Vec::new(),
-        )
-    } else if pending > 0 {
-        let preview = overview.current_preview();
-        let failed = match preview {
-            Some(Err(reason)) => Some(reason.as_str()),
-            _ => None,
-        };
-        let blocked = !problems.is_empty() || failed.is_some();
-        let checking = preview.is_none();
-        let detail = if let Some(reason) = failed {
-            reason
-        } else if blocked {
-            "Fix the errors to save."
-        } else if checking {
-            "Checking the edits…"
-        } else {
-            "Save shows the agents.yaml diff first."
-        };
-        Answer::new(
-            plural(pending, "unsaved change"),
             detail,
-            if blocked {
-                Token::StateDanger
-            } else {
-                Token::TextMuted
-            },
-            vec![
-                (
-                    "Save",
-                    WorkspaceHit::OverviewSave(true),
-                    !blocked && !checking,
-                ),
-                ("Discard", WorkspaceHit::OverviewSave(false), false),
-            ],
+            Token::StateDanger,
+            vec![("Discard", WorkspaceHit::OverviewDiscard, false)],
         )
     } else if let Some(awaiting) = &project.status.commands_awaiting_approval {
         let title = format!(
@@ -1717,7 +1623,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
     } else if !declaration.exists {
         Answer::new(
             "",
-            "No agents.yaml yet. The first Save creates it.",
+            "No agents.yaml yet. The first change creates it.",
             Token::TextMuted,
             Vec::new(),
         )
@@ -2152,13 +2058,6 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
     if overview.edit.field.is_some() {
         return vec![(Action::Activate, "apply"), (Action::Dismiss, "cancel")];
     }
-    if overview.edit.reviewing {
-        return vec![
-            (Action::FocusNext, "choose"),
-            (Action::Activate, "confirm"),
-            (Action::Dismiss, "back"),
-        ];
-    }
     if overview.drawer && !side_by_side {
         return vec![(Action::Dismiss, "close")];
     }
@@ -2173,8 +2072,10 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
                 (Action::Activate, "edit"),
                 (Action::AddItem, "add"),
                 (Action::RemoveItem, "remove"),
-                (Action::SaveChanges, "save"),
             ]);
+            if overview.edit.is_refused() {
+                keys.push((Action::DiscardChanges, "discard"));
+            }
             match overview.selected_workspace_row() {
                 Some(WorkspaceRow::Key(key)) if is_number(key) => {
                     keys.extend([(Action::PreviousValue, "less"), (Action::NextValue, "more")]);
@@ -2280,11 +2181,6 @@ fn counted(count: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// The review's title over a diff of `changed` lines.
-fn changed_lines_title(changed: usize) -> String {
-    counted(changed, "line changes", "lines change")
-}
-
 /// A commit as the Plugins table shows it: its first seven characters.
 fn short_commit(commit: &str) -> &str {
     commit
@@ -2323,7 +2219,7 @@ mod tests {
         assert_eq!(states.state_of(None, false).0, "never runs here");
     }
 
-    use super::{changed_lines_title, short_commit, typed_lines};
+    use super::{short_commit, typed_lines};
 
     /// A commit is cut to seven characters, never inside one.
     #[test]
@@ -2331,13 +2227,6 @@ mod tests {
         assert_eq!(short_commit("0123456789abcdef"), "0123456");
         assert_eq!(short_commit("abc"), "abc");
         assert_eq!(short_commit("v1.0-ação-final"), "v1.0-aç");
-    }
-
-    /// The review's title agrees with its count.
-    #[test]
-    fn the_review_title_counts_its_lines() {
-        assert_eq!(changed_lines_title(1), "1 line changes");
-        assert_eq!(changed_lines_title(3), "3 lines change");
     }
 
     fn spelled(lines: &[Vec<ratatui::text::Span<'static>>]) -> Vec<String> {

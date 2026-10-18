@@ -1,6 +1,6 @@
 //! What a project declares under `workspace:`, as a person reviews and
-//! edits it: every key with its value or its default, what an edit would
-//! change in `agents.yaml` before it is written, and the write itself.
+//! edits it: every key with its value or its default, and each edit
+//! written into `agents.yaml` as it is made.
 //!
 //! Validation is the workspace's own reading of the file, made on the
 //! candidate text, so a value the editor accepts is one the workspace
@@ -66,28 +66,20 @@ pub struct DeclarationEntry {
     pub description: &'static str,
 }
 
-/// What saving a set of edits would do.
+/// What applying a set of edits did to `agents.yaml`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeclarationPreview {
-    /// Every problem the edited file would have; saving is refused while
-    /// any remains.
-    pub problems: Vec<DeclarationProblem>,
-    /// The lines of `agents.yaml` that change, each run after the line of
-    /// the key it sits under.
-    pub diff: Vec<DiffLine>,
-    /// The setup or gate lines change, and would wait for the operator's
-    /// approval again before they run: an approval names the lines.
-    pub awaits_approval_again: bool,
-    /// The file the preview was made from, `None` when there was none.
-    /// Saving refuses a file that no longer reads this way.
-    pub expected: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DiffLine {
-    Context(String),
-    Removed(String),
-    Added(String),
+pub enum DeclarationApplied {
+    /// The edits are in the file.
+    Written {
+        /// There was no `agents.yaml`, and the edits started one.
+        created: bool,
+        /// The setup or gate lines changed, and wait for the operator's
+        /// approval again before they run: an approval names the lines.
+        awaits_approval_again: bool,
+    },
+    /// The edited file would be refused by the workspace, so nothing was
+    /// written; every problem it would have, each under its key.
+    Refused { problems: Vec<DeclarationProblem> },
 }
 
 impl Workspace<'_> {
@@ -131,16 +123,31 @@ impl Workspace<'_> {
         })
     }
 
-    /// What `edits` would make of the project's `agents.yaml`, without
-    /// writing it.
-    #[tracing::instrument(name = "workspace.preview_declaration", skip_all, fields(root = %root.display()), err)]
-    pub fn preview_declaration(&self, root: &Path, edits: &[Edit]) -> Result<DeclarationPreview> {
+    /// Writes `edits` into the project's `agents.yaml` as it is now,
+    /// creating it with only the keys they set when there is none, unless
+    /// the workspace would refuse the result. An edit names a key, so it
+    /// applies to whatever the file holds when it lands. Never approves a
+    /// command: a changed setup or gate is reported as waiting again.
+    #[tracing::instrument(name = "workspace.apply_declaration", skip_all, fields(root = %root.display()), err)]
+    pub fn apply_declaration(&self, root: &Path, edits: &[Edit]) -> Result<DeclarationApplied> {
+        let _mutation = MutationLock::acquire(&self.0.home)?;
         let primary = primary_of(root);
         let path = manifest::manifest_path_for(&primary);
-        let expected = authored(&path)?;
-        let before = expected.as_deref().unwrap_or_default();
-        let document = edited(&path, expected.as_deref(), edits)?;
+        let held = authored(&path)?;
+        let before = held.as_deref().unwrap_or_default();
+        let document = edited(&path, held.as_deref(), edits)?;
         let after = checked(&primary, document.source());
+        if !after.problems.is_empty() {
+            return Ok(DeclarationApplied::Refused {
+                problems: after.problems,
+            });
+        }
+        if before == document.source() {
+            return Ok(DeclarationApplied::Written {
+                created: false,
+                awaits_approval_again: false,
+            });
+        }
         let awaits_approval_again = after.policy.as_ref().is_some_and(|candidate| {
             let held = checked(&primary, before).policy.unwrap_or_default();
             ProjectCommands::of(candidate).digest() != ProjectCommands::of(&held).digest()
@@ -148,48 +155,11 @@ impl Workspace<'_> {
                     .awaiting()
                     .is_some()
         });
-        Ok(DeclarationPreview {
-            problems: after.problems,
-            diff: changed_lines(before, document.source()),
-            awaits_approval_again,
-            expected,
-        })
-    }
-
-    /// Writes `edits` into the project's `agents.yaml`, creating it with
-    /// only the keys they set when there is none, and says whether it did.
-    /// Refuses a file that no longer reads as `expected` — the text the
-    /// edits were reviewed against — and one the workspace would refuse.
-    #[tracing::instrument(name = "workspace.save_declaration", skip_all, fields(root = %root.display()), err)]
-    pub fn save_declaration(
-        &self,
-        root: &Path,
-        edits: &[Edit],
-        expected: Option<&str>,
-    ) -> Result<bool> {
-        let _mutation = MutationLock::acquire(&self.0.home)?;
-        let primary = primary_of(root);
-        let path = manifest::manifest_path_for(&primary);
-        let held = authored(&path)?;
-        if held.as_deref() != expected {
-            return Err(UzeError::ManifestChangedSince { path });
-        }
-        let document = edited(&path, held.as_deref(), edits)?;
-        if let Some(problem) = checked(&primary, document.source())
-            .problems
-            .into_iter()
-            .next()
-        {
-            return Err(UzeError::MalformedManifest {
-                path,
-                reason: problem.reason,
-            });
-        }
-        if held.as_deref().unwrap_or_default() == document.source() {
-            return Ok(false);
-        }
         document.save()?;
-        Ok(held.is_none())
+        Ok(DeclarationApplied::Written {
+            created: held.is_none(),
+            awaits_approval_again,
+        })
     }
 }
 
@@ -226,68 +196,6 @@ fn checked(primary: &Path, text: &str) -> Checked {
         });
     }
     checked
-}
-
-/// The lines that differ between `before` and `after`, each run preceded
-/// by the nearest unchanged line above it at a shallower indent — the key
-/// the change sits under — so a reader sees where it lands without the
-/// rest of the file.
-fn changed_lines(before: &str, after: &str) -> Vec<DiffLine> {
-    let old: Vec<&str> = before.lines().collect();
-    let new: Vec<&str> = after.lines().collect();
-    let mut common = vec![vec![0usize; new.len() + 1]; old.len() + 1];
-    for i in (0..old.len()).rev() {
-        for j in (0..new.len()).rev() {
-            common[i][j] = if old[i] == new[j] {
-                common[i + 1][j + 1] + 1
-            } else {
-                common[i + 1][j].max(common[i][j + 1])
-            };
-        }
-    }
-
-    let mut lines = Vec::new();
-    let mut kept: Vec<&str> = Vec::new();
-    let mut announced: Option<usize> = None;
-    let mut in_run = false;
-    let (mut i, mut j) = (0, 0);
-    while i < old.len() || j < new.len() {
-        let change = if i < old.len() && j < new.len() && old[i] == new[j] {
-            kept.push(old[i]);
-            i += 1;
-            j += 1;
-            in_run = false;
-            continue;
-        } else if j == new.len() || (i < old.len() && common[i + 1][j] >= common[i][j + 1]) {
-            i += 1;
-            DiffLine::Removed(old[i - 1].to_owned())
-        } else {
-            j += 1;
-            DiffLine::Added(new[j - 1].to_owned())
-        };
-        if !in_run {
-            let (DiffLine::Removed(text) | DiffLine::Added(text) | DiffLine::Context(text)) =
-                &change;
-            let depth = indent(text);
-            let parent = kept.iter().enumerate().rev().find(|(_, line)| {
-                let trimmed = line.trim_start();
-                !trimmed.is_empty() && !trimmed.starts_with('#') && indent(line) < depth
-            });
-            if let Some((index, line)) = parent
-                && announced != Some(index)
-            {
-                lines.push(DiffLine::Context((*line).to_owned()));
-                announced = Some(index);
-            }
-            in_run = true;
-        }
-        lines.push(change);
-    }
-    lines
-}
-
-fn indent(line: &str) -> usize {
-    line.len() - line.trim_start().len()
 }
 
 #[cfg(test)]

@@ -40,6 +40,12 @@ fn text(value: &str) -> DeclaredValue {
     DeclaredValue::Text(value.to_owned())
 }
 
+fn apply(app: &UzeApplication, repository: &Repository, edits: &[Edit]) -> DeclarationApplied {
+    app.workspace()
+        .apply_declaration(repository.root(), edits)
+        .unwrap()
+}
+
 fn written(repository: &Repository) -> String {
     fs::read_to_string(repository.root().join("agents.yaml")).unwrap()
 }
@@ -115,21 +121,25 @@ fn a_file_using_an_anchor_is_shown_but_not_editable() {
     assert!(reason.contains("anchor"), "{reason}");
     assert!(
         app.workspace()
-            .preview_declaration(
+            .apply_declaration(
                 repository.root(),
                 &[set(DeclarationKey::Slots, DeclaredValue::Number(3))]
             )
             .is_err()
     );
+    assert_eq!(
+        written(&repository),
+        "workspace:\n  target: &main main\n  slots: 2\n"
+    );
 }
 
 #[test]
-fn every_problem_is_reported_at_once_under_its_key() {
+fn a_refused_edit_writes_nothing_and_reports_every_problem_under_its_key() {
     let app = application("declaration-problems");
     let repository = project("declaration-problems", Some(AUTHORED));
-    let preview = app
+    let applied = app
         .workspace()
-        .preview_declaration(
+        .apply_declaration(
             repository.root(),
             &[
                 set(DeclarationKey::Slots, DeclaredValue::Number(0)),
@@ -145,25 +155,22 @@ fn every_problem_is_reported_at_once_under_its_key() {
             ],
         )
         .unwrap();
-    let keys: Vec<_> = preview
-        .problems
+    let DeclarationApplied::Refused { problems } = applied else {
+        panic!("{applied:?}");
+    };
+    let keys: Vec<_> = problems
         .iter()
         .map(|problem| problem.key.as_deref().unwrap_or("-"))
         .collect();
     for key in ["slots", "delivery", "artifacts"] {
-        assert!(
-            keys.contains(&key),
-            "{key} missing from {:?}",
-            preview.problems
-        );
+        assert!(keys.contains(&key), "{key} missing from {problems:?}");
     }
     assert_eq!(
         keys.iter().filter(|key| **key == "link").count(),
         2,
-        "the misplaced link and the tracked one: {:?}",
-        preview.problems
+        "the misplaced link and the tracked one: {problems:?}"
     );
-    assert_eq!(written(&repository), AUTHORED, "a preview writes nothing");
+    assert_eq!(written(&repository), AUTHORED, "a refusal writes nothing");
 }
 
 #[test]
@@ -183,31 +190,7 @@ fn an_unknown_key_in_the_file_is_reported_by_name() {
 }
 
 #[test]
-fn the_diff_shows_only_the_changed_lines_under_their_key() {
-    let app = application("declaration-diff");
-    let repository = project("declaration-diff", Some(AUTHORED));
-    let preview = app
-        .workspace()
-        .preview_declaration(
-            repository.root(),
-            &[set(DeclarationKey::Delivery, text("push"))],
-        )
-        .unwrap();
-    assert!(preview.problems.is_empty(), "{:?}", preview.problems);
-    assert_eq!(
-        preview.diff,
-        vec![
-            DiffLine::Context("workspace:".to_owned()),
-            DiffLine::Removed("  delivery: merge".to_owned()),
-            DiffLine::Added("  delivery: push".to_owned()),
-        ]
-    );
-    assert_eq!(preview.expected.as_deref(), Some(AUTHORED));
-    assert!(!preview.awaits_approval_again);
-}
-
-#[test]
-fn saving_keeps_every_comment_and_changes_only_the_edited_keys() {
+fn an_edit_keeps_every_comment_and_changes_only_the_edited_keys() {
     let app = application("declaration-save");
     let repository = project("declaration-save", Some(AUTHORED));
     let edits = [
@@ -220,15 +203,14 @@ fn saving_keeps_every_comment_and_changes_only_the_edited_keys() {
             key: DeclarationKey::Worktree,
         },
     ];
-    let preview = app
-        .workspace()
-        .preview_declaration(repository.root(), &edits)
-        .unwrap();
-    let created = app
-        .workspace()
-        .save_declaration(repository.root(), &edits, preview.expected.as_deref())
-        .unwrap();
-    assert!(!created);
+    assert_eq!(
+        apply(&app, &repository, &edits),
+        DeclarationApplied::Written {
+            created: false,
+            // The gate is new, and nobody approved it.
+            awaits_approval_again: true
+        }
+    );
     let after = written(&repository);
     for comment in [
         "# The team's agent environment.",
@@ -246,24 +228,19 @@ fn saving_keeps_every_comment_and_changes_only_the_edited_keys() {
 }
 
 #[test]
-fn a_file_changed_since_the_preview_is_refused_and_left_as_it_is() {
+fn an_edit_lands_on_the_file_as_it_is_now_keeping_what_others_wrote() {
     let app = application("declaration-changed");
     let repository = project("declaration-changed", Some(AUTHORED));
-    let edits = [set(DeclarationKey::Slots, DeclaredValue::Number(4))];
-    let preview = app
-        .workspace()
-        .preview_declaration(repository.root(), &edits)
-        .unwrap();
     let theirs = format!("{AUTHORED}# a teammate's note\n");
     fs::write(repository.root().join("agents.yaml"), &theirs).unwrap();
-    let refused =
-        app.workspace()
-            .save_declaration(repository.root(), &edits, preview.expected.as_deref());
-    assert!(
-        matches!(refused, Err(UzeError::ManifestChangedSince { .. })),
-        "{refused:?}"
+    apply(
+        &app,
+        &repository,
+        &[set(DeclarationKey::Slots, DeclaredValue::Number(4))],
     );
-    assert_eq!(written(&repository), theirs);
+    let after = written(&repository);
+    assert!(after.contains("# a teammate's note"), "{after}");
+    assert!(after.contains("slots: 4"), "{after}");
 }
 
 #[test]
@@ -274,24 +251,12 @@ fn a_project_without_a_manifest_gets_one_holding_only_the_keys_set() {
         set(DeclarationKey::Worktree, text("always")),
         set(DeclarationKey::Slots, DeclaredValue::Number(3)),
     ];
-    let preview = app
-        .workspace()
-        .preview_declaration(repository.root(), &edits)
-        .unwrap();
-    assert_eq!(preview.expected, None);
-    assert!(
-        preview
-            .diff
-            .iter()
-            .all(|line| matches!(line, DiffLine::Added(_))),
-        "{:?}",
-        preview.diff
-    );
-    assert!(
-        app.workspace()
-            .save_declaration(repository.root(), &edits, None)
-            .unwrap(),
-        "the file was created"
+    assert_eq!(
+        apply(&app, &repository, &edits),
+        DeclarationApplied::Written {
+            created: true,
+            awaits_approval_again: false
+        }
     );
     assert_eq!(
         written(&repository),
@@ -317,29 +282,46 @@ fn changing_setup_says_the_commands_wait_for_approval_again() {
         .expect("the setup awaits approval");
     app.workspace().approve_commands(&awaiting).unwrap();
 
-    let unrelated = app
-        .workspace()
-        .preview_declaration(
-            repository.root(),
-            &[set(DeclarationKey::Slots, DeclaredValue::Number(2))],
-        )
-        .unwrap();
-    assert!(!unrelated.awaits_approval_again);
+    let unrelated = apply(
+        &app,
+        &repository,
+        &[set(DeclarationKey::Slots, DeclaredValue::Number(2))],
+    );
+    assert!(matches!(
+        unrelated,
+        DeclarationApplied::Written {
+            awaits_approval_again: false,
+            ..
+        }
+    ));
 
-    let changed = app
-        .workspace()
-        .preview_declaration(
-            repository.root(),
-            &[set(
-                DeclarationKey::Setup,
-                DeclaredValue::Commands(vec![ShellCommand::spelled(
-                    "pnpm install --frozen-lockfile",
-                    "pnpm install --frozen-lockfile",
-                )]),
-            )],
-        )
-        .unwrap();
-    assert!(changed.awaits_approval_again);
+    let changed = apply(
+        &app,
+        &repository,
+        &[set(
+            DeclarationKey::Setup,
+            DeclaredValue::Commands(vec![ShellCommand::spelled(
+                "pnpm install --frozen-lockfile",
+                "pnpm install --frozen-lockfile",
+            )]),
+        )],
+    );
+    assert!(
+        matches!(
+            changed,
+            DeclarationApplied::Written {
+                awaits_approval_again: true,
+                ..
+            }
+        ),
+        "{changed:?}"
+    );
+    assert!(
+        app.workspace()
+            .commands_awaiting_approval(repository.root())
+            .is_some(),
+        "writing a changed setup never approves it"
+    );
 }
 
 #[test]
@@ -353,14 +335,11 @@ fn an_action_is_written_beside_the_others_and_taken_out_with_its_block() {
         ),
     );
     let save = |edits: &[Edit]| {
-        let preview = app
-            .workspace()
-            .preview_declaration(repository.root(), edits)
-            .unwrap();
-        assert!(preview.problems.is_empty(), "{:?}", preview.problems);
-        app.workspace()
-            .save_declaration(repository.root(), edits, preview.expected.as_deref())
-            .unwrap();
+        let applied = apply(&app, &repository, edits);
+        assert!(
+            matches!(applied, DeclarationApplied::Written { .. }),
+            "{applied:?}"
+        );
         written(&repository)
     };
 
@@ -407,13 +386,7 @@ fn an_action_starts_its_block_when_the_file_has_none() {
         state: ActionState::OnPublish,
         text: Some("Open a pull request.".to_owned()),
     }];
-    let preview = app
-        .workspace()
-        .preview_declaration(repository.root(), &edits)
-        .unwrap();
-    app.workspace()
-        .save_declaration(repository.root(), &edits, preview.expected.as_deref())
-        .unwrap();
+    apply(&app, &repository, &edits);
     let after = written(&repository);
     assert!(
         after.contains("actions:") && after.contains("on_publish: Open a pull request."),

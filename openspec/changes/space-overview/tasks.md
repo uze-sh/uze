@@ -19,30 +19,30 @@
 - [x] 3.1 `ManifestDocument`: a public writer for any `workspace:` key (set any value, remove); `set_completion` uses it
 - [x] 3.2 `uze-workspace`: validate a candidate `workspace:` text against a root, collecting every problem keyed by key (parse, slots, misplaced links, unignored links, unknown keys); `declared` uses it
 - [x] 3.3 `Workspace::declaration_view(root)`: every key, value or default (marked), `actions` names, editable or the refusal reason
-- [x] 3.4 `Workspace::preview_declaration(root, edits)`: candidate text in memory, problems (artifact rule included), the diff lines, and which commands would wait for approval again
-- [x] 3.5 `Workspace::save_declaration(root, edits, expected)`: under `MutationLock`, refuses a file changed since the preview, saves atomically; creates `agents.yaml` when absent
+- [x] 3.4 `Workspace::apply_declaration(root, edits)`: under `MutationLock`, applies the edits to the file as it is now, checks the result (artifact rule included), and either saves it atomically (creating `agents.yaml` when absent) or refuses with every problem; says whether setup or gate wait for approval again, and never approves them
+- [x] 3.5 Remove the preview, its diff and the changed-since check: an edit names a key and lands on the current file
 - [x] 3.6 Tests: comments kept, every problem reported, changed-file refusal, anchors read-only, new-file creation
 
 ## 4. Widgets (src/ui/widget)
 
 - [x] 4.1 Move the manage header's tabs into `widget/` as a generic tab bar (label, optional mark, active index, shrink to number + mark); manage renders through it unchanged
 - [x] 4.2 Move the drawer's core into `widget/` (width and drag state passed in); manage's `drawer` calls it
-- [ ] 4.3 `Choice` (an inline enum, options shown on focus), a list editor row set, and a YAML diff view, each only as the Settings section needs it
+- [ ] 4.3 `Choice` (an inline enum, options shown on focus) and a list editor row set, each only as the Settings section needs it
 
 ## 5. Surface (src/ui)
 
 - [x] 5.1 `WorkspaceModel.space_overview` keyed by `SpaceId`; `orchestrator/space_overview.rs` drawn in the pane's rect from `render.rs`'s no-extension arm: header with activity, section bar, cause line, the five sections (Agent first), drawer, footer; loading, "not a project" and "root gone"
-- [ ] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, save and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
+- [ ] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, a written change and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
 - [x] 5.3 `land_on_space`/`step_space` open the overview; put away by a tab, an agent row, `+`, another space or Esc; never by `close_extension_left_behind`
 - [x] 5.4 An `overview` tab leading the strip (`WorkspaceHit::OpenOverview`), selected while shown
 - [x] 5.5 Actions: `review_commands_for(project)`; a fact's body through `memory().show` on the read thread
-- [x] 5.6 Settings editing: pending edits, preview on the read thread, problems at their key, diff with Save/Discard, save on the read thread then re-read
+- [x] 5.6 Settings editing saves each committed change on the read thread, one save out at a time and edits made meanwhile sent after it; a written answer drops the edits it carried, re-reads and raises a toast; a refused one keeps them marked with each problem at its key, and `x` drops them
 - [x] 5.7 `Scope::SpaceOverview` and `Scope::SpaceOverviewEditing` in `uze-keys`, `Action::OpenSpaceOverview` in `Scope::Workspace`, default bindings
-- [ ] 5.8 `TestBackend` tests: the space button opens it in every context; the confirming broadcast keeps it; a tab selection puts it away; a space row lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an invalid edit blocks Save; the diff before save
+- [ ] 5.8 `TestBackend` tests: the space button opens it in every context; the confirming broadcast keeps it; a tab selection puts it away; a space row lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; a gone root; Review by keyboard; an edit written with no Save; a refused edit kept with its problem and discarded; edits made while a save is out written after it
 
 ## 6. Journey
 
-- [ ] 6.1 A journey in `04-workspace`: selecting the space shows its overview and the process table gains no shell; a workspace edit saved from the overview changes `agents.yaml` on disk with its comments kept
+- [ ] 6.1 A journey in `04-workspace`: selecting the space shows its overview and the process table gains no shell; a workspace edit made in the overview changes `agents.yaml` on disk with its comments kept
 
 ## 7. Docs and gate
 

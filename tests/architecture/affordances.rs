@@ -292,12 +292,8 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("the down hint along the overview's foot, on a list's entry"),
     );
     put(
-        Action::SaveChanges,
-        Control("the Save button under the workspace's unsaved edits"),
-    );
-    put(
         Action::DiscardChanges,
-        Control("the Discard button under the workspace's unsaved edits"),
+        Control("the Discard button under the edits agents.yaml refused"),
     );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));

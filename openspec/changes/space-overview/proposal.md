@@ -38,8 +38,9 @@ workspace without knowing its keys.
   - **Settings.** Every key of `agents.yaml`'s `workspace:` section, set or
     defaulted, and the state of each `setup` and `gate` line on this
     machine. The section is **editable**: a key is changed in place, the
-    real parser validates the result, and Save shows the `agents.yaml`
-    diff before writing it.
+    real parser validates the result, and each change is written to
+    `agents.yaml` as it is made; a change the parser refuses is not
+    written and stays marked with its problem.
   - **Plugins.** The plugins `agents.yaml` declares: installed, contributing
     here, the commit installed and its freshness; and `agents.lock`'s drift
     against the declaration.
@@ -91,7 +92,8 @@ workspace without knowing its keys.
       contributing here by name, rather than display-name-prefixed lines
       and a count. `uze status --json` changes shape accordingly.
     - A `SpaceOverview` read model, and a workspace declaration view and
-      edit (preview, then save) built on `uze-workspace`'s parser.
+      edit (one apply per change: written, or refused with its problems)
+      built on `uze-workspace`'s parser.
   - `uze-workspace`: the `workspace:` section's validation takes candidate
     text and collects every problem, instead of reading the file and
     stopping at the first.

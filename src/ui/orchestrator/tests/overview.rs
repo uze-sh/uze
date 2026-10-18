@@ -390,7 +390,9 @@ fn project_space(
 fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
     use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-form"));
-    let session = session("/repo");
+    let session = session(uze_testkit::temp::scratch(
+        "orchestrator-overview-form-project",
+    ));
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
@@ -506,7 +508,9 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
 fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
     use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-form"));
-    let session = session("/repo");
+    let session = session(uze_testkit::temp::scratch(
+        "orchestrator-overview-form-project",
+    ));
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
@@ -611,35 +615,204 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
     );
 }
 
-/// An answer to an older set of edits ends the check it answers, so
-/// the one for the edits as they stand is asked next. Leaving it
-/// pending kept "checking" on screen, and Save out of reach, forever.
-#[test]
-fn a_preview_for_older_edits_lets_the_current_one_be_asked() {
-    let session = session("/repo");
+/// A `workspace:` section declaring nothing, read from `exists` or no
+/// `agents.yaml` at all.
+fn undeclared(exists: bool) -> uze_application::DeclarationView {
+    use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView};
+    DeclarationView {
+        manifest: PathBuf::from("agents.yaml"),
+        exists,
+        entries: DeclarationKey::ALL
+            .iter()
+            .map(|key| DeclarationEntry {
+                key: *key,
+                declared: None,
+                default: key.default_spelled(),
+                description: key.description(),
+            })
+            .collect(),
+        actions: Vec::new(),
+        editable: Ok(()),
+        problems: Vec::new(),
+        choices: Default::default(),
+    }
+}
+
+/// The Settings section of a real repository's overview, with no
+/// `agents.yaml` yet, driven on a roomy terminal.
+fn settings_over<'a>(home: &'a UzeHome, repository: &uze_testkit::git::Repository) -> Driven<'a> {
+    let session = session(repository.root());
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
     model.open_space_overview(space, behind, true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
-    overview.edit.preview_pending = true;
-    overview.edit.preview_asked = 2;
-    model.absorb_declaration_preview(
-        crate::ui::orchestrator::space_overview::DeclarationPreviewResolution {
-            space,
-            asked: 1,
-            answer: Err("for the older edits".to_owned()),
-        },
-    );
-    let overview = model.space_overview.as_ref().expect("still open");
+    overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
+    overview.answer = Some(Ok(project_space(Default::default(), Ok(undeclared(false)))));
+    let mut driven = driven(model, home).on_a_roomy_terminal();
+    driven.frame();
+    driven
+}
+
+/// Waits for the save out to answer, then lets the attach take it in as
+/// its loop would, sending whatever was edited meanwhile.
+fn await_save(driven: &mut Driven<'_>) {
+    let answers = &driven.attach.channels.declaration_saves;
+    let answer = answers
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the save answered");
+    answers.sender.send(answer).expect("the channel is open");
+    driven.attach.absorb_space_overview_answers();
+    driven.frame();
+}
+
+fn key(driven: &mut Driven<'_>, code: crossterm::event::KeyCode) {
+    driven.press_key(crossterm::event::KeyEvent::from(code));
+    driven.frame();
+}
+
+fn overview_of<'m>(
+    driven: &'m Driven<'_>,
+) -> &'m crate::ui::orchestrator::space_overview::SpaceOverviewView {
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_ref()
+        .expect("the overview is open")
+}
+
+/// Choosing an option writes it: there is no Save to press, the edit
+/// leaves the pending ones once the file holds it, the form keeps
+/// showing it, and a toast says the file was created and what it says.
+#[test]
+fn an_edit_is_written_without_any_save() {
+    use crossterm::event::KeyCode;
+    use uze_application::{DeclarationKey, DeclaredValue};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-autosave"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-autosave");
+    let mut driven = settings_over(&home, &repository);
+    // Worktree opens on manual, its default; always is the next one.
+    key(&mut driven, KeyCode::Enter);
+    key(&mut driven, KeyCode::Down);
+    key(&mut driven, KeyCode::Enter);
     assert!(
-        !overview.edit.preview_pending,
-        "an answer to older edits left the check pending"
+        overview_of(&driven).edit.saving.is_some(),
+        "choosing an option sent no save"
     );
+    await_save(&mut driven);
+
+    let manifest = repository.root().join("agents.yaml");
+    assert_eq!(
+        std::fs::read_to_string(&manifest).expect("agents.yaml was created"),
+        "workspace:\n  worktree: always\n"
+    );
+    let overview = overview_of(&driven);
     assert!(
-        overview.current_preview().is_none(),
-        "an answer to older edits was taken for the current ones"
+        overview.edit.values.is_empty(),
+        "a written edit is still pending"
     );
+    assert_eq!(
+        overview.value(DeclarationKey::Worktree),
+        Some(&DeclaredValue::Text("always".to_owned())),
+        "the form went back to the old value before the file was read again"
+    );
+    let toast = driven
+        .attach
+        .model
+        .remembered
+        .toasts
+        .back()
+        .expect("a toast says what was written");
+    assert_eq!(toast.text, "agents.yaml created");
+    assert_eq!(toast.detail, "worktree: always");
+}
+
+/// A value the workspace would refuse is never written: the edit stays
+/// marked, its problem stands under its key, and discarding drops it.
+#[test]
+fn a_refused_edit_is_kept_with_its_problem_until_discarded() {
+    use crossterm::event::KeyCode;
+    use uze_application::DeclarationKey;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-refused"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-refused");
+    let mut driven = settings_over(&home, &repository);
+    key(&mut driven, KeyCode::Down);
+    key(&mut driven, KeyCode::Enter);
+    key(&mut driven, KeyCode::Char('x'));
+    key(&mut driven, KeyCode::Enter);
+    await_save(&mut driven);
+
+    let manifest = repository.root().join("agents.yaml");
+    assert!(!manifest.exists(), "a refused edit was written");
+    let overview = overview_of(&driven);
+    assert!(
+        overview.edit.values.contains_key(&DeclarationKey::Slots),
+        "the refused edit was dropped"
+    );
+    let reason = overview
+        .problems()
+        .iter()
+        .find(|problem| problem.key.as_deref() == Some("slots"))
+        .map(|problem| problem.reason.clone())
+        .expect("the refusal is reported under slots");
+    let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+    let said: String = reason.chars().take(24).collect();
+    assert!(
+        screen.contains(&said),
+        "the problem is not under its key:\n{screen}"
+    );
+    assert!(screen.contains("1 not saved"), "{screen}");
+
+    key(&mut driven, KeyCode::Char('x'));
+    let overview = overview_of(&driven);
+    assert!(overview.edit.values.is_empty(), "discard kept the edit");
+    assert!(overview.edit.saving.is_none(), "discarding sent a save");
+    assert!(!manifest.exists());
+}
+
+/// One save is out at a time: what is edited meanwhile waits for it to
+/// answer, and is then written on top of it.
+#[test]
+fn edits_made_while_a_save_is_out_are_written_after_it() {
+    use crossterm::event::KeyCode;
+    use uze_application::DeclarationKey;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-queued"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-queued");
+    let mut driven = settings_over(&home, &repository);
+    key(&mut driven, KeyCode::Enter);
+    key(&mut driven, KeyCode::Down);
+    key(&mut driven, KeyCode::Enter);
+    key(&mut driven, KeyCode::Down);
+    key(&mut driven, KeyCode::Char('+'));
+    let overview = overview_of(&driven);
+    let out = overview
+        .edit
+        .saving
+        .as_ref()
+        .expect("the first save is out");
+    assert!(
+        out.values.contains_key(&DeclarationKey::Worktree)
+            && !out.values.contains_key(&DeclarationKey::Slots),
+        "the second edit went out beside the first"
+    );
+    assert!(overview.edit.values.contains_key(&DeclarationKey::Slots));
+
+    await_save(&mut driven);
+    let out = overview_of(&driven)
+        .edit
+        .saving
+        .as_ref()
+        .expect("the edit made meanwhile went out once the first answered");
+    assert!(out.values.contains_key(&DeclarationKey::Slots));
+    await_save(&mut driven);
+
+    assert_eq!(
+        std::fs::read_to_string(repository.root().join("agents.yaml")).unwrap(),
+        "workspace:\n  worktree: always\n  slots: 1\n"
+    );
+    assert!(overview_of(&driven).edit.values.is_empty());
 }
 
 /// A number steps by its − and +, clicked or pressed: slots climbs
@@ -649,7 +822,9 @@ fn a_preview_for_older_edits_lets_the_current_one_be_asked() {
 fn a_number_steps_with_its_minus_and_plus() {
     use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-step"));
-    let session = session("/repo");
+    let session = session(uze_testkit::temp::scratch(
+        "orchestrator-overview-step-project",
+    ));
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
@@ -720,8 +895,8 @@ fn a_number_steps_with_its_minus_and_plus() {
     step(&mut driven, false);
     assert_eq!(
         value(&driven, DeclarationKey::Slots),
-        None,
-        "back below one is no limit, the file as it was"
+        Some(None),
+        "back below one is no limit, sent after the save of the first step"
     );
 
     // The key on idle days: down to it, and + from its default.
@@ -745,7 +920,9 @@ fn a_number_steps_with_its_minus_and_plus() {
 fn a_link_is_picked_from_what_the_repository_ignores() {
     use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView, DeclaredValue};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-pick"));
-    let session = session("/repo");
+    let session = session(uze_testkit::temp::scratch(
+        "orchestrator-overview-pick-project",
+    ));
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
@@ -832,7 +1009,9 @@ fn a_link_is_picked_from_what_the_repository_ignores() {
 fn an_action_is_written_over_several_lines() {
     use uze_application::{ActionState, DeclarationEntry, DeclarationKey, DeclarationView};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-action"));
-    let session = session("/repo");
+    let session = session(uze_testkit::temp::scratch(
+        "orchestrator-overview-action-project",
+    ));
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);

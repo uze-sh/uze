@@ -906,8 +906,8 @@ pub(super) enum WorkspaceHit {
     ResizeOverviewDrawer,
     /// The overview's question about the project's commands.
     OverviewReview,
-    /// Saving or dropping the overview's workspace edits; `true` saves.
-    OverviewSave(bool),
+    /// Dropping the overview's workspace edits `agents.yaml` refused.
+    OverviewDiscard,
     /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
     /// The task mark on a sidebar agent row — opens the catalog of what
@@ -1455,7 +1455,6 @@ struct Channels {
     /// A space's overview, and what its drawer and its edits ask.
     space_overviews: Answers<SpaceOverviewResolution>,
     fact_bodies: Answers<FactBodyResolution>,
-    declaration_previews: Answers<DeclarationPreviewResolution>,
     declaration_saves: Answers<DeclarationSaveResolution>,
 }
 

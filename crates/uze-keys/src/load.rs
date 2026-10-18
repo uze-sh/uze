@@ -438,7 +438,6 @@ fn default_bindings() -> Vec<Binding> {
         // Not alt: over a space, alt and the arrows walk its agents.
         bind(Scope::SpaceOverview, "shift+up", Action::MoveItemUp),
         bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
-        bind(Scope::SpaceOverview, "s", Action::SaveChanges),
         bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
         // Clearing the space's prompts, shifted off the `x` that discards
         // edits.
