@@ -359,13 +359,15 @@ fn misdeclared(policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
 /// Git only when a manifest declares links, so one that declares none costs
 /// no subprocess to read. A link already refused for where it points is
 /// not asked about.
-/// What a `workspace:` list may be set to, offered to be chosen rather than
+/// What a `workspace:` key may be set to, offered to be chosen rather than
 /// typed: the paths the repository ignores, the only ones a link may name,
-/// and the directories it tracks, where a project keeps its artifacts.
+/// the directories it tracks, where a project keeps its artifacts, and
+/// the branches work may be delivered to.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Choices {
     pub links: Vec<String>,
     pub directories: Vec<String>,
+    pub branches: Vec<String>,
 }
 
 /// [`Choices`] for the repository at `root`. Empty where Git cannot say:
@@ -399,7 +401,34 @@ pub fn choices(root: &Path) -> Choices {
     .filter(|path| !path.starts_with(".worktrees"))
     .collect();
     let directories = lines(&["ls-tree", "-r", "-d", "--name-only", "HEAD"]);
-    Choices { links, directories }
+    // Local and remote branches under one name each, the most recently
+    // committed first; an agent's own branch is never a target.
+    let mut branches: Vec<String> = Vec::new();
+    for branch in lines(&[
+        "for-each-ref",
+        "--sort=-committerdate",
+        "--format=%(refname:lstrip=2)",
+        "refs/heads",
+        "refs/remotes",
+    ]) {
+        let name = branch
+            .split_once('/')
+            .filter(|_| branch.starts_with("origin/"))
+            .map_or(branch.as_str(), |(_, name)| name)
+            .to_owned();
+        if name != "HEAD"
+            && name != "origin"
+            && !name.starts_with("agent/")
+            && !branches.contains(&name)
+        {
+            branches.push(name);
+        }
+    }
+    Choices {
+        links,
+        directories,
+        branches,
+    }
 }
 
 fn unignored_links(root: &Path, policy: &WorktreePolicy) -> Vec<DeclarationProblem> {
@@ -632,6 +661,24 @@ mod tests {
             vec!["docs", "docs/architecture"],
             "{offered:?}"
         );
+    }
+
+    /// The target is offered the repository's branches once each, local
+    /// and remote alike, and never an agent's own.
+    #[test]
+    fn the_target_is_offered_each_branch_once_and_no_agent_s() {
+        let repository = uze_testkit::git::Repository::new("declaration-branches");
+        let base = repository.branch();
+        repository.with_origin(&base);
+        repository.git(&["branch", "develop"]);
+        repository.git(&["branch", "agent/abc123"]);
+
+        let offered = choices(repository.root()).branches;
+        let mut sorted = offered.clone();
+        sorted.sort();
+        let mut expected = vec![base, "develop".to_owned()];
+        expected.sort();
+        assert_eq!(sorted, expected, "{offered:?}");
     }
 
     #[test]

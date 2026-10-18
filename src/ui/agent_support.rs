@@ -1,7 +1,6 @@
 //! What the overview's Agent section reads about the agent in front: what
 //! its harness supports, and what of the project reaches it here.
 
-use ratatui::text::{Line, Span};
 use uze_application::{CapabilityKind, HarnessCapabilities};
 
 use crate::ui::theme::{self, Symbol, Token};
@@ -86,199 +85,72 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     }
 }
 
-/// The context block's keys, and the air after them.
-const ITEM_GAP: usize = 2;
-/// The column the two capability rows' keys take, and the air after them.
-/// The keys are the two sources, `project` and `harness`: one length, so
-/// the column is no wider than either needs.
-const KEY_WIDTH: usize = 9;
-/// Two rows: what this project hands the agent (`AGENTS.md`, `.agents/`),
-/// and what the harness can do. A mark says each is there; a muted name
-/// says it is not. Kept apart because a missing one means a different
-/// thing on each: the project does not carry it, or the harness cannot.
-pub(crate) fn capability_lines(support: &AgentSupport, width: usize) -> Vec<Line<'static>> {
-    let project = vec![
-        delivery_item(
+/// What reaches the agent here, as the Harnesses screen lists a harness's
+/// compatibility: the project's instructions and `.agents` halves, then
+/// what the harness supports, each as its name and its state — said for
+/// this project, where that screen says it for the machine.
+pub(crate) fn compatibility(support: &AgentSupport) -> Vec<(&'static str, String, Token)> {
+    let delivered = |state: State, label: &str| {
+        let (symbol, tone) = match state {
+            State::Ready => (Symbol::MarkNative, Token::StateSuccess),
+            State::Neutral => (Symbol::MarkDot, Token::TextMuted),
+            State::Warning => (Symbol::MarkAttention, Token::StateWarning),
+            State::Error => (Symbol::MarkUnsupported, Token::StateDanger),
+        };
+        (
+            format!("{} {}", theme::glyph(symbol), capitalized(label)),
+            tone,
+        )
+    };
+    let project = [
+        (
             "AGENTS.md",
             support.instructions,
             support.instructions_label,
         ),
-        agents_directory_item(support),
-    ];
-    let supports: Vec<Vec<Span<'static>>> = [
-        (CapabilityKind::AgentSkill, "skills"),
-        (CapabilityKind::Agent, "agents"),
-        (CapabilityKind::Hook, "hooks"),
-        (CapabilityKind::Mcp, "mcp"),
+        (
+            ".agents/skills",
+            support.project_skills,
+            support.project_skills_label,
+        ),
+        (
+            ".agents/agents",
+            support.project_agents,
+            support.project_agents_label,
+        ),
     ]
     .into_iter()
-    .map(|(kind, name)| {
-        let (symbol, mark, label) = match capability_state(support, kind) {
-            CapabilityState::Supported => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
-            CapabilityState::Limited => (
-                Symbol::MarkAttention,
-                Token::StateWarning,
-                Token::TextPrimary,
-            ),
-            CapabilityState::Unavailable => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
+    .map(|(name, state, label)| {
+        let (status, tone) = delivered(state, label);
+        (name, status, tone)
+    });
+    let harness = [
+        ("Skills", CapabilityKind::AgentSkill),
+        ("MCP", CapabilityKind::Mcp),
+        ("Agents", CapabilityKind::Agent),
+        ("Hooks", CapabilityKind::Hook),
+    ]
+    .into_iter()
+    .map(|(name, kind)| {
+        let (symbol, word, tone) = match capability_state(support, kind) {
+            CapabilityState::Supported => (Symbol::MarkNative, "Native", Token::StateSuccess),
+            CapabilityState::Limited => (Symbol::MarkAdapted, "Adapted", Token::StateWarning),
+            CapabilityState::Unavailable => {
+                (Symbol::MarkUnsupported, "Not supported", Token::StateDanger)
+            }
         };
-        vec![
-            Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
-            Span::styled(name.to_owned(), theme::fg(label)),
-        ]
-    })
-    .collect();
-    let room = width.saturating_sub(KEY_WIDTH);
-    let rows = [project, supports];
-    match tabulated(&rows, room) {
-        Some(mut rows) => {
-            let supports = rows.pop().expect("two rows");
-            let project = rows.pop().expect("two rows");
-            let mut lines = keyed("project", vec![project]);
-            lines.extend(keyed("harness", vec![supports]));
-            lines
-        }
-        // Too narrow for columns: each row wraps on its own instead.
-        None => {
-            let [project, supports] = rows;
-            let mut lines = keyed("project", wrapped_items(project, room));
-            lines.extend(keyed("harness", wrapped_items(supports, room)));
-            lines
-        }
-    }
+        (name, format!("{} {word}", theme::glyph(symbol)), tone)
+    });
+    project.chain(harness).collect()
 }
 
-/// `.agents/` as one item: delivered when either half reaches the agent,
-/// absent when the project carries neither, and the worse of the two when
-/// one of them has a problem to say.
-fn agents_directory_item(support: &AgentSupport) -> Vec<Span<'static>> {
-    let halves = [
-        (support.project_skills, support.project_skills_label),
-        (support.project_agents, support.project_agents_label),
-    ];
-    let problem = halves
-        .iter()
-        .find(|(state, _)| matches!(state, State::Error))
-        .or_else(|| {
-            halves
-                .iter()
-                .find(|(state, _)| matches!(state, State::Warning))
-        });
-    if let Some(&(state, label)) = problem {
-        return delivery_item(".agents", state, label);
-    }
-    let state = if halves
-        .iter()
-        .any(|(state, _)| matches!(state, State::Ready))
-    {
-        State::Ready
-    } else {
-        State::Neutral
-    };
-    delivery_item(".agents", state, "")
-}
-
-/// `lines` behind `key`, the first carrying it and the rest under it.
-fn keyed(key: &str, lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    lines
-        .into_iter()
-        .enumerate()
-        .map(|(index, line)| {
-            let key = if index == 0 { key } else { "" };
-            let mut spans = vec![Span::styled(
-                format!("{key:<KEY_WIDTH$}"),
-                theme::fg(Token::TextMuted),
-            )];
-            spans.extend(line.spans);
-            Line::from(spans)
-        })
-        .collect()
-}
-
-/// What reaches the agent, as a mark and a name: how it reaches it is a
-/// detail the CLI reports and the drawer leaves out. A problem is the one
-/// thing said beside the name, since it asks something of the reader;
-/// something the project does not carry is the muted dot and nothing more.
-fn delivery_item(name: &str, state: State, label: &'static str) -> Vec<Span<'static>> {
-    let (symbol, mark, text) = match state {
-        State::Ready => (Symbol::MarkOk, Token::StateSuccess, Token::TextPrimary),
-        State::Neutral => (Symbol::MarkDot, Token::TextMuted, Token::TextMuted),
-        State::Warning => (
-            Symbol::MarkAttention,
-            Token::StateWarning,
-            Token::TextPrimary,
-        ),
-        State::Error => (Symbol::MarkClose, Token::StateDanger, Token::TextPrimary),
-    };
-    let mut spans = vec![
-        Span::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
-        Span::styled(name.to_owned(), theme::fg(text)),
-    ];
-    if matches!(state, State::Warning | State::Error) {
-        spans.push(Span::styled(format!(" ({label})"), theme::fg(mark)));
-    }
-    spans
-}
-
-/// `rows` laid out as a table: every item padded to the widest item in its
-/// column, so the n-th item of each row starts in the same column. `None`
-/// when the widest row does not fit in `width`.
-fn tabulated(rows: &[Vec<Vec<Span<'static>>>], width: usize) -> Option<Vec<Line<'static>>> {
-    let item_width = |item: &Vec<Span<'static>>| item.iter().map(Span::width).sum::<usize>();
-    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
-    let widths: Vec<usize> = (0..columns)
-        .map(|column| {
-            rows.iter()
-                .filter_map(|row| row.get(column))
-                .map(item_width)
-                .max()
-                .unwrap_or(0)
-        })
-        .collect();
-    let total = widths.iter().sum::<usize>() + ITEM_GAP * columns.saturating_sub(1);
-    if total > width {
-        return None;
-    }
-    Some(
-        rows.iter()
-            .map(|row| {
-                let mut spans = Vec::new();
-                for (column, item) in row.iter().enumerate() {
-                    if column > 0 {
-                        spans.push(Span::raw(" ".repeat(ITEM_GAP)));
-                    }
-                    let pad = widths[column] - item_width(item);
-                    spans.extend(item.iter().cloned());
-                    if column + 1 < row.len() {
-                        spans.push(Span::raw(" ".repeat(pad)));
-                    }
-                }
-                Line::from(spans)
-            })
-            .collect(),
-    )
-}
-
-/// `items` two columns apart, onto as many lines as `width` needs.
-fn wrapped_items(items: Vec<Vec<Span<'static>>>, width: usize) -> Vec<Line<'static>> {
-    let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
-    let mut used = 0;
-    for item in items {
-        let item_width: usize = item.iter().map(Span::width).sum();
-        let row = rows.last_mut().expect("one row");
-        if !row.is_empty() && used + ITEM_GAP + item_width > width {
-            rows.push(item);
-            used = item_width;
-            continue;
-        }
-        if !row.is_empty() {
-            row.push(Span::raw(" ".repeat(ITEM_GAP)));
-            used += ITEM_GAP;
-        }
-        row.extend(item);
-        used += item_width;
-    }
-    rows.into_iter().map(Line::from).collect()
+/// `text` with its first letter upper-cased, as a status reads beside a name.
+fn capitalized(text: &str) -> String {
+    let mut characters = text.chars();
+    characters
+        .next()
+        .map(|first| first.to_uppercase().chain(characters).collect())
+        .unwrap_or_default()
 }
 
 /// A harness capability's support level. Deliberately its own enum rather

@@ -28,10 +28,6 @@ struct Track {
     dragging: bool,
 }
 
-/// One option of a choice as drawn on its line: its column and width,
-/// the row it belongs to and its position among the options.
-type OptionCell = (u16, u16, usize, usize);
-
 /// A number's − and + as drawn: its line, its row, and the column and
 /// width of each.
 type StepCells = (usize, usize, (u16, u16), (u16, u16));
@@ -39,6 +35,9 @@ type StepCells = (usize, usize, (u16, u16), (u16, u16));
 /// The Workspace form's label column, and the width of a value's box.
 const LABEL: u16 = 18;
 const BOX: u16 = 48;
+
+/// The places a stepped number's value takes between its − and +.
+const STEP_PLACES: usize = 2;
 
 pub(super) fn render_space_overview(
     frame: &mut ratatui::Frame<'_>,
@@ -179,7 +178,7 @@ pub(super) fn render_space_overview(
             foot.y.saturating_sub(inner.y + 5),
         );
         let (drawer_inner, handle) = drawer::render(frame, column, dragging);
-        render_drawer(frame, drawer_inner, model, overview, project);
+        render_drawer(frame, drawer_inner, overview, project, hits);
         resize_handle = Some(handle);
         (
             Rect {
@@ -198,7 +197,7 @@ pub(super) fn render_space_overview(
             width: column.width.saturating_sub(2 * INSET),
             ..column
         };
-        render_drawer(frame, drawer_inner, model, overview, project);
+        render_drawer(frame, drawer_inner, overview, project, hits);
         (Rect::default(), Track::default())
     } else {
         (body, Track::default())
@@ -786,6 +785,9 @@ fn render_workspace(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     track: Track,
 ) -> Vec<(Rect, usize)> {
+    // A drawer beside the form ends in the answer about the edits; with
+    // none, the form's own foot carries it.
+    let answer_in_drawer = track.column.is_some();
     let Some(declaration) = overview.declaration() else {
         let reason = project
             .workspace
@@ -801,9 +803,11 @@ fn render_workspace(
             track,
         );
     };
-    let footer_height = 3;
+    let footer_height = if answer_in_drawer { 0 } else { 3 };
     let list = Rect {
-        height: area.height.saturating_sub(footer_height + 1),
+        height: area
+            .height
+            .saturating_sub(footer_height + u16::from(!answer_in_drawer)),
         ..area
     };
     let footer = Rect::new(
@@ -835,45 +839,9 @@ fn render_workspace(
             ));
         }
         draw_lines(frame, list, &lines, None, track);
-        let created = !declaration.exists;
-        let title = if created {
-            "Create agents.yaml".to_owned()
-        } else {
-            plural(
-                preview
-                    .diff
-                    .iter()
-                    .filter(|line| !matches!(line, DiffLine::Context(_)))
-                    .count(),
-                "line changes",
-            )
-            .replace("lines changes", "lines change")
-        };
-        let detail = if created {
-            "Only the keys you set are written."
-        } else {
-            "Your comments stay in place."
-        };
-        render_answer(
-            frame,
-            footer,
-            &title,
-            detail,
-            Token::TextMuted,
-            &[
-                (
-                    "Save",
-                    WorkspaceHit::OverviewSave(true),
-                    !overview.edit.on_discard,
-                ),
-                (
-                    "Discard",
-                    WorkspaceHit::OverviewSave(false),
-                    overview.edit.on_discard,
-                ),
-            ],
-            hits,
-        );
+        if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
+            answer.render(frame, footer, hits);
+        }
         return Vec::new();
     }
     let problems = match overview.current_preview() {
@@ -901,9 +869,7 @@ fn render_workspace(
     // Where on its line a typed value or a choice's options are drawn,
     // by line: placed once the list has scrolled.
     let mut field_at = None;
-    let mut options_at: Vec<(usize, Vec<OptionCell>)> = Vec::new();
     let mut steps_at: Vec<StepCells> = Vec::new();
-    let mut picks_at: Vec<(usize, usize)> = Vec::new();
     let label_cell = |key: DeclarationKey, focused: bool| {
         Span::styled(
             pad(key_label(key), LABEL),
@@ -927,6 +893,22 @@ fn render_workspace(
             theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
         )
     };
+    // A value chosen from a list: the box a typed value sits in, with the
+    // mark that says it opens.
+    let combo = |text: &str, tone: Token| {
+        let mark = theme::glyph(Symbol::Dropdown);
+        let room = box_width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
+        vec![
+            Span::styled(
+                format!(" {:<room$} ", text::elide(text, room)),
+                theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+            ),
+            Span::styled(
+                format!("{mark} "),
+                theme::fg(Token::TextMuted).bg(theme::color(Token::SurfaceRecessed)),
+            ),
+        ]
+    };
     let edited_mark = || Span::styled("  edited", theme::fg(Token::StateInfo));
     let mut index = 0;
     for (group, keys) in GROUPS {
@@ -934,48 +916,20 @@ fn render_workspace(
             lines.push(blank());
         }
         lines.push(said(group, Token::TextDim));
-        for (position, key) in keys.iter().copied().enumerate() {
-            // A line of air between keys: a form read down a column, not a
-            // table read across it.
-            if position > 0 {
-                lines.push(blank());
-            }
+        for key in keys.iter().copied() {
             let value = overview.effective(key);
             let edited = overview.edit.values.contains_key(&key);
             let focused = index == selected;
             let mut spans = vec![label_cell(key, focused)];
-            if !choices(key).is_empty() {
-                let current = chosen(key, value.as_ref());
-                let mut at = LABEL;
-                let mut placed: Vec<OptionCell> = Vec::new();
-                for (option_index, option) in choices(key).iter().enumerate() {
-                    let on = *option == current;
-                    let mark = theme::glyph(if on {
-                        Symbol::StatusSelected
-                    } else {
-                        Symbol::StatusIdle
-                    });
-                    let word = format!("{mark} {option}");
-                    let width = Line::from(word.as_str()).width() as u16;
-                    spans.push(Span::styled(
-                        mark,
-                        theme::fg(if on { Token::Accent } else { Token::TextDim }),
-                    ));
-                    spans.push(Span::styled(
-                        format!(" {option}"),
-                        if on {
-                            theme::fg_bold(Token::TextBright)
-                        } else {
-                            theme::fg(Token::TextSecondary)
-                        },
-                    ));
-                    spans.push(Span::raw("   "));
-                    placed.push((at, width, index, option_index));
-                    at += width + 3;
-                }
-                if editable {
-                    options_at.push((lines.len(), placed));
-                }
+            if field.is_some_and(|field| field.key == key && field.item.is_none()) {
+                field_at = Some((lines.len(), LABEL));
+            } else if is_combo(key) {
+                let (shown, tone) = match (&value, choices(key)) {
+                    (_, [_, ..]) => (chosen(key, value.as_ref()), Token::TextPrimary),
+                    (Some(value), _) => (scalar(value), Token::TextPrimary),
+                    (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
+                };
+                spans.extend(combo(&shown, tone));
             } else if is_number(key)
                 && !field.is_some_and(|field| field.key == key && field.item.is_none())
             {
@@ -993,7 +947,9 @@ fn render_workspace(
                 } else {
                     Token::TextFaint
                 };
-                let middle = format!("  {}  ", shown.0);
+                // Two places for every count, so the − and + of each line
+                // stand in the same columns.
+                let middle = format!("  {:>STEP_PLACES$}  ", shown.0);
                 spans.push(Span::styled(
                     format!(" {minus} "),
                     theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
@@ -1015,6 +971,13 @@ fn render_workspace(
                     ));
                 }
             } else if is_listed(key, overview) {
+                // A new entry is typed where its add stood.
+                let adding = field.filter(|field| field.key == key).is_some_and(|field| {
+                    field.item == Some(value.as_ref().map_or(0, |value| items(value).len()))
+                });
+                if adding {
+                    field_at = Some((lines.len(), LABEL));
+                }
                 spans.push(Span::styled(
                     if editable { "+ add" } else { "" },
                     theme::fg(if focused {
@@ -1023,8 +986,6 @@ fn render_workspace(
                         Token::TextDim
                     }),
                 ));
-            } else if field.is_some_and(|field| field.key == key && field.item.is_none()) {
-                field_at = Some((lines.len(), LABEL));
             } else {
                 match &value {
                     Some(value) => spans.push(boxed(&scalar(value), Token::TextPrimary)),
@@ -1049,7 +1010,6 @@ fn render_workspace(
                             spans: vec![indent],
                             row: Some(index),
                         });
-                        picker_lines(overview, box_width, &mut lines, &mut picks_at);
                         index += 1;
                         continue;
                     }
@@ -1083,16 +1043,6 @@ fn render_workspace(
                         row: Some(index),
                     });
                     index += 1;
-                }
-                if let Some(field) = field.filter(|field| field.key == key)
-                    && field.item == Some(entries.len())
-                {
-                    field_at = Some((lines.len(), LABEL));
-                    lines.push(SectionLine {
-                        spans: Vec::new(),
-                        row: None,
-                    });
-                    picker_lines(overview, box_width, &mut lines, &mut picks_at);
                 }
             }
             for problem in problems
@@ -1152,23 +1102,12 @@ fn render_workspace(
         };
         let mut boxes: Vec<Vec<Span<'static>>> = Vec::new();
         if let Some(buffer) = writing {
-            // The caret stands where typing lands, on whichever line that is.
             let (before, after) = buffer.split();
-            let mut current = vec![Span::raw(" ")];
-            for (index, part) in before.split('\n').enumerate() {
-                if index > 0 {
-                    boxes.push(std::mem::replace(&mut current, vec![Span::raw(" ")]));
-                }
-                current.push(Span::styled(part.to_owned(), theme::fg(Token::TextBright)));
+            for spans in typed_lines(before, after, box_width.saturating_sub(2).max(8)) {
+                let mut line = vec![Span::raw(" ")];
+                line.extend(spans);
+                boxes.push(line);
             }
-            current.push(widget::field::caret());
-            for (index, part) in after.split('\n').enumerate() {
-                if index > 0 {
-                    boxes.push(std::mem::replace(&mut current, vec![Span::raw(" ")]));
-                }
-                current.push(Span::styled(part.to_owned(), theme::fg(Token::TextBright)));
-            }
-            boxes.push(current);
             boxes = boxes.into_iter().map(box_line).collect();
         } else {
             let (shown, tone) = match overview.effective_action(state) {
@@ -1186,9 +1125,11 @@ fn render_workspace(
                     ]));
                 }
             }
-            if boxes.is_empty() {
-                boxes.push(box_line(vec![Span::raw(" ")]));
-            }
+        }
+        // A text area, never a one-line field: two lines at the least, and
+        // as many as what it holds.
+        while boxes.len() < 2 {
+            boxes.push(box_line(vec![Span::raw(" ")]));
         }
         for (line, mut spans) in boxes.into_iter().enumerate() {
             let mut row_spans = vec![if line == 0 {
@@ -1214,30 +1155,12 @@ fn render_workspace(
             Token::StateDanger,
         ));
     }
-    let (drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected), track);
+    let (mut drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected), track);
     let line_y = |line: usize| {
         (line >= offset)
             .then(|| list.y + (line - offset) as u16)
             .filter(|y| *y < list.bottom())
     };
-    for (line, placed) in options_at {
-        if let Some(y) = line_y(line) {
-            for (x, width, row, option) in placed {
-                hits.push((
-                    Rect::new(list.x + x, y, width, 1),
-                    WorkspaceHit::OverviewChoice(row, option),
-                ));
-            }
-        }
-    }
-    for (line, option) in picks_at {
-        if let Some(y) = line_y(line) {
-            hits.push((
-                Rect::new(list.x + LABEL, y, box_width as u16, 1),
-                WorkspaceHit::OverviewPick(option),
-            ));
-        }
-    }
     for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in steps_at {
         if let Some(y) = line_y(line) {
             hits.push((
@@ -1272,164 +1195,118 @@ fn render_workspace(
         // Padded to the box, so nothing the row drew beneath shows through.
         row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        // Over the form rather than in it: the rows under the field stay
+        // where they are, and a click lands on the list before them.
+        let picker = render_picker(frame, overview, rect, list, hits);
+        drawn.retain(|(row, _)| row.intersection(picker).is_empty());
     }
-    let pending = overview.edit.pending();
-    if let Err(reason) = &declaration.editable {
-        render_answer(
-            frame,
-            footer,
-            "Read-only",
-            &format!("edit agents.yaml by hand: {reason}"),
-            Token::TextMuted,
-            &[],
-            hits,
-        );
-    } else if let Some(refusal) = &overview.edit.refusal {
-        render_answer(
-            frame,
-            footer,
-            "Not saved",
-            refusal,
-            Token::StateDanger,
-            &[],
-            hits,
-        );
-    } else if pending > 0 {
-        let failed = match overview.current_preview() {
-            Some(Err(reason)) => Some(reason.clone()),
-            _ => None,
-        };
-        let blocked = !problems.is_empty() || failed.is_some();
-        let checking = overview.current_preview().is_none();
-        let detail = if let Some(reason) = &failed {
-            reason.as_str()
-        } else if blocked {
-            "Fix the errors to save."
-        } else if checking {
-            "Checking the edits…"
-        } else {
-            "Save shows the agents.yaml diff first."
-        };
-        let title = plural(pending, "unsaved change");
-        render_answer(
-            frame,
-            footer,
-            &title,
-            detail,
-            if blocked {
-                Token::StateDanger
-            } else {
-                Token::TextMuted
-            },
-            &[
-                (
-                    "Save",
-                    WorkspaceHit::OverviewSave(true),
-                    !blocked && !checking,
-                ),
-                ("Discard", WorkspaceHit::OverviewSave(false), false),
-            ],
-            hits,
-        );
-    } else if let Some(awaiting) = &project.status.commands_awaiting_approval {
-        let title = format!(
-            "{} waiting for approval",
-            plural(awaiting.commands.len(), "command")
-        );
-        render_answer(
-            frame,
-            footer,
-            &title,
-            "Nothing runs until you approve it.",
-            Token::TextMuted,
-            &[("Review", WorkspaceHit::OverviewReview, true)],
-            hits,
-        );
-    } else if !declaration.exists {
-        render_answer(
-            frame,
-            footer,
-            "",
-            "No agents.yaml yet. The first Save creates it.",
-            Token::TextMuted,
-            &[],
-            hits,
-        );
+    if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
+        answer.render(frame, footer, hits);
     }
     let _ = model;
     drawn
 }
 
-/// The paths a list's field offers, under it: a window of them around the
-/// one the keys are on, each answering a click, and what is left past it.
-/// Nothing is drawn for a key that offers none.
-fn picker_lines(
+/// What the field at `field` offers, floating under it — or over it, when
+/// `room` ends first: a window of the options around the one the keys
+/// are on, each answering a click, and what is left past it. Answers the
+/// rect it covers; nothing is drawn for a key that offers none.
+fn render_picker(
+    frame: &mut ratatui::Frame<'_>,
     overview: &SpaceOverviewView,
-    width: usize,
-    lines: &mut Vec<SectionLine>,
-    picks_at: &mut Vec<(usize, usize)>,
-) {
+    field: Rect,
+    room: Rect,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> Rect {
     const SHOWN: usize = 6;
-    let Some(field) = &overview.edit.field else {
-        return;
+    let Some(editing) = &overview.edit.field else {
+        return Rect::default();
     };
-    if !matches!(field.key, DeclarationKey::Link | DeclarationKey::Artifacts) {
-        return;
+    if !matches!(
+        editing.key,
+        DeclarationKey::Link | DeclarationKey::Artifacts
+    ) && !is_combo(editing.key)
+    {
+        return Rect::default();
     }
-    let indent = || Span::raw(" ".repeat(usize::from(LABEL)));
+    let width = usize::from(field.width);
     let options = overview.picker_options();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut picks: Vec<(usize, usize)> = Vec::new();
+    let quiet = |text: String| {
+        Line::from(Span::styled(
+            format!(" {:<width$}", text, width = width.saturating_sub(1)),
+            theme::fg(Token::TextFaint).bg(theme::color(Token::SurfaceRaisedSubtle)),
+        ))
+    };
     if options.is_empty() {
-        let none = if field.key == DeclarationKey::Link {
-            "nothing ignored matches; enter takes what is typed"
-        } else {
-            "no tracked directory matches; enter takes what is typed"
+        let none = match editing.key {
+            DeclarationKey::Link => "nothing ignored matches; enter takes what is typed",
+            DeclarationKey::Artifacts => "no tracked directory matches; enter takes what is typed",
+            DeclarationKey::Target => "no branch matches; enter takes what is typed",
+            _ => "no option matches",
         };
-        lines.push(SectionLine {
-            spans: vec![indent(), Span::styled(none, theme::fg(Token::TextFaint))],
-            row: None,
-        });
-        return;
-    }
-    let picked = field.picked.min(options.len() - 1);
-    let start = picked.saturating_sub(SHOWN - 1);
-    for (index, option) in options.iter().enumerate().skip(start).take(SHOWN) {
-        let on = index == picked;
-        let ground = if on {
-            Token::SurfaceRaised
-        } else {
-            Token::SurfaceRaisedSubtle
-        };
-        picks_at.push((lines.len(), index));
-        lines.push(SectionLine {
-            spans: vec![
-                indent(),
-                Span::styled(
-                    format!(
-                        " {:<width$}",
-                        text::elide(option, width - 2),
-                        width = width - 1
-                    ),
-                    theme::fg(if on {
-                        Token::TextBright
-                    } else {
-                        Token::TextInactive
-                    })
-                    .bg(theme::color(ground)),
+        lines.push(quiet(text::elide(none, width.saturating_sub(2))));
+    } else {
+        let picked = editing.picked.min(options.len() - 1);
+        let start = picked.saturating_sub(SHOWN - 1);
+        for (index, option) in options.iter().enumerate().skip(start).take(SHOWN) {
+            let on = index == picked;
+            let ground = if on {
+                Token::SurfaceRaised
+            } else {
+                Token::SurfaceRaisedSubtle
+            };
+            picks.push((lines.len(), index));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    " {:<width$}",
+                    text::elide(option, width.saturating_sub(2)),
+                    width = width.saturating_sub(1)
                 ),
-            ],
-            row: None,
-        });
+                theme::fg(if on {
+                    Token::TextBright
+                } else {
+                    Token::TextInactive
+                })
+                .bg(theme::color(ground)),
+            )));
+        }
+        let hidden = options.len().saturating_sub(start + SHOWN);
+        if hidden > 0 {
+            lines.push(quiet(format!("+{hidden} more")));
+        }
     }
-    let hidden = options.len().saturating_sub(start + SHOWN);
-    if hidden > 0 {
-        lines.push(SectionLine {
-            spans: vec![
-                indent(),
-                Span::styled(format!(" +{hidden} more"), theme::fg(Token::TextFaint)),
-            ],
-            row: None,
-        });
-    }
+    let height = lines.len() as u16;
+    let below = field.bottom();
+    let y = if below + height <= room.bottom() {
+        below
+    } else {
+        field.y.saturating_sub(height).max(room.y)
+    };
+    let area = Rect::new(
+        field.x,
+        y,
+        field.width,
+        height.min(room.bottom().saturating_sub(y)),
+    );
+    widget::fill(frame, area, Token::SurfaceRaisedSubtle);
+    frame.render_widget(Paragraph::new(lines), area);
+    // The first hit holding a point answers it, so the list's go ahead of
+    // the form's controls it floats over.
+    let options: Vec<(Rect, WorkspaceHit)> = picks
+        .into_iter()
+        .map(|(line, option)| (area.y + line as u16, option))
+        .filter(|(row, _)| *row < area.bottom())
+        .map(|(row, option)| {
+            (
+                Rect::new(area.x, row, area.width, 1),
+                WorkspaceHit::OverviewPick(option),
+            )
+        })
+        .collect();
+    hits.splice(0..0, options);
+    area
 }
 
 /// The Agent section: whose prompts are listed, and the prompts the agent
@@ -1548,6 +1425,202 @@ const PROMPT_HARNESS: u16 = 12;
 const PROMPT_WHEN: u16 = 7;
 const PROMPT_WHERE: u16 = 24;
 
+/// The lines of an action being written, folded at `width` columns
+/// wherever a line runs past it, with the caret between `before` and
+/// `after` on whichever line it falls.
+fn typed_lines(before: &str, after: &str, width: usize) -> Vec<Vec<Span<'static>>> {
+    let caret_at = before.chars().count();
+    let text: Vec<char> = before.chars().chain(after.chars()).collect();
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for paragraph in text.split(|character| *character == '\n') {
+        let end = start + paragraph.len();
+        let mut from = start;
+        loop {
+            let to = (from + width).min(end);
+            let last = to == end;
+            let holds_caret = caret_at >= from && (caret_at < to || last && caret_at == to);
+            let piece = |a: usize, b: usize| -> String { text[a..b].iter().collect() };
+            let tone = theme::fg(Token::TextBright);
+            let line = if holds_caret {
+                vec![
+                    Span::styled(piece(from, caret_at), tone),
+                    widget::field::caret(),
+                    Span::styled(piece(caret_at, to), tone),
+                ]
+            } else {
+                vec![Span::styled(piece(from, to), tone)]
+            };
+            lines.push(line);
+            if last {
+                break;
+            }
+            from = to;
+        }
+        start = end + 1;
+    }
+    lines
+}
+
+/// What the Settings section says about its edits, and the buttons that
+/// act on them: drawn at the foot of the drawer, as the manage screens end
+/// a detail in what can be done about it, or under the form when there is
+/// no drawer beside it.
+fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Option<Answer> {
+    let declaration = overview.declaration()?;
+    if overview.edit.reviewing
+        && let Some(Ok(preview)) = overview.current_preview()
+    {
+        let created = !declaration.exists;
+        let title = if created {
+            "Create agents.yaml".to_owned()
+        } else {
+            plural(
+                preview
+                    .diff
+                    .iter()
+                    .filter(|line| !matches!(line, DiffLine::Context(_)))
+                    .count(),
+                "line changes",
+            )
+            .replace("lines changes", "lines change")
+        };
+        let detail = if created {
+            "Only the keys you set are written."
+        } else {
+            "Your comments stay in place."
+        };
+        return Some(Answer::new(
+            &title,
+            detail,
+            Token::TextMuted,
+            vec![
+                (
+                    "Save",
+                    WorkspaceHit::OverviewSave(true),
+                    !overview.edit.on_discard,
+                ),
+                (
+                    "Discard",
+                    WorkspaceHit::OverviewSave(false),
+                    overview.edit.on_discard,
+                ),
+            ],
+        ));
+    }
+    let problems = match overview.current_preview() {
+        Some(Ok(preview)) if overview.edit.pending() > 0 => preview.problems.clone(),
+        _ => declaration.problems.clone(),
+    };
+    let pending = overview.edit.pending();
+    let answer = if let Err(reason) = &declaration.editable {
+        Answer::new(
+            "Read-only",
+            &format!("edit agents.yaml by hand: {reason}"),
+            Token::TextMuted,
+            Vec::new(),
+        )
+    } else if let Some(refusal) = &overview.edit.refusal {
+        Answer::new("Not saved", refusal, Token::StateDanger, Vec::new())
+    } else if pending > 0 {
+        let failed = match overview.current_preview() {
+            Some(Err(reason)) => Some(reason.clone()),
+            _ => None,
+        };
+        let blocked = !problems.is_empty() || failed.is_some();
+        let checking = overview.current_preview().is_none();
+        let detail = if let Some(reason) = &failed {
+            reason.as_str()
+        } else if blocked {
+            "Fix the errors to save."
+        } else if checking {
+            "Checking the edits…"
+        } else {
+            "Save shows the agents.yaml diff first."
+        };
+        let title = plural(pending, "unsaved change");
+        Answer::new(
+            &title,
+            detail,
+            if blocked {
+                Token::StateDanger
+            } else {
+                Token::TextMuted
+            },
+            vec![
+                (
+                    "Save",
+                    WorkspaceHit::OverviewSave(true),
+                    !blocked && !checking,
+                ),
+                ("Discard", WorkspaceHit::OverviewSave(false), false),
+            ],
+        )
+    } else if let Some(awaiting) = &project.status.commands_awaiting_approval {
+        let title = format!(
+            "{} waiting for approval",
+            plural(awaiting.commands.len(), "command")
+        );
+        Answer::new(
+            &title,
+            "Nothing runs until you approve it.",
+            Token::TextMuted,
+            vec![("Review", WorkspaceHit::OverviewReview, true)],
+        )
+    } else if !declaration.exists {
+        Answer::new(
+            "",
+            "No agents.yaml yet. The first Save creates it.",
+            Token::TextMuted,
+            Vec::new(),
+        )
+    } else {
+        return None;
+    };
+    Some(answer)
+}
+
+/// A title, what it means, and the buttons that answer it.
+struct Answer {
+    title: String,
+    detail: String,
+    tone: Token,
+    buttons: Vec<(&'static str, WorkspaceHit, bool)>,
+}
+
+impl Answer {
+    fn new(
+        title: &str,
+        detail: &str,
+        tone: Token,
+        buttons: Vec<(&'static str, WorkspaceHit, bool)>,
+    ) -> Self {
+        Self {
+            title: title.to_owned(),
+            detail: detail.to_owned(),
+            tone,
+            buttons,
+        }
+    }
+
+    fn render(
+        &self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        hits: &mut Vec<(Rect, WorkspaceHit)>,
+    ) {
+        render_answer(
+            frame,
+            area,
+            &self.title,
+            &self.detail,
+            self.tone,
+            &self.buttons,
+            hits,
+        );
+    }
+}
+
 /// A section's closing word: what stands, why, and the buttons that act
 /// on it, each lit when it is the one Enter takes.
 fn render_answer(
@@ -1594,9 +1667,9 @@ fn render_answer(
 fn render_drawer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
-    model: &WorkspaceModel,
     overview: &SpaceOverviewView,
     project: &ProjectSpace,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let width = usize::from(area.width);
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -1648,41 +1721,27 @@ fn render_drawer(
                     lines.push(pair("path", agent.path.clone(), Token::TextSecondary));
                 }
             }
-            lines.push(Line::default());
-            lines.push(Line::from(Span::styled(
-                "what reaches it",
-                theme::fg(Token::TextDim),
-            )));
-            match &agent.support {
-                _ if agent.key.is_none() => {}
-                Some(support) => {
-                    lines.extend(crate::ui::agent_support::capability_lines(support, width));
+            if agent.key.is_some() {
+                lines.push(Line::default());
+                match &agent.support {
+                    Some(support) => {
+                        lines.push(Line::from(Span::styled(
+                            "compatibility",
+                            theme::fg(Token::TextDim),
+                        )));
+                        for (name, status, tone) in crate::ui::agent_support::compatibility(support)
+                        {
+                            lines.push(Line::from(vec![
+                                Span::styled(pad(name, 16), theme::fg(Token::TextSecondary)),
+                                Span::styled(status, theme::fg(tone)),
+                            ]));
+                        }
+                    }
+                    None => lines.push(Line::from(Span::styled(
+                        "reading…",
+                        theme::fg(Token::TextMuted),
+                    ))),
                 }
-                None => lines.push(Line::from(Span::styled(
-                    "reading…",
-                    theme::fg(Token::TextMuted),
-                ))),
-            }
-            let chosen = model
-                .remembered
-                .drawer_prompts
-                .as_ref()
-                .filter(|history| history.root == agent.space_root)
-                .and_then(|history| agent.prompts(&history.entries).get(agent.selected).copied());
-            if let Some(entry) = chosen {
-                lines.push(Line::default());
-                lines.push(Line::from(Span::styled(
-                    "prompt",
-                    theme::fg(Token::TextDim),
-                )));
-                lines.push(pair(
-                    "asked",
-                    entry.compact_age(&uze_application::PromptClock::now()),
-                    Token::TextSecondary,
-                ));
-                lines.push(pair("in", entry.tab_label.clone(), Token::TextSecondary));
-                lines.push(Line::default());
-                paragraph(&entry.preview, Token::TextPrimary, &mut lines);
             }
         }
         Section::Context if row == 0 => {
@@ -1877,7 +1936,7 @@ fn render_drawer(
                 if overview.edit.actions.contains_key(&state) {
                     lines.push(pair("", "edited, not saved".to_owned(), Token::StateInfo));
                 }
-                frame.render_widget(Paragraph::new(lines), area);
+                draw_with_answer(frame, area, lines, settings_answer(overview, project), hits);
                 return;
             }
             let Some(key) = row.key() else {
@@ -1917,9 +1976,34 @@ fn render_drawer(
             if overview.edit.values.contains_key(&key) {
                 lines.push(pair("", "edited, not saved".to_owned(), Token::StateInfo));
             }
+            draw_with_answer(frame, area, lines, settings_answer(overview, project), hits);
+            return;
         }
     }
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// The drawer's lines, then the answer about the edits a line below them —
+/// or at the drawer's foot when the lines leave no room above it.
+fn draw_with_answer(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    answer: Option<Answer>,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    const HEIGHT: u16 = 3;
+    let below = area.y + lines.len() as u16 + 1;
+    frame.render_widget(Paragraph::new(lines), area);
+    let Some(answer) = answer else {
+        return;
+    };
+    let y = below.min(area.bottom().saturating_sub(HEIGHT)).max(area.y);
+    answer.render(
+        frame,
+        Rect::new(area.x, y, area.width, HEIGHT.min(area.bottom() - y)),
+        hits,
+    );
 }
 
 fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &'static str)> {
@@ -2066,5 +2150,32 @@ fn display_path(path: &Path) -> String {
         Some(relative) if relative.as_os_str().is_empty() => "~".to_owned(),
         Some(relative) => format!("~/{}", relative.display()),
         None => path.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::typed_lines;
+
+    fn spelled(lines: &[Vec<ratatui::text::Span<'static>>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|spans| spans.iter().map(|span| span.content.as_ref()).collect())
+            .collect()
+    }
+
+    /// An action being written folds where it runs past the box, keeps
+    /// the lines it was given, and carries the caret on the line typing
+    /// lands on.
+    #[test]
+    fn an_action_being_written_folds_and_carries_its_caret() {
+        let lines = typed_lines("abcdefgh", "ij\nkl", 8);
+        let caret = crate::ui::widget::field::caret().content.into_owned();
+        assert_eq!(
+            spelled(&lines),
+            vec!["abcdefgh".to_owned(), format!("{caret}ij"), "kl".to_owned()],
+        );
+        let at_end = typed_lines("ab", "", 8);
+        assert_eq!(spelled(&at_end), vec![format!("ab{caret}")]);
     }
 }
