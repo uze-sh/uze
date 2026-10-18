@@ -94,6 +94,19 @@ sandbox:
           printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$repo" >> {home}/.codex/config.toml
       done
   write:
+    # Codex runs its commands in a sandbox and asks before one that writes
+    # outside the checkout: `uze agent work name` records the name under
+    # ~/.uze, and `git add`/`git commit` write a worktree's metadata, which
+    # lives in its repository's .git/worktrees/ and stays read-only to the
+    # sandbox even under a writable root. The take then stopped on an
+    # approval prompt. Allow rules for those, the same thing the prompt's
+    # "don't ask again" writes, not a bypass mode: Git as a whole, since an
+    # agent chains `git add && git commit && git status` and every part of a
+    # chain needs a rule, and the fixtures have no remote to reach.
+    - path: '{home}/.codex/rules/uze.rules'
+      text: |
+        prefix_rule(pattern=["uze", "agent"], decision="allow")
+        prefix_rule(pattern=["git"], decision="allow")
     - path: '{home}/.claude.json'
       text: |
         {
@@ -113,9 +126,11 @@ sandbox:
   patch_json:
     # An allow list, not a bypass mode: the bypass opens a consent screen that
     # would be the first frame of the video. The runtime path is the briefing
-    # an agent carried on from another harness is pointed at.
+    # an agent carried on from another harness is pointed at. Auto mode is
+    # kept off: otherwise Claude offers to make it the default the first
+    # time an agent is carried on into it, and the take stops on that offer.
     - path: '{home}/.claude/settings.json'
-      merge: '{"permissions": {"defaultMode": "acceptEdits", "allow": ["Bash", "Read(/{home}/.uze/runtime/**)"]}}'
+      merge: '{"permissions": {"defaultMode": "acceptEdits", "disableAutoMode": "disable", "allow": ["Bash", "Read(/{home}/.uze/runtime/**)"]}}'
     # The model the operator's OpenCode Go login serves. Without that login
     # OpenCode falls back to a free model that refuses to run when the
     # workspace launches it, whatever this says.

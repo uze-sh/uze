@@ -99,6 +99,20 @@ beats:
     pause: 0.8
   - use: launch-opencode
     with: {say: 'a third, on OpenCode', menu_pause: 0.5, pause: 0.6}
+  # Named from the strip: whether OpenCode's model names its own work is up
+  # to the model, and the work is what Recent lists it by later.
+  - dclick: ''
+    glyph: '✦'
+    in: strip
+    offset: 2
+    expect: ▏
+    expect_in: strip
+    expect_timeout: 6
+  - type: routes
+    clear: all
+    expect: routes
+    expect_in: strip
+    pause: 0.5
   - type: add a Routes section to README.md listing every route in src/router.rs, without committing
     pause: 0.8
   # ── 4. review and deliver ───────────────────────────────────────────────
@@ -179,10 +193,11 @@ beats:
     expect: Antigravity
     expect_timeout: 6
     pause: 0.8
-  # The submenu lists the harnesses set up here, Claude Code first.
+  # The submenu lists the harnesses set up here, Claude Code first. The
+  # briefing reaches it through its own channel, with no turn typed into
+  # the pane, so what proves the move is uze's toast saying so.
   - key: Enter
-    expect: continuing work another agent started
-    expect_in: pane
+    expect: Continued in Claude Code
     expect_timeout: 40
     pause: 3.0
   - say: closed, its work is kept
@@ -190,8 +205,15 @@ beats:
     expect: work kept
     expect_timeout: 8
     pause: 1.6
+  # Recent lists named work by default, and whether OpenCode's model names
+  # its work is up to the model: `a` lists every agent, named or not.
   - say: and Recent has it, across every project
     key: M-p
+    expect: recent
+    expect_in: sidebar
+    expect_timeout: 8
+    pause: 0.6
+  - key: a
     expect: shelved
     expect_in: sidebar
     expect_timeout: 8

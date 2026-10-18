@@ -116,17 +116,16 @@ beats:
   - say: asked for something else — this one without a commit
     type: add a Routes section to README.md listing every route in src/router.rs
     pause: 1.6
-  # The drawer's prompt list heading: the facts card above it names keys
-  # (project, harness) that other screens draw too.
+  # The agent's own drawer moved into the space's overview: its Agent
+  # section lists what the space's agents were asked, and its drawer what
+  # reaches the agent in front.
   - say: 'what uze delivered to *this* harness, and what it was asked'
-    click: ''
-    glyph: '✦'
-    in: strip
-    occurrence: last
-    expect: PROMPTS
-    expect_timeout: 6
+    key: M-o
+    expect: prompts asked in this space
+    expect_timeout: 8
     pause: 3.2
   - key: Escape
+    refuse: prompts asked in this space
     pause: 0.8
   - say: wait for that agent's first edit — the only stretch the cut squeezes
     wait: shell
