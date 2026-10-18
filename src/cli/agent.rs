@@ -705,13 +705,8 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                         spot.field
                     ));
                 }
-                if let Some(similar) = report.similar {
-                    said.push_str(&format!(
-                        "{} `{similar}` says much the same in the {} memory; remembering \
-                         under that name updates it instead\n",
-                        progress::warning_icon(),
-                        report.scope
-                    ));
+                if let Some(hint) = near_duplicate_hint(report) {
+                    said.push_str(&format!("{} {hint}\n", progress::warning_icon()));
                 }
                 said
             });
@@ -758,6 +753,27 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
         }
     }
     Ok(())
+}
+
+/// What to do about a near duplicate the write just made: the fact it
+/// repeats, and how to take the copy back. A proposal waits for the
+/// operator, who discards it; nothing an agent runs removes one.
+fn near_duplicate_hint(report: &MemoryWrite<'_>) -> Option<String> {
+    let similar = report.similar?;
+    let undo = if report.proposed {
+        "the operator is asked about this proposal".to_owned()
+    } else {
+        format!(
+            "`uze agent memory forget {}{}` removes this one",
+            report.name,
+            if report.scope == "machine" { " -m" } else { "" }
+        )
+    };
+    Some(format!(
+        "`{similar}` says much the same in the {} memory; remembering under that name \
+         updates it instead, and {undo}",
+        report.scope
+    ))
 }
 
 #[derive(serde::Serialize)]
@@ -934,4 +950,37 @@ fn memory_line(entry: &uze_application::application::memory::Entry) -> String {
         uze_application::inert(&entry.description),
         progress::label(by)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn written<'a>(scope: &'a str, proposed: bool) -> MemoryWrite<'a> {
+        MemoryWrite {
+            name: "portuguese-replies",
+            scope,
+            path: std::path::Path::new("/m/portuguese-replies.md"),
+            updated: false,
+            proposed,
+            secret_looking: None,
+            similar: Some("reply-in-ptbr"),
+        }
+    }
+
+    #[test]
+    fn a_near_duplicate_hint_undoes_the_write_in_its_own_scope() {
+        let project = near_duplicate_hint(&written("project", false)).unwrap();
+        assert!(
+            project.ends_with("`uze agent memory forget portuguese-replies` removes this one"),
+            "{project}"
+        );
+        let machine = near_duplicate_hint(&written("machine", false)).unwrap();
+        assert!(
+            machine.ends_with("`uze agent memory forget portuguese-replies -m` removes this one"),
+            "{machine}"
+        );
+        let proposal = near_duplicate_hint(&written("machine", true)).unwrap();
+        assert!(!proposal.contains("forget"), "{proposal}");
+    }
 }
