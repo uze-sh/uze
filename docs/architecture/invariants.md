@@ -2859,7 +2859,7 @@ same list. A build where three of them agree and the fourth still offers a
 way in is the failure mode a runtime flag has in place of a compile error,
 so it is the one this guards.
 
-> `src/ui/tests.rs::a_screen_behind_a_feature_is_absent_or_whole`
+> `src/ui/tests/navigation.rs::a_screen_behind_a_feature_is_absent_or_whole`
 
 ## Decisions deliberately *not* taken
 
@@ -3057,7 +3057,7 @@ buttons and the index both read that one list. A detail view draws a button
 for what can be done now and for nothing else.
 
 > `uze-application::application::offers::tests::an_action_that_cannot_run_says_why_rather_than_doing_nothing`
-> `src/ui/tests.rs::every_drawer_draws_what_its_row_can_do_as_buttons`
+> `src/ui/tests/layout.rs::every_drawer_draws_what_its_row_can_do_as_buttons`
 > `src/ui/tests.rs::the_drawer_offers_what_can_be_done_as_buttons`
 
 ---

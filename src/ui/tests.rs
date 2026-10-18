@@ -3,6 +3,12 @@
 // Gated again so the architecture suite, which reads `#[cfg(test)] mod`
 // declarations, knows these files are test code.
 #[cfg(test)]
+mod layout;
+#[cfg(test)]
+mod navigation;
+#[cfg(test)]
+mod session;
+#[cfg(test)]
 mod support;
 
 use std::path::PathBuf;
@@ -23,8 +29,7 @@ use super::hit::Hit;
 use super::management::render;
 use super::model::{
     Confirmation, Focus, ListScreen, Overlay, PREFERENCE_ROW_COUNT, PluginPane, ProfilePanel,
-    ROUTES, RefreshData, Remembered, Route, Status, TrustedRetry, TuiModel, routes,
-    scope_is_offered,
+    ROUTES, RefreshData, Remembered, Route, Status, TrustedRetry, TuiModel,
 };
 use super::view::health::{Severity, actionable_alerts};
 use super::worker::{Intent, TrustGrant};
@@ -32,35 +37,6 @@ use crate::ui::theme::{self, Token};
 use crate::ui::widget::text;
 
 use support::*;
-
-#[test]
-fn every_route_renders_without_panicking() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let base = model_with_data();
-    for route in ROUTES {
-        let model = TuiModel {
-            route,
-            profile_harness_selection: base.profile_harness_selection.clone(),
-            focus: Focus::Content,
-            remembered: Remembered {
-                plugins: base.remembered.plugins.clone(),
-                marketplaces: base.remembered.marketplaces.clone(),
-                marketplace_plugins: base.remembered.marketplace_plugins.clone(),
-                doctor: base.remembered.doctor.clone(),
-                harness_screen: base.remembered.harness_screen.clone(),
-                profiles: base.remembered.profiles.clone(),
-                ..TuiModel::default().remembered
-            },
-            ..TuiModel::default()
-        };
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| {
-                render(frame, frame.area(), &model, false, &mut hits);
-            })
-            .unwrap();
-    }
-}
 
 /// The legend is the card's own vocabulary written out, so it names what
 /// a card can wear and nothing else. It used to list three marks, one of
@@ -89,128 +65,6 @@ fn the_harness_legend_names_the_words_a_card_carries() {
             "{gone:?} is not a state a card has: {legend}"
         );
     }
-}
-
-#[test]
-fn every_overlay_renders_without_panicking() {
-    let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-    let base = model_with_data();
-    let overlays = [
-        Overlay::ActionIndex {
-            scopes: vec![uze_keys::Scope::Global, uze_keys::Scope::Management],
-            filter: String::new(),
-            selected: 0,
-        },
-        Overlay::HarnessHelp,
-        Overlay::Confirm {
-            kind: Confirmation::RemovePlugin("one".to_owned()),
-            focus: Some(1),
-        },
-        Overlay::Confirm {
-            kind: Confirmation::UpdatePlugin("one".to_owned()),
-            focus: None,
-        },
-        Overlay::Confirm {
-            kind: Confirmation::InstallPlugin {
-                name: "flow".to_owned(),
-                marketplace: "uze-official".to_owned(),
-            },
-            focus: None,
-        },
-        Overlay::Confirm {
-            kind: Confirmation::ApplyContext,
-            focus: None,
-        },
-        Overlay::Confirm {
-            kind: Confirmation::ProtectedPlugin("one".to_owned()),
-            focus: None,
-        },
-        Overlay::AddMarketplace("/home/user/marketplace".to_owned()),
-        Overlay::NewProfile("dev-autonomous".to_owned()),
-        Overlay::Confirm {
-            kind: Confirmation::DeleteProfile("default".to_owned()),
-            focus: Some(1),
-        },
-        Overlay::Confirm {
-            kind: Confirmation::Trust {
-                plugin: "one".to_owned(),
-                detail: "one -> mcp-server".to_owned(),
-                retry: TrustedRetry::Install {
-                    name: "one".to_owned(),
-                    marketplace: "uze-official".to_owned(),
-                },
-            },
-            focus: None,
-        },
-    ];
-    for overlay in overlays {
-        let model = TuiModel {
-            overlay,
-            remembered: Remembered {
-                plugins: base.remembered.plugins.clone(),
-                marketplace_plugins: base.remembered.marketplace_plugins.clone(),
-                doctor: base.remembered.doctor.clone(),
-                ..TuiModel::default().remembered
-            },
-            ..TuiModel::default()
-        };
-        let mut hits = Vec::new();
-        terminal
-            .draw(|frame| {
-                render(frame, frame.area(), &model, false, &mut hits);
-            })
-            .unwrap();
-    }
-}
-
-#[test]
-fn sidebar_keyboard_navigation_cycles_routes() {
-    let mut model = TuiModel {
-        focus: Focus::Sidebar,
-        ..TuiModel::default()
-    };
-    // Against the sidebar's own order rather than against named routes:
-    // what this proves is that the keys walk it and turn around, which is
-    // still true the next time the order is argued over.
-    assert_eq!(model.route, ROUTES[0]);
-    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(model.route, ROUTES[1]);
-    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(model.route, ROUTES[2]);
-    model.apply_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(model.route, ROUTES[1]);
-}
-
-#[test]
-fn tab_toggles_focus_between_sidebar_and_content() {
-    let mut model = TuiModel::default();
-    assert_eq!(model.focus, Focus::Sidebar);
-    model.apply_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    assert_eq!(model.focus, Focus::Content);
-    model.apply_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    assert_eq!(model.focus, Focus::Sidebar);
-}
-
-/// Down walks the tree past the group's heading onto the next plugin, the
-/// panel asks for that plugin's detail, and Enter performs what the panel
-/// offers first — asked about before it happens.
-#[test]
-fn content_navigation_and_inspect_intent() {
-    let mut model = model_with_plugins(&["one", "two"]);
-    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(model.remembered.plugin_screen.selected, 1);
-    assert_eq!(
-        model.marketplace_inspect_intent(),
-        Intent::InspectPlugin("two".to_owned())
-    );
-    assert_eq!(
-        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        Intent::None
-    );
-    assert!(
-        matches!(model.overlay, Overlay::Confirm { .. }),
-        "an installed plugin's first offer is removing it, confirmed first"
-    );
 }
 
 /// The drawer opens by default on whichever row is selected, and the
@@ -358,154 +212,6 @@ fn an_auto_updated_plugin_badges_until_the_plugins_screen_has_shown_it() {
 }
 
 #[test]
-fn a_return_visit_draws_what_the_last_one_resolved() {
-    let mut model = model_with_plugins(&["one", "two"]);
-    model.remembered.resolved_at = Some(std::time::Instant::now());
-    model.remembered.plugin_screen.selected = 1;
-    model.drawer_width = Some(46);
-    // What one visit ends holding — including work it was in the middle
-    // of, which the next visit must not inherit.
-    model.status = Status::Working("Inspecting one…".to_owned());
-    model.overlay = Overlay::Confirm {
-        kind: Confirmation::RemovePlugin("one".to_owned()),
-        focus: Some(0),
-    };
-    model.maintenance_in_flight = true;
-    model.inspection_in_flight = Some(Intent::InspectPlugin("one".to_owned()));
-    model.hits = vec![(Rect::new(0, 0, 1, 1), Hit::Route(Route::Plugins))];
-
-    let layout = model.management_layout();
-    let model = TuiModel::recall(Some(model.remember()), &layout);
-
-    assert_eq!(
-        model.remembered.plugins.len(),
-        2,
-        "the machine state the last visit resolved is still the truth about the machine"
-    );
-    assert!(
-        model.remembered.resolved_at.is_some(),
-        "and so is when it was resolved — the next visit decides on it"
-    );
-    assert_eq!(model.route, Route::Plugins);
-    assert_eq!(model.remembered.plugin_screen.selected, 1);
-    assert_eq!(
-        model.drawer_width,
-        Some(46),
-        "a drawer stays the width it was dragged to"
-    );
-    assert!(matches!(model.status, Status::Idle));
-    assert!(matches!(model.overlay, Overlay::None));
-    assert_eq!(model.focus, Focus::Sidebar);
-    assert!(
-        !model.maintenance_in_flight && model.inspection_in_flight.is_none(),
-        "work in flight belonged to a visit that ended, and its channel with it"
-    );
-    assert!(model.hits.is_empty());
-}
-
-#[test]
-fn a_resolution_the_session_just_made_is_not_asked_for_again() {
-    use super::management::{RESOLUTION_STANDS_FOR, opening_re_resolves};
-    use std::time::Instant;
-
-    assert!(
-        opening_re_resolves(None),
-        "nothing resolved yet is not an answer to stand on"
-    );
-    assert!(
-        !opening_re_resolves(Some(Instant::now())),
-        "the session's own warm-up answered a moment ago; opening the screen shows it"
-    );
-    assert!(
-        opening_re_resolves(Some(Instant::now() - RESOLUTION_STANDS_FOR)),
-        "past the window, opening the screen is a claim about the machine now"
-    );
-}
-
-#[test]
-fn a_first_visit_starts_from_the_default_model() {
-    let model = TuiModel::recall(None, &uze_application::ManagementLayout::default());
-    assert!(model.remembered.plugins.is_empty());
-    assert_eq!(model.route, Route::Overview);
-    assert!(
-        model.drawer_width.is_none(),
-        "the width a drawer opens with is stated once, by Default"
-    );
-}
-
-/// Which screen was open, and how its drawers were left, outlive the
-/// process: the next run opens where the last one was, not on Overview.
-#[test]
-fn the_next_run_opens_on_the_screen_the_last_one_left() {
-    let mut model = TuiModel::default();
-    model.set_route(Route::Profiles);
-    model.drawer_width = Some(38);
-    model.profile_columns_width = Some(28);
-    model.plugin_market = Some("uze-official".to_owned());
-
-    let layout = model.management_layout();
-    assert_eq!(layout.route.as_deref(), Some("profiles"));
-
-    let model = TuiModel::recall(None, &layout);
-    assert_eq!(model.route, Route::Profiles);
-    assert_eq!(
-        model.drawer_width,
-        Some(38),
-        "a drawer stays the width it was dragged to"
-    );
-    assert_eq!(model.profile_columns_width, Some(28));
-    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
-
-    let unknown = uze_application::ManagementLayout {
-        route: Some("a screen this build does not have".to_owned()),
-        ..uze_application::ManagementLayout::default()
-    };
-    assert_eq!(
-        TuiModel::recall(None, &unknown).route,
-        Route::Overview,
-        "a screen the client no longer recognizes opens the default, not nothing"
-    );
-}
-
-/// The management client reopens on the screen it was left on without
-/// passing through a route change — and Settings, which reads its lists
-/// on arrival, used to open empty until it was clicked again.
-#[test]
-fn settings_reopened_where_it_was_left_still_reads_its_lists() {
-    let layout = uze_application::ManagementLayout {
-        route: Some(Route::Settings.id().to_owned()),
-        ..uze_application::ManagementLayout::default()
-    };
-    let mut model = TuiModel::recall(None, &layout);
-    assert_eq!(model.route, Route::Settings);
-    assert_eq!(model.settings_intent(), Intent::LoadSettings);
-    model.settings_read = true;
-    assert_eq!(
-        model.settings_intent(),
-        Intent::None,
-        "read once, not every frame — an empty machine included"
-    );
-    model.set_route(Route::Overview);
-    assert_eq!(
-        model.settings_intent(),
-        Intent::None,
-        "only that screen reads them"
-    );
-}
-
-#[test]
-fn a_route_action_key_works_from_the_sidebar_too() {
-    let mut model = model_with_plugins(&["one"]);
-    model.remembered.plugins[0].freshness = behind();
-    model.focus = Focus::Sidebar;
-    model.apply_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE));
-    assert!(
-        matches!(model.overlay, Overlay::Confirm { kind: Confirmation::UpdatePlugin(ref id), .. } if id == "one"),
-        "`u` must not be swallowed just because the sidebar holds focus"
-    );
-}
-
-#[test]
 fn trust_required_overlay_confirm_regrants_with_trust() {
     let mut model = TuiModel {
         overlay: Overlay::Confirm {
@@ -531,26 +237,6 @@ fn trust_required_overlay_confirm_regrants_with_trust() {
         }
     );
     assert_eq!(model.overlay, Overlay::None);
-}
-
-#[test]
-fn mouse_click_on_sidebar_route_switches_route_and_focus() {
-    let mut model = TuiModel {
-        hits: vec![(Rect::new(0, 1, 20, 1), Hit::Route(Route::Plugins))],
-        ..TuiModel::default()
-    };
-    let intent = model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: 2,
-            row: 1,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 100, 40),
-    );
-    assert_eq!(intent, Intent::None);
-    assert_eq!(model.route, Route::Plugins);
-    assert_eq!(model.focus, Focus::Content);
 }
 
 #[test]
@@ -719,57 +405,6 @@ fn the_index_narrows_as_you_type_and_performs_what_you_choose() {
         "choosing from the index performs it: {:?}",
         model.overlay
     );
-}
-
-#[test]
-fn empty_marketplace_and_no_harness_states_do_not_panic_rendering() {
-    let model = TuiModel {
-        route: Route::Plugins,
-        ..TuiModel::default()
-    };
-    assert_eq!(model.list_len(model.route), 0);
-    assert!(model.selected_marketplace_plugin().is_none());
-    let model = TuiModel {
-        route: Route::Harnesses,
-        ..TuiModel::default()
-    };
-    assert!(model.selected_harness().is_none());
-}
-
-#[test]
-fn read_only_navigation_never_produces_a_mutating_intent() {
-    let mut model = model_with_plugins(&["one", "two"]);
-    model.set_route(Route::Plugins);
-    model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
-        name: "uze".to_owned(),
-        description: None,
-        keywords: Vec::new(),
-        category: None,
-        installed: true,
-        freshness: up_to_date(),
-        installed_at_unix: None,
-        is_default: true,
-    }];
-    for key in [
-        KeyCode::Down,
-        KeyCode::Up,
-        KeyCode::Char('j'),
-        KeyCode::Char('k'),
-    ] {
-        let intent = model.apply_key(KeyEvent::new(key, KeyModifiers::NONE));
-        // Plugins navigation may dispatch a read-only inspect fetch
-        // (keeps the drawer's revision and the row's resources populated as
-        // selection moves) — that's not a mutation, so only reject the
-        // intents that actually write something.
-        assert!(
-            matches!(
-                intent,
-                Intent::None | Intent::InspectMarketplacePlugin { .. } | Intent::InspectPlugin(..)
-            ),
-            "navigation must never produce a mutating intent, got {intent:?}"
-        );
-    }
 }
 
 #[test]
@@ -2128,52 +1763,6 @@ fn the_footers_version_opens_this_releases_notes() {
     );
 }
 
-/// A step is recorded wherever it was performed from — the key, a button,
-/// the index — because every action this client performs goes through one
-/// place, and that is where the list learns.
-#[test]
-fn taking_a_step_any_way_at_all_marks_it_taken() {
-    let mut model = model_with_plugins(&["flow"]);
-    assert!(model.steps_taken.is_empty());
-    model.act(uze_keys::Action::OpenActionIndex);
-    assert!(
-        model
-            .steps_taken
-            .contains(&uze_keys::Action::OpenActionIndex.name())
-    );
-
-    // And an action that is not a step leaves the list alone.
-    let before = model.steps_taken.clone();
-    model.act(uze_keys::Action::StartFilter);
-    assert_eq!(model.steps_taken, before);
-}
-
-/// The property the list needs and nothing was checking: a step must be
-/// takeable from wherever the list is drawn, which is every screen.
-///
-/// Two steps were screen-specific — asking a row what can be done to it,
-/// and searching a list — so on the screen uze opens on they were rows
-/// that did nothing when clicked, in a checklist that could never be
-/// finished from there.
-#[test]
-fn every_first_step_can_be_taken_from_every_screen() {
-    for route in ROUTES {
-        for action in crate::ui::management::FIRST_STEPS {
-            let mut model = TuiModel {
-                route,
-                focus: Focus::Content,
-                ..model_with_data()
-            };
-            model.act(action);
-            assert!(
-                model.steps_taken.contains(&action.name()),
-                "{action} did not land on {route:?} — a step the list offers \
-                 everywhere has to be takeable everywhere"
-            );
-        }
-    }
-}
-
 /// An action that belongs to a screen with a list still answers on one
 /// without, rather than doing nothing — which is what a broken key looks
 /// like — and is never recorded as something that happened.
@@ -3096,141 +2685,6 @@ fn small_caps_levels_mixed_case_and_keeps_what_it_cannot_fold() {
     assert_eq!(crate::ui::widget::text::small_caps("Query X2"), "qᴜᴇʀʏ x2");
 }
 
-/// A screen behind a feature is absent or whole. The sidebar, the walk
-/// from one screen to the next, the id a layout file remembers and the
-/// shortcuts screen all read the same list — a build where three of them
-/// agree and the fourth still offers a way in is the failure mode a flag
-/// like this has instead of a compile error.
-#[test]
-fn a_screen_behind_a_feature_is_absent_or_whole() {
-    let offered = routes();
-    for route in ROUTES {
-        let shown = offered.contains(&route);
-        assert_eq!(
-            shown,
-            route.feature().is_none_or(uze_application::feature_enabled),
-            "{route:?} is drawn on a different rule from the one it declares"
-        );
-        assert_eq!(
-            Route::from_id(route.id()).is_some(),
-            shown,
-            "{route:?} is remembered on a different rule from the one it is drawn on"
-        );
-    }
-    for route in &offered {
-        assert!(
-            offered.contains(&route.neighbour(1)) && offered.contains(&route.neighbour(-1)),
-            "walking the sidebar from {route:?} lands on a screen nobody can see"
-        );
-    }
-
-    let model = model_with_data();
-    let undocumented: Vec<_> = model
-        .key_rows()
-        .into_iter()
-        .filter(|row| !scope_is_offered(row.scope))
-        .map(|row| format!("{}.{}", row.scope.name(), row.action))
-        .collect();
-    assert!(
-        undocumented.is_empty(),
-        "the shortcuts screen documents a surface this build hides: {undocumented:?}"
-    );
-
-    // Whether a surface is on offer is answered by the screen that owns
-    // it, so a scope two screens claim would be answered twice, and
-    // differently once one of them is behind a feature.
-    let mut claimed: std::collections::BTreeMap<uze_keys::Scope, Route> =
-        std::collections::BTreeMap::new();
-    for route in ROUTES {
-        for scope in route.scopes() {
-            if let Some(other) = claimed.insert(*scope, route) {
-                panic!(
-                    "{} is claimed by both {other:?} and {route:?}",
-                    scope.name()
-                );
-            }
-        }
-    }
-}
-
-// The tab strip is where someone decides which screen to open, so a route
-// that is not settled has to say so there — and keep saying it when the
-// strip runs short of room, which gives up the counts before the badges.
-#[test]
-fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
-    let badge = crate::ui::widget::text::small_caps(
-        Route::Profiles
-            .badge()
-            .expect("a screen behind a feature says so"),
-    );
-    let unsettled: Vec<Route> = super::model::routes()
-        .into_iter()
-        .filter(|route| route.feature().is_some())
-        .collect();
-    for width in [190u16, 150] {
-        for route in [Route::Profiles, Route::Plugins] {
-            let model = TuiModel {
-                route,
-                focus: Focus::Content,
-                overlay: Overlay::None,
-                ..model_with_data()
-            };
-            let (terminal, hits) = drawn_at(&model, width, 30);
-            let rows = buffer_rows(&terminal);
-            let header = &rows[0];
-            assert_eq!(
-                header.matches(badge.as_str()).count(),
-                unsettled.len(),
-                "at {width} on {route:?}: {header:?}"
-            );
-            for (rect, hit) in &hits {
-                let Hit::Route(tab) = hit else { continue };
-                let drawn: String = header
-                    .chars()
-                    .skip(rect.x as usize)
-                    .take(rect.width as usize)
-                    .collect();
-                assert_eq!(
-                    drawn.contains(badge.as_str()),
-                    unsettled.contains(tab),
-                    "the badge sits on exactly the unsettled tabs: {drawn:?}"
-                );
-            }
-        }
-    }
-}
-
-/// A tab is the screen's number and name, and a badge only where the
-/// screen is not settled: no count beside any of them. The count said how
-/// big an inventory was in the one place a reader is choosing where to go,
-/// and the screen's own header says it once they are there.
-#[test]
-fn no_tab_carries_a_count() {
-    let model = TuiModel {
-        route: Route::Keys,
-        focus: Focus::Content,
-        ..model_with_data()
-    };
-    let (terminal, hits) = drawn_at(&model, 190, 40);
-    let header = buffer_rows(&terminal)
-        .into_iter()
-        .next()
-        .unwrap_or_default();
-    for (rect, hit) in &hits {
-        let Hit::Route(route) = hit else { continue };
-        let tab: String = header
-            .chars()
-            .skip(rect.x as usize)
-            .take(rect.width as usize)
-            .collect();
-        let after_label = tab.split(route.label()).nth(1).unwrap_or_default();
-        assert!(
-            !after_label.chars().any(|glyph| glyph.is_ascii_digit()),
-            "no count beside {route:?}: {tab:?}"
-        );
-    }
-}
-
 // --- Actions where the thing they act on is -----------------------------
 
 /// The drawer's buttons are the plugin's offers, clickable where the
@@ -3551,28 +3005,6 @@ fn the_keys_list_follows_the_selection_past_the_fold() {
             .any(|row| row.contains(&rows[last].scope.heading().to_lowercase())),
         "{drawn:#?}"
     );
-}
-
-/// A screen is chosen by the number on its tab, from wherever the focus
-/// was, and the keyboard lands in it — choosing one is wanting to be on it.
-#[test]
-fn a_number_chooses_the_screen_from_wherever_you_are() {
-    for focus in [Focus::Content, Focus::Sidebar] {
-        let mut model = TuiModel {
-            route: Route::Overview,
-            focus,
-            ..model_with_data()
-        };
-        let plugins = Route::Plugins.index() + 1;
-        let digit = char::from_digit(plugins as u32, 10).expect("one digit");
-        model.apply_key(KeyEvent::new(KeyCode::Char(digit), KeyModifiers::NONE));
-        assert_eq!(model.route, Route::Plugins);
-        assert_eq!(
-            model.focus,
-            Focus::Content,
-            "and the keyboard is in the screen, not on its name"
-        );
-    }
 }
 
 /// The selected key is a filled band the width of the list, the way every
@@ -3964,90 +3396,6 @@ fn a_key_this_terminal_cannot_send_is_never_bound() {
         "{:?}",
         model.keys_problem
     );
-}
-
-/// The drawer is where a row's actions are performed with the pointer, so
-/// every screen that has actions draws them there, as buttons, for exactly
-/// what can be done now.
-#[test]
-fn every_drawer_draws_what_its_row_can_do_as_buttons() {
-    for route in [
-        Route::Plugins,
-        Route::Harnesses,
-        Route::Profiles,
-        Route::Keys,
-    ] {
-        let mut model = model_with_data();
-        model.set_route(route);
-        model.focus = Focus::Content;
-        let available: Vec<_> = model
-            .selected_offers()
-            .into_iter()
-            .filter(|offer| offer.is_available())
-            .map(|offer| offer.action)
-            .collect();
-        // The sample's one plugin is the official one, installed and
-        // current: nothing to do, so nothing is drawn — the buttons a
-        // plugin does draw have a test of their own.
-        assert!(
-            route == Route::Plugins || !available.is_empty(),
-            "{route:?} offers nothing to do"
-        );
-        let (_terminal, hits) = drawn_at(&model, 140, 40);
-        for action in available {
-            assert!(
-                hits.iter()
-                    .any(|(_, hit)| *hit == Hit::OfferedAction(action)),
-                "{route:?} drew no button for {action}"
-            );
-        }
-    }
-}
-
-/// Every right-hand drawer is the same slab: it starts on the frame's own
-/// top row and runs to the bottom. A drawer handed the area *below* the
-/// screen header instead starts three rows down, which reads as a panel
-/// that failed to open rather than as a deliberate inset.
-#[test]
-fn every_drawer_runs_the_full_height_of_its_screen() {
-    let mut rules = Vec::new();
-    for route in [
-        Route::Plugins,
-        Route::Extensions,
-        Route::Harnesses,
-        Route::Keys,
-        Route::Settings,
-    ] {
-        let mut model = model_with_data();
-        model.set_route(route);
-        model.focus = Focus::Content;
-        model.settings_themes = vec![uze_application::application::ThemeSummary {
-            id: "default".to_owned(),
-            active: true,
-            path: None,
-        }];
-        model.settings_glyph_sets = vec![uze_application::application::GlyphSetSummary {
-            id: "nerd".to_owned(),
-            active: false,
-        }];
-        model.settle_settings_selection();
-
-        let (_terminal, hits) = drawn_at(&model, 140, 40);
-        let rule = hits
-            .iter()
-            .find_map(|(rect, hit)| matches!(hit, Hit::ResizePanel(_)).then_some(*rect))
-            .unwrap_or_else(|| panic!("{route:?} drew no drawer"));
-        rules.push((route, rule));
-    }
-
-    let (first_route, first) = rules[0];
-    for (route, rule) in &rules[1..] {
-        assert_eq!(
-            (rule.y, rule.height),
-            (first.y, first.height),
-            "{route:?}'s drawer does not run the height {first_route:?}'s does"
-        );
-    }
 }
 
 /// Every card of the catalogue is reachable however narrow the column
@@ -4647,88 +3995,6 @@ fn the_wheel_walks_the_open_index() {
     assert!(matches!(model.overlay, Overlay::ActionIndex { .. }));
 }
 
-/// The drawer's own shape: the plugin's name is the heading rather than a
-/// value under a `PLUGIN` label, and no row is folded flush against the
-/// border — folding at the full width is what made a drawer with rows to
-/// spare read as crowded.
-#[test]
-fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
-    use uze_application::application::{MarketplacePluginDetail, Revision};
-
-    let summary = MarketplacePluginSummary {
-        marketplace: "ai".to_owned(),
-        name: "git".to_owned(),
-        description: Some(
-            "Personal git workflow conventions: a Conventional Commits skill and a \
-             pull/merge request skill."
-                .to_owned(),
-        ),
-        keywords: vec!["git".to_owned(), "conventional-commits".to_owned()],
-        category: None,
-        installed: false,
-        freshness: uze_application::application::Freshness::not_checked(),
-        installed_at_unix: None,
-        is_default: false,
-    };
-    let mut model = TuiModel {
-        route: Route::Plugins,
-        focus: Focus::Content,
-        plugin_pane: PluginPane::Plugins,
-        marketplace_detail: Some(MarketplacePluginDetail {
-            revision: Some(Revision::Commit {
-                short: "f1f00f7".to_owned(),
-                age: "79 minutes ago".to_owned(),
-                subject: "feat(git): require technical descriptions in the commit and pr skills"
-                    .to_owned(),
-            }),
-            summary: summary.clone(),
-            capabilities: Vec::new(),
-        }),
-        remembered: Remembered {
-            plugin_screen: ListScreen::default(),
-            marketplace_plugins: vec![summary],
-            ..TuiModel::default().remembered
-        },
-        ..TuiModel::default()
-    };
-    let width = 52;
-    model.drawer_width = Some(width);
-    let (terminal, _hits) = drawn_at(&model, 120, 40);
-    let rows = buffer_rows(&terminal);
-
-    // The drawer is what follows the last rule on each row; the list
-    // beside it heads its own column with the word.
-    assert!(
-        !rows.iter().any(|row| row
-            .rsplit('│')
-            .next()
-            .is_some_and(|drawer| drawer.contains("PLUGIN"))),
-        "the name is the heading, not a value under a label: {rows:#?}"
-    );
-    let revision = rows
-        .iter()
-        .position(|row| row.contains("revision"))
-        .unwrap_or_else(|| panic!("the revision field is drawn: {rows:#?}"));
-    assert!(
-        rows[revision].contains("f1f00f7") && rows[revision].contains("79 minutes ago"),
-        "the commit and its age share a row: {rows:#?}"
-    );
-
-    // Every drawer row stops short of the border. Measured against the
-    // widest row the drawer drew, since the panel's own edge is what the
-    // gutter is relative to.
-    let widest = rows
-        .iter()
-        .filter(|row| row.contains("git") || row.contains("feat("))
-        .map(|row| row.trim_end().chars().count())
-        .max()
-        .unwrap_or_default();
-    assert!(
-        widest > 0 && widest < 120,
-        "no row runs to the terminal's edge: {widest}"
-    );
-}
-
 /// The category is what a catalogue is browsed by: the drawer says it,
 /// and the filter finds a plugin by it as it does by a keyword.
 #[test]
@@ -4962,14 +4228,6 @@ fn a_resource_preview_scrolls_to_its_end_and_stops() {
         "one page back is a page back"
     );
     draw(&model);
-}
-
-#[test]
-fn both_columns_reach_the_terminals_last_row() {
-    let frame = Rect::new(0, 0, 120, 40);
-    let (sidebar, column) = super::sidebar_and_column(frame, None);
-    assert_eq!(sidebar.bottom(), frame.bottom());
-    assert_eq!(column.bottom(), frame.bottom());
 }
 
 /// Health is said in one place, beside the version, on every screen of
