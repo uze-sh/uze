@@ -113,10 +113,7 @@ impl ManifestDocument {
     /// owner, whatever shape its value takes. The owner decides what the
     /// value means and reads it back; this only places it.
     pub fn set_key(&mut self, section: Section, key: &str, value: &impl Serialize) -> Result<()> {
-        let value = serde_yaml::to_value(value).map_err(|error| {
-            self.refusal(&format!("{}.{key}", section.key()), error.to_string())
-        })?;
-        self.upsert(section.key(), key, &value)
+        self.set_in(section.key(), key, value)
     }
 
     /// Whether the document holds anything at the dotted `path`.
@@ -140,7 +137,7 @@ impl ManifestDocument {
 
     /// Takes `key` out of `section`; the section goes with its last key.
     pub fn unset_key(&mut self, section: Section, key: &str) -> Result<()> {
-        self.remove(section.key(), key)
+        self.unset_in(section.key(), key)
     }
 
     /// Appends `item` to the sequence at `sequence_path`, creating the
@@ -220,10 +217,6 @@ impl ManifestDocument {
         value.cloned()
     }
 
-    /// The create path: `mapping_path` has never been declared, so there is
-    /// no mapping to insert into and nothing above to preserve. Emitting
-    /// the whole `key: value` block at once keeps the emitter's hands on
-    /// the quoting here too.
     /// Whether `key` is written at the root with no value, as the scaffold
     /// once wrote `worktrees:`: a heading over commented choices, which declares
     /// nothing and which the library therefore does not report as present.
@@ -275,6 +268,10 @@ impl ManifestDocument {
         Ok(())
     }
 
+    /// The create path: `mapping_path` has never been declared, so there is
+    /// no mapping to insert into and nothing above to preserve. Emitting
+    /// the whole `key: value` block at once keeps the emitter's hands on
+    /// the quoting here too.
     fn append_mapping(
         &mut self,
         mapping_path: &str,
