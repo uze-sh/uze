@@ -528,6 +528,50 @@ fn machine_facts_are_listed_beside_the_projects() {
     );
 }
 
+/// The facts read newest first, whichever memory keeps them, and one with
+/// no date goes last.
+#[test]
+fn memory_facts_are_listed_newest_first() {
+    use uze_application::application::memory::{Entry, Kind, MemoryScope};
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let fact = |name: &str, scope, updated: Option<&str>| Entry {
+        name: name.to_owned(),
+        description: String::new(),
+        kind: Kind::Project,
+        scope,
+        origin: "uze".to_owned(),
+        source: None,
+        path: PathBuf::from(format!("/facts/{name}.md")),
+        updated: updated.map(str::to_owned),
+        writable: true,
+        proposed: false,
+    };
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.answer = Some(Ok(project_space(
+        uze_application::SpaceMemory {
+            project: vec![
+                fact("undated", MemoryScope::Project, None),
+                fact("oldest", MemoryScope::Project, Some("2026-09-01")),
+                fact("newest", MemoryScope::Project, Some("2026-10-17")),
+            ],
+            machine: vec![fact("middle", MemoryScope::Machine, Some("2026-10-02"))],
+            ..Default::default()
+        },
+        Err("not read here".to_owned()),
+    )));
+
+    let names: Vec<&str> = overview
+        .memory_facts()
+        .into_iter()
+        .map(|entry| entry.name.as_str())
+        .collect();
+    assert_eq!(names, ["newest", "middle", "oldest", "undated"]);
+}
+
 /// A fact's body is read as the Markdown it is written in: emphasis is
 /// drawn, not spelled out in asterisks.
 #[test]
