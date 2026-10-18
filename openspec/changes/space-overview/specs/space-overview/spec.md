@@ -47,9 +47,9 @@ as before.
 - **WHEN** the terminal runtime restores a workspace
 - **THEN** each space comes back with its tabs as they were, and no tab stands for an overview
 
-### Requirement: The overview has six sections, each with its state
-The overview SHALL show six sections, Agent, Settings, Plugins, Context,
-Memory and Worktrees, in that order, one at a time, chosen from a section bar. Each tab
+### Requirement: The overview has five sections, each with its state
+The overview SHALL show five sections, Agent, Settings, Plugins, Memory and
+Worktrees, in that order, one at a time, chosen from a section bar. Each tab
 SHALL carry the worst state among its section's parts, and each section's
 first line SHALL name the cause of that state. A drawer SHALL show the
 selected row of a section in full.
@@ -123,18 +123,27 @@ agent in front it SHALL say so. It replaces the agent drawer.
 
 ### Requirement: The overview reports readiness from the status read model
 The overview SHALL report the project's state from the read model `uze
-status` renders, composed once in the application: the instructions file
-and each harness's context and agent-context delivery under Context; the
-declared plugins and the lock's drift under Plugins; commands that wait for
-approval or have no spelling for this machine under Settings.
+status` renders, composed once in the application: the declared plugins and
+the lock's drift under Plugins; commands that wait for approval or have no
+spelling for this machine under Settings.
 
 #### Scenario: Status and the overview agree
-- **WHEN** `uze status` reports a harness missing agent context or a plugin missing from the Store
-- **THEN** the overview's Context or Plugins section reports the same thing
+- **WHEN** `uze status` reports a plugin missing from the Store
+- **THEN** the overview's Plugins section reports the same thing
 
 #### Scenario: Commands awaiting approval
 - **WHEN** a project's commands wait for approval
 - **THEN** the Settings section marks those lines and its Review opens the approval dialog for that project
+
+### Requirement: The overview's foot lists what to check
+The overview's foot SHALL count everything in the space there is to check,
+the instructions file and each harness's context and agent-context delivery
+included. A click on the count SHALL list it in a dialog, worst first, as
+the management's health status does; a click elsewhere or Esc SHALL close it.
+
+#### Scenario: A harness that will not read the context
+- **WHEN** `uze status` reports a harness that will not read the project's context
+- **THEN** the foot counts it, and the list a click on the count opens names the harness and why
 
 ### Requirement: A space that is not a project says so
 When a space's root no longer exists, or is not inside a project, the

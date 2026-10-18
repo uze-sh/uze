@@ -117,7 +117,11 @@ What the code holds today (2026-10-17):
   it. It is the manage drawer, moved to `src/ui/widget/` with the width
   and the drag state passed in rather than read from `TuiModel`.
 - **Footer.** The hints for the focus, and on the
-  right how many sections need attention ("! 3 to check", or "✓ ready").
+  right how many things need attention ("! 3 to check", or "✓ ready"). The
+  count is a button: it lists them in a dialog, worst first, drawn by the
+  `alerts` widget the management's Health dialog is drawn by too. What a
+  harness makes of the project's context is said there and in the Agent
+  drawer, so there is no Context section.
 - **Built from the vocabulary.** Every part comes from `src/ui/widget/`;
   nothing is assembled at the call site. New widgets the Workspace
   section needs (D6) are added there.

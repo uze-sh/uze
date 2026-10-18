@@ -173,6 +173,9 @@ impl Attach<'_> {
             _ if self.model.asks_worktree_removal() => {
                 self.worktree_removal_press(mouse.column, mouse.row);
             }
+            _ if self.model.shows_space_issues() => {
+                self.space_issues_press(mouse.column, mouse.row);
+            }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
                     self.model.hit_at(mouse.column, mouse.row),
@@ -1413,7 +1416,9 @@ impl Attach<'_> {
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody
             | WorkspaceHit::OverviewRemovalAnswer(_)
-            | WorkspaceHit::OverviewRemovalBody => {}
+            | WorkspaceHit::OverviewRemovalBody
+            | WorkspaceHit::OverviewIssuesBody => {}
+            WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is
                 // open, which the guarded arm above already

@@ -26,6 +26,7 @@ impl Attach<'_> {
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_worktree_removal()
+            || self.model.shows_space_issues()
         {
             scopes.push(Scope::Confirm);
             return scopes;
@@ -143,6 +144,7 @@ impl Attach<'_> {
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_worktree_removal()
+            || self.model.shows_space_issues()
         {
             // Nothing the question did not ask for reaches anything: not
             // the pane behind it, and not an answer.
@@ -298,6 +300,10 @@ impl Attach<'_> {
         }
         if self.model.asks_worktree_removal() {
             self.worktree_removal_action(action);
+            return Flow::Continue;
+        }
+        if self.model.shows_space_issues() {
+            self.space_issues_action(action);
             return Flow::Continue;
         }
         if self.model.root_picker.is_some() {

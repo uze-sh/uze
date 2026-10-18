@@ -12,10 +12,7 @@ use crate::ui::widget::{
     tabs::{self, Tab},
 };
 use uze_application::ShellCommand;
-use uze_application::application::{
-    FreshnessState, HarnessContextDelivery, StatusHarness, StatusReport,
-    memory::Entry as MemoryEntry,
-};
+use uze_application::application::{FreshnessState, memory::Entry as MemoryEntry};
 use uze_application::{
     ActionState, CheckoutOwner, DeclarationKey, DeclaredValue, ProjectSpace, SpaceOverview,
     SpacePlugin,
@@ -318,7 +315,9 @@ fn render_header(
     overview: &SpaceOverviewView,
     project: Option<&ProjectSpace>,
 ) {
+    // What this is, since the strip's door to it no longer says so.
     let left = Line::from(vec![
+        Span::styled("Space  ", theme::fg(Token::TextDim)),
         Span::styled(name.to_owned(), theme::fg_bold(Token::TextBright)),
         Span::styled(
             format!("  {}", display_path(&overview.root)),
@@ -363,35 +362,11 @@ fn render_header(
 
 /// The first line of the section: what its state comes from.
 fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, Token) {
-    let report = &project.status.report;
     match overview.section {
         Section::Agent => (
             "prompts asked in this space, newest first".to_owned(),
             Token::TextSecondary,
         ),
-        Section::Context => {
-            let troubled: Vec<&str> = report
-                .harnesses
-                .iter()
-                .filter(|harness| harness_issues(harness).next().is_some())
-                .map(|harness| harness.display_name.as_str())
-                .collect();
-            if !report.instructions.exists {
-                (
-                    "no AGENTS.md: harnesses get no project context".to_owned(),
-                    Token::TextSecondary,
-                )
-            } else if !troubled.is_empty() {
-                (
-                    format!("{} with issues", troubled.join(", ")),
-                    Token::StateWarning,
-                )
-            } else if !report.issues.is_empty() {
-                (plural(report.issues.len(), "issue"), Token::StateWarning)
-            } else {
-                ("context delivered".to_owned(), Token::TextSecondary)
-            }
-        }
         Section::Plugins => {
             let plugins = &project.plugins;
             let mut causes = Vec::new();
@@ -501,7 +476,6 @@ fn render_section(
     };
     let lines = match overview.section {
         Section::Agent => return render_agent(frame, area, model, overview, hits, track),
-        Section::Context => context_lines(project, room),
         Section::Plugins
             if project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none() =>
         {
@@ -562,7 +536,7 @@ fn nothing_to_list(
         Section::Worktrees => {
             !matches!(&overview.worktrees.answer, Some(Some(_))) || overview.worktrees().is_empty()
         }
-        Section::Context | Section::Settings => false,
+        Section::Settings => false,
     }
 }
 
@@ -686,73 +660,6 @@ fn pad(text: &str, width: u16) -> String {
 
 fn cell(text: &str, width: u16, tone: Token) -> Span<'static> {
     Span::styled(pad(text, width), theme::fg(tone))
-}
-
-fn context_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
-    let report = &project.status.report;
-    let table = Table::fit(&CONTEXT, room);
-    let mut lines = vec![SectionLine {
-        spans: table.row(vec![
-            cell("AGENTS.md", CONTEXT[0].width, Token::TextPrimary),
-            if report.instructions.exists {
-                cell("present", CONTEXT[1].width, Token::TextPrimary)
-            } else {
-                cell("absent", CONTEXT[1].width, Token::TextMuted)
-            },
-            Span::styled(
-                if report.instructions.exists {
-                    plural(report.instructions.managed_regions, "managed region")
-                } else {
-                    String::new()
-                },
-                theme::fg(Token::TextMuted),
-            ),
-        ]),
-        row: Some(0),
-    }];
-    lines.push(blank());
-    lines.push(table.heading());
-    for (index, harness) in report.harnesses.iter().enumerate() {
-        let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
-        let issues = harness_issues(harness).count();
-        let (context, tone) = if !installed {
-            ("—".to_owned(), Token::TextDim)
-        } else if issues > 0 {
-            (plural(issues, "issue"), Token::StateWarning)
-        } else {
-            (
-                delivery_word(harness.context.as_ref()).to_owned(),
-                Token::TextPrimary,
-            )
-        };
-        lines.push(SectionLine {
-            spans: table.row(vec![
-                cell(&harness.display_name, CONTEXT[0].width, Token::TextPrimary),
-                cell(
-                    if installed { "yes" } else { "no" },
-                    CONTEXT[1].width,
-                    if installed {
-                        Token::TextPrimary
-                    } else {
-                        Token::TextMuted
-                    },
-                ),
-                Span::styled(context, theme::fg(tone)),
-            ]),
-            row: Some(index + 1),
-        });
-    }
-    lines
-}
-
-fn delivery_word(delivery: Option<&HarnessContextDelivery>) -> &'static str {
-    match delivery {
-        None => "takes none",
-        Some(HarnessContextDelivery::Native) => "native",
-        Some(HarnessContextDelivery::Projected) => "projected",
-        Some(HarnessContextDelivery::Bridge { .. }) => "bridged",
-        Some(HarnessContextDelivery::NotDetected) => "—",
-    }
 }
 
 fn freshness_word(state: &FreshnessState) -> (String, Token) {
@@ -1197,6 +1104,7 @@ impl Form {
                 form.lines.push(blank());
             }
             form.lines.push(group_heading(group, form.width));
+            form.lines.push(blank());
             for (position, key) in keys.iter().copied().enumerate() {
                 // A line of air between keys, so each reads as its own.
                 if position > 0 {
@@ -1209,6 +1117,7 @@ impl Form {
         // as many lines as the instruction runs to.
         form.lines.push(blank());
         form.lines.push(group_heading("agent actions", form.width));
+        form.lines.push(blank());
         for (position, state) in ActionState::ALL.into_iter().enumerate() {
             if position > 0 {
                 form.lines.push(blank());
@@ -2178,26 +2087,6 @@ fn worktree_tone(state: WorktreeState) -> Token {
     }
 }
 
-/// The Context table: the harness, whether it is installed, and how the
-/// context reaches it.
-const CONTEXT: [Column; 3] = [
-    Column {
-        heading: "harness",
-        width: 18,
-        keep: KEPT,
-    },
-    Column {
-        heading: "installed",
-        width: 14,
-        keep: 1,
-    },
-    Column {
-        heading: "context",
-        width: 12,
-        keep: KEPT,
-    },
-];
-
 /// The Plugins table: the plugin, where it comes from, whether
 /// `AGENTS.md` carries its instructions, its commit, and its state.
 const PLUGINS: [Column; 5] = [
@@ -2464,7 +2353,6 @@ fn render_drawer(
         lines: Vec::new(),
         width: usize::from(area.width),
     };
-    let report = &project.status.report;
     let row = overview.row();
     match overview.section {
         Section::Agent => {
@@ -2472,13 +2360,6 @@ fn render_drawer(
                 return;
             };
             drawer.agent(agent);
-        }
-        Section::Context if row == 0 => drawer.context_file(report),
-        Section::Context => {
-            let Some(harness) = report.harnesses.get(row - 1) else {
-                return;
-            };
-            drawer.harness(harness);
         }
         Section::Plugins => {
             let Some(plugin) = project.plugins.plugins.get(row) else {
@@ -2630,63 +2511,6 @@ impl DrawerLines {
                 }
             }
             None => self.said("reading…", Token::TextMuted),
-        }
-    }
-
-    fn context_file(&mut self, report: &StatusReport) {
-        self.head("context file", "AGENTS.md");
-        self.pair(
-            "status",
-            if report.instructions.exists {
-                "present"
-            } else {
-                "absent"
-            }
-            .to_owned(),
-            Token::TextPrimary,
-        );
-        if report.instructions.exists {
-            self.pair(
-                "managed regions",
-                report.instructions.managed_regions.to_string(),
-                Token::TextPrimary,
-            );
-        }
-        if !report.issues.is_empty() {
-            self.blank();
-            self.said("issues", Token::TextMuted);
-            for issue in &report.issues {
-                self.paragraph(issue, Token::TextPrimary);
-            }
-        }
-    }
-
-    fn harness(&mut self, harness: &StatusHarness) {
-        self.head("harness", &harness.display_name);
-        let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
-        self.pair(
-            "installed",
-            if installed { "yes" } else { "no" }.to_owned(),
-            Token::TextPrimary,
-        );
-        if !installed {
-            return;
-        }
-        self.pair(
-            "context",
-            delivery_word(harness.context.as_ref()).to_owned(),
-            Token::TextPrimary,
-        );
-        for (label, issue) in [
-            ("context unread", &harness.context_unread),
-            ("agent context", &harness.agent_context),
-            ("version", &harness.outdated),
-        ] {
-            if let Some(issue) = issue {
-                self.blank();
-                self.said(label, Token::TextMuted);
-                self.paragraph(issue, Token::StateWarning);
-            }
         }
     }
 
@@ -2949,7 +2773,7 @@ fn foot_keys(
             }
         }
         Section::Memory => keys.push((Action::Activate, "read")),
-        Section::Context | Section::Plugins | Section::Worktrees if !side_by_side => {
+        Section::Plugins | Section::Worktrees if !side_by_side => {
             keys.push((Action::Activate, "details"))
         }
         _ => {}
@@ -2970,44 +2794,41 @@ fn render_foot(
     keys: &[(Action, &str)],
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let attention = Section::ALL
-        .iter()
-        .filter(|section| {
-            matches!(
-                overview.health(**section),
-                Health::Warning | Health::Failing
-            )
-        })
-        .count();
-    let summary = if overview.project().is_none() {
-        Line::default()
-    } else if attention > 0 {
-        Line::from(vec![
-            Span::styled(
-                theme::glyph(Symbol::MarkAttention),
-                theme::fg(Token::StateWarning),
-            ),
-            Span::styled(
-                format!(" {attention} to check"),
-                theme::fg(Token::TextMuted),
-            ),
-        ])
-    } else {
-        Line::from(vec![
+    // The count is what the list it opens holds, so the two never
+    // disagree; its hue is the worst of them.
+    let issues = overview.issues();
+    let worst = issues.iter().map(|issue| issue.severity).min();
+    let summary = match worst {
+        _ if overview.project().is_none() => Line::default(),
+        Some(severity) => {
+            let (_, hue) = severity.mark();
+            let words =
+                if popups::chip_state(model, WorkspaceHit::OverviewIssues) == ChipState::Resting {
+                    theme::fg(Token::TextMuted)
+                } else {
+                    theme::fg_bold(hue)
+                };
+            Line::from(vec![
+                Span::styled(theme::glyph(Symbol::MarkAttention), theme::fg(hue)),
+                Span::styled(format!(" {} to check", issues.len()), words),
+            ])
+        }
+        None => Line::from(vec![
             Span::styled(theme::glyph(Symbol::MarkOk), theme::fg(Token::StateSuccess)),
             Span::styled(" ready", theme::fg(Token::TextMuted)),
-        ])
+        ]),
     };
     let summary_width = summary.width() as u16;
-    frame.render_widget(
-        Paragraph::new(summary),
-        Rect::new(
-            rect.right().saturating_sub(summary_width),
-            rect.y,
-            summary_width,
-            1,
-        ),
+    let summary_rect = Rect::new(
+        rect.right().saturating_sub(summary_width),
+        rect.y,
+        summary_width,
+        1,
     );
+    frame.render_widget(Paragraph::new(summary), summary_rect);
+    if worst.is_some() {
+        hits.push((summary_rect, WorkspaceHit::OverviewIssues));
+    }
     // The keys a hint prints are the ones live now: while a value is being
     // typed, those of the scope that takes the typing.
     let typing = overview.edit.field.is_some() || overview.edit.text.is_some();

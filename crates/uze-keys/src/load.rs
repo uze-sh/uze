@@ -519,7 +519,7 @@ fn default_bindings() -> Vec<Binding> {
             &format!("alt+{index}"),
             Action::SelectTab(index),
         ));
-        if index <= 6 {
+        if index <= 5 {
             bindings.push(bind(
                 Scope::SpaceOverview,
                 &index.to_string(),

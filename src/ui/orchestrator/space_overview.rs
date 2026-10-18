@@ -8,6 +8,7 @@
 //! operator choosing something else puts it away.
 
 use super::*;
+use crate::ui::widget::alerts::{Alert, Severity};
 use uze_application::application::StatusHarness;
 use uze_application::{
     ActionEntry, ActionState, CheckoutOwner, CheckoutView, CheckoutsView, DeclarationApplied,
@@ -23,7 +24,6 @@ pub(super) enum Section {
     /// The `workspace:` section of `agents.yaml`, as a form.
     Settings,
     Plugins,
-    Context,
     Memory,
     /// The checkouts UZE made for the space's agents and their subagents.
     Worktrees,
@@ -34,11 +34,10 @@ impl Section {
     // follows from it. Worktrees close the bar: they are what the agents
     // left on disk, and last keeps the number each earlier section is
     // reached by.
-    pub(super) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 5] = [
         Self::Agent,
         Self::Settings,
         Self::Plugins,
-        Self::Context,
         Self::Memory,
         Self::Worktrees,
     ];
@@ -48,7 +47,6 @@ impl Section {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Agent => "Agent",
-            Self::Context => "Context",
             Self::Plugins => "Plugins",
             Self::Settings => "Settings",
             Self::Memory => "Memory",
@@ -125,6 +123,8 @@ pub(super) struct SpaceOverviewView {
     /// A removal is out: one at a time, since a second would judge a slot
     /// the first is taking away.
     pub(super) removing: bool,
+    /// The space's issues are listed over the overview.
+    pub(super) issues_open: bool,
 }
 
 /// The space's worktrees as last measured. Measuring walks every file of
@@ -583,6 +583,7 @@ impl SpaceOverviewView {
             worktrees: WorktreesRead::default(),
             removal: None,
             removing: false,
+            issues_open: false,
         }
     }
 
@@ -699,7 +700,6 @@ impl SpaceOverviewView {
             return 0;
         };
         match self.section {
-            Section::Context => 1 + project.status.report.harnesses.len(),
             Section::Plugins => project.plugins.plugins.len(),
             Section::Settings => self.workspace_rows().len(),
             Section::Memory => project.memory.project.len(),
@@ -847,19 +847,7 @@ impl SpaceOverviewView {
                 Health::Fine
             };
         };
-        let report = &project.status.report;
         match section {
-            Section::Context => {
-                let harness_trouble = report
-                    .harnesses
-                    .iter()
-                    .any(|harness| harness_issues(harness).next().is_some());
-                if harness_trouble || !report.issues.is_empty() {
-                    Health::Warning
-                } else {
-                    Health::Fine
-                }
-            }
             Section::Plugins => {
                 let plugins = &project.plugins;
                 if plugins.lock_problem.is_some() {
@@ -909,6 +897,142 @@ impl SpaceOverviewView {
                 }
             }
         }
+    }
+
+    /// Everything in the space worth checking, each what it is about and
+    /// what to do: what the section bar marks section by section, and what
+    /// reaches the harnesses, which has no section of its own since the
+    /// Agent's drawer says it for the agent in front.
+    pub(super) fn issues(&self) -> Vec<Alert> {
+        let Some(project) = self.project() else {
+            return Vec::new();
+        };
+        let alert = |severity, label: String, detail: String| Alert {
+            severity,
+            label,
+            detail,
+        };
+        let mut issues = Vec::new();
+        let report = &project.status.report;
+        if !report.instructions.exists {
+            issues.push(alert(
+                Severity::Low,
+                "No AGENTS.md".to_owned(),
+                "Harnesses get no project context here.".to_owned(),
+            ));
+        }
+        for harness in &report.harnesses {
+            for issue in harness_issues(harness) {
+                issues.push(alert(
+                    Severity::Medium,
+                    harness.display_name.clone(),
+                    issue.to_owned(),
+                ));
+            }
+        }
+        for issue in &report.issues {
+            issues.push(alert(Severity::Medium, "Context".to_owned(), issue.clone()));
+        }
+        let plugins = &project.plugins;
+        if let Some(problem) = &plugins.lock_problem {
+            issues.push(alert(
+                Severity::High,
+                "agents.lock is malformed".to_owned(),
+                problem.clone(),
+            ));
+        }
+        for plugin in plugins.plugins.iter().filter(|plugin| !plugin.installed) {
+            issues.push(alert(
+                Severity::Medium,
+                format!("{} is not installed", plugin.plugin),
+                "`uze install` installs what agents.lock records.".to_owned(),
+            ));
+        }
+        let drift = &plugins.drift;
+        for (label, names) in [
+            ("Declared, not locked yet", &drift.unresolved),
+            ("Locked, no longer declared", &drift.surplus),
+            ("Locked, not in the store", &drift.missing),
+        ] {
+            if !names.is_empty() {
+                issues.push(alert(
+                    Severity::Medium,
+                    label.to_owned(),
+                    format!("{}. `uze install` puts it right.", names.join(", ")),
+                ));
+            }
+        }
+        if drift.stale_projection {
+            issues.push(alert(
+                Severity::Medium,
+                "AGENTS.md is stale".to_owned(),
+                "A plugin's region says other than it should. `uze install` puts it right."
+                    .to_owned(),
+            ));
+        }
+        for step in &project.status.steps_not_spelled_here {
+            issues.push(alert(
+                Severity::High,
+                format!("`{}` never runs here", step.command),
+                format!("It has no {} spelling in agents.yaml.", step.platform),
+            ));
+        }
+        match &project.workspace {
+            Err(reason) => issues.push(alert(
+                Severity::High,
+                "agents.yaml could not be read".to_owned(),
+                reason.clone(),
+            )),
+            Ok(declaration) => {
+                for problem in &declaration.problems {
+                    issues.push(alert(
+                        Severity::High,
+                        problem.key.as_deref().map_or_else(
+                            || "agents.yaml".to_owned(),
+                            |key| format!("workspace.{key}"),
+                        ),
+                        problem.reason.clone(),
+                    ));
+                }
+            }
+        }
+        if let Some(awaiting) = &project.status.commands_awaiting_approval {
+            issues.push(alert(
+                Severity::Medium,
+                match awaiting.commands.len() {
+                    1 => "1 command waiting for approval".to_owned(),
+                    count => format!("{count} commands waiting for approval"),
+                },
+                "Settings shows them; approving lets agents run them here.".to_owned(),
+            ));
+        }
+        for unreadable in &project.memory.unreadable {
+            issues.push(alert(
+                Severity::Medium,
+                "A memory file cannot be read".to_owned(),
+                format!("{}: {}", unreadable.path.display(), unreadable.reason),
+            ));
+        }
+        for checkout in self.worktrees() {
+            let name = checkout
+                .branch
+                .clone()
+                .unwrap_or_else(|| checkout.path.display().to_string());
+            if checkout.owner == CheckoutOwner::Unreadable {
+                issues.push(alert(
+                    Severity::Medium,
+                    format!("{name}: record unreadable"),
+                    "This build cannot read the record of who owns this worktree.".to_owned(),
+                ));
+            } else if left_unattended(checkout) {
+                issues.push(alert(
+                    Severity::Medium,
+                    format!("{name}: uncommitted work"),
+                    "No agent is working in it. Worktrees shows it.".to_owned(),
+                ));
+            }
+        }
+        issues
     }
 
     fn set(&mut self, key: DeclarationKey, value: Option<DeclaredValue>) {
@@ -1670,7 +1794,7 @@ impl Attach<'_> {
                     self.channels.fact_bodies.sender.clone(),
                 );
             }
-            Section::Context | Section::Plugins | Section::Worktrees => overview.drawer = true,
+            Section::Plugins | Section::Worktrees => overview.drawer = true,
             // Its keys are the prompts', answered before this.
             Section::Agent => {}
         }

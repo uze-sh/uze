@@ -71,6 +71,7 @@ mod events;
 mod interrupt;
 mod notices;
 mod proposal;
+mod space_issues;
 mod space_overview;
 mod worktree_removal;
 
@@ -218,6 +219,7 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 use approval::*;
 use interrupt::*;
 use proposal::*;
+use space_issues::*;
 use space_overview::*;
 use worktree_removal::*;
 mod input;
@@ -920,6 +922,10 @@ pub(super) enum WorkspaceHit {
     OverviewRemovalAnswer(bool),
     /// The removal question itself, which a click on answers nothing.
     OverviewRemovalBody,
+    /// The overview foot's count of what to check, which lists it.
+    OverviewIssues,
+    /// The list of the space's issues, which a click on closes nothing.
+    OverviewIssuesBody,
     /// A prompt listed in the overview's Agent section, by position.
     DrawerPrompt(usize),
     /// The task mark on a sidebar agent row — opens the catalog of what

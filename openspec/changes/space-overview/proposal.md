@@ -31,7 +31,7 @@ workspace without knowing its keys.
 - **An Agent section** takes the agent drawer's place: the prompts the agent
   in front, or its space, was given, and what reaches that agent. Enter on a
   prompt copies it. The drawer itself is removed.
-- **Six sections**: the agent in front, then what the project declares
+- **Five sections**: the agent in front, then what the project declares
   and what follows from it, reached from a section bar like the
   manage modal's header. Each tab carries the worst state of
   its parts, and the section's first line names the cause.
@@ -44,9 +44,9 @@ workspace without knowing its keys.
   - **Plugins.** The plugins `agents.yaml` declares: installed, contributing
     here, the commit installed and its freshness; and `agents.lock`'s drift
     against the declaration.
-  - **Context.** `AGENTS.md` and, per harness, whether it is installed,
-    whether the project context reaches it and what agent context it
-    misses.
+  - What reaches each harness of the project's context has no section:
+    the Agent drawer says it for the agent in front, and the foot's count
+    of what to check lists every harness that misses it.
   - **Memory.** The project's facts with their kind, origin and date, and
     how many machine facts also reach agents here. A fact's body opens in
     the drawer.

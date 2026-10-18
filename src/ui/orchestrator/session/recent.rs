@@ -36,6 +36,7 @@ impl Attach<'_> {
             || model.interrupt.is_some()
             || model.proposal.is_some()
             || model.asks_worktree_removal()
+            || model.shows_space_issues()
             || model.release_notes.is_some()
             || model.action_index.is_some()
             || model.renaming.is_some()

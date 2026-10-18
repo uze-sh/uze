@@ -287,8 +287,8 @@ fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
             .space_overview
             .as_ref()
             .is_some_and(|overview| overview.section
-                == crate::ui::orchestrator::space_overview::Section::Context),
-        "4 did not show the Context section"
+                == crate::ui::orchestrator::space_overview::Section::Memory),
+        "4 did not show the Memory section"
     );
 }
 
@@ -1818,7 +1818,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     let mut driven = driven(model, &home);
     driven.frame();
     driven.press_key(crossterm::event::KeyEvent::from(
-        crossterm::event::KeyCode::Char('6'),
+        crossterm::event::KeyCode::Char('5'),
     ));
     let read = |driven: &Driven<'_>| {
         let overview = driven.attach.model.space_overview.as_ref().expect("open");
@@ -2354,4 +2354,82 @@ fn the_plugins_are_a_compact_table_and_the_drawer_folds_as_it_narrows() {
     // Narrow, the commit is folded in the drawer rather than cut short.
     let screen = frame_rows_at(&mut model, Rect::new(0, 0, 100, 24)).join("\n");
     assert!(screen.contains("3605f817abcdef0123"), "{screen}");
+}
+
+/// The foot counts what there is to check, and a click on the count lists
+/// it over the client, harnesses that will not read the context included
+/// now that no section says it; a click elsewhere or esc puts it away.
+#[test]
+fn the_count_in_the_foot_lists_the_space_s_issues() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-issues"));
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, true);
+    let mut answer = project_space(Default::default(), Err("not read".to_owned()));
+    if let uze_application::SpaceOverview::Project(project) = &mut answer {
+        project
+            .status
+            .report
+            .harnesses
+            .push(uze_application::application::StatusHarness {
+                integration: "codex".to_owned(),
+                display_name: "Codex".to_owned(),
+                context: None,
+                context_unread: Some("the project is not trusted".to_owned()),
+                agent_context: None,
+                outdated: None,
+            });
+    }
+    model.space_overview.as_mut().expect("open").answer = Some(Ok(answer));
+    let mut driven = driven(model, &home);
+    driven.area = Rect::new(0, 0, 160, 40);
+    driven.frame();
+
+    let count = |driven: &Driven<'_>| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == WorkspaceHit::OverviewIssues)
+            .map(|(rect, _)| *rect)
+            .expect("the count is a button")
+    };
+    let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
+    // The harness, and agents.yaml unread.
+    assert!(screen.contains("2 to check"), "{screen}");
+
+    let button = count(&driven);
+    driven.press(button.x, button.y);
+    assert!(driven.attach.model.shows_space_issues());
+    let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
+    for said in [
+        "To check",
+        "Codex",
+        "the project is not trusted",
+        "agents.yaml",
+    ] {
+        assert!(screen.contains(said), "{said} is not listed:\n{screen}");
+    }
+    driven.frame();
+    driven.press(0, 0);
+    assert!(
+        !driven.attach.model.shows_space_issues(),
+        "a click outside kept it"
+    );
+
+    driven.frame();
+    let button = count(&driven);
+    driven.press(button.x, button.y);
+    assert!(driven.attach.model.shows_space_issues());
+    driven.press_key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Esc,
+    ));
+    assert!(!driven.attach.model.shows_space_issues(), "esc kept it");
+    assert!(
+        driven.attach.model.space_overview.is_some(),
+        "esc put the overview away with the list"
+    );
 }

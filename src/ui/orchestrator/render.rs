@@ -279,6 +279,13 @@ pub(super) fn render(
     {
         render_worktree_removal(frame, frame.area(), asked, hits);
     }
+    if let Some(overview) = model
+        .space_overview
+        .as_ref()
+        .filter(|overview| overview.issues_open)
+    {
+        render_space_issues(frame, frame.area(), overview, hits);
+    }
     // Over everything, the management modal included. Drawn beneath the
     // popups, a toast was covered by the very dropdowns that hang off the
     // strip above its corner, and one raised while a dialog was open sat
