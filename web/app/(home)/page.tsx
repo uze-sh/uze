@@ -90,7 +90,7 @@ export default function HomePage() {
       {/* After the session shows how uze is used, what using it gets you. */}
       <section
         id="features"
-        className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-28 lg:mt-16"
+        className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] scroll-mt-[calc(var(--uze-banner-height)+3.5rem)] border-t border-line py-20 sm:py-28 lg:mt-16"
       >
         <Features />
       </section>

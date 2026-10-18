@@ -357,13 +357,13 @@ figure.shiki {
 */
 @font-face {
   font-family: 'Uze Terminal';
-  src: url('/fonts/FiraCodeNerdMono-Regular.subset.woff2') format('woff2');
+  src: url('/fonts/FiraCodeNerdMono-Regular.subset.woff2?v=47aa6875ddc1') format('woff2');
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: 'Uze Terminal';
-  src: url('/fonts/FiraCodeNerdMono-Bold.subset.woff2') format('woff2');
+  src: url('/fonts/FiraCodeNerdMono-Bold.subset.woff2?v=74df144ee35e') format('woff2');
   font-weight: 700;
   font-display: swap;
 }
@@ -403,4 +403,23 @@ html.dark .cast-frame {
   border-inline-end: 0;
   padding-inline-end: 0;
   margin-inline-end: 0;
+}
+
+/* How long a take on the home page has left before the next one. */
+.take-progress {
+  animation: take-progress linear forwards;
+}
+@keyframes take-progress {
+  from {
+    scale: 0 1;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .take-progress {
+    animation: none;
+    scale: 1 1;
+  }
 }
