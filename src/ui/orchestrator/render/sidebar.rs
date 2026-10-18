@@ -1592,3 +1592,35 @@ pub(in crate::ui::orchestrator) fn task_tone(state: &WorkStateView) -> Option<(S
 pub(in crate::ui::orchestrator) fn task_mark(state: &WorkStateView) -> Option<(String, Color)> {
     task_tone(state).map(|(symbol, hue)| (theme::glyph(symbol), theme::color(hue)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The spec button stands first of the three and is the surface's
+    /// switch like the others: a click puts it where the pane is, lit, and
+    /// a second click on it puts it away.
+    /// The spec section is its header, and open, a row per change and a
+    /// row of air, so the timeline's
+    /// header below does not sit against the last change; folded, its
+    /// header alone.
+    #[test]
+    fn a_spec_section_keeps_air_under_its_changes_while_open() {
+        let summary = uze_extensions::spec::Summary {
+            changes: vec![
+                uze_extensions::spec::ChangeSummary {
+                    name: "a".to_owned(),
+                    progress: None,
+                },
+                uze_extensions::spec::ChangeSummary {
+                    name: "b".to_owned(),
+                    progress: None,
+                },
+            ],
+            done: 0,
+            total: 0,
+        };
+        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
+        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+    }
+}

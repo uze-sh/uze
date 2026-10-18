@@ -836,6 +836,7 @@ pub(in crate::ui::orchestrator) fn render_action_index(
 #[cfg(test)]
 mod tests {
     use super::split_at_head;
+    use ratatui::layout::Rect;
 
     #[test]
     fn the_head_a_query_names_is_cut_where_it_ends_in_the_original() {
@@ -850,5 +851,61 @@ mod tests {
         assert_eq!(split_at_head("uze", "uzer"), (String::new(), "uze".into()));
         assert_eq!(split_at_head("docs", "ox"), (String::new(), "docs".into()));
         assert_eq!(split_at_head("docs", ""), (String::new(), "docs".into()));
+    }
+
+    /// The picker measures itself: `height` budgets its two border rows and
+    /// nothing else, because each row carries its own lead. Drawn on a surface
+    /// that insets as well, the last option fell outside the box — and with
+    /// one harness installed there was no option left to draw at all, which is
+    /// what "never showed 'agent 1'" was.
+    #[test]
+    fn the_agent_picker_draws_every_option_it_sized_itself_for() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        use crate::ui::orchestrator::render;
+
+        let option = |name: &str| crate::ui::orchestrator::AgentOption {
+            display_name: name.to_owned(),
+            integration: "claude-code".to_owned(),
+            command: vec!["claude".to_owned()],
+            continuity_gap: None,
+        };
+        let drawn = |names: &[&str]| {
+            let picker = crate::ui::orchestrator::AgentPicker {
+                options: names.iter().map(|name| option(name)).collect(),
+                selected: 0,
+                anchor: Rect::new(2, 1, 3, 1),
+                resume: None,
+            };
+            let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+            let mut hits = Vec::new();
+            terminal
+                .draw(|frame| {
+                    render::render_agent_picker(
+                        frame,
+                        Rect::new(0, 0, 60, 20),
+                        picker.anchor,
+                        &picker,
+                        &mut hits,
+                    );
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            (0..20)
+                .map(|y| (0..60).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let one = drawn(&["Claude Code"]);
+        assert!(
+            one.contains("Claude Code"),
+            "the only harness installed is drawn:\n{one}"
+        );
+
+        let three = drawn(&["Claude Code", "Codex", "OpenCode"]);
+        for name in ["Claude Code", "Codex", "OpenCode"] {
+            assert!(three.contains(name), "{name} is drawn:\n{three}");
+        }
     }
 }

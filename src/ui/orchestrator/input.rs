@@ -524,4 +524,46 @@ mod tests {
             assert_eq!(crate::ui::keys::chord_of(event), None, "{kind:?}");
         }
     }
+
+    #[test]
+    fn encode_mouse_sgr_matches_the_documented_wire_format() {
+        assert_eq!(
+            encode_mouse(MouseEventKind::Down(MouseButton::Left), 3, 5, true),
+            Some(b"\x1b[<0;3;5M".to_vec())
+        );
+        assert_eq!(
+            encode_mouse(MouseEventKind::Up(MouseButton::Left), 3, 5, true),
+            Some(b"\x1b[<0;3;5m".to_vec())
+        );
+        assert_eq!(
+            encode_mouse(MouseEventKind::Drag(MouseButton::Left), 3, 5, true),
+            Some(b"\x1b[<32;3;5M".to_vec())
+        );
+        assert_eq!(
+            encode_mouse(MouseEventKind::ScrollUp, 3, 5, true),
+            Some(b"\x1b[<64;3;5M".to_vec())
+        );
+        // Unsupported buttons/kinds (right/middle click, plain motion) stay
+        // unforwarded rather than guessing at an encoding for them.
+        assert_eq!(
+            encode_mouse(MouseEventKind::Down(MouseButton::Right), 3, 5, true),
+            None
+        );
+    }
+
+    #[test]
+    fn encode_mouse_legacy_x10_saturates_instead_of_overflowing_past_223() {
+        assert_eq!(
+            encode_mouse(MouseEventKind::Down(MouseButton::Left), 1, 1, false),
+            Some(vec![0x1b, b'[', b'M', 32, 33, 33])
+        );
+        assert_eq!(
+            encode_mouse(MouseEventKind::Up(MouseButton::Left), 1, 1, false),
+            Some(vec![0x1b, b'[', b'M', 32 + 3, 33, 33])
+        );
+        assert_eq!(
+            encode_mouse(MouseEventKind::Down(MouseButton::Left), 999, 999, false),
+            Some(vec![0x1b, b'[', b'M', 32, 32 + 223, 32 + 223])
+        );
+    }
 }

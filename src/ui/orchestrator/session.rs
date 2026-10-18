@@ -352,3 +352,40 @@ impl Attach<'_> {
         Flow::Continue
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// A door pressed twice closes. `alt+e` on a surface already showing
+    /// files used to re-show them, which is indistinguishable from a key that
+    /// does nothing — and the action is called a toggle.
+    #[test]
+    fn a_code_door_pressed_on_the_surface_it_opened_closes_it() {
+        use super::{CodeDoor, code_door};
+        use uze_extensions::code::ContentMode;
+
+        assert_eq!(
+            code_door(Some(ContentMode::Contents), ContentMode::Contents),
+            CodeDoor::Close,
+            "its own door, pressed again, has to close"
+        );
+        assert_eq!(
+            code_door(Some(ContentMode::Diff), ContentMode::Diff),
+            CodeDoor::Close
+        );
+        // The other door switches instead: reaching for the other half of the
+        // same surface is not asking to leave it.
+        assert_eq!(
+            code_door(Some(ContentMode::Diff), ContentMode::Contents),
+            CodeDoor::Switch
+        );
+        // A document in its preview is the files half all the same: the
+        // files door shuts it rather than turning it back into source.
+        assert_eq!(
+            code_door(Some(ContentMode::Preview), ContentMode::Contents),
+            CodeDoor::Close
+        );
+        // With nothing open, this scope is not live at all — the workspace's
+        // own binding is what opens the surface.
+        assert_eq!(code_door(None, ContentMode::Contents), CodeDoor::Nothing);
+    }
+}

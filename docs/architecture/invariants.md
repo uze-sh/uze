@@ -432,7 +432,7 @@ overrides).
 
 > `src/progress.rs::tests::only_this_module_s_painting_reaches_the_terminal`
 > `src/cli/output.rs::tests::json_output_carries_no_raw_terminal_control`
-> `src/ui/orchestrator/tests.rs::a_bidi_override_never_reaches_the_terminal`
+> `src/ui/orchestrator/tests/drawing.rs::a_bidi_override_never_reaches_the_terminal`
 > `tests/architecture/layering.rs::every_frame_reaches_the_terminal_through_one_session`
 
 Consent is not inherited across an update. A revision introducing execution
@@ -748,8 +748,8 @@ line invisibly — history recall, completion, an escape, a control chord —
 discards the reconstruction instead of persisting a prompt the user never
 typed. The history is a navigation aid, never a record of a session.
 
-> `src/ui/orchestrator/tests.rs::prompt_buffer_tests::history_recall_discards_the_reconstruction`
-> `src/ui/orchestrator/tests.rs::prompt_buffer_tests::a_control_or_alt_chord_discards_the_reconstruction`
+> `src/ui/orchestrator/tests/prompt_buffer.rs::history_recall_discards_the_reconstruction`
+> `src/ui/orchestrator/tests/prompt_buffer.rs::a_control_or_alt_chord_discards_the_reconstruction`
 
 ### Prompt text is owner-only, workspace-scoped, and deletable
 

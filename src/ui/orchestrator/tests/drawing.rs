@@ -55,3 +55,32 @@ fn a_theme_put_in_force_elsewhere_is_drawn_and_told_to_the_server_once() {
     let _ = driven.pump();
     assert_eq!(palettes(driven.sent()), 0, "told once, not every frame");
 }
+
+/// A plugin name carrying a right-to-left override draws as its letters:
+/// the override, which ratatui keeps because it is zero-width, never
+/// reaches the terminal to reorder the row.
+#[test]
+fn a_bidi_override_never_reaches_the_terminal() {
+    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 12, 1));
+    buffer.set_string(0, 0, "ab\u{202e}cd", ratatui::style::Style::default());
+    let mut drawn = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 12, 1));
+    ratatui::widgets::Widget::render(
+        ratatui::text::Line::raw("ab\u{202e}cd\u{1b}[2K"),
+        drawn.area,
+        &mut drawn,
+    );
+    assert!(
+        drawn
+            .content
+            .iter()
+            .any(|cell| cell.symbol().contains('\u{202e}')),
+        "ratatui itself keeps the override, so this pass is what removes it"
+    );
+    crate::ui::settle_controls(&mut drawn);
+    let row: String = drawn.content.iter().map(|cell| cell.symbol()).collect();
+    assert!(
+        !row.chars().any(uze_application::is_terminal_control),
+        "{row:?}"
+    );
+    assert!(row.starts_with("abcd"), "{row:?}");
+}

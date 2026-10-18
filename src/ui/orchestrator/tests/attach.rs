@@ -4,6 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{Flow, GitBadge, WorkStateView, WorkspaceModel, answered_or};
+use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 use uze_core::UzeHome;
@@ -95,4 +96,23 @@ fn memory_carries_what_the_client_resolved_across_attaches() {
     assert!(model.session.is_none());
     assert!(model.error.is_none());
     assert!(model.hits.is_empty());
+}
+
+#[test]
+fn a_burst_of_input_waits_for_the_frame_only_where_geometry_matters() {
+    let paste = Event::Paste("a".to_owned());
+    let click = Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 3,
+        row: 4,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert_eq!(super::burst_admits(1, &paste, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(0, &click, true), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, false), super::Admit::Handle);
+    assert_eq!(super::burst_admits(1, &click, true), super::Admit::Hold);
+    assert_eq!(
+        super::burst_admits(1, &Event::Resize(80, 24), false),
+        super::Admit::HandleAndDraw
+    );
 }

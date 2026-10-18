@@ -375,3 +375,85 @@ pub(super) fn space_blocks(
     blocks.sort_by_key(|(rect, _)| rect.y);
     blocks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_pending_drop_row_requires_armed_and_the_same_group() {
+        let group = TabDragGroup::Agents(SpaceId(1), AgentGroup::InTheRoot);
+        let dragging = DraggingTab {
+            tab: TabId(9),
+            group,
+            origin: 0,
+            armed: true,
+            pending: Some(PendingDrop::Before(TabId(2))),
+        };
+        assert!(dragging.is_pending_drop_row(group, TabId(2), false));
+        assert!(
+            !dragging.is_pending_drop_row(group, TabId(3), false),
+            "the wrong row"
+        );
+        assert!(
+            !dragging.is_pending_drop_row(
+                TabDragGroup::Agents(SpaceId(2), AgentGroup::InTheRoot),
+                TabId(2),
+                false
+            ),
+            "the wrong group"
+        );
+        let unarmed = DraggingTab {
+            armed: false,
+            ..dragging
+        };
+        assert!(
+            !unarmed.is_pending_drop_row(group, TabId(2), false),
+            "not armed yet — no indicator before the drag threshold"
+        );
+
+        let at_end = DraggingTab {
+            pending: Some(PendingDrop::End),
+            ..dragging
+        };
+        assert!(
+            at_end.is_pending_drop_row(group, TabId(5), true),
+            "dropping at the end lands on whichever row is last"
+        );
+        assert!(
+            !at_end.is_pending_drop_row(group, TabId(5), false),
+            "but not on a row that isn't"
+        );
+    }
+
+    /// A label is edited where the caret is, not only at its end: renaming
+    /// "agent 2" to "agent 12" is one keystroke after two lefts, not a label
+    /// erased and typed out again.
+    #[test]
+    fn a_rename_edits_at_the_caret() {
+        let mut buffer = RenameBuffer::new("agent 2".to_owned());
+        buffer.left();
+        buffer.insert('1');
+        assert_eq!(buffer.text(), "agent 12");
+
+        buffer.home();
+        buffer.erase_forward();
+        buffer.insert('A');
+        buffer.end();
+        buffer.erase_back();
+        buffer.insert_str("3é");
+        assert_eq!(buffer.text(), "Agent 13é");
+
+        buffer.left();
+        buffer.erase_back();
+        assert_eq!(buffer.split(), ("Agent 1", "é"));
+
+        buffer.home();
+        buffer.left();
+        buffer.erase_back();
+        buffer.end();
+        buffer.right();
+        buffer.erase_forward();
+        assert_eq!(buffer.text(), "Agent 1é", "edges are where the caret stops");
+    }
+}

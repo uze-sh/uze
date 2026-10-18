@@ -197,3 +197,105 @@ impl WorkspaceModel {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two things finishing at once is the ordinary case, and the notice's
+    /// single slot loses one of them. The stack keeps both, newest on top.
+    #[test]
+    fn outcomes_stack_newest_first_and_the_oldest_goes_when_it_is_full() {
+        use crate::ui::widget::ToastKind;
+
+        let mut model = WorkspaceModel::default();
+        for n in 0..super::MAX_TOASTS + 2 {
+            model.raise_toast(ToastKind::Told, format!("message {n}"), "detail", None);
+        }
+
+        let stack = model.toast_stack();
+        assert_eq!(stack.len(), super::MAX_TOASTS, "the stack is capped");
+        let drawn = format!("{stack:?}");
+        assert!(
+            drawn.contains(&format!("message {}", super::MAX_TOASTS + 1)),
+            "the newest is kept"
+        );
+        assert!(
+            !drawn.contains("message 0"),
+            "the oldest went, because the reader is looking at the newest"
+        );
+    }
+
+    /// An outcome with something to answer stays until it is answered: a
+    /// message with a button that vanished while the reader reached for it is
+    /// worse than no button.
+    #[test]
+    fn an_outcome_with_an_offer_has_no_clock_and_the_rest_do() {
+        use crate::ui::widget::ToastKind;
+
+        let mut model = WorkspaceModel::default();
+        model.raise_toast(ToastKind::Done, "synced", "to main", None);
+        model.raise_toast(
+            ToastKind::Failed,
+            "rejected",
+            "the remote said no",
+            Some(("retry".to_owned(), WorkspaceHit::OpenChanges)),
+        );
+
+        // Age both past the deadline.
+        for toast in &mut model.remembered.toasts {
+            toast.raised = Instant::now() - super::TOAST_TTL - Duration::from_secs(1);
+        }
+        assert!(model.retire_toasts(), "something left");
+
+        let stack = model.toast_stack();
+        assert_eq!(stack.len(), 1, "only the one with nothing to answer went");
+        assert_eq!(
+            model.toast_offer(0),
+            Some(WorkspaceHit::OpenChanges),
+            "and the one that stayed still carries what answering means"
+        );
+    }
+
+    /// A pass that finds the same fault every time it runs says it once: the
+    /// toast already up is kept fresh, never stacked beside itself.
+    #[test]
+    fn the_same_fault_found_again_keeps_one_toast_up() {
+        let mut model = WorkspaceModel::default();
+        model.raise_toast(ToastKind::Failed, "agents unreadable", "bad yaml", None);
+        model.remembered.toasts[0].raised = Instant::now() - Duration::from_secs(3);
+
+        model.raise_toast(ToastKind::Failed, "agents unreadable", "bad yaml", None);
+        model.raise_toast(ToastKind::Failed, "agents unreadable", "other", None);
+
+        assert_eq!(model.toast_stack().len(), 2);
+        assert!(model.remembered.toasts[0].raised.elapsed() < Duration::from_secs(3));
+    }
+
+    /// Putting one away takes that one, by where it sits on screen.
+    #[test]
+    fn dismissing_takes_the_one_that_was_clicked() {
+        use crate::ui::widget::ToastKind;
+
+        let mut model = WorkspaceModel::default();
+        model.raise_toast(ToastKind::Told, "first", "one", None);
+        model.raise_toast(ToastKind::Told, "second", "two", None);
+
+        // Index 0 is the top of the stack, which is the newest.
+        model.dismiss_toast(0);
+
+        let stack = model.toast_stack();
+        assert_eq!(stack.len(), 1);
+        assert!(
+            format!("{stack:?}").contains("first"),
+            "the other one stays"
+        );
+
+        model.dismiss_toast(7);
+        assert_eq!(
+            model.toast_stack().len(),
+            1,
+            "an index nobody drew is a no-op"
+        );
+    }
+}

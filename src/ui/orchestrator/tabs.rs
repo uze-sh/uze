@@ -1016,3 +1016,125 @@ pub(super) fn open_commit_detail(
     model.dirty = true;
     spawn_commit_detail(cwd, hash, anchor, target, sender.clone());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_tab_drop_resolves_the_nearest_half_and_end_past_the_last() {
+        let members = vec![
+            (Rect::new(0, 0, 10, 2), TabId(1)),
+            (Rect::new(0, 2, 10, 2), TabId(2)),
+            (Rect::new(0, 4, 10, 2), TabId(3)),
+        ];
+        let group = TabDragGroup::Agents(SpaceId(1), AgentGroup::InTheRoot);
+        // Origin past every member here — as if dragging a tab that
+        // started out below all three, so none of them is its "moot
+        // successor" and every member's own midpoint splits plainly.
+        let origin = 10;
+        assert_eq!(
+            pending_tab_drop(&members, group, 0, origin),
+            Some(PendingDrop::Before(TabId(1))),
+            "top half of the first row"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 1, origin),
+            Some(PendingDrop::Before(TabId(2))),
+            "past the first row's own midpoint"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 5, origin),
+            Some(PendingDrop::End),
+            "past every row's midpoint"
+        );
+    }
+
+    #[test]
+    fn pending_tab_drop_skips_straight_past_the_dragged_tabs_moot_successor() {
+        // Dragging the first of four; its immediate successor (TabId(2))
+        // can only ever land "before" it by reconstructing the exact slot
+        // it just left, which `Session::reorder_tab` already refuses as a
+        // no-op — so touching any part of it (not just its own back half)
+        // has to resolve straight through to "after it", not sit there as
+        // a dead, do-nothing target the way a plain per-member midpoint
+        // split would leave it.
+        let members = vec![
+            (Rect::new(0, 2, 10, 2), TabId(2)),
+            (Rect::new(0, 5, 10, 2), TabId(3)),
+            (Rect::new(0, 8, 10, 2), TabId(4)),
+        ];
+        let group = TabDragGroup::Agents(SpaceId(1), AgentGroup::InTheRoot);
+        let origin = 0; // TabId(1)'s own original row.
+        assert_eq!(
+            pending_tab_drop(&members, group, 1, origin),
+            Some(PendingDrop::Before(TabId(2))),
+            "still short of the moot successor: no target reached yet"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 2, origin),
+            Some(PendingDrop::Before(TabId(3))),
+            "the moot successor's own label row already resolves past it"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 3, origin),
+            Some(PendingDrop::Before(TabId(3))),
+            "and so does its detail row"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 6, origin),
+            Some(PendingDrop::Before(TabId(4))),
+            "a real (non-moot) member still splits by its own midpoint"
+        );
+    }
+
+    #[test]
+    fn pending_tab_drop_is_none_outside_the_groups_own_area() {
+        let members = vec![(Rect::new(0, 5, 10, 2), TabId(1))];
+        let group = TabDragGroup::Agents(SpaceId(1), AgentGroup::InTheRoot);
+        let origin = 10;
+        assert_eq!(
+            pending_tab_drop(&members, group, 0, origin),
+            None,
+            "well above the list, past its slack"
+        );
+        assert_eq!(
+            pending_tab_drop(&members, group, 20, origin),
+            None,
+            "well below the list, past its slack"
+        );
+        assert_eq!(
+            pending_tab_drop(&[], group, 0, origin),
+            None,
+            "nothing to drop onto at all"
+        );
+    }
+
+    #[test]
+    fn a_checkout_still_in_use_is_asked_about_again_later_each_time() {
+        let now = Instant::now();
+        let repository = PathBuf::from("/repository");
+        let first = OccupancyRetry::after(None, vec![repository.clone()], now);
+        assert_eq!(first.wait, Duration::from_secs(2));
+        assert_eq!(first.due, now + Duration::from_secs(2));
+
+        let mut previous = first;
+        for _ in 0..10 {
+            previous = OccupancyRetry::after(Some(&previous), vec![repository.clone()], now);
+        }
+        assert_eq!(
+            previous.wait,
+            Duration::from_secs(60),
+            "a shell left open is asked about once a minute, never less often"
+        );
+        assert_eq!(previous.look_in, vec![repository]);
+    }
+
+    #[test]
+    fn a_retry_still_owed_keeps_its_repository_beside_a_new_one() {
+        let now = Instant::now();
+        let owed = OccupancyRetry::after(None, vec![PathBuf::from("/a")], now);
+        let next = OccupancyRetry::after(Some(&owed), vec![PathBuf::from("/b")], now);
+        assert_eq!(next.look_in, vec![PathBuf::from("/b"), PathBuf::from("/a")]);
+    }
+}
