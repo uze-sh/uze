@@ -3002,7 +3002,7 @@ contextual. A keymap that breaks this is refused rather than resolved by
 order, which is what retired `r` meaning both *remove* and *refresh*.
 
 > `uze-keys::keymap::tests::one_chord_names_one_action_within_a_keyboard`
-> `src/ui/tests.rs::a_letter_names_one_action_and_refreshing_has_its_own`
+> `src/ui/tests/marketplaces.rs::a_letter_names_one_action_and_refreshing_has_its_own`
 
 ### A question is answered with the arrows and enter
 
@@ -3012,7 +3012,7 @@ between them, enter takes the one the keyboard is on, esc withdraws it,
 and no letter answers it: a second, invisible way to say yes is a key
 pressed by habit on the wrong question.
 
-> `src/ui/tests.rs::remove_confirmation_flow`
+> `src/ui/tests/plugins.rs::remove_confirmation_flow`
 > `src/ui/tests.rs::the_arrows_choose_an_answer_and_enter_takes_it`
 > `src/ui/orchestrator/tests.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
 > `src/ui/orchestrator/tests/recent.rs::a_question_opens_on_its_way_out_and_the_arrow_reaches_going_ahead`
@@ -3058,7 +3058,7 @@ for what can be done now and for nothing else.
 
 > `uze-application::application::offers::tests::an_action_that_cannot_run_says_why_rather_than_doing_nothing`
 > `src/ui/tests/layout.rs::every_drawer_draws_what_its_row_can_do_as_buttons`
-> `src/ui/tests.rs::the_drawer_offers_what_can_be_done_as_buttons`
+> `src/ui/tests/plugins.rs::the_drawer_offers_what_can_be_done_as_buttons`
 
 ---
 
