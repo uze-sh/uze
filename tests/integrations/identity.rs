@@ -311,6 +311,12 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            // A `tests/` directory beside a `tests.rs` holds that test
+            // module's own submodules: test code for the same reason the
+            // root below is.
+            if path.file_name().is_some_and(|name| name == "tests") {
+                continue;
+            }
             rust_files(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "rs") {
             // `tests.rs` is only ever reachable via `#[cfg(test)] mod
