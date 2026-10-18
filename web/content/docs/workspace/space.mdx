@@ -5,7 +5,7 @@ description: One screen for a project in the workspace, covering what its agents
 
 <Demo
   cast="/casts/space.cast"
-  posterAt={4}
+  posterAt={21}
   alt="The space overview: the prompts asked in the space with what reaches the agent in front, the agents.yaml settings as a form, the project's plugins, the facts its agents kept, and the worktrees its agents work in."
   caption="Alt+O opens it over the tab in front, from an agent or a shell."
 />
@@ -82,13 +82,31 @@ puts it right; see [Plugins](/docs/plugins).
 
 ## Memory
 
-The facts this project's agents kept for later agents on any harness: their
-name, kind, origin and when they changed. The line under the list counts the
-facts kept on this machine, which reach agents here too.
+Agents keep facts for the agents that come after them, on any harness: how
+you want work done, a constraint of the project, where something lives. A
+fact is a short Markdown file with a name, a one-line description and a
+kind (`feedback`, `project`, `reference` or `user`). uze keeps them outside
+every checkout, readable by you alone, at two scopes: the **project**,
+shared by every agent launched in it, and the **machine**, shared by every
+project.
 
-`/` searches by name, description, kind and origin as you type, and `Esc`
-clears the search. `Enter` reads the selected fact in the drawer. Nothing is
-changed from here: agents keep and forget facts with `uze agent memory`.
+Every agent uze launches is given an index of that memory in its context,
+whatever its harness: each piece of feedback with its description, the
+rest by name, and how to read one in full. Agents write facts with
+`uze agent memory`. A harness that keeps memory of its own, like Claude
+Code, goes on writing it there, and uze reads it where it is rather than
+copying it. A machine fact an agent proposes waits for your approval before
+it reaches any agent. Facts are notes, never instructions, and memory holds
+no secrets.
+
+This section lists the project's facts: their name, kind, origin (the
+harness that wrote it, or `uze` for one written outside an agent) and when
+they changed. The line
+under the list counts the machine facts that reach agents here too. `/`
+searches by name, description, kind and origin as you type, and `Esc`
+clears the search. `Enter` reads the selected fact in the drawer, which also
+shows the file it lives in. Nothing is changed from here: a fact is a file,
+and you can edit it by hand.
 
 ## Worktrees
 
