@@ -884,10 +884,16 @@ fn a_colleagues_branch_of_the_same_name_is_never_overwritten() {
         vocabulary: &BranchVocabulary::Unset,
     };
 
+    let before = isolation.state.clone();
     let refused = deliver(primary, &mut isolation, &policy);
     assert!(
         matches!(&refused, Err(DeliveryFailure::Git(reason)) if reason.contains("did not push")),
         "{refused:?}"
+    );
+    // Refused, the task is not left reading as a delivery under way.
+    assert_eq!(
+        isolation.state, before,
+        "the refused delivery kept its claim"
     );
     let remote = repository.git_in(&other, &["ls-remote", REMOTE, "refs/heads/fix/shared-name"]);
     assert!(

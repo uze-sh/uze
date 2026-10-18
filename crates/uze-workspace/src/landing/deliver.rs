@@ -4,15 +4,26 @@ use super::*;
 
 /// Delivers a ready task according to `policy`, under the repository write
 /// lock. Updates `task` to say what happened, whatever that was.
+///
+/// A delivery that fails without saying where the work stands — a fetch
+/// or a push refused — gives the task back the state it had: left
+/// `Integrating`, it would read as a delivery still running, and every
+/// later one would be refused as already under way.
 pub fn deliver(
     primary: &Path,
     agent: &mut Agent,
     policy: &Policy<'_>,
 ) -> Result<Delivered, DeliveryFailure> {
-    uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+    let before = agent.state.clone();
+    let delivered = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
         deliver_locked(primary, agent, policy)
     })
-    .map_err(|error| DeliveryFailure::Git(error.to_string()))?
+    .map_err(|error| DeliveryFailure::Git(error.to_string()))
+    .and_then(|delivered| delivered);
+    if delivered.is_err() && agent.state == WorkState::Integrating {
+        agent.state = before;
+    }
+    delivered
 }
 
 pub(super) fn deliver_locked(
