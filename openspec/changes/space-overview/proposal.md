@@ -53,7 +53,8 @@ workspace without knowing its keys.
   - **Worktrees.** The checkouts UZE made for the space's agents and
     subagents, one card each: branch, state, owner and the tab working
     there, size on disk, commits ahead, uncommitted work, path and age.
-    Read-only: freeing or discarding stays where the work is.
+    A free worktree can be removed from its drawer, after a question;
+    nothing else is: discarding kept work stays where the work is.
 - **A drawer** beside the section shows the selected row in full: a
   harness, a plugin, a fact, a workspace key.
 - **Activity.** Counts of the space's agents by state beside the title.

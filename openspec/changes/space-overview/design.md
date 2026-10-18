@@ -324,8 +324,35 @@ What the code holds today (2026-10-17):
   whose agent is not live, a subagent's with no topic) and on an
   unreadable record. Size alone never warns: no threshold is honest for
   every project.
-- **Nothing destructive.** The drawer reads the worktree in full and offers
-  no action; freeing and discarding stay in the sidebar, beside the work.
+- **One removal, of a free worktree only (D11).** The drawer reads the
+  worktree in full; kept work is discarded or joined from recent, beside
+  the work.
+
+### D11. Removing a free worktree, asked first and judged again
+
+- **Only free.** A slot no task holds, with nothing uncommitted, nothing
+  unkept on its branch and nobody inside: what the pool would hand the next
+  agent. Nothing else is offered, and no button stands greyed where it is
+  not. Kept, to join and idle cards say in one muted line where to go.
+- **The safety is the workspace's.** `checkout::remove_free_slot` re-reads
+  the slot under the task store's lock and the repository's write lock,
+  right before it moves anything, and observes the process table there:
+  any process inside, attended or not, refuses it, since a daemon follows a
+  moved directory without a word. A slot that is no longer UZE's, that a
+  task names, that holds uncommitted work or that is not free is refused
+  with the reason. It is set aside as collection does, its branch kept,
+  and the trash is emptied once the locks are let go.
+- **Asked first.** Its directory is often gigabytes of build output the
+  client cannot give back, so `RemoveItem` (`d`) or the drawer's Remove
+  opens a dialog naming the worktree and its size; arrows, Enter and Esc
+  answer it, Cancel first.
+- **Reusing `RemoveItem`.** It already means "remove the entry in focus" in
+  this scope, and stays non-destructive honestly: it only asks, and a free
+  slot holds no work, only output a build makes again. A new action would
+  have needed another letter for the same gesture.
+- **Off the frame.** The removal runs on a thread, one per overview at a
+  time; the header says it is underway, a toast says what happened (the
+  size freed, or why it was kept), and the section is read again either way.
 
 ## Risks / Trade-offs
 

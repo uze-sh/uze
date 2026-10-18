@@ -42,6 +42,8 @@
 
 - [x] 5.9 A Worktrees section: the catalog's grid moved to `widget::grid`; cards from `Workspace::checkouts` read by `spawn_space_worktrees` while the section is in front and on refresh, stale answers dropped; state, owner and live tab per card; drawer; `SelectSection(6)`
 - [x] 5.10 `TestBackend` tests: a card per worktree with branch and size; keys and a click select; the wheel scrolls whole cards without selecting; hover lifts a card; the measure is off the frame and a stale answer dropped; the empty state; the warning
+- [x] 5.11 Removing a free worktree (D11): `checkout::remove_free_slot` judges the slot again under the task store's and the repository's locks and refuses with a reason; `Workspace::remove_free_checkout` empties the trash after; `RemoveItem` and a drawer button ask with a dialog, `spawn_worktree_removal` runs it off the frame, the header says it is underway, a toast says what happened and the section is read again
+- [x] 5.12 Tests: real repositories for a free slot removed with its branch kept, and a held, entered, written-in or foreign one refused and left intact; `TestBackend` for the offer only on a free card, esc withdrawing the question, one removal sent off the frame, a refusal toasted with the card kept, a success read again
 
 ## 6. Journey
 

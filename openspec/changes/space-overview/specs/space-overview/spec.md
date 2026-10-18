@@ -68,7 +68,7 @@ space's agents and subagents, in a grid as wide as the room and only whole
 cards: its branch, state, owner and working tab, size on disk, commits
 ahead, uncommitted work, path and age. Its tab SHALL warn on uncommitted
 work no agent attends. It SHALL be measured off the frame only while in
-front or refreshed, and SHALL offer nothing destructive.
+front or refreshed.
 
 #### Scenario: A card per worktree
 - **WHEN** the space has three slots of UZE's and a checkout a person made
@@ -85,6 +85,30 @@ front or refreshed, and SHALL offer nothing destructive.
 #### Scenario: No worktrees
 - **WHEN** every agent of the space works in its own checkout
 - **THEN** the section says there are no worktrees
+
+### Requirement: Only a free worktree can be removed from the overview
+The Worktrees section SHALL offer removal only for a free worktree, a slot
+no task holds, and only after a question naming it and its size. The
+removal SHALL run off the frame and keep the worktree's branch. The
+workspace SHALL judge the slot again right before removing it and SHALL
+refuse, leaving it intact, one that a task holds, that holds uncommitted
+work or that any process stands in.
+
+#### Scenario: A free worktree removed after a question
+- **WHEN** the operator asks to remove a free worktree and confirms
+- **THEN** its directory is deleted, its branch stays, a toast says the size freed and the section is read again
+
+#### Scenario: The question withdrawn
+- **WHEN** the operator answers the question with Esc or Cancel
+- **THEN** nothing is removed
+
+#### Scenario: Anything else cannot be removed
+- **WHEN** the selected worktree is working, ready, idle, kept, to join or unreadable
+- **THEN** no removal is offered
+
+#### Scenario: A worktree that changed since it was shown
+- **WHEN** a slot is taken, written in or entered between the question and the removal
+- **THEN** it is left intact and a toast says why it was kept
 
 ### Requirement: The Agent section reads the agent in front
 The Agent section SHALL list the prompts the agent in front was given,
