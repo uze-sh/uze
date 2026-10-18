@@ -1,7 +1,7 @@
 //! Recent: what it lists and in what order, what a row says selected and
 //! not, the header that leads into it, and what each key does to a row.
 
-use super::workspace_tests::{driven, key_event, model_of, preserved, session};
+use super::support::{driven, key_event, model_of, preserved, session};
 use super::*;
 use crossterm::event::{MouseButton, MouseEventKind};
 use ratatui::style::Modifier;
@@ -123,7 +123,7 @@ fn row_of(lines: &[String], text: &str) -> usize {
         .unwrap_or_else(|| panic!("{text:?} is drawn:\n{}", lines.join("\n")))
 }
 
-fn press(driven: &mut super::workspace_tests::Driven<'_>, action: Action) {
+fn press(driven: &mut super::support::Driven<'_>, action: Action) {
     let chord = uze_keys::active()
         .chord_for(
             action,
@@ -925,7 +925,7 @@ fn names(model: &WorkspaceModel) -> Vec<String> {
     recent_rows(model).into_iter().map(|row| row.name).collect()
 }
 
-fn type_into(driven: &mut super::workspace_tests::Driven<'_>, text: &str) {
+fn type_into(driven: &mut super::support::Driven<'_>, text: &str) {
     for character in text.chars() {
         let chord = uze_keys::Chord::parse(&character.to_string()).unwrap();
         driven.press_key(key_event(chord));

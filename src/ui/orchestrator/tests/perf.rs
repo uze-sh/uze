@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::workspace_tests::{Driven, driven, model_of, session};
+use super::support::{Driven, driven, model_of, session};
 use crate::ui::orchestrator::{POLL, WorkspaceModel, open_code_at};
 use std::time::{Duration, Instant};
 use uze_core::UzeHome;

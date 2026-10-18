@@ -4,7 +4,7 @@
 //! The two harnesses are whatever the shared fixture's agents run, read off
 //! their panes, so nothing here depends on which vendors those are.
 
-use super::workspace_tests::{agents_in_the_root_session, driven, frame_rows};
+use super::support::{agents_in_the_root_session, driven, frame_rows};
 use super::*;
 use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -53,7 +53,7 @@ fn identities() -> Vec<AgentIdentity> {
 const CONTINUE_IN: &str = "Continue in…";
 
 /// The harnesses the open menu's group entry offers, as they read.
-fn offered(driven: &workspace_tests::Driven<'_>) -> Vec<String> {
+fn offered(driven: &support::Driven<'_>) -> Vec<String> {
     let menu = driven
         .attach
         .model
@@ -73,23 +73,19 @@ fn offered(driven: &workspace_tests::Driven<'_>) -> Vec<String> {
 }
 
 /// One key, by the chord the active keymap gives `action` in `scope`.
-fn press(
-    driven: &mut workspace_tests::Driven<'_>,
-    action: uze_keys::Action,
-    scope: uze_keys::Scope,
-) {
+fn press(driven: &mut support::Driven<'_>, action: uze_keys::Action, scope: uze_keys::Scope) {
     let chord = uze_keys::active()
         .chord_for(
             action,
             &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, scope],
         )
         .expect("the action has a key");
-    driven.press_key(workspace_tests::key_event(chord));
+    driven.press_key(support::key_event(chord));
 }
 
 /// Opens the selected agent's menu from the keyboard and takes its
 /// "Continue in…" group to the first harness.
-fn continue_from_the_keyboard(driven: &mut workspace_tests::Driven<'_>) {
+fn continue_from_the_keyboard(driven: &mut support::Driven<'_>) {
     driven.frame();
     press(driven, uze_keys::Action::OpenMenu, uze_keys::Scope::Pane);
     assert!(
@@ -119,7 +115,7 @@ fn continue_from_the_keyboard(driven: &mut workspace_tests::Driven<'_>) {
 }
 
 /// The menu a right-click on `wanted`'s row opens, as its entries read.
-fn menu_on(driven: &mut workspace_tests::Driven<'_>, wanted: TabId) -> Vec<String> {
+fn menu_on(driven: &mut support::Driven<'_>, wanted: TabId) -> Vec<String> {
     driven
         .attach
         .model
@@ -364,7 +360,7 @@ fn a_click_opens_the_group_and_a_click_on_a_harness_switches() {
     driven.attach.identities = identities();
     menu_on(&mut driven, TabId(2));
     driven.frame();
-    let rect_of = |driven: &workspace_tests::Driven<'_>, wanted: WorkspaceHit| {
+    let rect_of = |driven: &support::Driven<'_>, wanted: WorkspaceHit| {
         driven
             .attach
             .model
