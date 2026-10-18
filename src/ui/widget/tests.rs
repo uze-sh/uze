@@ -1386,3 +1386,51 @@ fn a_selected_row_keeps_its_controls_grounds() {
     );
     assert_eq!(spans.last().map(|span| span.style.bg), Some(Some(selected)));
 }
+
+/// An alert's detail draws what it quotes as code, without the backticks,
+/// and a row of air stands between one alert and the next.
+#[test]
+fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
+    use super::alerts::{self, Alert, Severity};
+    let (width, height) = (80, 20);
+    let buffer = drawn(width, height, |frame| {
+        alerts::render(
+            frame,
+            Rect::new(0, 0, width, height),
+            "To check",
+            &[
+                Alert {
+                    severity: Severity::Medium,
+                    label: "Codex".to_owned(),
+                    detail: "raise `project_doc_max_bytes` in its config".to_owned(),
+                },
+                Alert {
+                    severity: Severity::Medium,
+                    label: "Antigravity".to_owned(),
+                    detail: "reads the first bytes".to_owned(),
+                },
+            ],
+            ratatui::text::Line::default(),
+        );
+    });
+    let rows: Vec<String> = (0..height)
+        .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
+        .collect();
+    assert!(rows.iter().all(|row| !row.contains('`')), "{rows:#?}");
+    let detail = rows
+        .iter()
+        .position(|row| row.contains("project_doc_max_bytes"))
+        .expect("the detail is drawn");
+    let code_at = rows[detail].find("project_doc_max_bytes").unwrap();
+    let code_at = rows[detail][..code_at].chars().count() as u16;
+    assert_eq!(
+        buffer[(code_at, detail as u16)].fg,
+        theme::color(Token::TextCode),
+        "the quoted setting wears the code ink"
+    );
+    let next = rows
+        .iter()
+        .position(|row| row.contains("Antigravity"))
+        .expect("the second alert is drawn");
+    assert_eq!(next, detail + 2, "no air between the alerts:\n{rows:#?}");
+}
