@@ -37,13 +37,10 @@ video:
   cast: '{root}/uze-hero.cast'
   speed: 1.2                # reads as a person; at 1.45 the extension scene read as fast-forward
   wait_collapse: 1.5        # what an agent's thinking time collapses to
-  # The poster: named by what must be on screen, so a
-  # re-cut cannot silently move it to a half-drawn frame. Not the drawer's
-  # heading: the drawer draws `reading…` first and its prompt list a frame
-  # later, so the heading's frame is the half-drawn one. The list's row is
-  # the prompt wrapped at the drawer's width; the pane breaks it elsewhere,
-  # so only the drawer puts an escape between those two words.
-  poster_when: 'listing every\x1b[^r]*route in src/router'
+  # The poster: named by what must be on screen, so a re-cut cannot
+  # silently move it to a half-drawn frame: the space's overview on its
+  # Agent section, the prompts both agents were given.
+  poster_when: 'prompts asked in this space'
 fixtures:
   - include: _shared/demo-app.yml
   - include: _shared/demo-web.yml
@@ -95,7 +92,10 @@ beats:
     expect: 'esc to interrupt|for \d+s · done'
     expect_timeout: 60
     pause: 1.8
-  - use: launch-opencode
+  # Codex rather than OpenCode: OpenCode 2.0.30's background service fails
+  # its own health check in the sandbox (2026-10-18), and the agent never
+  # draws. The landing still shows OpenCode.
+  - use: launch-codex
     with: {say: 'a second agent, on a different harness', menu_pause: 0.9, pause: 1.8}
   - dclick: ''
     glyph: '✦'
@@ -114,7 +114,7 @@ beats:
   # point of this demo — and a careful agent then explores, finds nothing,
   # and the wait below times out with the take.
   - say: asked for something else — this one without a commit
-    type: add a Routes section to README.md listing every route in src/router.rs
+    type: add a Routes section to README.md listing every route in src/router.rs, without committing
     pause: 1.6
   # The agent's own drawer moved into the space's overview: its Agent
   # section lists what the space's agents were asked, and its drawer what
@@ -225,10 +225,11 @@ beats:
   # Closed by its own button, not by Escape. Escape steps *back* — a mode, a
   # selection — so how many it takes to leave depends on how deep the scene
   # went. The lit button closes it from any depth, and the proof is the
-  # agent under it drawing again: OpenCode's own footer.
+  # tab strip back over the agent: Code draws its own tabs there.
   - click: code
     in: strip
-    expect: ctrl\+p commands
+    expect: docs
+    expect_in: strip
     expect_timeout: 6
     refuse: Ranking
     pause: 0.8

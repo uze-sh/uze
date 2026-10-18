@@ -86,6 +86,16 @@ sandbox:
     # operator's real install.
     - test -e {home}/.uze/shims/opencode || ln -s {project}/target/release/uze {home}/.uze/shims/opencode
   reset:
+    # OpenCode v2 serves its sessions from a background process that
+    # outlives the agent that started it, and the base reset only ends uze's
+    # own. One left from an earlier take goes unresponsive, and the next
+    # OpenCode agent then never draws: it is ended here, by the sandbox's
+    # HOME, so the operator's own OpenCode is never touched.
+    - |
+      for pid in $(pgrep -f 'opencode serve' 2>/dev/null); do
+        tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -qx 'HOME={home}' && kill -TERM "$pid" 2>/dev/null
+      done
+      sleep 1
     # Codex asks whether to trust a folder on its first launch there, and
     # its answer lives in its own config, which `uze setup` also writes to.
     - |

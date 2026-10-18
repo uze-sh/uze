@@ -35,27 +35,28 @@ video:
 sandbox:
   cwd: '{fixtures}/demo-api'
   reset:
-    # A plugin for the Plugins section, declared in the project the way a
-    # person would: through uze, from a marketplace.
-    - |
-      U="env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze"
-      cd {fixtures}/demo-api
-      $U market add hiukky/ai >/dev/null 2>&1 || true
-      $U install git@ai >/dev/null 2>&1
-    # The facts the Memory section lists, kept by the operator. The project
-    # memory is under state/projects, which the base reset clears, so each
-    # take starts from these four.
-    - |
-      U="env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze"
-      cd {fixtures}/demo-api
-      echo 'Every route is registered in src/router.rs; a path it does not carry falls through to not_found.' |
-        $U agent memory remember route-table --type reference --description 'Where the routes are declared' >/dev/null
-      echo 'The request budget is read from config.toml under [limits], never hard-coded.' |
-        $U agent memory remember request-budget --type project --description 'Where the rate limit comes from' >/dev/null
-      echo 'cargo test runs every suite; the health check has its own in src/health.rs.' |
-        $U agent memory remember running-tests --type project --description 'How the checks are run' >/dev/null
-      echo 'Commit subjects follow Conventional Commits, with the module as the scope.' |
-        $U agent memory remember commit-style --type feedback --description 'How commits are written here' >/dev/null
+    # The marketplace the plugin comes from, on the machine. The plugin
+    # itself is added on camera: the fixture is rewound after these
+    # commands, which reverts agents.yaml and AGENTS.md and leaves the
+    # untracked agents.lock, so an install here reads as drift.
+    - env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze market add hiukky/ai >/dev/null 2>&1 || true
+  write:
+    # The facts the Memory section lists, kept by the operator. They cannot
+    # be written in `reset`: `clear` removes ~/.uze/state/projects after it,
+    # and the project's memory lives there. A beat runs this instead, once
+    # the take has started, in a wait the cut squeezes out.
+    - path: '{home}/seed-memory.sh'
+      text: |
+        U="env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze"
+        cd {fixtures}/demo-api || exit 1
+        echo 'Every route is registered in src/router.rs; a path it does not carry falls through to not_found.' |
+          $U agent memory remember route-table --type reference --description 'Where the routes are declared' >/dev/null || exit 1
+        echo 'The request budget is read from config.toml under [limits], never hard-coded.' |
+          $U agent memory remember request-budget --type project --description 'Where the rate limit comes from' >/dev/null || exit 1
+        echo 'cargo test runs every suite; the health check has its own in src/health.rs.' |
+          $U agent memory remember running-tests --type project --description 'How the checks are run' >/dev/null || exit 1
+        echo 'Commit subjects follow Conventional Commits, with the module as the scope.' |
+          $U agent memory remember commit-style --type feedback --description 'How commits are written here' >/dev/null
 fixtures:
   - include: ../_shared/demo-api.yml
 beats:
@@ -64,6 +65,16 @@ beats:
     expect_in: sidebar
     expect_timeout: 15
     pause: 1.0
+  - say: the project's memory, kept by the operator before the story starts
+    wait: shell
+    until: sh {home}/seed-memory.sh
+    timeout: 20
+    pause: 0.2
+  - say: a plugin, added to the project from its shell
+    type: uze git@ai
+    expect: added to this project
+    expect_timeout: 90
+    pause: 1.2
   # Two agents, each in a worktree of its own, so the overview has prompts
   # to list and worktrees to show.
   - use: launch-claude
@@ -122,7 +133,7 @@ beats:
     pause: 0.8
   - say: and read in full
     key: Enter
-    expect: never hard-coded
+    expect: request budget is read from
     expect_timeout: 6
     pause: 2.4
   # ── Worktrees ───────────────────────────────────────────────────────────
