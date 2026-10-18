@@ -15,7 +15,7 @@
 //! them is.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -404,6 +404,7 @@ pub fn choices(root: &Path) -> Choices {
     // Local and remote branches under one name each, the most recently
     // committed first; an agent's own branch is never a target.
     let mut branches: Vec<String> = Vec::new();
+    let mut seen = BTreeSet::new();
     for branch in lines(&[
         "for-each-ref",
         "--sort=-committerdate",
@@ -419,7 +420,7 @@ pub fn choices(root: &Path) -> Choices {
         if name != "HEAD"
             && name != "origin"
             && !name.starts_with("agent/")
-            && !branches.contains(&name)
+            && seen.insert(name.clone())
         {
             branches.push(name);
         }
