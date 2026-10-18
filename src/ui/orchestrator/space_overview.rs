@@ -678,25 +678,18 @@ impl SpaceOverviewView {
     /// for the target, its branches; for a choice, its options. Those
     /// already in a list are left out, those the typed text heads first,
     /// then those it appears in.
-    pub(super) fn picker_options(&self) -> Vec<String> {
+    pub(super) fn picker_options(&self) -> Vec<&str> {
         let Some(field) = &self.edit.field else {
             return Vec::new();
         };
         let Some(offered) = self.declaration().map(|declaration| &declaration.choices) else {
             return Vec::new();
         };
-        let options: Vec<String>;
-        let source = match field.key {
-            DeclarationKey::Link => &offered.links,
-            DeclarationKey::Artifacts => &offered.directories,
-            DeclarationKey::Target => &offered.branches,
-            key if is_combo(key) => {
-                options = choices(key)
-                    .iter()
-                    .map(|option| (*option).to_owned())
-                    .collect();
-                &options
-            }
+        let (read, fixed): (&[String], &[&str]) = match field.key {
+            DeclarationKey::Link => (&offered.links, &[]),
+            DeclarationKey::Artifacts => (&offered.directories, &[]),
+            DeclarationKey::Target => (&offered.branches, &[]),
+            key if is_combo(key) => (&[], choices(key)),
             _ => return Vec::new(),
         };
         let taken = self
@@ -706,18 +699,21 @@ impl SpaceOverviewView {
             .unwrap_or_default();
         let editing = field.item.and_then(|item| taken.get(item));
         let typed = field.buffer.text().trim().to_lowercase();
-        let open: Vec<&String> = source
-            .iter()
-            .filter(|path| !taken.contains(path) || Some(*path) == editing)
-            .collect();
-        let heads = open
-            .iter()
-            .filter(|path| path.to_lowercase().starts_with(&typed));
-        let inside = open.iter().filter(|path| {
-            let lowered = path.to_lowercase();
-            !lowered.starts_with(&typed) && lowered.contains(&typed)
-        });
-        heads.chain(inside).map(|path| (*path).clone()).collect()
+        let mut heads = Vec::new();
+        let mut inside = Vec::new();
+        let source = read.iter().map(String::as_str).chain(fixed.iter().copied());
+        for option in source.filter(|option| {
+            editing.is_some_and(|item| item == option) || !taken.iter().any(|item| item == option)
+        }) {
+            let lowered = option.to_lowercase();
+            if lowered.starts_with(&typed) {
+                heads.push(option);
+            } else if lowered.contains(&typed) {
+                inside.push(option);
+            }
+        }
+        heads.extend(inside);
+        heads
     }
 
     /// An action's instruction as it would be saved.
@@ -1551,16 +1547,19 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        let options = overview.picker_options();
+        let offered = {
+            let options = overview.picker_options();
+            let picked = overview.edit.field.as_ref().map_or(0, |field| field.picked);
+            options
+                .get(picked.min(options.len().saturating_sub(1)))
+                .map(|option| (*option).to_owned())
+        };
         let Some(field) = overview.edit.field.take() else {
             return;
         };
         // A path on offer is taken as offered; with none matching, what
         // was typed stands, and the check says whether it may.
-        let typed = options
-            .get(field.picked.min(options.len().saturating_sub(1)))
-            .cloned()
-            .unwrap_or_else(|| field.buffer.text().trim().to_owned());
+        let typed = offered.unwrap_or_else(|| field.buffer.text().trim().to_owned());
         let key = field.key;
         if !choices(key).is_empty() && field.item.is_none() {
             if let Some(index) = choices(key).iter().position(|option| *option == typed) {

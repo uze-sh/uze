@@ -535,7 +535,7 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
         .expect("still open");
     assert_eq!(
         overview.picker_options(),
-        vec!["main".to_owned(), "develop".to_owned()],
+        vec!["main", "develop"],
         "the target does not offer the repository's branches"
     );
 }
