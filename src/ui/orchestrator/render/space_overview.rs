@@ -1384,7 +1384,7 @@ fn render_agent(
             track,
         );
     };
-    let prompts = agent.prompts(&history.entries);
+    let prompts = &history.entries;
     if prompts.is_empty() {
         let whose = "nothing has been asked in this space yet";
         return draw_lines(frame, list, &[said(whose, Token::TextMuted)], None, track);

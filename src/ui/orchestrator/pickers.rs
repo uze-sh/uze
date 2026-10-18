@@ -76,16 +76,6 @@ pub(super) struct AgentSupportDropdown {
     pub(super) clearing: bool,
 }
 
-impl AgentSupportDropdown {
-    /// The space's prompts, newest first.
-    pub(super) fn prompts<'a>(
-        &self,
-        history: &'a [uze_application::PromptEntry],
-    ) -> Vec<&'a uze_application::PromptEntry> {
-        history.iter().collect()
-    }
-}
-
 /// What a right-click-opened [`ContextMenu`] targets — the space or tab
 /// the menu's actions act on, or recent's selected row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

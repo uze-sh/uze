@@ -210,43 +210,30 @@ impl Attach<'_> {
             .and_then(|overview| overview.agent.as_mut())
     }
 
-    /// The prompt the keys are on, as it was asked.
-    fn chosen_prompt(&self) -> Option<String> {
+    /// The Agent section, with the space's prompts it lists, newest first,
+    /// once the history read for its space has arrived.
+    fn listed_prompts(&self) -> Option<(&AgentSupportDropdown, &[uze_application::PromptEntry])> {
         let agent = self.model.space_overview.as_ref()?.agent.as_ref()?;
         let history = self.model.remembered.drawer_prompts.as_ref()?;
-        (history.root == agent.space_root)
-            .then(|| agent.prompts(&history.entries))?
+        (history.root == agent.space_root).then_some((agent, history.entries.as_slice()))
+    }
+
+    /// The prompt the keys are on, as it was asked.
+    fn chosen_prompt(&self) -> Option<String> {
+        let (agent, prompts) = self.listed_prompts()?;
+        prompts
             .get(agent.selected)
             .map(|entry| entry.preview.clone())
     }
 
     /// How many prompts the Agent section lists.
     pub(in crate::ui::orchestrator) fn drawer_prompt_count(&self) -> usize {
-        let agent = self
-            .model
-            .space_overview
-            .as_ref()
-            .and_then(|overview| overview.agent.as_ref());
-        match (agent, &self.model.remembered.drawer_prompts) {
-            (Some(agent), Some(history)) if history.root == agent.space_root => {
-                agent.prompts(&history.entries).len()
-            }
-            _ => 0,
-        }
+        self.listed_prompts()
+            .map_or(0, |(_, prompts)| prompts.len())
     }
 
     pub(in crate::ui::orchestrator) fn space_has_prompts(&self) -> bool {
-        let agent = self
-            .model
-            .space_overview
-            .as_ref()
-            .and_then(|overview| overview.agent.as_ref());
-        match (agent, &self.model.remembered.drawer_prompts) {
-            (Some(agent), Some(history)) => {
-                history.root == agent.space_root && !history.entries.is_empty()
-            }
-            _ => false,
-        }
+        self.drawer_prompt_count() > 0
     }
 
     /// Keeps the selection on a prompt that is still listed after the
