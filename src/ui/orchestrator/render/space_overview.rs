@@ -1248,11 +1248,7 @@ fn render_picker(
     let Some(editing) = &overview.edit.field else {
         return Rect::default();
     };
-    if !matches!(
-        editing.key,
-        DeclarationKey::Link | DeclarationKey::Artifacts
-    ) && !is_combo(editing.key)
-    {
+    if !offers_choices(editing.key) {
         return Rect::default();
     }
     let width = usize::from(field.width);

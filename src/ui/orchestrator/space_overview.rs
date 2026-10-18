@@ -684,6 +684,13 @@ pub(super) fn harness_issues(harness: &StatusHarness) -> impl Iterator<Item = &s
     .filter_map(|issue| issue.as_deref())
 }
 
+/// Whether a field for `key` offers something to choose from, as
+/// [`SpaceOverviewView::picker_options`] lists it: what the repository
+/// ignores, the directories it tracks, or a combo's options.
+pub(super) fn offers_choices(key: DeclarationKey) -> bool {
+    matches!(key, DeclarationKey::Link | DeclarationKey::Artifacts) || is_combo(key)
+}
+
 /// A key chosen from a list it offers rather than typed: its options, or
 /// the repository's branches.
 pub(super) fn is_combo(key: DeclarationKey) -> bool {
