@@ -10,10 +10,13 @@ use crate::ui::widget::{
     row,
     tabs::{self, Tab},
 };
-use uze_application::application::{FreshnessState, HarnessContextDelivery};
+use uze_application::application::{
+    FreshnessState, HarnessContextDelivery, StatusHarness, StatusReport,
+    memory::Entry as MemoryEntry,
+};
 use uze_application::{
     ActionState, DeclarationKey, DeclarationPreview, DeclaredValue, DiffLine, ProjectSpace,
-    SpaceOverview,
+    SpaceOverview, SpacePlugin,
 };
 
 /// The width under which the drawer stands over the section instead of
@@ -1757,305 +1760,324 @@ fn render_drawer(
     project: &ProjectSpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let width = usize::from(area.width);
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let head = |kind: &str, title: &str, lines: &mut Vec<Line<'static>>| {
-        lines.push(Line::from(Span::styled(
-            kind.to_owned(),
-            theme::fg(Token::TextMuted),
-        )));
-        lines.push(Line::from(Span::styled(
-            title.to_owned(),
-            theme::fg_bold(Token::TextBright),
-        )));
-        lines.push(Line::default());
-    };
-    let pair = |label: &str, value: String, tone: Token| {
-        Line::from(vec![
-            Span::styled(pad(label, 16), theme::fg(Token::TextMuted)),
-            Span::styled(value, theme::fg(tone)),
-        ])
-    };
-    let paragraph = |text: &str, tone: Token, lines: &mut Vec<Line<'static>>| {
-        for folded in text::fold(text, width) {
-            lines.push(Line::from(Span::styled(folded, theme::fg(tone))));
-        }
+    let mut drawer = DrawerLines {
+        lines: Vec::new(),
+        width: usize::from(area.width),
     };
     let report = &project.status.report;
     let row = overview.row();
     match overview.section {
-        // The agent the prompts were asked of: what it runs on, what of
-        // the project reaches it, and the prompt the keys are on, whole.
         Section::Agent => {
             let Some(agent) = &overview.agent else {
                 return;
             };
-            match (&agent.key, &agent.support) {
-                (None, _) => {
-                    head("space", &agent.path, &mut lines);
-                    paragraph(
-                        "No agent in front: open the space from an agent's tab to read what reaches it.",
-                        Token::TextMuted,
-                        &mut lines,
-                    );
-                }
-                (Some(_), support) => {
-                    let name = support
-                        .as_ref()
-                        .map_or("the agent in front", |support| support.display_name());
-                    head("harness", name, &mut lines);
-                    lines.push(pair("path", agent.path.clone(), Token::TextSecondary));
-                }
-            }
-            if agent.key.is_some() {
-                lines.push(Line::default());
-                match &agent.support {
-                    Some(support) => {
-                        lines.push(Line::from(Span::styled(
-                            "compatibility",
-                            theme::fg(Token::TextDim),
-                        )));
-                        for (name, status, tone) in crate::ui::agent_support::compatibility(support)
-                        {
-                            lines.push(Line::from(vec![
-                                Span::styled(pad(name, 16), theme::fg(Token::TextSecondary)),
-                                Span::styled(status, theme::fg(tone)),
-                            ]));
-                        }
-                    }
-                    None => lines.push(Line::from(Span::styled(
-                        "reading…",
-                        theme::fg(Token::TextMuted),
-                    ))),
-                }
-            }
+            drawer.agent(agent);
         }
-        Section::Context if row == 0 => {
-            head("context file", "AGENTS.md", &mut lines);
-            lines.push(pair(
-                "status",
-                if report.instructions.exists {
-                    "present"
-                } else {
-                    "absent"
-                }
-                .to_owned(),
-                Token::TextPrimary,
-            ));
-            if report.instructions.exists {
-                lines.push(pair(
-                    "managed regions",
-                    report.instructions.managed_regions.to_string(),
-                    Token::TextPrimary,
-                ));
-            }
-            if !report.issues.is_empty() {
-                lines.push(Line::default());
-                lines.push(Line::from(Span::styled(
-                    "issues",
-                    theme::fg(Token::TextMuted),
-                )));
-                for issue in &report.issues {
-                    paragraph(issue, Token::TextPrimary, &mut lines);
-                }
-            }
-        }
+        Section::Context if row == 0 => drawer.context_file(report),
         Section::Context => {
             let Some(harness) = report.harnesses.get(row - 1) else {
                 return;
             };
-            head("harness", &harness.display_name, &mut lines);
-            let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
-            lines.push(pair(
-                "installed",
-                if installed { "yes" } else { "no" }.to_owned(),
-                Token::TextPrimary,
-            ));
-            if installed {
-                lines.push(pair(
-                    "context",
-                    delivery_word(harness.context.as_ref()).to_owned(),
-                    Token::TextPrimary,
-                ));
-                for (label, issue) in [
-                    ("context unread", &harness.context_unread),
-                    ("agent context", &harness.agent_context),
-                    ("version", &harness.outdated),
-                ] {
-                    if let Some(issue) = issue {
-                        lines.push(Line::default());
-                        lines.push(Line::from(Span::styled(
-                            label.to_owned(),
-                            theme::fg(Token::TextMuted),
-                        )));
-                        paragraph(issue, Token::StateWarning, &mut lines);
-                    }
-                }
-            }
+            drawer.harness(harness);
         }
         Section::Plugins => {
             let Some(plugin) = project.plugins.plugins.get(row) else {
                 return;
             };
-            head("plugin", &plugin.plugin, &mut lines);
-            lines.push(pair("package", plugin.package.clone(), Token::TextPrimary));
-            lines.push(pair(
-                "installed",
-                if plugin.installed { "yes" } else { "no" }.to_owned(),
-                if plugin.installed {
-                    Token::TextPrimary
-                } else {
-                    Token::StateWarning
-                },
-            ));
-            if plugin.installed {
-                lines.push(pair(
-                    "here",
-                    if plugin.contributing {
-                        "contributes"
-                    } else {
-                        "idle"
-                    }
-                    .to_owned(),
-                    Token::TextPrimary,
-                ));
-                lines.push(pair(
-                    "commit",
-                    plugin.commit.clone().unwrap_or_else(|| "—".to_owned()),
-                    Token::TextMuted,
-                ));
-                if let Some(freshness) = &plugin.freshness {
-                    let (word, tone) = freshness_word(&freshness.state);
-                    lines.push(pair("freshness", word, tone));
-                }
-            }
-            lines.push(pair(
-                "agents.lock",
-                if !plugin.locked {
-                    "not recorded"
-                } else if plugin.differs_from_lock {
-                    "differs"
-                } else {
-                    "recorded"
-                }
-                .to_owned(),
-                Token::TextPrimary,
-            ));
-            if !plugin.installed {
-                lines.push(Line::default());
-                lines.push(Line::from(Span::styled(
-                    "uze install",
-                    theme::fg(Token::TextCode),
-                )));
-            }
+            drawer.plugin(plugin);
         }
         Section::Memory => {
             let Some(entry) = project.memory.project.get(row) else {
                 return;
             };
-            head("memory · read-only", &entry.name, &mut lines);
-            lines.push(pair(
-                "kind",
-                entry.kind.label().to_owned(),
-                Token::TextPrimary,
-            ));
-            lines.push(pair("origin", entry.origin.clone(), Token::TextPrimary));
-            lines.push(pair(
-                "updated",
-                entry.updated.clone().unwrap_or_default(),
-                Token::TextMuted,
-            ));
-            lines.push(pair("file", display_path(&entry.path), Token::TextCode));
-            lines.push(Line::default());
-            paragraph(&entry.description, Token::TextSecondary, &mut lines);
-            match &overview.fact {
-                Some((name, Some(Ok(body)))) if *name == entry.name => {
-                    lines.push(Line::default());
-                    for line in body.lines() {
-                        paragraph(line, Token::TextPrimary, &mut lines);
-                    }
-                }
-                Some((name, Some(Err(reason)))) if *name == entry.name => {
-                    lines.push(Line::default());
-                    paragraph(reason, Token::StateDanger, &mut lines);
-                }
-                Some((name, None)) if *name == entry.name => {
-                    lines.push(Line::default());
-                    lines.push(Line::from(Span::styled(
-                        "reading…",
-                        theme::fg(Token::TextMuted),
-                    )));
-                }
-                _ => {
-                    lines.push(Line::default());
-                    lines.push(Line::from(Span::styled(
-                        "enter reads the fact",
-                        theme::fg(Token::TextDim),
-                    )));
-                }
-            }
+            drawer.fact(entry, overview.fact.as_ref());
         }
         Section::Settings => {
-            let Some(row) = overview.selected_workspace_row() else {
-                return;
-            };
-            if let WorkspaceRow::Action(state) = row {
-                head("agents.yaml · workspace.actions", state.key(), &mut lines);
-                paragraph(action_moment(state), Token::TextSecondary, &mut lines);
-                lines.push(Line::default());
-                let fallback = overview
-                    .action_entry(state)
-                    .and_then(|entry| entry.fallback);
-                lines.push(pair(
-                    "when unset",
-                    fallback
-                        .map_or("nothing is sent", |_| "UZE's own instruction")
-                        .to_owned(),
-                    Token::TextSecondary,
-                ));
-                if overview.edit.actions.contains_key(&state) {
-                    lines.push(pair("", "edited, not saved".to_owned(), Token::StateInfo));
-                }
-                draw_with_answer(frame, area, lines, settings_answer(overview, project), hits);
+            if drawer.setting(overview).is_none() {
                 return;
             }
-            let Some(key) = row.key() else {
-                return;
-            };
-            let Some(entry) = overview.entry(key) else {
-                return;
-            };
-            head("agents.yaml · workspace", key.name(), &mut lines);
-            paragraph(entry.description, Token::TextSecondary, &mut lines);
-            lines.push(Line::default());
-            lines.push(pair(
-                "default",
-                entry.default.to_owned(),
-                Token::TextSecondary,
-            ));
-            let value = overview.value(key);
-            lines.push(pair(
-                "value",
-                match value {
-                    None => "not declared".to_owned(),
-                    Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
-                    Some(DeclaredValue::Commands(commands)) => plural(commands.len(), "command"),
-                    Some(value) => scalar(value),
-                },
-                if value.is_some() {
-                    Token::TextPrimary
-                } else {
-                    Token::TextMuted
-                },
-            ));
-            if overview.edit.values.contains_key(&key) {
-                lines.push(pair("", "edited, not saved".to_owned(), Token::StateInfo));
-            }
-            draw_with_answer(frame, area, lines, settings_answer(overview, project), hits);
+            draw_with_answer(
+                frame,
+                area,
+                drawer.lines,
+                settings_answer(overview, project),
+                hits,
+            );
             return;
         }
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(drawer.lines), area);
+}
+
+/// The drawer's text: the row in front read in full, folded at `width`.
+struct DrawerLines {
+    lines: Vec<Line<'static>>,
+    width: usize,
+}
+
+impl DrawerLines {
+    /// What the drawer is about, and its name.
+    fn head(&mut self, kind: &str, title: &str) {
+        self.said(kind, Token::TextMuted);
+        self.lines.push(Line::from(Span::styled(
+            title.to_owned(),
+            theme::fg_bold(Token::TextBright),
+        )));
+        self.blank();
+    }
+
+    /// A label and its value, side by side.
+    fn pair(&mut self, label: &str, value: String, tone: Token) {
+        self.lines.push(Line::from(vec![
+            Span::styled(pad(label, 16), theme::fg(Token::TextMuted)),
+            Span::styled(value, theme::fg(tone)),
+        ]));
+    }
+
+    /// `text`, folded at the drawer's width.
+    fn paragraph(&mut self, text: &str, tone: Token) {
+        for folded in text::fold(text, self.width) {
+            self.lines
+                .push(Line::from(Span::styled(folded, theme::fg(tone))));
+        }
+    }
+
+    /// One line, as it is.
+    fn said(&mut self, text: &str, tone: Token) {
+        self.lines
+            .push(Line::from(Span::styled(text.to_owned(), theme::fg(tone))));
+    }
+
+    fn blank(&mut self) {
+        self.lines.push(Line::default());
+    }
+
+    /// The agent the prompts were asked of: what it runs on, and what of
+    /// the project reaches it.
+    fn agent(&mut self, agent: &AgentSupportDropdown) {
+        match (&agent.key, &agent.support) {
+            (None, _) => {
+                self.head("space", &agent.path);
+                self.paragraph(
+                    "No agent in front: open the space from an agent's tab to read what reaches it.",
+                    Token::TextMuted,
+                );
+            }
+            (Some(_), support) => {
+                let name = support
+                    .as_ref()
+                    .map_or("the agent in front", |support| support.display_name());
+                self.head("harness", name);
+                self.pair("path", agent.path.clone(), Token::TextSecondary);
+            }
+        }
+        if agent.key.is_none() {
+            return;
+        }
+        self.blank();
+        match &agent.support {
+            Some(support) => {
+                self.said("compatibility", Token::TextDim);
+                for (name, status, tone) in crate::ui::agent_support::compatibility(support) {
+                    self.lines.push(Line::from(vec![
+                        Span::styled(pad(name, 16), theme::fg(Token::TextSecondary)),
+                        Span::styled(status, theme::fg(tone)),
+                    ]));
+                }
+            }
+            None => self.said("reading…", Token::TextMuted),
+        }
+    }
+
+    fn context_file(&mut self, report: &StatusReport) {
+        self.head("context file", "AGENTS.md");
+        self.pair(
+            "status",
+            if report.instructions.exists {
+                "present"
+            } else {
+                "absent"
+            }
+            .to_owned(),
+            Token::TextPrimary,
+        );
+        if report.instructions.exists {
+            self.pair(
+                "managed regions",
+                report.instructions.managed_regions.to_string(),
+                Token::TextPrimary,
+            );
+        }
+        if !report.issues.is_empty() {
+            self.blank();
+            self.said("issues", Token::TextMuted);
+            for issue in &report.issues {
+                self.paragraph(issue, Token::TextPrimary);
+            }
+        }
+    }
+
+    fn harness(&mut self, harness: &StatusHarness) {
+        self.head("harness", &harness.display_name);
+        let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
+        self.pair(
+            "installed",
+            if installed { "yes" } else { "no" }.to_owned(),
+            Token::TextPrimary,
+        );
+        if !installed {
+            return;
+        }
+        self.pair(
+            "context",
+            delivery_word(harness.context.as_ref()).to_owned(),
+            Token::TextPrimary,
+        );
+        for (label, issue) in [
+            ("context unread", &harness.context_unread),
+            ("agent context", &harness.agent_context),
+            ("version", &harness.outdated),
+        ] {
+            if let Some(issue) = issue {
+                self.blank();
+                self.said(label, Token::TextMuted);
+                self.paragraph(issue, Token::StateWarning);
+            }
+        }
+    }
+
+    fn plugin(&mut self, plugin: &SpacePlugin) {
+        self.head("plugin", &plugin.plugin);
+        self.pair("package", plugin.package.clone(), Token::TextPrimary);
+        self.pair(
+            "installed",
+            if plugin.installed { "yes" } else { "no" }.to_owned(),
+            if plugin.installed {
+                Token::TextPrimary
+            } else {
+                Token::StateWarning
+            },
+        );
+        if plugin.installed {
+            self.pair(
+                "here",
+                if plugin.contributing {
+                    "contributes"
+                } else {
+                    "idle"
+                }
+                .to_owned(),
+                Token::TextPrimary,
+            );
+            self.pair(
+                "commit",
+                plugin.commit.clone().unwrap_or_else(|| "—".to_owned()),
+                Token::TextMuted,
+            );
+            if let Some(freshness) = &plugin.freshness {
+                let (word, tone) = freshness_word(&freshness.state);
+                self.pair("freshness", word, tone);
+            }
+        }
+        self.pair(
+            "agents.lock",
+            if !plugin.locked {
+                "not recorded"
+            } else if plugin.differs_from_lock {
+                "differs"
+            } else {
+                "recorded"
+            }
+            .to_owned(),
+            Token::TextPrimary,
+        );
+        if !plugin.installed {
+            self.blank();
+            self.said("uze install", Token::TextCode);
+        }
+    }
+
+    /// A fact, and its body once Enter has read it.
+    fn fact(
+        &mut self,
+        entry: &MemoryEntry,
+        read: Option<&(String, Option<std::result::Result<String, String>>)>,
+    ) {
+        self.head("memory · read-only", &entry.name);
+        self.pair("kind", entry.kind.label().to_owned(), Token::TextPrimary);
+        self.pair("origin", entry.origin.clone(), Token::TextPrimary);
+        self.pair(
+            "updated",
+            entry.updated.clone().unwrap_or_default(),
+            Token::TextMuted,
+        );
+        self.pair("file", display_path(&entry.path), Token::TextCode);
+        self.blank();
+        self.paragraph(&entry.description, Token::TextSecondary);
+        self.blank();
+        match read {
+            Some((name, Some(Ok(body)))) if *name == entry.name => {
+                for line in body.lines() {
+                    self.paragraph(line, Token::TextPrimary);
+                }
+            }
+            Some((name, Some(Err(reason)))) if *name == entry.name => {
+                self.paragraph(reason, Token::StateDanger);
+            }
+            Some((name, None)) if *name == entry.name => self.said("reading…", Token::TextMuted),
+            _ => self.said("enter reads the fact", Token::TextDim),
+        }
+    }
+
+    /// The Settings row in front: what the key or action decides, and
+    /// what it holds. `None` when there is no such row.
+    fn setting(&mut self, overview: &SpaceOverviewView) -> Option<()> {
+        let row = overview.selected_workspace_row()?;
+        if let WorkspaceRow::Action(state) = row {
+            self.head("agents.yaml · workspace.actions", state.key());
+            self.paragraph(action_moment(state), Token::TextSecondary);
+            self.blank();
+            let fallback = overview
+                .action_entry(state)
+                .and_then(|entry| entry.fallback);
+            self.pair(
+                "when unset",
+                fallback
+                    .map_or("nothing is sent", |_| "UZE's own instruction")
+                    .to_owned(),
+                Token::TextSecondary,
+            );
+            if overview.edit.actions.contains_key(&state) {
+                self.pair("", "edited, not saved".to_owned(), Token::StateInfo);
+            }
+            return Some(());
+        }
+        let key = row.key()?;
+        let entry = overview.entry(key)?;
+        self.head("agents.yaml · workspace", key.name());
+        self.paragraph(entry.description, Token::TextSecondary);
+        self.blank();
+        self.pair("default", entry.default.to_owned(), Token::TextSecondary);
+        let value = overview.value(key);
+        self.pair(
+            "value",
+            match value {
+                None => "not declared".to_owned(),
+                Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
+                Some(DeclaredValue::Commands(commands)) => plural(commands.len(), "command"),
+                Some(value) => scalar(value),
+            },
+            if value.is_some() {
+                Token::TextPrimary
+            } else {
+                Token::TextMuted
+            },
+        );
+        if overview.edit.values.contains_key(&key) {
+            self.pair("", "edited, not saved".to_owned(), Token::StateInfo);
+        }
+        Some(())
+    }
 }
 
 /// The drawer's lines, then the answer about the edits a line below them —
