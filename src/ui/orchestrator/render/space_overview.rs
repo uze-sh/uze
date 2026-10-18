@@ -3,6 +3,7 @@
 //! on read in full in a drawer, and the keys that act along the foot.
 
 use super::*;
+use crate::ui::extension_view::NavigatorScroll;
 use crate::ui::widget::{
     Button, RowState, Scrollbar, drawer,
     hint::Hints,
@@ -19,8 +20,7 @@ use uze_application::{
 /// beside it.
 const SIDE_BY_SIDE: u16 = 110;
 
-use crate::ui::extension_view::NavigatorScroll;
-
+/// The overview's margin either side, inside the pane.
 const INSET: u16 = 2;
 
 /// Where a section's scroll handle goes: on the drawer's rule when the
@@ -141,9 +141,7 @@ fn render_overview_frame(
             (tab, index)
         })
         .collect();
-    let open = Section::ALL
-        .iter()
-        .position(|section| *section == overview.section);
+    let open = Some(overview.section.index());
     for (rect, index) in tabs::tab_bar(frame, bar, &sections, open, false) {
         hits.push((rect, WorkspaceHit::OverviewSection(index)));
     }
@@ -268,6 +266,7 @@ fn render_header(
             theme::fg(Token::TextMuted),
         ),
     ]);
+    let left_width = left.width() as u16;
     frame.render_widget(Paragraph::new(left), rect);
     let Some(project) = project else {
         return;
@@ -295,11 +294,6 @@ fn render_header(
         Span::styled(" preserved", theme::fg(Token::TextMuted)),
     ]);
     let width = activity.width() as u16;
-    let left_width = Line::from(vec![
-        Span::raw(name.to_owned()),
-        Span::raw(format!("  {}", display_path(&overview.root))),
-    ])
-    .width() as u16;
     if left_width + width + 4 <= rect.width {
         frame.render_widget(
             Paragraph::new(activity),
@@ -2136,17 +2130,14 @@ fn foot_keys(overview: &SpaceOverviewView, side_by_side: bool) -> Vec<(Action, &
                 (Action::RemoveItem, "remove"),
                 (Action::SaveChanges, "save"),
             ]);
-            if matches!(
-                overview.selected_workspace_row(),
-                Some(WorkspaceRow::Key(key)) if is_number(key)
-            ) {
-                keys.extend([(Action::PreviousValue, "less"), (Action::NextValue, "more")]);
-            }
-            if matches!(
-                overview.selected_workspace_row(),
-                Some(WorkspaceRow::Item(..))
-            ) {
-                keys.extend([(Action::MoveItemUp, "up"), (Action::MoveItemDown, "down")]);
+            match overview.selected_workspace_row() {
+                Some(WorkspaceRow::Key(key)) if is_number(key) => {
+                    keys.extend([(Action::PreviousValue, "less"), (Action::NextValue, "more")]);
+                }
+                Some(WorkspaceRow::Item(..)) => {
+                    keys.extend([(Action::MoveItemUp, "up"), (Action::MoveItemDown, "down")]);
+                }
+                _ => {}
             }
         }
         Section::Memory => keys.push((Action::Activate, "read")),
