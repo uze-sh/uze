@@ -10,8 +10,9 @@
 use super::*;
 use uze_application::application::StatusHarness;
 use uze_application::{
-    ActionState, DeclarationKey, DeclarationPreview, DeclarationView, DeclaredValue, Edit,
-    ProjectSpace, ShellCommand, SpaceOverview,
+    ActionEntry, ActionState, DeclarationEntry, DeclarationKey, DeclarationPreview,
+    DeclarationProblem, DeclarationView, DeclaredValue, Edit, ProjectSpace, ShellCommand,
+    SpaceOverview,
 };
 
 /// The overview's sections, in the order the bar shows them.
@@ -429,11 +430,34 @@ impl SpaceOverviewView {
         if let Some(edited) = self.edit.values.get(&key) {
             return edited.as_ref();
         }
+        self.entry(key)?.declared.as_ref()
+    }
+
+    /// What the file declares about `key`.
+    pub(super) fn entry(&self, key: DeclarationKey) -> Option<&DeclarationEntry> {
         self.declaration()?
             .entries
             .iter()
             .find(|entry| entry.key == key)
-            .and_then(|entry| entry.declared.as_ref())
+    }
+
+    /// What the file declares about the action at `state`.
+    pub(super) fn action_entry(&self, state: ActionState) -> Option<&ActionEntry> {
+        self.declaration()?
+            .actions
+            .iter()
+            .find(|entry| entry.state == state)
+    }
+
+    /// What the workspace would refuse: in the edits once their preview
+    /// has arrived, else in the file as it is.
+    pub(super) fn problems(&self) -> &[DeclarationProblem] {
+        match self.current_preview() {
+            Some(Ok(preview)) if self.edit.pending() > 0 => &preview.problems,
+            _ => self
+                .declaration()
+                .map_or(&[], |declaration| &declaration.problems),
+        }
     }
 
     pub(super) fn editable(&self) -> bool {
@@ -605,23 +629,13 @@ impl SpaceOverviewView {
         if let Some(edited) = self.edit.actions.get(&state) {
             return edited.clone();
         }
-        self.declaration()?
-            .actions
-            .iter()
-            .find(|entry| entry.state == state)
-            .and_then(|entry| entry.declared.clone())
+        self.action_entry(state)?.declared.clone()
     }
 
     fn set_action(&mut self, state: ActionState, text: Option<String>) {
         let text = text.filter(|text| !text.trim().is_empty());
         let declared = self
-            .declaration()
-            .and_then(|declaration| {
-                declaration
-                    .actions
-                    .iter()
-                    .find(|entry| entry.state == state)
-            })
+            .action_entry(state)
             .and_then(|entry| entry.declared.clone());
         if text == declared {
             self.edit.actions.remove(&state);
@@ -644,10 +658,7 @@ impl SpaceOverviewView {
     }
 
     fn set(&mut self, key: DeclarationKey, value: Option<DeclaredValue>) {
-        let declared = self
-            .declaration()
-            .and_then(|declaration| declaration.entries.iter().find(|entry| entry.key == key))
-            .and_then(|entry| entry.declared.clone());
+        let declared = self.entry(key).and_then(|entry| entry.declared.clone());
         let value = value.filter(|value| {
             !items(value).iter().all(String::is_empty) || matches!(value, DeclaredValue::Number(_))
         });

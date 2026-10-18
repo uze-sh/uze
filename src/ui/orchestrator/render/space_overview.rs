@@ -876,10 +876,7 @@ fn render_workspace(
         }
         return Vec::new();
     }
-    let problems = match overview.current_preview() {
-        Some(Ok(preview)) if overview.edit.pending() > 0 => preview.problems.clone(),
-        _ => declaration.problems.clone(),
-    };
+    let problems = overview.problems();
     let awaiting: Vec<&str> = project
         .status
         .commands_awaiting_approval
@@ -1102,10 +1099,8 @@ fn render_workspace(
         if position > 0 {
             lines.push(blank());
         }
-        let fallback = declaration
-            .actions
-            .iter()
-            .find(|entry| entry.state == state)
+        let fallback = overview
+            .action_entry(state)
             .and_then(|entry| entry.fallback);
         let focused = index == selected;
         let label = Span::styled(
@@ -1537,10 +1532,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             ],
         ));
     }
-    let problems = match overview.current_preview() {
-        Some(Ok(preview)) if overview.edit.pending() > 0 => preview.problems.clone(),
-        _ => declaration.problems.clone(),
-    };
+    let problems = overview.problems();
     let pending = overview.edit.pending();
     let answer = if let Err(reason) = &declaration.editable {
         Answer::new(
@@ -1947,13 +1939,7 @@ fn render_drawer(
                 paragraph(action_moment(state), Token::TextSecondary, &mut lines);
                 lines.push(Line::default());
                 let fallback = overview
-                    .declaration()
-                    .and_then(|declaration| {
-                        declaration
-                            .actions
-                            .iter()
-                            .find(|entry| entry.state == state)
-                    })
+                    .action_entry(state)
                     .and_then(|entry| entry.fallback);
                 lines.push(pair(
                     "when unset",
@@ -1971,10 +1957,7 @@ fn render_drawer(
             let Some(key) = row.key() else {
                 return;
             };
-            let Some(entry) = overview
-                .declaration()
-                .and_then(|declaration| declaration.entries.iter().find(|entry| entry.key == key))
-            else {
+            let Some(entry) = overview.entry(key) else {
                 return;
             };
             head("agents.yaml · workspace", key.name(), &mut lines);
