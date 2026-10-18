@@ -52,6 +52,19 @@ impl Section {
             .position(|section| *section == self)
             .unwrap_or(0)
     }
+
+    /// The section `step` places after this one along the bar, wrapping.
+    fn after(self, step: usize) -> Self {
+        Self::ALL[(self.index() + step) % Self::ALL.len()]
+    }
+
+    fn next(self) -> Self {
+        self.after(1)
+    }
+
+    fn previous(self) -> Self {
+        self.after(3)
+    }
 }
 
 /// What a section's parts add up to, worst first when compared.
@@ -1157,11 +1170,8 @@ impl Attach<'_> {
                     overview.switch(*section);
                 }
             }
-            Action::FocusNext | Action::FocusPrevious => {
-                let step = if action == Action::FocusNext { 1 } else { 3 };
-                let next = Section::ALL[(overview.section.index() + step) % Section::ALL.len()];
-                overview.switch(next);
-            }
+            Action::FocusNext => overview.switch(overview.section.next()),
+            Action::FocusPrevious => overview.switch(overview.section.previous()),
             Action::SelectNext => overview.select(1),
             Action::SelectPrevious => overview.select(-1),
             Action::Refresh => self.refresh_space_overview(),
