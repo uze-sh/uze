@@ -402,27 +402,29 @@ pub fn choices(root: &Path) -> Choices {
     .collect();
     let directories = lines(&["ls-tree", "-r", "-d", "--name-only", "HEAD"]);
     // Local and remote branches under one name each, the most recently
-    // committed first; an agent's own branch is never a target.
+    // committed first, whatever the remote is called; an agent's own
+    // branch is never a target.
     let mut branches: Vec<String> = Vec::new();
     let mut seen = BTreeSet::new();
-    for branch in lines(&[
+    for reference in lines(&[
         "for-each-ref",
         "--sort=-committerdate",
-        "--format=%(refname:lstrip=2)",
+        "--format=%(refname)",
         "refs/heads",
         "refs/remotes",
     ]) {
-        let name = branch
-            .split_once('/')
-            .filter(|_| branch.starts_with("origin/"))
-            .map_or(branch.as_str(), |(_, name)| name)
-            .to_owned();
-        if name != "HEAD"
-            && name != "origin"
-            && !name.starts_with("agent/")
-            && seen.insert(name.clone())
+        let name = if let Some(local) = reference.strip_prefix("refs/heads/") {
+            local
+        } else if let Some((_, branch)) = reference
+            .strip_prefix("refs/remotes/")
+            .and_then(|remote| remote.split_once('/'))
         {
-            branches.push(name);
+            branch
+        } else {
+            continue;
+        };
+        if name != "HEAD" && !name.starts_with("agent/") && seen.insert(name.to_owned()) {
+            branches.push(name.to_owned());
         }
     }
     Choices {
@@ -665,7 +667,8 @@ mod tests {
     }
 
     /// The target is offered the repository's branches once each, local
-    /// and remote alike, and never an agent's own.
+    /// and remote alike whatever the remote is called, and never a
+    /// remote's HEAD or an agent's own.
     #[test]
     fn the_target_is_offered_each_branch_once_and_no_agent_s() {
         let repository = uze_testkit::git::Repository::new("declaration-branches");
@@ -673,11 +676,21 @@ mod tests {
         repository.with_origin(&base);
         repository.git(&["branch", "develop"]);
         repository.git(&["branch", "agent/abc123"]);
+        // A second remote, named anything but origin, with its own HEAD.
+        for branch in ["release", "develop", "agent/def456"] {
+            let reference = format!("refs/remotes/upstream/{branch}");
+            repository.git(&["update-ref", &reference, "HEAD"]);
+        }
+        repository.git(&[
+            "symbolic-ref",
+            "refs/remotes/upstream/HEAD",
+            "refs/remotes/upstream/release",
+        ]);
 
         let offered = choices(repository.root()).branches;
         let mut sorted = offered.clone();
         sorted.sort();
-        let mut expected = vec![base, "develop".to_owned()];
+        let mut expected = vec![base, "develop".to_owned(), "release".to_owned()];
         expected.sort();
         assert_eq!(sorted, expected, "{offered:?}");
     }
