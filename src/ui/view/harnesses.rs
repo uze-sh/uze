@@ -331,12 +331,21 @@ fn render_harness_drawer(
         ]));
     }
     lines.push(Line::from(""));
-    lines.push(super::section_label("compatibility"));
-    for (label, status, style) in compatibility_rows(harness) {
-        lines.push(Line::from(vec![
-            label_span(label, theme::fg(Token::TextSecondary)),
-            Span::styled(status, style),
-        ]));
+    let (project, supports) = compatibility_rows(harness);
+    for (index, (group, rows)) in [("project", project), ("supports", supports)]
+        .into_iter()
+        .enumerate()
+    {
+        if index > 0 {
+            lines.push(Line::from(""));
+        }
+        lines.push(super::section_label(group));
+        for (label, status, style) in rows {
+            lines.push(Line::from(vec![
+                label_span(label, theme::fg(Token::TextSecondary)),
+                Span::styled(status, style),
+            ]));
+        }
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 }
@@ -347,11 +356,10 @@ fn label_span(label: &str, style: Style) -> Span<'static> {
     Span::styled(format!("{label:<width$}", width = LABEL_COL), style)
 }
 
-/// One row per capability UZE knows about, in the order a reader would care
-/// about them: what a harness actually delivers today first, what remains
-/// unimplemented anywhere last. The two portable *project* resources
-/// (`AGENTS.md` and `.agents/`) are listed separately from the
-/// `capabilities()`-derived rows below them, and read from a different
+/// One row per capability UZE knows about, in two groups: the portable
+/// *project* resources (`AGENTS.md` and `.agents/`), then the
+/// `capabilities()`-derived rows of what the harness supports. The project
+/// ones are listed apart from the others, and read from a different
 /// model: they are not `CapabilityKind` resources routed through
 /// `HarnessCapabilities` — mixing them into the same lookup would silently
 /// mislabel them "not supported" on every harness, since none of them ever
@@ -363,7 +371,7 @@ fn label_span(label: &str, style: Style) -> Span<'static> {
 /// per-agent support popup's question, answered against that pane's own
 /// cwd — asking it here, against the TUI's launch directory, is how the
 /// screen used to report "none in project" about `$HOME`.
-fn compatibility_rows(harness: &HarnessHealth) -> Vec<(&'static str, String, Style)> {
+fn compatibility_rows(harness: &HarnessHealth) -> (Vec<Row>, Vec<Row>) {
     let routed = [
         ("Skills", CapabilityKind::AgentSkill),
         ("MCP", CapabilityKind::Mcp),
@@ -375,11 +383,11 @@ fn compatibility_rows(harness: &HarnessHealth) -> Vec<(&'static str, String, Sty
         let (status, style) = capability_status(&harness.capabilities, kind);
         (label, status, style)
     });
-    context_rows(&harness.context_support)
-        .into_iter()
-        .chain(routed)
-        .collect()
+    (context_rows(&harness.context_support), routed.collect())
 }
+
+/// A compatibility row: its label, and its state in words and style.
+type Row = (&'static str, String, Style);
 
 /// The drawer's project-context rows. Each names the mechanism through
 /// which this harness receives that resource, so a harness receiving
@@ -620,30 +628,27 @@ mod tests {
     #[test]
     fn compatibility_rows_lead_with_the_portable_resources() {
         let harness = configured_harness(true);
-        let labels: Vec<_> = compatibility_rows(&harness)
-            .into_iter()
-            .map(|(label, _, _)| label)
-            .collect();
+        let (project, supports) = compatibility_rows(&harness);
+        let labels = |rows: Vec<Row>| {
+            rows.into_iter()
+                .map(|(label, _, _)| label)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
-            labels,
-            [
-                "AGENTS.md",
-                ".agents/skills",
-                ".agents/agents",
-                "Skills",
-                "MCP",
-                "Agents",
-                "Hooks"
-            ]
+            labels(project),
+            ["AGENTS.md", ".agents/skills", ".agents/agents"]
         );
+        assert_eq!(labels(supports), ["Skills", "MCP", "Agents", "Hooks"]);
     }
 
     /// Every label the drawer prints leaves two columns before its value,
     /// whatever row it heads.
     #[test]
     fn every_label_leaves_room_before_its_value() {
-        let longest = compatibility_rows(&configured_harness(true))
+        let (project, supports) = compatibility_rows(&configured_harness(true));
+        let longest = project
             .into_iter()
+            .chain(supports)
             .map(|(label, _, _)| label.chars().count())
             .chain(["Version", "Provisioning"].map(str::len))
             .max()
