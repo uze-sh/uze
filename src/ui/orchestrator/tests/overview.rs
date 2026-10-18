@@ -1281,3 +1281,118 @@ fn a_stepper_s_button_and_a_pair_s_option_lift_under_the_pointer() {
         "hovering chose something"
     );
 }
+
+/// A click on another row leaves what is being typed: an action's prose is
+/// kept and saved, and the clicked row takes the keys.
+#[test]
+fn a_click_elsewhere_keeps_the_prose_and_moves_the_focus() {
+    use crate::ui::orchestrator::space_overview::WorkspaceRow;
+    use crossterm::event::KeyCode;
+    use uze_application::ActionState;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-blur"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-blur");
+    let mut driven = settings_over(&home, &repository);
+    let rows = overview_of(&driven).workspace_rows();
+    let action = rows
+        .iter()
+        .position(|row| *row == WorkspaceRow::Action(ActionState::ALL[0]))
+        .expect("the first action is a row");
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .rows[1] = action;
+    key(&mut driven, KeyCode::Enter);
+    for typed in "Commit.".chars() {
+        key(&mut driven, KeyCode::Char(typed));
+    }
+    assert!(
+        overview_of(&driven).edit.text.is_some(),
+        "the text area did not open"
+    );
+
+    driven.frame();
+    let worktree = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::OverviewRow(0)).then_some(*rect))
+        .expect("worktree's row is a target");
+    driven.press(worktree.x, worktree.y);
+
+    let overview = overview_of(&driven);
+    assert!(overview.edit.text.is_none(), "the text area kept the keys");
+    assert_eq!(
+        overview.rows[1], 0,
+        "the clicked row did not take the focus"
+    );
+    let sent = overview
+        .edit
+        .saving
+        .as_ref()
+        .map(|out| out.actions.get(&ActionState::ALL[0]).cloned());
+    let held = overview.edit.actions.get(&ActionState::ALL[0]).cloned();
+    assert!(
+        sent == Some(Some(Some("Commit.".to_owned()))) || held == Some(Some("Commit.".to_owned())),
+        "the prose was lost: sent {sent:?}, held {held:?}"
+    );
+}
+
+/// A choice of up to three is drawn side by side, each option a target;
+/// past three it goes behind a list.
+#[test]
+fn delivery_draws_its_three_options_side_by_side() {
+    use crate::ui::orchestrator::space_overview::WorkspaceRow;
+    use uze_application::{DeclarationKey, DeclaredValue};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-three"));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-three");
+    let mut driven = settings_over(&home, &repository);
+    driven.frame();
+    let row_of = |key| {
+        overview_of(&driven)
+            .workspace_rows()
+            .iter()
+            .position(|row| *row == WorkspaceRow::Key(key))
+            .expect("the key is a row")
+    };
+    let delivery = row_of(DeclarationKey::Delivery);
+    let branch = row_of(DeclarationKey::Branch);
+    let targets = |row: usize| -> Vec<Rect> {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter(|(_, hit)| matches!(hit, WorkspaceHit::OverviewChoice(at, _) if *at == row))
+            .map(|(rect, _)| *rect)
+            .collect()
+    };
+    assert_eq!(
+        targets(delivery).len(),
+        3,
+        "delivery's options are not side by side"
+    );
+    assert!(
+        targets(branch).is_empty(),
+        "five options are drawn side by side"
+    );
+
+    let push = targets(delivery)[2];
+    driven.press(push.x, push.y);
+    let chosen = overview_of(&driven)
+        .edit
+        .saving
+        .as_ref()
+        .and_then(|out| out.values.get(&DeclarationKey::Delivery).cloned())
+        .or_else(|| {
+            overview_of(&driven)
+                .edit
+                .values
+                .get(&DeclarationKey::Delivery)
+                .cloned()
+        });
+    assert_eq!(chosen, Some(Some(DeclaredValue::Text("push".to_owned()))));
+}

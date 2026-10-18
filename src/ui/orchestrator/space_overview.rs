@@ -846,9 +846,13 @@ pub(super) fn offers_choices(key: DeclarationKey) -> bool {
     matches!(key, DeclarationKey::Link | DeclarationKey::Artifacts) || is_combo(key)
 }
 
-/// A choice of two, both drawn side by side rather than behind a list.
-pub(super) fn is_pair(key: DeclarationKey) -> bool {
-    choices(key).len() == 2
+/// The most options a choice draws side by side; past it, they go behind
+/// a list.
+const SIDE_BY_SIDE: usize = 3;
+
+/// A choice whose options are all drawn side by side.
+pub(super) fn is_segmented(key: DeclarationKey) -> bool {
+    (2..=SIDE_BY_SIDE).contains(&choices(key).len())
 }
 
 /// A key chosen from a list it offers rather than typed: its options, or
@@ -1424,14 +1428,30 @@ impl Attach<'_> {
     /// an entry, a list's add or a choice's list is opened, as Enter would.
     /// A number's row waits for a click on its − or +.
     pub(super) fn click_overview_row(&mut self, index: usize) {
+        // Known by what it is rather than where: finishing what is open
+        // can add a line above it.
+        let clicked = self
+            .model
+            .space_overview
+            .as_ref()
+            .filter(|overview| overview.section == Section::Settings)
+            .and_then(|overview| overview.workspace_rows().get(index).copied());
+        let index = match clicked {
+            Some(row) => {
+                self.finish_editing();
+                self.model
+                    .space_overview
+                    .as_ref()
+                    .and_then(|overview| overview.workspace_rows().iter().position(|at| *at == row))
+                    .unwrap_or(index)
+            }
+            None => index,
+        };
         self.model.select_overview_row(index);
         let Some(overview) = self.model.space_overview.as_ref() else {
             return;
         };
-        if overview.section != Section::Settings
-            || overview.edit.field.is_some()
-            || overview.edit.text.is_some()
-        {
+        if overview.section != Section::Settings {
             return;
         }
         let stepped = matches!(
@@ -1440,6 +1460,30 @@ impl Attach<'_> {
         );
         if !stepped {
             self.space_overview_action(Action::Activate);
+        }
+    }
+
+    /// Leaves whatever is being typed, as a click elsewhere in the form
+    /// does: prose is kept and saved, a typed entry is taken, and a list
+    /// of options closes without choosing — the one highlighted was never
+    /// picked.
+    fn finish_editing(&mut self) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        if let Some((state, buffer)) = overview.edit.text.take() {
+            overview.set_action(state, Some(buffer.text().to_owned()));
+            self.schedule_declaration_save();
+            return;
+        }
+        let Some(field) = &overview.edit.field else {
+            return;
+        };
+        let offers = is_combo(field.key) || !overview.picker_options().is_empty();
+        if offers || field.buffer.text().trim().is_empty() {
+            overview.edit.field = None;
+        } else {
+            self.commit_field();
         }
     }
 
@@ -1462,6 +1506,7 @@ impl Attach<'_> {
     /// Steps the number on `row` by `delta`, selecting it: its − and +
     /// clicked, or the keys that stand for them.
     pub(super) fn step_overview_value(&mut self, row: usize, delta: i64) {
+        self.finish_editing();
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -1480,8 +1525,10 @@ impl Attach<'_> {
         self.schedule_declaration_save();
     }
 
-    /// A click on one of a pair's options: selects its row and sets it.
+    /// A click on one of a segmented choice's options: selects its row and
+    /// sets it.
     pub(super) fn choose_overview_option(&mut self, row: usize, option: usize) {
+        self.finish_editing();
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
@@ -1491,7 +1538,7 @@ impl Attach<'_> {
         let Some(WorkspaceRow::Key(key)) = overview.workspace_rows().get(row).copied() else {
             return;
         };
-        if !is_pair(key) {
+        if !is_segmented(key) {
             return;
         }
         overview.rows[Section::Settings.index()] = row;
@@ -1539,10 +1586,12 @@ impl Attach<'_> {
             }
             // Opened on the value it holds, with nothing typed: every
             // option is on offer until typing narrows them.
-            // Both options are on screen, so enter takes the other one.
-            WorkspaceRow::Key(key) if is_pair(key) => {
-                let other = usize::from(choices(key)[0] == chosen(key, value.as_ref()));
-                overview.choose(key, other);
+            // Every option is on screen, so enter takes the next one.
+            WorkspaceRow::Key(key) if is_segmented(key) => {
+                let options = choices(key);
+                let current = chosen(key, value.as_ref());
+                let at = options.iter().position(|option| *option == current);
+                overview.choose(key, at.map_or(0, |at| (at + 1) % options.len()));
                 self.schedule_declaration_save();
             }
             WorkspaceRow::Key(key) if is_combo(key) => {

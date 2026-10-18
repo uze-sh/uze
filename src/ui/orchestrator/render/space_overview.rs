@@ -53,15 +53,18 @@ struct Track<'a> {
     hovered: Option<usize>,
     /// Whatever the pointer is over, for a control that lifts under it.
     pointer: Option<WorkspaceHit>,
+    /// The lines say where the keyboard is themselves, so no row takes a
+    /// ground: a form's boxes and buttons would sit in a band of it.
+    bare: bool,
 }
 
 /// A number's − and + as drawn: its line, its row, and the column and
 /// width of each.
 type StepCells = (usize, usize, (u16, u16), (u16, u16));
 
-/// A pair's two options as drawn: its line, its row, and each option's
-/// column and width.
-type PairCells = (usize, usize, [(u16, u16); 2]);
+/// A segmented choice's options as drawn: its line, its row, and each
+/// option's column and width.
+type SegmentCells = (usize, usize, Vec<(u16, u16)>);
 
 /// The Workspace form's label column, and the width of a value's box.
 const LABEL: u16 = 18;
@@ -70,9 +73,9 @@ const BOX: u16 = 48;
 /// How far a key's label sits in under its group's heading.
 const KEY_INDENT: usize = 2;
 
-/// The width a pair's options and a number's − value + share, so the two
-/// kinds of control end in the same column.
-const CONTROL: usize = 20;
+/// The width a segmented choice's options and a number's − value + share,
+/// so the two kinds of control end in the same column.
+const CONTROL: usize = 24;
 
 pub(super) fn render_space_overview(
     frame: &mut ratatui::Frame<'_>,
@@ -822,7 +825,9 @@ fn draw_scrolled(
         let mut shown = Line::from(line.spans.clone());
         text::clip(&mut shown, usize::from(area.width));
         let mut spans = shown.spans;
-        row::fill_under(&mut spans, area.width, state);
+        if !track.bare {
+            row::fill_under(&mut spans, area.width, state);
+        }
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
         if let Some(row) = line.row {
             rows.push((rect, row));
@@ -871,13 +876,22 @@ fn render_workspace(
         footer_height,
     );
     let form = Form::of(overview, project, list.width, track.pointer);
-    let (mut drawn, offset) = draw_scrolled(frame, list, &form.lines, Some(overview.row()), track);
+    let (mut drawn, offset) = draw_scrolled(
+        frame,
+        list,
+        &form.lines,
+        Some(overview.row()),
+        Track {
+            bare: true,
+            ..track
+        },
+    );
     let line_y = |line: usize| {
         (line >= offset)
             .then(|| list.y + (line - offset) as u16)
             .filter(|y| *y < list.bottom())
     };
-    for (line, row, options) in form.pairs {
+    for (line, row, options) in form.segments {
         if let Some(y) = line_y(line) {
             for (option, (x, width)) in options.into_iter().enumerate() {
                 hits.push((
@@ -944,7 +958,7 @@ struct Form {
     /// The line and column the field being typed is drawn at.
     field_at: Option<(usize, u16)>,
     steps: Vec<StepCells>,
-    pairs: Vec<PairCells>,
+    segments: Vec<SegmentCells>,
     /// What the pointer is over, so a control under it lifts.
     hovered: Option<WorkspaceHit>,
     /// The width a group's heading rule runs to.
@@ -967,7 +981,7 @@ impl Form {
             lines: Vec::new(),
             field_at: None,
             steps: Vec::new(),
-            pairs: Vec::new(),
+            segments: Vec::new(),
             hovered,
             width: usize::from(width),
             box_width: usize::from(width.saturating_sub(LABEL + 22).clamp(12, BOX)),
@@ -1026,29 +1040,29 @@ impl Form {
             .filter(|field| field.key == key);
         let editable = overview.editable();
         let focused = self.index == overview.row();
-        let mut spans = vec![form_label(key_label(key), focused)];
+        let mut spans = vec![form_label(key_label(key), self.label_state(focused))];
         if field.is_some_and(|field| field.item.is_none()) {
             self.field_at = Some((self.lines.len(), LABEL));
-        } else if is_pair(key) {
+        } else if is_segmented(key) {
             let current = chosen(key, value);
             let options = choices(key);
-            let mut cells = [(0, 0); 2];
+            let mut cells = Vec::with_capacity(options.len());
             let mut at = LABEL;
             for (option, word) in options.iter().enumerate() {
                 let state = if *word == current {
-                    PairState::Chosen
+                    SegmentState::Chosen
                 } else if self.hovered == Some(WorkspaceHit::OverviewChoice(self.index, option)) {
-                    PairState::Hovered
+                    SegmentState::Hovered
                 } else {
-                    PairState::Resting
+                    SegmentState::Resting
                 };
-                let cell = pair_cell(word, state, CONTROL / 2);
-                cells[option] = (at, cell.width() as u16);
+                let cell = segment(word, state, CONTROL / options.len());
+                cells.push((at, cell.width() as u16));
                 at += cell.width() as u16;
                 spans.push(cell);
             }
             if editable {
-                self.pairs.push((self.lines.len(), self.index, cells));
+                self.segments.push((self.lines.len(), self.index, cells));
             }
         } else if is_combo(key) {
             let (shown, tone) = match (value, choices(key)) {
@@ -1147,7 +1161,7 @@ impl Form {
             .enumerate()
         {
             let mut row_spans = vec![if line == 0 {
-                form_label(action_label(state), focused)
+                form_label(action_label(state), self.label_state(focused))
             } else {
                 indent()
             }];
@@ -1161,6 +1175,15 @@ impl Form {
             });
         }
         self.index += 1;
+    }
+
+    /// How the next row's label is drawn: the keyboard's, under the
+    /// pointer, or neither.
+    fn label_state(&self, focused: bool) -> RowState {
+        RowState::of(
+            focused,
+            self.hovered == Some(WorkspaceHit::OverviewRow(self.index)),
+        )
     }
 
     /// A line selecting the next row.
@@ -1264,20 +1287,23 @@ fn action_boxes(
     boxes
 }
 
-/// A form row's label, bright on the row the keys are on.
-fn form_label(text: &str, focused: bool) -> Span<'static> {
-    Span::styled(
-        format!(
-            "{}{}",
-            " ".repeat(KEY_INDENT),
-            pad(text, LABEL - KEY_INDENT as u16)
-        ),
-        if focused {
-            theme::fg_bold(Token::TextBright)
-        } else {
-            theme::fg(Token::TextSecondary)
-        },
-    )
+/// A key's label in the form's first column. The keyboard's row is
+/// pointed at, as the plugin tree points at its own, and stands out bright
+/// against the rest left muted; the pointer brings a label up a step.
+fn form_label(text: &str, state: RowState) -> Span<'static> {
+    let marker = match state {
+        RowState::Selected => format!("{} ", theme::glyph(Symbol::Prompt)),
+        RowState::Hovered | RowState::Resting => String::new(),
+    };
+    let room =
+        usize::from(LABEL).saturating_sub(Line::from(marker.as_str()).width().max(KEY_INDENT));
+    let label = format!("{marker:>KEY_INDENT$}{}", pad(text, room as u16));
+    let style = match state {
+        RowState::Selected => theme::fg_bold(Token::TextBright),
+        RowState::Hovered => theme::fg(Token::TextPrimary),
+        RowState::Resting => theme::fg(Token::TextMuted),
+    };
+    Span::styled(label, style)
 }
 
 /// The label column left blank, under a label.
@@ -1366,24 +1392,24 @@ fn stepper(
     )
 }
 
-/// How one of a pair's options is drawn.
+/// How one of a segmented choice's options is drawn.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum PairState {
+enum SegmentState {
     Chosen,
     Hovered,
     Resting,
 }
 
-/// One option of a pair, `width` columns with its word in the middle: the
-/// chosen one filled with the accent, the other on a raised ground that
-/// lifts under the pointer.
-fn pair_cell(word: &str, state: PairState, width: usize) -> Span<'static> {
+/// One option of a segmented choice, `width` columns with its word in the
+/// middle: the chosen one filled with the accent, the others on a raised
+/// ground that lifts under the pointer.
+fn segment(word: &str, state: SegmentState, width: usize) -> Span<'static> {
     let style = match state {
-        PairState::Chosen => {
+        SegmentState::Chosen => {
             theme::fg_bold(Token::SurfaceBackground).bg(theme::color(Token::Accent))
         }
-        PairState::Hovered => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
-        PairState::Resting => {
+        SegmentState::Hovered => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
+        SegmentState::Resting => {
             theme::fg(Token::TextSecondary).bg(theme::color(Token::SurfaceRaised))
         }
     };
