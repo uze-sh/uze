@@ -456,3 +456,48 @@ fn clicking_a_glyph_set_chooses_it() {
         crate::ui::worker::Intent::SelectGlyphSet("ascii".to_owned())
     );
 }
+
+/// The wheel takes the catalogue down to its end and back up to its top:
+/// a window kept in whole cards still moves a step each way.
+#[test]
+fn the_settings_catalogue_scrolls_back_up_from_its_end() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+    let mut model = TuiModel {
+        route: Route::Settings,
+        focus: Focus::Content,
+        ..model_with_data()
+    };
+    let wheel = |model: &mut TuiModel, kind| {
+        model.apply_mouse(
+            MouseEvent {
+                kind,
+                column: 20,
+                row: 10,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 20),
+        );
+        drawn_at(model, 100, 20);
+    };
+    drawn_at(&model, 100, 20);
+    for _ in 0..60 {
+        wheel(&mut model, MouseEventKind::ScrollDown);
+    }
+    let bottom = model.settings_scroll.get().first;
+    assert!(bottom > 0, "the catalogue did not scroll down");
+    wheel(&mut model, MouseEventKind::ScrollUp);
+    assert_eq!(
+        model.settings_scroll.get().first,
+        bottom - 1,
+        "a step up from the end did not move"
+    );
+    for _ in 0..60 {
+        wheel(&mut model, MouseEventKind::ScrollUp);
+    }
+    assert_eq!(
+        model.settings_scroll.get().first,
+        0,
+        "the top was not reached"
+    );
+}

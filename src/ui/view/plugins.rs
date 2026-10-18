@@ -37,7 +37,9 @@ use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, row, screen_header, text};
 
 /// Below this many columns the panel goes and the tree takes the width.
-const NARROW: u16 = 88;
+/// Low, since the panel is the detail of the row chosen and the tree gives
+/// way in its own columns first.
+const NARROW: u16 = 64;
 
 /// How far the tree's text sits inside its column — the inset every
 /// screen's content keeps.

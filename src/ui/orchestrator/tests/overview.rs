@@ -800,7 +800,7 @@ fn a_refused_edit_is_kept_with_its_problem_until_discarded() {
         .find(|problem| problem.key.as_deref() == Some("slots"))
         .map(|problem| problem.reason.clone())
         .expect("the refusal is reported under slots");
-    let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 120, 40)).join("\n");
+    let screen = frame_rows_at(&mut driven.attach.model, Rect::new(0, 0, 200, 40)).join("\n");
     let said: String = reason.chars().take(24).collect();
     assert!(
         screen.contains(&said),
@@ -1548,11 +1548,14 @@ fn the_selected_prompt_slides_and_the_others_hold_still() {
             .collect();
         (rows, metrics.marquee)
     };
-    let line = |rows: &[String], needle: &str| {
-        rows.iter()
-            .find(|row| row.contains(needle))
-            .cloned()
-            .unwrap_or_else(|| panic!("no line holds {needle:?}:\n{}", rows.join("\n")))
+    // The other prompt's line, and the selected one just above it: the
+    // columns that would name them give way on a narrow section.
+    let lines = |rows: &[String]| {
+        let other = rows
+            .iter()
+            .position(|row| row.contains("other"))
+            .unwrap_or_else(|| panic!("the other prompt is not drawn:\n{}", rows.join("\n")));
+        (rows[other - 1].clone(), rows[other].clone())
     };
     let (before, sliding) = frame_at(&mut model, 0);
     assert!(
@@ -1560,14 +1563,11 @@ fn the_selected_prompt_slides_and_the_others_hold_still() {
         "a selected prompt that does not fit asked for no next frame"
     );
     let (after, _) = frame_at(&mut model, 200);
+    let (selected_before, other_before) = lines(&before);
+    let (selected_after, other_after) = lines(&after);
     assert_ne!(
-        line(&before, "uze/Agent"),
-        line(&after, "uze/Agent"),
+        selected_before, selected_after,
         "the selected prompt did not slide"
     );
-    assert_eq!(
-        line(&before, "other"),
-        line(&after, "other"),
-        "a prompt not selected moved"
-    );
+    assert_eq!(other_before, other_after, "a prompt not selected moved");
 }

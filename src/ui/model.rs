@@ -708,8 +708,9 @@ pub(crate) struct TuiModel {
     /// target — a group's blank lines answer for its heading — and so
     /// cannot tell the line under the pointer by its target alone.
     pub(crate) pointer_row: Option<u16>,
-    /// Where the Settings catalogue is scrolled to — see
-    /// [`ListScreen::scroll`].
+    /// Where the Settings catalogue is scrolled to, in whole bands — a
+    /// heading, a gap or a line of cards — rather than lines, so it never
+    /// stops inside a card. See [`ListScreen::scroll`].
     pub(crate) settings_scroll: std::cell::Cell<crate::ui::extension_view::NavigatorScroll>,
 
     /// Frame counter for spinner animation while background work is pending.

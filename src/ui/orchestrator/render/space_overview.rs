@@ -20,8 +20,9 @@ use uze_application::{
 };
 
 /// The width under which the drawer stands over the section instead of
-/// beside it.
-const SIDE_BY_SIDE: u16 = 110;
+/// beside it: low, since the drawer is the detail of what is chosen and a
+/// narrow screen gives way in the section's tables first.
+const SIDE_BY_SIDE: u16 = 64;
 
 /// The overview's margin either side, inside the pane.
 const INSET: u16 = 2;
@@ -467,14 +468,20 @@ fn render_section(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     track: Track,
 ) -> Vec<(Rect, usize)> {
+    // What a table has across, once a groove is taken for the scrollbar
+    // when no drawer's rule carries it.
+    let room = match track.column {
+        Some(_) => area.width,
+        None => area.width.saturating_sub(Scrollbar::width() + 1),
+    };
     let lines = match overview.section {
         Section::Agent => return render_agent(frame, area, model, overview, hits, track),
-        Section::Context => context_lines(project),
-        Section::Plugins => plugin_lines(project),
+        Section::Context => context_lines(project, room),
+        Section::Plugins => plugin_lines(project, room),
         Section::Settings => {
             return render_workspace(frame, area, overview, project, hits, track);
         }
-        Section::Memory => memory_lines(project),
+        Section::Memory => memory_lines(project, room),
     };
     draw_lines(frame, area, &lines, Some(overview.row()), track)
 }
@@ -485,12 +492,83 @@ struct SectionLine {
     row: Option<usize>,
 }
 
-fn heading(columns: &[(&str, u16)]) -> SectionLine {
-    let mut spans = Vec::new();
-    for (label, width) in columns {
-        spans.push(Span::styled(pad(label, *width), theme::fg(Token::TextDim)));
+/// One column of a table: its heading, the columns it takes, and how
+/// readily it gives way on a narrow screen — the lowest `keep` goes first,
+/// and [`KEPT`] never does. The last column takes whatever is left, its
+/// `width` the least it needs.
+#[derive(Clone, Copy)]
+struct Column {
+    heading: &'static str,
+    width: u16,
+    keep: u8,
+}
+
+/// A column a table is not read without.
+const KEPT: u8 = u8::MAX;
+
+/// A table's columns as `room` allows: the least kept are left out until
+/// what remains fits.
+struct Table {
+    columns: &'static [Column],
+    shown: Vec<bool>,
+}
+
+impl Table {
+    fn fit(columns: &'static [Column], room: u16) -> Self {
+        let mut shown = vec![true; columns.len()];
+        let mut giving_way: Vec<usize> = (0..columns.len())
+            .filter(|index| columns[*index].keep != KEPT)
+            .collect();
+        giving_way.sort_by_key(|index| columns[*index].keep);
+        for index in giving_way {
+            let used: u16 = columns
+                .iter()
+                .zip(&shown)
+                .filter(|(_, shown)| **shown)
+                .map(|(column, _)| column.width)
+                .sum();
+            if used <= room {
+                break;
+            }
+            shown[index] = false;
+        }
+        Self { columns, shown }
     }
-    SectionLine { spans, row: None }
+
+    /// The headings of the columns drawn.
+    fn heading(&self) -> SectionLine {
+        let spans = self.row(
+            self.columns
+                .iter()
+                .map(|column| {
+                    Span::styled(pad(column.heading, column.width), theme::fg(Token::TextDim))
+                })
+                .collect(),
+        );
+        SectionLine { spans, row: None }
+    }
+
+    /// `cells`, one per column, keeping those of the columns drawn.
+    fn row(&self, cells: Vec<Span<'static>>) -> Vec<Span<'static>> {
+        debug_assert_eq!(cells.len(), self.columns.len(), "a cell per column");
+        cells
+            .into_iter()
+            .zip(&self.shown)
+            .filter_map(|(cell, shown)| shown.then_some(cell))
+            .collect()
+    }
+
+    /// The columns the drawn ones before the last take.
+    fn leading_width(&self) -> u16 {
+        let last = self.columns.len().saturating_sub(1);
+        self.columns
+            .iter()
+            .zip(&self.shown)
+            .take(last)
+            .filter(|(_, shown)| **shown)
+            .map(|(column, _)| column.width)
+            .sum()
+    }
 }
 
 fn blank() -> SectionLine {
@@ -517,15 +595,16 @@ fn cell(text: &str, width: u16, tone: Token) -> Span<'static> {
     Span::styled(pad(text, width), theme::fg(tone))
 }
 
-fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
+fn context_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
     let report = &project.status.report;
+    let table = Table::fit(&CONTEXT, room);
     let mut lines = vec![SectionLine {
-        spans: vec![
-            cell("AGENTS.md", CONTEXT_NAME, Token::TextPrimary),
+        spans: table.row(vec![
+            cell("AGENTS.md", CONTEXT[0].width, Token::TextPrimary),
             if report.instructions.exists {
-                cell("present", CONTEXT_INSTALLED, Token::TextPrimary)
+                cell("present", CONTEXT[1].width, Token::TextPrimary)
             } else {
-                cell("absent", CONTEXT_INSTALLED, Token::TextMuted)
+                cell("absent", CONTEXT[1].width, Token::TextMuted)
             },
             Span::styled(
                 if report.instructions.exists {
@@ -535,15 +614,11 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
                 },
                 theme::fg(Token::TextMuted),
             ),
-        ],
+        ]),
         row: Some(0),
     }];
     lines.push(blank());
-    lines.push(heading(&[
-        ("harness", CONTEXT_NAME),
-        ("installed", CONTEXT_INSTALLED),
-        ("context", CONTEXT_STATE),
-    ]));
+    lines.push(table.heading());
     for (index, harness) in report.harnesses.iter().enumerate() {
         let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
         let issues = harness_issues(harness).count();
@@ -558,11 +633,11 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
             )
         };
         lines.push(SectionLine {
-            spans: vec![
-                cell(&harness.display_name, CONTEXT_NAME, Token::TextPrimary),
+            spans: table.row(vec![
+                cell(&harness.display_name, CONTEXT[0].width, Token::TextPrimary),
                 cell(
                     if installed { "yes" } else { "no" },
-                    14,
+                    CONTEXT[1].width,
                     if installed {
                         Token::TextPrimary
                     } else {
@@ -570,7 +645,7 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
                     },
                 ),
                 Span::styled(context, theme::fg(tone)),
-            ],
+            ]),
             row: Some(index + 1),
         });
     }
@@ -603,24 +678,19 @@ fn freshness_word(state: &FreshnessState) -> (String, Token) {
     }
 }
 
-fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
+fn plugin_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
     let plugins = &project.plugins;
     if plugins.plugins.is_empty() && plugins.lock_problem.is_none() {
         return Vec::new();
     }
-    let mut lines = vec![heading(&[
-        ("plugin", PLUGIN_NAME),
-        ("installed", PLUGIN_INSTALLED),
-        ("here", PLUGIN_HERE),
-        ("commit", PLUGIN_COMMIT),
-        ("freshness", PLUGIN_FRESHNESS),
-    ])];
+    let table = Table::fit(&PLUGINS, room);
+    let mut lines = vec![table.heading()];
     for (index, plugin) in plugins.plugins.iter().enumerate() {
         let mut spans = vec![
-            cell(&plugin.plugin, PLUGIN_NAME, Token::TextPrimary),
+            cell(&plugin.plugin, PLUGINS[0].width, Token::TextPrimary),
             cell(
                 if plugin.installed { "yes" } else { "no" },
-                PLUGIN_INSTALLED,
+                PLUGINS[1].width,
                 if plugin.installed {
                     Token::TextPrimary
                 } else {
@@ -631,7 +701,7 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         if plugin.installed {
             spans.push(cell(
                 if plugin.contributing { "yes" } else { "idle" },
-                PLUGIN_HERE,
+                PLUGINS[2].width,
                 if plugin.contributing {
                     Token::TextPrimary
                 } else {
@@ -639,19 +709,22 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
                 },
             ));
             let commit = plugin.commit.as_deref().map_or("—", short_commit);
-            spans.push(cell(commit, PLUGIN_COMMIT, Token::TextMuted));
-            if let Some(freshness) = &plugin.freshness {
-                let (word, tone) = freshness_word(&freshness.state);
-                spans.push(Span::styled(word, theme::fg(tone)));
-            }
+            spans.push(cell(commit, PLUGINS[3].width, Token::TextMuted));
+            spans.push(match &plugin.freshness {
+                Some(freshness) => {
+                    let (word, tone) = freshness_word(&freshness.state);
+                    Span::styled(word, theme::fg(tone))
+                }
+                None => Span::raw(""),
+            });
         } else {
-            for width in [PLUGIN_HERE, PLUGIN_COMMIT] {
+            for width in [PLUGINS[2].width, PLUGINS[3].width] {
                 spans.push(cell("—", width, Token::TextDim));
             }
             spans.push(Span::styled("—", theme::fg(Token::TextDim)));
         }
         lines.push(SectionLine {
-            spans,
+            spans: table.row(spans),
             row: Some(index),
         });
     }
@@ -702,29 +775,25 @@ fn plugin_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     lines
 }
 
-fn memory_lines(project: &ProjectSpace) -> Vec<SectionLine> {
+fn memory_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
     let memory = &project.memory;
     let mut lines = Vec::new();
     if memory.project.is_empty() {
         lines.push(said("no facts kept for this project", Token::TextMuted));
     } else {
-        lines.push(heading(&[
-            ("name", FACT_NAME),
-            ("kind", FACT_KIND),
-            ("origin", FACT_ORIGIN),
-            ("updated", FACT_UPDATED),
-        ]));
+        let table = Table::fit(&FACTS, room);
+        lines.push(table.heading());
         for (index, entry) in memory.project.iter().enumerate() {
             lines.push(SectionLine {
-                spans: vec![
-                    cell(&entry.name, FACT_NAME, Token::TextPrimary),
-                    cell(entry.kind.label(), FACT_KIND, Token::TextSecondary),
-                    cell(&entry.origin, FACT_ORIGIN, Token::TextSecondary),
+                spans: table.row(vec![
+                    cell(&entry.name, FACTS[0].width, Token::TextPrimary),
+                    cell(entry.kind.label(), FACTS[1].width, Token::TextSecondary),
+                    cell(&entry.origin, FACTS[2].width, Token::TextSecondary),
                     Span::styled(
                         entry.updated.clone().unwrap_or_default(),
                         theme::fg(Token::TextMuted),
                     ),
-                ],
+                ]),
                 row: Some(index),
             });
         }
@@ -1067,7 +1136,7 @@ impl Form {
                 } else {
                     SegmentState::Resting
                 };
-                let cell = segment(word, state, CONTROL / options.len());
+                let cell = segment(word, state, self.control() / options.len());
                 cells.push((at, cell.width() as u16));
                 at += cell.width() as u16;
                 spans.push(cell);
@@ -1088,7 +1157,13 @@ impl Form {
                 None => (key.default_spelled().to_owned(), Token::TextDim),
             };
             let lit = |adds| self.hovered == Some(WorkspaceHit::OverviewStep(self.index, adds));
-            let (stepper, minus, plus) = stepper(&shown, tone, editable, [lit(false), lit(true)]);
+            let (stepper, minus, plus) = stepper(
+                &shown,
+                tone,
+                editable,
+                [lit(false), lit(true)],
+                self.control(),
+            );
             spans.extend(stepper);
             if editable {
                 self.steps.push((self.lines.len(), self.index, minus, plus));
@@ -1190,6 +1265,12 @@ impl Form {
             });
         }
         self.index += 1;
+    }
+
+    /// The width a segmented choice and a stepper take: [`CONTROL`], or
+    /// what a value's box has on a narrow screen.
+    fn control(&self) -> usize {
+        CONTROL.min(self.box_width)
     }
 
     /// How the next row's label is drawn: the keyboard's, under the
@@ -1374,7 +1455,7 @@ fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     spans
 }
 
-/// A number between its − and +, [`CONTROL`] wide with the number in the
+/// A number between its − and +, `width` wide with the number in the
 /// middle, and where each of those two stands on the line: its column and
 /// its width. `lit` says which of the two the pointer is over.
 fn stepper(
@@ -1382,6 +1463,7 @@ fn stepper(
     tone: Token,
     editable: bool,
     lit: [bool; 2],
+    width: usize,
 ) -> (Vec<Span<'static>>, (u16, u16), (u16, u16)) {
     let step = |symbol: Symbol, lit: bool| {
         let (fg, ground) = match (editable, lit) {
@@ -1398,7 +1480,7 @@ fn stepper(
     let plus = step(Symbol::StepIncrease, lit[1]);
     let minus_width = minus.width() as u16;
     let plus_width = plus.width() as u16;
-    let room = CONTROL.saturating_sub(usize::from(minus_width + plus_width));
+    let room = width.saturating_sub(usize::from(minus_width + plus_width));
     let middle = Span::styled(
         format!("{:^room$}", text::elide(shown, room)),
         theme::fg_bold(tone).bg(theme::color(Token::SurfaceRecessed)),
@@ -1593,23 +1675,15 @@ fn render_agent(
         .filter_map(|tab| super::launched_agent_id(tab).map(|id| (id, tab.label.as_str())))
         .collect();
     let clock = uze_application::PromptClock::now();
-    let mut header = heading(&[
-        ("harness", PROMPT_HARNESS),
-        ("when", PROMPT_WHEN),
-        ("where", PROMPT_WHERE),
-    ]);
-    header
-        .spans
-        .push(Span::styled("prompt", theme::fg(Token::TextDim)));
-    let mut lines = vec![header];
-    // What the prompt column has once the others and, with no drawer
-    // beside the list, the scrollbar's groove are taken.
-    let groove = match track.column {
-        Some(_) => 0,
-        None => usize::from(Scrollbar::width()) + 1,
+    // What the table has across once, with no drawer beside the list, the
+    // scrollbar's groove is taken; the prompt has what the others leave.
+    let room = match track.column {
+        Some(_) => list.width,
+        None => list.width.saturating_sub(Scrollbar::width() + 1),
     };
-    let prompt_room = usize::from(list.width)
-        .saturating_sub(usize::from(PROMPT_HARNESS + PROMPT_WHEN + PROMPT_WHERE) + groove);
+    let table = Table::fit(&PROMPTS, room);
+    let prompt_room = usize::from(room.saturating_sub(table.leading_width()));
+    let mut lines = vec![table.heading()];
     let mut age = None;
     for (index, entry) in prompts.iter().enumerate() {
         // A heading where the age changes: the recent ones open the list
@@ -1629,15 +1703,22 @@ fn render_agent(
             .unwrap_or(&entry.tab_label);
         let place = format!("{}/{tab}", entry.space_label);
         let when = entry.compact_age(&clock);
-        lines.push(SectionLine {
-            spans: vec![
-                cell(&entry.agent_binary, PROMPT_HARNESS, Token::TextSecondary),
-                Span::styled(
-                    format!("{when:>width$}  ", width = usize::from(PROMPT_WHEN) - 2),
-                    theme::fg(Token::TextMuted),
+        let mut spans = table.row(vec![
+            cell(&entry.agent_binary, PROMPTS[0].width, Token::TextSecondary),
+            Span::styled(
+                format!(
+                    "{when:>width$}  ",
+                    width = usize::from(PROMPTS[1].width) - 2
                 ),
-                cell(&place, PROMPT_WHERE, Token::TextMuted),
-            ],
+                theme::fg(Token::TextMuted),
+            ),
+            cell(&place, PROMPTS[2].width, Token::TextMuted),
+            Span::raw(""),
+        ]);
+        // The prompt's own cell is drawn below, sliding or cut.
+        spans.pop();
+        lines.push(SectionLine {
+            spans,
             row: Some(index),
         });
         let prompt = &mut lines.last_mut().expect("just pushed").spans;
@@ -1688,34 +1769,107 @@ fn render_agent(
     Vec::new()
 }
 
-/// The Context table's columns: the harness, whether it is installed,
-/// and how the context reaches it.
-const CONTEXT_NAME: u16 = 18;
-const CONTEXT_INSTALLED: u16 = 14;
-const CONTEXT_STATE: u16 = 20;
+/// The Context table: the harness, whether it is installed, and how the
+/// context reaches it.
+const CONTEXT: [Column; 3] = [
+    Column {
+        heading: "harness",
+        width: 18,
+        keep: KEPT,
+    },
+    Column {
+        heading: "installed",
+        width: 14,
+        keep: 1,
+    },
+    Column {
+        heading: "context",
+        width: 12,
+        keep: KEPT,
+    },
+];
 
-/// The Plugins table's columns, and the label column of the lock's lines
-/// under it.
-const PLUGIN_NAME: u16 = 24;
-const PLUGIN_INSTALLED: u16 = 11;
-const PLUGIN_HERE: u16 = 8;
-const PLUGIN_COMMIT: u16 = 10;
-const PLUGIN_FRESHNESS: u16 = 16;
+/// The Plugins table, and the label column of the lock's lines under it.
+const PLUGINS: [Column; 5] = [
+    Column {
+        heading: "plugin",
+        width: 24,
+        keep: KEPT,
+    },
+    Column {
+        heading: "installed",
+        width: 11,
+        keep: 2,
+    },
+    Column {
+        heading: "here",
+        width: 8,
+        keep: 3,
+    },
+    Column {
+        heading: "commit",
+        width: 10,
+        keep: 1,
+    },
+    Column {
+        heading: "freshness",
+        width: 12,
+        keep: 4,
+    },
+];
 const LOCK_LABEL: u16 = 30;
 
-/// The Memory table's columns.
-const FACT_NAME: u16 = 34;
-const FACT_KIND: u16 = 12;
-const FACT_ORIGIN: u16 = 14;
-const FACT_UPDATED: u16 = 12;
+/// The Memory table.
+const FACTS: [Column; 4] = [
+    Column {
+        heading: "name",
+        width: 34,
+        keep: KEPT,
+    },
+    Column {
+        heading: "kind",
+        width: 12,
+        keep: 3,
+    },
+    Column {
+        heading: "origin",
+        width: 14,
+        keep: 2,
+    },
+    Column {
+        heading: "updated",
+        width: 10,
+        keep: 1,
+    },
+];
 
 /// The label column of the drawer's pairs.
 const DRAWER_LABEL: u16 = 16;
 
-/// The prompts table's columns: who answered, how long ago, where.
-const PROMPT_HARNESS: u16 = 12;
-const PROMPT_WHEN: u16 = 7;
-const PROMPT_WHERE: u16 = 24;
+/// The prompts table: who answered, how long ago, where, and the prompt,
+/// which is what the table is read for.
+const PROMPTS: [Column; 4] = [
+    Column {
+        heading: "harness",
+        width: 12,
+        keep: 2,
+    },
+    Column {
+        heading: "when",
+        width: 7,
+        keep: 3,
+    },
+    Column {
+        heading: "where",
+        width: 24,
+        keep: 1,
+    },
+    Column {
+        heading: "prompt",
+        width: 24,
+        keep: KEPT,
+    },
+];
 
 /// The lines of an action being written, folded at `width` columns
 /// wherever a line runs past it, with the caret between `before` and
@@ -2375,6 +2529,24 @@ fn display_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A narrow section gives way in its least kept columns first, and
+    /// never in one the table is not read without.
+    #[test]
+    fn a_table_gives_way_in_its_least_kept_columns_first() {
+        use super::{PLUGINS, Table};
+        let shown = |room| Table::fit(&PLUGINS, room).shown;
+        assert_eq!(shown(200), vec![true; 5], "room for all");
+        // plugin 24 + installed 11 + here 8 + freshness 12 = 55: the
+        // commit goes first.
+        assert_eq!(shown(55), vec![true, true, true, false, true]);
+        assert_eq!(shown(44), vec![true, false, true, false, true]);
+        assert_eq!(
+            shown(5),
+            vec![true, false, false, false, false],
+            "the name stays"
+        );
+    }
+
     /// A setup line is judged by the command, not by how the form shows
     /// it: a POSIX line that happens to read like the two-spelling form is
     /// still the line approval names.

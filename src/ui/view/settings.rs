@@ -118,42 +118,7 @@ fn render_catalog(
 ) -> (usize, usize) {
     let bands = bands_of(model, area.width);
     let total: u16 = bands.iter().map(Band::height).sum();
-    let starts: Vec<u16> = bands
-        .iter()
-        .scan(0, |at, band| {
-            let start = *at;
-            *at += band.height();
-            Some(start)
-        })
-        .collect();
-    let selected = bands
-        .iter()
-        .position(
-            |band| matches!(band, Band::Cards(cards) if cards.contains(&model.settings_selected)),
-        )
-        .map(|band| {
-            let start = usize::from(starts[band]);
-            (start, start + usize::from(bands[band].height()) - 1)
-        });
-    let line = super::settle(
-        &model.settings_scroll,
-        selected,
-        usize::from(total),
-        usize::from(area.height),
-    );
-    // Whole bands only: a window stopping inside a card would clip it, so
-    // it starts at the first band beginning at or after the line.
-    let first = starts
-        .iter()
-        .position(|start| usize::from(*start) >= line)
-        .unwrap_or(bands.len());
-    let scroll = model.settings_scroll.get();
-    model
-        .settings_scroll
-        .set(crate::ui::extension_view::NavigatorScroll {
-            first: starts.get(first).map_or(line, |start| usize::from(*start)),
-            ..scroll
-        });
+    let first = first_band(&bands, model, area.height);
     let mut y = area.y;
     let skipped: u16 = bands.iter().take(first).map(Band::height).sum();
     for band in bands.iter().skip(first) {
@@ -179,6 +144,42 @@ fn render_catalog(
         y += band.height();
     }
     (usize::from(total), usize::from(skipped))
+}
+
+/// The band the window starts at, kept in bands rather than lines so the
+/// window always starts on a whole one: wherever the wheel left it, until
+/// the selection moves, which pulls it just far enough to show the
+/// selected card whole. Never further than the last band ending at the
+/// foot.
+fn first_band(bands: &[Band<'_>], model: &TuiModel, height: u16) -> usize {
+    let fits = |from: usize, to: usize| -> bool {
+        bands[from..to].iter().map(Band::height).sum::<u16>() <= height
+    };
+    let last_start = (0..bands.len())
+        .find(|from| fits(*from, bands.len()))
+        .unwrap_or(bands.len());
+    let selected = bands.iter().position(
+        |band| matches!(band, Band::Cards(cards) if cards.contains(&model.settings_selected)),
+    );
+    let previous = model.settings_scroll.get();
+    let mut first = previous.first.min(last_start);
+    if selected != previous.revealed
+        && let Some(selected) = selected
+    {
+        if selected < first {
+            first = selected;
+        }
+        while first < selected && !fits(first, selected + 1) {
+            first += 1;
+        }
+    }
+    model
+        .settings_scroll
+        .set(crate::ui::extension_view::NavigatorScroll {
+            first,
+            revealed: selected,
+        });
+    first
 }
 
 /// One stretch of the catalogue that moves as a unit: a group heading,
