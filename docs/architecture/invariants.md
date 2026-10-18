@@ -2620,7 +2620,7 @@ because index 2 is *green* to whatever emitted it.
 > `src/theme.rs::a_themes_own_symbol_wins_over_the_selected_set`
 > `src/theme.rs::the_operators_overrides_win_over_the_set_and_the_theme_both`
 > `crates/uze-core/src/appearance.rs::the_two_choices_do_not_overwrite_each_other`
-> `src/ui/tests.rs::each_glyph_set_is_previewed_in_its_own_glyphs`
+> `src/ui/tests/settings.rs::each_glyph_set_is_previewed_in_its_own_glyphs`
 > `src/progress.rs::the_cli_and_the_tui_resolve_a_shared_token_to_the_same_colour`
 > `src/ui/orchestrator/tests.rs::the_palette_a_pane_is_told_about_is_the_one_being_drawn`
 > `crates/uze-terminal/src/runtime/tests.rs::osc_background_and_foreground_queries_get_answered_instead_of_hanging`
@@ -3013,7 +3013,7 @@ and no letter answers it: a second, invisible way to say yes is a key
 pressed by habit on the wrong question.
 
 > `src/ui/tests/plugins.rs::remove_confirmation_flow`
-> `src/ui/tests.rs::the_arrows_choose_an_answer_and_enter_takes_it`
+> `src/ui/tests/overlays.rs::the_arrows_choose_an_answer_and_enter_takes_it`
 > `src/ui/orchestrator/tests.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
 > `src/ui/orchestrator/tests/recent.rs::a_question_opens_on_its_way_out_and_the_arrow_reaches_going_ahead`
 
@@ -3048,7 +3048,7 @@ loads.
 > `uze-keys::load::tests::a_file_that_cannot_be_used_leaves_the_keyboard_alone`
 > `uze-keys::load::tests::a_keymap_written_for_a_newer_uze_still_loads`
 > `src/keymap.rs::tests::a_file_that_would_take_the_keyboard_away_says_so_and_changes_nothing`
-> `src/ui/tests.rs::a_key_this_terminal_cannot_send_is_never_bound`
+> `src/ui/tests/keys.rs::a_key_this_terminal_cannot_send_is_never_bound`
 
 ### What can be done to a thing is answered once
 
