@@ -399,9 +399,21 @@ fn a_fact_citing_what_is_gone_is_marked_where_it_is_named_and_named_once() {
             "{name} named twice: {index}"
         );
     }
+    let group = index
+        .lines()
+        .find(|line| line.starts_with("- citing paths this checkout does not have"))
+        .unwrap_or_default();
+    for n in 0..12 {
+        let name = format!("moved-{n:02}");
+        let described = index.contains(&format!("- {name} (project, cites a path"));
+        assert!(
+            described || group.contains(&name) || !index.contains(&name),
+            "{name} is named outside the stale group without its mark: {index}"
+        );
+    }
     assert!(
-        index.contains("- citing paths this checkout does not have (verify them first): moved-02"),
-        "{index}"
+        !group.is_empty(),
+        "facts named alone were not grouped: {index}"
     );
 }
 

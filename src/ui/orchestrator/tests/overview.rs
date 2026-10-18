@@ -837,8 +837,9 @@ fn a_fact_citing_what_the_checkout_lacks_is_marked_in_the_tab_and_the_drawer() {
 
     let overview = model.space_overview.as_mut().expect("open");
     overview.drawer = true;
-    // The mark sits under the fact's details, past a drawer this short.
-    overview.scroll_drawer(6);
+    // The mark sits under the fact's details, past a drawer this short:
+    // scrolled to its end, which the frame settles on its last screenful.
+    overview.scroll_drawer(i16::MAX);
     let screen = frame_rows(&mut model).join("\n");
     assert!(
         screen.contains("cites what this checkout does not have")
