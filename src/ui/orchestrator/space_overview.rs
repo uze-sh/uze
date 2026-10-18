@@ -63,7 +63,7 @@ impl Section {
     }
 
     fn previous(self) -> Self {
-        self.after(3)
+        self.after(Self::ALL.len() - 1)
     }
 }
 
@@ -1621,4 +1621,19 @@ fn with_item(
 enum Items {
     Strings(Vec<String>),
     Commands(Vec<ShellCommand>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Section;
+
+    /// Back from any section is the one before it on the bar, wrapping
+    /// from the first to the last, and forward undoes it.
+    #[test]
+    fn stepping_back_lands_on_the_section_before() {
+        assert_eq!(Section::Agent.previous(), Section::Memory);
+        for section in Section::ALL {
+            assert_eq!(section.next().previous(), section);
+        }
+    }
 }
