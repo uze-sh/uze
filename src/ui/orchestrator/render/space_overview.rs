@@ -741,18 +741,13 @@ fn draw_scrolled(
         selected.and_then(|selected| lines.iter().position(|line| line.row == Some(selected)));
     let last_line =
         selected.and_then(|selected| lines.iter().rposition(|line| line.row == Some(selected)));
-    let previous = track.scroll.map(std::cell::Cell::get).unwrap_or_default();
-    let mut scroll = previous.settled(last_line, lines.len(), height);
-    if let Some(first) = first_line
-        && scroll.revealed != previous.revealed
-        && first < scroll.first
-    {
-        scroll.first = first;
-    }
-    if let Some(cell) = track.scroll {
-        cell.set(scroll);
-    }
-    let offset = scroll.first;
+    let unkept = std::cell::Cell::default();
+    let offset = crate::ui::view::settle(
+        track.scroll.unwrap_or(&unkept),
+        first_line.zip(last_line),
+        lines.len(),
+        height,
+    );
     // The handle rides the drawer's rule, as every list with a divider
     // beside it does; with no drawer it takes the list's last column.
     let (bar, area) = match track.column {
@@ -792,12 +787,11 @@ fn draw_scrolled(
     let mut rows = Vec::new();
     for (index, line) in lines.iter().skip(offset).take(height).enumerate() {
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
-        let mut spans = line.spans.clone();
         let state = RowState::of(
             line.row.is_some() && line.row == selected,
             line.row.is_some() && line.row == track.hovered,
         );
-        let mut shown = Line::from(std::mem::take(&mut spans));
+        let mut shown = Line::from(line.spans.clone());
         text::clip(&mut shown, usize::from(area.width));
         let mut spans = shown.spans;
         row::fill_under(&mut spans, area.width, state);
