@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::ui::widget::alerts::{Alert, Severity};
-use uze_application::application::StatusHarness;
+use uze_application::application::{StatusHarness, memory::Entry as MemoryEntry};
 use uze_application::{
     ActionEntry, ActionState, CheckoutOwner, CheckoutView, CheckoutsView, DeclarationApplied,
     DeclarationEntry, DeclarationKey, DeclarationProblem, DeclarationView, DeclaredValue, Edit,
@@ -125,6 +125,11 @@ pub(super) struct SpaceOverviewView {
     pub(super) removing: bool,
     /// The space's issues are listed over the overview.
     pub(super) issues_open: bool,
+    /// The words the Memory section's facts are narrowed by, matched
+    /// against each fact's name, description, kind and origin.
+    pub(super) memory_filter: String,
+    /// Whether that search is taking what is typed.
+    pub(super) filtering: bool,
 }
 
 /// The space's worktrees as last measured. Measuring walks every file of
@@ -401,6 +406,19 @@ pub(super) struct DeclarationSaveResolution {
     pub(super) outcome: std::result::Result<DeclarationApplied, String>,
 }
 
+/// Whether `needle`, already lowercased, is in anything the fact's row or
+/// drawer says of it: its name, its description, its kind or its origin.
+fn fact_matches(entry: &MemoryEntry, needle: &str) -> bool {
+    [
+        entry.name.as_str(),
+        entry.description.as_str(),
+        entry.kind.label(),
+        entry.origin.as_str(),
+    ]
+    .into_iter()
+    .any(|said| said.to_lowercase().contains(needle))
+}
+
 /// Whether the overview answers `action` itself. Everything else is the
 /// workspace's — walking spaces, opening a tab — and reaches it over the
 /// overview, which does not seal.
@@ -413,6 +431,7 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::SelectNext
             | Action::SelectPrevious
             | Action::SelectSection(_)
+            | Action::StartFilter
             | Action::Activate
             | Action::Refresh
             | Action::AddItem
@@ -584,6 +603,8 @@ impl SpaceOverviewView {
             removal: None,
             removing: false,
             issues_open: false,
+            memory_filter: String::new(),
+            filtering: false,
         }
     }
 
@@ -612,6 +633,34 @@ impl SpaceOverviewView {
 
     pub(super) fn row(&self) -> usize {
         self.rows[self.section.index()]
+    }
+
+    /// The project's facts the Memory search lets through, in the order
+    /// they are kept.
+    pub(super) fn memory_facts(&self) -> Vec<&MemoryEntry> {
+        let Some(project) = self.project() else {
+            return Vec::new();
+        };
+        let needle = self.memory_filter.trim().to_lowercase();
+        project
+            .memory
+            .project
+            .iter()
+            .filter(|entry| needle.is_empty() || fact_matches(entry, &needle))
+            .collect()
+    }
+
+    /// The search's words changed: the selection starts over on what they
+    /// let through, and a body read for a fact that may be gone is let go.
+    fn narrowed(&mut self) {
+        self.rows[Section::Memory.index()] = 0;
+        self.scroll[Section::Memory.index()] = Default::default();
+        self.fact = None;
+    }
+
+    pub(super) fn type_into_search(&mut self, character: char) {
+        self.memory_filter.push(character);
+        self.narrowed();
     }
 
     /// A key's value as it would be saved: the edit when there is one,
@@ -702,7 +751,7 @@ impl SpaceOverviewView {
         match self.section {
             Section::Plugins => project.plugins.plugins.len(),
             Section::Settings => self.workspace_rows().len(),
-            Section::Memory => project.memory.project.len(),
+            Section::Memory => self.memory_facts().len(),
             Section::Worktrees => self.worktrees().len(),
             // Its prompts are counted where they are held, by the session.
             Section::Agent => 0,
@@ -729,6 +778,7 @@ impl SpaceOverviewView {
 
     fn switch(&mut self, section: Section) {
         self.section = section;
+        self.filtering = false;
         self.drawer = false;
         self.fact = None;
         self.edit.field = None;
@@ -1639,6 +1689,8 @@ impl Attach<'_> {
         self.model.dirty = true;
         if overview.edit.text.is_some() {
             self.instruction_action(action);
+        } else if overview.filtering {
+            self.memory_search_action(action);
         } else if overview.edit.field.is_some() {
             self.field_action(action);
         } else if overview.section == Section::Agent
@@ -1688,6 +1740,33 @@ impl Attach<'_> {
         }
     }
 
+    /// What a key does while the Memory search takes text: the arrows walk
+    /// what it let through, enter leaves it on the words and reads the
+    /// fact, and esc leaves it with the words gone.
+    fn memory_search_action(&mut self, action: Action) {
+        let Some(overview) = self.model.space_overview.as_mut() else {
+            return;
+        };
+        match action {
+            Action::EraseBack => {
+                overview.memory_filter.pop();
+                overview.narrowed();
+            }
+            Action::Dismiss => {
+                overview.filtering = false;
+                overview.memory_filter.clear();
+                overview.narrowed();
+            }
+            Action::SelectNext => overview.select(1),
+            Action::SelectPrevious => overview.select(-1),
+            Action::Activate => {
+                overview.filtering = false;
+                self.activate_overview_row();
+            }
+            _ => {}
+        }
+    }
+
     /// A value being typed, and the options it narrows.
     fn field_action(&mut self, action: Action) {
         let Some(overview) = self.model.space_overview.as_mut() else {
@@ -1729,7 +1808,17 @@ impl Attach<'_> {
         match action {
             Action::Dismiss if overview.drawer => overview.drawer = false,
             Action::Dismiss if overview.fact.is_some() => overview.fact = None,
+            // Esc takes the words away before it takes the overview away.
+            Action::Dismiss
+                if overview.section == Section::Memory && !overview.memory_filter.is_empty() =>
+            {
+                overview.memory_filter.clear();
+                overview.narrowed();
+            }
             Action::Dismiss => self.model.put_away_space_overview(),
+            Action::StartFilter if overview.section == Section::Memory => {
+                overview.filtering = true;
+            }
             Action::SelectSection(position) => {
                 if let Some(section) = Section::ALL.get(usize::from(position).saturating_sub(1)) {
                     overview.switch(*section);
@@ -1778,8 +1867,8 @@ impl Attach<'_> {
             }
             Section::Memory => {
                 let Some(name) = overview
-                    .project()
-                    .and_then(|project| project.memory.project.get(overview.row()))
+                    .memory_facts()
+                    .get(overview.row())
                     .map(|entry| entry.name.clone())
                 else {
                     return;
@@ -1857,6 +1946,8 @@ impl Attach<'_> {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
+        // The search keeps its words; only the typing ends.
+        overview.filtering = false;
         if let Some((state, buffer)) = overview.edit.text.take() {
             overview.set_action(state, Some(buffer.text().to_owned()));
             self.schedule_declaration_save();

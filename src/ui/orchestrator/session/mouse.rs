@@ -1445,6 +1445,7 @@ impl Attach<'_> {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
             }
             WorkspaceHit::OverviewRow(index) => self.click_overview_row(index),
+            WorkspaceHit::OverviewMemorySearch => return self.act(Action::StartFilter, viewport),
             WorkspaceHit::OverviewReview => self.review_overview_commands(),
             WorkspaceHit::OverviewPick(option) => self.pick_overview_option(option),
             WorkspaceHit::OverviewChoice(row, option) => self.choose_overview_option(row, option),

@@ -161,12 +161,17 @@ overview SHALL say which and show no section.
 The Memory section SHALL list the facts kept for the project, each with its
 kind, origin (UZE, or the harness that keeps it) and last update, SHALL say
 how many machine facts also reach agents in the project, and SHALL report
-files it could not read. A fact's body SHALL open in the drawer. Proposed
-machine facts SHALL NOT be listed.
+files it could not read. A search SHALL narrow the facts by name,
+description, kind or origin. A fact's body SHALL open in the drawer.
+Proposed machine facts SHALL NOT be listed.
 
 #### Scenario: Facts from every source
 - **WHEN** a project has UZE facts and Claude keeps memory for it
 - **THEN** the section lists both, each naming where it is kept
+
+#### Scenario: Searching the facts
+- **WHEN** the operator types words into the Memory section's search
+- **THEN** only the facts whose name, description, kind or origin contain them are listed, the count says how many of all, and enter reads the selected one
 
 ### Requirement: The Settings section shows every key
 The Settings section SHALL list every key the `workspace:` section of

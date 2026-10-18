@@ -5,7 +5,7 @@
 use super::*;
 use crate::ui::extension_view::NavigatorScroll;
 use crate::ui::widget::{
-    Button, RowState, Scrollbar, Surface, drawer,
+    Button, Field, RowState, Scrollbar, Surface, drawer,
     grid::Shape,
     hint::Hints,
     row,
@@ -451,6 +451,15 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                     format!("{} unreadable", plural(memory.unreadable.len(), "file")),
                     Token::StateWarning,
                 )
+            } else if !overview.memory_filter.trim().is_empty() {
+                (
+                    format!(
+                        "{} of {}",
+                        overview.memory_facts().len(),
+                        plural(memory.project.len(), "fact")
+                    ),
+                    Token::TextSecondary,
+                )
             } else {
                 (plural(memory.project.len(), "fact"), Token::TextSecondary)
             }
@@ -502,7 +511,9 @@ fn render_section(
         Section::Settings => {
             return render_workspace(frame, area, overview, project, hits, track);
         }
-        Section::Memory => memory_lines(project, room),
+        Section::Memory => {
+            return render_memory(frame, area, overview, project, hits, track, room);
+        }
         Section::Worktrees => {
             return render_worktrees(frame, area, model, overview, project, track);
         }
@@ -809,15 +820,58 @@ fn plugin_state(plugin: &SpacePlugin) -> (String, Token) {
     }
 }
 
-fn memory_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
+/// The Memory section: its search over the table of facts it lets
+/// through.
+fn render_memory(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    overview: &SpaceOverviewView,
+    project: &ProjectSpace,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+    track: Track,
+    room: u16,
+) -> Vec<(Rect, usize)> {
+    // The search and a blank line under it, before the table.
+    const SEARCH_ROWS: u16 = 2;
+    let search = Rect {
+        width: room,
+        height: 1.min(area.height),
+        ..area
+    };
+    let placeholder = if overview.filtering {
+        "name, description, kind, origin…"
+    } else {
+        "search"
+    };
+    Field::new(&overview.memory_filter, placeholder)
+        .focused(overview.filtering)
+        .render_search(frame, search);
+    hits.push((search, WorkspaceHit::OverviewMemorySearch));
+    let table = Rect {
+        y: area.y + SEARCH_ROWS.min(area.height),
+        height: area.height.saturating_sub(SEARCH_ROWS),
+        ..area
+    };
+    let lines = memory_lines(overview, project, room);
+    draw_lines(frame, table, &lines, Some(overview.row()), track)
+}
+
+fn memory_lines(
+    overview: &SpaceOverviewView,
+    project: &ProjectSpace,
+    room: u16,
+) -> Vec<SectionLine> {
     let memory = &project.memory;
+    let facts = overview.memory_facts();
     let mut lines = Vec::new();
     if memory.project.is_empty() {
         lines.push(said("no facts kept for this project", Token::TextMuted));
+    } else if facts.is_empty() {
+        lines.push(said("nothing matches", Token::TextMuted));
     } else {
         let table = Table::fit(&FACTS, room);
         lines.push(table.heading());
-        for (index, entry) in memory.project.iter().enumerate() {
+        for (index, entry) in facts.into_iter().enumerate() {
             lines.push(SectionLine {
                 spans: table.row(vec![
                     cell(&entry.name, FACTS[0].width, Token::TextPrimary),
@@ -969,11 +1023,12 @@ fn render_workspace(
             track,
         );
     }
-    let footer_height = if answer_in_drawer { 0 } else { 3 };
+    let answer = (!answer_in_drawer)
+        .then(|| settings_answer(overview, project))
+        .flatten();
+    let footer_height = answer.as_ref().map_or(0, Answer::height);
     let list = Rect {
-        height: area
-            .height
-            .saturating_sub(footer_height + u16::from(!answer_in_drawer)),
+        height: area.height.saturating_sub(footer_height),
         ..area
     };
     let footer = Rect::new(
@@ -1035,8 +1090,8 @@ fn render_workspace(
         let picker = render_picker(frame, overview, rect, list, hits);
         drawn.retain(|(row, _)| row.intersection(picker).is_empty());
     }
-    if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
-        answer.render(frame, footer, hits);
+    if let Some(answer) = answer {
+        answer.render(frame, footer, track.pointer, hits);
     }
     drawn
 }
@@ -2222,7 +2277,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
     let answer = if let Err(reason) = &declaration.editable {
         Answer::new(
             "Read-only",
-            format!("edit agents.yaml by hand: {reason}"),
+            format!("Edit agents.yaml by hand: {reason}"),
             Token::TextMuted,
             Vec::new(),
         )
@@ -2240,7 +2295,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             "Not saved",
             detail,
             Token::StateDanger,
-            vec![("Discard", WorkspaceHit::OverviewDiscard, false)],
+            vec![("Discard", WorkspaceHit::OverviewDiscard, Token::StateDanger)],
         )
     } else if let Some(awaiting) = &project.status.commands_awaiting_approval {
         let title = format!(
@@ -2250,13 +2305,13 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
         Answer::new(
             title,
             "Nothing runs until you approve it.",
-            Token::TextMuted,
-            vec![("Review", WorkspaceHit::OverviewReview, true)],
+            Token::StateWarning,
+            vec![("Review", WorkspaceHit::OverviewReview, Token::Accent)],
         )
     } else if !declaration.exists {
         Answer::new(
-            "",
-            "No agents.yaml yet. The first change creates it.",
+            "No agents.yaml yet",
+            "The first change creates it.",
             Token::TextMuted,
             Vec::new(),
         )
@@ -2272,8 +2327,12 @@ fn removal_answer() -> Answer {
     Answer::new(
         "No agent holds it",
         "Removing it keeps its branch.",
-        Token::TextMuted,
-        vec![("Remove", WorkspaceHit::OverviewRemoveWorktree, false)],
+        Token::TextSecondary,
+        vec![(
+            "Remove",
+            WorkspaceHit::OverviewRemoveWorktree,
+            Token::StateDanger,
+        )],
     )
 }
 
@@ -2282,7 +2341,7 @@ struct Answer {
     title: String,
     detail: String,
     tone: Token,
-    buttons: Vec<(&'static str, WorkspaceHit, bool)>,
+    buttons: Vec<(&'static str, WorkspaceHit, Token)>,
 }
 
 impl Answer {
@@ -2290,7 +2349,7 @@ impl Answer {
         title: impl Into<String>,
         detail: impl Into<String>,
         tone: Token,
-        buttons: Vec<(&'static str, WorkspaceHit, bool)>,
+        buttons: Vec<(&'static str, WorkspaceHit, Token)>,
     ) -> Self {
         Self {
             title: title.into(),
@@ -2300,44 +2359,35 @@ impl Answer {
         }
     }
 
-    /// Drawn as a section's closing word: what stands, why, and the
-    /// buttons that act on it, each lit when it is the one Enter takes.
+    fn height(&self) -> u16 {
+        drawer::foot_height(!self.buttons.is_empty())
+    }
+
+    /// Drawn the way the manage screens end a drawer: what stands and why,
+    /// then the buttons that act on it, each full under the pointer.
     fn render(
         &self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
+        hovered: Option<WorkspaceHit>,
         hits: &mut Vec<(Rect, WorkspaceHit)>,
     ) {
-        if area.height == 0 {
-            return;
-        }
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                self.title.clone(),
-                theme::fg_bold(Token::TextPrimary),
-            )),
-            Rect { height: 1, ..area },
-        );
-        if area.height > 1 {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    text::elide(&self.detail, usize::from(area.width)),
-                    theme::fg(self.tone),
-                )),
-                Rect::new(area.x, area.y + 1, area.width, 1),
-            );
-        }
-        if area.height > 2 {
-            let mut x = area.x;
-            for (label, hit, lit) in &self.buttons {
-                let button = Button::new(*label, Token::TextPrimary).strong(*lit);
-                let width = button.width();
-                let rect = Rect::new(x, area.y + 2, width.min(area.right().saturating_sub(x)), 1);
-                button.render(frame, rect);
-                hits.push((rect, *hit));
-                x += width + 1;
-            }
-        }
+        let buttons: Vec<_> = self
+            .buttons
+            .iter()
+            .map(|(label, hit, hue)| {
+                let button = Button::new(*label, *hue)
+                    .strong(hovered == Some(*hit))
+                    .ground(Token::SurfaceBackground);
+                (button, *hit)
+            })
+            .collect();
+        let status = drawer::Status {
+            color: theme::color(self.tone),
+            headline: &self.title,
+            subtitle: &self.detail,
+        };
+        hits.extend(drawer::foot(frame, area, status, &buttons));
     }
 }
 
@@ -2368,7 +2418,7 @@ fn render_drawer(
             drawer.plugin(plugin);
         }
         Section::Memory => {
-            let Some(entry) = project.memory.project.get(row) else {
+            let Some(entry) = overview.memory_facts().get(row).copied() else {
                 return;
             };
             drawer.fact(entry, overview.fact.as_ref());
@@ -2380,7 +2430,7 @@ fn render_drawer(
             };
             drawer.worktree(card);
             let answer = model.offers_worktree_removal(overview).then(removal_answer);
-            draw_with_answer(frame, area, drawer.lines, answer, hits);
+            draw_with_answer(frame, area, drawer.lines, answer, model.hovered, hits);
             return;
         }
         Section::Settings => {
@@ -2392,6 +2442,7 @@ fn render_drawer(
                 area,
                 drawer.lines,
                 settings_answer(overview, project),
+                model.hovered,
                 hits,
             );
             return;
@@ -2706,27 +2757,22 @@ impl DrawerLines {
     }
 }
 
-/// The drawer's lines, then the answer about the edits a line below them —
-/// or at the drawer's foot when the lines leave no room above it.
+/// The drawer's lines, and the answer at its foot.
 fn draw_with_answer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     lines: Vec<Line<'static>>,
     answer: Option<Answer>,
+    hovered: Option<WorkspaceHit>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    const HEIGHT: u16 = 3;
-    let below = area.y + lines.len() as u16 + 1;
-    frame.render_widget(Paragraph::new(lines), area);
     let Some(answer) = answer else {
+        frame.render_widget(Paragraph::new(lines), area);
         return;
     };
-    let y = below.min(area.bottom().saturating_sub(HEIGHT)).max(area.y);
-    answer.render(
-        frame,
-        Rect::new(area.x, y, area.width, HEIGHT.min(area.bottom() - y)),
-        hits,
-    );
+    let (body, foot) = drawer::split(area, !answer.buttons.is_empty());
+    frame.render_widget(Paragraph::new(lines), body);
+    answer.render(frame, foot, hovered, hits);
 }
 
 fn foot_keys(
@@ -2743,6 +2789,13 @@ fn foot_keys(
     }
     if overview.edit.field.is_some() {
         return vec![(Action::Activate, "apply"), (Action::Dismiss, "cancel")];
+    }
+    if overview.filtering {
+        return vec![
+            (Action::SelectNext, "move"),
+            (Action::Activate, "read"),
+            (Action::Dismiss, "clear"),
+        ];
     }
     if overview.drawer && !side_by_side {
         return vec![(Action::Dismiss, "close")];
@@ -2772,7 +2825,9 @@ fn foot_keys(
                 _ => {}
             }
         }
-        Section::Memory => keys.push((Action::Activate, "read")),
+        Section::Memory => {
+            keys.extend([(Action::Activate, "read"), (Action::StartFilter, "search")])
+        }
         Section::Plugins | Section::Worktrees if !side_by_side => {
             keys.push((Action::Activate, "details"))
         }
@@ -2835,7 +2890,9 @@ fn render_foot(
     let scopes = [
         uze_keys::Scope::Global,
         uze_keys::Scope::Workspace,
-        if typing {
+        if overview.filtering {
+            uze_keys::Scope::SpaceOverviewFilter
+        } else if typing {
             uze_keys::Scope::SpaceOverviewEditing
         } else {
             uze_keys::Scope::SpaceOverview

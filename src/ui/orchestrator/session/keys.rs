@@ -55,7 +55,9 @@ impl Attach<'_> {
         } else if self.model.code.is_some() {
             Scope::Code
         } else if let Some(overview) = &self.model.space_overview {
-            if overview.edit.field.is_some() || overview.edit.text.is_some() {
+            if overview.filtering {
+                Scope::SpaceOverviewFilter
+            } else if overview.edit.field.is_some() || overview.edit.text.is_some() {
                 Scope::SpaceOverviewEditing
             } else {
                 Scope::SpaceOverview
@@ -180,6 +182,13 @@ impl Attach<'_> {
             buffer.insert(character);
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
             self.model.recent.filter.push(character);
+        } else if let Some(overview) = self
+            .model
+            .space_overview
+            .as_mut()
+            .filter(|overview| overview.filtering)
+        {
+            overview.type_into_search(character);
         } else if let Some((_, buffer)) = self
             .model
             .space_overview

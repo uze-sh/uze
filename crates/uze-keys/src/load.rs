@@ -445,6 +445,14 @@ fn default_bindings() -> Vec<Binding> {
         // A number steps by one, the way its − and + are clicked.
         bind(Scope::SpaceOverview, "-", Action::PreviousValue),
         bind(Scope::SpaceOverview, "+", Action::NextValue),
+        bind(Scope::SpaceOverview, "/", Action::StartFilter),
+        // Like recent's: the arrows walk the facts it lets through, enter
+        // keeps the words and reads the fact.
+        bind(Scope::SpaceOverviewFilter, "esc", Action::Dismiss),
+        bind(Scope::SpaceOverviewFilter, "enter", Action::Activate),
+        bind(Scope::SpaceOverviewFilter, "backspace", Action::EraseBack),
+        bind(Scope::SpaceOverviewFilter, "down", Action::SelectNext),
+        bind(Scope::SpaceOverviewFilter, "up", Action::SelectPrevious),
         bind(Scope::SpaceOverviewEditing, "enter", Action::Activate),
         bind(Scope::SpaceOverviewEditing, "esc", Action::Dismiss),
         bind(Scope::SpaceOverviewEditing, "backspace", Action::EraseBack),

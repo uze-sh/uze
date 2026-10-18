@@ -7,10 +7,16 @@
 //! whether it is being dragged arrive as arguments; neither client's model
 //! is read here.
 
-use ratatui::{layout::Rect, widgets::Clear};
-use uze_theme::Token;
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Clear, Paragraph, Wrap},
+};
+use uze_theme::{Symbol, Token};
 
-use super::{Edge, Rule};
+use super::{Align, Button, Edge, Rule, button_row};
+use crate::ui::theme;
 
 /// A drawer's width at rest, and on a terminal wide enough that the list
 /// beside it has columns to spare and a paragraph reads in fewer rows.
@@ -67,4 +73,96 @@ pub(crate) fn render(frame: &mut ratatui::Frame<'_>, area: Rect, dragging: bool)
         area.height,
     );
     (inner, handle)
+}
+
+/// Where a drawer's selected thing stands, in the words its foot prints: a
+/// coloured headline and a muted note beneath it.
+pub(crate) struct Status<'a> {
+    pub color: Color,
+    pub headline: &'a str,
+    pub subtitle: &'a str,
+}
+
+/// How many rows a drawer's note may wrap onto before it is elided.
+///
+/// Two, because it is a sentence and the drawer is a width the operator
+/// drags. On one row it was clipped mid-word the moment the drawer was
+/// narrower than the longest note anyone had written — "setting it up
+/// installs it" became "setting it up install", which is not a shorter
+/// sentence but a broken one.
+const NOTE_ROWS: u16 = 2;
+
+/// Rows [`foot`] needs: a row of air, the headline and the rows its note
+/// may take, plus a gap and a row of buttons when there are any.
+pub(crate) fn foot_height(buttons: bool) -> u16 {
+    if buttons {
+        NOTE_ROWS + 4
+    } else {
+        NOTE_ROWS + 2
+    }
+}
+
+/// A drawer's content split into its body and, along its bottom, the foot
+/// [`foot`] draws.
+pub(crate) fn split(inner: Rect, buttons: bool) -> (Rect, Rect) {
+    let height = foot_height(buttons).min(inner.height);
+    let body = Rect {
+        height: inner.height - height,
+        ..inner
+    };
+    (body, Rect::new(inner.x, body.bottom(), inner.width, height))
+}
+
+/// Every detail drawer ends the same way, at its bottom: where the thing
+/// stands, then what can be done about it, as buttons. Answers with the
+/// rect each button took, for the caller to register.
+///
+/// The drawer is the one place a row's actions are performed with the
+/// pointer, so a caller passes only the buttons that can run now, each
+/// `strong` while the pointer is on it: the step from soft to full is what
+/// says it can be clicked.
+pub(crate) fn foot<T: Clone>(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    status: Status<'_>,
+    buttons: &[(Button, T)],
+) -> Vec<(Rect, T)> {
+    // A row of air where a rule used to stand: the foot is set apart by
+    // space, the way the Marketplace panel's action is.
+    let inner = Rect {
+        y: area.y + 1.min(area.height),
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{} ", theme::glyph(Symbol::StatusSelected)),
+                Style::default().fg(status.color),
+            ),
+            Span::styled(
+                status.headline.to_owned(),
+                Style::default()
+                    .fg(status.color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(Span::styled(
+            status.subtitle.to_owned(),
+            theme::fg(Token::TextMuted),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: true }),
+        Rect {
+            height: inner.height.min(1 + NOTE_ROWS),
+            ..inner
+        },
+    );
+    let row_y = inner.y + 1 + NOTE_ROWS;
+    if row_y >= area.bottom() {
+        return Vec::new();
+    }
+    let row = Rect::new(inner.x, row_y, inner.width, 1);
+    button_row(frame, row, buttons, Align::Left)
 }

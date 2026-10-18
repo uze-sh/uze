@@ -901,6 +901,8 @@ pub(super) enum WorkspaceHit {
     OverviewSection(usize),
     /// A row of the overview's section in front, by position.
     OverviewRow(usize),
+    /// The Memory section's search.
+    OverviewMemorySearch,
     /// A number's − or + in the overview's Workspace section: its row, and
     /// whether it adds.
     OverviewStep(usize, bool),

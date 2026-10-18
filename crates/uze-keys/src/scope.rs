@@ -171,6 +171,9 @@ scopes! {
     /// The overview with a workspace value open for typing.
     SpaceOverviewEditing => "space-overview-editing", "Editing a workspace value", Workspace,
         seals: true, text: true;
+    /// The overview's Memory search, while it takes text.
+    SpaceOverviewFilter => "space-overview-filter", "Searching memory", Workspace,
+        seals: true, text: true;
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
     /// The inline rename buffer over a tab or space label.

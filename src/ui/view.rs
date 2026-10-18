@@ -2,16 +2,15 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
 };
 
 use crate::ui::hit::Hit;
 use crate::ui::model::{ResizablePanel, TuiModel};
 use crate::ui::side_panel_area;
-use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, Field, button_row, drawer};
+use crate::ui::theme::{self, Token};
+use crate::ui::widget::{Button, Field, drawer};
 use uze_application::application::offers::ActionOffer;
 
 pub mod catalog;
@@ -105,15 +104,7 @@ pub(crate) fn drawer(
 /// A drawer's content split into its body and the footer
 /// [`render_drawer_footer`] draws beneath it.
 pub(crate) fn drawer_body_and_footer(inner: Rect, offers: &[ActionOffer]) -> (Rect, Rect) {
-    let footer_height = drawer_footer_height(offers);
-    let body = Rect {
-        height: inner.height.saturating_sub(footer_height),
-        ..inner
-    };
-    (
-        body,
-        Rect::new(inner.x, body.bottom(), inner.width, footer_height),
-    )
+    drawer::split(inner, !drawer_buttons(offers).is_empty())
 }
 
 /// A list's search row: what has been typed, or `placeholder` when
@@ -145,33 +136,12 @@ pub(crate) fn section_label(text: &str) -> Line<'static> {
 /// Rows a screen gives its search row: the row and the blank one under it.
 pub(crate) const FILTER_ROWS: u16 = 2;
 
-/// Where a detail drawer's selected thing stands, in the words its footer
-/// prints: a coloured headline and a muted note beneath it.
-pub(crate) struct DrawerStatus<'a> {
-    pub color: Color,
-    pub headline: &'a str,
-    pub subtitle: &'a str,
-}
+pub(crate) use drawer::Status as DrawerStatus;
 
-/// Rows [`render_drawer_footer`] needs: the divider, the headline and the
-/// two rows its note is allowed to take, plus a gap and a row of buttons
-/// when anything can be done now.
-///
-/// Two rows for the note, because it is a sentence and the drawer is a
-/// width the operator drags. On one row it was clipped mid-word the
-/// moment the drawer was narrower than the longest note anyone had
-/// written — "setting it up installs it" became "setting it up install",
-/// which is not a shorter sentence but a broken one.
+/// Rows [`render_drawer_footer`] needs for `offers`.
 pub(crate) fn drawer_footer_height(offers: &[ActionOffer]) -> u16 {
-    if drawer_buttons(offers).is_empty() {
-        NOTE_ROWS + 2
-    } else {
-        NOTE_ROWS + 4
-    }
+    drawer::foot_height(!drawer_buttons(offers).is_empty())
 }
-
-/// How many rows a drawer's note may wrap onto before it is elided.
-const NOTE_ROWS: u16 = 2;
 
 /// The offers a drawer draws as buttons: the available ones, what builds
 /// before what destroys. `Activate` is left out — it is what opened the
@@ -221,45 +191,6 @@ pub(crate) fn render_drawer_footer(
     engaged: Option<uze_keys::Action>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    // A row of air where a rule used to stand: the drawer's foot is set
-    // apart by space, the way the Marketplace panel's action is.
-    let inner = Rect {
-        y: area.y + 1.min(area.height),
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(
-                format!("{} ", theme::glyph(Symbol::StatusSelected)),
-                Style::default().fg(status.color),
-            ),
-            Span::styled(
-                status.headline.to_owned(),
-                Style::default()
-                    .fg(status.color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(Span::styled(
-            status.subtitle.to_owned(),
-            theme::fg(Token::TextMuted),
-        )),
-    ];
-    frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: true }),
-        Rect::new(
-            inner.x,
-            inner.y,
-            inner.width,
-            inner.height.min(1 + NOTE_ROWS),
-        ),
-    );
-
-    let row_y = inner.y + 1 + NOTE_ROWS;
-    if row_y >= area.bottom() {
-        return;
-    }
     let buttons: Vec<_> = drawer_buttons(offers)
         .into_iter()
         .enumerate()
@@ -281,8 +212,7 @@ pub(crate) fn render_drawer_footer(
             )
         })
         .collect();
-    let row = Rect::new(inner.x, row_y, inner.width, 1);
-    hits.extend(button_row(frame, row, &buttons, Align::Left));
+    hits.extend(drawer::foot(frame, area, status, &buttons));
 }
 
 /// The plural suffix a count takes in a screen's English: `""` for one.

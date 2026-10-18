@@ -44,6 +44,8 @@
 - [x] 5.10 `TestBackend` tests: a card per worktree with branch and size; keys and a click select; the wheel scrolls whole cards without selecting; hover lifts a card; the measure is off the frame and a stale answer dropped; the empty state; the warning
 - [x] 5.11 Removing a free worktree (D11): `checkout::remove_free_slot` judges the slot again under the task store's and the repository's locks and refuses with a reason; `Workspace::remove_free_checkout` empties the trash after; `RemoveItem` and a drawer button ask with a dialog, `spawn_worktree_removal` runs it off the frame, the header says it is underway, a toast says what happened and the section is read again
 - [x] 5.12 Tests: real repositories for a free slot removed with its branch kept, and a held, entered, written-in or foreign one refused and left intact; `TestBackend` for the offer only on a free card, esc withdrawing the question, one removal sent off the frame, a refusal toasted with the card kept, a success read again
+- [x] 5.13 A search over the Memory section (`/`, `Scope::SpaceOverviewFilter`): narrows by name, description, kind or origin, the cause line counts what it let through, enter reads the fact, esc takes the words before the overview; `TestBackend` test
+- [x] 5.14 The overview's drawer answers end the way the manage drawers do: `widget::drawer::foot` (status, then buttons, at the drawer's bottom, full under the pointer), shared with `view::render_drawer_footer`
 
 ## 6. Journey
 
