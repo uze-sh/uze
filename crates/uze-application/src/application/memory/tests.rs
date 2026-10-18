@@ -114,7 +114,7 @@ fn an_agent_writing_through_uze_is_told_how_and_sees_every_other_source() {
 }
 
 #[test]
-fn an_agent_writing_its_own_memory_is_given_only_the_index() {
+fn an_agent_writing_its_own_memory_is_told_how_to_read_and_not_how_to_write() {
     let (home, project) = world("app-memory-claude-agent");
     remember(&home, &project, Scope::Project, "a-uze-fact", false);
     let (claude, codex) = harnesses();
@@ -126,8 +126,9 @@ fn an_agent_writing_its_own_memory_is_given_only_the_index() {
         !text.contains("uze agent memory remember"),
         "one way to remember: its own"
     );
-    assert!(text.contains("- a-uze-fact"));
-    assert!(text.contains("codex-memory-summary"));
+    assert!(text.contains("uze agent memory list <words>"), "{text}");
+    assert!(text.contains("- project: a-uze-fact"), "{text}");
+    assert!(text.contains("codex-memory-summary"), "{text}");
     assert!(
         !text.contains("from-claude"),
         "Claude already loads its own"
@@ -158,7 +159,149 @@ fn a_proposed_machine_fact_reaches_no_agent_until_accepted() {
         .accept("prefers-ptbr")
         .unwrap();
     let after = context_sections(&home, &project, &codex, &all);
-    assert!(after[0].text.contains("- prefers-ptbr (project, machine)"));
+    assert!(
+        after[0].text.contains("- project: prefers-ptbr"),
+        "{}",
+        after[0].text
+    );
+}
+
+#[test]
+fn the_read_instruction_is_given_with_any_index() {
+    let (home, project) = world("app-memory-read-instruction");
+    remember(&home, &project, Scope::Project, "a-uze-fact", false);
+    let (claude, codex) = harnesses();
+    let all: Vec<&dyn IntegrationPort> = vec![&claude, &codex];
+    for launching in [&claude as &dyn IntegrationPort, &codex] {
+        let text = &context_sections(&home, &project, launching, &all)[0].text;
+        assert!(text.starts_with(READ_INSTRUCTION), "{text}");
+        assert!(text.len() <= MEMORY_SHARE);
+    }
+}
+
+fn caller(project: &Path) -> MemoryCaller<'_> {
+    MemoryCaller::Operator { cwd: project }
+}
+
+fn app(home: &UzeHome, harnesses: Vec<Box<dyn IntegrationPort>>) -> UzeApplication {
+    UzeApplication::new(home.clone(), harnesses)
+}
+
+fn remember_body(
+    home: &UzeHome,
+    project: &Path,
+    scope: Scope,
+    name: &str,
+    kind: FactKind,
+    body: &str,
+) {
+    MemoryStore::new(home, Some(project))
+        .remember(
+            scope,
+            &Remember {
+                name,
+                kind,
+                description: "about something else",
+                body,
+                source: Source::Operator,
+            },
+            false,
+        )
+        .unwrap();
+}
+
+#[test]
+fn find_quotes_the_body_line_a_word_is_on_and_says_how_to_read_the_fact() {
+    let (home, project) = world("app-memory-find-body");
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "phrase",
+        FactKind::User,
+        "first line\n\nThe phrase to answer with (\"frase secreta\") is kept here.",
+    );
+    remember_body(
+        &home,
+        &project,
+        Scope::Machine,
+        "unrelated",
+        FactKind::User,
+        "nothing",
+    );
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["Secreta".to_owned()],
+        None,
+    );
+    assert_eq!(found.total, 1);
+    let matched = &found.matches[0];
+    assert_eq!(matched.entry.name, "phrase");
+    assert_eq!(matched.show, "uze agent memory show phrase");
+    let body = matched.hits.iter().find(|hit| hit.field == "body").unwrap();
+    assert!(body.text.contains("frase secreta"), "{body:?}");
+    let file = std::fs::read_to_string(&matched.entry.path).unwrap();
+    assert_eq!(
+        file.lines().nth(body.line.unwrap() - 1).map(str::trim),
+        Some(body.text.as_str()),
+        "the line number is the file's"
+    );
+}
+
+#[test]
+fn find_ranks_by_how_many_words_a_fact_holds_and_filters_by_kind() {
+    let (home, project) = world("app-memory-find-rank");
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "one-word",
+        FactKind::Project,
+        "alpha",
+    );
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "both-words",
+        FactKind::Reference,
+        "alpha beta",
+    );
+    let report = gather(&home, Some(&project), &[], None);
+    let words = ["alpha".to_owned(), "beta".to_owned()];
+    let found = find::find(&report, &words, None);
+    let names: Vec<&str> = found
+        .matches
+        .iter()
+        .map(|m| m.entry.name.as_str())
+        .collect();
+    assert_eq!(names, ["both-words", "one-word"]);
+    let projects = find::find(&report, &words, Some(FactKind::Project));
+    assert_eq!(projects.total, 1);
+}
+
+#[test]
+fn find_never_reaches_a_proposal() {
+    let (home, project) = world("app-memory-find-proposal");
+    remember(&home, &project, Scope::Machine, "proposed-fact", true);
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["proposed".to_owned()],
+        None,
+    );
+    assert_eq!(found.total, 0);
+}
+
+#[test]
+fn show_without_a_scope_finds_a_machine_fact() {
+    let (home, project) = world("app-memory-show-machine");
+    remember(&home, &project, Scope::Machine, "machine-only", false);
+    let app = app(&home, Vec::new());
+    let shown = app
+        .memory()
+        .show(caller(&project), Scope::Project, "machine-only")
+        .unwrap();
+    assert_eq!(shown.entry.scope, Scope::Machine);
 }
 
 #[test]

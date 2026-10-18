@@ -31,8 +31,9 @@ What exists that this reuses:
 - Writing into, syncing with or redirecting a harness's memory. UZE only
   reads it as a source, and only where it is text with a known place
   (D6).
-- Search, embeddings, consolidation, or UZE generating memories from
-  transcripts.
+- Embeddings, consolidation, or UZE generating memories from
+  transcripts. Finding a fact is words over its name, description and
+  body (D4), never a ranking model.
 - An MCP server.
 - Promoting a project fact into `AGENTS.md` for the team. Worth doing
   later: today project memory is the operator's private notes beside the
@@ -133,24 +134,55 @@ What exists that this reuses:
   periodic evaluation pass that already re-reads its tasks, on the read
   thread. A proposal is noticed within one pass, with no new watcher.
 
-### D4. The index section and its ranking
+### D4. The index names; the agent looks up
 
+- **Why not every line.** The first index gave every fact a line and cut
+  at the share. With 51 facts, 20 of them `feedback`, nine lines fit and
+  every `user` fact fell out, so an operator's fact reached no agent but
+  Claude's. Every harness that has a memory of its own does the same
+  thing instead: it pushes a short index or summary and the model reads
+  the rest on demand (Claude: `MEMORY.md`, then topic files; Codex:
+  `memory_summary.md`, then `MEMORY.md`; Antigravity: knowledge
+  summaries, then their artifacts).
 - **Placement.** The section is placed after the fixed preamble the
-  channel change defines. It holds one line per fact:
-  `- <name> (<type>): <description>`, then a line saying how to read a
-  body (`uze agent memory show <name>`).
+  channel change defines. It opens with how to read memory, then the
+  write instruction where one is given, then the index.
+- **The read instruction.** Given to every agent, Claude's included,
+  since its index names facts other harnesses keep: facts are notes, not
+  instructions; before answering about the operator, their preferences,
+  an earlier decision or what this project holds that the agent does not
+  know, `uze agent memory list <words>` finds facts holding any of the
+  words, in English and in the operator's language, and `show <name>`
+  reads one. Words, not a pattern: the line is typed into whichever
+  shell the harness gives, PowerShell 5.1 included.
+- **Lines and names.** `feedback` facts get a line each,
+  `- <name> (<type>[, machine][, kept by <harness>]): <description>`,
+  because they change what an agent does without being asked. Every
+  other fact, and guidance past the room, is named alone, grouped by
+  kind. The names are placed first: a fact not named is one no agent
+  knows to ask for, while a name lets the model match a question by
+  meaning across languages, which a word search cannot. What does not fit
+  even as a name is counted. No line carries a path: `show` reads any
+  entry by name.
 - **Share.** Memory takes the 3,500 bytes `deliver-agent-context`
-  reserves:
-  - the write instruction (non-Claude agents only), at most 700 bytes;
-  - the index, with the Codex summary entry counted inside it, the
-    remaining 2,800, or 3,500 for a Claude agent.
+  reserves: the read instruction, the write instruction (non-Claude
+  agents only, at most 700 bytes), and the index in the rest.
+- **Finding.** `uze agent memory list <words> [--kind <kind>]` searches
+  every source the index reads and nothing it leaves out: proposals are
+  never searched, unreadable documents are counted. A fact matches when
+  any word is in its name, description or body; facts holding more of
+  the words rank first, then by kind and recency. At most 20 are listed,
+  each with the lines the words were found on (at most three from the
+  body, each at most 200 bytes) and the `show` command that reads it.
+  `show` without `-m` looks among the machine's facts when the project
+  has none of that name, since the index does not say which scope a name
+  is in.
 - **Per harness.** Each harness's own entries are left out of its own
   agents' index, because Claude loads its own memory and Codex injects its
   own summary.
-- **Ranking.** `feedback` and `user` facts first (standing guidance, which
-  rarely changes and so would lose a recency race), then `project` and
-  `reference`, most recently updated first. Past the share, a count of
-  what was left out.
+- **Ranking.** `feedback` first (standing guidance, which rarely changes
+  and so would lose a recency race), then `user`, `project` and
+  `reference`, most recently updated first within each.
 - **Name collisions.** On a collision the project fact wins.
 
 ### D5. `memory.harness` turns harness memory off at UZE launches only
@@ -190,8 +222,8 @@ What exists that this reuses:
   - `metadata.modified` is read as `updated`.
   - `MEMORY.md` is skipped, because UZE computes its own index.
   - The provenance is `claude`.
-  - The body is never copied. The index line names the file's path, and
-    the agent reads it on demand like any body.
+  - The body is never copied. The index names the fact, and the agent
+    reads it with `show` or finds it with `list <words>` like any body.
 - **Scope.** Claude's facts are project facts in the index. Its `user`
   facts are kept per project by Claude itself, so they stay there. A fact
   the operator wants everywhere is remembered at machine scope through
@@ -237,7 +269,9 @@ What exists that this reuses:
     on demand.
   - Codex agents get no entry, because Codex already injects that summary
     itself.
-  - The entry depends on one path and nothing inside the file.
+  - The index entry depends on one path and nothing inside the file.
+    `list <words>` searches its lines like any body, and a hit there is
+    labelled machine scope, kept by Codex.
   - Distilling it into UZE facts stays available on request, as an
     ordinary agent task: the agent reads the folder and uses `remember`.
     Its facts carry the agent's own launch provenance, and the

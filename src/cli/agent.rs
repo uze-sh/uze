@@ -711,9 +711,22 @@ pub(crate) fn run_agent_memory(app: &UzeApplication, action: AgentMemoryAction) 
                 );
             }
         }
-        AgentMemoryAction::List { format } => {
+        AgentMemoryAction::List {
+            words,
+            kind: None,
+            format,
+        } if words.is_empty() => {
             let report = app.memory().list(caller)?;
             emit(format, &report, render_memory);
+        }
+        AgentMemoryAction::List {
+            words,
+            kind,
+            format,
+        } => {
+            let kind = kind.as_deref().and_then(Kind::parse);
+            let found = app.memory().find(caller, &words, kind)?;
+            emit(format, &found, render_found);
         }
         AgentMemoryAction::Show { name, machine } => {
             let shown = app.memory().show(caller, scope(machine), &name)?;
@@ -787,6 +800,46 @@ pub(crate) fn render_memory(report: &uze_application::application::memory::Memor
         text.push('\n');
     }
     for unreadable in &report.unreadable {
+        text.push_str(&format!(
+            "{} {}: {}\n",
+            progress::warning_icon(),
+            unreadable.path.display(),
+            uze_application::inert(&unreadable.reason)
+        ));
+    }
+    text
+}
+
+/// What a search found, best first: each fact, where the words were in
+/// it, and the command that reads it.
+fn render_found(found: &uze_application::application::memory::Found) -> String {
+    let mut text = if found.matches.is_empty() {
+        "no fact matches\n".to_owned()
+    } else if found.truncated {
+        format!(
+            "{} facts match; the {} best:\n",
+            found.total,
+            found.matches.len()
+        )
+    } else {
+        String::new()
+    };
+    for matched in &found.matches {
+        text.push_str(&memory_line(&matched.entry));
+        for hit in &matched.hits {
+            let at = match hit.line {
+                Some(line) => format!("{} {line}", hit.field),
+                None => hit.field.to_owned(),
+            };
+            text.push_str(&format!(
+                "    {}  {}\n",
+                progress::label(at),
+                uze_application::inert(&hit.text)
+            ));
+        }
+        text.push_str(&format!("    {}\n", matched.show));
+    }
+    for unreadable in &found.unreadable {
         text.push_str(&format!(
             "{} {}: {}\n",
             progress::warning_icon(),

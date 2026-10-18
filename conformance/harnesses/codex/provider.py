@@ -59,6 +59,10 @@ CONTINUITY_MARKERS = [
     "UZE_CONFORMANCE_ALMOND",
     "UZE_CONFORMANCE_CASHEW",
     "UZE_CONFORMANCE_PISTACHIO",
+    # The memory contract's fact given by name alone, and the read
+    # instruction every launched agent is given (`contract/memory.py`).
+    "uze-lab-named-fact",
+    "uze agent memory list <words>",
 ]
 SKILL_MARKERS = [
     "flow:commit",

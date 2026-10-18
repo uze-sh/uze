@@ -8,9 +8,11 @@ briefing travels. Two things only the real binary can answer:
     one itself with `uze agent memory remember`, from the shell its harness
     gives it.
 
-The scene is the continuity scene's, with one project fact seeded before
-the launch: the request carrying the fact's marker is the index having
-arrived. The provider then scripts the model's shell call to `remember`, and
+The scene is the continuity scene's, with two project facts seeded before
+the launch: a `feedback` fact, which the index gives a line with its
+description, and a `user` fact, which it names alone. The request carrying
+the first's marker, the second's name and the instruction saying how to look
+a fact up is the index having arrived. The provider then scripts the model's shell call to `remember`, and
 the request after it carrying the command's own answer (the file it
 names, `<name>.md`) is the fact kept — or, under a sandbox that refuses the write,
 the refusal the command printed, which is then the harness's measured
@@ -22,8 +24,12 @@ from shared.common import check, describe, provider_struct
 
 from . import continuity
 
-#: In the seeded fact's description, so the index line carries it.
+#: In the seeded `feedback` fact's description, so its index line carries it.
 INDEXED_MARKER = "UZE_CONFORMANCE_PISTACHIO"
+#: The seeded `user` fact, which the index names without describing.
+NAMED_FACT = "uze-lab-named-fact"
+#: What the instruction every launched agent is given says to run.
+READ_MARKER = "uze agent memory list <words>"
 #: The name the agent's own `remember` keeps, as the command's answer says it.
 KEPT_NAME = "uze-lab-memory-kept"
 #: The file the agent's own `remember` writes, read off the harness's disk:
@@ -58,10 +64,20 @@ cat > {_records()}/memory/lab-fact.md <<'UZE_EOF'
 shape: 1
 name: lab-fact
 description: "kept before this launch: {INDEXED_MARKER}"
-type: project
+type: feedback
 ---
 
 The body is read on demand.
+UZE_EOF
+cat > {_records()}/memory/{NAMED_FACT}.md <<'UZE_EOF'
+---
+shape: 1
+name: {NAMED_FACT}
+description: "given by name alone"
+type: user
+---
+
+Found with `uze agent memory list`.
 UZE_EOF
 """
     )
@@ -112,6 +128,16 @@ def _assert_memory(cfg, bindings):
             "memory-index-reaches-the-model",
             _carried(cfg, INDEXED_MARKER),
             "a request carries the index of the facts kept before the launch",
+        )
+        check(
+            "memory-named-fact-reaches-the-model",
+            _carried(cfg, NAMED_FACT),
+            "a request names the fact the index gives no line, so the model knows to ask for it",
+        )
+        check(
+            "memory-read-instruction-reaches-the-model",
+            _carried(cfg, READ_MARKER),
+            "a request carries how to look a fact up with `uze agent memory list`",
         )
         kept = common.harness_files(cfg, f"{_records()}/memory").get(KEPT_FILE, "")
         check(

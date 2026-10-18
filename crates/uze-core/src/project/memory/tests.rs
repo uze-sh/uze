@@ -219,34 +219,78 @@ fn entry(name: &str, kind: FactKind, updated: &str) -> MemoryEntry {
 }
 
 #[test]
-fn the_index_keeps_standing_guidance_first_and_counts_what_it_leaves_out() {
-    let mut entries: Vec<MemoryEntry> = (0..40)
+fn guidance_is_given_a_line_and_every_other_fact_a_name() {
+    let entries = vec![
+        entry("reply-in-ptbr", FactKind::Feedback, "2026-10-01"),
+        entry("secret-phrase", FactKind::User, "2026-10-18"),
+        entry("lab-image", FactKind::Project, "2026-10-02"),
+        entry("dashboards", FactKind::Reference, "2026-10-03"),
+    ];
+    let index = render_index(&entries, 2_000);
+    assert!(
+        index.starts_with("- reply-in-ptbr (feedback): about reply-in-ptbr\n"),
+        "{index}"
+    );
+    assert!(index.contains("- user: secret-phrase"), "{index}");
+    assert!(index.contains("- project: lab-image"), "{index}");
+    assert!(index.contains("- reference: dashboards"), "{index}");
+    assert!(!index.contains("about secret-phrase"), "{index}");
+}
+
+/// The case that left an operator's fact out of every agent but Claude:
+/// enough guidance to fill the room pushed every other kind past it.
+#[test]
+fn guidance_past_the_room_never_pushes_another_fact_out_of_the_names() {
+    let mut entries: Vec<MemoryEntry> = (0..30)
         .map(|n| {
-            entry(
-                &format!("ref-{n:02}"),
-                FactKind::Reference,
-                &format!("2026-10-{:02}", n % 28 + 1),
-            )
+            let mut guidance = entry(
+                &format!("guidance-{n:02}"),
+                FactKind::Feedback,
+                "2026-10-01",
+            );
+            guidance.description = "a long standing guidance line ".repeat(5);
+            guidance
         })
         .collect();
-    entries.push(entry("old-feedback", FactKind::Feedback, "2020-01-01"));
-    entries.push(entry("who", FactKind::User, "2020-01-01"));
-    let index = render_index(&entries, 600);
-    assert!(index.len() <= 600, "{} bytes", index.len());
-    let first: Vec<&str> = index.lines().take(2).collect();
-    assert!(first[0].starts_with("- old-feedback (feedback)"), "{index}");
-    assert!(first[1].starts_with("- who (user)"), "{index}");
-    assert!(index.contains("more kept; `uze agent memory list` lists them all."));
+    entries.push(entry("secret-phrase", FactKind::User, "2026-10-18"));
+    let index = render_index(&entries, 2_500);
+    assert!(index.len() <= 2_500, "{} bytes", index.len());
+    assert!(index.starts_with("- guidance-"), "{index}");
+    assert!(index.contains("secret-phrase"), "{index}");
+    assert!(
+        index.contains("- feedback: guidance-"),
+        "guidance with no room for a line is still named: {index}"
+    );
+    assert!(!index.contains("more kept"), "{index}");
 }
 
 #[test]
-fn a_harness_entry_names_where_to_read_it() {
+fn names_past_the_room_are_counted() {
+    let entries: Vec<MemoryEntry> = (0..200)
+        .map(|n| {
+            entry(
+                &format!("reference-number-{n:03}"),
+                FactKind::Reference,
+                "2026-10-01",
+            )
+        })
+        .collect();
+    let index = render_index(&entries, 600);
+    assert!(index.len() <= 600, "{} bytes", index.len());
+    assert!(
+        index.contains("more kept; `uze agent memory list` lists them all."),
+        "{index}"
+    );
+}
+
+#[test]
+fn a_harness_entry_says_who_keeps_it_and_no_path() {
     let mut claude = entry("from-claude", FactKind::Feedback, "2026-10-01");
     claude.origin = "claude-code".into();
     claude.path = PathBuf::from("/home/u/.claude/projects/x/memory/from-claude.md");
     let index = render_index(&[claude], 1000);
     assert!(index.contains("kept by claude-code"));
-    assert!(index.contains("Read /home/u/.claude/projects/x/memory/from-claude.md"));
+    assert!(!index.contains("/home/u/.claude"), "{index}");
 }
 
 #[test]

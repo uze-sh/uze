@@ -100,20 +100,32 @@ reach that harness.
 
 #### Scenario: A harness with a working channel
 - **WHEN** an agent is launched in a project with accepted facts on a harness whose context delivery is not degraded
-- **THEN** its context lists each fact's name, type and description
+- **THEN** its context names each fact by kind, with the description of each `feedback` fact
 
 #### Scenario: A degraded harness
 - **WHEN** an agent is launched on a harness whose context delivery is degraded
 - **THEN** no memory is shown as a turn, and status reports that memory does not reach that harness
 
-### Requirement: The index keeps standing guidance first
-When the index exceeds its share of the context, the system SHALL keep the
-`feedback` and `user` facts first. It SHALL then keep the others, most
-recently updated first, and SHALL state how many were left out.
+### Requirement: The index gives guidance a line and names every other fact
+The index SHALL give each `feedback` fact a line with its description
+while room remains, and SHALL name every other fact, grouped by kind,
+before giving any further line. Names that do not fit SHALL be counted.
+No index line SHALL carry a file path.
 
 #### Scenario: A large memory
-- **WHEN** a project's index is larger than its share
-- **THEN** every `feedback` and `user` fact that fits is given before any `project` or `reference` fact, and the context states how many were left out
+- **WHEN** a project's facts would not fit the share as one line each
+- **THEN** every fact that fits is at least named, `feedback` lines come first, and the context states how many could not be named
+
+### Requirement: Agents find facts by words
+`uze agent memory list <words>` SHALL list the facts whose name,
+description or body holds any of the words, ignoring case, best first and
+at most 20, each with the lines the words were found on and the command
+that reads it. Proposals SHALL NOT be searched. Every launched agent SHALL
+be told how to look facts up before answering what memory may hold.
+
+#### Scenario: A fact named but not described
+- **WHEN** an agent is asked about something only a fact's body says
+- **THEN** `uze agent memory list` with a word from the question finds the fact, quotes the line, and names `uze agent memory show <name>`
 
 ### Requirement: Each launched agent is given exactly one way to write memory
 The `uze agent memory` verbs SHALL be excluded from the help a person
@@ -129,7 +141,7 @@ rather than instructions, and that memory holds no secrets.
 
 #### Scenario: A Claude agent
 - **WHEN** an agent is launched on Claude, whose agents write Claude's own memory
-- **THEN** its context carries the memory index and no instruction to write with `uze agent memory`, and Claude's own memory instruction is left as it is
+- **THEN** its context carries how to look facts up and the memory index, no instruction to write with `uze agent memory`, and Claude's own memory instruction is left as it is
 
 #### Scenario: A Claude agent is not given its own facts twice
 - **WHEN** an agent is launched on Claude

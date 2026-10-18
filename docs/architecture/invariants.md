@@ -2273,8 +2273,19 @@ harness writes its own memory is given no instruction to write through UZE,
 and no harness's agents are given back the entries that harness keeps.
 
 > `crates/uze-integrations/src/claude/memory.rs::both_front_matter_shapes_are_read_and_the_index_file_is_not`
-> `crates/uze-application/src/application/memory/tests.rs::an_agent_writing_its_own_memory_is_given_only_the_index`
+> `crates/uze-application/src/application/memory/tests.rs::an_agent_writing_its_own_memory_is_told_how_to_read_and_not_how_to_write`
 > `crates/uze-application/src/application/memory/tests.rs::an_agent_writing_through_uze_is_told_how_and_sees_every_other_source`
+
+### Every fact is at least named to every agent, and found by its words
+
+An index past its share gives `feedback` lines up first and never another
+fact's name: what does not fit is named by kind, and only what does not fit
+even as a name is counted. `uze agent memory list <words>` finds a fact by
+its body and never reaches a proposal.
+
+> `crates/uze-core/src/project/memory/tests.rs::guidance_past_the_room_never_pushes_another_fact_out_of_the_names`
+> `crates/uze-application/src/application/memory/tests.rs::find_quotes_the_body_line_a_word_is_on_and_says_how_to_read_the_fact`
+> `crates/uze-application/src/application/memory/tests.rs::find_never_reaches_a_proposal`
 
 ### A harness without an invisible channel is told so, and pointed at its briefing once
 

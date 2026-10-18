@@ -371,8 +371,14 @@ pub(crate) enum AgentMemoryAction {
         #[arg(short = 'm', long)]
         machine: bool,
     },
-    /// Every fact kept here, with where it lives and who wrote it
+    /// Every fact kept here, with where it lives and who wrote it; given
+    /// words, the facts holding any of them, with where each was found
     List {
+        /// Words to look for in each fact's name, description and body
+        words: Vec<String>,
+        /// Only facts of this kind
+        #[arg(long, value_parser = ["feedback", "user", "project", "reference"])]
+        kind: Option<String>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },

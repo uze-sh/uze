@@ -417,6 +417,10 @@ fn the_memory_surface_meets_the_budget() {
             .ok()
     });
     world.within_budget("agent memory list", |app| app.memory().list(caller).ok());
+    // `list` given words reads each fact's body: still one file per fact.
+    world.within_budget("agent memory list", |app| {
+        app.memory().find(caller, &["budget".to_owned()], None).ok()
+    });
     world.within_budget("agent memory show", |app| {
         app.memory().show(caller, Scope::Project, "budget").ok()
     });

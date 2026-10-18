@@ -11,6 +11,7 @@ flowchart TD
   click gather href "crates/uze-application/src/application/memory.rs"
   click rank href "crates/uze-core/src/project/memory.rs"
   click compose href "crates/uze-workspace/src/agent_context.rs"
+  click lookup href "crates/uze-application/src/application/memory/find.rs"
   click memoryOff href "src/shim.rs"
   click viaClaude href "crates/uze-integrations/src/claude.rs"
   click viaCodex href "crates/uze-integrations/src/codex.rs"
@@ -36,14 +37,18 @@ flowchart TD
   claudeMemory -->|unless H is Claude| gather
   codexSummary -->|unless H is Codex| gather
   proposals -.->|never listed| gather
-  gather --> rank[A name already taken is dropped<br/>feedback and user first, then newest<br/>cut to the memory share]
+  gather --> rank[A name already taken is dropped<br/>feedback given a line each while room remains<br/>every other fact named, grouped by kind]
   rank --> writesOwn{Does H keep its own memory?}
-  writesOwn -->|yes, Claude| indexOnly[The index alone]
-  writesOwn -->|no| indexAndHow[The index and how to<br/>remember through UZE]
+  writesOwn -->|yes, Claude| indexOnly[How to look facts up<br/>and the index]
+  writesOwn -->|no| indexAndHow[How to look facts up, how to<br/>remember through UZE, and the index]
   indexOnly --> compose[The agent's composed context<br/>preamble, briefing, memory, 9 KB bound]
   indexAndHow --> compose
+  compose -.->|a question memory may answer| lookup[uze agent memory list words<br/>name, description and body, best first<br/>then show name]
+  projectFacts -.-> lookup
+  machineFacts -.-> lookup
+  claudeMemory -.-> lookup
   memoryOff[memory.harness = off] -.->|Codex launches only| viaCodex
   compose --> viaClaude[Claude: CLAUDE.md<br/>in a per-agent --add-dir]
   compose --> viaCodex[Codex: SessionStart hook<br/>on a -c layer]
-  compose --> viaOpencode[OpenCode: uze-agent-context.ts<br/>keyed by the session id]
+  compose --> viaOpencode[OpenCode: uze-agent-context.ts plugin<br/>reads runtime/sessions/opencode/session-id.md<br/>on every request]
   compose --> viaAntigravity[Antigravity: PreInvocation hook<br/>in a per-agent --add-dir]

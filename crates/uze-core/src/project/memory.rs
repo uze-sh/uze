@@ -514,9 +514,13 @@ pub fn render(fact: &Fact) -> String {
     )
 }
 
-/// The index of `entries` within `bound` bytes: standing guidance first
-/// (`feedback`, then `user`), the rest most recently updated first, and a
-/// count of what did not fit. Empty when there is nothing to list.
+/// The index of `entries` within `bound` bytes. Standing guidance
+/// (`feedback`) is given a line each, description included, because it
+/// changes what an agent does without being asked; every other fact, and
+/// guidance past the room, is given by name alone, grouped by kind, for an
+/// agent to look up when a question calls for it. Names are placed before
+/// lines: a fact not even named is one no agent knows to ask for, and what
+/// does not fit as a name is counted. Empty when there is nothing to list.
 pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
     let mut ranked: Vec<&MemoryEntry> = entries.iter().filter(|entry| !entry.proposed).collect();
     ranked.sort_by(|left, right| {
@@ -525,28 +529,76 @@ pub fn render_index(entries: &[MemoryEntry], bound: usize) -> String {
             .then_with(|| right.updated.cmp(&left.updated))
             .then_with(|| left.name.cmp(&right.name))
     });
-    let mut lines = Vec::new();
-    let mut used = 0;
-    let mut left_out = 0;
-    for entry in ranked {
+    let mut lines: Vec<String> = Vec::new();
+    let mut named = ranked.clone();
+    for entry in ranked
+        .iter()
+        .filter(|entry| entry.kind == FactKind::Feedback)
+    {
         let line = index_line(entry);
-        if used + line.len() + 1 > bound.saturating_sub(LEFT_OUT_RESERVE) {
-            left_out += 1;
-            continue;
+        let rest: Vec<&MemoryEntry> = named
+            .iter()
+            .copied()
+            .filter(|other| other.name != entry.name)
+            .collect();
+        let used: usize = lines.iter().map(|line| line.len() + 1).sum();
+        if used + line.len() + 1 + names_block(&rest, usize::MAX).len() > bound {
+            break;
         }
-        used += line.len() + 1;
         lines.push(line);
+        named = rest;
     }
-    if left_out > 0 {
-        lines.push(format!(
-            "{left_out} more kept; `uze agent memory list` lists them all."
-        ));
+    let used: usize = lines.iter().map(|line| line.len() + 1).sum();
+    let names = names_block(&named, bound.saturating_sub(used));
+    if !names.is_empty() {
+        lines.push(names);
     }
     lines.join("\n")
 }
 
-/// Room kept for the line saying how many did not fit.
-const LEFT_OUT_RESERVE: usize = 80;
+/// The facts not given a line, by name and grouped by kind, within
+/// `bound` bytes: the lowest ranked are counted rather than named when
+/// they do not fit.
+fn names_block(entries: &[&MemoryEntry], bound: usize) -> String {
+    if entries.is_empty() {
+        return String::new();
+    }
+    let render = |shown: &[&MemoryEntry], left_out: usize| {
+        let mut text = String::from(NAMES_HEADING);
+        for kind in [
+            FactKind::Feedback,
+            FactKind::User,
+            FactKind::Project,
+            FactKind::Reference,
+        ] {
+            let names: Vec<&str> = shown
+                .iter()
+                .filter(|entry| entry.kind == kind)
+                .map(|entry| entry.name.as_str())
+                .collect();
+            if !names.is_empty() {
+                text.push_str(&format!("\n- {}: {}", kind.label(), names.join(", ")));
+            }
+        }
+        if left_out > 0 {
+            text.push_str(&format!(
+                "\n{left_out} more kept; `uze agent memory list` lists them all."
+            ));
+        }
+        text
+    };
+    let mut shown = entries.len();
+    loop {
+        let text = render(&entries[..shown], entries.len() - shown);
+        if text.len() <= bound || shown == 0 {
+            return text;
+        }
+        shown -= 1;
+    }
+}
+
+/// What opens the list of facts given by name alone.
+const NAMES_HEADING: &str = "Also kept, by name (`uze agent memory show <name>` reads one):";
 
 fn index_line(entry: &MemoryEntry) -> String {
     let mut qualifiers = vec![entry.kind.label().to_owned()];
@@ -556,13 +608,8 @@ fn index_line(entry: &MemoryEntry) -> String {
     if entry.origin != UZE_ORIGIN {
         qualifiers.push(format!("kept by {}", entry.origin));
     }
-    let read = if entry.origin == UZE_ORIGIN {
-        String::new()
-    } else {
-        format!(" Read {}", entry.path.display())
-    };
     format!(
-        "- {} ({}): {}{read}",
+        "- {} ({}): {}",
         entry.name,
         qualifiers.join(", "),
         one_line(&entry.description)

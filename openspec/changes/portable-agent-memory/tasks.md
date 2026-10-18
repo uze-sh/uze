@@ -36,6 +36,14 @@
 - [x] 5.1 `memory.harness` in `config.toml` (`keep` default)
 - [x] 5.2 With `off`: Codex `-c features.memories=false` at UZE launches only; Claude never turned off; Antigravity reported as unsupported
 
+## 5b. Looking facts up
+
+- [x] 5b.1 The index gives `feedback` a line and names every other fact by kind, names placed before lines, no paths (`render_index`)
+- [x] 5b.2 A read instruction for every launched agent, Claude's included (`READ_INSTRUCTION`)
+- [x] 5b.3 `uze agent memory list <words> [--kind]`: name, description and body, best first, at most 20, quoted hits and the `show` command; proposals never searched; `--format json`
+- [x] 5b.4 `show` without `-m` finds a machine fact the project does not shadow
+- [x] 5b.5 Contract: a non-`feedback` fact past the lines reaches the model by name, and the read instruction reaches it
+
 ## 6. Conformance and journeys
 
 - [x] 6.1 Contract: a fact remembered before a launch is listed in the model's first request on each harness whose channel is proven
