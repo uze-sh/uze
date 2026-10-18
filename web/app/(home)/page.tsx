@@ -7,6 +7,7 @@ import { HeroRecording } from '@/components/home/recording';
 import { HarnessOrbit } from '@/components/home/harness-orbit';
 import { SessionSummary } from '@/components/home/session-summary';
 import { HeroStage } from '@/components/home/hero-stage';
+import { Features } from '@/components/home/features';
 
 export default function HomePage() {
   return (
@@ -86,9 +87,17 @@ export default function HomePage() {
         />
       </section>
 
+      {/* After the session shows how uze is used, what using it gets you. */}
+      <section
+        id="features"
+        className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-28 lg:mt-16"
+      >
+        <Features />
+      </section>
+
       {/* One column: a question is read top to bottom. The answer that undoes
           the misreading starts open, so a reader who only skims sees it. */}
-      <section id="faq" className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-24 lg:mt-16">
+      <section id="faq" className="w-full max-w-[calc(var(--fd-layout-width)-2rem)] border-t border-line py-20 sm:py-24">
         <div className="grid gap-x-16 gap-y-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           <header>
             <h2 className="text-[1.75rem] font-semibold tracking-tight text-ink">
