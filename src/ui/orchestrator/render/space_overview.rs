@@ -11,7 +11,8 @@ use crate::ui::widget::{
 };
 use uze_application::application::{FreshnessState, HarnessContextDelivery};
 use uze_application::{
-    ActionState, DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview,
+    ActionState, DeclarationKey, DeclarationPreview, DeclaredValue, DiffLine, ProjectSpace,
+    SpaceOverview,
 };
 
 /// The width under which the drawer stands over the section instead of
@@ -842,389 +843,484 @@ fn render_workspace(
         area.width,
         footer_height,
     );
+    let mut drawn = Vec::new();
     if overview.edit.reviewing
         && let Some(Ok(preview)) = overview.current_preview()
     {
-        let mut lines = vec![
-            said(display_path(&declaration.manifest), Token::TextMuted),
-            blank(),
-        ];
-        for line in &preview.diff {
-            let (mark, text, tone) = match line {
-                DiffLine::Context(text) => (" ", text, Token::TextSecondary),
-                DiffLine::Removed(text) => ("-", text, Token::StateDiffRemoved),
-                DiffLine::Added(text) => ("+", text, Token::StateDiffAdded),
-            };
-            lines.push(said(format!("{mark} {text}"), tone));
-        }
-        if preview.awaits_approval_again {
-            lines.push(blank());
-            lines.push(said(
-                "setup or gate changed: those lines wait for approval again after Save",
-                Token::StateWarning,
-            ));
-        }
+        let lines = review_lines(&declaration.manifest, preview);
         draw_lines(frame, list, &lines, None, track);
-        if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
-            answer.render(frame, footer, hits);
-        }
-        return Vec::new();
-    }
-    let problems = overview.problems();
-    let awaiting: Vec<&str> = project
-        .status
-        .commands_awaiting_approval
-        .iter()
-        .flat_map(|awaiting| &awaiting.commands)
-        .map(|command| command.line.as_str())
-        .collect();
-    let unspelled: Vec<&str> = project
-        .status
-        .steps_not_spelled_here
-        .iter()
-        .map(|step| step.command.as_str())
-        .collect();
-    let selected = overview.row();
-    let rows = overview.workspace_rows();
-    let field = overview.edit.field.as_ref();
-    let editable = overview.editable();
-    let mut lines: Vec<SectionLine> = Vec::new();
-    // Where on its line a typed value or a choice's options are drawn,
-    // by line: placed once the list has scrolled.
-    let mut field_at = None;
-    let mut steps_at: Vec<StepCells> = Vec::new();
-    let label_cell = |key: DeclarationKey, focused: bool| {
-        Span::styled(
-            pad(key_label(key), LABEL),
-            if focused {
-                theme::fg_bold(Token::TextBright)
-            } else {
-                theme::fg(Token::TextSecondary)
-            },
-        )
-    };
-    // The room a value's box takes: what the row leaves after its label
-    // and a word of state beside it, never wider than a value needs.
-    let box_width = usize::from(list.width.saturating_sub(LABEL + 22).clamp(12, BOX));
-    let boxed = |text: &str, tone: Token| {
-        Span::styled(
-            format!(
-                " {:<width$}",
-                text::elide(text, box_width - 2),
-                width = box_width - 1
-            ),
-            theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
-        )
-    };
-    // A value chosen from a list: the box a typed value sits in, with the
-    // mark that says it opens.
-    let combo = |text: &str, tone: Token| {
-        let mark = theme::glyph(Symbol::Dropdown);
-        let room = box_width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
-        vec![
-            Span::styled(
-                format!(" {:<room$} ", text::elide(text, room)),
-                theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
-            ),
-            Span::styled(
-                format!("{mark} "),
-                theme::fg(Token::TextMuted).bg(theme::color(Token::SurfaceRecessed)),
-            ),
-        ]
-    };
-    let edited_mark = || Span::styled("  edited", theme::fg(Token::StateInfo));
-    let mut index = 0;
-    for (group, keys) in GROUPS {
-        if !lines.is_empty() {
-            lines.push(blank());
-        }
-        lines.push(said(group, Token::TextDim));
-        for key in keys.iter().copied() {
-            let value = overview.value(key);
-            let edited = overview.edit.values.contains_key(&key);
-            let focused = index == selected;
-            let mut spans = vec![label_cell(key, focused)];
-            if field.is_some_and(|field| field.key == key && field.item.is_none()) {
-                field_at = Some((lines.len(), LABEL));
-            } else if is_combo(key) {
-                let (shown, tone) = match (value, choices(key)) {
-                    (_, [_, ..]) => (chosen(key, value), Token::TextPrimary),
-                    (Some(value), _) => (scalar(value), Token::TextPrimary),
-                    (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
-                };
-                spans.extend(combo(&shown, tone));
-            } else if is_number(key)
-                && !field.is_some_and(|field| field.key == key && field.item.is_none())
-            {
-                // Slots left out is no bound at all: an empty count says so
-                // where a number stands, and the drawer names it.
-                let shown = match value {
-                    Some(value) => (scalar(value), Token::TextBright),
-                    None if key == DeclarationKey::Slots => (String::new(), Token::TextDim),
-                    None => (key.default_spelled().to_owned(), Token::TextDim),
-                };
-                let minus = theme::glyph(Symbol::StepDecrease);
-                let plus = theme::glyph(Symbol::StepIncrease);
-                let step_tone = if editable {
-                    Token::TextSecondary
-                } else {
-                    Token::TextFaint
-                };
-                // Two places for every count, so the − and + of each line
-                // stand in the same columns.
-                let middle = format!("  {:>STEP_PLACES$}  ", shown.0);
-                spans.push(Span::styled(
-                    format!(" {minus} "),
-                    theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
-                ));
-                spans.push(Span::styled(middle.clone(), theme::fg_bold(shown.1)));
-                spans.push(Span::styled(
-                    format!(" {plus} "),
-                    theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
-                ));
-                if editable {
-                    let minus_width = Line::from(format!(" {minus} ")).width() as u16;
-                    let middle_width = Line::from(middle.as_str()).width() as u16;
-                    let plus_width = Line::from(format!(" {plus} ")).width() as u16;
-                    steps_at.push((
-                        lines.len(),
-                        index,
-                        (LABEL, minus_width),
-                        (LABEL + minus_width + middle_width, plus_width),
-                    ));
-                }
-            } else if is_listed(key, overview) {
-                // A new entry is typed where its add stood.
-                let adding = field
-                    .filter(|field| field.key == key)
-                    .is_some_and(|field| field.item == Some(value.map_or(0, item_count)));
-                if adding {
-                    field_at = Some((lines.len(), LABEL));
-                }
-                spans.push(Span::styled(
-                    if editable { "+ add" } else { "" },
-                    theme::fg(if focused {
-                        Token::TextSecondary
-                    } else {
-                        Token::TextDim
-                    }),
-                ));
-            } else {
-                match value {
-                    Some(value) => spans.push(boxed(&scalar(value), Token::TextPrimary)),
-                    None => spans.push(boxed(key.default_spelled(), Token::TextDim)),
-                }
-            }
-            if edited {
-                spans.push(edited_mark());
-            }
-            lines.push(SectionLine {
-                spans,
-                row: Some(index),
-            });
-            index += 1;
-            if is_listed(key, overview) {
-                let entries = value.map(items).unwrap_or_default();
-                for (item, entry) in entries.iter().enumerate() {
-                    let indent = Span::raw(" ".repeat(usize::from(LABEL)));
-                    if field.is_some_and(|field| field.key == key && field.item == Some(item)) {
-                        field_at = Some((lines.len(), LABEL));
-                        lines.push(SectionLine {
-                            spans: vec![indent],
-                            row: Some(index),
-                        });
-                        index += 1;
-                        continue;
-                    }
-                    let mut spans = vec![indent];
-                    if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
-                        spans.push(boxed(entry, Token::TextCode));
-                        let posix = entry.split(" | windows: ").next().unwrap_or_default();
-                        let (word, tone) =
-                            if unspelled.contains(&posix) || entry.starts_with("windows: ") {
-                                ("never runs here", Token::StateDanger)
-                            } else if awaiting.contains(&posix) {
-                                ("waiting for approval", Token::StateWarning)
-                            } else if edited {
-                                ("not saved", Token::StateInfo)
-                            } else {
-                                ("approved", Token::TextMuted)
-                            };
-                        spans.push(Span::styled(format!("  {word}"), theme::fg(tone)));
-                    } else {
-                        spans.push(Span::styled(
-                            theme::glyph(Symbol::MarkDot),
-                            theme::fg(Token::TextFaint),
-                        ));
-                        spans.push(Span::styled(
-                            format!(" {entry}"),
-                            theme::fg(Token::TextCode),
-                        ));
-                    }
-                    lines.push(SectionLine {
-                        spans,
-                        row: Some(index),
-                    });
-                    index += 1;
-                }
-            }
-            for problem in problems
-                .iter()
-                .filter(|problem| problem.key.as_deref() == Some(key.name()))
-            {
-                lines.push(SectionLine {
-                    spans: vec![
-                        Span::raw(" ".repeat(usize::from(LABEL))),
-                        Span::styled(
-                            format!("{} {}", theme::glyph(Symbol::MarkFailed), problem.reason),
-                            theme::fg(Token::StateDanger),
-                        ),
-                    ],
-                    row: None,
-                });
-            }
-        }
-    }
-    // What an agent is asked at each moment: prose, so each is a box of
-    // as many lines as the instruction runs to.
-    lines.push(blank());
-    lines.push(said("agent actions", Token::TextDim));
-    for (position, state) in ActionState::ALL.into_iter().enumerate() {
-        if position > 0 {
-            lines.push(blank());
-        }
-        let fallback = overview
-            .action_entry(state)
-            .and_then(|entry| entry.fallback);
-        let focused = index == selected;
-        let label = Span::styled(
-            pad(action_label(state), LABEL),
-            if focused {
-                theme::fg_bold(Token::TextBright)
-            } else {
-                theme::fg(Token::TextSecondary)
-            },
-        );
-        let writing = overview
-            .edit
-            .text
-            .as_ref()
-            .filter(|(writing, _)| *writing == state)
-            .map(|(_, buffer)| buffer);
-        let edited = overview.edit.actions.contains_key(&state);
-        let box_line = |spans: Vec<Span<'static>>| {
-            let mut spans = spans;
-            row::pad_to(
-                &mut spans,
-                box_width as u16,
-                theme::color(Token::SurfaceRecessed),
-            );
-            spans
+    } else {
+        let form = Form::of(overview, project, list.width);
+        let offset;
+        (drawn, offset) = draw_scrolled(frame, list, &form.lines, Some(overview.row()), track);
+        let line_y = |line: usize| {
+            (line >= offset)
+                .then(|| list.y + (line - offset) as u16)
+                .filter(|y| *y < list.bottom())
         };
-        let mut boxes: Vec<Vec<Span<'static>>> = Vec::new();
-        if let Some(buffer) = writing {
-            let (before, after) = buffer.split();
-            for spans in typed_lines(before, after, box_width.saturating_sub(2).max(8)) {
-                let mut line = vec![Span::raw(" ")];
-                line.extend(spans);
-                boxes.push(line);
-            }
-            boxes = boxes.into_iter().map(box_line).collect();
-        } else {
-            let (shown, tone) = match overview.effective_action(state) {
-                Some(text) => (text, Token::TextPrimary),
-                None => (
-                    fallback.unwrap_or("nothing is sent").to_owned(),
-                    Token::TextDim,
-                ),
-            };
-            for paragraph in shown.lines() {
-                for folded in text::fold(paragraph, box_width.saturating_sub(2).max(8)) {
-                    boxes.push(box_line(vec![
-                        Span::raw(" "),
-                        Span::styled(folded, theme::fg(tone)),
-                    ]));
-                }
+        for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in form.steps {
+            if let Some(y) = line_y(line) {
+                hits.push((
+                    Rect::new(list.x + minus_x, y, minus_width, 1),
+                    WorkspaceHit::OverviewStep(row, false),
+                ));
+                hits.push((
+                    Rect::new(list.x + plus_x, y, plus_width, 1),
+                    WorkspaceHit::OverviewStep(row, true),
+                ));
             }
         }
-        // A text area, never a one-line field: two lines at the least, and
-        // as many as what it holds.
-        while boxes.len() < 2 {
-            boxes.push(box_line(vec![Span::raw(" ")]));
+        if let (Some(field), Some((line, column))) = (&overview.edit.field, form.field_at)
+            && let Some(y) = line_y(line)
+        {
+            let rect = Rect::new(
+                list.x + column,
+                y,
+                BOX.min(list.width.saturating_sub(column)),
+                1,
+            );
+            render_field(frame, field, rect);
+            // Over the form rather than in it: the rows under the field stay
+            // where they are, and a click lands on the list before them.
+            let picker = render_picker(frame, overview, rect, list, hits);
+            drawn.retain(|(row, _)| row.intersection(picker).is_empty());
         }
-        for (line, mut spans) in boxes.into_iter().enumerate() {
-            let mut row_spans = vec![if line == 0 {
-                label.clone()
-            } else {
-                Span::raw(" ".repeat(usize::from(LABEL)))
-            }];
-            row_spans.append(&mut spans);
-            if line == 0 && edited {
-                row_spans.push(edited_mark());
-            }
-            lines.push(SectionLine {
-                spans: row_spans,
-                row: Some(index),
-            });
-        }
-        index += 1;
-    }
-    debug_assert_eq!(index, rows.len(), "the form draws every row the keys walk");
-    for problem in problems.iter().filter(|problem| problem.key.is_none()) {
-        lines.push(said(
-            format!("{} {}", theme::glyph(Symbol::MarkFailed), problem.reason),
-            Token::StateDanger,
-        ));
-    }
-    let (mut drawn, offset) = draw_scrolled(frame, list, &lines, Some(selected), track);
-    let line_y = |line: usize| {
-        (line >= offset)
-            .then(|| list.y + (line - offset) as u16)
-            .filter(|y| *y < list.bottom())
-    };
-    for (line, row, (minus_x, minus_width), (plus_x, plus_width)) in steps_at {
-        if let Some(y) = line_y(line) {
-            hits.push((
-                Rect::new(list.x + minus_x, y, minus_width, 1),
-                WorkspaceHit::OverviewStep(row, false),
-            ));
-            hits.push((
-                Rect::new(list.x + plus_x, y, plus_width, 1),
-                WorkspaceHit::OverviewStep(row, true),
-            ));
-        }
-    }
-    if let (Some(field), Some((line, column))) = (field, field_at)
-        && let Some(y) = line_y(line)
-    {
-        let rect = Rect::new(
-            list.x + column,
-            y,
-            BOX.min(list.width.saturating_sub(column)),
-            1,
-        );
-        // One row: the box itself is the field, so it carries the text
-        // and a caret where typing lands rather than a rule beneath.
-        widget::fill(frame, rect, Token::SurfaceRecessed);
-        let (before, after) = field.buffer.split();
-        let mut spans = vec![
-            Span::raw(" "),
-            Span::styled(before.to_owned(), theme::fg(Token::TextBright)),
-            widget::field::caret(),
-            Span::styled(after.to_owned(), theme::fg(Token::TextBright)),
-        ];
-        // Padded to the box, so nothing the row drew beneath shows through.
-        row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-        // Over the form rather than in it: the rows under the field stay
-        // where they are, and a click lands on the list before them.
-        let picker = render_picker(frame, overview, rect, list, hits);
-        drawn.retain(|(row, _)| row.intersection(picker).is_empty());
     }
     if !answer_in_drawer && let Some(answer) = settings_answer(overview, project) {
         answer.render(frame, footer, hits);
     }
     drawn
+}
+
+/// The diff a save would make to `manifest`, under its path.
+fn review_lines(manifest: &Path, preview: &DeclarationPreview) -> Vec<SectionLine> {
+    let mut lines = vec![said(display_path(manifest), Token::TextMuted), blank()];
+    for line in &preview.diff {
+        let (mark, text, tone) = match line {
+            DiffLine::Context(text) => (" ", text, Token::TextSecondary),
+            DiffLine::Removed(text) => ("-", text, Token::StateDiffRemoved),
+            DiffLine::Added(text) => ("+", text, Token::StateDiffAdded),
+        };
+        lines.push(said(format!("{mark} {text}"), tone));
+    }
+    if preview.awaits_approval_again {
+        lines.push(blank());
+        lines.push(said(
+            "setup or gate changed: those lines wait for approval again after Save",
+            Token::StateWarning,
+        ));
+    }
+    lines
+}
+
+/// The field being typed, over the line it edits. One row: the box itself
+/// is the field, so it carries the text and a caret where typing lands
+/// rather than a rule beneath.
+fn render_field(frame: &mut ratatui::Frame<'_>, field: &EditField, rect: Rect) {
+    widget::fill(frame, rect, Token::SurfaceRecessed);
+    let (before, after) = field.buffer.split();
+    let mut spans = vec![
+        Span::raw(" "),
+        Span::styled(before.to_owned(), theme::fg(Token::TextBright)),
+        widget::field::caret(),
+        Span::styled(after.to_owned(), theme::fg(Token::TextBright)),
+    ];
+    // Padded to the box, so nothing the row drew beneath shows through.
+    row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
+    frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+}
+
+/// The Workspace form as lines, and where on them its controls landed —
+/// placed once the list has scrolled.
+struct Form {
+    lines: Vec<SectionLine>,
+    /// The line and column the field being typed is drawn at.
+    field_at: Option<(usize, u16)>,
+    steps: Vec<StepCells>,
+    /// The room a value's box takes: what the row leaves after its label
+    /// and a word of state beside it, never wider than a value needs.
+    box_width: usize,
+    /// The row the next line pushed selects.
+    index: usize,
+}
+
+impl Form {
+    fn of(overview: &SpaceOverviewView, project: &ProjectSpace, width: u16) -> Self {
+        let mut form = Self {
+            lines: Vec::new(),
+            field_at: None,
+            steps: Vec::new(),
+            box_width: usize::from(width.saturating_sub(LABEL + 22).clamp(12, BOX)),
+            index: 0,
+        };
+        let commands = CommandStates::of(project);
+        for (group, keys) in GROUPS {
+            if !form.lines.is_empty() {
+                form.lines.push(blank());
+            }
+            form.lines.push(said(group, Token::TextDim));
+            for key in keys.iter().copied() {
+                form.push_key(overview, key, &commands);
+            }
+        }
+        // What an agent is asked at each moment: prose, so each is a box of
+        // as many lines as the instruction runs to.
+        form.lines.push(blank());
+        form.lines.push(said("agent actions", Token::TextDim));
+        for (position, state) in ActionState::ALL.into_iter().enumerate() {
+            if position > 0 {
+                form.lines.push(blank());
+            }
+            form.push_action(overview, state);
+        }
+        debug_assert_eq!(
+            form.index,
+            overview.workspace_rows().len(),
+            "the form draws every row the keys walk"
+        );
+        for problem in overview
+            .problems()
+            .iter()
+            .filter(|problem| problem.key.is_none())
+        {
+            form.lines
+                .push(said(failed(&problem.reason), Token::StateDanger));
+        }
+        form
+    }
+
+    /// A key's line, its list's entries under it, and what is refused
+    /// about it.
+    fn push_key(
+        &mut self,
+        overview: &SpaceOverviewView,
+        key: DeclarationKey,
+        commands: &CommandStates<'_>,
+    ) {
+        let value = overview.value(key);
+        let edited = overview.edit.values.contains_key(&key);
+        let field = overview
+            .edit
+            .field
+            .as_ref()
+            .filter(|field| field.key == key);
+        let editable = overview.editable();
+        let focused = self.index == overview.row();
+        let mut spans = vec![form_label(key_label(key), focused)];
+        if field.is_some_and(|field| field.item.is_none()) {
+            self.field_at = Some((self.lines.len(), LABEL));
+        } else if is_combo(key) {
+            let (shown, tone) = match (value, choices(key)) {
+                (_, [_, ..]) => (chosen(key, value), Token::TextPrimary),
+                (Some(value), _) => (scalar(value), Token::TextPrimary),
+                (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
+            };
+            spans.extend(combo(&shown, tone, self.box_width));
+        } else if is_number(key) {
+            // Slots left out is no bound at all: an empty count says so
+            // where a number stands, and the drawer names it.
+            let (shown, tone) = match value {
+                Some(value) => (scalar(value), Token::TextBright),
+                None if key == DeclarationKey::Slots => (String::new(), Token::TextDim),
+                None => (key.default_spelled().to_owned(), Token::TextDim),
+            };
+            let (stepper, minus, plus) = stepper(&shown, tone, editable);
+            spans.extend(stepper);
+            if editable {
+                self.steps.push((self.lines.len(), self.index, minus, plus));
+            }
+        } else if is_listed(key, overview) {
+            // A new entry is typed where its add stood.
+            if field.is_some_and(|field| field.item == Some(value.map_or(0, item_count))) {
+                self.field_at = Some((self.lines.len(), LABEL));
+            }
+            spans.push(Span::styled(
+                if editable { "+ add" } else { "" },
+                theme::fg(if focused {
+                    Token::TextSecondary
+                } else {
+                    Token::TextDim
+                }),
+            ));
+        } else {
+            match value {
+                Some(value) => {
+                    spans.push(boxed(&scalar(value), Token::TextPrimary, self.box_width))
+                }
+                None => spans.push(boxed(key.default_spelled(), Token::TextDim, self.box_width)),
+            }
+        }
+        if edited {
+            spans.push(edited_mark());
+        }
+        self.push_row(spans);
+        if is_listed(key, overview) {
+            let entries = value.map(items).unwrap_or_default();
+            for (item, entry) in entries.iter().enumerate() {
+                if field.is_some_and(|field| field.item == Some(item)) {
+                    self.field_at = Some((self.lines.len(), LABEL));
+                    self.push_row(vec![indent()]);
+                    continue;
+                }
+                let mut spans = vec![indent()];
+                if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
+                    spans.push(boxed(entry, Token::TextCode, self.box_width));
+                    let (word, tone) = commands.state_of(entry, edited);
+                    spans.push(Span::styled(format!("  {word}"), theme::fg(tone)));
+                } else {
+                    spans.push(Span::styled(
+                        theme::glyph(Symbol::MarkDot),
+                        theme::fg(Token::TextFaint),
+                    ));
+                    spans.push(Span::styled(
+                        format!(" {entry}"),
+                        theme::fg(Token::TextCode),
+                    ));
+                }
+                self.push_row(spans);
+            }
+        }
+        for problem in overview
+            .problems()
+            .iter()
+            .filter(|problem| problem.key.as_deref() == Some(key.name()))
+        {
+            self.lines.push(SectionLine {
+                spans: vec![
+                    indent(),
+                    Span::styled(failed(&problem.reason), theme::fg(Token::StateDanger)),
+                ],
+                row: None,
+            });
+        }
+    }
+
+    /// An action's box, its label on the first of its lines.
+    fn push_action(&mut self, overview: &SpaceOverviewView, state: ActionState) {
+        let focused = self.index == overview.row();
+        let edited = overview.edit.actions.contains_key(&state);
+        for (line, mut spans) in action_boxes(overview, state, self.box_width)
+            .into_iter()
+            .enumerate()
+        {
+            let mut row_spans = vec![if line == 0 {
+                form_label(action_label(state), focused)
+            } else {
+                indent()
+            }];
+            row_spans.append(&mut spans);
+            if line == 0 && edited {
+                row_spans.push(edited_mark());
+            }
+            self.lines.push(SectionLine {
+                spans: row_spans,
+                row: Some(self.index),
+            });
+        }
+        self.index += 1;
+    }
+
+    /// A line selecting the next row.
+    fn push_row(&mut self, spans: Vec<Span<'static>>) {
+        self.lines.push(SectionLine {
+            spans,
+            row: Some(self.index),
+        });
+        self.index += 1;
+    }
+}
+
+/// What `uze status` says about the project's commands, by their line.
+struct CommandStates<'a> {
+    awaiting: Vec<&'a str>,
+    unspelled: Vec<&'a str>,
+}
+
+impl<'a> CommandStates<'a> {
+    fn of(project: &'a ProjectSpace) -> Self {
+        Self {
+            awaiting: project
+                .status
+                .commands_awaiting_approval
+                .iter()
+                .flat_map(|awaiting| &awaiting.commands)
+                .map(|command| command.line.as_str())
+                .collect(),
+            unspelled: project
+                .status
+                .steps_not_spelled_here
+                .iter()
+                .map(|step| step.command.as_str())
+                .collect(),
+        }
+    }
+
+    /// The word beside a setup or gate entry, as [`command_line`] spells
+    /// it, and its tone.
+    fn state_of(&self, entry: &str, edited: bool) -> (&'static str, Token) {
+        let posix = entry.split(" | windows: ").next().unwrap_or_default();
+        if self.unspelled.contains(&posix) || entry.starts_with("windows: ") {
+            ("never runs here", Token::StateDanger)
+        } else if self.awaiting.contains(&posix) {
+            ("waiting for approval", Token::StateWarning)
+        } else if edited {
+            ("not saved", Token::StateInfo)
+        } else {
+            ("approved", Token::TextMuted)
+        }
+    }
+}
+
+/// An action's instruction as the lines of its box: as it is being
+/// written, caret and all, else as it would be saved, else what is sent
+/// in its place. A text area, never a one-line field: two lines at the
+/// least, and as many as what it holds.
+fn action_boxes(
+    overview: &SpaceOverviewView,
+    state: ActionState,
+    box_width: usize,
+) -> Vec<Vec<Span<'static>>> {
+    let fold_width = box_width.saturating_sub(2).max(8);
+    let writing = overview
+        .edit
+        .text
+        .as_ref()
+        .filter(|(writing, _)| *writing == state)
+        .map(|(_, buffer)| buffer);
+    let mut boxes: Vec<Vec<Span<'static>>> = match writing {
+        Some(buffer) => {
+            let (before, after) = buffer.split();
+            typed_lines(before, after, fold_width)
+                .into_iter()
+                .map(|spans| {
+                    let mut line = vec![Span::raw(" ")];
+                    line.extend(spans);
+                    box_line(line, box_width)
+                })
+                .collect()
+        }
+        None => {
+            let (shown, tone) = match overview.effective_action(state) {
+                Some(text) => (text, Token::TextPrimary),
+                None => (
+                    overview
+                        .action_entry(state)
+                        .and_then(|entry| entry.fallback)
+                        .unwrap_or("nothing is sent")
+                        .to_owned(),
+                    Token::TextDim,
+                ),
+            };
+            shown
+                .lines()
+                .flat_map(|paragraph| text::fold(paragraph, fold_width))
+                .map(|folded| {
+                    box_line(
+                        vec![Span::raw(" "), Span::styled(folded, theme::fg(tone))],
+                        box_width,
+                    )
+                })
+                .collect()
+        }
+    };
+    while boxes.len() < 2 {
+        boxes.push(box_line(vec![Span::raw(" ")], box_width));
+    }
+    boxes
+}
+
+/// A form row's label, bright on the row the keys are on.
+fn form_label(text: &str, focused: bool) -> Span<'static> {
+    Span::styled(
+        pad(text, LABEL),
+        if focused {
+            theme::fg_bold(Token::TextBright)
+        } else {
+            theme::fg(Token::TextSecondary)
+        },
+    )
+}
+
+/// The label column left blank, under a label.
+fn indent() -> Span<'static> {
+    Span::raw(" ".repeat(usize::from(LABEL)))
+}
+
+/// What is refused, behind its mark.
+fn failed(reason: &str) -> String {
+    format!("{} {reason}", theme::glyph(Symbol::MarkFailed))
+}
+
+fn edited_mark() -> Span<'static> {
+    Span::styled("  edited", theme::fg(Token::StateInfo))
+}
+
+/// A value in its box, `width` columns wide.
+fn boxed(text: &str, tone: Token, width: usize) -> Span<'static> {
+    Span::styled(
+        format!(" {:<pad$}", text::elide(text, width - 2), pad = width - 1),
+        theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+    )
+}
+
+/// A value chosen from a list: the box a typed value sits in, with the
+/// mark that says it opens.
+fn combo(text: &str, tone: Token, width: usize) -> Vec<Span<'static>> {
+    let mark = theme::glyph(Symbol::Dropdown);
+    let room = width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
+    vec![
+        Span::styled(
+            format!(" {:<room$} ", text::elide(text, room)),
+            theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+        ),
+        Span::styled(
+            format!("{mark} "),
+            theme::fg(Token::TextMuted).bg(theme::color(Token::SurfaceRecessed)),
+        ),
+    ]
+}
+
+/// One line of a box `width` columns wide.
+fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    row::pad_to(
+        &mut spans,
+        width as u16,
+        theme::color(Token::SurfaceRecessed),
+    );
+    spans
+}
+
+/// A number between its − and +, and where each of those two stands on
+/// the line: its column and its width.
+fn stepper(
+    shown: &str,
+    tone: Token,
+    editable: bool,
+) -> (Vec<Span<'static>>, (u16, u16), (u16, u16)) {
+    let step_tone = if editable {
+        Token::TextSecondary
+    } else {
+        Token::TextFaint
+    };
+    let step = |symbol: Symbol| {
+        Span::styled(
+            format!(" {} ", theme::glyph(symbol)),
+            theme::fg_bold(step_tone).bg(theme::color(Token::SurfaceRaised)),
+        )
+    };
+    let minus = step(Symbol::StepDecrease);
+    // Two places for every count, so the − and + of each line stand in
+    // the same columns.
+    let middle = Span::styled(format!("  {shown:>STEP_PLACES$}  "), theme::fg_bold(tone));
+    let plus = step(Symbol::StepIncrease);
+    let minus_width = minus.width() as u16;
+    let middle_width = middle.width() as u16;
+    let plus_width = plus.width() as u16;
+    (
+        vec![minus, middle, plus],
+        (LABEL, minus_width),
+        (LABEL + minus_width + middle_width, plus_width),
+    )
 }
 
 /// What the field at `field` offers, floating under it — or over it, when
