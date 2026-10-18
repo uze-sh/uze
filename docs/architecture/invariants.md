@@ -818,7 +818,7 @@ every spawned read answers on every path, and the work is run so that a
 panic still produces the "nothing found" answer the absorber already
 draws.
 
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_delivery_that_answered_nothing_still_gives_the_task_back`
+> `src/ui/orchestrator/tests/delivery.rs::a_delivery_that_answered_nothing_still_gives_the_task_back`
 > `src/ui/orchestrator/tests.rs::workspace_tests::a_terminal_runtime_that_went_away_is_said_rather_than_waited_on`
 
 ### An extension describes every surface it has, including a sidebar section
@@ -1512,10 +1512,10 @@ in memory and overwritten by the outcome before the store is saved, so no
 evaluation can read it back, and the client that started the delivery is the
 only party that knows one is running.
 
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_published_task_is_marked_as_gone_not_as_waiting_to_be_delivered`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_delivery_in_flight_is_drawn_from_the_client_that_started_it`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_branch_level_with_its_request_reports_the_sync_instead_of_a_count`
-> `src/ui/orchestrator/tests.rs::workspace_tests::work_in_review_shows_its_request_number_and_no_mark`
+> `src/ui/orchestrator/tests/delivery.rs::a_published_task_is_marked_as_gone_not_as_waiting_to_be_delivered`
+> `src/ui/orchestrator/tests/delivery.rs::a_delivery_in_flight_is_drawn_from_the_client_that_started_it`
+> `src/ui/orchestrator/tests/delivery.rs::a_branch_level_with_its_request_reports_the_sync_instead_of_a_count`
+> `src/ui/orchestrator/tests/delivery.rs::work_in_review_shows_its_request_number_and_no_mark`
 
 ### Only a checkout UZE recorded making is ever reset, reused or removed (`account-for-every-checkout`)
 
@@ -1805,11 +1805,11 @@ does nothing.
 > `crates/uze-workspace/src/declaration.rs::tests::an_unknown_state_or_an_empty_instruction_is_left_out_and_named`
 > `crates/uze-workspace/src/declaration.rs::tests::actions_alone_declare_no_policy_and_none_declared_is_empty`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::the_view_carries_the_instruction_its_state_answers_to`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_delivery_sends_the_instruction_of_the_state_it_left`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_an_answered_status_sends_its_instruction_once`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_ready_work_delivers_it`
-> `src/ui/orchestrator/tests.rs::workspace_tests::a_click_on_a_report_does_nothing`
-> `src/ui/orchestrator/tests.rs::workspace_tests::uncommitted_work_shows_a_status_only_when_the_project_asks_something_there`
+> `src/ui/orchestrator/tests/delivery.rs::a_delivery_sends_the_instruction_of_the_state_it_left`
+> `src/ui/orchestrator/tests/delivery.rs::a_click_on_an_answered_status_sends_its_instruction_once`
+> `src/ui/orchestrator/tests/delivery.rs::a_click_on_ready_work_delivers_it`
+> `src/ui/orchestrator/tests/delivery.rs::a_click_on_a_report_does_nothing`
+> `src/ui/orchestrator/tests/delivery.rs::uncommitted_work_shows_a_status_only_when_the_project_asks_something_there`
 
 ### A delivery never collides with the operator's own edits
 
@@ -2135,8 +2135,8 @@ framed as a paste where the pane asked for one, and is never sent into an
 agent mid-turn or on top of text the operator typed.
 
 > `src/ui/orchestrator/input.rs::tests::a_notice_reaches_a_pane_as_text_and_one_submission`
-> `src/ui/orchestrator/tests.rs::workspace_tests::an_instruction_is_refused_over_text_the_operator_typed`
-> `src/ui/orchestrator/tests.rs::workspace_tests::an_automatic_send_into_a_busy_agent_is_held_back`
+> `src/ui/orchestrator/tests/delivery.rs::an_instruction_is_refused_over_text_the_operator_typed`
+> `src/ui/orchestrator/tests/delivery.rs::an_automatic_send_into_a_busy_agent_is_held_back`
 
 ### An agent is its launch, not its identifier
 
