@@ -9,7 +9,7 @@ use crate::ui::widget::{
     row,
     tabs::{self, Tab},
 };
-use uze_application::application::{FreshnessState, HarnessContextDelivery, StatusHarness};
+use uze_application::application::{FreshnessState, HarnessContextDelivery};
 use uze_application::{
     ActionState, DeclarationKey, DeclaredValue, DiffLine, ProjectSpace, SpaceOverview,
 };
@@ -319,11 +319,7 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
             let troubled: Vec<&str> = report
                 .harnesses
                 .iter()
-                .filter(|harness| {
-                    harness.context_unread.is_some()
-                        || harness.agent_context.is_some()
-                        || harness.outdated.is_some()
-                })
+                .filter(|harness| harness_issues(harness).next().is_some())
                 .map(|harness| harness.display_name.as_str())
                 .collect();
             if !report.instructions.exists {
@@ -512,7 +508,7 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
     ]));
     for (index, harness) in report.harnesses.iter().enumerate() {
         let installed = !matches!(harness.context, Some(HarnessContextDelivery::NotDetected));
-        let issues = harness_issues(harness).len();
+        let issues = harness_issues(harness).count();
         let (context, tone) = if !installed {
             ("—".to_owned(), Token::TextDim)
         } else if issues > 0 {
@@ -541,17 +537,6 @@ fn context_lines(project: &ProjectSpace) -> Vec<SectionLine> {
         });
     }
     lines
-}
-
-fn harness_issues(harness: &StatusHarness) -> Vec<&str> {
-    [
-        &harness.context_unread,
-        &harness.agent_context,
-        &harness.outdated,
-    ]
-    .into_iter()
-    .filter_map(|issue| issue.as_deref())
-    .collect()
 }
 
 fn delivery_word(delivery: Option<&HarnessContextDelivery>) -> &'static str {

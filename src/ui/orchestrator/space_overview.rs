@@ -8,6 +8,7 @@
 //! operator choosing something else puts it away.
 
 use super::*;
+use uze_application::application::StatusHarness;
 use uze_application::{
     ActionState, DeclarationKey, DeclarationPreview, DeclarationView, DeclaredValue, Edit,
     ProjectSpace, ShellCommand, SpaceOverview,
@@ -660,6 +661,18 @@ impl SpaceOverviewView {
     }
 }
 
+/// What keeps `harness` from reading the project's context here: its
+/// context unread, an agent context it reads instead, an outdated version.
+pub(super) fn harness_issues(harness: &StatusHarness) -> impl Iterator<Item = &str> {
+    [
+        &harness.context_unread,
+        &harness.agent_context,
+        &harness.outdated,
+    ]
+    .into_iter()
+    .filter_map(|issue| issue.as_deref())
+}
+
 /// A key chosen from a list it offers rather than typed: its options, or
 /// the repository's branches.
 pub(super) fn is_combo(key: DeclarationKey) -> bool {
@@ -922,11 +935,10 @@ impl WorkspaceModel {
         let report = &project.status.report;
         match section {
             Section::Context => {
-                let harness_trouble = report.harnesses.iter().any(|harness| {
-                    harness.context_unread.is_some()
-                        || harness.agent_context.is_some()
-                        || harness.outdated.is_some()
-                });
+                let harness_trouble = report
+                    .harnesses
+                    .iter()
+                    .any(|harness| harness_issues(harness).next().is_some());
                 if harness_trouble || !report.issues.is_empty() {
                     Health::Warning
                 } else {
