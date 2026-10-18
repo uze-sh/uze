@@ -791,6 +791,25 @@ fn choosing_another_row_reads_the_drawer_from_its_top() {
     );
 }
 
+/// On a terminal too narrow for the drawer beside the section, the drawer
+/// is opened by Enter, and opens at its top whatever the page keys did
+/// while it was closed.
+#[test]
+fn a_drawer_opened_reads_from_its_top_after_page_keys_while_closed() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-drawer-closed",
+    ));
+    let mut model = memory_overview(&["long-fact"]);
+    model.space_overview.as_mut().expect("open").drawer = false;
+    let mut driven = driven(model, &home);
+    let key = |code| crossterm::event::KeyEvent::from(code);
+    driven.press_key(key(crossterm::event::KeyCode::PageDown));
+    driven.press_key(key(crossterm::event::KeyCode::Enter));
+    let overview = driven.attach.model.space_overview.as_ref().expect("open");
+    assert!(overview.drawer, "Enter opened the drawer");
+    assert_eq!(overview.drawer_scroll(), 0, "the drawer opened scrolled");
+}
+
 /// A project's overview with nothing to report but `memory` and the
 /// `workspace:` declaration `workspace`.
 fn project_space(

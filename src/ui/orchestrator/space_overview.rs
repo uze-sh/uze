@@ -681,6 +681,13 @@ impl SpaceOverviewView {
         };
     }
 
+    /// Opens the drawer at its top: what the page keys did while it was
+    /// closed was never seen.
+    fn open_drawer(&mut self) {
+        self.drawer = true;
+        self.drawer_scroll = DrawerScroll::default();
+    }
+
     fn drawer_row(&self) -> (usize, usize) {
         (self.section.index(), self.row())
     }
@@ -1937,7 +1944,7 @@ impl Attach<'_> {
                 else {
                     return;
                 };
-                overview.drawer = true;
+                overview.open_drawer();
                 overview.fact = Some((name.clone(), None));
                 spawn_fact_body(
                     self.home,
@@ -1948,7 +1955,7 @@ impl Attach<'_> {
                     self.channels.fact_bodies.sender.clone(),
                 );
             }
-            Section::Plugins | Section::Worktrees => overview.drawer = true,
+            Section::Plugins | Section::Worktrees => overview.open_drawer(),
             // Its keys are the prompts', answered before this.
             Section::Agent => {}
         }
