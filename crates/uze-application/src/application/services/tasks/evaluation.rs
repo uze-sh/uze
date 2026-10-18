@@ -103,12 +103,15 @@ impl Workspace<'_> {
             // Named from the work or renamed by hand on this pass: the
             // subagents follow, since they were skipped above.
             store.follow_parent_branches();
+            // Only a live agent: one a release already ended and left
+            // holding its checkout (a paused rebase, a shelf refused) is
+            // pinned, and asking again on every evaluation would repeat the
+            // whole release under the write lock for the same answer.
             // Without the tabs this client launched, which only the
             // release knows: it is asked, and decides with them.
-            let unheld = store
-                .agents
-                .iter()
-                .any(|agent| is_abandoned(&primary, store, agent, occupied, &[]));
+            let unheld = store.agents.iter().any(|agent| {
+                agent.is_live() && is_abandoned(&primary, store, agent, occupied, &[])
+            });
             // The views are built from this copy once the lock is released:
             // they read Git for every recorded agent, closed ones included,
             // and inside the lock that held every placement and delivery in

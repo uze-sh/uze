@@ -2772,6 +2772,31 @@ mod task_service_tests {
         );
     }
 
+    /// A checkout a release ended its agent in and kept — pinned by a
+    /// paused rebase or a shelf it could not take — is not asked about
+    /// again by every evaluation: the release would repeat under the write
+    /// lock for the same answer.
+    #[test]
+    fn a_checkout_kept_by_an_ended_agent_is_not_asked_about_again() {
+        let repository = repository("svc-kept-checkout");
+        let root = repository.root().to_path_buf();
+        let app = application("svc-kept-checkout-home");
+        let (id, _) = launched(&app, &root);
+        task::locked(&app.home, &root, |store| {
+            task_mut(store, &id).expect("the agent is recorded").end();
+            Ok(())
+        })
+        .unwrap();
+
+        let evaluation = app.workspace().evaluate_tasks(&root, &[]);
+
+        assert!(!evaluation.unheld);
+        assert!(
+            view_of(&app, &root, &id).checkout.is_some(),
+            "it still holds it"
+        );
+    }
+
     /// A manifest that does not parse is said, not read as a project with
     /// no agents or no repository: an evaluation keeps its rows by naming
     /// the manifest, and an operator's action is refused over it.
