@@ -669,6 +669,67 @@ impl SpaceOverviewView {
             .map(|(_, preview)| preview)
     }
 
+    /// The health of each section, from the answer as it stands.
+    pub(super) fn health(&self, section: Section) -> Health {
+        let Some(project) = self.project() else {
+            return if self.answer.is_none() {
+                Health::Loading
+            } else {
+                Health::Fine
+            };
+        };
+        let report = &project.status.report;
+        match section {
+            Section::Context => {
+                let harness_trouble = report
+                    .harnesses
+                    .iter()
+                    .any(|harness| harness_issues(harness).next().is_some());
+                if harness_trouble || !report.issues.is_empty() {
+                    Health::Warning
+                } else {
+                    Health::Fine
+                }
+            }
+            Section::Plugins => {
+                let plugins = &project.plugins;
+                if plugins.lock_problem.is_some() {
+                    Health::Failing
+                } else if plugins.plugins.iter().any(|plugin| !plugin.installed)
+                    || !plugins.drift.unresolved.is_empty()
+                    || !plugins.drift.surplus.is_empty()
+                    || !plugins.drift.missing.is_empty()
+                {
+                    Health::Warning
+                } else {
+                    Health::Fine
+                }
+            }
+            Section::Settings => {
+                let failing = !project.status.steps_not_spelled_here.is_empty()
+                    || project
+                        .workspace
+                        .as_ref()
+                        .map_or(true, |declaration| !declaration.problems.is_empty());
+                if failing {
+                    Health::Failing
+                } else if project.status.commands_awaiting_approval.is_some() {
+                    Health::Warning
+                } else {
+                    Health::Fine
+                }
+            }
+            Section::Agent => Health::Fine,
+            Section::Memory => {
+                if project.memory.unreadable.is_empty() {
+                    Health::Fine
+                } else {
+                    Health::Warning
+                }
+            }
+        }
+    }
+
     fn set(&mut self, key: DeclarationKey, value: Option<DeclaredValue>) {
         let declared = self.entry(key).and_then(|entry| entry.declared.clone());
         let value = value.filter(|value| {
@@ -948,67 +1009,6 @@ impl WorkspaceModel {
             }
         }
         true
-    }
-
-    /// The health of each section, from the answer as it stands.
-    pub(super) fn section_health(overview: &SpaceOverviewView, section: Section) -> Health {
-        let Some(project) = overview.project() else {
-            return if overview.answer.is_none() {
-                Health::Loading
-            } else {
-                Health::Fine
-            };
-        };
-        let report = &project.status.report;
-        match section {
-            Section::Context => {
-                let harness_trouble = report
-                    .harnesses
-                    .iter()
-                    .any(|harness| harness_issues(harness).next().is_some());
-                if harness_trouble || !report.issues.is_empty() {
-                    Health::Warning
-                } else {
-                    Health::Fine
-                }
-            }
-            Section::Plugins => {
-                let plugins = &project.plugins;
-                if plugins.lock_problem.is_some() {
-                    Health::Failing
-                } else if plugins.plugins.iter().any(|plugin| !plugin.installed)
-                    || !plugins.drift.unresolved.is_empty()
-                    || !plugins.drift.surplus.is_empty()
-                    || !plugins.drift.missing.is_empty()
-                {
-                    Health::Warning
-                } else {
-                    Health::Fine
-                }
-            }
-            Section::Settings => {
-                let failing = !project.status.steps_not_spelled_here.is_empty()
-                    || project
-                        .workspace
-                        .as_ref()
-                        .map_or(true, |declaration| !declaration.problems.is_empty());
-                if failing {
-                    Health::Failing
-                } else if project.status.commands_awaiting_approval.is_some() {
-                    Health::Warning
-                } else {
-                    Health::Fine
-                }
-            }
-            Section::Agent => Health::Fine,
-            Section::Memory => {
-                if project.memory.unreadable.is_empty() {
-                    Health::Fine
-                } else {
-                    Health::Warning
-                }
-            }
-        }
     }
 }
 

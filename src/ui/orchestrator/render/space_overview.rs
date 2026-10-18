@@ -258,7 +258,7 @@ fn section_tabs(model: &WorkspaceModel, overview: &SpaceOverviewView) -> Vec<(Ta
         .enumerate()
         .map(|(index, section)| {
             let tab = Tab::new(section.label());
-            let tab = match WorkspaceModel::section_health(overview, *section) {
+            let tab = match overview.health(*section) {
                 Health::Fine => tab,
                 Health::Loading => tab.lead(
                     theme::frame(Symbol::StatusWorking, model.tick),
@@ -2211,7 +2211,7 @@ fn render_foot(
         .iter()
         .filter(|section| {
             matches!(
-                WorkspaceModel::section_health(overview, **section),
+                overview.health(**section),
                 Health::Warning | Health::Failing
             )
         })
