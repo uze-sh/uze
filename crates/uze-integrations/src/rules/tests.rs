@@ -26,6 +26,9 @@ fn regenerate_goldens() {
     fs::write(goldens_dir().join("rules-opencode.ts"), golden_plugin()).unwrap();
 }
 
+// The rendered templates name the engine's path with `/`, and they ship
+// only where the engine runs; a PowerShell platform renders none.
+#[cfg(unix)]
 #[test]
 fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
     assert_eq!(
@@ -56,6 +59,9 @@ fn nothing_in_a_delivered_template_names_the_packager() {
     }
 }
 
+// The rendered templates name the engine's path with `/`, and they ship
+// only where the engine runs; a PowerShell platform renders none.
+#[cfg(unix)]
 #[test]
 fn the_opencode_plugin_imports_nothing_and_rides_the_two_v2_hooks() {
     let plugin = golden_plugin();
