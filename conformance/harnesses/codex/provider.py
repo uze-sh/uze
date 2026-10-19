@@ -18,6 +18,18 @@ Contract (derived from observed behavior of the REAL codex-cli 0.149.1):
     must be answered with the JSON it asked for, or the rename never
     completes and its thread runs the scripted tool call of its own.
 
+  * (0.163.0) `/compact` is remote compaction v2: a request on the
+    thread (`previous_response_id`) whose whole `input` is
+    `[{"type": "compaction_trigger"}]`. Codex requires its answer to carry
+    exactly one output item of type `compaction` with a string
+    `encrypted_content` ("remote compaction v2 expected exactly one
+    compaction output item", "compaction item ... did not contain string
+    encrypted_content", read from the 0.163.0 binary; the real API's
+    stream was not observed). Any other answer fails the compaction, and
+    nothing that follows one (a `SessionStart` with `source: compact`)
+    ever happens. The opaque content stands in for the server's summary
+    and is sent back by Codex in the next turn's `input`.
+
 This stub records ONLY a structural summary of each request (skill markers,
 catalog presence, user-text presence) — never the verbatim body — into
 PROVIDER_STRUCT: the model-facing observation boundary.
@@ -447,6 +459,70 @@ def function_call_sse(step=0, model=None):
 SIDE_CALL_ANSWER = "UZE Lab session"
 
 
+#: What a compacted thread carries in place of its history.
+COMPACTION_CONTENT = "UZE_LAB_COMPACTION_SUMMARY"
+
+
+def is_compaction_trigger(body):
+    try:
+        items = json.loads(body).get("input")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(items, list) and any(
+        isinstance(i, dict) and i.get("type") == "compaction_trigger" for i in items
+    )
+
+
+def compaction_events(model=None):
+    rid = "resp_uze_compact"
+    item = {
+        "type": "compaction",
+        "id": "cmp_uze_1",
+        "encrypted_content": COMPACTION_CONTENT,
+    }
+    base = {"id": rid, "object": "response", "created_at": 1750000000}
+    return [
+        (
+            "response.created",
+            {
+                "type": "response.created",
+                "response": {
+                    **base,
+                    "status": "in_progress",
+                    "model": model or DEFAULT_MODEL,
+                    "output": [],
+                    "usage": None,
+                },
+            },
+        ),
+        (
+            "response.output_item.added",
+            {"type": "response.output_item.added", "output_index": 0, "item": item},
+        ),
+        (
+            "response.output_item.done",
+            {"type": "response.output_item.done", "output_index": 0, "item": item},
+        ),
+        (
+            "response.completed",
+            {
+                "type": "response.completed",
+                "response": {
+                    **base,
+                    "status": "completed",
+                    "model": model or DEFAULT_MODEL,
+                    "output": [item],
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 3,
+                        "total_tokens": 13,
+                    },
+                },
+            },
+        ),
+    ]
+
+
 def schema_answer(body):
     """The JSON a request constraining its answer with `text.format` asked
     for, or None when the request is an ordinary turn.
@@ -478,6 +554,8 @@ def respond(body, path):
         # A tool call is only scripted for a real turn: the TUI also
         # sends a boot/connectivity request without `input`/`inputs`,
         # and answering that with a function call hangs its model load.
+        if is_compaction_trigger(body):
+            return sse_bytes(compaction_events(requested_model(body)))
         side_call = schema_answer(body)
         if side_call is not None:
             return responses_sse(side_call, requested_model(body))
@@ -554,7 +632,9 @@ def ws_loop(conn, path):
         capture.record_declared_tools(text)
         side_call = schema_answer(text)
         step = answered_step(text) if side_call is None else None
-        if side_call is not None:
+        if is_compaction_trigger(text):
+            events = compaction_events(requested_model(text))
+        elif side_call is not None:
             events = text_events(side_call, requested_model(text))
         elif step is not None:
             events = function_call_events(step, requested_model(text))
