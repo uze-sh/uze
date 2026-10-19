@@ -25,7 +25,6 @@ use crate::package::store;
 use crate::{PackageId, Result, UzeError};
 
 mod agent_plugins;
-pub mod region;
 pub use agent_plugins::{
     MCP_SCHEMA, PLUGIN_SCHEMA, STANDARD as AGENT_PLUGINS, StandardConformance, UZE_NAMESPACE,
 };

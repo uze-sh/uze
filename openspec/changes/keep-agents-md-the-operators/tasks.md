@@ -1,28 +1,28 @@
 ## 1. The launch section
 
-- [ ] 1.1 `WorktreePolicy::instructions` takes the agent's situation (isolated or in place, slot directory, branch, target, completion) and renders only the bullets that apply, naming clause first. Drop the "this section is for an agent `uze workspace` launched" opening. Unit tests per situation, plus byte-stability across two renders
-- [ ] 1.2 `agent_context::compose` gains the instructions part ahead of the notes preamble (D2). The preamble's wording is unchanged and introduces only the sections after it. Test the order, and that a context with instructions and no notes still composes
-- [ ] 1.3 Read the branch from the checkout at compose time, never from the slot name, so a resume after `uze agent work name` states the new branch. Test: name, resume, assert the section
-- [ ] 1.4 The launch composes the section for every launch and resume the workspace owns, through each harness's existing channel, and for no launch it does not own. Integration tests for an isolated launch, an in-place launch, and a shim launch outside the workspace (no section)
+- [x] 1.1 `WorktreePolicy::instructions` takes the agent's situation (isolated or in place, slot directory, branch, target, completion) and renders only the bullets that apply, naming clause first. Drop the "this section is for an agent `uze workspace` launched" opening. Unit tests per situation, plus byte-stability across two renders
+- [x] 1.2 `agent_context::compose` gains the instructions part ahead of the notes preamble (D2). The preamble's wording is unchanged and introduces only the sections after it. Test the order, and that a context with instructions and no notes still composes
+- [x] 1.3 Read the branch from the checkout at compose time, never from the slot name, so a resume after `uze agent work name` states the new branch. Test: name, resume, assert the section
+- [x] 1.4 The launch composes the section for every launch and resume the workspace owns, through each harness's existing channel, and for no launch it does not own. Integration tests for an isolated launch, an in-place launch, and a shim launch outside the workspace (no section)
 - [ ] 1.4a Antigravity (D2a): write the instructions part as an `always_on` rule in the agent's context directory, and keep the notes on the `PreInvocation` hook. Lab: `systemInstruction` on launch, resume and `invoke_subagent`
 - [ ] 1.4b OpenCode (D2b): the `context` plugin falls back to the parent session's context through `ctx.session.get(...).parentID`. Lab: a child session receives the instructions
-- [ ] 1.5 Degraded channel: compose `context.md` on every launch whatever the channel (today a degraded launch composes nothing). A launch that starts a new conversation on a degraded or unavailable channel gets one first turn pointing at `context.md` (beside today's switch-briefing first turn, never two). A resume gets none. Both are reported as degraded. Unit tests in `continuity.rs` for new, resumed and switched launches
-- [ ] 1.6 `uze agent work split` prints, beside the path, the two lines a parent hands to its subagent: commit in this checkout, and never switch the branch or make a worktree
+- [x] 1.5 Degraded channel: compose `context.md` on every launch whatever the channel (today a degraded launch composes nothing). A launch that starts a new conversation on a degraded or unavailable channel gets one first turn pointing at `context.md` (beside today's switch-briefing first turn, never two). A resume gets none. Both are reported as degraded. Unit tests in `continuity.rs` for new, resumed and switched launches
+- [x] 1.6 `uze agent work split` prints, beside the path, the two lines a parent hands to its subagent: commit in this checkout, and never switch the branch or make a worktree
 
 ## 2. Shares of the bound
 
-- [ ] 2.1 Add the instructions share and reduce the briefing share as in D4. Keep `the_shares_add_up_to_the_bound`, and add a test that a full briefing and an overfull memory never cut the instructions
-- [ ] 2.2 Test that the composed document stays at or under `BOUND` with multi-byte text in every section
+- [x] 2.1 Add the instructions share and reduce the briefing share as in D4. Keep `the_shares_add_up_to_the_bound`, and add a test that a full briefing and an overfull memory never cut the instructions
+- [x] 2.2 Test that the composed document stays at or under `BOUND` with multi-byte text in every section
 - [ ] 2.3 Measure the largest briefing in the Lab's recorded runs and the rendered policy for the longest declared vocabulary. If 4,000 bytes cuts a real briefing, shorten the policy text, never raising `BOUND`
 
 ## 3. Stop writing AGENTS.md
 
-- [ ] 3.1 Remove the policy region sync at launch (`services/policy_region.rs`), the client's "AGENTS.md's workspace section" warnings, and the policy-region read in `src/ui/orchestrator/reads.rs`. The context popup keeps showing the policy in force and its provenance
-- [ ] 3.2 Remove `package::authoring::region` and its reconcile step
-- [ ] 3.3 Retire the `project:worktree-policy` and `project:plugin-authoring` prefixes: in the primary checkout, `uze install` and `uze agent context reconcile` remove a region whose body matches the digest in its identity, report one that does not, and attach nothing. In an isolated checkout they remove nothing. Tests: both regions removed byte-exactly around the operator's text, an edited region kept and reported, an isolated checkout left unchanged and free, a project without `AGENTS.md` left without one
-- [ ] 3.3a Replace `PolicyRegionView`'s `in_step`/`state` and `project_environment.rs`'s "region behind" read model with one "retired regions present" report naming `uze install`, in `uze status` and the client
-- [ ] 3.4 `checkout-accounting`: drop the managed-region discount and keep the lock discount. Update `accounting_tests.rs` and `shelf_tests.rs` to the new scenarios
-- [ ] 3.5 Architecture suite: a rule that no production code outside the retired-prefix cleanup writes `AGENTS.md`
+- [x] 3.1 Remove the policy region sync at launch (`services/policy_region.rs`), the client's "AGENTS.md's workspace section" warnings, and the policy-region read in `src/ui/orchestrator/reads.rs`. The context popup keeps showing the policy in force and its provenance
+- [x] 3.2 Remove `package::authoring::region` and its reconcile step
+- [x] 3.3 Retire the `project:worktree-policy` and `project:plugin-authoring` prefixes: in the primary checkout, `uze install` and `uze agent context reconcile` remove a region whose body matches the digest in its identity, report one that does not, and attach nothing. In an isolated checkout they remove nothing. Tests: both regions removed byte-exactly around the operator's text, an edited region kept and reported, an isolated checkout left unchanged and free, a project without `AGENTS.md` left without one
+- [x] 3.3a Replace `PolicyRegionView`'s `in_step`/`state` and `project_environment.rs`'s "region behind" read model with one "retired regions present" report naming `uze install`, in `uze status` and the client
+- [ ] 3.4 (after 4.1, decisions.md I3) `checkout-accounting`: drop the managed-region discount and keep the lock discount. Update `accounting_tests.rs` and `shelf_tests.rs` to the new scenarios
+- [ ] 3.5 (with 4.1, decisions.md I5) Architecture suite: a rule that no production code outside the retired-prefix cleanup writes `AGENTS.md`
 
 ## 4. Plugin instructions become rules (after `plugin-rules` ships)
 
@@ -44,8 +44,8 @@
 
 - [ ] 6.1 `plugins/uze` Skills: `init` stops describing UZE regions in `AGENTS.md`, and reports and cleans a project carrying them. `worktree` and `author` drop their references to the projected region
 - [ ] 6.2 `docs/capabilities/context-manager.md`, `docs/capabilities/uze-skill.md` and `web/content/docs/` (context, installation, glossary, FAQ): what UZE writes into a project, following D1, with no em dashes in user-facing copy
-- [ ] 6.3 `docs/architecture/invariants.md`: replace every region invariant (the bridge protocol around line 111, "A package's instructions reach only a project that declares it", the managed-region accounting around line 1598, the policy-region identity around line 1862, "Each region of `AGENTS.md` has one owner") with "no UZE operation changes `AGENTS.md` except to remove a retired region in the primary checkout", tied to 3.3 and 3.5
-- [ ] 6.4 Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
-- [ ] 6.5 This repository's own `AGENTS.md`: remove the "Authoring plugins" and "Concurrent work isolation" sections, and update the "`uze agent …` is an audience" bullet to name the launch context
+- [x] 6.3 `docs/architecture/invariants.md`: replace every region invariant (the bridge protocol around line 111, "A package's instructions reach only a project that declares it", the managed-region accounting around line 1598, the policy-region identity around line 1862, "Each region of `AGENTS.md` has one owner") with "no UZE operation changes `AGENTS.md` except to remove a retired region in the primary checkout", tied to 3.3 and 3.5
+- [ ] 6.4 (with 3.4, decisions.md I3) Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
+- [x] 6.5 This repository's own `AGENTS.md`: remove the "Authoring plugins" and "Concurrent work isolation" sections, and update the "`uze agent …` is an audience" bullet to name the launch context
 - [ ] 6.6 Journeys: the workspace chapter checks that a launch leaves `AGENTS.md` byte-identical, and the packages chapter checks that `uze install` removes old regions
 - [ ] 6.7 At archive, rewrite the Purpose of `openspec/specs/plugin-authoring/spec.md`, which still says the verbs are "documented in the projected `AGENTS.md` region"

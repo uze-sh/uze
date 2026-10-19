@@ -63,6 +63,18 @@ summarize `harnesses` briefly (who's native, who's bridged, who's not
 detected on this machine). Stop here unless they ask for something
 specific.
 
+### Sections an earlier UZE wrote
+
+An `AGENTS.md` may still carry a "Concurrent work isolation" or an
+"Authoring plugins" section between `<!-- uze:begin project:… -->` markers.
+Earlier releases wrote them; nothing does any more, because a launched
+agent gets those instructions with its context and the authoring verbs
+come with the `uze:author` Skill. They are not the project's content: never
+fold them into a proposal. `uze agent context plan` lists them, and
+`uze install` (or `uze agent context reconcile`) removes them, except one
+someone edited by hand, which is reported and left for the person to keep
+or delete.
+
 ### `NO_CONTEXT` (no AGENTS.md, no CLAUDE.md, no GEMINI.md)
 
 This is the "portable init" flow — see **Flow A** below.

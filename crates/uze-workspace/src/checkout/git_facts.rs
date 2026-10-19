@@ -31,6 +31,21 @@ pub fn rename_branch_within(
     .map_err(|reason| crate::UzeError::TaskNaming(reason.to_string()))?
 }
 
+/// The branch checked out in `checkout`, read from its `HEAD` file rather
+/// than asked of Git: for a caller on the launch path, where a spawn per
+/// relaunch is a cost every agent pays. `None` for a detached `HEAD`, a
+/// checkout with no `.git`, or a ref store that keeps no `HEAD` file.
+pub fn branch_on_disk(checkout: &Path) -> Option<String> {
+    let dot_git = checkout.join(".git");
+    let git_dir = anchor::names(&dot_git)
+        .or_else(|| fs::metadata(&dot_git).ok()?.is_dir().then_some(dot_git))?;
+    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    head.trim()
+        .strip_prefix("ref: refs/heads/")
+        .filter(|branch| !branch.is_empty())
+        .map(str::to_owned)
+}
+
 /// The branch checked out in `root`, or `None` for a detached `HEAD`.
 /// `symbolic-ref` rather than `rev-parse --abbrev-ref`: it still names the
 /// branch when it has no commit yet, which is the case that must be told

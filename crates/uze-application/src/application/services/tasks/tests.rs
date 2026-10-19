@@ -1525,25 +1525,40 @@ mod task_service_tests {
         );
     }
 
-    /// The workspace keeps its region of `AGENTS.md` in step in the primary
-    /// checkout, uncommitted until the operator commits it. Isolating with a
-    /// copy of the operator's changes must not carry that region into the
-    /// agent's branch, or the agent could commit and deliver it; a change of
-    /// the operator's own is still carried.
+    /// `uze install` in the primary checkout removes a region an earlier
+    /// release wrote, uncommitted until the operator commits it. Isolating
+    /// with a copy of the operator's changes must not carry that removal
+    /// into the agent's branch, or every branch would commit the same hunk;
+    /// a change of the operator's own is still carried.
     #[test]
-    fn isolating_leaves_the_synced_region_behind_and_carries_the_rest() {
+    fn isolating_leaves_a_retired_regions_removal_behind_and_carries_the_rest() {
         let repository = repository("svc-isolate-region");
         let root = repository.root().to_path_buf();
         let app = application("svc-isolate-region-home");
-        repository.commit_file("AGENTS.md", "# Project\n\nWritten by a person.\n");
+        let body = "## Concurrent work isolation\n\n- old text\n";
+        let identity = format!(
+            "{}/{}",
+            uze_core::retired_region::WORKTREE_POLICY,
+            uze_core::digest::short_hex(body.as_bytes())
+        );
+        std::fs::write(
+            root.join("AGENTS.md"),
+            "# Project\n\nWritten by a person.\n",
+        )
+        .unwrap();
+        uze_core::text_region::attach(&root.join("AGENTS.md"), &identity, body).unwrap();
+        let committed = std::fs::read_to_string(root.join("AGENTS.md")).unwrap();
+        repository.git(&["add", "--", "AGENTS.md"]);
+        repository.git(&["commit", "-qm", "docs: agents"]);
         repository.commit_file("README.md", "readme\n");
         std::fs::write(root.join("agents.yaml"), "workspace: {}\n").unwrap();
-        let id = launched_in_the_root(&app, &root);
-        let synced = std::fs::read_to_string(root.join("AGENTS.md")).unwrap();
-        assert!(
-            synced.contains("uze:begin project:worktree-policy"),
-            "the launch in the primary synced the region: {synced}"
+        app.context().reconcile(&root).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+            "# Project\n\nWritten by a person.\n",
+            "install in the primary removed the old region"
         );
+        let id = launched_in_the_root(&app, &root);
         std::fs::write(root.join("README.md"), "an edit nobody committed\n").unwrap();
 
         let placement = app
@@ -1553,7 +1568,7 @@ mod task_service_tests {
 
         assert_eq!(
             std::fs::read_to_string(placement.cwd.join("AGENTS.md")).unwrap(),
-            "# Project\n\nWritten by a person.\n",
+            committed,
             "the slot keeps the committed file"
         );
         assert_eq!(
@@ -1561,17 +1576,12 @@ mod task_service_tests {
             "an edit nobody committed\n",
             "the operator's own change is carried"
         );
-        assert_eq!(
-            std::fs::read_to_string(root.join("AGENTS.md")).unwrap(),
-            synced,
-            "the primary keeps its region"
-        );
     }
 
-    /// An agent placed in the primary checkout reads the region the project
-    /// declares now; one placed in a slot never has its file written.
+    /// No launch writes into the checkout it places an agent in: the
+    /// instructions reach the agent through its launch context.
     #[test]
-    fn a_launch_in_the_primary_syncs_the_region_and_a_slot_is_never_written() {
+    fn a_launch_writes_nothing_into_agents_md_anywhere() {
         let repository = repository("svc-launch-sync");
         let root = repository.root().to_path_buf();
         let app = application("svc-launch-sync-home");
@@ -1581,10 +1591,9 @@ mod task_service_tests {
         app.workspace()
             .place_new_agent(&root, Some(PlacementKind::InPlace), "claude-code", &[])
             .expect("placed in the root");
-        assert!(
-            std::fs::read_to_string(root.join("AGENTS.md"))
-                .unwrap()
-                .contains("uze:begin project:worktree-policy")
+        assert_eq!(
+            std::fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+            "# Project\n"
         );
 
         let isolated = app
@@ -1593,8 +1602,7 @@ mod task_service_tests {
             .expect("placed in a slot");
         assert_eq!(
             std::fs::read_to_string(isolated.cwd.join("AGENTS.md")).unwrap(),
-            "# Project\n",
-            "a slot reads the region its branch was cut with"
+            "# Project\n"
         );
     }
 

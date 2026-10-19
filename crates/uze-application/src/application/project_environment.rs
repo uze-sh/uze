@@ -143,29 +143,24 @@ impl Project<'_> {
         })
     }
 
-    /// Whether a region the package manager owns in `AGENTS.md` is not what
-    /// it should say. The workspace's region is the workspace's to report:
-    /// a package command never counts it, so a project that stopped using
-    /// the workspace is never told to run anything over it.
+    /// Whether `AGENTS.md` still carries a region an earlier release wrote,
+    /// which `uze install` removes. Asked of the primary checkout only: a
+    /// slot's file is its branch's, and the cleanup never runs there.
     ///
-    /// One string comparison per region, and no harness is asked anything:
-    /// a region's identity is a digest of the bytes it should hold.
+    /// One read of the file, and no harness is asked anything.
     fn stale_projection(&self, canonical: &Path) -> Option<StaleProjection> {
-        let desired = super::context::authoring_desired(canonical);
-        let agents_md = canonical.join(uze_core::project_context::AGENTS_MD_FILE_NAME);
-        if super::managed_region::in_step(
-            &agents_md,
-            uze_core::authoring::region::owns_region,
-            &desired,
-        ) {
+        if !super::retired_regions::applies_at(canonical) {
             return None;
         }
-        let projected_identity = uze_core::text_region::region_identities_present(&agents_md)
-            .into_iter()
-            .find(|identity| uze_core::authoring::region::owns_region(identity))
-            .unwrap_or_else(|| "none".to_owned());
+        let agents_md = canonical.join(uze_core::project_context::AGENTS_MD_FILE_NAME);
+        let plan = super::retired_regions::plan(&agents_md)?;
+        let projected_identity = plan.remove.into_iter().next()?;
+        let region = projected_identity.rsplit_once('/').map_or_else(
+            || projected_identity.clone(),
+            |(prefix, _)| prefix.to_owned(),
+        );
         Some(StaleProjection {
-            region: uze_core::authoring::region::REGION_PREFIX.to_owned(),
+            region,
             projected_identity,
         })
     }
@@ -1526,7 +1521,7 @@ pub struct ProjectEnvironmentPlan {
     pub unresolved: Vec<String>,
     /// In the lock, and the manifest no longer declares it.
     pub surplus: Vec<String>,
-    /// A region the package manager owns in `AGENTS.md` is behind.
+    /// `AGENTS.md` still carries a region an earlier release wrote.
     pub stale_projection: Option<StaleProjection>,
     /// Marketplaces this project declares that resolve nowhere but the
     /// machine that declared them. Not a fault here — they work where they
@@ -1537,13 +1532,13 @@ pub struct ProjectEnvironmentPlan {
     pub has_changes: bool,
 }
 
-/// A region the package manager owns in `AGENTS.md` is not what it should
-/// say, so the agents reading the file are reading something else.
+/// A region an earlier release wrote into `AGENTS.md`, still there: agents
+/// reading the file read instructions no release maintains.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StaleProjection {
     /// Which region: its identity's prefix.
     pub region: String,
-    /// The identity the region in `AGENTS.md` still carries, or `none`.
+    /// The identity the region in `AGENTS.md` still carries.
     pub projected_identity: String,
 }
 

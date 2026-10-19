@@ -20,14 +20,19 @@
 //! writes that back, so a conversation cleared, forked or switched inside
 //! the process is the one that resumes rather than the one it began with.
 
-use std::{ffi::OsString, path::Path};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     agent_context::{self, Section, SectionAsk},
-    briefing,
+    briefing, checkout,
     conversation::{self, Claim, ConversationOrigin, ConversationRecord, SessionId},
+    declaration,
     home::UzeHome,
     integration::{AgentContext, IntegrationPort, ObservationContext, SessionContinuity},
+    worktree::{self, Placement},
 };
 
 /// What a launch should carry, and what could not be done.
@@ -119,6 +124,7 @@ fn plan_for(
             claim.cwd,
             integration,
             None,
+            Conversation::New,
             sections,
         );
         return plan;
@@ -153,6 +159,7 @@ fn plan_for(
                 claim.cwd,
                 integration,
                 Some(&recorded),
+                Conversation::Resumed,
                 sections,
             );
             return plan;
@@ -277,17 +284,26 @@ fn start(
         cwd,
         integration,
         session.as_ref(),
+        Conversation::New,
         sections,
     );
     plan
 }
 
+/// Whether a launch starts a conversation or carries one on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Conversation {
+    New,
+    Resumed,
+}
+
 /// Gives this launch the agent's context through the harness's channel, or,
-/// on a harness that has none (or whose channel cannot run here), points it
-/// at the briefing with one first turn, given once.
+/// on a harness that has none (or whose channel cannot run here), points a
+/// new conversation at it with one first turn.
 ///
 /// Never fails the launch: a context that cannot be written or delivered
 /// costs this launch its context and says so on the note channel.
+#[allow(clippy::too_many_arguments)]
 fn give_context(
     plan: &mut LaunchPlan,
     home: &UzeHome,
@@ -295,14 +311,16 @@ fn give_context(
     cwd: &Path,
     integration: &dyn IntegrationPort,
     session: Option<&SessionId>,
+    conversation: Conversation,
     extra: &dyn Fn(&SectionAsk<'_>) -> Vec<Section>,
 ) {
     let id = integration.id();
     let agent = owner.agent.as_str();
+    let instructions = launch_instructions(&owner.project_root, cwd);
     if integration.context_channel().is_degraded()
         || integration.context_channel_unavailable().is_some()
     {
-        plan.trailing = first_turn(home, owner, integration);
+        plan.trailing = first_turn(home, owner, integration, &instructions, conversation);
         return;
     }
     let record = conversation::load(home, &owner.project_root, &owner.agent);
@@ -315,13 +333,13 @@ fn give_context(
         })
         .into_iter()
         .collect();
-    let room = agent_context::room_after(&sections);
+    let room = agent_context::room_after(&instructions, &sections);
     sections.extend(extra(&SectionAsk {
         project_root: &owner.project_root,
         checkout: cwd,
         room,
     }));
-    let Some(text) = agent_context::compose(&sections) else {
+    let Some(text) = agent_context::compose(&instructions, &sections) else {
         // A context an earlier launch was given must not outlive what it
         // said: a retired briefing is no longer the agent's to be told.
         let _ = std::fs::remove_file(
@@ -358,37 +376,64 @@ fn give_context(
     }
 }
 
-/// The first turn pointing at the briefing pending for this harness, given
-/// once so no later launch — a restore, a relaunch — is pointed at it
-/// again. The briefing is written beside the agent's context for the turn
-/// to name.
+/// The workspace's instructions for an agent launched at `checkout`, from
+/// the policy in force and where the agent stands now. A declaration that
+/// cannot be read gives the default policy's: an agent is never launched
+/// without being told how its work is delivered.
+fn launch_instructions(project_root: &Path, cwd: &Path) -> String {
+    let policy = declaration::policy(project_root).unwrap_or_default();
+    match worktree::isolated_checkout(cwd) {
+        Some(isolated) => {
+            let shown = PathBuf::from(worktree::WORKTREES_DIRECTORY).join(isolated.name);
+            // Read now rather than taken from the slot's name: naming the
+            // work renames the branch, and a resume must say the new one.
+            let branch = checkout::branch_on_disk(&isolated.directory())
+                .unwrap_or_else(|| format!("{}{}", worktree::BRANCH_PREFIX, isolated.name));
+            policy.instructions(&Placement::Isolated {
+                checkout: &shown,
+                branch: &branch,
+            })
+        }
+        None => policy.instructions(&Placement::InPlace),
+    }
+}
+
+/// The one visible first turn a harness with no invisible channel gets,
+/// pointing at the agent's context written beside it: on a new
+/// conversation always, since the instructions reach it no other way, and
+/// on a resume only while a briefing waits to be given, once.
 fn first_turn(
     home: &UzeHome,
     owner: &conversation::Owner,
     integration: &dyn IntegrationPort,
+    instructions: &str,
+    conversation: Conversation,
 ) -> Vec<OsString> {
-    let text = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
+    let briefing = conversation::update(home, &owner.project_root, &owner.agent, |stored| {
         stored.take_first_turn(integration.id())
     })
     .ok()
     .flatten();
-    let Some(text) = text else {
+    if briefing.is_none() && conversation == Conversation::Resumed {
+        return Vec::new();
+    }
+    let sections: Vec<Section> = briefing
+        .iter()
+        .map(|text| Section {
+            heading: briefing::HEADING,
+            text: text.clone(),
+            share: agent_context::BRIEFING_SHARE,
+        })
+        .collect();
+    let Some(text) = agent_context::compose(instructions, &sections) else {
         return Vec::new();
     };
-    match agent_context::write_file(
-        home,
-        &owner.project_root,
-        owner.agent.as_str(),
-        BRIEFING_FILE,
-        &text,
-    ) {
-        Ok(path) => integration.first_turn_args(&briefing::first_turn(&path)),
+    match agent_context::write(home, &owner.project_root, owner.agent.as_str(), &text) {
+        Ok(path) if briefing.is_some() => integration.first_turn_args(&briefing::first_turn(&path)),
+        Ok(path) => integration.first_turn_args(&briefing::instructions_turn(&path)),
         Err(_) => Vec::new(),
     }
 }
-
-/// The briefing a first turn points at, in the agent's context directory.
-const BRIEFING_FILE: &str = "briefing.md";
 
 /// Writes back the conversation the agent is actually in.
 ///
@@ -636,16 +681,40 @@ mod tests {
         conversation::load(home, primary, &store.agents[0].id).briefing
     }
 
-    /// The first turn a degraded harness is given, pointing at the briefing
-    /// written beside the agent's context.
-    fn turn_for(home: &UzeHome, primary: &Path) -> Vec<OsString> {
+    /// Where the agent's context is written, beside its other files.
+    fn context_file(home: &UzeHome, primary: &Path) -> PathBuf {
         let store = task::load(home, primary).unwrap();
-        let path =
-            agent_context::dir(home, primary, store.agents[0].id.as_str()).join(BRIEFING_FILE);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), BRIEFING_TEXT);
+        agent_context::dir(home, primary, store.agents[0].id.as_str())
+            .join(agent_context::FILE_NAME)
+    }
+
+    /// The first turn a degraded harness is given while a briefing waits,
+    /// pointing at the context that carries it.
+    fn turn_for(home: &UzeHome, primary: &Path) -> Vec<OsString> {
+        let path = context_file(home, primary);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains(BRIEFING_TEXT)
+        );
         vec![
             OsString::from("--turn"),
             OsString::from(briefing::first_turn(&path)),
+        ]
+    }
+
+    /// The first turn a degraded harness is given on a new conversation with
+    /// no briefing waiting.
+    fn instructions_turn_for(home: &UzeHome, primary: &Path) -> Vec<OsString> {
+        let path = context_file(home, primary);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("Concurrent work isolation")
+        );
+        vec![
+            OsString::from("--turn"),
+            OsString::from(briefing::instructions_turn(&path)),
         ]
     }
 
@@ -697,8 +766,9 @@ mod tests {
             Harness::with_channel(SessionContinuity::Assigned),
         ] {
             let launch = plan(&home, claim(&id, &slot), &harness);
-            assert!(launch.trailing.is_empty());
-            assert!(!launch.args.contains(&OsString::from("--context")));
+            assert!(!mentions_the_briefing(&launch));
+            let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+            assert!(!context.contains(BRIEFING_TEXT), "{context}");
         }
         let kept = pending(&home, &primary).unwrap();
         assert_eq!(kept.integration, "elsewhere");
@@ -736,7 +806,8 @@ mod tests {
                 .expect("the channel's arguments are carried");
             let file = PathBuf::from(&launch.args[at + 1]);
             let context = std::fs::read_to_string(&file).unwrap();
-            assert!(context.starts_with(agent_context::PREAMBLE));
+            assert!(context.starts_with(agent_context::INSTRUCTIONS_LEAD));
+            assert!(context.contains(agent_context::PREAMBLE));
             assert!(context.contains(BRIEFING_TEXT));
             assert!(!file.starts_with(&slot) && !file.starts_with(&primary));
             assert_eq!(
@@ -775,17 +846,22 @@ mod tests {
             text: BRIEFING_TEXT.to_owned(),
             share: agent_context::BRIEFING_SHARE,
         };
+        let instructions = launch_instructions(&primary, &slot);
         assert_eq!(
             asked,
             [
                 (
                     primary.clone(),
                     slot.clone(),
-                    agent_context::room_after(&[])
+                    agent_context::room_after(&instructions, &[])
                 ),
-                (primary, slot, agent_context::room_after(&[briefing])),
+                (
+                    primary,
+                    slot,
+                    agent_context::room_after(&instructions, &[briefing])
+                ),
             ],
-            "asked from the agent's own checkout, with what the briefing leaves"
+            "asked from the agent's own checkout, with what the instructions and the briefing leave"
         );
     }
 
@@ -808,24 +884,95 @@ mod tests {
             stored.briefing = None;
         })
         .unwrap();
-        let next = plan(&home, claim(&id, &slot), &harness);
-        assert!(!next.args.contains(&OsString::from("--context")));
+        plan(&home, claim(&id, &slot), &harness);
+        let context = std::fs::read_to_string(&file).unwrap();
         assert!(
-            !file.exists(),
-            "the last launch's context does not outlive it"
+            !context.contains(BRIEFING_TEXT),
+            "the last launch's briefing does not outlive it: {context}"
         );
     }
 
     #[test]
-    fn nothing_to_give_delivers_nothing() {
-        let (home, _primary, slot, id) = managed("continuity-context-nothing");
+    fn every_launch_is_given_its_instructions() {
+        let (home, primary, slot, id) = managed("continuity-context-instructions");
         let launch = plan(
             &home,
             claim(&id, &slot),
             &Harness::with_channel(SessionContinuity::Assigned),
         );
-        assert!(!launch.args.contains(&OsString::from("--context")));
-        assert!(launch.env.is_empty());
+        assert!(launch.args.contains(&OsString::from("--context")));
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(
+            context.starts_with(agent_context::INSTRUCTIONS_LEAD),
+            "{context}"
+        );
+        assert!(context.contains("`.worktrees/slot-1`"), "{context}");
+        assert!(context.contains("`agent/slot-1`"), "{context}");
+        assert!(
+            !context.contains(agent_context::PREAMBLE),
+            "no notes, no preamble: {context}"
+        );
+    }
+
+    #[test]
+    fn the_policy_in_force_is_the_one_the_manifest_declares() {
+        let (home, primary, slot, id) = managed("continuity-context-declared");
+        std::fs::write(
+            primary.join("agents.yaml"),
+            "workspace:\n  delivery: push\n",
+        )
+        .unwrap();
+        plan(
+            &home,
+            claim(&id, &slot),
+            &Harness::with_channel(SessionContinuity::Assigned),
+        );
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(
+            context.contains(worktree::CompletionBehavior::instruction_clause(Some(
+                worktree::CompletionBehavior::Push
+            ))),
+            "the declared behavior must be the one an agent reads: {context}"
+        );
+    }
+
+    #[test]
+    fn the_instructions_name_the_branch_the_checkout_has_now() {
+        let (home, primary, slot, id) = managed("continuity-context-branch");
+        let admin = primary.join(".git").join("worktrees").join("slot-1");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(slot.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+        std::fs::write(admin.join("HEAD"), "ref: refs/heads/fix/naming\n").unwrap();
+
+        plan(
+            &home,
+            claim(&id, &slot),
+            &Harness::with_channel(SessionContinuity::Assigned),
+        );
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(context.contains("`fix/naming`"), "{context}");
+    }
+
+    #[test]
+    fn an_agent_in_the_primary_checkout_is_told_it_is_on_the_operators_branch() {
+        let (home, primary, _slot, _id) = managed("continuity-context-in-place");
+        let text = launch_instructions(&primary, &primary);
+        assert!(text.contains("operator's own checkout"), "{text}");
+        assert!(!text.contains(".worktrees"), "{text}");
+        let _ = home;
+    }
+
+    #[test]
+    fn a_degraded_new_conversation_is_pointed_at_its_instructions_and_a_resume_at_nothing() {
+        let (home, primary, slot, id) = managed("continuity-context-degraded");
+        let harness = Harness::new(SessionContinuity::Assigned);
+
+        let first = plan(&home, claim(&id, &slot), &harness);
+        assert_eq!(first.trailing, instructions_turn_for(&home, &primary));
+
+        let resumed = plan(&home, claim(&id, &slot), &harness);
+        assert!(resumed.args.contains(&OsString::from("--resume")));
+        assert!(resumed.trailing.is_empty());
     }
 
     #[test]
@@ -893,8 +1040,10 @@ mod tests {
             plan(&home, claim(&id, &slot), &harness),
             LaunchPlan {
                 owned: true,
+                trailing: instructions_turn_for(&home, &primary),
                 ..LaunchPlan::nothing()
-            }
+            },
+            "no argument of its own: the only thing carried is the degraded turn"
         );
 
         let store = task::load(&home, &primary).unwrap();
@@ -1010,8 +1159,10 @@ mod tests {
             ),
             LaunchPlan {
                 owned: true,
+                trailing: instructions_turn_for(&home, &primary),
                 ..LaunchPlan::nothing()
-            }
+            },
+            "every launch of it is a new conversation, pointed at its instructions"
         );
         assert_eq!(recorded(&home, &primary), None);
     }

@@ -5,8 +5,9 @@
 //! ([`manifest`]) and what resolving it produced ([`project_lock`]), where
 //! that project begins ([`project_root`], [`anchor`]), the instruction
 //! context it carries ([`context`], [`project_context`]), the mechanism for
-//! owning a slice of a file UZE did not write ([`text_region`]), and the
-//! per-project directory under `UzeHome` ([`record`]).
+//! owning a slice of a file UZE did not write ([`text_region`]), the regions
+//! earlier releases wrote there ([`retired_region`]), and the per-project
+//! directory under `UzeHome` ([`record`]).
 //!
 //! The work UZE runs inside a project (the agents it launched, their
 //! checkouts, their conversations and how their work lands) is the
@@ -25,4 +26,5 @@ pub mod project_context;
 pub mod project_lock;
 pub mod project_root;
 pub mod record;
+pub mod retired_region;
 pub mod text_region;

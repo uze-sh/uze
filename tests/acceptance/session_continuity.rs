@@ -177,13 +177,16 @@ fn a_relaunched_agent_resumes_the_conversation_its_task_was_left_in() {
 
     let launches = launches(&harness);
     assert_eq!(launches.len(), 2, "{launches:?}");
-    let [flag, started] = launches[0].as_slice() else {
+    // After the continuity flags, each launch carries its context's
+    // channel: every agent the workspace launches is given its
+    // instructions.
+    let [flag, started, ..] = launches[0].as_slice() else {
         panic!("the first launch names a conversation: {launches:?}");
     };
     assert_eq!(flag, "--session-id", "{launches:?}");
     assert_eq!(
-        launches[1],
-        vec!["--resume".to_owned(), started.clone()],
+        launches[1][..2],
+        ["--resume".to_owned(), started.clone()],
         "the second launch continues the first: {launches:?}"
     );
 }
@@ -357,13 +360,16 @@ fn an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation() {
 
     let launches = launches(&harness);
     assert_eq!(launches.len(), 2, "{launches:?}");
-    let [flag, started] = launches[0].as_slice() else {
+    // After the continuity flags, each launch carries its context's
+    // channel: every agent the workspace launches is given its
+    // instructions.
+    let [flag, started, ..] = launches[0].as_slice() else {
         panic!("the first launch names a conversation: {launches:?}");
     };
     assert_eq!(flag, "--session-id", "{launches:?}");
     assert_eq!(
-        launches[1],
-        vec!["--resume".to_owned(), started.clone()],
+        launches[1][..2],
+        ["--resume".to_owned(), started.clone()],
         "the relaunch continues the conversation: {launches:?}"
     );
 }

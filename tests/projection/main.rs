@@ -4,5 +4,5 @@
 
 mod invocation;
 mod naming;
+mod retired_regions;
 mod skill_roots;
-mod worktree_policy;

@@ -321,6 +321,14 @@ pub(crate) fn run_agent_work(app: &UzeApplication, action: AgentWorkAction) -> R
                     uze_application::inert(&warning.to_string())
                 );
             }
+            // What the parent hands its subagent with the path: a split
+            // checkout carries no instructions of its own, and a subagent's
+            // harness may not pass it the parent's launch context. On
+            // stderr, so stdout stays the path alone.
+            eprintln!(
+                "Hand the subagent this checkout with: commit your work here, as you go; \
+                 never switch its branch, and never make a worktree with Git."
+            );
             // The path alone, so `cd "$(uze agent work split <topic>)"` works.
             println!("{}", split.path.display());
         }

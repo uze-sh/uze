@@ -879,7 +879,7 @@ const PACKAGE_MANAGER_APPLICATION: &[&str] = &[
     "crates/uze-application/src/application/lifecycle.rs",
     "crates/uze-application/src/application/project_environment.rs",
     "crates/uze-application/src/application/context.rs",
-    "crates/uze-application/src/application/managed_region.rs",
+    "crates/uze-application/src/application/retired_regions.rs",
     "crates/uze-application/src/application/marketplace.rs",
     "crates/uze-application/src/application/marketplace_catalogue.rs",
     "crates/uze-application/src/application/authoring.rs",

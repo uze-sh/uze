@@ -108,25 +108,19 @@ pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAge
     });
 }
 
-/// What keeping one project's `AGENTS.md` in step found that the operator
-/// should hear: a workspace section edited by hand, which is left as it is,
-/// or one that could not be written. Nothing is sent when it is in step.
-pub(super) struct PolicyRegionResolution {
+/// A project whose `AGENTS.md` still carries regions an earlier release
+/// wrote, which `uze install` removes.
+pub(super) struct RetiredRegionsNotice {
     pub(super) file: PathBuf,
-    pub(super) problem: String,
-    pub(super) drifted: bool,
 }
 
-/// Keeps the workspace's region of each directory's `AGENTS.md` in step
-/// with what its project declares, in the primary checkout only. Off the
-/// frame like every other repository touch: it reads `agents.yaml`, may ask
-/// Git about linked files, and may write the file. A sync with nothing new
-/// writes nothing, so asking on the refresh clock is how an edit to
-/// `agents.yaml` reaches the file without a command.
-pub(super) fn spawn_policy_region_sync(
+/// Looks, off the frame like every other repository touch, for regions an
+/// earlier release left in each directory's primary `AGENTS.md`. It only
+/// reads: the workspace writes nothing into the operator's files.
+pub(super) fn spawn_retired_region_check(
     home: &UzeHome,
     directories: Vec<PathBuf>,
-    sender: mpsc::Sender<PolicyRegionResolution>,
+    sender: mpsc::Sender<RetiredRegionsNotice>,
 ) {
     if directories.is_empty() {
         return;
@@ -134,35 +128,19 @@ pub(super) fn spawn_policy_region_sync(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.policy_region_sync", parent: &parent);
+        let _pass = crate::telemetry::background_pass!("tui.retired_region_check", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
         };
         let mut seen = std::collections::BTreeSet::new();
         for directory in directories {
-            let resolution = match app.workspace().sync_policy_region(&directory) {
-                Ok(Some(region)) if !seen.insert(region.file.clone()) => continue,
-                Ok(Some(region)) => match region.state {
-                    uze_application::AttachmentState::Drifted => PolicyRegionResolution {
-                        file: region.file,
-                        problem: region.reason,
-                        drifted: true,
-                    },
-                    uze_application::AttachmentState::Blocked => PolicyRegionResolution {
-                        file: region.file,
-                        problem: region.reason,
-                        drifted: false,
-                    },
-                    _ => continue,
-                },
-                Ok(None) => continue,
-                Err(error) => PolicyRegionResolution {
-                    file: directory,
-                    problem: error.to_string(),
-                    drifted: false,
-                },
+            let Some(plan) = app.workspace().retired_regions(&directory) else {
+                continue;
             };
-            let _ = sender.send(resolution);
+            if !seen.insert(plan.file.clone()) {
+                continue;
+            }
+            let _ = sender.send(RetiredRegionsNotice { file: plan.file });
         }
     });
 }

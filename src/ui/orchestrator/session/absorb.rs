@@ -358,10 +358,10 @@ impl Attach<'_> {
             unread.clone(),
             self.channels.commands_awaiting.sender.clone(),
         );
-        spawn_policy_region_sync(
+        spawn_retired_region_check(
             self.home,
             unread,
-            self.channels.policy_regions.sender.clone(),
+            self.channels.retired_regions.sender.clone(),
         );
         if self
             .model
@@ -394,13 +394,10 @@ impl Attach<'_> {
                 self.model
                     .schedule_evaluation(self.home, cwd.clone(), &self.channels.tasks.sender);
             }
-            // The same clock keeps each project's `AGENTS.md` in step with
-            // an edit to its `agents.yaml`: a sync with nothing new writes
-            // nothing.
-            spawn_policy_region_sync(
+            spawn_retired_region_check(
                 self.home,
                 directories,
-                self.channels.policy_regions.sender.clone(),
+                self.channels.retired_regions.sender.clone(),
             );
             // On the same clock, and for every agent rather than the
             // selected one: this is also where a launch left pending by a
@@ -585,23 +582,22 @@ impl Attach<'_> {
         }
     }
 
-    pub(super) fn absorb_policy_regions(&mut self) {
-        while let Ok(resolution) = self.channels.policy_regions.receiver.try_recv() {
+    pub(super) fn absorb_retired_regions(&mut self) {
+        while let Ok(notice) = self.channels.retired_regions.receiver.try_recv() {
             if !self
                 .model
                 .remembered
-                .policy_region_reported
-                .insert(resolution.file.clone())
+                .retired_regions_reported
+                .insert(notice.file.clone())
             {
                 continue;
             }
-            let (kind, title) = if resolution.drifted {
-                (ToastKind::Warned, "AGENTS.md edited by hand")
-            } else {
-                (ToastKind::Failed, "AGENTS.md not updated")
-            };
-            self.model
-                .raise_toast(kind, title, resolution.problem, None);
+            self.model.raise_toast(
+                ToastKind::Warned,
+                "AGENTS.md has old text",
+                "run `uze install` to remove it",
+                None,
+            );
         }
     }
 

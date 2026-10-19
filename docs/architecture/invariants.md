@@ -1846,26 +1846,26 @@ launch.
 > `crates/uze-workspace/src/declaration.rs::a_link_to_a_tracked_file_is_rejected_and_an_ignored_one_loads`
 > `crates/uze-workspace/src/checkout/tests.rs::a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent`
 
-### The projection never triggers a harness's own isolation
+### The instructions never trigger a harness's own isolation
 
-The text projected into the shared baseline states where the reader already
-is and how to isolate a subagent; it never asks for a top-level worktree. A
-harness with its own worktree primitive activates on exactly that
-instruction, and would isolate a second time on top of the slot UZE already
-placed the agent in.
+The instructions a launched agent is given state where it already is (its
+checkout and branch, or the operator's own checkout) and how to give a
+subagent a checkout; they never ask for a top-level worktree. A harness with
+its own worktree primitive activates on exactly that instruction, and would
+isolate a second time on top of the slot UZE already placed the agent in.
 
-> `tests/projection/worktree_policy.rs::the_projection_never_triggers_a_harnesss_own_isolation`
-> `crates/uze-workspace/src/worktree.rs::the_projected_text_never_asks_for_a_top_level_worktree`
+> `crates/uze-workspace/src/worktree.rs::the_instructions_never_ask_for_a_top_level_worktree`
+> `crates/uze-workspace/src/worktree.rs::an_isolated_agent_is_told_its_checkout_branch_and_target`
 
-### A declaration stays editable
+### The policy an agent reads is the one in force at its launch
 
-The region's identity carries the rendered content's digest, so changing the
-`workspace:` section of `agents.yaml` reads as one region going stale and another appearing — never as drift
-inside the region that already exists. Exactly one policy region exists at a
-time, and a hand edit still drifts and is refused.
+The instructions are rendered on every launch and resume from the
+declaration in force and the branch the checkout has then, so an edit to
+`agents.yaml` reaches the next launch with nothing written anywhere, and a
+resume after naming states the new branch.
 
-> `tests/projection/worktree_policy.rs::editing_the_declaration_replaces_its_region_rather_than_drifting`
-> `tests/projection/worktree_policy.rs::an_edited_region_is_blocked_not_overwritten`
+> `crates/uze-workspace/src/continuity.rs::the_policy_in_force_is_the_one_the_manifest_declares`
+> `crates/uze-workspace/src/continuity.rs::the_instructions_name_the_branch_the_checkout_has_now`
 
 ### A change view shows one checkout, never the repository
 
@@ -2255,7 +2255,7 @@ a harness an agent starts — is composed nothing and given nothing.
 
 > `crates/uze-workspace/src/continuity.rs::a_channel_gives_the_briefing_on_every_launch_and_never_in_argv`
 > `crates/uze-workspace/src/continuity.rs::an_operators_own_invocation_is_given_no_context`
-> `crates/uze-workspace/src/continuity.rs::nothing_to_give_delivers_nothing`
+> `crates/uze-workspace/src/continuity.rs::every_launch_is_given_its_instructions`
 > `crates/uze-integrations/src/opencode/agent_context.rs::the_document_is_written_under_the_assigned_conversation`
 
 ### Memory never enters a checkout, and an agent's machine fact waits for the operator
@@ -2575,18 +2575,25 @@ package manager's keys as they were.
 > `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
 > `crates/uze-workspace/src/declaration.rs::tests::choosing_a_delivery_adds_the_section_and_leaves_the_rest_alone`
 
-### Each region of `AGENTS.md` has one owner
+### The workspace never writes `AGENTS.md`, and retired regions are removed
 
-The package manager writes its regions (plugin contributions, plugin
-authoring) and counts only those as drift; it never writes, removes or
-counts the workspace's region. The workspace keeps its own in step in the
-primary checkout only, never in a slot, and an isolate does not carry a
-region-only change. Both owners take one per-project guard on the file.
+Neither a launch nor the workspace client writes the operator's
+`AGENTS.md`; the one writer left is the package manager's region per
+declared plugin, until plugins speak through rules. Reconciling a project
+removes the regions earlier releases
+wrote (the workspace policy, the plugin authoring verbs), in a main working
+tree only and only while each holds the bytes its identity's digest names;
+one edited by hand is reported and left. A linked worktree is never
+cleaned, and an isolate does not carry a removal-only change into the
+agent's branch. One per-project guard serializes writers of the file.
 
-> `tests/projection/worktree_policy.rs::package_reconciliation_neither_writes_nor_removes_the_workspace_region`
-> `tests/projection/worktree_policy.rs::a_stale_workspace_region_leaves_the_package_environment_clear`
-> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_launch_in_the_primary_syncs_the_region_and_a_slot_is_never_written`
-> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_leaves_the_synced_region_behind_and_carries_the_rest`
+> `tests/projection/retired_regions.rs::reconciling_removes_what_an_earlier_release_wrote_and_nothing_else`
+> `tests/projection/retired_regions.rs::a_region_edited_by_hand_is_the_operators_now`
+> `tests/projection/retired_regions.rs::reconciling_a_project_writes_no_uze_text_into_agents_md`
+> `tests/projection/retired_regions.rs::the_workspace_client_only_reads_what_is_left`
+> `crates/uze-application/src/application/retired_regions.rs::tests::a_linked_worktree_is_never_cleaned`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_launch_writes_nothing_into_agents_md_anywhere`
+> `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_leaves_a_retired_regions_removal_behind_and_carries_the_rest`
 > `crates/uze-core/src/project/project_context.rs::tests::a_second_owner_waits_for_the_first`
 
 ### No shell file is edited, and the shim is the workspace's
@@ -2925,7 +2932,7 @@ and set aside for a reason rather than forgotten.
 
 ### The name is asked for as the first command about clear work
 
-The projected region's first bullet is the naming clause. Once a user message
+The launch instructions' first bullet is the naming clause. Once a user message
 makes the work's topic clear, it asks for the name as the agent's first
 command, before it reads a file, plans or edits. The moment carries the rule:
 a name states an intention, which is what an agent holds at its first topical
@@ -2935,7 +2942,7 @@ There is no mechanism behind this, which is exactly why the wording and the
 position are pinned by a test rather than left to whoever edits the string
 next.
 
-> `crates/uze-workspace/src/worktree.rs::naming_happens_as_soon_as_a_topic_is_clear`
+> `crates/uze-workspace/src/worktree.rs::naming_is_the_first_thing_asked_for`
 
 ### Work that reaches a commit unnamed is named from that commit
 
@@ -2978,14 +2985,14 @@ where `commits_ahead` answers `0` and a task with work reads as having none.
 ### Drift along the environment chain is reported, never applied on its own
 
 Declared (`agents.yaml`) → locked (`agents.lock`) → installed (the Store) →
-delivered (the projected region) is compared from the manifest down, and the
+delivered (what reaches each harness) is compared from the manifest down, and the
 comparison is two file reads and a set difference — no acquisition, no
 network. Converging a removal edits the lock and nothing on the machine:
 the Store keeps the package and every harness keeps reading it, because
 other projects share both and machine scope is `uze remove <plugin> -m`'s.
 
 > `tests/project/consumer.rs::drift::install_converges_the_lock_and_leaves_the_machine_alone`
-> `tests/project/consumer.rs::drift::a_package_region_gone_from_agents_md_reads_as_stale_until_install_clears_it`
+> `tests/project/consumer.rs::drift::a_region_an_earlier_release_left_reads_as_stale_until_install_removes_it`
 
 
 ## Input (M6)

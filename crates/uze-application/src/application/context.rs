@@ -8,7 +8,6 @@ use std::{
 
 use uze_core::{
     Result, UzeError,
-    authoring::region as authoring_region,
     context::{self as instruction_context, InstructionContribution},
     integration::{AttachmentState, ContextDelivery},
     manifest,
@@ -16,7 +15,7 @@ use uze_core::{
     text_region,
 };
 
-use super::managed_region::{self, Desired, plan_action_for_region};
+use super::retired_regions::{self, plan_action_for_region};
 
 use super::services::Context;
 use super::*;
@@ -169,20 +168,14 @@ impl Context<'_> {
             })
             .collect();
 
-        let authoring = authoring_desired(&canonical);
-        let authoring_region = authoring.is_some().then(|| {
-            managed_region::plan(
-                &agents_md,
-                authoring_region::owns_region,
-                &authoring,
-                "plugin authoring",
-            )
-        });
+        let retired_regions = retired_regions::applies_at(&canonical)
+            .then(|| retired_regions::plan(&agents_md))
+            .flatten();
 
         Ok(ContextPlan {
             agents_md,
             agents_md_plan,
-            authoring_region,
+            retired_regions,
             bridges,
         })
     }
@@ -201,18 +194,15 @@ impl Context<'_> {
         if let Some(error) = unreadable_manifest {
             return Err(error);
         }
-        // Two owners rewrite this file (the package manager here, the
-        // workspace its policy region), each as a whole-file read-modify-write.
+        // A whole-file read-modify-write, so one pass at a time per project.
         let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
         let agents_md_report = instruction_context::reconcile_agents_md(&agents_md, &contributions);
 
-        // Reconciled before the bridges, for the same reason package
-        // contributions are: a bridge's own desired-state question is
-        // answered by what `AGENTS.md` ends up carrying.
-        let authoring = authoring_desired(&canonical);
-        let authoring_region = (authoring.is_some()
-            || !managed_region::in_step(&agents_md, authoring_region::owns_region, &None))
-        .then(|| managed_region::converge(&agents_md, authoring_region::owns_region, authoring));
+        let retired_regions = if retired_regions::applies_at(&canonical) {
+            retired_regions::remove(&agents_md)?
+        } else {
+            None
+        };
 
         let bridges = self
             .detected_bridges(&canonical)
@@ -250,7 +240,7 @@ impl Context<'_> {
                 .into_iter()
                 .map(|(package_id, reason)| (package_id.as_str().to_owned(), reason))
                 .collect(),
-            authoring_region,
+            retired_regions,
             bridges,
         })
     }
@@ -457,15 +447,4 @@ fn derive_warnings(
         }
     }
     warnings
-}
-
-/// The authoring region a project is owed: one for every project with an
-/// `agents.yaml`, whether or not the workspace is ever used there.
-pub(super) fn authoring_desired(canonical: &Path) -> Desired {
-    manifest::manifest_path_for(canonical).is_file().then(|| {
-        (
-            authoring_region::identity(),
-            authoring_region::instructions(),
-        )
-    })
 }

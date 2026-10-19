@@ -64,10 +64,11 @@ shown, never touched.
 A project has no `workspace:` section until somebody chooses something: the
 `agents.yaml` uze creates says nothing about the workspace, and every key is in
 the [reference](/docs/reference/project-files#workspace). Whatever is chosen,
-or the defaults when nothing is, the workspace keeps a "Concurrent work
-isolation" section in `AGENTS.md` in step with it, in your checkout, for the
-agents it launches: how to name their work, where they stand and how their
-work is delivered. It never creates `AGENTS.md` for this; `uze install` does.
+or the defaults when nothing is, each agent the workspace launches is told
+what applies to it when it starts: how to name its work, which checkout and
+branch it is in and how its work is delivered. It arrives with the agent's
+context, the way `AGENTS.md` does, and nothing is written into your files: an
+edit to `agents.yaml` reaches the next agent you launch.
 The agents themselves carry the part no harness does for them with the
 `uze:worktree` skill.
 

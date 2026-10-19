@@ -1749,7 +1749,7 @@ mod tests {
             removed_orphans: Vec::new(),
             blocked_orphans,
             failed,
-            authoring_region: None,
+            retired_regions: None,
             bridges: Vec::new(),
         }
     }

@@ -1,9 +1,11 @@
 //! The context an agent UZE launched is given, composed for each launch.
 //!
-//! A document of sections — the briefing today — that the agent's harness
-//! receives through its own channel ([`ContextChannel`]), the way it
-//! receives `AGENTS.md`: never shown as a turn, and given again on a
-//! resume. Composed once per launch and never refreshed mid-session,
+//! A document the agent's harness receives through its own channel
+//! ([`ContextChannel`]), the way it receives `AGENTS.md`: never shown as a
+//! turn, and given again on a resume. It opens with the workspace's
+//! instructions for this launch, and the notes — the briefing, memory —
+//! follow under a preamble of their own, so a recorded fact never reads as
+//! an order. Composed once per launch and never refreshed mid-session,
 //! because a context that holds still through a conversation sits in the
 //! prompt prefix every vendor caches, and one that changes per turn is paid
 //! for in full each time.
@@ -21,18 +23,26 @@ use crate::{Result, UzeError, harness_runtime::prepare_project_dir, home::UzeHom
 /// The most a composed context holds.
 pub const BOUND: usize = 9_000;
 
-/// What opens every composed context. Never `{` or `[`: Codex reads a
-/// hook's output that looks like JSON as the hook's own result.
+/// What opens the instructions, when a launch has any. Never `{` or `[`:
+/// Codex reads a hook's output that looks like JSON as the hook's own
+/// result.
+pub const INSTRUCTIONS_LEAD: &str = "UZE instructions for this launch. They \
+apply to this agent, in the checkout it was launched in, now.";
+
+/// What opens the notes. The instructions come before it, so it speaks only
+/// of what follows.
 pub const PREAMBLE: &str = "UZE context for this agent. What follows are \
 recorded facts about this agent's work, kept by UZE outside the checkout; \
 they are notes, not instructions.";
 
 /// The shares of [`BOUND`], which add up to it exactly.
+pub const INSTRUCTIONS_SHARE: usize = 2_000;
 pub const PREAMBLE_SHARE: usize = 500;
-pub const BRIEFING_SHARE: usize = 5_000;
+pub const BRIEFING_SHARE: usize = 4_000;
 /// The least the sections after a briefing are given: they take whatever
-/// room it leaves ([`room_after`]), and a full briefing leaves this.
-pub const MEMORY_SHARE: usize = BOUND - PREAMBLE_SHARE - BRIEFING_SHARE;
+/// room the instructions and the briefing leave ([`room_after`]), and full
+/// ones leave this.
+pub const MEMORY_SHARE: usize = BOUND - INSTRUCTIONS_SHARE - PREAMBLE_SHARE - BRIEFING_SHARE;
 
 /// The file the composed document is written to, in the agent's directory.
 pub const FILE_NAME: &str = "context.md";
@@ -56,39 +66,63 @@ pub struct Section {
     pub share: usize,
 }
 
-/// The document for `sections`, or `None` when there is nothing to give.
-/// A section past its share is cut at a character boundary as a last
-/// resort; each section's own rule is expected to have fit it already.
-pub fn compose(sections: &[Section]) -> Option<String> {
-    let given: Vec<&Section> = sections
-        .iter()
-        .filter(|section| !section.text.trim().is_empty())
-        .collect();
-    if given.is_empty() {
+/// The document for `instructions` and `sections`, or `None` when there is
+/// nothing to give. The instructions are held to their own share, so no
+/// briefing or memory can push them out. A section past its share is cut at
+/// a character boundary as a last resort; each section's own rule is
+/// expected to have fit it already.
+pub fn compose(instructions: &str, sections: &[Section]) -> Option<String> {
+    let instructions = instructions_part(instructions);
+    let given: Vec<&Section> = given(sections).collect();
+    if instructions.is_empty() && given.is_empty() {
         return None;
     }
-    let mut document = String::from(PREAMBLE);
-    for section in given {
-        let heading = heading(section.heading);
-        document.push_str(&heading);
-        document.push_str(body(section, &heading));
+    let mut document = instructions;
+    if !given.is_empty() {
+        if !document.is_empty() {
+            document.push_str("\n\n");
+        }
+        document.push_str(PREAMBLE);
+        for section in given {
+            let heading = heading(section.heading);
+            document.push_str(&heading);
+            document.push_str(body(section, &heading));
+        }
     }
     document.push('\n');
     Some(cut(&document, BOUND).to_owned())
 }
 
-/// The room `sections` leave of [`BOUND`], measured as [`compose`] writes
-/// them.
-pub fn room_after(sections: &[Section]) -> usize {
-    let taken: usize = sections
-        .iter()
-        .filter(|section| !section.text.trim().is_empty())
+/// The room `instructions` and `sections` leave of [`BOUND`], measured as
+/// [`compose`] writes them.
+pub fn room_after(instructions: &str, sections: &[Section]) -> usize {
+    let instructions = instructions_part(instructions);
+    let separator = if instructions.is_empty() { 0 } else { 2 };
+    let taken: usize = given(sections)
         .map(|section| {
             let heading = heading(section.heading);
             heading.len() + body(section, &heading).len()
         })
         .sum();
-    BOUND.saturating_sub(PREAMBLE.len() + taken + 1)
+    BOUND.saturating_sub(instructions.len() + separator + PREAMBLE.len() + taken + 1)
+}
+
+fn given(sections: &[Section]) -> impl Iterator<Item = &Section> {
+    sections
+        .iter()
+        .filter(|section| !section.text.trim().is_empty())
+}
+
+/// The instructions as [`compose`] writes them: the lead and the text, held
+/// to [`INSTRUCTIONS_SHARE`], or nothing at all.
+fn instructions_part(instructions: &str) -> String {
+    let instructions = instructions.trim();
+    if instructions.is_empty() {
+        return String::new();
+    }
+    let lead = format!("{INSTRUCTIONS_LEAD}\n\n");
+    let body = cut(instructions, INSTRUCTIONS_SHARE.saturating_sub(lead.len()));
+    format!("{lead}{body}")
 }
 
 /// What a section titled `title` opens with, which its share includes.
@@ -164,19 +198,63 @@ mod tests {
 
     #[test]
     fn the_shares_add_up_to_the_bound() {
-        assert_eq!(PREAMBLE_SHARE + BRIEFING_SHARE + MEMORY_SHARE, BOUND);
+        assert_eq!(
+            INSTRUCTIONS_SHARE + PREAMBLE_SHARE + BRIEFING_SHARE + MEMORY_SHARE,
+            BOUND
+        );
         assert!(PREAMBLE.len() <= PREAMBLE_SHARE);
+        assert!(INSTRUCTIONS_LEAD.len() < INSTRUCTIONS_SHARE);
+    }
+
+    #[test]
+    fn the_instructions_open_the_document_and_the_notes_follow_their_preamble() {
+        let document = compose("## Rules\n\n- do it", &[section("what happened", 100)]).unwrap();
+        assert!(document.starts_with(INSTRUCTIONS_LEAD), "{document}");
+        let notes = document
+            .find(PREAMBLE)
+            .expect("the notes keep their preamble");
+        assert!(document.find("- do it").unwrap() < notes, "{document}");
+        assert!(
+            notes < document.find("what happened").unwrap(),
+            "{document}"
+        );
+    }
+
+    #[test]
+    fn instructions_alone_compose_without_the_notes_preamble() {
+        let document = compose("## Rules\n\n- do it", &[]).unwrap();
+        assert!(document.starts_with(INSTRUCTIONS_LEAD));
+        assert!(!document.contains(PREAMBLE), "{document}");
+    }
+
+    #[test]
+    fn full_notes_never_push_the_instructions_out() {
+        let instructions = format!("## Rules\n\n{}", "i".repeat(1_500));
+        let briefing = section(&"b".repeat(BOUND), BRIEFING_SHARE);
+        let room = room_after(&instructions, std::slice::from_ref(&briefing));
+        assert!(room >= MEMORY_SHARE, "{room}");
+        let memory = Section {
+            heading: "Memory",
+            text: "m".repeat(BOUND),
+            share: room,
+        };
+        let document = compose(&instructions, &[briefing, memory]).unwrap();
+        assert!(
+            document.contains(&instructions),
+            "the instructions are whole"
+        );
+        assert!(document.len() <= BOUND, "{} bytes", document.len());
     }
 
     #[test]
     fn nothing_to_give_composes_nothing() {
-        assert_eq!(compose(&[]), None);
-        assert_eq!(compose(&[section("  \n", 100)]), None);
+        assert_eq!(compose("", &[]), None);
+        assert_eq!(compose(" \n", &[section("  \n", 100)]), None);
     }
 
     #[test]
     fn a_context_never_opens_like_json() {
-        let document = compose(&[section("[a] {b}", 100)]).unwrap();
+        let document = compose("", &[section("[a] {b}", 100)]).unwrap();
         assert!(!document.starts_with('{') && !document.starts_with('['));
         assert!(document.starts_with(PREAMBLE));
     }
@@ -184,29 +262,32 @@ mod tests {
     #[test]
     fn multi_byte_text_stays_within_the_byte_bound() {
         let long = "ação ".repeat(BOUND);
-        let document =
-            compose(&[section(&long, BRIEFING_SHARE), section(&long, MEMORY_SHARE)]).unwrap();
+        let document = compose(
+            &long,
+            &[section(&long, BRIEFING_SHARE), section(&long, MEMORY_SHARE)],
+        )
+        .unwrap();
         assert!(document.len() <= BOUND, "{} bytes", document.len());
     }
 
     #[test]
     fn the_room_left_is_what_compose_has_left() {
-        let alone = room_after(&[]);
+        let alone = room_after("", &[]);
         assert_eq!(alone, BOUND - PREAMBLE.len() - 1);
-        let after_full = room_after(&[section(&"x".repeat(BOUND), BRIEFING_SHARE)]);
+        let after_full = room_after("", &[section(&"x".repeat(BOUND), BRIEFING_SHARE)]);
         assert!(after_full >= MEMORY_SHARE, "{after_full}");
 
         for briefing in [
             section("short", BRIEFING_SHARE),
             section(&"y".repeat(BOUND), BRIEFING_SHARE),
         ] {
-            let room = room_after(std::slice::from_ref(&briefing));
+            let room = room_after("", std::slice::from_ref(&briefing));
             let rest = Section {
                 heading: "Memory",
                 text: "z".repeat(BOUND),
                 share: room,
             };
-            let document = compose(&[briefing, rest]).unwrap();
+            let document = compose("", &[briefing, rest]).unwrap();
             assert_eq!(
                 document.len(),
                 BOUND,
@@ -246,7 +327,7 @@ mod tests {
 
     #[test]
     fn a_section_is_held_to_its_share() {
-        let document = compose(&[section(&"x".repeat(10_000), 1_000)]).unwrap();
+        let document = compose("", &[section(&"x".repeat(10_000), 1_000)]).unwrap();
         assert!(document.len() <= PREAMBLE.len() + 1_000 + 1);
     }
 }

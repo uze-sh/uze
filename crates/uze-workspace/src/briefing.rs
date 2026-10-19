@@ -45,6 +45,15 @@ pub fn first_turn(briefing: &Path) -> String {
     )
 }
 
+/// The operator's first message to a harness with no invisible channel,
+/// on a conversation that starts with nothing to take over.
+pub fn instructions_turn(context: &Path) -> String {
+    format!(
+        "Read {} first: it holds UZE's instructions for this launch.",
+        context.display()
+    )
+}
+
 /// Who is handing over to whom, and since when.
 #[derive(Clone, Debug)]
 pub struct Handover<'a> {

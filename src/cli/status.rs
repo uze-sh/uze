@@ -652,7 +652,7 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         instructions[1] = format!(
             "{} {}",
             progress::warning_icon(),
-            progress::label("behind what uze keeps there")
+            progress::label("carries sections an earlier uze wrote; `uze install` removes them")
         );
     }
     let mut rows = vec![instructions];
@@ -1272,20 +1272,23 @@ pub(crate) fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> S
             render_action(&bridge.action),
         ]);
     }
-    if let Some(region) = &plan.authoring_region {
-        rows.push(vec![
-            region.file.file_name().map_or_else(
-                || progress::path(&region.file),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            "plugin authoring".to_owned(),
-            render_action(&region.action),
-        ]);
-        for identity in &region.superseded {
+    if let Some(regions) = &plan.retired_regions {
+        let file = regions.file.file_name().map_or_else(
+            || progress::path(&regions.file),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        for identity in &regions.remove {
             rows.push(vec![
-                String::new(),
+                file.clone(),
                 identity.clone(),
-                progress::warning_text("remove, superseded"),
+                progress::warning_text("remove, written by an earlier release"),
+            ]);
+        }
+        for (identity, reason) in &regions.keep {
+            rows.push(vec![
+                file.clone(),
+                identity.clone(),
+                progress::warning_text(format!("keep: {reason}")),
             ]);
         }
     }
@@ -1340,27 +1343,23 @@ pub(crate) fn render_context_reconciliation(
             progress::error_text(format!("failed: {reason}")),
         ]);
     }
-    if let Some(region) = &report.authoring_region {
-        rows.push(vec![
-            region.file.file_name().map_or_else(
-                || progress::path(&region.file),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            "plugin authoring".to_owned(),
-            progress::label(format!("{:?}", region.state).to_lowercase()),
-        ]);
-        for identity in &region.removed_superseded {
+    if let Some(regions) = &report.retired_regions {
+        let file = regions.file.file_name().map_or_else(
+            || progress::path(&regions.file),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        for identity in &regions.removed {
             rows.push(vec![
-                String::new(),
+                file.clone(),
                 identity.clone(),
-                progress::label("removed, superseded"),
+                progress::label("removed, written by an earlier release"),
             ]);
         }
-        for (identity, reason) in &region.blocked_superseded {
+        for (identity, reason) in &regions.kept {
             rows.push(vec![
-                String::new(),
+                file.clone(),
                 identity.clone(),
-                progress::error_text(format!("blocked: {reason}")),
+                progress::warning_text(format!("kept: {reason}")),
             ]);
         }
     }

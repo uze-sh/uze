@@ -23,9 +23,11 @@ are relaunched in the new checkout — with whatever their tree had
 uncommitted, if they said to carry it, and possibly with a conversation
 that starts over, because a harness that files a conversation under the
 directory it ran in cannot resume it elsewhere.
-When the project declares a policy, the "Concurrent work isolation"
-section of `AGENTS.md` states the layout and what happens to finished
-work; the workspace keeps it in step with `agents.yaml`.
+The "Concurrent work isolation" instructions UZE gave you at launch state
+where you are (your checkout and branch, or the operator's own checkout)
+and what happens to finished work, from the policy `agents.yaml` declares.
+They arrive with your context, not in `AGENTS.md`: UZE writes nothing into
+the project's files.
 
 This skill is what no harness does for you: the part of that arrangement
 you have to carry yourself.

@@ -906,27 +906,25 @@ pub struct ProjectContextStatus {
     pub warnings: Vec<String>,
 }
 
-/// The planned change to one region UZE owns in `AGENTS.md`.
+/// The regions an earlier release wrote into `AGENTS.md` that this pass
+/// would take out, and the ones it would leave.
 #[derive(Clone, Debug, Serialize)]
-pub struct ManagedRegionPlan {
+pub struct RetiredRegionsPlan {
     pub file: PathBuf,
-    pub action: instruction_context::PlannedAction,
-    /// Versions of the region an earlier text left, which this pass would
-    /// remove. A change of text reads as one region going stale and another
-    /// appearing, never as drift inside the region that already exists.
-    pub superseded: Vec<String>,
+    /// Regions still holding what they were written with.
+    pub remove: Vec<String>,
+    /// Regions edited by hand or malformed, with why each stays.
+    pub keep: Vec<(String, String)>,
 }
 
-/// What converging one region UZE owns in `AGENTS.md` did.
+/// What removing the regions an earlier release wrote did.
 #[derive(Clone, Debug, Serialize)]
-pub struct ManagedRegionStatus {
+pub struct RetiredRegionsStatus {
     pub file: PathBuf,
-    pub state: AttachmentState,
-    pub reason: String,
-    pub removed_superseded: Vec<String>,
-    /// A superseded region whose markers were malformed, so ownership could
-    /// not be proven and nothing was removed.
-    pub blocked_superseded: Vec<(String, String)>,
+    pub removed: Vec<String>,
+    /// Regions left where they are, with why: an edit by hand is the
+    /// operator's text now.
+    pub kept: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -940,9 +938,9 @@ pub struct BridgePlan {
 pub struct ContextPlan {
     pub agents_md: PathBuf,
     pub agents_md_plan: instruction_context::AgentsMdPlan,
-    /// The package manager's plugin-authoring region, present for a project
-    /// with an `agents.yaml`.
-    pub authoring_region: Option<ManagedRegionPlan>,
+    /// Regions an earlier release wrote, present only until they are
+    /// removed.
+    pub retired_regions: Option<RetiredRegionsPlan>,
     pub bridges: Vec<BridgePlan>,
 }
 
@@ -950,9 +948,9 @@ impl ContextPlan {
     pub fn has_changes(&self) -> bool {
         self.agents_md_plan.has_changes()
             || self
-                .authoring_region
+                .retired_regions
                 .as_ref()
-                .is_some_and(|region| is_mutating(&region.action) || !region.superseded.is_empty())
+                .is_some_and(|regions| !regions.remove.is_empty())
             || self
                 .bridges
                 .iter()
@@ -1158,7 +1156,7 @@ pub struct ContextReconciliationReport {
     /// A package whose region this pass could not write, with the reason —
     /// distinct from a region that is merely absent.
     pub failed: Vec<(String, String)>,
-    pub authoring_region: Option<ManagedRegionStatus>,
+    pub retired_regions: Option<RetiredRegionsStatus>,
     pub bridges: Vec<BridgeStatus>,
 }
 

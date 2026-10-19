@@ -784,6 +784,29 @@ fn inspect_lines(
     )
 }
 
+/// The bytes a well-formed region holds, as they were handed to [`attach`]
+/// (each line followed by a newline), or `None` when the region is absent,
+/// malformed or the file cannot be read. What a caller holding only a
+/// digest of the content it wrote compares against.
+pub fn region_body(target_file: &Path, region_identity: &str) -> Option<String> {
+    if !identity_is_valid(region_identity) {
+        return None;
+    }
+    let Ok(Some(lines)) = read_lines(target_file) else {
+        return None;
+    };
+    let (begin_marker, end_marker) = markers(region_identity);
+    let Scan::WellFormed { begin, end } = scan(&lines, &begin_marker, &end_marker) else {
+        return None;
+    };
+    let body = joined_text(&lines[begin + 1..end]);
+    Some(if body.is_empty() {
+        body
+    } else {
+        format!("{body}\n")
+    })
+}
+
 /// The `region_identity` named by every begin marker line in
 /// `target_file`, in file order — one entry per line, so an identity whose
 /// markers are duplicated or half present appears too, as often as its
@@ -1495,6 +1518,21 @@ mod tests {
             AttachmentState::Blocked
         );
         assert!(convergence.desired[0].write_failure.is_some());
+    }
+
+    #[test]
+    fn a_region_body_is_what_was_attached() {
+        let dir = uze_testkit::temp::scratch("text-region-body");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("AGENTS.md");
+        std::fs::write(&file, "# Mine\n").unwrap();
+        attach(&file, "owner/abc", "line one\nline two\n").unwrap();
+        assert_eq!(
+            region_body(&file, "owner/abc").as_deref(),
+            Some("line one\nline two\n")
+        );
+        assert_eq!(region_body(&file, "owner/other"), None);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

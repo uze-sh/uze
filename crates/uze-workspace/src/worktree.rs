@@ -11,9 +11,8 @@
 //! - the fixed layout every layer must agree on (`.worktrees/<id>`,
 //!   branch `agent/<id>`), and the lexical questions asked of it;
 //! - what a project declares — what happens to finished work;
-//! - the text projected into the project's shared instruction file, whose
-//!   only audience is a writer UZE did not place: a subagent spawned inside
-//!   a harness session.
+//! - the instructions every agent the workspace launches is given through
+//!   its launch context, stated for where that agent stands.
 //!
 //! Deliberately *not* here: any instruction to create a top-level worktree.
 //! A harness with its own worktree primitive activates on exactly that kind
@@ -24,12 +23,6 @@ use std::path::{Path, PathBuf};
 use uze_core::shell::ShellCommand;
 
 use serde::{Deserialize, Serialize};
-
-/// The prefix every managed region this module owns carries inside a
-/// project's shared instruction file. Project-scoped, deliberately outside
-/// the `package:*:instructions` shape `crate::context` owns, so neither
-/// module can ever see the other's region as an orphan to remove.
-pub const POLICY_REGION_PREFIX: &str = "project:worktree-policy";
 
 /// Where isolated checkouts live, relative to the primary checkout. Fixed,
 /// not configurable: the location is infrastructure, and every tool in this
@@ -509,36 +502,20 @@ pub enum PolicyStep {
     Gate,
 }
 
+/// Where a launched agent stands, as the launcher knows it when it
+/// composes the agent's context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Placement<'a> {
+    /// In a checkout of its own: the checkout as the agent should read it
+    /// (relative to the primary, `.worktrees/<id>`) and the branch it has
+    /// now, which naming the work renames.
+    Isolated { checkout: &'a Path, branch: &'a str },
+    /// In the operator's own checkout, on their branch.
+    InPlace,
+}
+
 impl WorktreePolicy {
-    /// The managed-region identity this exact policy owns.
-    ///
-    /// The rendered content's digest is part of the identity, and that is
-    /// what makes a declaration *editable*. With a fixed identity, a changed
-    /// policy would render different bytes into a region that already
-    /// exists, which `text_region` correctly refuses as drift — the policy
-    /// could be projected once and never updated again. Keying the identity
-    /// on the content instead turns an edit into "one region is now stale,
-    /// another is missing": both answerable without ever overwriting content
-    /// UZE did not write.
-    ///
-    /// A hand edit still drifts, because it changes the content *inside* an
-    /// identity that stays exactly what it was.
-    pub fn region_identity(&self) -> String {
-        format!(
-            "{POLICY_REGION_PREFIX}/{}",
-            crate::digest::short_hex(self.instructions().as_bytes())
-        )
-    }
-
-    /// Whether `identity` is a region this module owns — the test for a
-    /// stale region left by a previous declaration.
-    pub fn owns_region(identity: &str) -> bool {
-        identity
-            .strip_prefix(POLICY_REGION_PREFIX)
-            .is_some_and(|rest| rest.starts_with('/'))
-    }
-
-    /// What the projected text tells an agent about naming its work.
+    /// What the instructions tell an agent about naming its work.
     ///
     /// An agent names itself as soon as the conversation gives it a clear
     /// topic — normally from the first user message — and as its first
@@ -546,89 +523,91 @@ impl WorktreePolicy {
     /// against work already under way, and that is when it was skipped. The
     /// vocabulary is spelled out rather than referred to, because an agent
     /// cannot open `agents.yaml` it was never told about.
-    fn naming_clause(&self) -> String {
+    fn naming_clause(&self, placement: &Placement<'_>) -> String {
         if !self.branch.names_work() {
             return String::new();
         }
+        let renames = match placement {
+            Placement::Isolated { .. } => "It renames your branch as well as your label.",
+            Placement::InPlace => {
+                "It changes your label only: the operator's branch keeps its name."
+            }
+        };
         format!(
             "- As soon as a user message gives the conversation a clear topic — normally the \
              first message — make naming your work your first command, before reading a file, \
-             planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `{types}`. The \
-             subject is ideally one or two words, never more than three, naming the intention, \
-             not a description of the task — \
-             `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The \
-             command always updates your label. In a checkout of your own it also renames your \
-             branch; in the operator's checkout only your label changes. Work that reaches a \
-             commit still unnamed is named by UZE from that commit's subject. Name it again with \
-             the same command whenever the work turns out to be something else — the last name \
-             given is the one that stands. Invoke the command directly; do not merely say you \
-             will name the work.\n",
+             planning or editing: `uze agent work name <type>/<subject>`. Types this project \
+             accepts: `{types}`. The subject is ideally one or two words, never more than \
+             three, naming the intention, not a description of the task — \
+             `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. \
+             {renames} Work that reaches a commit still unnamed is named by UZE from that \
+             commit's subject. Name it again with the same command whenever the work turns out \
+             to be something else — the last name given is the one that stands. Invoke the \
+             command directly; do not merely say you will name the work.\n",
             types = self.branch.spelled()
         )
     }
 
-    /// The rendered statement projected into the project's shared
-    /// instruction file — the exact bytes the managed region carries.
+    /// The instructions an agent the workspace launched is given for this
+    /// launch, stated for where it actually stands.
     ///
-    /// Written for a writer UZE did not place. It names the verbs a
-    /// subagent's checkout is asked for through, and it states where the
-    /// reader already is
-    /// — isolated in a slot, or running in the operator's own checkout —
-    /// so an agent UZE isolated does not isolate itself again and an agent
-    /// UZE placed on the operator's branch does not go looking for a slot.
-    /// It never asks anyone to create a top-level worktree: UZE already did
-    /// that, at launch, for every agent it isolated.
+    /// The launcher knows the answers a projected region had to leave to the
+    /// reader — isolated or not, which checkout, which branch — so the text
+    /// states them and carries only the bullets that apply. It never asks
+    /// anyone to create a top-level worktree: UZE already did that, at
+    /// launch, for every agent it isolated.
     ///
     /// The order is the order the reader acts in, which is why naming comes
     /// before everything else: it is the only bullet asking for something
     /// now, and the rest are rules that apply when their moment arrives.
-    pub fn instructions(&self) -> String {
-        format!(
-            "## Concurrent work isolation\n\
-             \n\
-             This section is for an agent `uze workspace` launched. An agent started any other \
-             way can ignore it: nothing below applies to it, and the `uze agent work` commands \
-             it names refuse outside the workspace.\n\
-             \n\
-             {naming}\
-             - An agent UZE isolated works in a checkout of its own under \
-             `{directory}/<id>`, on branch `{prefix}<id>`. If your working directory is \
-             inside `{directory}/`, you are already isolated; do not switch branches.\n\
-             - If your working directory is not inside `{directory}/`, you are in the \
-             operator's own checkout, on the branch they are on: commit there, as you go, and \
-             never switch, reset, stash or clean it — the operator's uncommitted work is theirs. \
-             Nothing below about delivery applies to you; the branch keeps the name it has.\
-             {naming_in_place}\n\
-             - Commit your work on your own branch, as you go. Never commit to, merge into, \
-             rebase, or reset the target branch{target}: {completion}.\n\
-             - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
-             preserving the intent of your change, run `git rebase --continue`, run the \
-             project's checks, and end your turn.\n\
-             - Before spawning parallel subagents that write files, give each its own \
-             checkout: `uze agent work split <topic>` prints the path of one cut from your \
-             current commit — hand that path to the subagent. When it is done, commit in both \
-             checkouts and run `uze agent work join <topic>` to bring its commits onto your \
-             branch; on a conflict, resolve it in the subagent's checkout, run `git rebase \
-             --continue` there, and join again. `uze agent work list` shows them. Never make \
-             a worktree with Git for this: UZE only knows the checkouts it made. An agent in \
-             the operator's checkout has no branch of its own to join into, and runs its \
-             subagents one after another instead.\n",
-            directory = WORKTREES_DIRECTORY,
-            prefix = BRANCH_PREFIX,
-            naming = self.naming_clause(),
-            naming_in_place = if self.branch.names_work() {
-                " Naming your work still applies here, first: it names your label, never their \
-                 branch."
-            } else {
-                ""
-            },
-            target = self
-                .target
-                .as_deref()
-                .map(|target| format!(" (`{target}`)"))
-                .unwrap_or_default(),
-            completion = CompletionBehavior::instruction_clause(self.completion)
-        )
+    pub fn instructions(&self, placement: &Placement<'_>) -> String {
+        let naming = self.naming_clause(placement);
+        match placement {
+            Placement::Isolated { checkout, branch } => format!(
+                "## Concurrent work isolation\n\
+                 \n\
+                 {naming}\
+                 - You work in a checkout of your own, `{checkout}`, on branch `{branch}`. You \
+                 are already isolated: do not switch branches.\n\
+                 - Commit your work on your branch, as you go. Never commit to, merge into, \
+                 rebase, or reset the target branch{target}: {completion}.\n\
+                 - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
+                 preserving the intent of your change, run `git rebase --continue`, run the \
+                 project's checks, and end your turn.\n\
+                 - Before spawning parallel subagents that write files, give each its own \
+                 checkout: `uze agent work split <topic>` prints the path of one cut from your \
+                 current commit — hand that path to the subagent. When it is done, commit in \
+                 both checkouts and run `uze agent work join <topic>` to bring its commits onto \
+                 your branch; on a conflict, resolve it in the subagent's checkout, run `git \
+                 rebase --continue` there, and join again. `uze agent work list` shows them. \
+                 Never make a worktree with Git for this: UZE only knows the checkouts it \
+                 made.\n",
+                checkout = checkout.display(),
+                target = self
+                    .target
+                    .as_deref()
+                    .map(|target| format!(" (`{target}`)"))
+                    .unwrap_or_default(),
+                completion = CompletionBehavior::instruction_clause(self.completion)
+            ),
+            Placement::InPlace => format!(
+                "## Concurrent work isolation\n\
+                 \n\
+                 {naming}\
+                 - You are in the operator's own checkout, on the branch they are on: commit \
+                 there, as you go, and never switch, reset, stash or clean it — the operator's \
+                 uncommitted work is theirs. The branch keeps the name it has, and nothing \
+                 about delivery applies to you.{naming_in_place}\n\
+                 - You have no branch of your own to join a subagent's work into: run subagents \
+                 that write files one after another, never in parallel.\n",
+                naming_in_place = if self.branch.names_work() {
+                    " Naming your work still applies here, first: it names your label, never \
+                     their branch."
+                } else {
+                    ""
+                },
+            ),
+        }
     }
 }
 
@@ -723,12 +702,19 @@ mod tests {
         );
     }
 
+    pub(super) fn isolated() -> Placement<'static> {
+        Placement::Isolated {
+            checkout: Path::new(".worktrees/ab12cd"),
+            branch: "agent/ab12cd",
+        }
+    }
+
     #[test]
-    fn the_projected_text_never_asks_for_a_top_level_worktree() {
+    fn the_instructions_never_ask_for_a_top_level_worktree() {
         // A harness that ships its own worktree primitive activates on
         // exactly that instruction, and would isolate a second time on top
         // of the checkout UZE already placed the agent in.
-        let text = WorktreePolicy::default().instructions();
+        let text = WorktreePolicy::default().instructions(&isolated());
         assert!(!text.to_lowercase().contains("before editing"), "{text}");
         assert!(!text.to_lowercase().contains("create or reuse"), "{text}");
         assert!(
@@ -742,10 +728,28 @@ mod tests {
     }
 
     #[test]
-    fn the_projected_text_states_the_layout_and_the_completion_rule() {
-        let text = WorktreePolicy::default().instructions();
-        assert!(text.contains(WORKTREES_DIRECTORY));
-        assert!(text.contains(BRANCH_PREFIX));
+    fn an_isolated_agent_is_told_its_checkout_branch_and_target() {
+        let policy = WorktreePolicy {
+            target: Some("main".to_owned()),
+            ..WorktreePolicy::default()
+        };
+        let text = policy.instructions(&isolated());
+        assert!(text.contains("`.worktrees/ab12cd`"), "{text}");
+        assert!(text.contains("`agent/ab12cd`"), "{text}");
+        assert!(text.contains("(`main`)"), "{text}");
+        assert!(
+            !text.contains("If your working directory"),
+            "the agent is never asked to infer where it is: {text}"
+        );
+        assert!(
+            !text.contains("operator's own checkout"),
+            "an isolated agent is not told what an agent in place does: {text}"
+        );
+    }
+
+    #[test]
+    fn the_isolated_instructions_state_the_completion_rule_and_the_verbs() {
+        let text = WorktreePolicy::default().instructions(&isolated());
         assert!(text.contains(CompletionBehavior::instruction_clause(None)));
         assert!(
             !text.contains("delivery is UZE's"),
@@ -763,11 +767,10 @@ mod tests {
         );
 
         let merging = WorktreePolicy {
-            default: Default::default(),
             completion: Some(CompletionBehavior::Merge),
             ..WorktreePolicy::default()
         };
-        let text = merging.instructions();
+        let text = merging.instructions(&isolated());
         assert!(text.contains(CompletionBehavior::instruction_clause(Some(
             CompletionBehavior::Merge
         ))));
@@ -775,35 +778,33 @@ mod tests {
     }
 
     #[test]
-    fn rendering_is_deterministic_for_the_same_policy() {
-        let policy = WorktreePolicy::default();
-        assert_eq!(policy.instructions(), policy.instructions());
-        assert_eq!(policy.region_identity(), policy.region_identity());
-    }
-
-    /// The property that makes a declaration editable rather than
-    /// write-once: a different policy claims a different region, so updating
-    /// one is never an overwrite of content UZE did not write.
-    #[test]
-    fn a_changed_policy_claims_a_different_region() {
-        let undeclared = WorktreePolicy::default();
-        let merge = WorktreePolicy {
-            default: Default::default(),
-            completion: Some(CompletionBehavior::Merge),
+    fn an_agent_in_place_is_told_it_is_on_the_operators_branch_and_nothing_of_delivery() {
+        let policy = WorktreePolicy {
+            completion: Some(CompletionBehavior::Push),
             ..WorktreePolicy::default()
         };
-        assert_ne!(undeclared.region_identity(), merge.region_identity());
-        assert!(WorktreePolicy::owns_region(&undeclared.region_identity()));
-        assert!(WorktreePolicy::owns_region(&merge.region_identity()));
+        let text = policy.instructions(&Placement::InPlace);
+        assert!(text.contains("operator's own checkout"), "{text}");
+        assert!(
+            text.contains("never switch, reset, stash or clean it"),
+            "{text}"
+        );
+        assert!(!text.contains("delivery is UZE's"), "{text}");
+        assert!(!text.contains(WORKTREES_DIRECTORY), "{text}");
+        assert!(!text.contains("uze agent work split"), "{text}");
     }
 
     #[test]
-    fn only_this_modules_regions_are_claimed() {
-        assert!(!WorktreePolicy::owns_region(
-            "package:uze:official:instructions"
-        ));
-        assert!(!WorktreePolicy::owns_region("instruction-bridge"));
-        assert!(!WorktreePolicy::owns_region(POLICY_REGION_PREFIX));
+    fn rendering_is_deterministic_for_the_same_situation() {
+        let policy = WorktreePolicy::default();
+        assert_eq!(
+            policy.instructions(&isolated()),
+            policy.instructions(&isolated())
+        );
+        assert_eq!(
+            policy.instructions(&Placement::InPlace),
+            policy.instructions(&Placement::InPlace)
+        );
     }
 
     #[test]
@@ -876,6 +877,7 @@ mod tests {
 
 #[cfg(test)]
 mod naming_tests {
+    use super::tests::isolated;
     use super::*;
 
     fn conventional() -> BranchVocabulary {
@@ -1011,10 +1013,12 @@ mod naming_tests {
     /// Every agent UZE launches can name itself, including in a project
     /// whose manifest says nothing about workspace policy.
     #[test]
-    fn the_default_policy_projects_the_naming_clause() {
-        let text = WorktreePolicy::default().instructions();
-        assert!(text.contains("uze agent work name"), "{text}");
-        assert!(text.contains("feat|fix"), "{text}");
+    fn the_default_policy_gives_the_naming_clause() {
+        for placement in [isolated(), Placement::InPlace] {
+            let text = WorktreePolicy::default().instructions(&placement);
+            assert!(text.contains("uze agent work name"), "{text}");
+            assert!(text.contains("feat|fix"), "{text}");
+        }
     }
 
     /// Agents in the operator's checkout read "the branch keeps its name" as
@@ -1024,10 +1028,10 @@ mod naming_tests {
     fn an_agent_in_the_operators_checkout_is_told_naming_still_applies() {
         let in_place_bullet = |policy: WorktreePolicy| {
             policy
-                .instructions()
+                .instructions(&Placement::InPlace)
                 .lines()
                 .find(|line| line.contains("operator's own checkout"))
-                .expect("the region has an in-place bullet")
+                .expect("the instructions have an in-place bullet")
                 .to_owned()
         };
 
@@ -1044,66 +1048,71 @@ mod naming_tests {
         assert!(!opted_out.contains("Naming"), "{opted_out}");
     }
 
+    #[test]
+    fn a_project_that_names_nothing_asks_for_nothing() {
+        let policy = WorktreePolicy {
+            branch: BranchVocabulary::Preset(BranchPreset::Agent),
+            ..WorktreePolicy::default()
+        };
+        for placement in [isolated(), Placement::InPlace] {
+            let text = policy.instructions(&placement);
+            assert!(!text.contains("uze agent work name"), "{text}");
+        }
+    }
+
     /// The instruction an agent reads has to be the one its project will
     /// accept, and an agent cannot open an `agents.yaml` nobody told it
     /// about.
     #[test]
-    fn the_projected_clause_spells_out_the_vocabulary_in_force() {
+    fn the_clause_spells_out_the_vocabulary_in_force() {
         let policy = WorktreePolicy {
-            default: Default::default(),
             branch: BranchVocabulary::Types(vec!["ui".to_owned(), "fix".to_owned()]),
             ..WorktreePolicy::default()
         };
-        let text = policy.instructions();
+        let text = policy.instructions(&isolated());
         assert!(text.contains("uze agent work name"), "{text}");
         assert!(text.contains("ui|fix"), "{text}");
     }
 
     /// Naming is prompted as soon as the conversation has a clear topic,
-    /// normally in the first user message, without inventing a name for a
-    /// genuinely vague request.
+    /// normally in the first user message, and before anything else the
+    /// instructions ask for.
     #[test]
-    fn naming_happens_as_soon_as_a_topic_is_clear() {
+    fn naming_is_the_first_thing_asked_for() {
         let policy = WorktreePolicy {
-            default: Default::default(),
             branch: BranchVocabulary::Preset(BranchPreset::Conventional),
             ..WorktreePolicy::default()
         };
-        let text = policy.instructions();
-        let first_bullet = text
-            .lines()
-            .find(|line| line.starts_with("- "))
-            .expect("the region is a list");
-        assert!(
-            first_bullet.contains("As soon as a user message gives the conversation a clear topic"),
-            "the clause must describe the moment: {first_bullet}"
-        );
-        assert!(
-            first_bullet.contains("uze agent work name"),
-            "the clause must name the command: {first_bullet}"
-        );
-        assert!(
-            first_bullet.contains("your first command"),
-            "the clause must order naming before any other command: {first_bullet}"
-        );
-        assert!(
-            !text.contains("first action"),
-            "the old compulsory moment must not survive: {text}"
-        );
+        for placement in [isolated(), Placement::InPlace] {
+            let text = policy.instructions(&placement);
+            let first_bullet = text
+                .lines()
+                .find(|line| line.starts_with("- "))
+                .expect("the instructions are a list");
+            assert!(
+                first_bullet
+                    .contains("As soon as a user message gives the conversation a clear topic"),
+                "the clause must describe the moment: {first_bullet}"
+            );
+            assert!(
+                first_bullet.contains("your first command"),
+                "the clause must order naming before any other command: {first_bullet}"
+            );
+        }
     }
 
-    /// The region's identity is a digest of its bytes, so a vocabulary
-    /// change is a projection that has fallen behind — which is what makes
-    /// the drift report possible at all.
     #[test]
-    fn changing_the_vocabulary_changes_the_regions_identity() {
-        let before = WorktreePolicy::default().region_identity();
-        let after = WorktreePolicy {
-            default: Default::default(),
-            branch: BranchVocabulary::Types(vec!["ui".to_owned(), "fix".to_owned()]),
-            ..WorktreePolicy::default()
-        }
-        .region_identity();
-        assert_ne!(before, after);
+    fn the_isolated_clause_says_naming_renames_the_branch_and_in_place_it_does_not() {
+        let policy = WorktreePolicy::default();
+        assert!(
+            policy
+                .instructions(&isolated())
+                .contains("renames your branch")
+        );
+        assert!(
+            policy
+                .instructions(&Placement::InPlace)
+                .contains("changes your label only")
+        );
     }
 }

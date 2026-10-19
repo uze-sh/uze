@@ -8,11 +8,11 @@
 
 use std::path::Path;
 
-use uze_core::authoring::region as authoring_region;
+use uze_core::retired_region::PLUGIN_AUTHORING;
+use uze_core::retired_region::WORKTREE_POLICY as POLICY_REGION_PREFIX;
 use uze_testkit::fixtures;
 use uze_testkit::scenario::PackageOnly;
 use uze_testkit::temp::TestEnvironment;
-use uze_workspace::worktree::POLICY_REGION_PREFIX;
 
 use crate::util::{install_fake_harnesses, uze_bin};
 
@@ -66,13 +66,9 @@ fn the_package_manager_alone_never_meets_the_workspace() {
     let manifest = std::fs::read_to_string(world.project.join("agents.yaml")).unwrap();
     assert!(!manifest.contains("workspace"), "{manifest}");
 
-    // AGENTS.md carries the package manager's regions and nothing of the
-    // workspace's.
+    // AGENTS.md carries nothing of UZE's.
     let written = agents_md(&world.project);
-    assert!(
-        written.contains(authoring_region::REGION_PREFIX),
-        "{written}"
-    );
+    assert!(!written.contains(PLUGIN_AUTHORING), "{written}");
     assert!(!written.contains(POLICY_REGION_PREFIX), "{written}");
 
     // No checkout, and no agent the workspace could have recorded.

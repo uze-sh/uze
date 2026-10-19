@@ -150,32 +150,6 @@ fn install_never_rewrites_a_manifest_somebody_authored() {
 }
 
 #[test]
-fn the_policy_in_force_is_what_the_manifest_says_and_it_reaches_the_projection() {
-    let (application, repository) = project("manifest-policy-projected");
-    let root = repository.root().to_path_buf();
-    fs::write(
-        manifest::manifest_path_for(&root),
-        "workspace:\n  delivery: push\n",
-    )
-    .unwrap();
-    // The workspace keeps its section in an AGENTS.md the project has; it
-    // never creates one.
-    fs::write(root.join("AGENTS.md"), "# Project\n").unwrap();
-
-    application.workspace().sync_policy_region(&root).unwrap();
-
-    let agents_md = fs::read_to_string(root.join("AGENTS.md")).unwrap();
-    assert!(
-        agents_md.contains(
-            uze_workspace::worktree::CompletionBehavior::instruction_clause(Some(
-                uze_workspace::worktree::CompletionBehavior::Push
-            ))
-        ),
-        "the declared behavior must be the one an agent reads: {agents_md}"
-    );
-}
-
-#[test]
 fn a_typo_in_the_manifest_is_named_rather_than_ignored() {
     let (application, repository) = project("manifest-typo");
     let root = repository.root().to_path_buf();
