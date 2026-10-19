@@ -182,10 +182,10 @@ agents.
 This is independent of Native Projection (ADR-013): it delivers
 project-context, not package/capability content, and there is no higher-tier
 option to fall back from for an externally-scoped `AGENTS.md` — see ADR-014's
-"Relationship to Native Plugin Projection". A separate, older mechanism (the
-persistent `CLAUDE.md` bridge via `text_region`) also exists, owned by
-`crates/uze-application`, not this crate — which of the two is authoritative
-long-term is explicitly undecided (ADR-014 Consequences).
+"Relationship to Native Plugin Projection". The older persistent `CLAUDE.md`
+bridge is retired: Claude Code reads `AGENTS.md` itself, nothing writes the
+bridge, and `uze-application`'s retired-regions cleanup takes a leftover one
+out.
 
 ## Lifecycle
 
@@ -214,8 +214,6 @@ reasoning holds, not confirmed by a dedicated test.
 - MCP behavioral verification (an actual tool call) is not closed; a headless
   discovery quirk was characterized, not fixed (ADR-007).
 - `/compact` retention of runtime-projected context is unverified (ADR-014).
-- The persistent-bridge-vs-runtime-projection question for context delivery
-  is explicitly undecided.
 
 ## Evidence
 
@@ -234,4 +232,3 @@ reasoning holds, not confirmed by a dedicated test.
 1. Add unit coverage for the mutating native-plugin CLI functions (`attach_package`, `ClaudeMarketplace::install_plugin`) via a fake/injectable process boundary, matching how `provision_cli` already uses `ProcessRunner`. (An `executable_override` escape hatch was added and then removed this milestone for the generated-native pass — it ended up with zero call sites once PATH-based test isolation solved the actual failing tests more directly; worth reconsidering if this item is picked up for real.)
 2. Close the MCP headless-discovery/behavioral gap from ADR-007's last entry.
 3. Verify or refute the `package_root`-not-compared observation above with a dedicated drift test.
-4. Resolve persistent-bridge vs. runtime-projection precedence for Claude context delivery (ADR-014 Future Work).

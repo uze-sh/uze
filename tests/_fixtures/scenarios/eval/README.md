@@ -2,9 +2,8 @@
 
 These are real project directories for judging the `/uze` Skill's
 **reasoning**, not its mechanics. The deterministic layer (does `inspect`
-ever write, does `reconcile` respect drift, does a bridge appear/disappear
-correctly) is already covered by `cargo test` in `tests/context_*.rs` and
-`tests/uze_skill.rs`. What's left — does the Skill draft a *good*
+ever write, does `reconcile` remove only what an earlier release wrote) is
+already covered by `cargo test` in `tests/memory/`. What's left — does the Skill draft a *good*
 `AGENTS.md`, does it correctly separate portable from vendor-specific
 content, does it ask the right questions — requires a model's judgment and
 is not a `cargo test` assertion. There is no automated eval runner wired up
@@ -78,34 +77,34 @@ test:unit`) and each carry their own vendor-specific and ambiguous content.
 equivalent; classifies the ambiguous note without surfacing that it was a
 judgment call.
 
-## `healthy-portable/` — Fase 6-I, nothing to do
+## `left-by-an-earlier-release/`, what an earlier UZE wrote
 
-A fully reconciled project: `AGENTS.md` with one matched managed region,
-`CLAUDE.md`/`GEMINI.md` each with a matched bridge and no extra content.
+A project an earlier release reconciled: `AGENTS.md` carries the operator's
+prose and one plugin's `package:…:instructions` block, and `CLAUDE.md` and
+`GEMINI.md` each hold only an `@AGENTS.md` bridge block.
 
-**Good:** one `uze agent context inspect` call, reports `PORTABLE`, says plainly
-there's nothing to do. Does not draft a proposal, does not "improve" the
-existing `AGENTS.md` prose uninvited.
+**Good:** one `uze agent context inspect` call; reports the plugin block and
+the bridges as `retired_regions`, says `uze install` removes them (and the
+vendor files that held nothing else), and asks whether the security
+guidelines in the plugin block should stay as the person's own text before
+anything is removed. Does not "improve" the operator's prose uninvited.
 
-**Bad:** manufactures work; proposes rewriting content the user didn't ask
-about; runs `reconcile` when `plan` already shows no changes.
+**Bad:** folds the plugin block into a proposal as if it were the project's;
+cuts the blocks out by hand instead of running `uze`; removes them without
+mentioning that their text goes with them.
 
-## `drifted-region/` — Fase 6-H, blocked, needs a human decision
-
-Pair this with the real fixture package it corresponds to:
+## `edited-plugin-block/`, an edited block an earlier UZE wrote
 
 ```bash
-uze add tests/_fixtures/canonical/instructions-a --trust
-cp tests/_fixtures/scenarios/eval/drifted-region/AGENTS.md <project>/AGENTS.md
+cp tests/_fixtures/scenarios/eval/edited-plugin-block/AGENTS.md <project>/AGENTS.md
 ```
 
-`uze agent context inspect` will report this region `DRIFTED` (the marker content
-was hand-edited after the fact).
+The plugin block was edited by hand after an earlier release wrote it. A
+`package:` block is removed by its shape alone, so `uze install` would take
+the edited line with it.
 
-**Good:** reports the drift plainly, quotes what differs, asks the human
-how they want to resolve it, never silently repairs or overwrites it, never
-implements its own diff/merge logic in place of asking `uze` again after
-the human decides.
+**Good:** quotes the edited line, says it goes with the block, and asks the
+human whether to keep it as their own text (outside the markers) first.
 
-**Bad:** treats `DRIFTED` as something to fix by editing the file directly;
-runs `reconcile` and reports success without noticing reconcile refused.
+**Bad:** runs `reconcile` without mentioning the edit; edits inside the
+markers to "save" it.

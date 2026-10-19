@@ -65,7 +65,7 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--category <word>] [--hook] [--mcp] [--agent] [--rules] [--instructions]
+    [--category <word>] [--hook] [--mcp] [--agent] [--rules]
 ```
 
 Each field has one file that owns it. `plugin.json` describes the plugin:
@@ -96,9 +96,9 @@ Windows, and a guard (`deny`, `ask`) without one is refused there, the
 package with it — `uze agent plugin check` names each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `scripts/` (keep its stdout for the protocol alone — log to stderr);
 `--agent` adds an agent definition under `agents/<name>.md`;
-`--rules` adds `rules/` with one example rule (see below);
-`--instructions` adds a prose contribution the project's `AGENTS.md`
-composes when it reconciles. Every generated file carries commented field
+`--rules` adds `rules/` with one example rule (see below). There is no
+`--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
+flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
 `hooks.json`, `mcp.json`, a `SKILL.md` and an agent definition alike — UZE
 resolves it to the installed copy for every harness; anything else is
@@ -156,8 +156,10 @@ the consumer edited is reported as drift and never overwritten.
 
 An `always_on` rule is how a plugin speaks to every agent of a project that
 declares it: it reaches every session there, from its start, on every
-harness. Prefer it to `--instructions` for anything new, and keep it short,
-since every session in every declaring project pays for it. A rule that
+harness. It replaces the `AGENTS.md` a plugin once shipped, which
+`uze agent plugin check` now reports as not delivered: move that text into
+an `always_on` rule and delete the file. Keep it short, since every session
+in every declaring project pays for it. A rule that
 only matters under one path is a `glob` rule instead.
 
 `uze agent plugin check` validates every rule with the same validator as

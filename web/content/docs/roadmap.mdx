@@ -29,8 +29,8 @@ too, installed by `irm https://uze.sh/i | iex` (see
   commands a project's workspace runs wait for `uze workspace allow`.
 - **Native package delivery**: a preserved vendor envelope where one exists, a
   deterministically generated one where it doesn't.
-- **Project context**: `AGENTS.md` as the baseline, with the one bridge that
-  needs maintaining, in regions uze owns and nothing else.
+- **Project context**: `AGENTS.md` as the baseline, the operator's alone: uze
+  writes nothing into it, and plugins speak through `always_on` rules.
 - **Reproducible project environments**: `agents.yaml` declares, `agents.lock`
   pins each marketplace to a commit and each package to a digest, and
   `git clone && uze install` rebuilds both.

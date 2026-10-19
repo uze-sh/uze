@@ -21,16 +21,16 @@
 - [x] 3.2 Remove `package::authoring::region` and its reconcile step
 - [x] 3.3 Retire the `project:worktree-policy` and `project:plugin-authoring` prefixes: in the primary checkout, `uze install` and `uze agent context reconcile` remove a region whose body matches the digest in its identity, report one that does not, and attach nothing. In an isolated checkout they remove nothing. Tests: both regions removed byte-exactly around the operator's text, an edited region kept and reported, an isolated checkout left unchanged and free, a project without `AGENTS.md` left without one
 - [x] 3.3a Replace `PolicyRegionView`'s `in_step`/`state` and `project_environment.rs`'s "region behind" read model with one "retired regions present" report naming `uze install`, in `uze status` and the client
-- [ ] 3.4 (after 4.1, decisions.md I3) `checkout-accounting`: drop the managed-region discount and keep the lock discount. Update `accounting_tests.rs` and `shelf_tests.rs` to the new scenarios
-- [ ] 3.5 (with 4.1, decisions.md I5) Architecture suite: a rule that no production code outside the retired-prefix cleanup writes `AGENTS.md`
+- [x] 3.4 (after 4.1, decisions.md I3) `checkout-accounting`: drop the managed-region discount and keep the lock discount. Update `accounting_tests.rs` and `shelf_tests.rs` to the new scenarios
+- [x] 3.5 (with 4.1, decisions.md I5) Architecture suite: a rule that no production code outside the retired-prefix cleanup writes `AGENTS.md`
 
 ## 4. Plugin instructions become rules (after `plugin-rules` ships)
 
-- [ ] 4.1 Remove the package `AGENTS.md` resource from `project::context`, and retire the `package:` prefix: removed structurally with `text_region::remove_unconditionally`, primary checkout only
-- [ ] 4.1a When the last package region goes, remove the `instruction-bridge` region of `CLAUDE.md` and delete a `CLAUDE.md` that held only it. A no-op where `resolve-instruction-files` already removed the bridge. Tests for a bridge-only file and a file with operator lines
-- [ ] 4.2 `uze agent plugin create --instructions` fails, naming `--rules` with an `always_on` rule. Remove `authoring/instructions.md`
-- [ ] 4.3 `uze agent plugin check` reports a plugin-root `AGENTS.md` as not delivered and names the replacement
-- [ ] 4.4 `plugins/uze/plugin.json`'s description and any official plugin resource that relied on instructions
+- [x] 4.1 Remove the package `AGENTS.md` resource from `project::context`, and retire the `package:` prefix: removed structurally with `text_region::remove_unconditionally`, primary checkout only
+- [x] 4.1a When the last package region goes, remove the `instruction-bridge` region of `CLAUDE.md` and delete a `CLAUDE.md` that held only it. A no-op where `resolve-instruction-files` already removed the bridge. Tests for a bridge-only file and a file with operator lines
+- [x] 4.2 `uze agent plugin create --instructions` fails, naming `--rules` with an `always_on` rule. Remove `authoring/instructions.md`
+- [x] 4.3 `uze agent plugin check` reports a plugin-root `AGENTS.md` as not delivered and names the replacement
+- [x] 4.4 `plugins/uze/plugin.json`'s description and any official plugin resource that relied on instructions
 
 ## 5. Conformance
 
@@ -45,7 +45,7 @@
 - [ ] 6.1 `plugins/uze` Skills: `init` stops describing UZE regions in `AGENTS.md`, and reports and cleans a project carrying them. `worktree` and `author` drop their references to the projected region
 - [ ] 6.2 `docs/capabilities/context-manager.md`, `docs/capabilities/uze-skill.md` and `web/content/docs/` (context, installation, glossary, FAQ): what UZE writes into a project, following D1, with no em dashes in user-facing copy
 - [x] 6.3 `docs/architecture/invariants.md`: replace every region invariant (the bridge protocol around line 111, "A package's instructions reach only a project that declares it", the managed-region accounting around line 1598, the policy-region identity around line 1862, "Each region of `AGENTS.md` has one owner") with "no UZE operation changes `AGENTS.md` except to remove a retired region in the primary checkout", tied to 3.3 and 3.5
-- [ ] 6.4 (with 3.4, decisions.md I3) Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
+- [x] 6.4 (with 3.4, decisions.md I3) Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
 - [x] 6.5 This repository's own `AGENTS.md`: remove the "Authoring plugins" and "Concurrent work isolation" sections, and update the "`uze agent …` is an audience" bullet to name the launch context
 - [ ] 6.6 Journeys: the workspace chapter checks that a launch leaves `AGENTS.md` byte-identical, and the packages chapter checks that `uze install` removes old regions
 - [ ] 6.7 At archive, rewrite the Purpose of `openspec/specs/plugin-authoring/spec.md`, which still says the verbs are "documented in the projected `AGENTS.md` region"

@@ -107,25 +107,28 @@ CLI/TUI.
 
 ### Project-context delivery is declared per integration
 
-Which harness reads the shared `AGENTS.md` natively, which needs an
-`@AGENTS.md` bridge region, and which additional native files are
-observed for portability reporting is each integration's
-`context_delivery()` declaration — never an Application-owned vendor
-list. The bridge protocol itself (region identity, import line) is the
-Application's, shared by every bridge-needing harness.
+Which harness reads the shared `AGENTS.md` natively, which keeps a file
+of its own beside it (where an earlier release wrote an `@AGENTS.md`
+bridge), and which additional native files are observed for portability
+reporting is each integration's `context_delivery()` declaration, never
+an Application-owned vendor list. No bridge is written for any of them.
 
 > `tests/memory/inspection.rs` scenarios A–F (stub harness declares its
-> bridge exactly like a real integration)
+> own file exactly like a real integration)
+> `tests/memory/inspection.rs::agents_md_alone_is_portable_and_claude_reads_it_with_no_bridge`
 
-### A package's instructions reach only a project that declares it
+### A plugin speaks to a project through rules, never through `AGENTS.md`
 
-`AGENTS.md` carries a region for a package only when the project's
-`agents.yaml` declares it. The Store is the machine's, so composing from
-everything installed would make a versioned file depend on which machine
-last reconciled it; a package dropped from the declaration loses its region
-on the next reconcile while it stays installed.
+A plugin's root `AGENTS.md` is not a capability: nothing composes it into
+a project, and `uze agent plugin check` warns that it is not delivered,
+naming an `always_on` rule. `uze agent plugin create --instructions` is
+refused with the same pointer.
 
-> `tests/memory/reconciliation.rs::only_a_declared_package_s_instructions_reach_the_project`
+> `crates/uze-core/src/delivery/engine.rs::discovery_tests::a_root_agents_md_is_not_a_capability`
+> `tests/memory/reconciliation.rs::a_declared_plugin_shipping_agents_md_adds_nothing_to_the_project`
+> `tests/packages/canonical_model.rs::installing_and_reconciling_never_touch_the_operators_agents_md`
+> `crates/uze-core/src/package/authoring/tests.rs::check_reports_a_root_agents_md_as_not_delivered_and_names_the_rule`
+> `tests/cli/machine.rs::plugin_create_refuses_instructions_and_names_an_always_on_rule`
 
 ### Native means preserved semantics, not identical primitives (ADR-030)
 
@@ -1664,17 +1667,19 @@ not held for its life.
 ### Content UZE derives is never work
 
 Deciding whether a checkout holds work, and what goes on its shelf, a lock
-that only gained or lost entries and an instruction file changed only inside
-UZE's managed regions are not work: they are what a slot collects by having
-UZE run in it. A lock that moves a plugin's pin is work, since moving pins is
-what `update` exists for, and is shelved. Rebasing, joining and delivering
-still require a tree with nothing uncommitted at all.
+that only gained or lost entries is not work: it is what a slot collects by
+having UZE run in it. A lock that moves a plugin's pin is work, since moving
+pins is what `update` exists for, and is shelved. `AGENTS.md` is never
+derived: UZE writes nothing into it in a slot, so any change to it there,
+inside an old region or beside one, is somebody's work. Rebasing, joining
+and delivering still require a tree with nothing uncommitted at all.
 
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_lock_that_only_gained_an_entry_leaves_the_slot_free`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_moved_pin_is_shelved`
-> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_reprojected_region_leaves_the_slot_free`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_change_inside_a_region_is_shelved`
+> `crates/uze-workspace/src/checkout/accounting_tests.rs::a_retired_region_removed_in_a_slot_is_shelved`
 > `crates/uze-workspace/src/checkout/accounting_tests.rs::a_hand_edit_beside_a_region_is_shelved`
-> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_managed_region_alone_is_not_shelved_and_a_hand_edit_is`
+> `crates/uze-workspace/src/checkout/shelf_tests.rs::a_change_inside_a_region_is_shelved_like_any_other`
 
 ### An agent's work is kept in Git, never in a checkout
 
@@ -2645,17 +2650,28 @@ package manager's keys as they were.
 > `crates/uze-workspace/src/declaration.rs::tests::a_scaffolded_manifest_declares_no_policy`
 > `crates/uze-workspace/src/declaration.rs::tests::choosing_a_delivery_adds_the_section_and_leaves_the_rest_alone`
 
-### The workspace never writes `AGENTS.md`, and retired regions are removed
+### No UZE operation changes `AGENTS.md` except to remove a retired region
 
-Neither a launch nor the workspace client writes the operator's
-`AGENTS.md`; the one writer left is the package manager's region per
-declared plugin, until plugins speak through rules. Reconciling a project
-removes the regions earlier releases
-wrote (the workspace policy, the plugin authoring verbs), in a main working
-tree only and only while each holds the bytes its identity's digest names;
-one edited by hand is reported and left. A linked worktree is never
-cleaned, and an isolate does not carry a removal-only change into the
-agent's branch. One per-project guard serializes writers of the file.
+Nothing UZE runs creates, changes or appends to the operator's
+`AGENTS.md`: not a launch, not the workspace client, not `uze install`.
+The one writer is the cleanup that takes out the regions earlier releases
+wrote, in a main working tree only. A workspace policy or authoring region
+goes only while it holds the bytes its identity's digest names, and one
+edited by hand is reported and left; a package's instructions region goes
+by its shape alone. With the last package region, the `@AGENTS.md` bridge
+in `CLAUDE.md` goes too, and a `CLAUDE.md` that held nothing else is
+deleted. A linked worktree is never cleaned, and an isolate does not carry
+a removal-only change into the agent's branch. One per-project guard
+serializes writers of the file, and the architecture suite fails over any
+other production file that writes it.
+
+> `tests/architecture/layering.rs::a_retired_region_cleanup_is_the_only_writer_of_agents_md`
+> `crates/uze-application/src/application/retired_regions.rs::tests::a_package_region_goes_by_its_shape_whatever_it_holds`
+> `crates/uze-application/src/application/retired_regions.rs::tests::a_bridge_only_claude_md_goes_with_the_last_package_region`
+> `crates/uze-application/src/application/retired_regions.rs::tests::the_operators_lines_in_claude_md_stay_when_the_bridge_goes`
+> `tests/memory/reconciliation.rs::a_package_region_and_a_bridge_only_claude_md_go_together`
+> `tests/memory/reconciliation.rs::a_linked_worktree_is_left_as_its_branch_has_it`
+> `crates/uze-application/tests/slot_lifecycle.rs::install_in_a_slot_leaves_a_retired_region_as_committed`
 
 > `tests/projection/retired_regions.rs::reconciling_removes_what_an_earlier_release_wrote_and_nothing_else`
 > `tests/projection/retired_regions.rs::a_region_edited_by_hand_is_the_operators_now`

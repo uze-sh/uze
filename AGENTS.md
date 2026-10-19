@@ -9,9 +9,11 @@ uze is a Rust CLI: the package manager and workspace for coding agents
 (Claude Code, Codex, OpenCode, Antigravity CLI). You install a
 plugin once; uze stores its bytes centrally and delivers it through each
 harness's most native mechanism — a real plugin where one exists, native
-capabilities where it doesn't, a safe adapter only as a last resort. It also
-maintains one project context file, `AGENTS.md`, and projects it into each
-harness's own bridge/config format instead of maintaining four separately.
+capabilities where it doesn't, a safe adapter only as a last resort. It
+treats one project context file, `AGENTS.md`, as the baseline every harness
+reads, and writes nothing into it: what only means something inside UZE
+reaches an agent through its launch, and what a plugin tells every agent is
+an `always_on` rule.
 
 This repository is itself the official uze marketplace: `marketplace.json` +
 `plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`, `uze:worktree`,
@@ -669,9 +671,9 @@ properties):
   `uze install` converges the manifest in both directions — a plugin dropped
   from `agents.yaml` leaves `agents.lock`, while the Store and every harness
   keep it, because other projects share those and taking it off the machine
-  is `uze remove <plugin> -m` — and leaves the project context reconciled, so
-  declaring an environment and projecting it are one command rather than
-  two.
+  is `uze remove <plugin> -m` — and, in a main working tree, takes out the
+  regions an earlier release wrote into `AGENTS.md` (and the `CLAUDE.md`
+  bridge that went with them), the one change UZE ever makes to that file.
 - **The header says what is happening; a toast says what happened.** The
   workspace client's header carries one line, only ever about work in
   flight, with a spinner and no clock — it goes when the work ends, which
@@ -692,8 +694,8 @@ properties):
   official plugin's Skills — each audience reads one surface, and UZE
   writes none of it into a project's `AGENTS.md`. `agent context inspect|plan|reconcile` sits there for
   that reason and no other: the project scope is unchanged, but the
-  region-by-region detail it answers with is something only a writer of
-  `AGENTS.md` acts on. A person asks `uze status` whether the project is
+  region-by-region detail it answers with, the retired regions still in
+  `AGENTS.md`, is something only an agent cleaning a project up acts on. A person asks `uze status` whether the project is
   ready and `uze install` to make it so, so anything a person needs to
   know about the context belongs in `status`, never in a fourth verb of
   their own. `uze agent work name <type>/<subject>` is how work
@@ -744,12 +746,15 @@ properties):
   an unclassified command fails `cargo test` by name
   (`tests::every_cli_command_is_classified`). Classify any new command you
   add here.
-- **Project context bridging**: `AGENTS.md` is the portable baseline for
-  project instructions. `CLAUDE.md` is the one generated bridge
-  (`@AGENTS.md`) produced by `uze agent context reconcile` — don't hand-edit
-  their managed regions in a *project uze manages*; this repository's own
-  root `CLAUDE.md`/`AGENTS.md` are the exception, maintained directly since
-  this is uze's own source, not a uze-managed target project.
+- **`AGENTS.md` is the operator's**: it is the portable baseline every
+  harness reads natively, and no production code writes it except
+  `uze-application`'s `retired_regions.rs`, which takes out the regions
+  earlier releases wrote (`project:*` while their digest matches,
+  `package:*:instructions` by shape, the `CLAUDE.md` bridge with the last of
+  them), in a main working tree only. Enforced by
+  `tests/architecture/layering.rs::a_retired_region_cleanup_is_the_only_writer_of_agents_md`.
+  This repository's own root `AGENTS.md` is maintained directly, since this
+  is uze's own source.
 
 `IntegrationPort` (in `uze-core::integration`) is intentionally kept as one
 trait proven by conformance tests across all four harnesses, rather than

@@ -4,8 +4,7 @@ description: One AGENTS.md that every agent reads
 ---
 
 Write your project's instructions once, in `AGENTS.md` at the project root.
-Every agent reads it: Codex, OpenCode and Antigravity natively, and Claude Code
-through a one-line `CLAUDE.md` that uze keeps in place.
+Every agent reads it natively: Claude Code, Codex, OpenCode and Antigravity.
 
 ## Set it up
 
@@ -29,7 +28,17 @@ If one does not, `uze install` fixes it.
 
 ## What uze writes into it
 
-`AGENTS.md` is yours. The only place uze writes is inside the blocks it marks:
+Nothing. `AGENTS.md` is yours, and no uze command adds to it or changes it.
+
+What a plugin asks of every agent in your project arrives as a rule with
+`trigger: always_on`, copied into `.agents/rules/` when your `agents.yaml`
+declares the plugin ([Rules](/docs/plugins/rules)). An agent the workspace
+launches gets its own instructions (where it works, how its work is
+delivered, how to name it) with its context when it starts
+([Agents](/docs/workspace/agents)), and an agent asked to write a plugin
+follows the `uze:author` skill.
+
+Earlier releases wrote blocks into `AGENTS.md`, marked like this:
 
 ```markdown
 <!-- uze:begin … -->
@@ -37,17 +46,11 @@ If one does not, `uze install` fixes it.
 <!-- uze:end … -->
 ```
 
-They hold what a plugin your `agents.yaml` declares asks of every agent, and
-`uze install` writes one for each such plugin, never for a plugin that is only
-on your machine. Anything you write outside the blocks is never touched, and a
-block you edit by hand is reported, not overwritten.
-
-The workspace writes nothing here. An agent it launches gets its instructions
-(where it works, how its work is delivered, how to name it) with its context
-when it starts ([Agents](/docs/workspace/agents)), and an agent asked to write
-a plugin follows the `uze:author` skill. Earlier releases put both in
-`AGENTS.md`; `uze install` removes those blocks, except one you edited, which
-it reports and leaves for you.
+and a one-line `CLAUDE.md` that imported `AGENTS.md` for Claude Code. In your
+main checkout, `uze install` removes those blocks once and leaves your own
+text as it was. A block you edited by hand is reported and left for you. The
+`CLAUDE.md` goes with the last block, or keeps your own lines if you wrote
+any. Commit the result once; checkouts made after that are clean.
 
 ## Project skills and agents
 

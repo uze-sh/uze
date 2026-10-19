@@ -72,3 +72,97 @@ the workspace and the launch. Those are the writers this cut removes.
 **Alternative.** Add the rule now with `project::context` sanctioned, and
 remove the sanction in section 4. That is two edits to the suite where one
 does the job, and a sanction that exists only to be deleted.
+
+## I6. The cleanup reads no declaration
+
+**Context.** `uze agent context reconcile` refused an `agents.yaml` that did
+not parse, because it composed one region per declared package and a typo
+would have taken them back.
+
+**Decision.** Nothing the cleanup removes depends on the declaration, so it
+no longer reads it: a retired region goes whatever `agents.yaml` says, and
+`uze update` no longer reconciles the context at all (a moved pin changes
+nothing in `AGENTS.md`). `UpdateReport::reconciled` goes with it.
+
+**Alternative.** Keep the refusal. It would protect nothing, and leave old
+text in place over an unrelated typo.
+
+## I7. The bridge goes when no package region is left, on every declared bridge file
+
+**Context.** The bridge was planned only for a *detected* harness declaring
+`ContextDelivery::Bridge`, and only while a package contribution matched.
+
+**Decision.** The cleanup looks at every registered integration's bridge
+file, detected or not, since a leftover is in the project either way. It is
+removed only while it still holds `@AGENTS.md` (content-checked, like a
+`project:` region); an edited one is reported and kept. It stays while a
+package region is kept (malformed markers), so a harness is never left
+without the import while the region it imported is still there. A file
+left with nothing outside UZE's regions is deleted.
+
+**Alternative.** Remove it structurally, like a package region. Its expected
+content is known, so there is no reason to give up the check.
+
+## I8. `ContextDelivery::Bridge` stays as a declaration; the read models stop reporting a bridge
+
+**Context.** `resolve-instruction-files` will decide what Claude declares.
+Until then the declaration also names the file the cleanup must look at.
+
+**Decision.** The core vocabulary keeps `Bridge { file_name }`, documented as
+"reads `AGENTS.md` itself beside its own file". Everything that reported a
+bridge being needed goes: `HarnessContextDelivery::Bridge { needed, state }`
+becomes `ReadsNatively` (so `uze status` still says "reads AGENTS.md
+natively"), `ContextMechanism::Bridge`, `ResourceDelivery::Bridged`,
+`UndeliveredReason::Bridge` and `Portability::PartiallyPortable` are removed
+(nothing can produce them), and a bridge-declaring harness without a live
+shim is `Native`. `InstructionsFile::managed_regions`,
+`StatusReport::packages_contributing_here` and `SpacePlugin::contributing`
+go too: there is nothing UZE manages in the file to count.
+
+**Alternative.** Switch Claude to `Native` here. That is
+`resolve-instruction-files`' decision, and the two changes land in either
+order.
+
+## I9. A plugin's root `AGENTS.md` is a check warning, not a finding
+
+**Context.** Task 4.3 asks `uze agent plugin check` to report it.
+
+**Decision.** A warning, beside the other "installs but reaches nothing"
+cases (an entry under `rules/` that is not a rule). The plugin still
+installs and every other capability still reaches its harnesses; refusing
+it would break every published plugin that shipped one, for text that is
+now merely inert.
+
+**Alternative.** A finding, failing the check. It would block publishing a
+plugin over a file that harms nothing.
+
+## I10. `--instructions` is a hidden flag that refuses
+
+**Context.** Removing the flag from the grammar makes clap answer
+"unexpected argument", which names no replacement.
+
+**Decision.** The flag stays parsed, hidden from help, and the command fails
+before writing anything, naming `--rules` and `trigger: always_on`. It goes
+from the grammar with the other retired spellings once no author can still
+reach for it.
+
+**Alternative.** A `removed_spelling` entry in `src/main.rs`. That table
+matches leading words, not a flag anywhere on the line.
+
+## I11. What the "only writer" rule can see
+
+**Context.** Task 3.5's rule is static: it cannot follow a path through a
+variable.
+
+**Decision.** A production file is a writer of `AGENTS.md` when it names the
+file and calls a region writer (`text_region::attach|detach|reconcile|
+converge|remove_unconditionally`) anywhere, or names it on the same line as a
+file write. Only `retired_regions.rs` is sanctioned, and the test fails if
+that sanction stops matching anything. The workspace's isolate undo
+(`checkout/lifecycle.rs`), which puts the *committed* `AGENTS.md` back in a
+slot it has just copied the primary's changes into, writes through a
+variable and is not seen; it restores the branch's own bytes rather than
+writing UZE text, and it is the retired-region case of D6.
+
+**Alternative.** Sanction it too. A sanction the rule never matches would be
+documentation pretending to be enforcement.

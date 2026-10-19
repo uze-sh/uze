@@ -188,11 +188,12 @@ install names what was dropped.
 
 ## `AGENTS.md`
 
-Plain prose a plugin adds to the `AGENTS.md` of every project that installs it:
-what an agent working there needs to know from this plugin's point of view.
-`uze install` writes it into a block uze owns in the project's `AGENTS.md`, and
-keeps it current as the plugin changes. `uze agent plugin create --instructions`
-scaffolds one.
+A plugin's own `AGENTS.md` is not delivered: uze writes nothing into a
+project's `AGENTS.md`. To tell every agent of a project that declares the
+plugin something, ship a rule with `trigger: always_on` under `rules/`
+([Rules](/docs/plugins/rules)); `uze agent plugin create --rules` scaffolds
+one. `uze agent plugin check` warns about an `AGENTS.md` left at the plugin's
+root.
 
 ## Files your plugin ships
 

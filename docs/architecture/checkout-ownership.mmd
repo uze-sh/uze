@@ -17,7 +17,7 @@ flowchart TD
   paused -->|no| work{Its agent gone,<br/>leaving work in it?}
   work -->|a submodule or nested repository,<br/>or the shelf could not be written| pinned
   work -->|yes| shelve[Released: uncommitted work to<br/>refs/uze/shelf/task, commits on its branch,<br/>the checkout detached and cleaned]
-  work -->|only a lock that moved no pin,<br/>or managed regions| free
+  work -->|only a lock that<br/>moved no pin| free
   work -->|no| free[Free]
   shelve --> free
   free --> idle{Used within the idle age?}

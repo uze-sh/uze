@@ -26,8 +26,8 @@ old `packages/` set hard to reason about.
   `CARGO_BIN_EXE_uze-mcp-conformance-fixture` — see its `README.md`.
 - `multi-mcp-plugin/` — two MCP servers in one package; proves one package
   composes into N named resources.
-- `instructions-a/`, `instructions-b/` — packages contributing `AGENTS.md`
-  instruction regions; the two-package region/bridge scenarios use them.
+- `instructions-a/` — a plugin that still ships a root `AGENTS.md`, which
+  no release delivers; proves nothing of it reaches a project.
 - `flow/` — `flow` package with one Skill `commit`; the canonical
   marketplace/consumer example used all over lifecycle tests.
 - `workflow/` — `workflow` package with one Skill `review`; the
@@ -55,8 +55,8 @@ as its own format. One per vendor, minimal:
 
 ## scenarios/
 
-- `eval/` — the agentic model-behavioral evaluation set (healthy-portable,
-  drifted-region, …). L4 evidence: exercised by
+- `eval/` — the agentic model-behavioral evaluation set (left-by-an-earlier-release,
+  edited-plugin-block, …). L4 evidence: exercised by
   `docs/capabilities/uze-skill.md`'s manual/agentic eval, never CI.
 - `malformed-lock/` — `agents.lock` referencing a marketplace that does not
   exist.

@@ -16,13 +16,13 @@ uze agent work join <topic>            # bring the subagent's commits onto this 
 uze agent work list                    # this agent's subagent checkouts
 uze agent artifacts check [path]       # draw every declared diagram, fail on one that does not
 uze agent context inspect [path]       # what each agent currently sees of AGENTS.md
-uze agent context plan [path]          # what reconciling would change
-uze agent context reconcile [path]     # write AGENTS.md's uze blocks and the bridges
+uze agent context plan [path]          # what reconciling would remove
+uze agent context reconcile [path]     # remove the blocks an earlier release wrote into AGENTS.md
 
 uze agent market create <name> --at <dir>   # scaffold, register and link a marketplace (--description)
 uze agent market create <name> --local      # the project as its own marketplace (--plugins-dir, default plugins)
 uze agent market check <path>               # validate a marketplace, offline
-uze agent plugin create <name> --market <m> # scaffold a plugin (--hook --mcp --agent --instructions --category --description)
+uze agent plugin create <name> --market <m> # scaffold a plugin (--hook --mcp --agent --rules --category --description)
 uze agent plugin check <path>               # validate a plugin, offline
 ```
 

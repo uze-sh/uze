@@ -182,8 +182,9 @@ impl IntegrationPort for ClaudeIntegration {
         Some("https://code.claude.com")
     }
 
-    /// Reads project context only through the `@AGENTS.md` bridge region in
-    /// `CLAUDE.md` — the vendor's own documented interop path.
+    /// Reads the project's `AGENTS.md` itself, beside its own `CLAUDE.md`,
+    /// where an earlier release wrote the `@AGENTS.md` bridge the cleanup
+    /// now takes out.
     fn context_delivery(&self) -> ContextDelivery {
         ContextDelivery::Bridge {
             file_name: "CLAUDE.md",
