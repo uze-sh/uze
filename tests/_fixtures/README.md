@@ -114,3 +114,14 @@ The JPEG samples the code surface's image decoding is tested against,
 since nothing in the tree encodes JPEG: `rust.jpg` (16×8, one colour) and
 `gray.jpg` (8×8, one channel), made with `ffmpeg -f lavfi -i color=…`.
 Every other format those tests read is encoded inside the test itself.
+
+## rules/
+
+- `glob-dialect.tsv` — the project-rules glob dialect as one table of
+  pattern, path and expected answer (`match`, `no-match`, `invalid`), the
+  format described in its header. Read by uze-core's matcher
+  (`every_row_of_the_shared_dialect_table_holds` in
+  `crates/uze-core/src/project/rules/tests.rs`) and meant for the generated
+  rules engine's tests, so both readers of a rule's `globs` are proven
+  against the same rows. A `globs` value splits on the commas outside `{…}`
+  before any row applies.

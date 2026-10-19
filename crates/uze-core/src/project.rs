@@ -27,4 +27,5 @@ pub mod project_lock;
 pub mod project_root;
 pub mod record;
 pub mod retired_region;
+pub mod rules;
 pub mod text_region;

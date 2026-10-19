@@ -695,6 +695,10 @@ mod tests {
             .join("ses_running.md");
         fs::create_dir_all(session.parent().unwrap()).unwrap();
         fs::write(&session, b"context").unwrap();
+        // And which rules a running session was already given.
+        let delivered_rules = home.rules_sessions_dir().join("ses_running");
+        fs::create_dir_all(delivered_rules.parent().unwrap()).unwrap();
+        fs::write(&delivered_rules, b".agents/rules/ui.md\n").unwrap();
 
         let mut pruned = prune_projections(&home);
         pruned.sort();
@@ -712,6 +716,10 @@ mod tests {
         assert!(
             session.is_file(),
             "a running conversation's context must survive the sweep"
+        );
+        assert!(
+            delivered_rules.is_file(),
+            "the rules a running session was given must survive the sweep"
         );
         assert!(
             home.runtime_project_dir(&project_id_for(&project)).is_dir(),

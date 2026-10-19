@@ -1,0 +1,66 @@
+# The project-rules glob dialect, as one table both readers are proven
+# against: uze-core's matcher (crates/uze-core/src/project/rules/tests.rs)
+# and the generated engine's ERE translation.
+#
+# Columns, separated by one tab: pattern, path, expected.
+#   expected is `match`, `no-match`, or `invalid` (the pattern is outside
+#   the dialect, so no reader delivers a rule using it; path is `-`).
+# Paths are relative to the checkout root, `/` between segments.
+# Lines starting with `#` and blank lines are ignored.
+
+# `**` spans any number of whole segments, none included
+src/ui/**	src/ui/button.ts	match
+src/ui/**	src/ui/forms/field.ts	match
+src/ui/**	src/core/math.ts	no-match
+src/ui/**	src/uikit/button.ts	no-match
+**/*.ts	main.ts	match
+**/*.ts	src/a/b/c.ts	match
+**/*.ts	src/a/b/c.tsx	no-match
+src/**/*.test.ts	src/core/math.test.ts	match
+src/**/*.test.ts	src/math.test.ts	match
+src/**/*.test.ts	src/core/math.ts	no-match
+tests/**	tests/e2e/login.ts	match
+tests/**	src/tests/login.ts	no-match
+**	anything/at/all.md	match
+a/**/b	a/b	match
+a/**/b	a/x/y/b	match
+a/**/b	a/x/y/c	no-match
+
+# `*` stays inside one segment
+*.md	README.md	match
+*.md	docs/README.md	no-match
+src/*.rs	src/main.rs	match
+src/*.rs	src/cli/agent.rs	no-match
+src/*	src/main.rs	match
+*.md	.hidden.md	match
+src/*_test.go	src/a_test.go	match
+src/*_test.go	src/_test.go	match
+
+# `?` is one character inside one segment
+src/?.rs	src/a.rs	match
+src/?.rs	src/ab.rs	no-match
+src/?.rs	src//.rs	no-match
+a?c	a/c	no-match
+
+# literals are exact, case included
+Makefile	Makefile	match
+Makefile	makefile	no-match
+docs/adr/README.md	docs/adr/README.md	match
+src/a+b.rs	src/a+b.rs	match
+src/a.rs	src/abrs	no-match
+src/$x^.rs	src/$x^.rs	match
+
+# outside the dialect
+src/**/*.{ts,tsx}	-	invalid
+src/[ab].rs	-	invalid
+!src/**	-	invalid
+/src/**	-	invalid
+src/@(a|b).rs	-	invalid
+src\ui\**	-	invalid
+src/my file.rs	-	invalid
+src//ui	-	invalid
+src/ui/	-	invalid
+./src/**	-	invalid
+src/../ui	-	invalid
+src/**.ts	-	invalid
+a**	-	invalid

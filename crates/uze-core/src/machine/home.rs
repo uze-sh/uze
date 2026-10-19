@@ -504,14 +504,29 @@ impl UzeHome {
     /// sweeping either would delete a live delivery on the next `doctor`.
     /// `sessions` holds the context of conversations still running, which a
     /// harness reads on every request: sweeping it took that context away
-    /// seconds after the launch that wrote it.
-    pub fn runtime_tenants(&self) -> [PathBuf; 4] {
+    /// seconds after the launch that wrote it. `rules` holds which rules
+    /// each running session was already given: sweeping it would deliver
+    /// them all again on the session's next tool call.
+    pub fn runtime_tenants(&self) -> [PathBuf; 5] {
         [
             self.runtime_projects_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
             self.runtime_sessions_dir(),
+            self.runtime_rules_dir(),
         ]
+    }
+
+    /// The rules engine's corner of the runtime tree.
+    pub fn runtime_rules_dir(&self) -> PathBuf {
+        self.runtime_dir().join("rules")
+    }
+
+    /// One file per harness session naming the rules the engine already
+    /// delivered in it. Generated: deleting it costs at most a rule
+    /// delivered twice.
+    pub fn rules_sessions_dir(&self) -> PathBuf {
+        self.runtime_rules_dir().join("sessions")
     }
 
     /// Where the PATH shim (`claude`, `codex`, `opencode`, `antigravity`,
