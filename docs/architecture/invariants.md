@@ -638,8 +638,9 @@ however the directories on the way are linked.
 ### No rules directory is written into a project
 
 A project's rules live in one directory it authors, `.agents/rules/`, and
-UZE only reads it: neither the check nor `status` writes a byte into the
-checkout, no harness is given a second rules directory there
+UZE only reads the project's own files there (it writes nothing but a
+declared plugin's copies, under that plugin's prefix, below): neither the
+check nor `status` writes a byte into the checkout, no harness is given a second rules directory there
 (`.claude/rules/` or any other), and reading an absent directory creates
 nothing. The rules engine setup delivers writes only machine files, beside
 each harness's foreign hooks and plugins, and Antigravity, which reads the
@@ -674,6 +675,35 @@ file, and anything else is refused rather than delivered to some harnesses.
 
 > `crates/uze-core/src/project/rules/tests.rs::every_row_of_the_shared_dialect_table_holds`
 > `crates/uze-integrations/src/rules/engine_tests.rs::the_engine_answers_the_shared_glob_table_under_every_awk_here`
+
+### A plugin's rules reach only a project that declares it
+
+A package's `rules/` rides no machine-wide envelope on any harness, and a
+machine install writes into no project. A project receives the rules only by
+declaring the plugin, as byte-identical copies named
+`.agents/rules/<plugin>@<market>--<rule>.md`; nothing is written into the
+project's own rules or another plugin's prefix, and a second project on the
+same machine that does not declare the plugin receives nothing.
+
+> `tests/project/plugin_rules.rs::rules_land_byte_for_byte_in_the_declaring_project_only`
+> `tests/project/plugin_rules.rs::a_machine_install_writes_into_no_project`
+> `crates/uze-core/src/project/rules/plugin/tests.rs::install_writes_byte_for_byte_and_never_touches_the_projects_own_rule`
+> `crates/uze-integrations/src/claude/generate.rs::the_envelope_is_the_package_minus_what_is_not_portable`
+
+### A drifted plugin rule copy is never overwritten
+
+A copy is judged against the plugin's rule at the revision `agents.lock`
+pins, from the project alone: a fresh machine acquires that revision
+read-only to judge a clone, and reports the copies unverified when it
+cannot. A copy that matches neither the revision it was locked at nor the
+new one is somebody's edit: install, update and remove name it and leave it
+byte for byte, a link at a copy's path is never written through, and only a
+missing copy is written back.
+
+> `tests/project/plugin_rules.rs::a_hand_edit_survives_install_and_a_deleted_copy_is_restored`
+> `tests/project/plugin_rules.rs::an_update_refuses_to_overwrite_or_remove_a_drifted_copy`
+> `tests/project/plugin_rules.rs::a_fresh_machine_judges_a_cloned_project_without_installing`
+> `crates/uze-core/src/project/rules/plugin/tests.rs::a_copy_that_is_a_link_is_never_written_through`
 
 ### A generated file is never written through a link
 

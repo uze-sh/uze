@@ -65,7 +65,7 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--category <word>] [--hook] [--mcp] [--agent] [--instructions]
+    [--category <word>] [--hook] [--mcp] [--agent] [--rules] [--instructions]
 ```
 
 Each field has one file that owns it. `plugin.json` describes the plugin:
@@ -96,6 +96,7 @@ Windows, and a guard (`deny`, `ask`) without one is refused there, the
 package with it — `uze agent plugin check` names each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `scripts/` (keep its stdout for the protocol alone — log to stderr);
 `--agent` adds an agent definition under `agents/<name>.md`;
+`--rules` adds `rules/` with one example rule (see below);
 `--instructions` adds a prose contribution the project's `AGENTS.md`
 composes when it reconciles. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -132,6 +133,35 @@ Each harness receives only its own entry; the block is never delivered. The
 same block works in a `SKILL.md`. The check below validates it for every
 harness: a value a harness would reject fails it, and a field a harness
 would not receive is named.
+
+### Rules: a plugin's conventions, per project
+
+A rule is a Markdown file directly under `rules/`, in the format a project's
+own `.agents/rules/` uses (the `uze:rules` Skill covers writing one:
+whether it is a rule at all, the trigger, the glob dialect, the wording).
+Patterns are matched against paths relative to the root of the project
+that receives the rule, so write them for that project, not for the plugin.
+
+Rules are the one capability that is never delivered machine-wide: a rule
+fires whenever a path matches, so delivered for every project it would
+govern code in projects that never asked for it. Instead `uze <name>@<market>`
+in a project, and `uze install` there, copy each rule byte for byte into
+that project's checkout as `.agents/rules/<name>@<market>--<rule>.md`, and
+the consumer commits the copies beside `agents.lock`. Every harness reads
+them from there, Antigravity natively and the others through the rules
+engine, and a clone has them without running UZE. `uze install -m`
+reports them as delivered per project only. An update of the plugin is a
+reviewable diff of those files in the consumer's pull request, and a copy
+the consumer edited is reported as drift and never overwritten.
+
+An `always_on` rule is how a plugin speaks to every agent of a project that
+declares it: it reaches every session there, from its start, on every
+harness. Prefer it to `--instructions` for anything new, and keep it short,
+since every session in every declaring project pays for it. A rule that
+only matters under one path is a `glob` rule instead.
+
+`uze agent plugin check` validates every rule with the same validator as
+`uze agent rules check`, and fails on one no harness would deliver.
 
 ## 3. Check, always before install
 

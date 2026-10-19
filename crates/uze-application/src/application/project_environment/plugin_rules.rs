@@ -138,7 +138,8 @@ impl Expected {
 /// for them.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Reach {
-    /// Acquire them: a lifecycle operation is about to write.
+    /// Acquire them: the plugin's revision just moved, and its copies
+    /// follow.
     Acquire,
     /// Acquire them only when there is something to judge: a copy in the
     /// checkout, or a Store revision that ships rules. A read never fetches
@@ -271,8 +272,11 @@ impl Project<'_> {
         let checkout = checkout_of(project_root);
         let mut reports = Vec::new();
         for (name, marketplace) in manifest.declared_plugins() {
+            // After reproduction the Store holds the locked bytes of every
+            // plugin it lacked, so only a machine past the lock reaches for
+            // them, and only when there is something to judge.
             let Some(expected) =
-                self.expected_rules(lock, name, marketplace, Reach::Acquire, &checkout)
+                self.expected_rules(lock, name, marketplace, Reach::WhenJudging, &checkout)
             else {
                 continue;
             };

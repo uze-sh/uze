@@ -1,6 +1,6 @@
 ---
 name: rules
-description: Writing a project's rules, the instructions that apply only when they are relevant, under `.agents/rules/`. Covers deciding whether something is a rule, `AGENTS.md` or a Skill, choosing the trigger, writing patterns in the supported glob dialect, wording a rule as a convention, and proving it with `uze agent rules check`. Use when asked to create, add or write a rule, when an instruction "only applies to src/…" or to one kind of file, when `AGENTS.md` has grown sections that only matter under one path and should be split, or when a rule does not seem to fire.
+description: Writing a project's rules, the instructions that apply only when they are relevant, under `.agents/rules/`. Covers deciding whether something is a rule, `AGENTS.md` or a Skill, choosing the trigger, writing patterns in the supported glob dialect, wording a rule as a convention, deciding when a rule belongs in a shared plugin and moving it there, and proving it with `uze agent rules check`. Use when asked to create, add or write a rule, when an instruction "only applies to src/…" or to one kind of file, when `AGENTS.md` has grown sections that only matter under one path and should be split, or when a rule does not seem to fire.
 ---
 
 # UZE: a project's rules, written once
@@ -110,3 +110,37 @@ or the legacy `.agent/rules/` reach only one harness. Move each into
 A pattern outside the dialect is flagged for the person to decide, never
 silently rewritten. Propose the move, wait for agreement, then run the
 check.
+
+## A rule several projects share belongs in a plugin
+
+A rule in `.agents/rules/` belongs to this project. When the same
+convention holds for every repository of a team or a stack, and someone is
+about to copy the file into a second project, it belongs in a plugin
+instead: written once in the plugin's `rules/`, and copied into every
+project that declares the plugin. Keep a rule in the project when it names
+this project's own layout, or when only this project follows it.
+
+A plugin's rules arrive as `.agents/rules/<plugin>@<market>--<rule>.md`.
+Those files are the plugin's, judged against the revision `agents.lock`
+pins. Never edit one in place: `uze status` reports the edit as drift,
+and no install or update overwrites it, so the project silently stops
+following the plugin for that rule. Either change the rule in the plugin
+and update, or take ownership of the change: move the file out of the
+namespace (rename it without the prefix) so it becomes the project's own.
+
+To move a project rule into a plugin:
+
+1. Pick the plugin, or create one with the `uze:author` Skill
+   (`uze agent plugin create <name> --market <market> --rules`).
+2. Move the file to the plugin's `rules/<rule>.md`, unchanged. Its
+   patterns stay relative to the root of the project that receives it.
+3. `uze agent plugin check <plugin directory>`, then publish the
+   marketplace as the `uze:author` Skill describes.
+4. In each project, delete the project's own copy and run
+   `uze <plugin>@<market>`: the plugin's copy takes its place under the
+   prefix. Commit both changes together, with `agents.lock`.
+5. `uze agent rules check` in the project, and `uze status`, which counts
+   the plugin's rules apart from the project's own.
+
+Propose the move and wait for agreement before deleting the project's
+file: which projects should follow the convention is the person's call.

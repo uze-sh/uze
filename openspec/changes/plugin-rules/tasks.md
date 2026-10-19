@@ -6,30 +6,30 @@
 
 ## 2. Package capability
 
-- [ ] 2.1 Recognise `rules/*.md` in a package as the Rule capability, validated with `project-rules`' validator. `uze agent plugin check` fails on a non-deliverable rule
-- [ ] 2.2 `uze agent plugin create --rules` scaffolds `rules/` with one example rule that passes the check
-- [ ] 2.3 Store bytes stay verbatim. The rules are part of the ingested bytes the lock's `integrity` covers. Test that changing a rule changes `integrity`
+- [x] 2.1 Recognise `rules/*.md` in a package as the Rule capability, validated with `project-rules`' validator. `uze agent plugin check` fails on a non-deliverable rule
+- [x] 2.2 `uze agent plugin create --rules` scaffolds `rules/` with one example rule that passes the check
+- [x] 2.3 Store bytes stay verbatim. The rules are part of the ingested bytes the lock's `integrity` covers. Test that changing a rule changes `integrity`
 
 ## 3. Projection into the checkout
 
-- [ ] 3.1 The namespace form from 1.1/1.2, as one function in `uze-core::project` naming the location for a plugin identity. Widen `project-rules`' discovery to include that form, and only that form
-- [ ] 3.2 Copy a locked plugin's rules byte for byte into its namespace during `uze <plugin>@<market>` and `uze install`, never touching the project's own rules or another namespace
-- [ ] 3.3 Inspection: classify each copy against the plugin's rules at the locked revision as current, drifted or missing, and each extra file in the namespace as extra, with no `$UZE_HOME` state needed
-- [ ] 3.4 Lifecycle:
+- [x] 3.1 The namespace form from 1.1/1.2, as one function in `uze-core::project` naming the location for a plugin identity. Widen `project-rules`' discovery to include that form, and only that form
+- [x] 3.2 Copy a locked plugin's rules byte for byte into its namespace during `uze <plugin>@<market>` and `uze install`, never touching the project's own rules or another namespace
+- [x] 3.3 Inspection: classify each copy against the plugin's rules at the locked revision as current, drifted or missing, and each extra file in the namespace as extra, with no `$UZE_HOME` state needed
+- [x] 3.4 Lifecycle:
   - install restores missing copies;
   - update replaces current copies and removes rules the new revision dropped;
   - remove deletes the namespace;
   - all three refuse to overwrite or remove a drifted copy, and name it.
-- [ ] 3.5 Machine scope: `uze plugin install` reports the rules as delivered per project only, naming `uze <plugin>@<market>`, and writes into no project
-- [ ] 3.6 Unit and integration tests for every scenario in the spec, including:
+- [x] 3.5 Machine scope: `uze plugin install` reports the rules as delivered per project only, naming `uze <plugin>@<market>`, and writes into no project
+- [x] 3.6 Unit and integration tests for every scenario in the spec, including:
   - a fresh `$UZE_HOME` judging a cloned project;
   - two projects on one machine, only one declaring the plugin.
 
 ## 4. Reporting and Skills
 
-- [ ] 4.1 `uze status`: per plugin, the rule count and copy state, naming each file that is not current. Without network, the copies are reported as unverified
-- [ ] 4.2 `uze:author` Skill: the `--rules` flag. Rules shipped in a plugin are delivered per project and committed by the consumer. An `always_on` rule is how a plugin speaks to every agent of a declaring project (D6). Validate with `uze agent plugin check`
-- [ ] 4.3 `uze:rules` Skill: when a rule belongs in a shared plugin rather than the project, and how to move a project rule into one (the D5 "take ownership" path in reverse)
+- [x] 4.1 `uze status`: per plugin, the rule count and copy state, naming each file that is not current. Without network, the copies are reported as unverified
+- [x] 4.2 `uze:author` Skill: the `--rules` flag. Rules shipped in a plugin are delivered per project and committed by the consumer. An `always_on` rule is how a plugin speaks to every agent of a declaring project (D6). Validate with `uze agent plugin check`
+- [x] 4.3 `uze:rules` Skill: when a rule belongs in a shared plugin rather than the project, and how to move a project rule into one (the D5 "take ownership" path in reverse)
 
 ## 5. Conformance and journeys
 
@@ -43,7 +43,7 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Extend the project rules page with sharing rules through a plugin: publishing, declaring, committing the copies, drift and updates
-- [ ] 6.2 Add to `docs/architecture/invariants.md`, each tied to its test:
+- [x] 6.1 Extend the project rules page with sharing rules through a plugin: publishing, declaring, committing the copies, drift and updates
+- [x] 6.2 Add to `docs/architecture/invariants.md`, each tied to its test:
   - plugin rules never reach a non-declaring project;
   - a drifted copy is never overwritten.

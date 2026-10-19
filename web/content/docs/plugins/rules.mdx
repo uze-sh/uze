@@ -74,9 +74,71 @@ one:
 | OpenCode | through the rules engine |
 
 The engine reads your project's own `.agents/rules/` each time, so a branch or
-a checkout with different rules gets its own. Nothing is copied into your
-project, and nothing is compiled. On Windows the engine is not available yet,
+a checkout with different rules gets its own. The engine copies nothing into
+your project, and nothing is compiled. On Windows the engine is not available yet,
 and `uze status` says so.
+
+## Share rules through a plugin
+
+When the same conventions hold for every repository of a team, write them
+once in a plugin instead of copying files between projects. A plugin ships
+rules as Markdown files directly under its `rules/` directory, in the same
+format. Scaffold one with:
+
+```bash
+uze agent plugin create acme-conventions --market acme --rules
+```
+
+`uze agent plugin check` validates the plugin's rules with the same checks as
+`uze agent rules check`. Patterns are matched against paths relative to the
+project that receives the rule.
+
+### Declaring the plugin
+
+In a project, `uze acme-conventions@acme` (or `uze install`, once the plugin
+is in `agents.yaml`) copies each rule, byte for byte, into the project:
+
+```text
+.agents/rules/acme-conventions@acme--ui.md
+.agents/rules/acme-conventions@acme--testing.md
+```
+
+The prefix names the plugin the file belongs to. Every agent reads these
+files exactly as it reads your own rules, and a rule of yours with the same
+name is left alone. Rules are the one part of a plugin that never reaches an
+agent machine-wide: `uze install -m` reports them as delivered per project,
+and a project that does not declare the plugin never receives them.
+
+An `always_on` rule is how a plugin says something to every agent of every
+project that declares it.
+
+### Commit the copies
+
+The copies are ordinary project files. Commit them beside `agents.lock`: a
+clone, a worktree or CI then has the rules without running uze, and
+Antigravity reads them there natively.
+
+### Updates and drift
+
+`uze update acme-conventions` moves the lock to the plugin's new revision
+and rewrites its copies to match. Rules the new revision changed show up as
+modified files in your pull request, and rules it dropped as deleted ones,
+so a change to the conventions is reviewed like code. `uze remove
+acme-conventions` deletes the plugin's copies and leaves your own rules.
+
+A copy is current when it matches the plugin's rule at the revision
+`agents.lock` pins. `uze status` reports each plugin's rules as current, or
+names every file that is drifted (edited), missing, or extra (in the plugin's
+namespace but not shipped by it). It can do that on a fresh clone too: when
+this machine does not have the plugin, it reads the pinned revision without
+installing anything, and without network it reports the copies as
+unverified.
+
+uze never overwrites or removes a copy someone edited. `uze install` and
+`uze update` name it and leave it. To resolve it, either revert the file, or
+take ownership of the change by renaming it without the prefix, which makes
+it one of your project's own rules. A missing copy is restored by
+`uze install`.
 
 ## Check them
 
@@ -86,5 +148,6 @@ uze agent rules check
 
 Validates every rule offline and names each file that is not one and why.
 `uze status` reports the same: how many rules of each kind, any file that is
-not a rule, and how each installed agent receives them. It never prints a
-rule's text.
+not a rule, each declared plugin's rules and whether their copies match the
+lock, and how each installed agent receives them. It never prints a rule's
+text.

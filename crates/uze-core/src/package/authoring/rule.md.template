@@ -13,6 +13,7 @@ trigger: glob
 # Comma-separated patterns, matched against paths relative to the root of the
 # project that declares the plugin. Each opens with `**/` or holds no `/`
 # (`*.md` matches at any depth); `*`, `**`, `?` and `[...]` are supported.
-globs: **/*.md
+# Quoted, since YAML reads a value opening with `*` as an alias.
+globs: "**/*.md"
 ---
 Write documentation in sentence case, one sentence per line.
