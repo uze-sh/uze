@@ -212,6 +212,48 @@ mod tests {
         assert!(INSTRUCTIONS_LEAD.len() < INSTRUCTIONS_SHARE);
     }
 
+    /// The policy is never cut by its own share: the longest preset
+    /// vocabulary, the longest delivery clause and a deep checkout path
+    /// still leave the last bullet whole (measured for task 2.3).
+    #[test]
+    fn the_longest_policy_fits_its_share_uncut() {
+        use crate::worktree::{
+            BranchPreset, BranchVocabulary, CompletionBehavior, Placement, WorktreePolicy,
+        };
+        let checkout = std::path::Path::new(
+            "/home/someone-with-a-long-name/src/github.com/organization/\
+             a-rather-long-repository-name/.worktrees/ab12cd",
+        );
+        for completion in [
+            None,
+            Some(CompletionBehavior::Merge),
+            Some(CompletionBehavior::Push),
+        ] {
+            let policy = WorktreePolicy {
+                branch: BranchVocabulary::Preset(BranchPreset::Conventional),
+                completion,
+                target: Some("a-long-target-branch".into()),
+                ..WorktreePolicy::default()
+            };
+            for placement in [
+                Placement::Isolated {
+                    checkout,
+                    branch: "refactor/a-three-word-subject",
+                },
+                Placement::InPlace,
+            ] {
+                let instructions = policy.instructions(&placement);
+                let part = instructions_part(&instructions);
+                assert!(
+                    part.ends_with(instructions.trim()),
+                    "{} bytes cut to {}",
+                    instructions.len(),
+                    part.len()
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_instructions_open_the_document_and_the_notes_follow_their_preamble() {
         let document = compose("## Rules\n\n- do it", &[section("what happened", 100)]).unwrap();

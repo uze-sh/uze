@@ -330,14 +330,13 @@ impl CompletionBehavior {
         match behavior {
             None => "your branch is left for a person to integrate; commit on it and stop",
             Some(Self::Merge) => {
-                "delivery is UZE's — UZE rebases your branch onto the target, runs the \
-                 project's checks, and fast-forwards the target itself; commit on your branch \
-                 and stop"
+                "UZE delivers your work, rebasing your branch onto the target, running the project's \
+                 checks and fast-forwarding the target; commit on your branch and stop"
             }
             Some(Self::Push) => {
-                "delivery is UZE's — UZE rebases your branch onto the target, runs the \
-                 project's checks and pushes it; open a request only when the project's \
-                 instruction asks you to, and otherwise commit on your branch and stop"
+                "UZE delivers your work, rebasing your branch onto the target, running the project's \
+                 checks and pushing it; open a request only if the project's instructions ask, \
+                 otherwise commit on your branch and stop"
             }
         }
     }
@@ -534,16 +533,14 @@ impl WorktreePolicy {
             }
         };
         format!(
-            "- As soon as a user message gives the conversation a clear topic — normally the \
-             first message — make naming your work your first command, before reading a file, \
-             planning or editing: `uze agent work name <type>/<subject>`. Types this project \
-             accepts: `{types}`. The subject is ideally one or two words, never more than \
-             three, naming the intention, not a description of the task — \
-             `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. \
-             {renames} Work that reaches a commit still unnamed is named by UZE from that \
-             commit's subject. Name it again with the same command whenever the work turns out \
-             to be something else — the last name given is the one that stands. Invoke the \
-             command directly; do not merely say you will name the work.\n",
+            "- As soon as a user message gives the conversation a clear topic, make naming your \
+             work your first command, before reading a file, planning or editing: `uze agent work \
+             name <type>/<subject>`. Types this project accepts: `{types}`. The subject is one to \
+             three words naming the intention, not the task, as in `fix/branch-naming`. \
+             {renames} Work that reaches a \
+             commit unnamed is named from that commit's subject. Name it again whenever the work \
+             turns out to be something else; the last name stands. Run the command; do not \
+             merely say you will.\n",
             types = self.branch.spelled()
         )
     }
@@ -571,17 +568,16 @@ impl WorktreePolicy {
                  are already isolated: do not switch branches.\n\
                  - Commit your work on your branch, as you go. Never commit to, merge into, \
                  rebase, or reset the target branch{target}: {completion}.\n\
-                 - If UZE tells you a rebase is paused in your checkout, resolve the conflicts \
-                 preserving the intent of your change, run `git rebase --continue`, run the \
-                 project's checks, and end your turn.\n\
+                 - If UZE says a rebase is paused here, resolve the conflicts \
+                 keeping your change's intent, run `git rebase --continue` and the project's \
+                 checks, and end your turn.\n\
                  - Before spawning parallel subagents that write files, give each its own \
-                 checkout: `uze agent work split <topic>` prints the path of one cut from your \
-                 current commit — hand that path to the subagent. When it is done, commit in \
-                 both checkouts and run `uze agent work join <topic>` to bring its commits onto \
-                 your branch; on a conflict, resolve it in the subagent's checkout, run `git \
-                 rebase --continue` there, and join again. `uze agent work list` shows them. \
-                 Never make a worktree with Git for this: UZE only knows the checkouts it \
-                 made.\n",
+                 checkout: hand it the path `uze agent work split <topic>` prints, cut from your \
+                 current commit. When it is done, commit in \
+                 both checkouts and run `uze agent work join <topic>` to bring its commits \
+                 back; on a conflict, resolve it in the subagent's checkout, run `git \
+                 rebase --continue` there, and join again; `uze agent work list` shows them. Never \
+                 make a worktree with Git for this: UZE only knows the checkouts it made.\n",
                 checkout = checkout.display(),
                 target = self
                     .target
@@ -752,7 +748,7 @@ mod tests {
         let text = WorktreePolicy::default().instructions(&isolated());
         assert!(text.contains(CompletionBehavior::instruction_clause(None)));
         assert!(
-            !text.contains("delivery is UZE's"),
+            !text.contains("UZE delivers your work"),
             "a project with no delivery claims none: {text}"
         );
         for verb in ["split", "join", "list"] {
@@ -789,7 +785,7 @@ mod tests {
             text.contains("never switch, reset, stash or clean it"),
             "{text}"
         );
-        assert!(!text.contains("delivery is UZE's"), "{text}");
+        assert!(!text.contains("UZE delivers your work"), "{text}");
         assert!(!text.contains(WORKTREES_DIRECTORY), "{text}");
         assert!(!text.contains("uze agent work split"), "{text}");
     }
