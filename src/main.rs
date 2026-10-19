@@ -562,15 +562,19 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                 app.project().remove(&plugin, &current_dir)
             })?;
             match report {
-                RemoveProjectPluginReport::Removed { .. } => {
+                RemoveProjectPluginReport::Removed { rules, .. } => {
                     let message = progress::change_report(
                         "remove",
-                        &progress::change(progress::Change::Removed, &plugin, None),
+                        &format!(
+                            "{}{}",
+                            progress::change(progress::Change::Removed, &plugin, None),
+                            render_rule_copies(rules.as_slice())
+                        ),
                         "1 plugin removed from this project",
                     );
                     emit(
                         format,
-                        &RemoveProjectPluginReport::Removed { plugin },
+                        &RemoveProjectPluginReport::Removed { plugin, rules },
                         |_| message,
                     );
                 }
@@ -882,6 +886,7 @@ mod status_output_tests {
             held_back: Vec::new(),
             memory: Default::default(),
             rules: None,
+            plugin_rules: Default::default(),
         };
         ProjectStatus {
             report,
@@ -980,6 +985,7 @@ mod status_output_tests {
             trigger,
             patterns: Vec::new(),
             description: None,
+            plugin: None,
         }
     }
 
@@ -1003,6 +1009,57 @@ mod status_output_tests {
         assert!(
             text.contains("ready"),
             "a clean set leaves the project ready: {text}"
+        );
+    }
+
+    #[test]
+    fn a_plugins_rules_are_counted_apart_from_the_projects_own() {
+        let copy = |rule: &str, trigger| uze_application::application::RuleSummary {
+            plugin: Some("acme-conventions@acme".to_owned()),
+            ..summary(
+                &format!(".agents/rules/acme-conventions@acme--{rule}"),
+                trigger,
+            )
+        };
+        let mut status = with_rules(
+            vec![
+                summary(".agents/rules/a.md", "glob"),
+                summary(".agents/rules/b.md", "always_on"),
+                copy("one.md", "glob"),
+                copy("two.md", "glob"),
+                copy("three.md", "always_on"),
+            ],
+            Vec::new(),
+            true,
+        );
+        status.report.plugin_rules = uze_application::application::PluginRulesReport {
+            plugins: vec![uze_application::application::PluginRulesStatus {
+                plugin: "acme-conventions@acme".to_owned(),
+                rules: Some(3),
+                files: vec![uze_application::application::RuleCopyFinding {
+                    path: ".agents/rules/acme-conventions@acme--two.md".to_owned(),
+                    state: "drifted",
+                }],
+                unverified: None,
+            }],
+            undeclared: Vec::new(),
+        };
+        let text = crate::progress::unpainted(&render_status(&status));
+        assert!(
+            text.contains(".agents/rules           2 rules · 1 always_on · 1 glob"),
+            "{text}"
+        );
+        assert!(
+            text.contains("acme-conventions@acme   3 rules · ! 1 file not current"),
+            "{text}"
+        );
+        assert!(
+            text.contains(".agents/rules/acme-conventions@acme--two.md: edited"),
+            "the drifted file is named: {text}"
+        );
+        assert!(
+            text.contains("1 plugin rule file out of step with the lock"),
+            "the headline says the project needs attention: {text}"
         );
     }
 

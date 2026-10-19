@@ -4,6 +4,7 @@
 
 pub(crate) mod consumer;
 pub(crate) mod marketplace;
+pub(crate) mod plugin_rules;
 
 /// Shared helpers for the workspace test binary.
 pub(crate) mod util {

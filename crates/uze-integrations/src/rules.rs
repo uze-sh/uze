@@ -44,17 +44,25 @@ pub(crate) const KIND: &str = "rules-engine";
 /// rules rather than waiting.
 pub(crate) const ENGINE_TIMEOUT_SECONDS: u16 = 10;
 
-/// The directory a package would ship rules in. Rules reach a harness per
+/// The directory a package ships rules in. Rules reach a harness per
 /// project, and every plugin route UZE has is machine-wide: a package's
 /// `rules/` is therefore carried by no envelope (spec: "A package's rules
-/// never reach a harness's machine-wide rules").
-pub(crate) const PACKAGE_RULES_DIR: &str = "rules";
+/// never reach a harness's machine-wide rules"). A project that declares
+/// the plugin receives them as copies in its own checkout instead
+/// (plugin-rules), which the project's rules route delivers.
+pub(crate) const PACKAGE_RULES_DIR: &str = uze_core::rules::plugin::PACKAGE_RULES_DIR;
 
-/// Why a package's `rules/` is not delivered, said wherever it is withheld.
-pub(crate) const PACKAGE_RULES_WITHHELD: &str = "rules are delivered per project, from the checkout's own `.agents/rules/`, and a plugin is installed for every project on the machine";
+/// Why a package's `rules/` is not delivered, said wherever it is withheld,
+/// naming the command that declares it in a project.
+pub(crate) fn package_rules_withheld(package: &str) -> String {
+    format!(
+        "rules are delivered per project, never machine-wide: `uze {package}` in a project copies \
+         them into its `.agents/rules/`"
+    )
+}
 
 /// The package's `rules/`, when it has one, as every harness reports it: not
-/// delivered, and why.
+/// delivered on this scope, and why.
 pub(crate) fn withheld(
     package: &uze_core::store::StoredPackage,
 ) -> Option<uze_core::integration::WithheldPath> {
@@ -62,7 +70,7 @@ pub(crate) fn withheld(
         .is_ok()
         .then(|| uze_core::integration::WithheldPath {
             path: PACKAGE_RULES_DIR.to_owned(),
-            reason: PACKAGE_RULES_WITHHELD.to_owned(),
+            reason: package_rules_withheld(package.id.as_str()),
         })
 }
 

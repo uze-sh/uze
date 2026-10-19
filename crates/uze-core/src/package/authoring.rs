@@ -36,6 +36,7 @@ pub struct ScaffoldCapabilities {
     pub mcp: bool,
     pub agent: bool,
     pub instructions: bool,
+    pub rules: bool,
 }
 
 /// The manifest every marketplace carries.
@@ -53,6 +54,9 @@ const PLUGINS_DIRECTORY_KEY: &str = "pluginsDirectory";
 /// The token a plugin's own files are referenced through from `hooks.json`
 /// and `mcp.json`; every delivery resolves it to the installed root.
 const PLUGIN_ROOT_TOKEN: &str = "${PLUGIN_ROOT}";
+
+/// The file name of the rule `--rules` scaffolds.
+const EXAMPLE_RULE: &str = "conventions.md";
 
 /// The initial commit message a scaffolded marketplace is born with.
 const INITIAL_COMMIT_MESSAGE: &str = "chore: scaffold marketplace";
@@ -395,6 +399,14 @@ fn write_plugin_files(
             include_str!("authoring/instructions.md"),
         )?;
     }
+    if caps.rules {
+        let rules = plugin_root.join(crate::rules::plugin::PACKAGE_RULES_DIR);
+        create_dir(&rules)?;
+        write_file(
+            &rules.join(EXAMPLE_RULE),
+            include_str!("authoring/rule.md.template"),
+        )?;
+    }
     Ok(())
 }
 
@@ -621,6 +633,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         }
         Err(error) => findings.push(error.to_string()),
     }
+    check_rules(root, &id, &mut delivers, &mut findings, &mut warnings)?;
     findings.extend(escaping_references(root));
     Ok(ValidationReport {
         delivers,
@@ -628,6 +641,38 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         warnings,
         agent_plugins,
     })
+}
+
+/// The package's rules, read by the validator `uze agent rules check` runs
+/// on a project's own: a file that is not a deliverable rule is a finding,
+/// since every project declaring the plugin would carry a copy no harness
+/// delivers. What under `rules/` is no rule file reaches no project, and is
+/// a warning.
+fn check_rules(
+    root: &Path,
+    id: &PackageId,
+    delivers: &mut Vec<String>,
+    findings: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) -> Result<()> {
+    for shipped in crate::rules::plugin::shipped_rules(root)? {
+        let path = shipped.package_path();
+        match shipped.parse() {
+            Ok(_) => delivers.push(format!("package:{}:{path}", id.as_str())),
+            Err(reason) => findings.push(format!("{}: {reason}", root.join(&path).display())),
+        }
+    }
+    warnings.extend(
+        crate::rules::plugin::unread_entries(root)
+            .into_iter()
+            .map(|entry| {
+                format!(
+                    "{entry}: not a rule; a plugin's rules are the `*.md` files directly under \
+                     `rules/`, so it reaches no project"
+                )
+            }),
+    );
+    Ok(())
 }
 
 /// What a hook group's handlers leave out of a platform: a line with no

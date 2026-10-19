@@ -1,0 +1,18 @@
+---
+# A rule this plugin gives every project that declares it. `uze <plugin>@<market>`
+# copies it, byte for byte, into that project's `.agents/rules/`, where the
+# project commits it and every harness reads it.
+#
+# trigger: when it reaches an agent.
+#   always_on       every session, from its start: how a plugin speaks to every
+#                   agent of a declaring project
+#   glob            when an agent reads or edits a path `globs` matches
+#   model_decision  when the task fits `description`, which says when to read it
+#   manual          only when someone names it
+trigger: glob
+# Comma-separated patterns, matched against paths relative to the root of the
+# project that declares the plugin. Each opens with `**/` or holds no `/`
+# (`*.md` matches at any depth); `*`, `**`, `?` and `[...]` are supported.
+globs: **/*.md
+---
+Write documentation in sentence case, one sentence per line.

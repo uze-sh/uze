@@ -20,6 +20,12 @@ use super::marketplace::MarketplaceRequest;
 use super::services::Project;
 use super::*;
 
+mod plugin_rules;
+
+use plugin_rules::{Expected, Reach, checkout_of};
+pub use plugin_rules::{PluginRulesReport, PluginRulesStatus, RuleCopies, RuleCopyFinding};
+use uze_core::rules::plugin::Namespace;
+
 /// The manifest's spelling of a marketplace the project declares. Both
 /// files name a source the same way, so this carries the keys across and
 /// adds the one thing only the manifest has: the list of plugins taken from
@@ -359,6 +365,12 @@ impl Project<'_> {
             });
         }
 
+        // What the plugin's copies were judged against before this add:
+        // a copy matching it is the plugin's and follows the new revision.
+        let checkout = checkout_of(&canonical);
+        let previous =
+            self.expected_rules(&lock, plugin, marketplace, Reach::WhenJudging, &checkout);
+
         // Acquire and ingest (reuses existing lifecycle).
         let report = self.resolve_and_install(
             plugin,
@@ -395,9 +407,21 @@ impl Project<'_> {
             &declared_marketplace_for(&lock, marketplace, linked_source, &canonical),
         )?;
         project_lock::save_lock(&canonical, &lock)?;
+        let rules =
+            match self.expected_rules(&lock, plugin, marketplace, Reach::Acquire, &checkout) {
+                Some(next) => Some(self.converge_rules(
+                    &checkout,
+                    &Namespace::new(plugin, marketplace),
+                    previous.as_ref().unwrap_or(&next),
+                    &next,
+                )?),
+                None => None,
+            }
+            .filter(|copies| !copies.is_quiet());
 
         Ok(AddPluginReport {
             declared: true,
+            rules,
             ..report
         })
     }
@@ -431,6 +455,30 @@ impl Project<'_> {
                 plugin: plugin.to_owned(),
             });
         }
+        // Judged before either file forgets the plugin: what a copy is
+        // compared against is the revision the project was locked at.
+        let checkout = checkout_of(&canonical);
+        let lock_before = project_lock::load_lock(&canonical)?.unwrap_or_default();
+        let owner = lock_before
+            .plugins
+            .get(name)
+            .map(|locked| locked.marketplace.clone())
+            .or_else(|| {
+                manifest::load(&canonical)
+                    .ok()
+                    .flatten()
+                    .and_then(|manifest| manifest.marketplace_of(name).map(str::to_owned))
+            });
+        let previous = owner.as_deref().map(|marketplace| {
+            let expected = self.expected_rules(
+                &lock_before,
+                name,
+                marketplace,
+                Reach::WhenJudging,
+                &checkout,
+            );
+            (Namespace::new(name, marketplace), expected)
+        });
         let undeclared = manifest::undeclare_plugin(&canonical, name)?;
         let mut lock = match project_lock::load_lock(&canonical)? {
             Some(lock) => lock,
@@ -453,8 +501,20 @@ impl Project<'_> {
             project_lock::save_lock(&canonical, &lock)?;
         }
 
+        let rules = match previous {
+            Some((namespace, Some(expected))) => Some(self.converge_rules(
+                &checkout,
+                &namespace,
+                &expected,
+                &Expected::Known(Vec::new()),
+            )?),
+            _ => None,
+        }
+        .filter(|copies| !copies.is_quiet());
+
         Ok(RemoveProjectPluginReport::Removed {
             plugin: plugin.to_owned(),
+            rules,
         })
     }
 
@@ -532,6 +592,8 @@ impl Project<'_> {
         // it is not reentrant. The lock file this writes is a project file,
         // which that lock does not govern.
         let mut outcomes = Vec::new();
+        let mut rules = Vec::new();
+        let checkout = checkout_of(&canonical);
         for (name, marketplace) in declared {
             let declared_marketplace =
                 manifest.marketplaces.get(&marketplace).ok_or_else(|| {
@@ -554,6 +616,8 @@ impl Project<'_> {
             }
 
             let qualified = format!("{name}@{marketplace}");
+            let previous_rules =
+                self.expected_rules(&lock, &name, &marketplace, Reach::WhenJudging, &checkout);
             let before = lock
                 .marketplaces
                 .get(&marketplace)
@@ -634,16 +698,23 @@ impl Project<'_> {
                     .filter(|_| self.installed_revision(&installed_id).content != content_before);
                 outcomes.push(match followed {
                     Some(linked_source) => UpdateOutcome::FollowedLink {
-                        plugin: name,
+                        plugin: name.clone(),
                         linked_source,
                         deliveries,
                     },
                     None => UpdateOutcome::Held {
-                        plugin: name,
+                        plugin: name.clone(),
                         reason: "linked to a checkout on this machine, which pins nothing"
                             .to_owned(),
                     },
                 });
+                rules.extend(self.follow_rules(
+                    &checkout,
+                    &lock,
+                    &name,
+                    &marketplace,
+                    previous_rules,
+                )?);
                 continue;
             }
             let after = lock
@@ -655,17 +726,24 @@ impl Project<'_> {
             outcomes.push(
                 if before.as_deref() == Some(after.as_str()) && !entry_moved {
                     UpdateOutcome::AlreadyCurrent {
-                        plugin: name,
+                        plugin: name.clone(),
                         deliveries,
                     }
                 } else {
                     UpdateOutcome::Moved {
-                        plugin: name,
+                        plugin: name.clone(),
                         revision: after,
                         deliveries,
                     }
                 },
             );
+            rules.extend(self.follow_rules(
+                &checkout,
+                &lock,
+                &name,
+                &marketplace,
+                previous_rules,
+            )?);
             // Saved per entry: the bytes are already in the Store, and a
             // later failure must not leave the lock denying what this
             // machine now holds.
@@ -679,6 +757,7 @@ impl Project<'_> {
             scope: UpdateScope::Project,
             reconciled: false,
             outcomes,
+            rules,
         };
         let reconciled = if report.changed_content() {
             self.0.context().reconcile(&canonical)?;
@@ -766,7 +845,31 @@ impl Project<'_> {
             scope: UpdateScope::Machine,
             reconciled: false,
             outcomes,
+            rules: Vec::new(),
         })
+    }
+
+    /// One updated plugin's copies, carried from what they were judged
+    /// against before the update to the revision the lock records now.
+    fn follow_rules(
+        &self,
+        checkout: &Path,
+        lock: &ProjectLock,
+        name: &str,
+        marketplace: &str,
+        previous: Option<Expected>,
+    ) -> Result<Option<RuleCopies>> {
+        let Some(next) = self.expected_rules(lock, name, marketplace, Reach::Acquire, checkout)
+        else {
+            return Ok(None);
+        };
+        let copies = self.converge_rules(
+            checkout,
+            &Namespace::new(name, marketplace),
+            previous.as_ref().unwrap_or(&next),
+            &next,
+        )?;
+        Ok((!copies.is_quiet()).then_some(copies))
     }
 
     /// The working copy `marketplace` is linked to on this machine, if any.
@@ -872,14 +975,26 @@ impl Project<'_> {
         // projects share the Store, and ADR-019 keeps project scope out of
         // it.
         let mut removed_plugins = Vec::new();
+        let mut rules = Vec::new();
         let surplus = project_lock::surplus_against(&manifest, &lock);
         if !surplus.is_empty() {
             drop(mutation.take());
             for plugin in &surplus {
-                self.remove(plugin, &canonical)?;
+                if let RemoveProjectPluginReport::Removed {
+                    rules: Some(copies),
+                    ..
+                } = self.remove(plugin, &canonical)?
+                {
+                    rules.push(copies);
+                }
                 removed_plugins.push(plugin.clone());
             }
         }
+
+        // Fifth, the declared plugins' rules, which live in the checkout
+        // rather than on the machine: a copy missing is restored from the
+        // locked revision, and one somebody edited is named and left.
+        rules.extend(self.converge_declared_rules(&canonical, &lock)?);
 
         // Installing changes what this project's packages contribute to
         // `AGENTS.md`, and a region the package manager owns there can fall
@@ -905,7 +1020,7 @@ impl Project<'_> {
         // A skip is not "nothing to do": it is something this machine
         // could not do, and it has to be said even when everything else
         // already agreed.
-        if nothing_moved && !reconciled && skipped.is_empty() {
+        if nothing_moved && !reconciled && skipped.is_empty() && rules.is_empty() {
             return Ok(InstallReport::NoChanges);
         }
         Ok(InstallReport::Installed {
@@ -914,6 +1029,7 @@ impl Project<'_> {
             skipped,
             reconciled,
             undelivered,
+            rules,
         })
     }
 
@@ -1546,8 +1662,15 @@ pub struct StaleProjection {
 #[serde(tag = "outcome", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemoveProjectPluginReport {
     NoLock,
-    NotInLock { plugin: String },
-    Removed { plugin: String },
+    NotInLock {
+        plugin: String,
+    },
+    Removed {
+        plugin: String,
+        /// What happened to the plugin's copies in the checkout.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rules: Option<RuleCopies>,
+    },
 }
 
 /// A package as an update compares it: by its content, named by where it
@@ -1626,6 +1749,10 @@ pub struct UpdateReport {
     pub outcomes: Vec<UpdateOutcome>,
     /// Whether the project's context was reconciled afterwards.
     pub reconciled: bool,
+    /// What happened to each updated plugin's copies in the checkout; only
+    /// plugins with something to say.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<RuleCopies>,
 }
 
 impl UpdateReport {
@@ -1702,6 +1829,10 @@ pub enum InstallReport {
         /// Harnesses a plugin installed here could not be delivered to.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         undelivered: Vec<(String, HarnessDeliveryReport)>,
+        /// What happened to each declared plugin's copies in the checkout;
+        /// only plugins with something to say.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        rules: Vec<RuleCopies>,
     },
 }
 

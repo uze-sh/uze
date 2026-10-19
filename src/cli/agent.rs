@@ -115,6 +115,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             mcp,
             agent,
             instructions,
+            rules,
             format,
         } => {
             let report = with_spinner(&format!("Scaffolding plugin {name}..."), || {
@@ -128,6 +129,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         mcp,
                         agent,
                         instructions,
+                        rules,
                     },
                 )
             })?;
@@ -247,6 +249,9 @@ pub(crate) fn delivered_as(identity: &str) -> (&'static str, String) {
             "skill",
             skill.rsplit('/').next().unwrap_or(skill).to_owned(),
         );
+    }
+    if let Some(rule) = path.strip_prefix("rules/") {
+        return ("rule", rule.trim_end_matches(".md").to_owned());
     }
     if let Some(agent) = path.strip_prefix("agents/") {
         return ("agent", agent.trim_end_matches(".md").to_owned());

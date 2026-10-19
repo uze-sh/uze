@@ -80,6 +80,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
             }
         }
     }
+    lines.push_str(&render_rule_copies(&report.rules));
     if report.reconciled {
         lines.push_str(&progress::change(
             Change::Updated,
@@ -187,6 +188,10 @@ pub(crate) fn render_update_report(report: &uze_application::application::Update
             text.push_str(&format!("  {}\n", progress::title(plugin)));
             text.push_str(&render_deliveries(deliveries, false, "    "));
         }
+    }
+    if !report.rules.is_empty() {
+        text.push_str(&format!("\n{}", progress::report_section("Rules")));
+        text.push_str(&render_rule_copies(&report.rules));
     }
     if report.reconciled {
         text.push_str("  Project context reconciled\n");
@@ -659,6 +664,7 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
     use progress::Change;
     let commit = report.plugin.commit.as_deref().map(short_commit);
     let mut lines = progress::change(Change::Added, &report.plugin.id, commit);
+    lines.push_str(&render_rule_copies(report.rules.as_slice()));
     let (issues, _) = delivery_issues(&report.deliveries);
     if !issues.is_empty() {
         lines.push('\n');
@@ -670,6 +676,51 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
         "1 plugin installed on this machine only"
     };
     progress::change_report("install", &lines, scope)
+}
+
+/// What a lifecycle operation did to each plugin's rules in the checkout:
+/// a line per copy written or removed, and one per copy it refused to touch
+/// or did not recognise, with why. Paths are the checkout's, so a person
+/// can open each one.
+pub(crate) fn render_rule_copies(copies: &[uze_application::application::RuleCopies]) -> String {
+    use progress::Change;
+    let mut lines = String::new();
+    for plugin in copies {
+        for path in &plugin.written {
+            lines.push_str(&progress::change(Change::Added, path, None));
+        }
+        for path in &plugin.removed {
+            lines.push_str(&progress::change(Change::Removed, path, None));
+        }
+        for path in &plugin.drifted {
+            lines.push_str(&progress::change(
+                Change::Attention,
+                path,
+                Some(&format!(
+                    "edited, so left as it is: differs from {} at the locked revision",
+                    plugin.plugin
+                )),
+            ));
+        }
+        for path in &plugin.extra {
+            lines.push_str(&progress::change(
+                Change::Attention,
+                path,
+                Some(&format!(
+                    "not a rule {} ships; left in place",
+                    plugin.plugin
+                )),
+            ));
+        }
+        if let Some(reason) = &plugin.unverified {
+            lines.push_str(&progress::change(
+                Change::Attention,
+                &plugin.plugin,
+                Some(&format!("rules not checked: {reason}")),
+            ));
+        }
+    }
+    lines
 }
 
 /// A commit as a person compares two of them.
@@ -973,6 +1024,7 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             removed,
             skipped,
             reconciled,
+            rules,
             ..
         } => {
             let mut lines = String::new();
@@ -989,6 +1041,7 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
                     Some(&one.reason),
                 ));
             }
+            lines.push_str(&render_rule_copies(rules));
             if *reconciled {
                 lines.push_str(&progress::change(
                     Change::Updated,
@@ -1026,6 +1079,7 @@ mod tests {
                 deliveries: Vec::new(),
             }],
             reconciled: false,
+            rules: Vec::new(),
         }
     }
 

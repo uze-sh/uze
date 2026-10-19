@@ -543,6 +543,11 @@ pub struct AddPluginReport {
     /// What a harness holds back of this delivery until the person acts in
     /// it — said at install, the moment the person is there to act.
     pub held_back: Vec<HeldBackNote>,
+    /// What happened to the plugin's rules in the declaring project's
+    /// checkout. `None` when no project declared it, or there was nothing
+    /// to say.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules: Option<crate::application::RuleCopies>,
 }
 
 impl AddPluginReport {
@@ -1028,6 +1033,9 @@ pub struct StatusReport {
     /// check` runs. `None` only when the directory could not be read,
     /// which is then one of [`Self::issues`].
     pub rules: Option<crate::application::RulesReport>,
+    /// The rules each declared plugin gives this project, judged against
+    /// the revision `agents.lock` pins.
+    pub plugin_rules: crate::application::PluginRulesReport,
 }
 
 /// One registered harness as `uze status` reports it, keyed by integration

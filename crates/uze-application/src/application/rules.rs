@@ -40,6 +40,10 @@ pub struct RuleSummary {
     /// A `model_decision` rule's description: when an agent should read it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The plugin a copied rule belongs to, `<plugin>@<marketplace>`, read
+    /// from its file name. `None` for the project's own rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
 }
 
 /// A file under `.agents/rules/` that is not delivered.
@@ -62,16 +66,22 @@ impl RulesReport {
         self.not_rules.is_empty()
     }
 
-    /// The triggers this checkout's rules use, each with its count, in the
-    /// order the format lists them; a trigger no rule uses is left out.
+    /// The rules the project wrote itself, as opposed to the copies a
+    /// declared plugin gave it.
+    pub fn own(&self) -> impl Iterator<Item = &RuleSummary> {
+        self.rules.iter().filter(|rule| rule.plugin.is_none())
+    }
+
+    /// The triggers the project's own rules use, each with its count, in
+    /// the order the format lists them; a trigger no rule uses is left out.
+    /// A plugin's copies are counted with their plugin instead.
     pub fn by_trigger(&self) -> Vec<TriggerCount> {
         Trigger::ALL
             .into_iter()
             .map(|trigger| TriggerCount {
                 trigger: trigger.as_str(),
                 rules: self
-                    .rules
-                    .iter()
+                    .own()
                     .filter(|rule| rule.trigger == trigger.as_str())
                     .count(),
             })
@@ -100,11 +110,14 @@ impl From<rules::ProjectRules> for RulesReport {
                         }
                         Activation::AlwaysOn | Activation::Manual => (Vec::new(), None),
                     };
+                    let plugin = rules::plugin::Namespace::owner_of(&rule.path)
+                        .map(|(namespace, _)| namespace.to_string());
                     RuleSummary {
                         path: rule.path,
                         trigger,
                         patterns,
                         description,
+                        plugin,
                     }
                 })
                 .collect(),

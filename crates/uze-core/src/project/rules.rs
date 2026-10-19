@@ -24,6 +24,7 @@ use crate::skill::split_frontmatter;
 use crate::{Result, UzeError};
 
 mod glob;
+pub mod plugin;
 
 pub use glob::{Construct, DialectViolation, Glob};
 
@@ -418,8 +419,10 @@ pub fn discover(root: &Path) -> Result<ProjectRules> {
     Ok(found)
 }
 
-/// Whether a directory entry is one rule file. The one place discovery
-/// decides membership, so the plugin namespace form can widen it alone.
+/// Whether a directory entry is one rule file: the one place discovery
+/// decides membership. A plugin's copies (`<plugin>@<market>--<rule>.md`,
+/// [`plugin`]) are rule files by this same test, so nothing widens for
+/// them.
 fn is_rule_file(path: &Path) -> bool {
     path.is_file() && path.extension().is_some_and(|extension| extension == "md")
 }

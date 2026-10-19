@@ -35,12 +35,13 @@ fn scratch(label: &str) -> PathBuf {
 fn every_scaffold_passes_its_own_check() -> Result<()> {
     let _git_identity = git_identity();
     let description = r#"Deploys: things "fast" — it's #1"#;
-    for flags in 0..16_u8 {
+    for flags in 0..32_u8 {
         let caps = ScaffoldCapabilities {
             hook: flags & 1 != 0,
             mcp: flags & 2 != 0,
             agent: flags & 4 != 0,
             instructions: flags & 8 != 0,
+            rules: flags & 16 != 0,
         };
         let root = scratch(&format!("authoring-scaffold-{flags}"));
         let market = scaffold_marketplace("tools", Some("Test tools"), &root.join("market"))?;
@@ -77,6 +78,15 @@ fn every_scaffold_passes_its_own_check() -> Result<()> {
             market_report.agent_plugins
         );
         assert!(market_report.delivers.iter().any(|d| d == "greet"));
+        assert_eq!(
+            plugin_report
+                .delivers
+                .iter()
+                .any(|identity| identity.ends_with(":rules/conventions.md")),
+            caps.rules,
+            "{caps:?}: {:?}",
+            plugin_report.delivers
+        );
 
         // The marketplace manifest the scaffold wrote parses by the same
         // rule an install-time catalogue read uses — and by now names the
@@ -901,4 +911,46 @@ fn check_names_an_exec_form_script_a_platform_cannot_start() {
         report.warnings
     );
     let _ = fs::remove_dir_all(plugin.parent().unwrap().parent().unwrap());
+}
+
+#[test]
+fn check_fails_on_a_rule_no_harness_would_deliver() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-rule-check");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities {
+            rules: true,
+            ..ScaffoldCapabilities::default()
+        },
+    )?;
+    fs::write(plugin.join("rules/ui.md"), "---\ntrigger: glob\n---\nUI\n").unwrap();
+    fs::create_dir_all(plugin.join("rules/nested")).unwrap();
+
+    let report = check_plugin(&plugin)?;
+
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|finding| finding.contains("rules/ui.md")
+                && finding.contains("`glob` rule without `globs`")),
+        "the file and the missing field are named: {:?}",
+        report.findings
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("rules/nested")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(!report.is_clean());
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
 }

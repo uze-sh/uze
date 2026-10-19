@@ -701,9 +701,18 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         text.push('\n');
         text.push_str(&render_status_memory(report, label));
     }
-    if let Some(rules) = report.rules.as_ref().filter(|rules| rules.present) {
+    if let Some(rules) = report
+        .rules
+        .as_ref()
+        .filter(|rules| rules.present || !report.plugin_rules.plugins.is_empty())
+    {
         text.push('\n');
-        text.push_str(&render_status_rules(rules, &report.harnesses, label));
+        text.push_str(&render_status_rules(
+            rules,
+            &report.plugin_rules,
+            &report.harnesses,
+            label,
+        ));
     }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {
@@ -791,6 +800,13 @@ fn status_label_width(report: &StatusReport, context: &[Vec<String>]) -> usize {
                 .filter(|rules| rules.present)
                 .map(|rules| progress::width(rules.directory)),
         )
+        .chain(
+            report
+                .plugin_rules
+                .plugins
+                .iter()
+                .map(|plugin| progress::width(&plugin.plugin)),
+        )
         .max()
         .unwrap_or_default()
 }
@@ -829,6 +845,18 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
             "{} in {} not delivered",
             count(rules.not_rules.len(), "file"),
             rules.directory
+        ));
+    }
+    let differing: usize = report
+        .plugin_rules
+        .plugins
+        .iter()
+        .map(|plugin| plugin.files.len())
+        .sum();
+    if differing > 0 {
+        return attention(format!(
+            "{} out of step with the lock",
+            count(differing, "plugin rule file")
         ));
     }
     match &report.portability {
@@ -1022,14 +1050,16 @@ pub(crate) fn render_status_memory(report: &StatusReport, label: usize) -> Strin
 /// whether the project is ready, not for the instructions themselves.
 pub(crate) fn render_status_rules(
     rules: &uze_application::application::RulesReport,
+    plugin_rules: &uze_application::application::PluginRulesReport,
     harnesses: &[uze_application::application::StatusHarness],
     label: usize,
 ) -> String {
     let by_trigger = rules.by_trigger();
-    let summary = if rules.rules.is_empty() {
+    let own = rules.own().count();
+    let summary = if own == 0 {
         progress::label("none")
     } else {
-        std::iter::once(count(rules.rules.len(), "rule"))
+        std::iter::once(count(own, "rule"))
             .chain(
                 by_trigger
                     .iter()
@@ -1040,6 +1070,30 @@ pub(crate) fn render_status_rules(
     };
     let mut text = progress::report_section("Rules");
     let mut rows = vec![vec![progress::label(rules.directory), summary]];
+    rows.extend(plugin_rules.plugins.iter().map(|plugin| {
+        let state = match (&plugin.unverified, plugin.files.is_empty()) {
+            (Some(_), _) => format!(
+                "{} {}",
+                progress::warning_icon(),
+                progress::label("unverified")
+            ),
+            (None, true) => format!(
+                "{} {}",
+                progress::success_icon(),
+                progress::label("current")
+            ),
+            (None, false) => format!(
+                "{} {}",
+                progress::warning_icon(),
+                progress::label(format!("{} not current", count(plugin.files.len(), "file")))
+            ),
+        };
+        let shipped = plugin
+            .rules
+            .map(|rules| format!("{} · ", count(rules, "rule")))
+            .unwrap_or_default();
+        vec![plugin.plugin.clone(), format!("{shipped}{state}")]
+    }));
     rows.extend(harnesses.iter().filter_map(|harness| {
         let route = harness.rules.as_ref()?;
         let delivered = match route.route {
@@ -1065,6 +1119,37 @@ pub(crate) fn render_status_rules(
             progress::warning_icon(),
             file.path,
             uze_application::inert(&file.reason)
+        ));
+    }
+    for plugin in &plugin_rules.plugins {
+        if let Some(reason) = &plugin.unverified {
+            text.push_str(&format!(
+                "{} {}: rules not checked against the lock: {}\n",
+                progress::warning_icon(),
+                plugin.plugin,
+                uze_application::inert(reason)
+            ));
+        }
+        for file in &plugin.files {
+            let said = match file.state {
+                "drifted" => format!(
+                    "edited; differs from {} at the locked revision, and `uze install` leaves it",
+                    plugin.plugin
+                ),
+                "missing" => "missing; `uze install` restores it".to_owned(),
+                _ => format!("not a rule {} ships", plugin.plugin),
+            };
+            text.push_str(&format!(
+                "{} {}: {said}\n",
+                progress::warning_icon(),
+                file.path
+            ));
+        }
+    }
+    for namespace in &plugin_rules.undeclared {
+        text.push_str(&format!(
+            "{} {namespace}: rules of a plugin this project does not declare\n",
+            progress::warning_icon()
         ));
     }
     text.push('\n');

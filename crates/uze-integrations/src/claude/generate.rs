@@ -1080,6 +1080,11 @@ mod generated_native_tests {
             .find(|withheld| withheld.path == "rules")
             .unwrap();
         assert!(rules.reason.contains("per project"), "{}", rules.reason);
+        assert!(
+            rules.reason.contains(&format!("`uze {}`", pkg.id.as_str())),
+            "the machine scope names the command that declares the plugin in a project: {}",
+            rules.reason
+        );
         let _ = fs::remove_dir_all(_root);
     }
 

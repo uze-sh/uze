@@ -303,6 +303,7 @@ impl Plugins<'_> {
             publications,
             blocked,
             declared: false,
+            rules: None,
             deliveries: reports,
             held_back: crate::application::doctor::held_back_notes(
                 self.0,

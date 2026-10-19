@@ -467,8 +467,10 @@ impl Health<'_> {
             .rules(&context.canonical)
             .map_err(|error| issues.push(format!("rules: {error}")))
             .ok();
+        let plugin_rules = self.0.project().plugin_rules(project_root);
         Ok(StatusReport {
             rules,
+            plugin_rules,
             root: context.canonical.clone(),
             instructions,
             drift,

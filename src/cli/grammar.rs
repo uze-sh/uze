@@ -309,6 +309,10 @@ pub(crate) enum AgentPluginAction {
         /// Also scaffold an instruction contribution
         #[arg(long)]
         instructions: bool,
+        /// Also scaffold rules/ with one example rule, copied into the
+        /// checkout of every project that declares the plugin
+        #[arg(long)]
+        rules: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
