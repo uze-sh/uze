@@ -253,6 +253,7 @@ impl Health<'_> {
                     subject: concern.subject.to_owned(),
                     detail: concern.detail,
                 })
+                .chain(self.0.rules_engine_concerns())
                 .collect(),
         }
     }

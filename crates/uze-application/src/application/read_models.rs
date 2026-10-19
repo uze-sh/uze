@@ -599,6 +599,9 @@ pub struct SetupResult {
     /// Also non-fatal: the harness setup completed, the shim just couldn't be
     /// wired.
     pub shim_error: Option<String>,
+    /// How the harness receives a project's rules, and what this setup
+    /// delivered for them; `None` where setup did not get that far.
+    pub rules: Option<RulesSetup>,
 }
 
 #[derive(Clone, Debug, Serialize)]

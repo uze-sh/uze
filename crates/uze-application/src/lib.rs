@@ -29,7 +29,7 @@ pub use uze_core::{
     context::PlannedAction,
     features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
-    integration::{AttachmentState, HarnessDetection, PublicationStatus},
+    integration::{AttachmentState, HarnessDetection, PublicationStatus, RulesRoute, WithheldPath},
     naming::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,

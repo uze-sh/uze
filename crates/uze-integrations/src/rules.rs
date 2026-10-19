@@ -489,5 +489,6 @@ fn still_started(delivered: &Delivered) -> bool {
 mod tests;
 
 /// The generated engine against real `sh`, `jq`, `git` and `awk`.
+// The engine is POSIX `sh`, run with Unix file modes.
 #[cfg(all(test, unix))]
 mod engine_tests;

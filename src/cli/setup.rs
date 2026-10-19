@@ -288,9 +288,28 @@ pub(crate) fn run_setup(
                         progress::label(format!("shim {}", progress::path(&shim.shim_path)))
                     ));
                 }
+                if let Some(rules) = &result.rules {
+                    if rules.delivered {
+                        lines.push_str(&progress::change_detail(
+                            progress::Change::Added,
+                            "rules engine delivered",
+                            Some("project rules reach it from each checkout's .agents/rules/"),
+                        ));
+                    } else if verbose
+                        && rules.error.is_none()
+                        && rules.route.route == uze_application::CompatibilityRoute::Unsupported
+                    {
+                        lines.push_str(&format!(
+                            "  {}\n",
+                            progress::label(format!("rules: {}", rules.route.reason))
+                        ));
+                    }
+                }
+                let rules_error = result.rules.as_ref().and_then(|rules| rules.error.as_ref());
                 for (what, error) in [
                     ("", result.attach_error.as_ref()),
                     ("shim: ", result.shim_error.as_ref()),
+                    ("rules engine: ", rules_error),
                 ] {
                     if let Some(error) = error {
                         had_warning = true;

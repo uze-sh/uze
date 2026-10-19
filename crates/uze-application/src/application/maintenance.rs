@@ -378,7 +378,9 @@ impl Health<'_> {
         let orphan_ids: BTreeSet<String> = all_receipts
             .into_iter()
             .map(|receipt| receipt.package_id)
-            .filter(|id| !known_ids.contains(id.as_str()))
+            // What setup delivered on its own account is no package's, and
+            // so never one whose package is gone.
+            .filter(|id| id != state::SETUP_OWNER && !known_ids.contains(id.as_str()))
             .collect();
 
         for package_id in orphan_ids {

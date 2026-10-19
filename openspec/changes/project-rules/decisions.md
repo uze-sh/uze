@@ -107,3 +107,96 @@ shared table, the `uze:rules` Skill and the docs page moved to the new form.
 
 **Alternative.** Keep root-relative patterns and translate them for
 Antigravity. That needs a copy of every rule, which design D1 rules out.
+
+# Decisions made while implementing project-rules
+
+Choices the design left open, recorded for review. Entries prefixed `E` are
+the engine and delivery's (tasks 3, 4, 5.1, 5.2, 5.5).
+
+## E1: The engine's receipts live in the attachment ledger under a reserved owner
+
+- **Context:** every managed artifact is receipt-owned, but the engine
+  belongs to no package, and the ledger's orphan sweep (`maintain`) detaches
+  any receipt whose package is not in the Store.
+- **Decision:** the receipts are ordinary `AttachmentReceipt`s whose
+  `package_id` is `state::SETUP_OWNER` (`"setup"`), which no package id can
+  equal (every one is `name@market`). The orphan sweep passes them by. Each
+  artifact is `IntegrationOwned { kind: "rules-engine" }`, so no generic
+  inspection, and no hook-wrapper prune, ever mistakes it for something else.
+- **Alternative:** a record of its own under `state/` (a new shaped
+  document and ladder for two or three entries per harness), or no receipt
+  at all, identifying UZE's entries by the engine path alone.
+
+## E2: The engine is one byte-identical file; the sessions directory is its argument
+
+- **Context:** ADR-040 D8 forbids the delivered artifact naming the
+  packager, and `$UZE_HOME` normally contains `.uze`.
+- **Decision:** the `sh` template is a constant; the entry passes
+  `runtime/rules/sessions` as `$1`. The engine is written per harness at
+  `runtime/attachments/<harness>/rules/engine`, beside that harness's hook
+  wrapper, so one harness's removal never takes another's engine.
+- **Alternative:** one shared engine for all three harnesses, which needs a
+  reference count across integrations to know when it may go.
+
+## E3: Path recovery trusts patch headers, and requires every other candidate to exist
+
+- **Context:** "every string field of `tool_input`" includes `description`,
+  `old_string` and file contents; shell tokens include `1,40p`.
+- **Decision:** `*** Add/Update/Delete File:` and `*** Move to:` lines are
+  taken as they are (a deleted or new file need not exist). A one-line
+  string field and each shell token count only when the checkout-relative
+  path exists. Multi-line non-shell fields (file contents) are ignored, and
+  a patch's body lines are never read for paths.
+- **Alternative:** taking every candidate unchecked, which turns a `**`
+  rule into "every tool call" and a description into a match.
+
+## E4: The `model_decision` index is a sentence and one `<rule>` line per rule
+
+- **Context:** the spec asks for one line naming the path and the
+  description; D5 asks every rule to arrive wrapped so `doctor` can
+  recognise the engine's output.
+- **Decision:** one sentence ("read a rule's file when its description fits
+  the task") then `<rule path="…" trigger="model_decision">description</rule>`
+  per rule, after the always-on bodies.
+- **Alternative:** an unwrapped bullet list, which `doctor` could not tell
+  from anything else in a transcript.
+
+## E5: OpenCode's plugin file is `uze-rules.ts`, refused over a foreign file
+
+- **Context:** the global plugin directory is shared with the operator's
+  own plugins, and a bare `rules.ts` is a name an operator may well use.
+- **Decision:** the file is `uze-rules.ts` (its content names no packager);
+  a file at that path that neither carries the generated header nor equals
+  a recorded earlier version is refused with `ManagedEntryConflict`.
+- **Alternative:** `rules.ts`, as the task names the template.
+
+## E6: OpenCode's `context` asks with `source: "context"`, which resets nothing
+
+- **Context:** `context` runs before every request, so it cannot mean a
+  compaction; truncating the session record there would re-deliver every
+  glob rule on every request.
+- **Decision:** only a `SessionStart` whose source is `compact` or `clear`
+  truncates the record. On OpenCode a glob rule therefore arrives once per
+  session even across a compaction; the spec allows, not requires, it to
+  arrive again.
+
+## E7: A package's `rules/` is withheld by every harness, with its own reason
+
+- **Context:** 4.6. Antigravity's generated plugin already stages only
+  `skills/`, `mcp_config.json`, `hooks.json` and `agents/`; Claude Code's
+  envelope and both explicit marketplace mirrors copied the whole tree.
+- **Decision:** `rules/` is excluded from every mirror, and
+  `IntegrationPort::withheld_paths` now returns `WithheldPath { path,
+  reason }` so `inspect` says "rules not delivered: rules are delivered per
+  project…" instead of the generic "no portable equivalent". All four
+  integrations report it.
+- **Alternative:** keeping `Vec<String>` and a fixed reason in the CLI,
+  which would have said something false about rules.
+
+## E8: Doctor reports the engine as machine concerns
+
+- **Context:** 5.5 asks for a missing `jq` and drifted entries, per harness.
+- **Decision:** both are `MachineConcern { subject: "rules" }` entries,
+  appended to the ones `doctor` already renders; `jq` is reported only when
+  some harness holds an engine receipt.
+- **Alternative:** a new `DoctorReport` field and its own rendering.

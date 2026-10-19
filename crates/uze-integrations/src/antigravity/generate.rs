@@ -417,6 +417,38 @@ mod generated_native_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// agy installs a plugin for every project on the machine, so a
+    /// package's own rules would fire one project's rule in all of them.
+    #[test]
+    fn the_staged_plugin_never_carries_the_packages_rules() {
+        use uze_core::integration::IntegrationPort;
+        let (root, pkg) = make_package_with_mcp("agy-plugin-rules");
+        fs::create_dir_all(pkg.root.join("rules")).unwrap();
+        fs::write(
+            pkg.root.join("rules/ui.md"),
+            "---\ntrigger: always_on\n---\nUI\n",
+        )
+        .unwrap();
+        let uze_home = UzeHome::at(root.join("uze"));
+        let dir =
+            materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
+        assert!(dir.join("skills").is_dir());
+        assert!(
+            !dir.join("rules").exists(),
+            "the staged plugin has no rules/"
+        );
+        let withheld =
+            AntigravityIntegration::new(root.join("agents"), uze_home).withheld_paths(&pkg);
+        assert_eq!(withheld.len(), 1);
+        assert_eq!(withheld[0].path, "rules");
+        assert!(
+            withheld[0].reason.contains("per project"),
+            "{}",
+            withheld[0].reason
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn materialize_translates_and_never_writes_into_the_store() {
         let (root, pkg) = make_package_with_mcp("materialize");

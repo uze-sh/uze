@@ -58,6 +58,7 @@ mod read_models;
 mod requirements;
 mod retired_regions;
 mod rules;
+mod rules_engine;
 mod runtime_shim;
 pub mod services;
 mod setup;
@@ -68,6 +69,7 @@ pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSum
 pub use read_models::*;
 pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};
 pub use rules::{NotARuleSummary, RuleSummary, RulesReport, TriggerCount};
+pub use rules_engine::RulesSetup;
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
 

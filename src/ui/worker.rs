@@ -2046,6 +2046,7 @@ mod tests {
             runtime_shim: None,
             attach_error: None,
             shim_error: None,
+            rules: None,
         }
     }
 

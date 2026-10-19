@@ -82,6 +82,9 @@ struct RoutedHarness {
     home: UzeHome,
     launched_through_a_shim: bool,
     skills_dir: PathBuf,
+    /// What stands for this harness's rules engine: one file whose content
+    /// the receipt carries.
+    rules_file: PathBuf,
     machine: Machine,
     provisioned: Arc<AtomicUsize>,
     prepared: Arc<AtomicUsize>,
@@ -94,6 +97,7 @@ impl RoutedHarness {
             home: home.clone(),
             launched_through_a_shim: false,
             skills_dir: root.join(id).join("skills"),
+            rules_file: root.join(id).join("rules-hook"),
             machine: machine.clone(),
             provisioned: Arc::new(AtomicUsize::new(0)),
             prepared: Arc::new(AtomicUsize::new(0)),
@@ -170,6 +174,19 @@ impl IntegrationPort for RoutedHarness {
                 strategy: "test-skills-dir".to_owned(),
             },
         )
+    }
+
+    fn rules_route(&self) -> uze_core::integration::RulesRoute {
+        uze_core::integration::RulesRoute::adapted("the test engine hands rules over")
+    }
+
+    fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        let artifact = ManagedArtifact::GeneratedFile {
+            path: self.rules_file.clone(),
+            content: "engine\n".to_owned(),
+        };
+        artifact.attach_standard()?;
+        Ok(vec![artifact])
     }
 
     fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
@@ -275,11 +292,15 @@ impl World {
             .unwrap();
     }
 
+    /// The harness's receipts for packages; what setup delivers on its own
+    /// account (the rules engine) is asked apart.
     fn receipts(&self) -> Vec<AttachmentReceipt> {
         state::receipts(&self.home, None)
             .unwrap()
             .into_iter()
-            .filter(|receipt| receipt.integration == "routed")
+            .filter(|receipt| {
+                receipt.integration == "routed" && receipt.package_id != state::SETUP_OWNER
+            })
             .collect()
     }
 
@@ -615,4 +636,107 @@ fn a_launcher_gone_since_setup_is_set_up_again() {
         world.app.workspace().launcher_names().is_empty(),
         "a harness with no launcher cannot have bypassed one"
     );
+}
+
+fn setup_receipts(world: &World) -> Vec<AttachmentReceipt> {
+    state::receipts(&world.home, Some(state::SETUP_OWNER)).unwrap()
+}
+
+#[test]
+fn setup_delivers_the_rules_engine_once_and_reports_its_route() {
+    let world = World::new(
+        "setup-rules-engine",
+        Machine::with_harness_installed(),
+        None,
+    );
+    let result = world.setup();
+    let rules = result.rules.expect("setup reports the rules route");
+    assert!(rules.delivered && rules.error.is_none(), "{rules:?}");
+    assert_eq!(rules.route.route, CompatibilityRoute::Adaptable);
+    let engine = world.root.join("home/routed/rules-hook");
+    assert_eq!(fs::read_to_string(&engine).unwrap(), "engine\n");
+
+    world.setup();
+    let receipts = setup_receipts(&world);
+    assert_eq!(receipts.len(), 1, "setup is idempotent: {receipts:?}");
+    assert_eq!(receipts[0].integration, "routed");
+
+    let maintained = world.app.health().maintain();
+    assert!(
+        setup_receipts(&world).len() == 1 && engine.exists(),
+        "what setup delivered belongs to no package, so it is never an orphan: {maintained:?}"
+    );
+    assert!(
+        world
+            .app
+            .health()
+            .report()
+            .machine_concerns
+            .iter()
+            .all(|concern| concern.subject != "rules"),
+        "a matched engine raises nothing"
+    );
+}
+
+#[test]
+fn an_edited_engine_is_reported_and_blocks_its_removal() {
+    let world = World::new(
+        "setup-rules-engine-drift",
+        Machine::with_harness_installed(),
+        None,
+    );
+    world.setup();
+    let engine = world.root.join("home/routed/rules-hook");
+    fs::write(&engine, "mine\n").unwrap();
+
+    let concerns = world.app.health().report().machine_concerns;
+    assert!(
+        concerns
+            .iter()
+            .any(|concern| concern.subject == "rules" && concern.detail.contains("routed")),
+        "{concerns:?}"
+    );
+    let outcomes = world.app.remove_rules_engine("routed").unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_ne!(
+        outcomes[0].1.state,
+        AttachmentState::Missing,
+        "{outcomes:?}"
+    );
+    assert_eq!(fs::read_to_string(&engine).unwrap(), "mine\n");
+    assert_eq!(
+        setup_receipts(&world).len(),
+        1,
+        "a refused removal keeps its receipt"
+    );
+
+    fs::write(&engine, "engine\n").unwrap();
+    let outcomes = world.app.remove_rules_engine("routed").unwrap();
+    assert_eq!(
+        outcomes[0].1.state,
+        AttachmentState::Missing,
+        "{outcomes:?}"
+    );
+    assert!(!engine.exists());
+    assert!(setup_receipts(&world).is_empty());
+}
+
+#[test]
+fn setup_ages_out_what_each_session_was_handed() {
+    let dir = uze_testkit::temp::scratch("setup-rules-sessions");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("old"), ".agents/rules/ui.md\n").unwrap();
+    let now = std::time::SystemTime::now();
+    rules_engine::sweep_rule_sessions(&dir, now, rules_engine::SESSION_RECORD_AGE);
+    assert!(
+        dir.join("old").exists(),
+        "a record younger than a week stays"
+    );
+    rules_engine::sweep_rule_sessions(
+        &dir,
+        now + rules_engine::SESSION_RECORD_AGE + std::time::Duration::from_secs(60),
+        rules_engine::SESSION_RECORD_AGE,
+    );
+    assert!(!dir.join("old").exists(), "an older one goes");
+    let _ = fs::remove_dir_all(dir);
 }

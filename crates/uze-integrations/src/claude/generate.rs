@@ -1045,6 +1045,7 @@ mod generated_native_tests {
             ("commands/legacy.md", "legacy"),
             (".mcp.json", "{}"),
             ("settings.json", "{}"),
+            ("rules/ui.md", "---\ntrigger: always_on\n---\nUI\n"),
         ] {
             let file = pkg.root.join(path);
             fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1069,6 +1070,16 @@ mod generated_native_tests {
                 "{excluded} is a Claude-only component and is never delivered"
             );
         }
+        assert!(
+            !dir.join("rules").exists(),
+            "a package's rules never ride a plugin installed for every project"
+        );
+        let withheld = super::withheld_paths(&pkg);
+        let rules = withheld
+            .iter()
+            .find(|withheld| withheld.path == "rules")
+            .unwrap();
+        assert!(rules.reason.contains("per project"), "{}", rules.reason);
         let _ = fs::remove_dir_all(_root);
     }
 

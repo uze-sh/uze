@@ -15,7 +15,7 @@
 
 ## 3. The engine templates (uze-integrations::rules)
 
-- [ ] 3.1 The POSIX `sh` engine template, implementing design D5:
+- [x] 3.1 The POSIX `sh` engine template, implementing design D5:
   - read the payload and resolve the checkout from `cwd`;
   - exit after one stat when there are no rules;
   - parse the frontmatter and translate the dialect to an ERE;
@@ -26,13 +26,13 @@
   - fail open on every error, including the `jq` guard reused from the portable wrapper.
 
   Nothing in the template names the packager.
-- [ ] 3.2 The OpenCode V2 plugin template, `rules.ts`:
+- [x] 3.2 The OpenCode V2 plugin template, `rules.ts`:
   - default export and no imports;
   - `session.hook("context")` pushes the always-on rules and index into `event.system`;
   - `tool.hook("execute.after")` appends matched rules to `event.result.content` on `completed`;
   - both ask the same `sh` engine through `Bun.spawn`, with the payload built from the event (`input.path` and the other V2 field names).
-- [ ] 3.3 Golden tests: each template rendered byte-for-byte against a fixture for a given `UzeHome`, and stable across renders
-- [ ] 3.4 Engine tests run against recorded payloads per harness (Claude `Read`/`Edit`/`Bash`, Codex `exec_command`/`apply_patch`, OpenCode `read`/`edit`/`write`). Cover:
+- [x] 3.3 Golden tests: each template rendered byte-for-byte against a fixture for a given `UzeHome`, and stable across renders
+- [x] 3.4 Engine tests run against recorded payloads per harness (Claude `Read`/`Edit`/`Bash`, Codex `exec_command`/`apply_patch`, OpenCode `read`/`edit`/`write`). Cover:
   - match and no-match;
   - absolute and relative paths, and a path outside the checkout;
   - deduplication, and the reset on compaction;
@@ -41,23 +41,23 @@
 
 ## 4. Delivery per harness
 
-- [ ] 4.1 `rules_route()` on `IntegrationPort`:
+- [x] 4.1 `rules_route()` on `IntegrationPort`:
   - Antigravity: Native, delivers nothing;
   - Claude Code: Adapted, with the reason naming the project rules directory UZE declines to create (design D3);
   - Codex: Adapted, with the shell best-effort note, plus 1.3's result if negative;
   - OpenCode: Adapted;
   - Windows: Unsupported for the adapted three, with the reason.
-- [ ] 4.2 Claude Code: write the engine file and receipt-owned `SessionStart` and `PostToolUse` (`Read|Edit|MultiEdit|Write|Bash`) entries in `~/.claude/settings.json`, in exec form with absolute paths. Inspect by content identity, and never touch a foreign entry
-- [ ] 4.3 Codex: the same in `~/.codex/hooks.json` (shell-line form, as the portable hooks' Codex entries)
-- [ ] 4.4 OpenCode: the generated `rules.ts` in the global plugin directory, receipt-owned like the portable-hook bridge, and no `plugin` entry in `opencode.json`
-- [ ] 4.5 Removal: detaching the rules engine removes only its own entries and files, after inspection, and refuses drift as portable hooks do
-- [ ] 4.6 Guard the machine-wide leak:
+- [x] 4.2 Claude Code: write the engine file and receipt-owned `SessionStart` and `PostToolUse` (`Read|Edit|MultiEdit|Write|Bash`) entries in `~/.claude/settings.json`, in exec form with absolute paths. Inspect by content identity, and never touch a foreign entry
+- [x] 4.3 Codex: the same in `~/.codex/hooks.json` (shell-line form, as the portable hooks' Codex entries)
+- [x] 4.4 OpenCode: the generated `rules.ts` in the global plugin directory, receipt-owned like the portable-hook bridge, and no `plugin` entry in `opencode.json`
+- [x] 4.5 Removal: detaching the rules engine removes only its own entries and files, after inspection, and refuses drift as portable hooks do
+- [x] 4.6 Guard the machine-wide leak:
   - Antigravity delivers a package containing `rules/` through its generated plugin with `rules/` excluded, the way a non-default invocation policy already forces capability-by-capability delivery;
   - the other harnesses' plugin envelopes never carry `rules/`;
   - the package's rules are reported as not delivered, with the per-project reason.
 
   Include a test that the plugin staged by `agy` has no `rules/`
-- [ ] 4.7 Integration tests with `FakeHarness`/isolated homes:
+- [x] 4.7 Integration tests with `FakeHarness`/isolated homes:
   - setup is idempotent;
   - a foreign hook and plugin survive;
   - drift blocks removal;
@@ -65,8 +65,8 @@
 
 ## 5. Application, CLI and reporting
 
-- [ ] 5.1 `uze setup` (and the workspace's automatic setup) delivers the rules engine to every detected harness whose route needs it, and reports it per harness like the other setup results
-- [ ] 5.2 Sweep `runtime/rules/sessions/` entries older than seven days during setup
+- [x] 5.1 `uze setup` (and the workspace's automatic setup) delivers the rules engine to every detected harness whose route needs it, and reports it per harness like the other setup results
+- [x] 5.2 Sweep `runtime/rules/sessions/` entries older than seven days during setup
 - [x] 5.3 A rules read model in `uze-application`, so `src/` names no `uze_core`
 - [ ] 5.4 `uze status` reports:
   - rules per trigger;
@@ -74,7 +74,7 @@
   - the route per detected harness.
 
   It never prints a rule body. Add `TestBackend`/snapshot tests for the output
-- [ ] 5.5 `uze doctor` reports a missing engine dependency (`jq`) and a delivered engine whose entry or file drifted, naming the harnesses affected
+- [x] 5.5 `uze doctor` reports a missing engine dependency (`jq`) and a delivered engine whose entry or file drifted, naming the harnesses affected
 - [x] 5.6 `uze agent rules check [<path>]`. Behavior:
   - resolve the checkout from the path;
   - run the shared validator;

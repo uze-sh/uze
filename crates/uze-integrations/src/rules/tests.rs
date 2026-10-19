@@ -407,6 +407,7 @@ fn removal_takes_only_the_engines_entries_and_refuses_an_edited_one() {
     );
 }
 
+// The executable bit an unrunnable engine loses is a Unix file mode.
 #[cfg(unix)]
 #[test]
 fn a_foreign_or_unrunnable_engine_is_drift() {

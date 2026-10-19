@@ -185,6 +185,11 @@ impl UzeApplication {
         // `setup` is the documented way to repair a derived view that
         // failed to publish, so it always rebuilds them.
         self.republish_all_reporting();
+        rules_engine::sweep_rule_sessions(
+            &self.home.rules_sessions_dir(),
+            std::time::SystemTime::now(),
+            rules_engine::SESSION_RECORD_AGE,
+        );
         for result in results.iter_mut().filter(|result| result.configured) {
             if let Some(integration) = self
                 .integrations
@@ -197,6 +202,7 @@ impl UzeApplication {
                         result.attach_error = Some(error.to_string());
                     }
                 }
+                result.rules = Some(self.deliver_rules_engine(integration.as_ref()));
                 match self.ensure_runtime_shim(
                     integration.as_ref(),
                     result.provisioning.located_outside_path.as_deref(),
@@ -303,6 +309,7 @@ impl UzeApplication {
             runtime_shim: None,
             attach_error: None,
             shim_error: None,
+            rules: None,
         }
     }
 
