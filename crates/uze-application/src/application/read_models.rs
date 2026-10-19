@@ -727,6 +727,12 @@ pub enum ContextMechanism {
     ShimMissing,
     /// No delivery strategy exists for this harness and this resource.
     Unsupported,
+    /// The rules engine `uze setup` delivers hands the project's rules over,
+    /// inside the workspace or outside it.
+    RulesEngine,
+    /// The rules engine would hand them over, but `uze setup` has not
+    /// delivered it to this harness yet.
+    RulesEngineMissing,
 }
 
 /// One harness's declared context support, one mechanism per portable
@@ -740,13 +746,20 @@ pub struct HarnessContextSupport {
     pub project_skills: ContextMechanism,
     /// `.agents/agents`.
     pub project_agents: ContextMechanism,
+    /// `.agents/rules`.
+    pub project_rules: ContextMechanism,
 }
 
 impl HarnessContextSupport {
     /// Derives the declaration from the integration's own answers plus the
-    /// one fact that can defeat them: whether its shim exists
-    /// (`runtime_shim_active`).
-    pub fn declared(integration: &dyn IntegrationPort, runtime_shim_active: bool) -> Self {
+    /// facts that can defeat them: whether its shim exists
+    /// (`runtime_shim_active`) and whether setup delivered the rules engine
+    /// to it (`rules_engine_delivered`).
+    pub fn declared(
+        integration: &dyn IntegrationPort,
+        runtime_shim_active: bool,
+        rules_engine_delivered: bool,
+    ) -> Self {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
             instructions: ContextMechanism::for_instructions(integration, projection),
@@ -760,6 +773,7 @@ impl HarnessContextSupport {
                 AgentsDirectoryResource::Agents,
                 projection,
             ),
+            project_rules: ContextMechanism::for_rules(integration, rules_engine_delivered),
         }
     }
 }
@@ -797,6 +811,17 @@ impl RuntimeProjection {
 /// itself. A harness that declares a bridge file reads `AGENTS.md` itself:
 /// no bridge is written for it any more.
 impl ContextMechanism {
+    /// How the project's rules reach the harness: read by the harness
+    /// itself, handed over by the engine setup delivers, or not at all.
+    pub(crate) fn for_rules(integration: &dyn IntegrationPort, engine_delivered: bool) -> Self {
+        match integration.rules_route().route {
+            uze_core::router::CompatibilityRoute::Native => Self::Native,
+            uze_core::router::CompatibilityRoute::Unsupported => Self::Unsupported,
+            _ if engine_delivered => Self::RulesEngine,
+            _ => Self::RulesEngineMissing,
+        }
+    }
+
     pub(crate) fn for_instructions(
         integration: &dyn IntegrationPort,
         projection: RuntimeProjection,

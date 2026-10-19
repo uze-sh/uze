@@ -399,10 +399,12 @@ fn context_rows(support: &HarnessContextSupport) -> Vec<(&'static str, String, S
     let (instructions, instructions_style) = context_row(support.instructions);
     let (skills, skills_style) = context_row(support.project_skills);
     let (agents, agents_style) = context_row(support.project_agents);
+    let (rules, rules_style) = context_row(support.project_rules);
     vec![
         ("AGENTS.md", instructions, instructions_style),
         (".agents/skills", skills, skills_style),
         (".agents/agents", agents, agents_style),
+        (".agents/rules", rules, rules_style),
     ]
 }
 
@@ -416,7 +418,11 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
-        ContextMechanism::ShimMissing => (
+        ContextMechanism::RulesEngine => (
+            format!("{} Rules engine", theme::glyph(Symbol::MarkNative)),
+            theme::fg(Token::StateSuccess),
+        ),
+        ContextMechanism::ShimMissing | ContextMechanism::RulesEngineMissing => (
             format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention)),
             theme::fg(Token::StateWarning),
         ),
@@ -476,6 +482,7 @@ mod tests {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,
                 project_agents: ContextMechanism::RuntimeShim,
+                project_rules: ContextMechanism::RulesEngine,
             },
         }
     }
@@ -535,6 +542,7 @@ mod tests {
             instructions,
             project_skills: agents_directory,
             project_agents: agents_directory,
+            project_rules: ContextMechanism::RulesEngine,
         }
     }
 
@@ -588,6 +596,7 @@ mod tests {
             instructions: ContextMechanism::Native,
             project_skills: ContextMechanism::Native,
             project_agents: ContextMechanism::Unsupported,
+            project_rules: ContextMechanism::Unsupported,
         });
         assert_eq!(rows[1].0, ".agents/skills");
         assert_eq!(
@@ -635,9 +644,31 @@ mod tests {
         };
         assert_eq!(
             labels(project),
-            ["AGENTS.md", ".agents/skills", ".agents/agents"]
+            [
+                "AGENTS.md",
+                ".agents/skills",
+                ".agents/agents",
+                ".agents/rules"
+            ]
         );
         assert_eq!(labels(supports), ["Skills", "MCP", "Agents", "Hooks"]);
+    }
+
+    #[test]
+    fn the_rules_row_says_how_the_project_rules_reach_the_harness() {
+        let mut support = configured_harness(true).context_support;
+        for (mechanism, words) in [
+            (ContextMechanism::Native, "Native"),
+            (ContextMechanism::RulesEngine, "Rules engine"),
+            (ContextMechanism::RulesEngineMissing, "Run uze setup"),
+            (ContextMechanism::Unsupported, "Not supported"),
+        ] {
+            support.project_rules = mechanism;
+            let rows = context_rows(&support);
+            let (label, value, _) = &rows[3];
+            assert_eq!(*label, ".agents/rules");
+            assert!(value.ends_with(words), "{mechanism:?}: {value}");
+        }
     }
 
     /// Every label the drawer prints leaves two columns before its value,

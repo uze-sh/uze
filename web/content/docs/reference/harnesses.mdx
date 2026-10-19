@@ -51,6 +51,7 @@ A plugin reaches Claude Code through a plugin UZE generates from the package, wh
 | Skill: model only | <Support level="native" /> | native |
 | Hooks | <Support level="native" /> | native |
 | Project `AGENTS.md` | <Support level="native" /> | read natively |
+| Project `.agents/rules` | <Support level="uze" /> | Claude Code reads its own rules only from a `.claude/rules/` directory inside the project, which UZE declines to create so the project keeps one rules directory; the rules engine hands each rule over through a `SessionStart` and a `PostToolUse` hook's `additionalContext`, the channel Claude's own rules arrive in |
 | Workspace: resume a relaunched agent | <Support level="native" /> | |
 
 </div>
@@ -100,6 +101,7 @@ A plugin reaches Codex through a plugin UZE generates from the package, which ca
 | Skill: model only | <Support level="partial" /> | A user can still invoke it with `$skill` |
 | Hooks | <Support level="native" /> | native |
 | Project `AGENTS.md` | <Support level="native" /> | read natively |
+| Project `.agents/rules` | <Support level="uze" /> | Codex has no rules of its own; the rules engine hands each rule over through a `SessionStart` and a `PostToolUse` hook's `additionalContext`. Codex reads files through its shell, so the path a command touched is recovered from its words: a best effort that can miss a path built from a variable, while a patch names its files exactly |
 | Workspace: resume a relaunched agent | <Support level="native" /> | |
 
 </div>
@@ -149,6 +151,7 @@ OpenCode has no plugin system: UZE delivers every capability to OpenCode's own n
 | Skill: model only | <Support level="partial" /> | A user can still invoke it from `/skills` or with a mention (`@<label>`): OpenCode V2 defines no field that withholds a Skill from the person (`slash` was removed), so invoke.user=false cannot be enforced |
 | Hooks | <Support level="uze" /> | through UZE; the note above says how |
 | Project `AGENTS.md` | <Support level="native" /> | read natively |
+| Project `.agents/rules` | <Support level="uze" /> | OpenCode has no rules of its own; a generated plugin asks the rules engine before every model request, so the always-on rules survive a compaction, and appends the rules a tool call's paths match to the result the model reads |
 | Workspace: resume a relaunched agent | <Support level="native" /> | |
 
 </div>
@@ -198,6 +201,7 @@ A plugin reaches Antigravity through a plugin UZE generates from the package, wh
 | Skill: model only | <Support level="native" /> | native |
 | Hooks | <Support level="native" /> | native |
 | Project `AGENTS.md` | <Support level="native" /> | read natively |
+| Project `.agents/rules` | <Support level="native" /> | read natively |
 | Workspace: resume a relaunched agent | <Support level="native" /> | |
 
 </div>

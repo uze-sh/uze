@@ -90,6 +90,16 @@ impl UzeApplication {
         state::receipts(&self.home, Some(state::SETUP_OWNER))
     }
 
+    /// Whether setup delivered the rules engine to `integration`: a receipt
+    /// of its own stands for it.
+    pub(crate) fn rules_engine_delivered(&self, integration: &dyn IntegrationPort) -> bool {
+        self.rules_receipts().is_ok_and(|receipts| {
+            receipts
+                .iter()
+                .any(|receipt| receipt.integration == integration.id())
+        })
+    }
+
     /// What `doctor` says about the delivered engine: its dependency missing
     /// and every entry or file of it that is no longer what UZE wrote, each
     /// naming the harnesses affected.

@@ -307,7 +307,11 @@ impl Health<'_> {
             publication: integration.publication(installed),
             capabilities: integration.capabilities(),
             runtime_shim_active,
-            context_support: HarnessContextSupport::declared(integration, runtime_shim_active),
+            context_support: HarnessContextSupport::declared(
+                integration,
+                runtime_shim_active,
+                self.0.rules_engine_delivered(integration),
+            ),
             agent_context: agent_context_shortfall(integration),
         }
     }

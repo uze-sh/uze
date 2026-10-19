@@ -570,6 +570,16 @@ fn harness_tab(integration: &dyn IntegrationPort, fixtures: &Fixtures) -> String
     out.push_str(&format!(
         "| Project `AGENTS.md` | {NATIVE} | read natively |\n"
     ));
+    let rules = integration.rules_route();
+    out.push_str(&row(
+        "Project `.agents/rules`",
+        rules.route,
+        if rules.route == CompatibilityRoute::Native {
+            "read natively".to_owned()
+        } else {
+            rules.reason
+        },
+    ));
     out.push_str(&format!(
         "| Workspace: resume a relaunched agent | {} | |\n",
         continuity_symbol(integration)

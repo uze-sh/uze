@@ -25,6 +25,8 @@ pub(super) struct AgentSupport {
     project_skills_label: &'static str,
     project_agents: State,
     project_agents_label: &'static str,
+    project_rules: State,
+    project_rules_label: &'static str,
 }
 
 #[derive(Clone, Copy)]
@@ -49,6 +51,7 @@ impl AgentSupport {
         let (instructions, instructions_label) = describe(&context.instructions);
         let (project_skills, project_skills_label) = describe(&context.project_skills);
         let (project_agents, project_agents_label) = describe(&context.project_agents);
+        let (project_rules, project_rules_label) = describe(&context.project_rules);
         Self {
             // Identity and presence come from the resolution itself, not
             // from `health`, so the popup can never label one harness's
@@ -61,6 +64,8 @@ impl AgentSupport {
             project_skills_label,
             project_agents,
             project_agents_label,
+            project_rules,
+            project_rules_label,
         }
     }
 }
@@ -74,10 +79,13 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
         ResourceDelivery::Projected => (State::Ready, "loaded (shim)"),
+        ResourceDelivery::RulesEngine => (State::Ready, "rules engine"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
-            UndeliveredReason::ShimMissing => (State::Warning, "run uze setup"),
+            UndeliveredReason::ShimMissing | UndeliveredReason::RulesEngineMissing => {
+                (State::Warning, "run uze setup")
+            }
             UndeliveredReason::Unsupported => (State::Error, "not supported"),
         },
     }
@@ -119,6 +127,11 @@ pub(crate) fn compatibility(support: &AgentSupport) -> (Vec<Compatible>, Vec<Com
             ".agents/agents",
             support.project_agents,
             support.project_agents_label,
+        ),
+        (
+            ".agents/rules",
+            support.project_rules,
+            support.project_rules_label,
         ),
     ]
     .into_iter()
@@ -249,6 +262,7 @@ mod tests {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,
                 project_agents: ContextMechanism::RuntimeShim,
+                project_rules: ContextMechanism::RulesEngine,
             },
         }
     }
@@ -267,8 +281,39 @@ mod tests {
             instructions,
             project_skills: agents_directory,
             project_agents,
+            project_rules: ResourceDelivery::AbsentFromProject,
         };
         AgentSupport::resolve(health(present), &context)
+    }
+
+    #[test]
+    fn the_projects_rules_are_listed_with_how_they_reach_the_agent() {
+        let rules_as = |delivery: ResourceDelivery| {
+            let context = AgentContextStatus {
+                integration: "claude-code".to_owned(),
+                display_name: "Claude Code".to_owned(),
+                present: true,
+                root: std::path::PathBuf::from("/project"),
+                instructions: ResourceDelivery::Native,
+                project_skills: ResourceDelivery::Native,
+                project_agents: ResourceDelivery::Native,
+                project_rules: delivery,
+            };
+            let support = AgentSupport::resolve(health(true), &context);
+            let (project, _) = compatibility(&support);
+            let (name, status, _) = project.last().cloned().unwrap();
+            assert_eq!(name, ".agents/rules");
+            status
+        };
+        assert!(rules_as(ResourceDelivery::RulesEngine).ends_with("Rules engine"));
+        assert!(rules_as(ResourceDelivery::Native).ends_with("Native"));
+        assert!(
+            rules_as(ResourceDelivery::Undelivered(
+                UndeliveredReason::RulesEngineMissing
+            ))
+            .ends_with("Run uze setup")
+        );
+        assert!(rules_as(ResourceDelivery::AbsentFromProject).ends_with("None in project"));
     }
 
     #[test]
@@ -329,6 +374,7 @@ mod tests {
             instructions: ResourceDelivery::Native,
             project_skills: ResourceDelivery::Native,
             project_agents: ResourceDelivery::Undelivered(UndeliveredReason::Unsupported),
+            project_rules: ResourceDelivery::AbsentFromProject,
         };
         let support = AgentSupport::resolve(health(true), &context);
         assert_eq!(support.project_skills_label, "native");

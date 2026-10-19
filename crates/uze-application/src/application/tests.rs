@@ -2610,7 +2610,7 @@ fn a_harness_reading_the_project_itself_declares_native_context_support() {
         agents: ProjectResourceRoute::Native,
         projects_at_runtime: false,
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::Native);
     assert_eq!(support.project_agents, ContextMechanism::Native);
@@ -2626,7 +2626,7 @@ fn a_runtime_projection_outranks_reading_the_project_itself() {
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::RuntimeShim);
     assert_eq!(support.project_skills, ContextMechanism::RuntimeShim);
     assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
@@ -2642,7 +2642,7 @@ fn a_shadowed_shim_is_reported_for_what_only_the_projection_carries() {
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
-    let support = HarnessContextSupport::declared(&integration, false);
+    let support = HarnessContextSupport::declared(&integration, false, true);
     // `AGENTS.md` is read by the harness itself, shim or not.
     assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::ShimMissing);
@@ -2659,7 +2659,7 @@ fn a_harness_once_bridged_reads_agents_md_itself_without_a_projection() {
         agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::Unsupported);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
@@ -2673,7 +2673,7 @@ fn a_harness_declaring_no_delivery_is_unsupported_regardless_of_the_shim() {
         agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Unsupported);
     assert_eq!(support.project_skills, ContextMechanism::Unsupported);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
@@ -2687,7 +2687,7 @@ fn each_kind_of_the_agents_directory_is_answered_apart() {
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.project_skills, ContextMechanism::Native);
     assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
 
@@ -2696,7 +2696,7 @@ fn each_kind_of_the_agents_directory_is_answered_apart() {
         projects_at_runtime: false,
         ..integration
     };
-    let support = HarnessContextSupport::declared(&integration, true);
+    let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.project_skills, ContextMechanism::Native);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }

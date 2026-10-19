@@ -52,7 +52,7 @@ text as it was. A block you edited by hand is reported and left for you. The
 `CLAUDE.md` goes with the last block, or keeps your own lines if you wrote
 any. Commit the result once; checkouts made after that are clean.
 
-## Project skills and agents
+## Project skills, agents and rules
 
 Skills the project keeps in `.agents/skills` reach Codex, OpenCode and
 Antigravity natively, wherever you start them. Agents in `.agents/agents` reach
@@ -63,7 +63,18 @@ nothing a launch hands it stays with one project. `uze status` and
 `uze inspect` say which. Plugins you
 install are not affected: they reach every agent everywhere.
 
+Rules the project keeps in `.agents/rules` reach every agent, inside the
+workspace or out of it: Antigravity reads them natively, and Claude Code, Codex
+and OpenCode receive them through the rules engine `uze setup` installs. See
+[Rules](/docs/plugins/rules).
+
+The workspace shows the same answer per agent: the harness's details under
+**Manage** and the agent's section of the space view list `AGENTS.md`,
+`.agents/skills`, `.agents/agents` and `.agents/rules`, each with how it reaches
+that agent.
+
 <Cards>
+  <Card title="Rules" href="/docs/plugins/rules" />
   <Card title="Skills" href="/docs/reference/skills" />
   <Card title="Harnesses" href="/docs/reference/harnesses" />
 </Cards>

@@ -44,6 +44,9 @@ pub enum ResourceDelivery {
     /// UZE's runtime PATH shim projects it into the session at launch,
     /// without writing anything into the project.
     Projected,
+    /// The rules engine `uze setup` delivers hands it over, in every
+    /// session of the harness.
+    RulesEngine,
     /// The project carries it, but nothing currently delivers it here.
     Undelivered(UndeliveredReason),
 }
@@ -56,6 +59,9 @@ pub enum UndeliveredReason {
     /// The workspace would carry it through a shim `uze setup` has not
     /// created yet.
     ShimMissing,
+    /// The rules engine would hand it over, but `uze setup` has not
+    /// delivered it to this harness yet.
+    RulesEngineMissing,
     /// No delivery strategy exists for this harness and this resource.
     Unsupported,
 }
@@ -77,6 +83,8 @@ pub struct AgentContextStatus {
     pub project_skills: ResourceDelivery,
     /// Delivery of the project's `.agents/agents`.
     pub project_agents: ResourceDelivery,
+    /// Delivery of the project's `.agents/rules`.
+    pub project_rules: ResourceDelivery,
 }
 
 impl Context<'_> {
@@ -139,6 +147,12 @@ impl Context<'_> {
                 present,
                 projection,
             ),
+            project_rules: rules_delivery(
+                integration,
+                context,
+                present,
+                self.0.rules_engine_delivered(integration),
+            ),
         }
     }
 }
@@ -181,11 +195,39 @@ fn instruction_delivery(
     if !present {
         return ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
     }
-    match ContextMechanism::for_instructions(integration, projection) {
+    delivered_by(ContextMechanism::for_instructions(integration, projection))
+}
+
+/// The project's rules, read where they live: the checkout root's
+/// `.agents/rules`, which every harness and the engine read.
+fn rules_delivery(
+    integration: &dyn IntegrationPort,
+    context: &project_context::ProjectContext,
+    present: bool,
+    engine_delivered: bool,
+) -> ResourceDelivery {
+    let root =
+        uze_core::rules::checkout_root(&context.root).unwrap_or_else(|_| context.root.clone());
+    if !root.join(uze_core::rules::RULES_DIR).is_dir() {
+        return ResourceDelivery::AbsentFromProject;
+    }
+    if !present {
+        return ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
+    }
+    delivered_by(ContextMechanism::for_rules(integration, engine_delivered))
+}
+
+/// What a resource the project carries gets from `mechanism`.
+fn delivered_by(mechanism: ContextMechanism) -> ResourceDelivery {
+    match mechanism {
         ContextMechanism::Native => ResourceDelivery::Native,
         ContextMechanism::RuntimeShim => ResourceDelivery::Projected,
+        ContextMechanism::RulesEngine => ResourceDelivery::RulesEngine,
         ContextMechanism::ShimMissing => {
             ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing)
+        }
+        ContextMechanism::RulesEngineMissing => {
+            ResourceDelivery::Undelivered(UndeliveredReason::RulesEngineMissing)
         }
         ContextMechanism::Unsupported => {
             ResourceDelivery::Undelivered(UndeliveredReason::Unsupported)
@@ -206,14 +248,9 @@ fn project_resource_delivery(
     if !present {
         return ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
     }
-    match ContextMechanism::for_project_resource(integration, resource, projection) {
-        ContextMechanism::Native => ResourceDelivery::Native,
-        ContextMechanism::RuntimeShim => ResourceDelivery::Projected,
-        ContextMechanism::ShimMissing => {
-            ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing)
-        }
-        ContextMechanism::Unsupported => {
-            ResourceDelivery::Undelivered(UndeliveredReason::Unsupported)
-        }
-    }
+    delivered_by(ContextMechanism::for_project_resource(
+        integration,
+        resource,
+        projection,
+    ))
 }

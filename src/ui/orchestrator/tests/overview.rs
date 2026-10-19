@@ -54,6 +54,7 @@ fn support_fixture() -> crate::ui::agent_support::AgentSupport {
             instructions: ContextMechanism::RuntimeShim,
             project_skills: ContextMechanism::RuntimeShim,
             project_agents: ContextMechanism::RuntimeShim,
+            project_rules: ContextMechanism::RulesEngine,
         },
     };
     let context = AgentContextStatus {
@@ -64,6 +65,7 @@ fn support_fixture() -> crate::ui::agent_support::AgentSupport {
         instructions: ResourceDelivery::Projected,
         project_skills: ResourceDelivery::Projected,
         project_agents: ResourceDelivery::AbsentFromProject,
+        project_rules: ResourceDelivery::AbsentFromProject,
     };
     crate::ui::agent_support::AgentSupport::resolve(health, &context)
 }
