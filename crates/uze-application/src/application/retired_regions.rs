@@ -84,14 +84,23 @@ pub(super) fn applies_at(project_root: &Path) -> bool {
         return true;
     }
     let pointer = std::fs::read_to_string(&dot_git).unwrap_or_default();
-    let gitdir = Path::new(
+    let written = Path::new(
         pointer
             .trim()
             .strip_prefix("gitdir:")
             .unwrap_or_default()
             .trim(),
     );
-    !gitdir
+    let gitdir = dot_git
+        .parent()
+        .map_or_else(|| written.to_path_buf(), |dir| dir.join(written));
+    // Git's own mark of a linked worktree's administrative directory is its
+    // `commondir` file; the `worktrees/` it sits in is read only when the
+    // directory is not there to ask.
+    if gitdir.is_dir() {
+        return !gitdir.join("commondir").is_file();
+    }
+    !written
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "worktrees")
@@ -454,6 +463,31 @@ mod tests {
         std::fs::create_dir_all(&submodule).unwrap();
         std::fs::write(submodule.join(".git"), "gitdir: ../../.git/modules/lib\n").unwrap();
         assert!(applies_at(&submodule));
+
+        // A separate git dir that happens to sit in a `worktrees/` is a main
+        // working tree: it has no `commondir`. A real linked worktree's
+        // administrative directory does.
+        let separate = root.join("worktrees").join("repo.git");
+        std::fs::create_dir_all(&separate).unwrap();
+        let main = root.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(
+            main.join(".git"),
+            format!("gitdir: {}\n", separate.display()),
+        )
+        .unwrap();
+        assert!(applies_at(&main));
+        let admin = primary.join(".git").join("worktrees").join("real");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+        let linked = root.join("linked");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", admin.display()),
+        )
+        .unwrap();
+        assert!(!applies_at(&linked));
         let _ = std::fs::remove_dir_all(root);
     }
 }
