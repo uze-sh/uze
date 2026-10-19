@@ -13,6 +13,9 @@
 - [x] 2.4 `UzeHome::rules_sessions_dir()` under `runtime/`, and register it with `every_path_uze_owns_is_named_in_the_map`
 - [x] 2.5 Unit tests: every reason a file is not a rule, each trigger's required fields, the full fixture table, a checkout with no `.agents/rules/`
 
+- [ ] 2.6 Discovery reads `.agents/rules.json` entries as Antigravity does (path relative to the checkout root, a directory's immediate `*.md`, a single file, `include_only`/`exclude` relative to the entry, one rule per file however often it is registered); an unparseable manifest adds nothing and is reported; `inherits` is not followed and is reported
+- [ ] 3.5 The engine reads the same entries, proven against shared fixtures with the Rust model
+
 ## 3. The engine templates (uze-integrations::rules)
 
 - [x] 3.1 The POSIX `sh` engine template, implementing design D5:

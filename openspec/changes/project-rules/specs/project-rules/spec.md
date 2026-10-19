@@ -24,6 +24,22 @@ identity SHALL be its path relative to the checkout root.
 - **WHEN** two checkouts of one repository are on branches whose `.agents/rules/` differ
 - **THEN** an agent in each checkout receives the rules of its own checkout and never the other's
 
+### Requirement: Rules registered in `.agents/rules.json` are rules of the checkout
+Beside the files directly under `.agents/rules/`, the system SHALL treat as
+rules the `*.md` files that `.agents/rules.json` registers, read as
+Antigravity reads them: each entry's `path` relative to the checkout root; a
+directory entry reads its immediate `*.md` files and a file entry that file;
+`include_only` and `exclude` match a path relative to the entry. A file
+registered twice SHALL be one rule.
+
+#### Scenario: A registered folder is read
+- **WHEN** `.agents/rules.json` holds `{"entries": [{"path": ".agents/rules/team"}]}` and `.agents/rules/team/ui.md` is a rule
+- **THEN** UZE reports `.agents/rules/team/ui.md` as a project rule, and every harness receives it
+
+#### Scenario: A manifest that does not parse adds nothing
+- **WHEN** `.agents/rules.json` does not parse
+- **THEN** the files directly under `.agents/rules/` are still the rules, and `uze status` reports the manifest as unreadable
+
 ### Requirement: The canonical rule frontmatter is Antigravity's
 A rule SHALL open with a YAML frontmatter block declaring `trigger`, one of
 `always_on`, `glob`, `model_decision` or `manual`. A `glob` rule SHALL

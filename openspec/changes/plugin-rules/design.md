@@ -82,31 +82,21 @@ way `uze install` does: integrity-checked, read-only. A receipt is still
 written where UZE performs the copy, for the inspect-before-detach path,
 but the judgement never depends on one.
 
-### D3: The namespace is a file-name prefix
-A plugin's rules are copied as `.agents/rules/<plugin>@<market>--<rule>.md`.
+### D3: The namespace is a folder, registered in `.agents/rules.json`
+A plugin's rules are copied as `.agents/rules/<plugin>@<market>/<rule>.md`,
+and the folder is registered in `.agents/rules.json` with one entry
+`{"path": ".agents/rules/<plugin>@<market>"}`. Decided with the operator on
+2026-10-19, after the measurement below: a folder per plugin is the layout a
+person expects, removable in one operation and owned by its name.
 
-The preferred form was a directory per plugin,
-`.agents/rules/<plugin>@<market>/`: readable, removable in one operation and
-collision-free across marketplaces. Measured on `agy` 1.4.2
-(`experiments/antigravity/rules`, tasks 1.1 and 1.2), Antigravity reads no
-subdirectory of `.agents/rules/`. An `always_on` rule and a `glob` rule in
-`lab-plugin@uze-lab/` reached the model in no form, and neither did one in
-a plain `plain/` subdirectory. Beside them, `lab-plugin@uze-lab--ui.md`
-(`always_on`) was inlined in `systemInstruction` and
-`lab-plugin@uze-lab--glob.md` fired on its first matching read. The `@`
-and the `--` in a file name cost nothing.
+Antigravity reads no subdirectory of `.agents/rules/` on its own (measured,
+`experiments/antigravity/rules`, tasks 1.1 and 1.2); the manifest entry is
+what makes it read the folder. The first measurement chose a flat prefix,
+`<plugin>@<market>--<rule>.md`, for that reason; the prefix never shipped.
 
-So the namespace is the flat prefix, and the `project-rules` engine already
-reads it: its rules are the `*.md` files directly under `.agents/rules/`,
-which is the set Antigravity reads. Nothing in its discovery widens, and a
-subdirectory stays outside both, so a project's own subdirectory never
-becomes a rule on one harness only. What the prefix costs:
-- removing a plugin's rules is deleting the files that carry its prefix,
-  not one directory;
-- a file name holding `<plugin>@<market>--` belongs to the namespace: a
-  project's own rule named that way is judged against the plugin it names
-  (D2), and reported as an extra file when that plugin does not ship it
-  (D5).
+The manifest is a file the operator may also write, so UZE owns only its
+own entries (D7). The `project-rules` engine and `uze-core` read the same
+manifest, so the four harnesses receive the same set.
 
 Measured: the `.agents/rules.json` manifest. Antigravity's docs say a
 nested rule is read once registered in `.agents/rules.json`. On `agy` 1.4.2
@@ -152,6 +142,18 @@ thing to every agent of a declaring project, through the same route as the
 plugin's other rules. Nothing about it is a second mechanism. The retirement
 itself (flag, resource, region cleanup) belongs to
 `keep-agents-md-the-operators`, ordered after this change.
+
+### D7: UZE owns its entries of `.agents/rules.json`, never the file
+- UZE adds, keeps and removes only entries whose `path` is a plugin folder
+  it declares, `.agents/rules/<plugin>@<market>`. Every other entry, and
+  every other key, is the operator's and is written back unchanged.
+- A manifest that does not parse is never written: install, update and
+  remove report it and copy nothing that needs it. A plugin folder already
+  registered by the operator is left as they wrote it.
+- A missing manifest is created holding UZE's entries alone; a manifest left
+  with no entry and no other key once the last plugin goes is removed.
+- `inherits` is not followed by UZE's readers, which is reported when a
+  manifest uses it: Antigravity reads further manifests UZE does not.
 
 ## Candidate ADRs
 

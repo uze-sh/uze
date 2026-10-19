@@ -25,6 +25,9 @@
   - a fresh `$UZE_HOME` judging a cloned project;
   - two projects on one machine, only one declaring the plugin.
 
+- [ ] 3.7 Folder layout (D3, D7): copies under `.agents/rules/<plugin>@<market>/`, the folder registered in `.agents/rules.json`, owning only UZE's entries; an unparseable manifest never written; the manifest created and removed with the first and last plugin. Tests for every scenario of the folder requirement
+- [ ] 3.8 Lab: the plugin-rules contract on all four harnesses with the folder layout, Antigravity reading it through the manifest
+
 ## 4. Reporting and Skills
 
 - [x] 4.1 `uze status`: per plugin, the rule count and copy state, naming each file that is not current. Without network, the copies are reported as unverified

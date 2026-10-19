@@ -42,6 +42,29 @@ location a harness reads for every project.
 - **WHEN** the project already has `.agents/rules/ui.md` and the plugin ships `rules/ui.md`
 - **THEN** both exist, the project's file is unchanged, and both are delivered
 
+### Requirement: A plugin's rules live in a folder of its own, registered in `.agents/rules.json`
+The copies SHALL be written to `.agents/rules/<plugin>@<market>/`, and that
+folder SHALL be registered in `.agents/rules.json` as one entry naming it.
+UZE SHALL add, keep and remove only its own entries and SHALL write every
+other entry and key back unchanged. A manifest that does not parse SHALL
+never be written; the operation SHALL report it.
+
+#### Scenario: Installing registers the folder
+- **WHEN** a project declares a plugin that ships rules and has no `.agents/rules.json`
+- **THEN** `.agents/rules/<plugin>@<market>/` holds the copies and `.agents/rules.json` holds one entry naming that folder
+
+#### Scenario: The operator's entries are kept
+- **WHEN** `.agents/rules.json` already registers `.agents/rules/team` and a plugin is added
+- **THEN** both entries are present and the operator's is unchanged
+
+#### Scenario: An unreadable manifest is never written
+- **WHEN** `.agents/rules.json` does not parse and a plugin with rules is added
+- **THEN** the manifest keeps its bytes and the command reports it
+
+#### Scenario: Removing the last plugin takes its entry back
+- **WHEN** the only plugin with rules is removed and the manifest holds nothing else
+- **THEN** the plugin's folder and `.agents/rules.json` are gone
+
 ### Requirement: The copies are committed and verified against the lock
 The copies SHALL be ordinary project files meant to be committed. UZE SHALL
 NOT add them to any ignore file. A copy's owner SHALL be derived from the
