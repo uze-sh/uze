@@ -73,6 +73,7 @@ src/*.rs	src/main.rs	invalid
 **/src/[^ab].rs	src/c.rs	invalid
 **/[]x.rs	]x.rs	invalid
 **/src/[a[b].rs	src/a.rs	invalid
+**/[z-a].rs	z.rs	invalid
 **/src/[ab.rs	src/[ab.rs	invalid
 !**/src/**	src/a.rs	invalid
 /src/**	src/a.rs	invalid

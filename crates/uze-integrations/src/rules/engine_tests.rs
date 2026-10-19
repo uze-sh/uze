@@ -603,6 +603,16 @@ fn a_file_the_rust_model_refuses_is_never_delivered() {
         "# a comment the model skips\ntrigger: glob\nglobs: **/src/c.rs",
         "COMMENTED",
     );
+    checkout.rule(
+        "control.md",
+        "trigger: glob\nglobs: **/src/c\u{b}.rs, **/src/c.rs",
+        "CONTROL",
+    );
+    checkout.rule(
+        "dash-key.md",
+        "trigger: glob\nglobs: **/src/c.rs\n-x: an unknown key",
+        "DASH-KEY",
+    );
     checkout.file("src/c.rs");
     let answer = checkout.ask(
         &serde_json::json!({
@@ -615,6 +625,14 @@ fn a_file_the_rust_model_refuses_is_never_delivered() {
         .to_string(),
     );
     let text = answer.context("PostToolUse");
+    assert!(
+        !text.contains("CONTROL"),
+        "a control character is refused: {text}"
+    );
+    assert!(
+        text.contains("DASH-KEY"),
+        "`-x:` is an unknown key, not a continuation: {text}"
+    );
     for refused in ["EMPTY-PATTERN", "NO-COLON"] {
         assert!(!text.contains(refused), "{refused} delivered: {text}");
         let rule = format!(

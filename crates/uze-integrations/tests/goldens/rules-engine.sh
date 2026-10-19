@@ -105,8 +105,8 @@ function attr(s) {
 # all. Within it, `**` (whole segments), `*` and `?` (within one segment),
 # `[...]` classes and literal characters. Anything else is outside it, and
 # the rule is not delivered.
-function ere(p,   n, segs, i, s, re, sep, j, c, t, end, class) {
-  if (p == "" || p ~ /[{}\\!()|\t]/) return ""
+function ere(p,   n, segs, i, s, re, sep, j, c, t, end, class, k) {
+  if (p == "" || p ~ /[{}\\!()|]/ || p ~ /[\001-\037\177]/) return ""
   if (p == "**") return "^.*$"
   if (index(p, "/") == 0) p = "**/" p
   else if (substr(p, 1, 3) != "**/") return ""
@@ -137,6 +137,8 @@ function ere(p,   n, segs, i, s, re, sep, j, c, t, end, class) {
         class = substr(s, j + 1, end)
         j += end + 1
         if (substr(class, 1, 1) == "^" || index(class, "[")) return ""
+        for (k = 1; k + 2 <= length(class); k++)
+          if (substr(class, k + 1, 1) == "-" && substr(class, k, 1) > substr(class, k + 2, 1)) return ""
         t = t "[" class "]"
       }
       else if (c == "]") return ""
@@ -201,7 +203,7 @@ state == 0 { state = (line == "---") ? 1 : 3; next }
 state == 1 {
   if (line == "---") { state = 2; next }
   if (trim(line) ~ /^#/) next
-  if (line ~ /^[ \t-]/) { if (open_key && trim(line) != "") broken = 1; next }
+  if (line ~ /^[ \t]/ || line ~ /^-( |$)/) { if (open_key && trim(line) != "") broken = 1; next }
   open_key = 0
   # A line that is not `key: value` makes the file no rule.
   if (trim(line) != "" && index(line, ":") == 0) { broken = 1; next }

@@ -184,8 +184,10 @@ fn first_construct(pattern: &str) -> Option<Construct> {
     for character in pattern.chars() {
         let construct = match character {
             ' ' | '[' | ']' => continue,
-            c if c.is_whitespace() => Construct::Whitespace,
-            c if c.is_control() => Construct::Control,
+            // ASCII only, which is what the engine's `awk` reading in the C
+            // locale can see; any other character is literal to both.
+            c if c.is_ascii_whitespace() => Construct::Whitespace,
+            c if c.is_ascii_control() => Construct::Control,
             '{' | '}' => Construct::Alternation,
             '!' => Construct::Negation,
             '(' | ')' | '|' => Construct::Extended,
@@ -255,6 +257,11 @@ fn tokens(segment: &str) -> Option<Vec<Token>> {
                 let mut at = 0;
                 while at < set.len() {
                     if at + 2 < set.len() && set[at + 1] == '-' {
+                        // A reversed range is an error to the `awk` regex
+                        // engines, which lose every rule of the event with it.
+                        if set[at] > set[at + 2] {
+                            return None;
+                        }
                         ranges.push((set[at], set[at + 2]));
                         at += 3;
                     } else {
