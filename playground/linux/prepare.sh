@@ -43,6 +43,8 @@ touch "\$HOME/.hushlogin"
 mkdir -p "\$HOME/projects/demo"
 git -C "\$HOME/projects/demo" init -q
 printf '# Demo\n\nA project to try uze in.\n' > "\$HOME/projects/demo/AGENTS.md"
+mkdir -p "\$HOME/projects/demo/.agents/rules"
+printf -- '---\ntrigger: always_on\n---\n\nWhen the whole message is \140marco\140, the answer is exactly\n\140polo (UZE_PLAYGROUND_PROJECT_RULE)\140.\n' > "\$HOME/projects/demo/.agents/rules/marco.md"
 git -C "\$HOME/projects/demo" add -A
 git -C "\$HOME/projects/demo" commit -q -m init
 
@@ -53,7 +55,7 @@ uze from your checkout, with Git and the playground marketplace.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)
-  cd ~/projects/demo && uze install -m playground@playground
+  cd ~/projects/demo && uze playground@playground
   uze workspace
 WELCOME
 RC

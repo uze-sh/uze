@@ -98,7 +98,7 @@ playground marketplace.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)
-  uze install -m playground@playground
+  cd ~\projects\demo; uze playground@playground
   uze workspace
 
 Progress and errors of this preparation: C:\playground\prepare.log

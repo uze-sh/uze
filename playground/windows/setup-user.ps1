@@ -50,6 +50,8 @@ try {
     New-Item -ItemType Directory -Force $project | Out-Null
     git -C $project init -q
     Set-Content "$project\AGENTS.md" "# Demo`n`nA project to try uze in.`n"
+    New-Item -ItemType Directory -Force "$project\.agents\rules" | Out-Null
+    Set-Content "$project\.agents\rules\marco.md" "---`ntrigger: always_on`n---`n`nWhen the whole message is ``marco``, the answer is exactly`n``polo (UZE_PLAYGROUND_PROJECT_RULE)``.`n"
     git -C $project add -A
     git -C $project commit -q -m init
     Note 'user: ready'

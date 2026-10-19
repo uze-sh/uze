@@ -31,7 +31,7 @@ Then try, for example:
 ```sh
 uze doctor
 uze setup claude-code            # or codex, opencode, antigravity: the real installers
-uze install -m playground@playground
+cd ~/projects/demo && uze playground@playground
 uze workspace
 ```
 
@@ -107,7 +107,8 @@ for:
 
 | capability | what it is | try | answers |
 |---|---|---|---|
-| instructions | [`AGENTS.md`](plugin/AGENTS.md), composed into the project's | `ping` | `pong (UZE_PLAYGROUND_INSTRUCTION)` |
+| rule, always on | [`pong`](plugin/rules/pong.md), copied into a declaring project's `.agents/rules/` | `ping` | `pong (UZE_PLAYGROUND_RULE: pong)` |
+| rule, glob | [`txt`](plugin/rules/txt.md), the same | "write a hello.txt" | the file's last line is `UZE_PLAYGROUND_RULE: txt` |
 | skill, model + user | [`ping`](plugin/skills/ping/SKILL.md) | `/playground:ping` | `pong (UZE_PLAYGROUND_SKILL: ping)` |
 | skill, user only | [`hello`](plugin/skills/hello/SKILL.md) | `/playground:hello` | `hello, world (UZE_PLAYGROUND_SKILL: hello)` |
 | skill, model only | [`secret`](plugin/skills/secret/SKILL.md) | "what is the playground's secret word?" | `tangerine (UZE_PLAYGROUND_SKILL: secret)` |
@@ -115,6 +116,12 @@ for:
 | hook, deny | `deny-ping` on `PreToolUse` | "run `echo ping-deny`" | refused: `pong (UZE_PLAYGROUND_HOOK: deny-ping …)` |
 | hooks, observe | `SessionStart`, `PostToolUse`, `Stop` | any session | a line each in `$TMPDIR/uze-playground-hooks.log` |
 | MCP | `pingpong`, [`mcp_server.rs`](mcp_server.rs) built as `playground-mcp` | "call the pingpong `ping` tool" | `pong (UZE_PLAYGROUND_MCP: ping)` |
+
+The rules reach only a project that declares the plugin
+(`uze playground@playground` in it), never one that only has it on the
+machine (`uze install -m`). The demo project also keeps a rule of its own,
+`.agents/rules/marco.md`: asked `marco`, an agent answers
+`polo (UZE_PLAYGROUND_PROJECT_RULE)`. `uze status` in the project lists both.
 
 The MCP server also has `hello`, `echo` and `add`. The hooks share one
 handler, [`scripts/hook`](plugin/scripts/hook) (and its Windows spelling).
@@ -132,7 +139,8 @@ Outside a playground world, install it on your own machine with:
 
 ```sh
 make playground-plugin                 # playground-mcp on PATH, marketplace linked here
-uze install -m playground@playground   # or `uze playground@playground` in one project
+uze playground@playground              # in a project: its rules arrive there
+uze install -m playground@playground   # the machine only: no rules
 ```
 
 The marketplace is linked to this checkout, so an edit to `plugin/` reaches
