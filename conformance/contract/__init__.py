@@ -31,6 +31,7 @@ from . import (
     lifecycle,
     mcp,
     memory,
+    rules,
     skill,
 )
 
@@ -47,6 +48,7 @@ CONTRACTS = (
     continuity,
     briefing,
     memory,
+    rules,
 )
 
 

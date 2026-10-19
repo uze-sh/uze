@@ -11,6 +11,11 @@ Contract (derived from observed behavior of the REAL claude 2.1.245):
     message_start/content_block_start/content_block_delta/content_block_stop/
     message_delta/message_stop events.
 
+Compaction (2.1.303, `/compact`): the request's last user message asks to
+"create a detailed summary of the conversation so far" as an `<analysis>`
+block followed by a `<summary>` block. It is answered in that shape, the
+summary carrying `markers.COMPACTION`, in any mode.
+
 Modes (PROVIDER_MODE):
   static   : every /v1/messages turn -> a text SSE (RESPONSE_TEXT).
   toolcall : /v1/messages carrying a user text turn -> tool_use SSE
@@ -308,6 +313,23 @@ def tool_use_events(step, model=None):
     ]
 
 
+#: What a compaction is answered with: the two blocks Claude Code asks for.
+COMPACTION_ANSWER = (
+    f"<analysis>The lab session.</analysis>\n<summary>{markers.COMPACTION}</summary>"
+)
+
+
+def is_compaction(body):
+    """Whether this request asks for the conversation summarized: its last
+    message is the person's, and is Claude Code's compaction prompt."""
+    messages = body.get("messages") or []
+    if not messages or messages[-1].get("role") != "user":
+        return False
+    return "detailed summary of the conversation so far" in json.dumps(
+        messages[-1].get("content")
+    )
+
+
 class H(BaseHTTPRequestHandler):
     def _handle(self):
 
@@ -358,7 +380,9 @@ class H(BaseHTTPRequestHandler):
                 return
             due = scripted_step(msgs)
             step = capture.next_scriptable(body, TOOL_SEQUENCE, due)
-            if step is not None:
+            if is_compaction(b):
+                payload = sse(text_events(COMPACTION_ANSWER, model=b.get("model")))
+            elif step is not None:
                 payload = sse(tool_use_events(step, model=b.get("model")))
             elif due is not None or "tool_result" in msgs:
                 payload = sse(text_events(FINAL_TEXT, model=b.get("model")))

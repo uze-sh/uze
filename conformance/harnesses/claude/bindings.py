@@ -15,6 +15,7 @@ class ClaudeBindings(Bindings):
     harness = "claude"
     integration_id = "claude-code"
     display_name = "Claude Code"
+    compact_command = "/compact"
     launch = "exec claude"
     ready_markers = ("Opus", "API Usage Billing", "❯")
     warmup = 6.0

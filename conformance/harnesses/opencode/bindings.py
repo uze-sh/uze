@@ -36,6 +36,7 @@ class OpenCodeBindings(Bindings):
     #: contract's, which relaunches through the launcher on purpose.
     #: `--standalone` is decision `opencode-standalone`: this container has
     #: no background service for a TUI to attach to.
+    compact_command = "/compact"
     launch = "exec opencode --standalone"
     ready_markers = ("Ask anything",)
     #: One interrupt ends it — measured (`experiments/relaunch_probe`). A

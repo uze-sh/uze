@@ -460,7 +460,7 @@ SIDE_CALL_ANSWER = "UZE Lab session"
 
 
 #: What a compacted thread carries in place of its history.
-COMPACTION_CONTENT = "UZE_LAB_COMPACTION_SUMMARY"
+COMPACTION_CONTENT = markers.COMPACTION
 
 
 def is_compaction_trigger(body):

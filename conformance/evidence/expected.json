@@ -146,6 +146,17 @@
         "codex-cli 0.162.1"
       ],
       "observed_at": "2026-10-14"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-always-on-after-compaction",
+      "suite": "rules > rules-always-on-after-compaction",
+      "reason": "Antigravity gates `/compact` behind the server-side experiment flag `enable-compact-slash-command`, which the offline Lab's recorded flag set does not carry, so a session cannot be compacted on demand here",
+      "measurement": "typing `/compact` answers `Unknown command: /compact` and the next turn's request still carries the first turn's prompt",
+      "versions": [
+        "1.4.2"
+      ],
+      "observed_at": "2026-10-19"
     }
   ]
 }

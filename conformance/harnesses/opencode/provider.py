@@ -14,6 +14,14 @@ Contract (derived from observed behavior of the REAL opencode 1.18.23):
     and returns `role: "tool"` content, the next turn answers the final
     text.
 
+Compaction (2.0.32, `/compact`): the request's last user message asks for
+the conversation summarized "into a structured summary" in a `<template>`
+of `## Objective` ... `## Important Context` sections, and OpenCode refuses
+an answer that does not fill that template ("Compaction summary did not
+match the required template"), asking once more before it gives up. Such a
+request is answered with the template filled (`COMPACTION_SUMMARY`), in any
+mode, whatever else it carries.
+
 Modes (PROVIDER_MODE):
   static   : every turn -> a text SSE (RESPONSE_TEXT).
   toolcall : the first request carrying tools (no tool result yet) ->
@@ -251,6 +259,53 @@ def tool_call_chunks(step):
     ]
 
 
+#: What a compacted session carries in place of its history: the template
+#: OpenCode asks for, every section filled, naming nothing a turn said.
+COMPACTION_SUMMARY = f"""## Objective
+- Continue the lab session.
+
+## Requirements
+- (none)
+
+## Decisions
+- (none)
+
+## Work State
+### Completed
+- (none)
+
+### Active
+- (none)
+
+### Blocked
+- (none)
+
+## Next Move
+1. (none)
+
+## Relevant Files
+- (none)
+
+## Important Context
+- {markers.COMPACTION}
+"""
+
+
+def is_compaction(body):
+    """Whether this request asks for the conversation summarized: its last
+    user message is OpenCode's compaction prompt, or the retry it sends
+    when an answer did not fill the template."""
+    try:
+        messages = json.loads(body).get("messages") or []
+    except (ValueError, AttributeError):
+        return False
+    users = [m for m in messages if isinstance(m, dict) and m.get("role") == "user"]
+    if not users:
+        return False
+    last = json.dumps(users[-1].get("content"))
+    return "into a structured summary" in last or "required summary template" in last
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -289,7 +344,9 @@ class H(BaseHTTPRequestHandler):
         due = scripted_step(body)
         step = capture.next_scriptable(body, TOOL_SEQUENCE, due)
         has_result = '"role":"tool"' in body.replace(" ", "") or '"tool_result"' in body
-        if step is not None:
+        if is_compaction(body):
+            payload = sse(text_chunks(COMPACTION_SUMMARY))
+        elif step is not None:
             payload = sse(tool_call_chunks(step))
         elif MODE == "toolcall" and (due is not None or has_result):
             payload = sse(text_chunks(FINAL_TEXT))

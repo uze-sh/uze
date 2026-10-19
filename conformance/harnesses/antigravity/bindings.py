@@ -17,6 +17,7 @@ class AntigravityBindings(Bindings):
     display_name = "Antigravity"
     #: UZE installs this harness's launcher under the name people type.
     launcher = "agy"
+    compact_command = "/compact"
     launch = "exec agy"
     ready_markers = ("Antigravity CLI",)
     warmup = 3.0
@@ -146,6 +147,19 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
         is dropped silently, with an id from its own catalogue as much as
         without one. UZE leaves `harness.antigravity.model` out, so the agent
         still arrives, on the session's model."""
+        if prop == "rules-always-on-after-compaction":
+            # Measured on 1.4.2: `/compact` (added in 1.3.5) answers
+            # "Unknown command: /compact"; the binary gates it behind the
+            # experiment flag `enable-compact-slash-command`, which the
+            # recorded signed-in flag set the provider replays (1.3.3)
+            # predates. Serving it would be the Lab guessing the vendor's
+            # server, not measuring it.
+            return (
+                "Antigravity gates `/compact` behind the server-side "
+                "experiment flag `enable-compact-slash-command`, absent from "
+                "the offline Lab's recorded flag set, so no session here can "
+                "be compacted on demand"
+            )
         if prop == "agent-vendor-fields-block-model":
             return (
                 "Antigravity drops an agent that carries `model` (measured on "

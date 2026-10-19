@@ -110,6 +110,25 @@ HOOK_READS = ("UZE_HOOK_READ_DENIED_BODY", "UZE_HOOK_READ_ALLOWED_BODY")
 #: is evidence, never the verdict.
 CONTEXT_PLACED = ("UZE_CONFORMANCE_PECAN", "UZE_CONFORMANCE_ALMOND")
 
+#: The rules contract's markers (`contract/rules.py`): each rule's body
+#: carries one, the `model_decision` rule's description another, and each
+#: turn's prompt its own, so a request can be told apart by what it carries.
+RULES = {
+    "glob": "UZE_RULES_MARKER_GLOB",
+    "always": "UZE_RULES_MARKER_ALWAYS",
+    "decide_index": "UZE_RULES_MARKER_DECIDE_INDEX",
+    "decide_body": "UZE_RULES_MARKER_DECIDE_BODY",
+}
+RULES_TURNS = ("UZE_RULES_TURN_ONE", "UZE_RULES_TURN_TWO")
+#: What every provider answers a compaction with, so the request after one
+#: says it follows a compaction by what it carries.
+COMPACTION = "UZE_LAB_COMPACTION_SUMMARY"
+
+#: Where a dialect carries a tool's result back to the model: Anthropic
+#: `tool_result`, OpenAI Responses `function_call_output` (and its freeform
+#: twin), chat completions' `tool` role, Gemini's `functionResponse`.
+_RESULT_TYPES = ("tool_result", "function_call_output", "custom_tool_call_output")
+
 _ROOT_REF = re.compile(r"UZE_ROOT_REF=([^\s\"'\\`]+)")
 _MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
 
@@ -149,7 +168,55 @@ def summary(body):
         "context_placement": {
             m: placement(body, m) for m in CONTEXT_PLACED if m in body
         },
+        "rule_markers": {
+            m: m in body for m in (*RULES.values(), *RULES_TURNS, COMPACTION)
+        },
+        **_shape(body),
     }
+
+
+def _shape(body):
+    """How many tool results a request carries back, whether it offers the
+    model tools, and whether it only continues the request before it: what
+    tells the turn's model calls from a side call (a title, a summary), and
+    each step of a scripted turn from the next."""
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return {"tool_results": None, "offers_tools": None}
+    results = 0
+
+    def walk(value):
+        nonlocal results
+        if isinstance(value, dict):
+            if value.get("type") in _RESULT_TYPES or value.get("role") == "tool":
+                results += 1
+            if "functionResponse" in value:
+                results += 1
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(document)
+    offers = False
+    continues = False
+    if isinstance(document, dict):
+        for holder in (document, document.get("request")):
+            if isinstance(holder, dict) and holder.get("tools"):
+                offers = True
+        # Codex 0.163 declares its tools in an `additional_tools` input item.
+        items = document.get("input")
+        if isinstance(items, list):
+            offers = offers or any(
+                isinstance(i, dict) and i.get("type") == "additional_tools"
+                for i in items
+            )
+        # A Responses request naming the one before it carries only what
+        # was added since (Codex over WebSocket).
+        continues = bool(document.get("previous_response_id"))
+    return {"tool_results": results, "offers_tools": offers, "continues": continues}
 
 
 def placement(body, needle):

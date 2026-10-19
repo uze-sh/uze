@@ -14,10 +14,12 @@ invisible, and a declaration that was never measured is a constant — the
 two ways a suite starts lying.
 """
 
+import json
 import subprocess
 import time
 from dataclasses import dataclass, field
 
+from shared import vocabulary
 from shared.common import squash
 
 
@@ -342,6 +344,15 @@ class Bindings:
 
         return render(template)
 
+    def read_call(self, expected, path):
+        """A scripted call that reads the file at `path` and hands its
+        content to the model, from the Lab's template for this harness's
+        read tool (`vocabulary.json` `file.read`)."""
+        row = expected["aliases"]["file.read"]
+        rendered = json.dumps(self.call(row["call"]))
+        rendered = rendered.replace(f"{self.hook_project}/README.md", path)
+        return {"tool": vocabulary.call_tool(row), "args": json.loads(rendered)}
+
     def approve(self, tui, prompt):
         """Accepts the approval on screen — the one `prompt` matched — as a
         person would."""
@@ -383,6 +394,25 @@ class Bindings:
             else f"the turn never ended: {seen[-160:]}".replace("\n", " ")
         )
         return Turn(seen, settled, detail, approvals)
+
+    #: The command a person types to compact this harness's conversation;
+    #: empty where the harness offers none a session can be driven with.
+    compact_command = ""
+
+    def compact(self, tui):
+        """Compacts the conversation the way a person does, returning
+        whether a command was typed at all. A second Enter lands on the
+        completion menu when one opened over the command, and is inert
+        otherwise."""
+        if not self.compact_command:
+            return False
+        self.await_input(tui)
+        tui.type(self.compact_command)
+        tui.submit()
+        tui.collect(reads=2)
+        tui.submit()
+        tui.collect(reads=10)
+        return True
 
     def _finals_shown(self, tui):
         """How many final texts the session's screen shows. Counted rather
