@@ -127,6 +127,39 @@ RULES_TURNS = ("UZE_RULES_TURN_ONE", "UZE_RULES_TURN_TWO")
 #: says it follows a compaction by what it carries.
 COMPACTION = "UZE_LAB_COMPACTION_SUMMARY"
 
+#: The launch-instructions contract's markers (`contract/instructions.py`).
+#: `lead` opens the instructions UZE composes for a launch
+#: (`uze_workspace::agent_context::INSTRUCTIONS_LEAD`), and `first_turn` is
+#: the visible turn that points a launch with no channel at them
+#: (`uze_workspace::briefing::instructions_turn`): text only UZE writes.
+#: The two `AGENTS.md` markers are the primary checkout's and a slot's, as
+#: two branches carry them; the prompts tell the parent's turn from the
+#: subagent's.
+INSTRUCTIONS = {
+    "lead": "UZE instructions for this launch.",
+    "first_turn": "holds UZE's instructions for this launch",
+    "primary_agents_md": "UZE_INSTRUCTIONS_PRIMARY_AGENTS_MD",
+    "slot_agents_md": "UZE_INSTRUCTIONS_SLOT_AGENTS_MD",
+    "spawn": "UZE_INSTRUCTIONS_SPAWN",
+    "subagent_turn": "UZE_INSTRUCTIONS_SUBAGENT_TURN",
+    "turn": "UZE_INSTRUCTIONS_TURN",
+}
+
+#: How a request states the directory the agent works in, one form per
+#: dialect a harness writes it in. Case-sensitive on purpose: each form is
+#: distinct from the others' wording only by its case.
+_WORKING_DIRECTORY = (
+    re.compile(r"Command Working Directory: ([^\s\\\"<]+)"),
+    re.compile(r"Primary working directory: ([^\s\\\"<]+)"),
+    re.compile(r"Working directory: ([^\s\\\"<]+)"),
+    re.compile(r"<cwd>([^<\\\"]+)</cwd>"),
+)
+
+#: Where a tool call's input sits: a field naming its arguments, or the
+#: `input` of an item whose type is a call.
+_CALL_FIELDS = ("arguments", "tool_calls", "functionCall")
+_CALL_TYPES = ("tool_use", "function_call", "custom_tool_call")
+
 #: Where a dialect carries a tool's result back to the model: Anthropic
 #: `tool_result`, OpenAI Responses `function_call_output` (and its freeform
 #: twin), chat completions' `tool` role, Gemini's `functionResponse`.
@@ -174,6 +207,17 @@ def summary(body):
         "rule_markers": {
             m: m in body for m in (*RULES.values(), *RULES_TURNS, COMPACTION)
         },
+        "instruction_markers": {m: m in body for m in INSTRUCTIONS.values()},
+        # A prompt carried by a message of the request's own, not only by
+        # the call that spawned it: what tells a subagent's request apart.
+        "instruction_turns": {
+            m: outside_calls(body, m)
+            for m in (INSTRUCTIONS["spawn"], INSTRUCTIONS["subagent_turn"])
+            if m in body
+        },
+        "working_directories": sorted(
+            {path for form in _WORKING_DIRECTORY for path in form.findall(body)}
+        ),
         **_shape(body),
     }
 
@@ -220,6 +264,27 @@ def _shape(body):
         # was added since (Codex over WebSocket).
         continues = bool(document.get("previous_response_id"))
     return {"tool_results": results, "offers_tools": offers, "continues": continues}
+
+
+def outside_calls(body, needle):
+    """Whether `needle` sits in a string of a JSON request outside every
+    tool call's input."""
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return False
+
+    def walk(value, in_call):
+        if isinstance(value, dict):
+            call = in_call or value.get("type") in _CALL_TYPES
+            return any(
+                walk(child, call or key in _CALL_FIELDS) for key, child in value.items()
+            )
+        if isinstance(value, list):
+            return any(walk(child, in_call) for child in value)
+        return isinstance(value, str) and needle in value and not in_call
+
+    return walk(document, False)
 
 
 def placement(body, needle):

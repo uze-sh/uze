@@ -664,6 +664,87 @@ cat /work/home/.gemini/config/plugins/uze-mcp-conformance/mcp_config.json 2>&1
     )
 
 
+def phase_signed_out_instructions(cfg, prov_ip):
+    """An agent the workspace launches while Antigravity is signed out.
+
+    Hooks run only signed in, so UZE's channel is unavailable and the launch
+    falls back to one visible first turn pointing at the context it composed
+    (keep-agents-md-the-operators 1.5). Through UZE's own launcher, on the
+    Gemini API key: the turn reaches the model with no typing, the context
+    file it names holds the instructions, and `uze status`, asked in the
+    project before the launch, reports the channel as not reaching the
+    harness.
+    """
+    # Imported here: the bindings import this module.
+    from contract import continuity
+    from harnesses.antigravity.bindings import AntigravityBindings
+    from shared.markers import INSTRUCTIONS
+
+    bindings = AntigravityBindings()
+    status = "/work/signed-out-status.txt"
+    context = (
+        f"{continuity.UZE_HOME}/runtime/projects/"
+        f"{continuity.project_id(continuity.PROJECT)}/agents/{continuity.SLOT_NAME}"
+    )
+    provider = common.start_provider(cfg, "static")
+    prelude = (
+        continuity.prelude(bindings.launcher_name())
+        + f"""
+{auth_fragment(provider, "apikey")}
+(cd {continuity.PROJECT} && uze status) > {status} 2>&1 || true
+"""
+    )
+    with bindings.relaunch_in(cfg, provider, continuity.SLOT, prelude) as tui:
+        plain, ready = bindings.prepare(tui)
+        check(
+            "signed-out-ready",
+            bool(ready),
+            "agy opened on the API key" if ready else plain[-160:].replace("\n", " "),
+        )
+        if not ready:
+            return
+        pointed = False
+        for _ in range(14):
+            tui.collect(reads=1)
+            pointed = any(
+                r.get("summary", {})
+                .get("instruction_markers", {})
+                .get(INSTRUCTIONS["first_turn"])
+                for r in common.provider_struct(cfg)
+            )
+            if pointed:
+                break
+        tui.snapshot("signed-out-first-turn", tui.transcript())
+        files = common.harness_files(cfg, context)
+        reported = common.harness_files(cfg, "/work").get("signed-out-status.txt", "")
+    with open(f"{cfg.outdir}/signed-out-status.txt", "w") as f:
+        f.write(reported)
+    check(
+        "signed-out-first-turn-points-at-the-instructions",
+        pointed,
+        "a request carries the first turn naming the context that holds the "
+        "instructions, with nothing typed"
+        if pointed
+        else "no request carries the instructions turn",
+    )
+    composed = files.get("context.md", "")
+    check(
+        "signed-out-context-holds-the-instructions",
+        INSTRUCTIONS["lead"] in composed,
+        f"context.md: {len(composed.encode())} bytes, instructions "
+        f"{'present' if INSTRUCTIONS['lead'] in composed else 'absent'}",
+    )
+    degraded = "does not reach it" in reported
+    check(
+        "signed-out-status-reports-the-channel",
+        degraded,
+        next(
+            (line.strip() for line in reported.splitlines() if "Antigravity:" in line),
+            reported[-200:],
+        ),
+    )
+
+
 def run(cfg, prov_ip):
     with describe("tui"):
         phase_tui(cfg, prov_ip)
@@ -677,3 +758,6 @@ def run(cfg, prov_ip):
             phase_hooks_gate(cfg, prov_ip)
         with describe("api-key"):
             phase_hooks_api_key_mode(cfg, prov_ip)
+    with describe("instructions"):
+        with describe("signed-out"):
+            phase_signed_out_instructions(cfg, prov_ip)
