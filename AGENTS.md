@@ -1,7 +1,10 @@
 # AGENTS.md
 
 This file provides guidance to agentic coding tools (Claude Code, Codex,
-OpenCode, Antigravity CLI) when working with code in this repository.
+OpenCode, Antigravity CLI) when working with code in this repository. It
+holds what is true whatever the task touches. What is true only under one
+path or for one kind of change is a rule under `.agents/rules/`, which
+arrives when it is relevant; check them with `uze agent rules check`.
 
 ## What this is
 
@@ -37,6 +40,7 @@ cargo llvm-cov --workspace --summary-only --fail-under-lines 68 --fail-under-reg
 
 cargo deny check                                           # licences, advisories, bans, sources (deny.toml); part of `make check`
 make attributions                                          # regenerate CREDITS.md (about.hbs + Cargo.lock); CI fails when it drifts
+uze agent rules check                                      # every rule under .agents/rules is deliverable
 
 UZE_LOG=info uze doctor                                    # spans and events as text (see docs/observability.md)
 make observe                                               # local Jaeger (UI :16686); then OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cargo run --features telemetry --bin uze -- doctor
@@ -49,27 +53,12 @@ and it calls `journeys.yml` and `conformance.yml` (the Lab) as reusable
 workflows when a change reaches their paths; both also run nightly. Treat
 `make check` as a close local proxy, not a guarantee of parity.
 
-### Test execution on WSL (history of the "session dies mid-test" bug)
-
-Until 2026-09-01, running any suite that exercised a child-process timeout
-killed the whole WSL login session (`[process exited with code 9]`, the
-agent included). It was **not** OOM and not cargo parallelism:
-`kill_process_group`, then in `crates/uze-core/src/subprocess.rs`, shelled
-out to `/bin/kill -KILL -<pid>`, and procps-ng `kill` parses a negative pid
-by its first digit only (`pid = '0' - optopt`), so any child pid starting
-with `1` (1000-1999, 10000-19999, ...) became `kill(-1, SIGKILL)`: every
-process the user owns. A process group is now ended with `kill(2)` directly,
-by `Tree::end` in `crates/uze-platform/src/process/unix.rs`. Never reintroduce a
-shell-out to `kill` for negative pids anywhere in the workspace; use
-`libc::kill` (or `kill -- -<pid>` if a shell script truly needs it).
-
-`CARGO_BUILD_JOBS=2` / `RUST_TEST_THREADS=4` (also `[build] jobs = 2` in
-`.cargo/config.toml`) remain as a courtesy to a 4-vCPU VM, not as a
-crash-avoidance measure. If a session still dies mid-run, look for a kill
-by signal in `journalctl` (`user@1000.service: ... status=9/KILL` at the
-same second as `Session N logged out`) before assuming memory pressure.
-
 Run the CLI itself with `cargo run --bin uze -- <args>` or `./target/debug/uze <args>` after a build; `uze workspace` launches the terminal UI; `uze` with no args prints help.
+
+`.cargo/config.toml` keeps `jobs = 2`, and `CARGO_BUILD_JOBS=2` /
+`RUST_TEST_THREADS=4` are a courtesy to a 4-vCPU WSL VM. A WSL session
+that dies mid-test is a kill by signal, not memory: see the
+`ending-processes` rule.
 
 ## Code style
 
@@ -79,10 +68,6 @@ explains a non-obvious *why* — the rationale behind a decision, an invariant,
 a workaround, or a subtle constraint the code alone cannot convey. Never
 restate what the code already says; write intent, not implementation.
 
-When the change is in `src/ui/`, chrome comes from `src/ui/widget/` and
-colour from `theme` — neither is assembled at the call site. Both are
-enforced; see the two entries in Workspace layout.
-
 Anything a person sees — a TUI surface, a CLI report or help text, the
 words in either — follows the `design-system` skill
 (`.agents/skills/design-system/`): read it before the change, run its
@@ -90,118 +75,10 @@ checklist before handing back, and when the operator corrects something
 visual, UX, DX or wording, write the rule into it in the same change as
 the fix.
 
-## What UZE persists
-
-Everything under `$UZE_HOME` belongs to exactly one tier, and the tier is
-decided by **what deleting it costs** — never by which module wrote it:
-
-| tier | where | deleting it costs |
-|---|---|---|
-| bytes | `store/` | the packages, until they are acquired again |
-| record | `state/` | the operator: nothing else knows it |
-| authored | the root: `config.toml`, `keys.json`, `theme-overrides.json`, `themes/` | the operator's own text |
-| generated | `runtime/`, `shims/` | nothing — it is produced again |
-| remembered | `cache/` | nothing — it is observed again |
-
-Three things live outside `$UZE_HOME`, inside the repository's own Git
-administrative directory, because what they describe lives there: the
-`/.worktrees/` line UZE adds to `.git/info/exclude` (the operator's file,
-of which UZE owns that one line); the record
-`.git/worktrees/<admin>/uze-checkout.json` saying UZE made that checkout — a
-*record* by the test above, since nothing else knows it, and one Git deletes
-with the worktree it describes; and `refs/uze/shelf/<task>`, the unfinished
-work an agent left when it ended, a commit that describes itself by its
-trailers — a record too, and the only place that work is. All three are
-named in the workspace's worktree module. Beside them, `refs/uze/sync/<target>`
-is where UZE fetches the target to: *remembered* by the same test, fetched
-again when missing, and never meeting the shelf.
-
-A thing must not sit in a tier that claims a different cost than it has.
-Generated harness content lived at `state/attachments/` for exactly one
-letter's distance from `attachments.json`, the ledger that says who owns
-what inside it — authoritative-looking, entirely reproducible, and the
-answer to "can I delete this" opposite for each.
-
-**Only records declare a shape.** Generated and remembered things are
-produced or observed again when they cannot be read; there is nothing in
-them to carry. Authored files are text a person writes, so they carry no
-shape either: they grow by additive keys, an unknown value reads as the
-default, and one that does not parse is reported and never written over.
-A new document therefore declares its tier by where `UzeHome` puts it and, if it is a record, its shape and ladder by
-implementing `uze_document::Shaped`. Nothing else is needed and nothing
-else is allowed: **every path UZE owns is named in `UzeHome`**, and
-`every_path_uze_owns_is_named_in_the_map` in
-`tests/architecture/layering.rs` fails the build over a path composed
-anywhere else. `uze-terminal` is the one sanctioned exception, for the
-dependency reason above.
-
-## Dependencies
-
-The dependency surface is small on purpose: ~31 direct external crates
-across the workspace (seven of them the `tracing`/OpenTelemetry stack, the
-exporter half behind the `telemetry` feature, and `windows-sys` on Windows
-only). Every addition is a permanent maintenance liability
-and part of the binary's supply chain, so choose by **provenance**, not by
-whichever crate name matched the search.
-
-Prefer, in this order, and stop at the first tier that can do the job:
-
-1. **The standard library, or a crate already in the workspace.** Ask this
-   first. Most additions lose here.
-2. **Foundation** — `rust-lang`, `serde-rs`, `tokio-rs`, dtolnay:
-   `serde`, `serde_json`, `thiserror`, `libc`, `tokio`.
-3. **A de-facto standard with an organization behind it** — `clap`
-   (clap-rs), `ratatui`, `crossterm` (crossterm-rs), `toml_edit`
-   (toml-rs), `indicatif`/`dialoguer` (console-rs), `anstyle` (rust-cli),
-   `unicode-width` (unicode-rs), `alacritty_terminal` (alacritty),
-   `portable-pty` (wezterm), `rmcp` (the official MCP Rust SDK).
-4. **A single maintainer, but mature and widely adopted** — `syntect`,
-   `schemars`. Acceptable, with the trade-off stated in the
-   PR.
-
-Refuse, unless there is no alternative and the reason is written down:
-
-- **A `0.0.x` crate.** In semver that range promises nothing; every
-  release may break.
-- **A crate that has renamed itself.** The identity of a dependency
-  moving under the project is a supply-chain event, not branding.
-- **A recently published crate with no adoption**, however well its README
-  reads. A README is written by the person asking for your trust.
-- **A crate whose author publishes many similarly-branded crates** with
-  claims disproportionate to their version number.
-
-Always check, and write the answer in the PR that adds it:
-
-- **Who publishes it.** `cargo info <crate>` shows `repository`, but that
-  field is set by the publisher — confirm the crate is genuinely published
-  from the repository it names.
-- **Whether it compiles C.** A build script compiling C costs real money
-  here: `release.yml` builds eight targets on native runners, two of them
-  musl and two Windows MSVC, and today no dependency compiles C on any of
-  them (`onig_sys` left when `syntect` moved to `fancy-regex`). If a
-  feature flag avoids the C path, take it.
-- **`cargo deny check` passes.** A new advisory ignore needs a reason *and*
-  a way out — `deny.toml`'s existing ignores name the condition that
-  removes them, and a new one must do the same. An ignore with no exit is
-  a decision to carry the problem forever.
-- **Transitive weight.** `cargo tree -p <crate>` before, not after.
-
-None of this applies to a crate the workspace already depends on: use it.
-
-Written exceptions, each with what removes it:
-
-- **`noyalib`** (`0.0.x`, one author, renamed once from `serde_yml`) parses
-  `agents.yaml` and `agents.lock`, the first thing UZE reads in a repository
-  that may have just been cloned. Kept because `serde_yaml` is archived and
-  `yamlpath`/`yamlpatch` brings `tree-sitter` and a C grammar onto the
-  release matrix; its tests, vendored `yaml-test-suite` cases and
-  `#![forbid(unsafe_code)]` are the evidence. Contained:
-  `project/manifest/edit.rs` is the only file naming `noyalib::cst`, and it
-  refuses anchors, aliases, merge keys, tabs and document separators before
-  an edit. Track its advisories (`RUSTSEC-2026-0333` was fixed by moving to
-  0.0.53). The exception goes when the crate reaches `0.1`, goes twelve
-  months without a release or renames again, or a maintained YAML serde
-  crate with an editing model appears.
+Cross-platform behaviour is a concept in `uze-platform` with one
+implementation per platform; a `cfg!` at a call site anywhere else is a
+missing concept there. A new dependency is chosen by provenance; the
+`dependencies` rule says how, and it arrives with `Cargo.toml`.
 
 ## Documentation hygiene
 
@@ -214,330 +91,66 @@ Before adding a document, update the existing canonical one when
 appropriate; new docs must state their durable purpose and owner, and
 prefer updating an existing document over creating a new file.
 
+A convention that holds only under one path is a rule in `.agents/rules/`
+(the `uze:rules` Skill says how), never a new section here. A procedure
+with steps is a Skill under `.agents/skills/`.
+
 ## Workspace layout
 
 Cargo workspace, edition 2024, MSRV 1.97. Single version source:
 `[workspace.package].version` in the root `Cargo.toml` — every crate
 inherits it; bump it before any binary is distributed (dev rebuilds don't
-need to).
+need to). Each crate's own `lib.rs` doc says what belongs in it; the rule
+for a crate arrives when you touch it.
 
 - `.` (binary crate `uze`) — the CLI (`src/main.rs` parses and
   dispatches; `src/cli/` holds the grammar, the help and one module per
-  command family), the terminal UI
-  (`src/ui.rs`, `src/ui/`), the runtime PATH shim (`src/shim.rs`), and
-  `src/command_performance.rs`.
+  command family), the terminal UI (`src/ui.rs`, `src/ui/`, with its
+  chrome vocabulary in `src/ui/widget/`), the runtime PATH shim
+  (`src/shim.rs`), and `src/command_performance.rs`.
 - `crates/uze-core` — the shared foundation and the package manager's
-  harness-agnostic domain, organized into five concerns, each a module
-  whose own doc says what belongs in it. Read the concern before the
-  module: `hook` is a *capability*, and that is a different question from
-  where its file sits.
-  - `package/` — where a package's bytes come from and where they live:
-    acquisition, authoring, trust, naming, hosts, requirement, store.
-  - `capability/` — what a plugin declares, portably: skill, hook, agent,
-    the `harness:` block.
-  - `delivery/` — how a capability reaches a harness: integration,
-    router, exposure, engine, state, persistence, reconciliation,
-    delivered_root, leftovers, session.
-  - `project/` — what a project declares and what UZE writes into it:
-    manifest (the file, and the package manager's section), project_lock,
-    context, project_context, project_root, record, text_region, the
-    `anchor` a project or marketplace roots at.
-  - `machine/` — the local environment outside UZE's own state: home,
-    detection cache, provisioning, subprocess, shell PATH, harness runtime,
-    launcher, requirement_check, process_cwd, features, path.
-
-  Public paths stay flat (`uze_core::store`, not `uze_core::package::store`)
-  via re-exports at the crate root, which is also where a reader sees which
-  concern each module belongs to. Depends on nothing harness-specific and
-  must stay that way (see Architecture below), and never on
-  `uze-workspace`: that is how the package manager works without the
-  workspace, and the compiler is what says so.
-- `crates/uze-workspace` — the workspace's domain: the agents UZE launches
-  (`task`), their checkouts (`checkout`, `worktree`), the conversation
-  each is in and carrying it across a launch (`conversation`,
-  `continuity`), how finished work lands (`landing`), what a project
-  declares about all of that (`declaration`, reading `agents.yaml`'s
-  `workspace:` section, its policy, `artifacts` and `actions`, which
-  `uze-core` carries unread), the operator's approval of the commands that
-  declaration runs (`approval`; `uze workspace allow|revoke`), what an agent
-  moved to another harness is told about its own work (`briefing`),
-  and the workspace client's own state (`client_layout`, `prompt_history`,
-  `notifications`, `extensions`). Built on `uze-core`; unrelated to
-  `uze-terminal`, which owns the panes and knows nothing of agents.
+  harness-agnostic domain, in five concerns: `package/`, `capability/`,
+  `delivery/`, `project/`, `machine/`.
+- `crates/uze-workspace` — the workspace's domain: tasks, checkouts,
+  conversations, landing, the `workspace:` declaration and its approval.
 - `crates/uze-application` — the product-facing facade
-  (`UzeApplication`) that orchestrates Core + Integrations into
-  install/remove/update/context lifecycle operations. `src/application.rs`
-  is the facade and its service accessors; `src/application/lifecycle/`
-  holds the per-operation modules (install/update/remove/attach, and
-  `effective`, what is effectively installed), and
-  `src/application/services/` the workspace's services (tasks, checkouts,
-  work), each a directory once it outgrows one file.
-- `crates/uze-git` — the one transport for speaking to the Git binary:
-  spawn convention, `read`/`write` entry points, and Git's exit code
-  reported rather than classified (a non-zero exit is an answer for
-  `diff`, `rebase` and `rev-parse --verify`, and a failure elsewhere —
-  only the caller knows which). Carries no domain.
+  (`UzeApplication`) orchestrating Core + Integrations into lifecycle
+  operations and the workspace's services.
+- `crates/uze-integrations` — one module per harness (`claude`, `codex`,
+  `opencode`, `antigravity`) implementing `IntegrationPort`, plus
+  `shared/`; `registry::IntegrationRegistry` is the single composition
+  root naming the concrete types.
+- `crates/uze-git` — the one transport for speaking to the Git binary;
+  reports Git's exit code rather than classifying it.
 - `crates/uze-document` — the one rule for reading a record another build
-  wrote: the shape a record declares, the ladder that carries it across,
-  and the floor beneath that. A leaf crate naming no domain, no path and
-  no harness, because the terminal runtime holds the workspace and reaches
-  nothing of UZE's — and a durability rule written in two places is the
-  failure it exists to end.
-  **A record written in a shape this build knows is carried across, and
-  nothing is said about it**: carrying a record across is the product
-  working, not an event. Setting one aside is the *floor* — only a shape
-  with no rung reaches it — and then what the world still knows is
-  reconstructed and only the residue reported. Recovery has a direction: a
-  record from a *newer* build is never taken, because two builds on one
-  machine is the daily state of this repository. The shape is read before
-  the record, and a record with no shape at all is shape 1.
-  A ladder step is deletable once no machine can be below it; that is what
-  makes this the opposite of scattered compatibility, which this project
-  refuses — the current struct stays clean *because* the old shapes live
-  in the ladder.
+  wrote: shape, ladder, floor.
 - `crates/uze-platform` — what UZE asks the operating system, answered
-  once per platform: processes and their trees (process groups; Job
-  Objects), kernel facts about a process (`probe`), cross-process locks, the
-  shell an authored line runs in (`sh -c`; Windows PowerShell 5.1), paths,
-  the home directory, private files, executables and the image a running
-  binary is replaced by, stdio, the desktop's URL openers and the system's
-  own tools. **One concept per module, one API per concept, and one
-  implementation per platform selected by `cfg` at that module's boundary**
-  (`mod unix;`/`mod windows;` behind `use … as imp`): nothing that uses it
-  branches on the operating system, and a `cfg!` at a call site anywhere
-  else in the workspace is a missing concept here. Distinct per-platform
-  data gets distinct types, never optional fields on a shared one. A leaf
-  crate naming no domain, no UZE path and no harness, because `uze-core`,
-  `uze-git`, the terminal runtime and the binary all need it and none may
-  depend on another for it.
+  once per platform.
 - `crates/uze-terminal` — the local terminal runtime: a server owning the
-  pseudoterminals and a versioned client protocol, so a pane survives a
-  client leaving. Depends on nothing in the workspace but `uze-platform`
-  and `uze-document`, whose rule it obeys like everything else that
-  persists — the path to its own workspace is the only thing it computes
-  for itself.
-- `crates/uze-theme` — the design vocabulary: colour `Token`s, named
-  `Symbol`s, the theme file schema, and the resolver that completes a
-  partial theme from the built-in default. A leaf crate — it resolves no
-  path, reads no environment, and names no rendering library, so every
-  consumer adapts `uze_theme::Rgb` to what it draws with (`src/ui/theme.rs`
-  for ratatui, `src/progress.rs` for the CLI). **Nothing outside those two
-  adapters may name a colour value, and nothing outside `src/ui/theme.rs`
-  may write a chrome glyph inline** — two rules in `tests/architecture/layering.rs` fail the build
-  over it. Name the meaning (`Token::TextMuted`, `Symbol::MarkOfficial`)
-  and let the active theme decide what it looks like; add a token or a
-  symbol when none of the existing ones says what yours means. Colour that
-  genuinely comes from content rather than from the design system — a
-  pane's own output, syntax highlighting an extension ships — goes through
-  `theme::content`.
-- `crates/uze-keys` — the input vocabulary, to the keyboard what
-  `uze-theme` is to the palette: the `Action` a gesture means, the `Scope`
-  it is live in, and the `Chord` that reaches it, with `Keymap` the only
-  thing that answers either direction. A leaf crate naming no terminal
-  library; `src/ui/keys.rs` is the one adapter, and the only file in `src/`
-  that may name a `KeyCode` (`one module names a physical key` in
-  `tests/architecture/layering.rs`).
-- `src/ui/widget/` — the chrome vocabulary: `Surface` (a bordered box),
-  `Rule` (an edge hairline), `Button`/`button_row`, `Status` (a work state on no
-  ground: a muted report, or a bold action that lifts under the pointer), `Field` (a text input, and the
-  caret that is the only thing saying an empty one can be typed into),
-  `Toast` (an outcome, stacked top-right and gone on its own clock),
-  `tabs` (a numbered tab bar that gives up badges, then closed tabs'
-  names, to fit), `drawer` (a detail column off the right, its rule the
-  drag handle),
-  `dialog` (a question the operator answers, or a notice they dismiss),
-  `modal` (a titled card over a frame the scrim pushed back) and its
-  `footer`, `alerts` (what to check, worst first, in a dialog), `menu` (a short list of actions, opened on the thing they act
-  on), `stat` (a row of summary figures), `row` (a list line's ground, its trailing caption, its title), `text`
-  (fitting text to the room there is, and the small-caps forms), `mark`
-  (the disclosure chevron), `hint` (the keys that act here),
-  `screen_header`, `action_index`, `Scrollbar`, `scrim`, the `fill`/`root`
-  grounds, and the `POPUP_H_PAD`/`POPUP_V_PAD`/`TRAILING_PAD` spacing. Nothing in it names
-  anything but `theme` and its own siblings. Where `theme` settles what a drawn thing may
-  *look* like, this settles what it is *made of*. **Nothing outside
-  `src/ui/widget/` may build chrome from ratatui's primitives** —
-  `chrome_is_built_from_the_widget_vocabulary` in
-  `tests/architecture/layering.rs` fails the build over a `Block::default()`
-  anywhere else. Name what it is (`Surface::floating()`, `Surface::card()`,
-  `Rule::new(Edge::Right)`) and let the widget decide the hairline, the
-  ground and the inset; add a constructor when none of the existing ones
-  says what yours means, and never rebuild one at the call site. A widget
-  owns none of hit-testing (a caller passes its `Hit` in and registers the
-  rects it gets back), no state (ratatui is immediate mode — there is
-  nothing to reconcile between frames), and no layout (it fills the rect it
-  is handed). Those three are guarded the other way by
-  `a_widget_knows_no_model_and_reaches_nothing`, which fails the build on a
-  widget naming `TuiModel`, `WorkspaceModel`, the filesystem, the
-  environment or a process — the pair keeps a screen from building its own
-  chrome and the vocabulary from growing into a screen. It lives here
-  rather than in a crate because `ratatui` appears in exactly one manifest,
-  the root's, and `uze-theme` and `uze-extensions` deliberately name no
-  rendering library.
-  Extract on the second *file*, not the second call: a helper three
-  callers in one screen share is that screen's, and moving it here only
-  makes the vocabulary harder to read. A primitive a screen exports is the
-  signal — `clip_line` lived in `management.rs` and four other screens
-  reached across for it as `super::super::management::clip_line`.
-- `crates/uze-extensions` — built-in TUI extensions. An extension answers
-  with a `view::View` (a full-frame surface) or a `view::Section` (a
-  collapsible block of one of the host's own columns) and never draws,
-  computes geometry, or names a colour; `src/ui/extension_view.rs` renders
-  both. Presentation, one directory per extension (`code/`,
-  `architect/` and `spec/`) with the extension's own surface in the file
-  beside it, one `ExtensionRegistry::builtin` entry, one `ExtensionHit`
-  variant per surface it draws. What more than one extension needs lives
-  under `shared/`, and only once a second one actually needs it — today
-  that is `canvas` (how to put a glyph somewhere, and nothing about what is
-  being drawn), `checkout` (what a title says about a checkout), `nearest`
-  (which thing on a picture lies in a direction), `markdown` and
-  `highlight` (one reading of a document, one load of the syntax sets),
-  `front_matter`, and `places` (the directories `workspace.artifacts`
-  declares, which the host resolves and both `architect` and `spec` read
-  from); `shared.rs` says why each joined. `view.rs` and `Host` are the two
-  contracts and sit at the crate root. `Host` is where every capability
-  is granted — including the five that write (`write_file`, `delete_file`,
-  `delete_dir`, `rename_path`, `restore_to_head`), whose only caller is the
-  code surface's requests (`code/request.rs`).
-  `code` is **one** extension covering the checkout's changes, its files,
-  its history and its map, because the selection has to survive a switch
-  between them and a selection cannot live above two extensions. Its
-  rule: no handler branches on the mode to decide what the state *means*
-  — the mode decides who is *asked*, and each half answers about the same
-  path knowing nothing about the other. The map is there rather than
-  beside the diagrams it was first drawn with, because a treemap of a
-  checkout only looks like an architecture diagram: nobody writes it, and
-  every tile on it is a path the other three halves already answer about.
-  `architect` draws what somebody *wrote down* about the project, and
-  nothing that is measured. `spec` reads what a checkout *intends*: a
-  spec tool's units, found by the marker the tool defines, and the
-  project's decision records, found by their shape in the declared
-  places, since no tool decides where those live.
-- `crates/uze-integrations` — one module per harness
-  (`claude`, `codex`, `opencode`, `antigravity`)
-  implementing the shared `IntegrationPort` from `uze-core`, plus `shared/`
-  for cross-vendor process/path helpers.
-- `conformance/` — Harness Conformance Lab (Python): Real Harness +
-  Synthetic World isolation evidence. `contract/` states what **every**
-  harness must prove, in outcome terms, and names no vendor;
-  `harnesses/<vendor>/bindings.py` says how that harness is driven and
-  carries no assertion; `scenarios.py` keeps only what is genuinely unique
-  to the vendor. A harness that cannot deliver part of a contract declares
-  it through `bindings.unsupported` with a reason, which the run records —
-  never by omitting the check. Vertical per harness
-  (`conformance/harnesses/{antigravity,claude,codex,opencode}/`) in a
-  disposable Docker environment — the real harness binary, a synthetic
-  provider, zero Internet, zero tokens. Vendor-specific by design; never
-  linked into the deterministic suite. Three fixture trees, by owner: the
-  deterministic suites' inputs in `tests/_fixtures`; the Lab's own
-  marketplace in `conformance/_fixtures/marketplace/`; per-harness session
-  and provider state under `conformance/harnesses/<vendor>/fixtures/`. Run with
-  `python3 conformance/lab.py --harness <h>`; replay a recorded run with
-  `make lab-replay`. `conformance.yml` runs all four verticals (matrix) —
-  its own workflow, on the paths that reach the Lab image plus nightly, so
-  a docs or web change no longer pays 34 runner-minutes to prove nothing.
-  Each vertical runs as two legs (`lab.py --part contract|vendor`), and a
-  leg — of the Lab or of the journeys — that already passed against the
-  same content of what it reads and the same thing outside the repository
-  it drives is reused, not rerun (`.github/scripts/proof.py`); the nightly
-  always runs.
-  `conformance-stability.yml` is ADR-035's promotion gate (3 clean runs per
-  vertical), nightly only.
-  The image bakes a release `uze` built from the checkout: every `lab.py`
-  run compares the image's `sh.uze.lab.source` label with the checkout
-  (uncommitted files included) and rebuilds it first when they differ, so a
-  run never tests an older binary than the code being changed. Read the
-  run's `provenance:` line before reading a failure; `UZE_LAB_IMAGE` pins
-  another image only on purpose.
-  Debugging a failure: see the `conformance-debug` skill (fast `--sandbox`
-  reproduction loop, seconds not minutes) before iterating against the full
-  gate run.
-- `tests/` — domain-organized integration suites (one `main.rs` per
-  domain: `cli/`, `memory/`, `packages/`, `project/`, `lifecycle/`,
-  `projection/`, `integrations/`, `architecture/`, `acceptance/`; installer
-  tests in `tests/scripts/`), shared test
-  infrastructure in `crates/uze-testkit` (isolated `TestEnvironment`,
-  `FakeHarness`, canonical/scenario fixtures), and the taxonomy documented
-  in `tests/README.md` (L0-L4).
+  pseudoterminals, so a pane survives a client leaving.
+- `crates/uze-theme`, `crates/uze-keys` — the design and input
+  vocabularies (`Token`, `Symbol`; `Action`, `Chord`, `Keymap`).
+- `crates/uze-extensions` — built-in TUI extensions (`code`, `architect`,
+  `spec`), which describe and never draw.
+- `crates/uze-testkit` — shared test infrastructure; `tests/` holds the
+  domain suites (taxonomy in `tests/README.md`).
+- `conformance/` — the Harness Conformance Lab (Python, Docker): real
+  harness binaries against a synthetic provider.
+- `journeys/` — the product journeys, the third test tier: a user's flow
+  through the real CLI and TUI, checked against the machine it left.
 - `playground/` — disposable worlds to try this checkout by hand
-  (`make playground-windows`: Windows Sandbox; `make playground-linux`: a
-  throwaway WSL distribution) and a
-  default local plugin used for manual dogfooding.
-- `docs/adr/` — numbered architecture decision records (read before making
-  a structural change; recent ones cover tiering what UZE persists (052),
-  isolation belonging to the agent (053), scope being reported rather than
-  positional (054), running a project's commands only once approved (055)
-  and the terminal runtime (056)).
-- `docs/architecture/*.mmd` — the architecture as Mermaid, drawn by the
-  workspace's own architect surface (`agents.yaml`'s `workspace.artifacts`
-  covers the directory) and by `uze-extensions`'s tests, so a diagram that stops
-  routing is a red build. The one diagram source: there is no separate
-  model to keep in sync. `uze agent artifacts check` (`make artifacts`,
-  part of `make check`) draws every file in that directory the way the
-  surface would and fails on one that does not, or whose box links open no
-  file — the tests can only cover
-  the eight they name, because `uze-extensions` may not read a filesystem.
-  Writing one of these is the `uze:architect` Skill's subject; the accepted
-  syntax is never written down anywhere, because the parser is the only
-  thing that can answer and it moves.
-- `docs/architecture/invariants.md` — properties the architecture actually
-  holds today, each tied to the specific test that proves it. Treat this as
-  the canonical list of "do not break this" behaviors.
-- `openspec/` — active/archived change proposals (spec-driven work log);
-  `openspec validate --all --strict` gates CI (the `OpenSpec` job, CLI
-  pinned there): warnings fail it too, so a requirement body over 500
-  characters or a placeholder Purpose is fixed in the change that wrote it.
-
-## Product journeys
-
-`journeys/` is the third test tier: a user's flow performed through the real
-CLI and the real TUI in a disposable world, then checked against the machine
-it left behind. See `journeys/README.md` for the vocabulary and the
-`journey-author` skill for how to write one; the rules that decide *what* a
-journey is are here because they govern the shape of the suite.
-
-- **Never validate UZE with UZE.** Every `then` check reads the filesystem,
-  Git, the recorded task state or the process table. UZE's own report is the
-  subject of a `cmd` step, asserted *against* those checks — never the source
-  of truth for another one. This tier exists to catch "exited zero, reported
-  the artifact, wrote nothing", and an assertion on UZE's own output cannot.
-- **Screen text is a gate, never an assertion.** `expect` proves a gesture
-  landed. A claim about what the screen *says* belongs in `src/ui/`'s own
-  `TestBackend` tests, where it is cheaper and more precise.
-- **Every gesture states its `expect`** — `journey validate` fails a click
-  that does not. An untimed gesture is where a suite like this dies, so the
-  linter refuses it rather than the reviewer.
-- **Chapters are the order a person meets the product**, not subsystems:
-  `01-first-run`, `02-packages`, `03-context`, `04-workspace`,
-  `05-delivery`, `06-recovery`, `07-upgrade`. The last one is the only
-  chapter that runs a *second* binary — the previously released `uze`,
-  built once from its tag and kept, never downloaded, so a run is not
-  counted as somebody installing that release — because what it proves is
-  two binaries meeting on one disk, which no fixture can be wrong about in
-  the way a release can. It costs a build, so it is nightly. The numbers are reading order only — every
-  journey builds its own world, so none depends on a lower number having run.
-  A chapter appears when its first journey does.
-- **A scene continues the story; a file starts one over.** Joined by "and
-  then" it is a scene; by "also" it is a file. Four things force a file: a
-  different world, a claim that does not depend on the story so far, a
-  different cadence, and — a property of the runner, not of taste — that a
-  run stops at the first failure, so claims sharing a file share a fate.
-- **A scene must be load-bearing.** Delete it: a later scene must break, or
-  its checks must be the only proof of its own claim. Otherwise it was a
-  step, not a claim, and belongs folded into its neighbour.
-- **Tags say when it runs, numbers say where it sits.** `gate` is the
-  pull-request set; everything runs nightly. A journey that becomes slow
-  changes its tag, never its chapter.
-- **The index is `journey list`**, read from the files themselves. Do not
-  keep a table of what the suite proves — that is the trap the per-harness
-  conformance matrix was in until it was parameterized.
-
-A journey that backs a user-facing claim names the page it backs in its
-`proves:` field, the way `docs/architecture/invariants.md` names the test
-behind each property. `journey validate` fails a `proves:` that no longer
-resolves, so a page that moved or was deleted surfaces as a red build, and
-whoever changes a flow is told which page to re-read. It catches structural
-drift and directs attention; it cannot tell you the prose went wrong, and
-nothing can.
+  (`make playground-windows`, `make playground-linux`).
+- `docs/adr/` — numbered architecture decision records; read the recent
+  ones before a structural change.
+- `docs/architecture/*.mmd` — the architecture as Mermaid, the one diagram
+  source; `uze agent artifacts check` (part of `make check`) fails on one
+  that does not draw. Writing them is the `uze:architect` Skill's subject.
+- `docs/architecture/invariants.md` — the properties the architecture
+  holds today, each tied to the test that proves it: the canonical list of
+  "do not break this".
+- `openspec/` — change proposals; `openspec validate --all --strict` gates
+  CI and warnings fail it too, so a requirement body over 500 characters
+  or a placeholder Purpose is fixed in the change that wrote it.
 
 ## Architecture
 
@@ -559,205 +172,47 @@ uze-terminal     (local terminal runtime — reaches only uze-platform and uze-d
 leaves           uze-platform, uze-document, uze-theme, uze-keys (name no domain)
 ```
 
-**`src/` must not name `uze_core::` or `uze_integrations`.** Presentation
-consumes read models from `uze-application`; reaching into the domain
-directly makes every domain change ripple into the frontend and leaves no
-single surface anything else could consume. Enforced by
-`tests/architecture/layering.rs::architecture_rules_hold`, and the debt is
-**zero** — every remaining reach is `sanctioned` and named. Need something
-the domain has? Add it to `uze-application`: a read model, a method on a
-service, or a re-export when it is vocabulary a read model is made of.
-**Never raise a budget**, and add to `sanctioned` only for a file that is
-genuinely not presentation, with the reason written down.
+`uze-core` never depends on `uze-workspace`: that is how the package
+manager works without the workspace, and the compiler is what says so.
 
-The compiler cannot enforce this in place of the test, because
-`src/shim.rs` and `src/bin/uze-harness-matrix.rs` share the binary crate
-and legitimately name the domain. Making `rustc` the enforcer would mean
-giving them crates of their own — a decision about what the `uze` binary
-is, not a tidy-up.
+The rules below hold wherever you are in the tree. Each fails the build
+when broken; `tests/architecture/layering.rs` and
+`tests/integrations/identity.rs` are where.
 
-**An extension never draws, and reaches nothing it was not handed.** It
-returns a `view::View` or a `view::Section` — the host owns rendering,
-geometry, hit-testing and the palette — and every other capability
-(running Git, reading a file, resolving `$HOME`) arrives through
-`uze_extensions::Host`, implemented in
-`src/ui/extension_host.rs`. `uze-extensions` depends on no UZE crate at
-all, and names no process, filesystem or environment API; the architecture
-suite fails on each. An extension is code UZE runs in its own
-process, which is a different trust class from plugin bytes a harness
-reads; see ADR-041 in `docs/adr/`.
-
-**Nothing the workspace client draws waits on a repository.** Every Git
-read it makes — the badge, the sidebar timeline, a commit's account, the
-changes overlay and its per-file diff — runs on a thread and answers
-through a channel, and so do the two other unbounded operations: placing a
-new agent (`git worktree add` plus the project's `setup`) and slot
-reconciliation. Two tests hold it: `src/ui/orchestrator/` (the render and
-input halves) may not name `WorkspaceHost` at all, save `reads.rs`, where
-the reads live; and every mention of it there and in
-`src/ui/orchestrator.rs` must sit inside a `thread::spawn`. Every answer
-carries the question it was asked, so one that arrives after the viewer
-moved on is dropped rather than drawn. Adding a read means a `spawn_*` in
-`orchestrator/reads.rs` and an `absorb_*` beside the existing ones, never
-an inline call.
-
-**Speak to Git through `uze-git`.** Never spawn `git` directly: two callers
-with two exit-code conventions is what this replaced, and a repository
-write lock cannot be complete if a module spawns Git around it. Reads go
-through `read`, writes through `write`. The one exception is
-`acquisition::git`, which clones *untrusted remote* repositories and
-therefore strips the environment rather than inheriting it — a different
-threat model, not a second convention. Both are sanctioned by name in the
-architecture suite, beside the testkit's loopback forge
-(`uze-testkit/src/forge.rs`, which plays the *server*); any other spawn
-fails it. Inside `uze-workspace`, Git is reached only through `crate::git`,
-the slot guard that refuses a slot whose `.git` no longer names the
-project's repository; a direct `uze_git::read`/`write` there fails the
-suite too.
-
-`uze-core` production code never names a specific harness (Claude/Codex/
-OpenCode/Antigravity) — enforced by
-`tests/integrations/identity.rs::core_never_names_a_vendor_harness`; the
-same neutrality holds for `uze-application` and `src/` (CLI/TUI),
-enforced by `application_never_names_a_vendor_harness` and
-`cli_and_tui_never_name_a_vendor_harness`. Vendor-specific knowledge lives
-only in `uze-integrations`, whose `registry::IntegrationRegistry`
-(`builtin`/`isolated`) is the single composition root that names the
-concrete integration types — application, the runtime shim, and tooling
-all consume the registry or the `IntegrationPort` contract. A new harness
-should require no semantic change to Store, Engine, or Router and no
-change to core/application/CLI/TUI — only a new integration vertical, one
-registry entry, conformance, and docs. Antigravity CLI is the Google-family
-v0 harness (ADR-027).
-
-Key domain concepts (see `docs/architecture/invariants.md` for the guarded
-properties):
-
-- **Store** (`uze-core::store`) owns installed package bytes and is the
-  single source of truth; it never writes anything a harness reads, and
-  integrations never mutate it.
-- **One Skill capability; invocation policy is its semantics**: explicit
-  user action vs. background knowledge is the `invoke: {model, user}`
-  block in SKILL.md (ADR-030), never a second capability kind — no
-  canonical `Command`, no `commands/` surface. Integrations translate the
-  policy into vendor-specific encodings; Store bytes stay verbatim.
-- **Portable Hooks (ADR-033, compiled per ADR-040)**: one authored
-  `hooks.json` is the canonical Hook surface, and its handler contract is
-  `HOOK_*` environment in, exit code out (0 allows, 3 denies with the
-  reason on stderr, anything else fails by the group's effect), bounded
-  output and a per-handler timeout, first-deny-wins, fail-open for
-  observational vs fail-closed for deny/ask/transform. The contract is
-  compiled at install time into the delivered artifact — a generated
-  wrapper (POSIX `sh`, or PowerShell on Windows) for the command-hook
-  harnesses, the owned OpenCode bridge —
-  with no `uze` on the execution path; a platform with no template is
-  reported Unsupported, never adapted. Every projection (merged config
-  entries, the generated Antigravity plugin, the OpenCode bridge) is
-  receipt-owned, content-identity inspected, and never touches foreign
-  hooks/plugins/order.
-- **Machine and project scope are independent, and always reported**:
-  `uze setup`, `uze doctor`, `uze config …`, `uze upgrade` and
-  `uze market …` act on the machine (`~/.uze`). `uze <plugin>@<market>`,
-  `uze install` (aliased `uze i`), `uze update`, `uze remove`, `uze status`
-  and `uze inspect` act where they run: in a project they act on the
-  machine and maintain `agents.yaml`, `agents.lock` and `AGENTS.md`,
-  outside one on the machine only, and `-m`/`--machine` states machine
-  scope on every verb that has two. `uze agent …` (`work name|split|join|list`,
-  `context inspect|plan|reconcile`, `artifacts check`,
-  `market|plugin create|check`) is project-scoped. Neither scope is
-  inferred from the other's state — see
-  `docs/adr/054-scope-is-reported-not-positional.md`, which supersedes part
-  of `docs/adr/019-explicit-project-machine-boundary-in-cli-command-grammar.md`.
-  `uze install` converges the manifest in both directions — a plugin dropped
-  from `agents.yaml` leaves `agents.lock`, while the Store and every harness
-  keep it, because other projects share those and taking it off the machine
-  is `uze remove <plugin> -m` — and, in a main working tree, takes out the
-  regions an earlier release wrote into `AGENTS.md` (and the `CLAUDE.md`
-  bridge that went with them), the one change UZE ever makes to that file.
-- **The header says what is happening; a toast says what happened.** The
-  workspace client's header carries one line, only ever about work in
-  flight, with a spinner and no clock — it goes when the work ends, which
-  is where the operation's own pending flag is cleared rather than where
-  anything is said about it, since an operation that finishes with nothing
-  to report still finishes. Outcomes are toasts, stacked top-right over
-  the pane: a title and a detail — both required, since a message worth
-  interrupting for is worth saying what it is *about*, and one row of
-  words over an empty one reads as a rendering fault. The hue is on the
-  mark alone and the ground is neutral, because four tinted boxes stacked
-  make the reader parse the surface before the words. They carry the
-  seconds they have left; the one that needs answering carries none and
-  stays until it is. A header that said both had to choose between them,
-  and what it dropped was whichever arrived second.
-- **`uze agent …` is an audience, not a category**: its reader is an agent
-  UZE launched, not a person, so it is hidden from `uze --help` and
-  documented in the instructions each agent is given at launch and in the
-  official plugin's Skills — each audience reads one surface, and UZE
-  writes none of it into a project's `AGENTS.md`. `agent context inspect|plan|reconcile` sits there for
-  that reason and no other: the project scope is unchanged, but the
-  region-by-region detail it answers with, the retired regions still in
-  `AGENTS.md`, is something only an agent cleaning a project up acts on. A person asks `uze status` whether the project is
-  ready and `uze install` to make it so, so anything a person needs to
-  know about the context belongs in `status`, never in a fourth verb of
-  their own. `uze agent work name <type>/<subject>` is how work
-  acquires the label an operator reads and, in a checkout of its own, the
-  `<type>/<subject>` branch a reviewer sees (in the operator's checkout it
-  never renames their branch); the vocabulary it is judged against is
-  `workspace.branch` in `agents.yaml`, Conventional Commits when undeclared,
-  and `agent` opts out of naming altogether.
-  Work that reaches its first commit still unnamed is named from that
-  commit's subject, judged against the same vocabulary — a Git fact read on
-  the evaluation pass, never a harness feature. That derivation fires once
-  and never again; asking by name renames, however often it is asked.
-  `uze agent work split|join|list` is how an agent gives its subagents
-  checkouts of their own and brings their work back: a subagent's checkout
-  is a slot UZE recorded as that agent's child, never a worktree made with
-  Git by hand, which UZE would neither see nor protect.
-- **`agents.yaml` is authored, `agents.lock` is derived**: the manifest holds
-  what the project declared (marketplaces and plugins at the root, the
-  workspace's policy under `workspace:`);
-  the lock holds only what resolving it produced — a commit per marketplace and
-  a digest per package — so it is regenerated, never repaired, and deleting it
-  loses nothing. A marketplace is a Git repository whether it is spelled as a
-  URL or as a local path.
-- **Native > Generated Native > Safe Adaptation > Unsupported** delivery
-  precedence per capability per harness. "Native" means the harness offers
-  an officially supported mechanism preserving canonical semantics — not
-  necessarily the same physical primitive across vendors. The canonical
-  capability is the Skill; its portable semantics are *who may invoke it*
-  (invocation policy, ADR-030), and each integration translates that policy
-  into the vendor's own encoding.
-- **Derived artifacts are non-authoritative and rebuildable** — anything an
-  integration generates (a generated native package, a projected bridge
-  file) can be safely deleted and regenerated from the Store + Engine
-  alone.
-- **Receipts drive lifecycle safety**: every managed filesystem artifact
-  (symlink, generated directory, config entry) is tracked by a typed
-  receipt; drift or an unreadable ledger blocks destructive mutation rather
-  than authorizing one; removal always inspects current state before
-  detaching (inspect-before-detach).
-- **The runtime PATH shim** (`src/shim.rs`, `uze-core::harness_runtime`) is
-  an experimental mechanism that projects `AGENTS.md` into a harness
-  without writing into the project; it must never recursively invoke
-  itself — this is a named, tested boundary
-  (`tests/integrations/runtime_boundary.rs`).
-- **`command_performance.rs`** enforces that every CLI leaf command is
-  classified as `Budgeted` (low-millisecond, cache-backed via
-  `UzeApplication::detect_cached`) or `JustifiedSlow` with a stated reason;
-  an unclassified command fails `cargo test` by name
-  (`tests::every_cli_command_is_classified`). Classify any new command you
-  add here.
-- **`AGENTS.md` is the operator's**: it is the portable baseline every
+- **`src/` must not name `uze_core::` or `uze_integrations`.**
+  Presentation consumes read models from `uze-application`; reaching into
+  the domain makes every domain change ripple into the frontend. The debt
+  is **zero**: every remaining reach is `sanctioned` and named. Need
+  something the domain has? Add a read model, a service method or a
+  re-export to `uze-application`. **Never raise a budget.** (The compiler
+  cannot enforce this, because `src/shim.rs` and
+  `src/bin/uze-harness-matrix.rs` share the binary crate and legitimately
+  name the domain.)
+- **Only `uze-integrations` names a harness.** `uze-core`,
+  `uze-application` and `src/` never name Claude, Codex, OpenCode or
+  Antigravity (`core_never_names_a_vendor_harness`,
+  `application_never_names_a_vendor_harness`,
+  `cli_and_tui_never_name_a_vendor_harness`). A new harness is a new
+  integration vertical, one registry entry, conformance and docs, and no
+  change anywhere else.
+- **Speak to Git through `uze-git`.** Never spawn `git` directly: reads go
+  through `read`, writes through `write`. The exceptions are sanctioned by
+  name: `acquisition::git`, which clones *untrusted* remote repositories
+  and strips the environment, and the testkit's loopback forge. Inside
+  `uze-workspace`, Git is reached only through `crate::git`.
+- **Every path UZE owns is named in `UzeHome`**, and what it persists
+  belongs to the tier its deletion costs; the `persistence-tiers` rule
+  says which.
+- **`AGENTS.md` is the operator's.** It is the portable baseline every
   harness reads natively, and no production code writes it except
   `uze-application`'s `retired_regions.rs`, which takes out the regions
-  earlier releases wrote (`project:*` while their digest matches,
-  `package:*:instructions` by shape, the `CLAUDE.md` bridge with the last of
-  them), in a main working tree only. Enforced by
-  `tests/architecture/layering.rs::a_retired_region_cleanup_is_the_only_writer_of_agents_md`.
-  This repository's own root `AGENTS.md` is maintained directly, since this
-  is uze's own source.
-
-`IntegrationPort` (in `uze-core::integration`) is intentionally kept as one
-trait proven by conformance tests across all four harnesses, rather than
-split into per-capability traits (`PackageDelivery`, `SkillDelivery`, …) —
-that fragmentation has been considered and rejected absent a concrete
-implementation problem forcing it.
+  earlier releases wrote, in a main working tree only
+  (`a_retired_region_cleanup_is_the_only_writer_of_agents_md`). This
+  repository's own `AGENTS.md` is maintained directly, since this is uze's
+  own source.
+- **Nothing the workspace client draws waits on a repository**: every Git
+  read and unbounded operation from `src/ui/` runs on a thread and answers
+  through a channel.
+- **An extension never draws, and reaches nothing it was not handed**: it
+  returns a view, and every capability arrives through
+  `uze_extensions::Host` (ADR-041).

@@ -4,15 +4,15 @@
 # How `uze workspace` runs the agents it launches here.
 workspace:
   # Every agent launched here gets a worktree of its own, which is what
-  # this repository has always done and what its own "Concurrent work
-  # isolation" section tells an agent to expect. Undeclared (`manual`), an
+  # this repository has always done and what the instructions each agent
+  # gets at launch tell it to expect. Undeclared (`manual`), an
   # agent would start in the operator's checkout and move to a worktree
   # only when somebody asked.
   worktree: always
 
   # UZE rebases an agent's branch onto the target, runs the checks and
-  # pushes it; it never opens a request. The workspace keeps AGENTS.md's
-  # "Concurrent work isolation" section in step with it.
+  # pushes it; it never opens a request. Each agent learns this from the
+  # instructions UZE gives it at launch.
   delivery: push
 
   # What the agent is asked when UZE leaves its work in a state, and when
