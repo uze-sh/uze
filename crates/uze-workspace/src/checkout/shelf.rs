@@ -407,10 +407,6 @@ fn derived_paths(slot: &Path) -> Vec<&'static str> {
     if known(lock) && lock_moves_no_pin(slot) {
         derived.push(lock);
     }
-    let instructions = crate::project_context::AGENTS_MD_FILE_NAME;
-    if known(instructions) && instructions_changed_only_in_regions(slot) {
-        derived.push(instructions);
-    }
     derived
 }
 

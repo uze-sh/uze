@@ -36,5 +36,6 @@ pub mod worktree;
 // it did in `uze-core`.
 pub(crate) use uze_core::{
     Result, UzeError, config, digest, harness_runtime, home, integration, manifest, persistence,
-    process_cwd, project_context, project_lock, record, session, subprocess, text_region,
+    process_cwd, project_context, project_lock, record, retired_region, session, subprocess,
+    text_region,
 };

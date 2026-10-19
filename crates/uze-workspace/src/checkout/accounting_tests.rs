@@ -478,6 +478,7 @@ fn every_worktree_is_accounted_for_by_owner() {
 
 /// A lock with the same pins and fewer or more entries is what `install`
 /// leaves; a moved pin is what `update` leaves, and that is somebody's work.
+/// The lock is the only content UZE derives in a slot.
 mod derived_content {
     use super::*;
 
@@ -535,8 +536,11 @@ mod derived_content {
 
     const INSTRUCTIONS: &str = "# Project\n\nWritten by a person.\n\n<!-- uze:begin project:policy/1 -->\nold\n<!-- uze:end project:policy/1 -->\n";
 
+    /// UZE writes nothing into `AGENTS.md` in a slot, so a change there is
+    /// somebody's, even one that lies inside a region an earlier release
+    /// wrote.
     #[test]
-    fn a_reprojected_region_leaves_the_slot_free() {
+    fn a_change_inside_a_region_is_shelved() {
         let (repository, mut store, agent, slot) =
             launched_with("derived-region", &[("AGENTS.md", INSTRUCTIONS)]);
         fs::write(
@@ -545,33 +549,22 @@ mod derived_content {
         )
         .unwrap();
 
-        assert_eq!(end(&repository, &mut store, &agent), FREED);
+        assert_eq!(end(&repository, &mut store, &agent), SHELVED);
     }
 
-    /// A free slot still holding a reprojected region is handed on even
-    /// when the target changed that same file since: the edit never held
-    /// it, so it must not stand between the next agent and its base either.
+    /// Taking a retired region out is `uze install`'s in the primary
+    /// checkout only; in a slot, the removal is a change like any other.
     #[test]
-    fn a_free_slot_holding_a_region_edit_is_reused_onto_a_target_that_changed_the_file() {
+    fn a_retired_region_removed_in_a_slot_is_shelved() {
         let (repository, mut store, agent, slot) =
-            launched_with("derived-region-moved", &[("AGENTS.md", INSTRUCTIONS)]);
+            launched_with("derived-region-removed", &[("AGENTS.md", INSTRUCTIONS)]);
         fs::write(
             slot.path.join("AGENTS.md"),
-            INSTRUCTIONS.replace("policy/1 -->\nold", "policy/1 -->\nnew"),
+            "# Project\n\nWritten by a person.\n\n",
         )
         .unwrap();
-        assert_eq!(end(&repository, &mut store, &agent), FREED);
-        let moved = INSTRUCTIONS.replace("Written by a person.", "Edited on the target.");
-        repository.commit_file("AGENTS.md", &moved);
 
-        let (_, next) = launch(&repository, &mut store, "next");
-
-        super::assert_moved_from(&slot.path, &next);
-        assert_eq!(
-            fs::read_to_string(next.path.join("AGENTS.md")).unwrap(),
-            moved,
-            "the next agent starts from its base, not from the last one's edit"
-        );
+        assert_eq!(end(&repository, &mut store, &agent), SHELVED);
     }
 
     #[test]

@@ -144,35 +144,23 @@ fn a_clean_checkout_on_its_branch_has_nothing_to_shelve() {
     );
 }
 
+/// UZE writes nothing into `AGENTS.md` in a slot, so a change inside a
+/// region an earlier release wrote is somebody's work, and is kept.
 #[test]
-fn a_managed_region_alone_is_not_shelved_and_a_hand_edit_is() {
+fn a_change_inside_a_region_is_shelved_like_any_other() {
     let (repository, slot, branch) = slot("shelf-derived");
     let committed =
         "# Project\n\n<!-- uze:begin project:context -->\nold\n<!-- uze:end project:context -->\n";
     fs::write(slot.join("AGENTS.md"), committed).unwrap();
     repository.git_in(&slot, &["add", "AGENTS.md"]);
     repository.git_in(&slot, &["commit", "-qm", "instructions"]);
-    fs::write(
-        slot.join("AGENTS.md"),
-        committed.replace("old", "reprojected"),
-    )
-    .unwrap();
+    fs::write(slot.join("AGENTS.md"), committed.replace("old", "edited")).unwrap();
 
-    assert_eq!(
-        shelve(&slot, TASK, "label", &branch).unwrap(),
-        Shelving::Nothing
-    );
-
-    fs::write(
-        slot.join("AGENTS.md"),
-        committed.replace("# Project", "# Project, by hand"),
-    )
-    .unwrap();
     let commit = shelved(&repository, &slot, &branch);
     assert!(
         show(&repository, &commit, "AGENTS.md")
             .unwrap()
-            .starts_with("# Project, by hand")
+            .contains("edited")
     );
 }
 

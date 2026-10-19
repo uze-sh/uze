@@ -661,10 +661,58 @@ mod work_shelf {
         );
     }
 
-    /// "Derived content alone is not shelved".
+    /// "Derived content alone is not shelved": a lock that only gained an
+    /// entry, which is all `install` does to it.
     #[test]
     fn derived_content_alone_is_not_shelved() {
         let mut world = World::new("shelf-derived");
+        let lock = "version: 1\nmarketplaces:\n  m:\n    git: https://example.invalid/m\n    \
+                    revision: 02d2c9831eb619821c574622a78bbc5f6189485a\nplugins:\n  a:\n    \
+                    marketplace: m\n    integrity: sha256:aaaa\n";
+        world.repo.commit_file("agents.lock", lock);
+        let agent = world.open();
+        world.write(
+            &agent.cwd,
+            "agents.lock",
+            &format!("{lock}  b:\n    marketplace: m\n    integrity: sha256:bbbb\n"),
+        );
+
+        world.close(&agent);
+        let next = world.open();
+
+        assert_eq!(world.shelf(&agent), None, "a lock entry is not work");
+        assert!(
+            world.handed_on(&agent.cwd, &next.cwd),
+            "the checkout was free"
+        );
+    }
+
+    /// "A managed region reprojected inside a slot": the cleanup never runs
+    /// in a slot, so the committed region stays and the slot stays free.
+    #[test]
+    fn install_in_a_slot_leaves_a_retired_region_as_committed() {
+        let mut world = World::new("shelf-retired-region");
+        let committed = "# Project\n\n<!-- uze:begin package:greet:tools:instructions -->\n\
+                         hi\n<!-- uze:end package:greet:tools:instructions -->\n";
+        world.repo.commit_file("AGENTS.md", committed);
+        let agent = world.open();
+
+        world.app.context().reconcile(&agent.cwd).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(agent.cwd.join("AGENTS.md")).unwrap(),
+            committed
+        );
+        world.close(&agent);
+        let next = world.open();
+
+        assert_eq!(world.shelf(&agent), None);
+        assert!(world.handed_on(&agent.cwd, &next.cwd));
+    }
+
+    /// Any change to `AGENTS.md` in a slot is somebody's: UZE writes none.
+    #[test]
+    fn a_change_inside_a_region_is_shelved() {
+        let mut world = World::new("shelf-region-edit");
         world.repo.commit_file(
             "AGENTS.md",
             "# Project\n\n<!-- uze:begin project:context -->\nold\n<!-- uze:end project:context -->\n",
@@ -673,17 +721,12 @@ mod work_shelf {
         world.write(
             &agent.cwd,
             "AGENTS.md",
-            "# Project\n\n<!-- uze:begin project:context -->\nreprojected\n<!-- uze:end project:context -->\n",
+            "# Project\n\n<!-- uze:begin project:context -->\nedited\n<!-- uze:end project:context -->\n",
         );
 
         world.close(&agent);
-        let next = world.open();
 
-        assert_eq!(world.shelf(&agent), None, "a managed region is not work");
-        assert!(
-            world.handed_on(&agent.cwd, &next.cwd),
-            "the checkout was free"
-        );
+        assert!(world.shelf(&agent).is_some(), "an edit in a slot is work");
     }
 
     /// "A hand edit beside a managed region" is work, and is shelved.

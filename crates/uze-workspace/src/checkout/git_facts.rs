@@ -101,10 +101,10 @@ pub fn is_dirty(root: &Path) -> bool {
 /// Whether `root` holds uncommitted changes that are somebody's work — the
 /// question a checkout is shelved or freed by. Content UZE derives and can
 /// produce again is not: a lock that only gained or lost entries, which is
-/// all `install` does to it, and an instruction file that changed only
-/// inside the regions UZE manages. Left alone, those are what a slot
-/// collects just by having UZE run in it, and each held the slot for
-/// good. A question Git could not answer is taken as yes.
+/// all `install` does to it. Left alone, that is what a slot collects just
+/// by having UZE run in it, and it held the slot for good. `AGENTS.md` is
+/// never derived: UZE writes nothing into it in a slot, so any change to it
+/// there is somebody's. A question Git could not answer is taken as yes.
 pub fn holds_uncommitted_work(root: &Path) -> bool {
     let Some(status) = crate::git::read(root, &["status", "--porcelain=v1", "-z"])
         .ok()
@@ -120,9 +120,6 @@ pub fn holds_uncommitted_work(root: &Path) -> bool {
             Some((code, _)) if code.starts_with(['R', 'C']) => true,
             Some((_, path)) if path == crate::project_lock::LOCK_FILE_NAME => {
                 !lock_moves_no_pin(root)
-            }
-            Some((_, path)) if path == crate::project_context::AGENTS_MD_FILE_NAME => {
-                !instructions_changed_only_in_regions(root)
             }
             _ => true,
         })
@@ -160,7 +157,10 @@ pub(super) fn lock_moves_no_pin(root: &Path) -> bool {
     })
 }
 
-pub(super) fn instructions_changed_only_in_regions(root: &Path) -> bool {
+/// Whether `AGENTS.md` differs from `HEAD` only by the regions an earlier
+/// release wrote having been taken out, which is all `uze install` does to
+/// it in a main working tree.
+pub(super) fn instructions_changed_only_by_retiring_regions(root: &Path) -> bool {
     use crate::project_context::AGENTS_MD_FILE_NAME;
 
     let committed = match committed_text(root, AGENTS_MD_FILE_NAME) {
@@ -176,7 +176,11 @@ pub(super) fn instructions_changed_only_in_regions(root: &Path) -> bool {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(_) => return false,
     };
-    crate::text_region::same_outside_managed_regions(&committed, &working)
+    let retired = |identity: &str| {
+        crate::retired_region::is_retired(identity)
+            || crate::retired_region::is_retired_package(identity)
+    };
+    committed != working && crate::text_region::without_regions(&committed, retired) == working
 }
 
 pub(super) enum Committed {

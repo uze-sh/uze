@@ -100,16 +100,16 @@ fn carry_untracked(primary: &Path, slot: &Path, relative: &str) -> Result<(), St
 }
 
 /// Undoes, in a slot just given the primary's changes, a change to
-/// `AGENTS.md` that lies only inside UZE's managed regions. The workspace
-/// keeps its region in step in the primary checkout, where it is the
+/// `AGENTS.md` that only takes out regions an earlier release wrote. That
+/// cleanup is `uze install`'s in the primary checkout, where it is the
 /// operator's to commit; carried into a slot it would be a change the agent
 /// could commit and deliver, colliding with the same change still
-/// uncommitted in the primary. A change of the operator's own beside the
-/// regions is theirs, and is carried like any other.
+/// uncommitted in the primary. Any other change is the operator's, and is
+/// carried like any other.
 pub(super) fn keep_derived_instructions_behind(primary: &Path, slot: &Path) -> Result<(), String> {
     use crate::project_context::AGENTS_MD_FILE_NAME;
 
-    if !instructions_changed_only_in_regions(primary) {
+    if !instructions_changed_only_by_retiring_regions(primary) {
         return Ok(());
     }
     let in_slot = slot.join(AGENTS_MD_FILE_NAME);
