@@ -123,20 +123,32 @@ impl UzeApplication {
             }
         }
         let dependency = uze_core::hook::WRAPPER_DEPENDENCY;
-        if !delivered_to.is_empty() && !uze_core::subprocess::program_on_path(dependency) {
-            concerns.insert(
-                0,
-                MachineConcern {
-                    subject: "rules".to_owned(),
-                    detail: format!(
-                        "{dependency} is not installed, so the rules engine hands no rules to {}",
-                        delivered_to.join(", ")
-                    ),
-                },
-            );
+        if let Some(concern) = missing_dependency(
+            dependency,
+            &delivered_to,
+            uze_core::subprocess::program_on_path(dependency),
+        ) {
+            concerns.insert(0, concern);
         }
         concerns
     }
+}
+
+/// The concern a delivered engine's missing `dependency` is, naming every
+/// harness it was delivered to: the engine fails open, so without this a
+/// person sees rules silently stop arriving.
+fn missing_dependency(
+    dependency: &str,
+    delivered_to: &[&str],
+    installed: bool,
+) -> Option<MachineConcern> {
+    (!delivered_to.is_empty() && !installed).then(|| MachineConcern {
+        subject: "rules".to_owned(),
+        detail: format!(
+            "{dependency} is not installed, so the rules engine hands no rules to {}",
+            delivered_to.join(", ")
+        ),
+    })
 }
 
 fn rules_receipt(integration: &str, artifact: ManagedArtifact) -> AttachmentReceipt {
@@ -170,5 +182,32 @@ pub(crate) fn sweep_rule_sessions(dir: &std::path::Path, now: SystemTime, age: D
         if stale && entry.file_type().is_ok_and(|kind| kind.is_file()) {
             let _ = std::fs::remove_file(entry.path());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_dependency_names_every_harness_the_engine_was_delivered_to() {
+        let concern = missing_dependency("jq", &["Claude Code", "Codex"], false)
+            .expect("a delivered engine without its dependency is a concern");
+        assert_eq!(concern.subject, "rules");
+        assert!(
+            concern.detail.contains("jq is not installed"),
+            "{}",
+            concern.detail
+        );
+        assert!(
+            concern.detail.contains("Claude Code, Codex"),
+            "{}",
+            concern.detail
+        );
+        assert!(missing_dependency("jq", &["Claude Code"], true).is_none());
+        assert!(
+            missing_dependency("jq", &[], false).is_none(),
+            "no engine delivered, nothing to warn about"
+        );
     }
 }
