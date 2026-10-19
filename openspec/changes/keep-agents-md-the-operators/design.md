@@ -135,11 +135,44 @@ briefing carried today's policy text):
 | Antigravity | a user-role `SYSTEM_MESSAGE` step, **after** the user's first request | `systemInstruction` | **lower** |
 
 On all four, a context at the bound arrived whole (no Codex spill), and it
-was present again on resume. Antigravity is the open point. The section's
-order inside the document and how a model weighs each placement are not
-provable with the synthetic provider. Tasks 5.1 and 5.2 settle them with
-real models, and task 5.0 looks for a launch-scoped route into
-Antigravity's `systemInstruction` first.
+was present again on resume. The section's order inside the document and
+how a model weighs each placement are not provable with the synthetic
+provider. Tasks 5.1 and 5.2 settle them with real models.
+
+### D2a: Antigravity's instructions are a rule in the agent's added directory
+
+A follow-up probe (`experiments/antigravity/system-instruction.py`,
+Antigravity 1.4.2) found a launch-scoped route into `systemInstruction`. A
+file in the directory the launch adds with `--add-dir` is loaded as a
+`<RULE[…]>` beside the project's own `AGENTS.md`. That holds for an
+`AGENTS.md`, a `GEMINI.md` and an `.agents/rules/*.md` with
+`trigger: always_on`, and it reaches resumes and `invoke_subagent` with no
+copies piling up. A `SessionStart` hook's `systemMessage` lands where
+`PreInvocation`'s does, and no flag or environment variable reaches the
+system prompt.
+
+So on Antigravity the instructions part is written as an `always_on` rule
+in the agent's context directory. The hook keeps carrying the notes
+(briefing and memory). The rule format is the one `project-rules` already
+makes canonical, and nothing is written into the checkout.
+
+**Constraint found on the way, and a shipped bug.** Antigravity orders
+`workspacePaths` by path, not by the order directories were given, and
+takes the first one as "Command Working Directory". With UZE's runtime
+directory (`~/.uze/runtime/…`) sorting before the checkout, the shipped
+1.0.0-beta.17 channel already makes Antigravity work in UZE's runtime
+directory instead of the slot. That was measured in the launch probe's
+request #27. It is fixed on its own, ahead of this change and independent
+of it. Any route through `--add-dir` depends on that fix, and the Lab
+gains a check that the working directory is the checkout.
+
+### D2b: OpenCode keys a child session to its parent's context
+
+The `context` event carries only `sessionID`, but
+`ctx.session.get({ sessionID })` answers a child session with `parentID`.
+Measured on 2.0.32 (`experiments/opencode/session-parent.py`). The plugin
+falls back to the parent's context when a session has none of its own, which
+closes OpenCode's subagent gap.
 
 Alternatives considered:
 - **One preamble for everything.** Calling the policy "notes" invites the
@@ -276,8 +309,11 @@ removed.
   does a Codex `spawn_agent` that forks the parent's history. A Codex spawn
   with `fork_turns: "none"`, an OpenCode child session (its own session id,
   so the plugin finds no file) and an Antigravity `invoke_subagent` receive
-  only `AGENTS.md`. The Antigravity miss may come from UZE's once-per-launch
-  marker, and a control run tells the two apart (task 5.3).
+  only `AGENTS.md`. The control run showed the Antigravity miss was UZE's
+  once-per-launch hook marker, not the harness. D2a's rule reaches the
+  subagent anyway, and D2b closes OpenCode. Codex with `fork_turns: "none"`
+  stays without the context, and that is recorded rather than worked
+  around.
 - **A degraded launch shows its instructions.** Antigravity signed out has no
   hook channel. Today's first turn exists only for a pending switch briefing,
   given once (`continuity.rs` `take_first_turn`), and when the channel is
