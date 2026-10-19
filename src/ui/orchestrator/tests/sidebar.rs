@@ -284,17 +284,11 @@ fn only_the_selected_space_header_offers_a_new_agent() {
     assert_eq!(picker.anchor, new, "anchored under the control clicked");
 }
 
-/// An open space is a block at full strength whether or not anybody
-/// is working in it: its agent rows stand on it, and on the faded
-/// ground they stood on the panel instead — the block had a header
-/// and then nothing under it, so its rows read as loose in the column
-/// rather than as its contents.
-///
-/// Minimized, nobody in it, the fade stays: two rows reading as one
-/// item need an edge, not a ground. Which space is in front is the
-/// gutter's answer either way.
+/// One lifted block in a transparent column: the space in front stands
+/// on the panel, and every other space, open or minimized, stands on the
+/// column itself. The lift is what says which space is in front.
 #[test]
-fn an_open_space_is_a_block_whether_or_not_anybody_is_in_it() {
+fn only_the_space_in_front_is_lifted() {
     let mut model = three_spaces();
     model.first_steps_collapsed = true;
     // One minimized, one open, neither of them the one in front.
@@ -306,47 +300,25 @@ fn an_open_space_is_a_block_whether_or_not_anybody_is_in_it() {
         let header = space_header(&hits, space);
         buffer[(header.x + 2, header.y + offset)].bg
     };
+    let column = theme::color(Token::SurfaceBackground);
 
+    for (space, offset) in [(SpaceId(1), 0), (SpaceId(2), 0), (SpaceId(2), 1)] {
+        assert_eq!(
+            ground(space, offset),
+            column,
+            "a space behind stands on the column: {rows:?}"
+        );
+    }
     assert_eq!(
-        ground(SpaceId(2), 0),
-        theme::color(Token::SurfaceRaised),
-        "an open space wears its header at full strength: {rows:?}"
-    );
-    assert_eq!(
-        ground(SpaceId(2), 1),
-        theme::color(Token::SurfaceRaisedSubtle),
-        "and its agents stand on the panel, not on the backdrop: {rows:?}"
-    );
-    assert_eq!(
-        ground(SpaceId(2), 0),
         ground(SpaceId(3), 0),
-        "the same ground the space in front stands on: {rows:?}"
-    );
-
-    // Minimized and nobody in it, the card is its header alone (see
-    // `only_the_minimized_space_in_front_says_where_it_is`), and the
-    // fade is what gives that one row an edge.
-    assert_eq!(
-        ground(SpaceId(1), 0),
-        crate::ui::theme::faded(Token::SurfaceRaised),
-        "a minimized space nobody is in is faded: {rows:?}"
-    );
-    assert_ne!(
-        ground(SpaceId(1), 0),
-        theme::color(Token::SurfaceBackground),
-        "and it is still a block"
-    );
-    assert_ne!(
-        ground(SpaceId(1), 0),
-        ground(SpaceId(2), 0),
-        "never the ground an open one stands on: {rows:?}"
+        theme::color(Token::SurfaceRaised),
+        "the space in front is lifted: {rows:?}"
     );
 }
 
 /// A space's own row is a target like any other: when it is the row
 /// in front — its shell selected, or the space folded to its header —
-/// it wears the same trace of the accent a selected agent row wears,
-/// over its own lighter surface. With an agent in front it is the
+/// it wears the same selection a selected agent row wears. With an agent in front it is the
 /// plain surface again, because then the trace belongs to that agent.
 #[test]
 fn the_spaces_own_row_wears_the_agents_trace_when_it_is_the_one_in_front() {
@@ -357,7 +329,7 @@ fn the_spaces_own_row_wears_the_agents_trace_when_it_is_the_one_in_front() {
     let header = space_header(&hits, SpaceId(1));
     assert_eq!(
         buffer[(header.x + 2, header.y)].bg,
-        crate::ui::theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle),
+        theme::color(Token::SurfaceSelected),
         "the space's own row is the one selected, in the one overlay: {rows:?}"
     );
 
@@ -389,7 +361,7 @@ fn a_minimized_space_in_front_is_lit_down_both_of_its_rows() {
     } = sidebar(&model, &identities_in_the_root());
     let header = space_header(&hits, SpaceId(1));
 
-    let overlay = crate::ui::theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle);
+    let overlay = theme::color(Token::SurfaceSelected);
     assert_eq!(
         buffer[(header.x + 2, header.y)].bg,
         overlay,
@@ -642,21 +614,13 @@ fn the_gutter_marks_the_selected_space_and_no_other() {
             "row {row}: the rail sits outside the block's fill: {rows:?}"
         );
     }
-    // What the fill says is a separate question, and
-    // `an_open_space_is_a_block_whether_or_not_anybody_is_in_it`
-    // owns it: here the claim is that the rail alone answers which
-    // space is in front, so two open headers are told apart by their
-    // leading column and by nothing else.
+    // The rail and the fill say the same thing: the space behind has
+    // neither (see `only_the_space_in_front_is_lifted`).
     let outside = space_header(&hits, SpaceId(1));
-    assert_eq!(
+    assert_ne!(
         buffer[(outside.x + 2, outside.y)].bg,
         buffer[(header.x + 2, header.y)].bg,
-        "both headers stand on the same ground: {rows:?}"
-    );
-    assert_ne!(
-        buffer[(outside.x, outside.y)].symbol(),
-        buffer[(header.x, header.y)].symbol(),
-        "and only their leading column differs: {rows:?}"
+        "only the header in front is lifted: {rows:?}"
     );
 }
 

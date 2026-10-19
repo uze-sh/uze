@@ -183,25 +183,24 @@ fn a_space_draws_each_agent_in_its_root_over_the_harness_it_runs() {
 
 /// Two rows per agent and no gap between them, so what says which
 /// item the keyboard is on has to be the item itself: its two rows
-/// carry a trace of the accent over the panel every other row sits
-/// on. Light enough to be read through — it is a selection, not a
-/// highlight.
+/// carry the neutral selection over the panel every other row sits
+/// on, never a hue of its own.
 #[test]
-fn the_agent_receiving_keystrokes_wears_the_accent_over_the_space() {
+fn the_agent_receiving_keystrokes_wears_the_selection_over_the_space() {
     let model = agents_in_the_root_session();
     let Sidebar {
         buffer, hits, rows, ..
     } = sidebar(&model, &identities_in_the_root());
     let agents = agent_rows(&hits);
     let plain = theme::color(Token::SurfaceRaisedSubtle);
-    let tinted = crate::ui::theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle);
-    assert_ne!(tinted, plain, "the tint is a surface of its own");
+    let selected = theme::color(Token::SurfaceSelected);
+    assert_ne!(selected, plain, "the selection is a surface of its own");
 
     // `agent 2` is the space's context agent (see `agents_in_the_root_session`).
     for row in [agents[2], agents[3]] {
         assert_eq!(
             buffer[(2, row)].bg,
-            tinted,
+            selected,
             "both rows of the item in front: {rows:?}"
         );
     }

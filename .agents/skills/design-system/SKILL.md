@@ -180,6 +180,10 @@ Toasts:
   Markdown is "clean, not a rainbow".
 - Ground overlays are neutral grey, **never green-tinted**.
 - A focused or selected container gets a subtle, slightly darker overlay.
+- The sidebar is transparent: only the space in front is lifted onto the
+  panel, every other space stands on the column itself, and the row in
+  front wears `SurfaceSelected` like every other list, never a trace of
+  the accent.
   A drawer or card must stand out from the base ground.
 - Light mode and adaptive themes must colour everything, extensions and
   harness panes included.

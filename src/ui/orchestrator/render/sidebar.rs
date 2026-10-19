@@ -237,9 +237,9 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // gets an edge on both sides, and it is also where a space being
     // dragged is shown landing (see `draw_space_drop`).
     //
-    // The fill alone was tried and is not enough. Every card but the one
-    // in front is faded, so where two faded cards meet there is no edge
-    // to find — the column reads as one surface with headers in it, and
+    // The fill alone is not enough. Every card but the one in front
+    // stands on the column itself, so where two of them meet there is no
+    // edge to find — the column reads as one list with headers in it, and
     // the card in front reads as the top or the bottom of whichever
     // neighbour it touches rather than as its own thing. The row over the
     // first card is the same argument against the rule above it.
@@ -927,41 +927,37 @@ pub(super) fn render_space_caption(
     // item: the trace the header wears when it is the row in front runs
     // through this row too, or the item would be lit down half its height.
     let ground = if is_current {
-        theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle)
+        front_ground()
     } else {
-        block_ground(selected || !model.space_folded(space))
+        block_ground(selected)
     };
     row::pad_to(&mut spans, rect.width, ground);
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     hits.push((rect, WorkspaceHit::SelectSpace(space.id)));
 }
 
-/// The overlay the row in front wears: a trace of the accent over the
-/// panel a space sits on.
+/// The overlay the row in front wears: the neutral selection every other
+/// list draws, one step over the panel its space is lifted on. A trace of
+/// the accent read as a colour of its own wherever the accent has a hue,
+/// which is what an overlay must never be.
 pub(super) fn front_ground() -> Color {
-    theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle)
+    theme::color(Token::SurfaceSelected)
 }
 
-/// The ground under a space's rows: the panel itself where a space is
-/// `lifted`, and the same panel faded where it is not. Every space is a
-/// block either way — what the fill says is which blocks have something
-/// standing on them.
+/// The ground under a space's rows: the panel lifted for the space in
+/// front, and nothing at all for every other one, which stands on the
+/// column itself.
 ///
-/// A space is lifted when it is the one in front *or* when it is open,
-/// which is not the same rule as "selected" and used not to be one at
-/// all. The fade is a third of a surface that is itself seven percent
-/// over the background, so what reaches the screen is about two — enough
-/// to find the edge of a minimized card, which is two rows reading as one
-/// item, and not enough to be a ground. An open space has agent rows
-/// standing on it, and on that fill they stood on the panel instead: the
-/// block had a header and then nothing under it, so its rows read as
-/// loose in the column rather than as its contents. Which one is in front
-/// is the gutter's answer now (see [`space_gutter`]), not the fill's.
-pub(super) fn block_ground(lifted: bool) -> Color {
-    if lifted {
+/// The lift is the space's highlight. Every space used to be a block,
+/// faded or full, and an open space nobody was in wore the same ground
+/// the one in front did, so which block was in front was left to a
+/// one-column gutter. One lifted block in a transparent column answers it
+/// at a glance.
+pub(super) fn block_ground(in_front: bool) -> Color {
+    if in_front {
         theme::color(Token::SurfaceRaisedSubtle)
     } else {
-        theme::faded(Token::SurfaceRaisedSubtle)
+        theme::color(Token::SurfaceBackground)
     }
 }
 
@@ -991,9 +987,8 @@ pub(super) fn block_ground(lifted: bool) -> Color {
 /// gutter in the accent; the trunk stays quiet either way, because it
 /// answers which group, not which row.
 ///
-/// Only an open space with agents in it reaches here, so every row this
-/// draws stands on a lifted ground whether or not its space is the one
-/// in front (see [`block_ground`]).
+/// Only an open space with agents in it reaches here; its rows are lifted
+/// only while it is the space in front (see [`block_ground`]).
 pub(super) fn draw_tree(
     frame: &mut ratatui::Frame<'_>,
     rows: &mut Rows,
@@ -1011,8 +1006,6 @@ pub(super) fn draw_tree(
     // closes it — the two rows whose glyph is not the one in between.
     let first_isolated = agents.iter().position(|agent| agent.isolated);
     let last_isolated = agents.iter().rposition(|agent| agent.isolated);
-    /// Every space `draw_tree` is called for is open.
-    const OPEN: bool = true;
     let mut previous: Option<bool> = None;
     for (index, (agent, caption)) in agents.iter().zip(captions).enumerate() {
         let tab = agent.tab;
@@ -1026,7 +1019,7 @@ pub(super) fn draw_tree(
             && let Some(gap) = rows.slot(1).visible()
         {
             let mut spans = vec![space_gutter(is_active_space, false)];
-            row::pad_to(&mut spans, gap.width, block_ground(OPEN));
+            row::pad_to(&mut spans, gap.width, block_ground(is_active_space));
             frame.render_widget(Paragraph::new(Line::from(spans)), gap);
         }
         previous = Some(isolated);
@@ -1036,15 +1029,15 @@ pub(super) fn draw_tree(
         // stretch of the gutter, and so does the row a dragged agent would
         // land before: the same line, in the accent, never a heavier one.
         let lit = agent.is_current || agent.drop_target;
-        // The row the keyboard is on carries a trace of its own group's
-        // hue over the panel every other row sits on — the item is two
-        // rows and the status glyph is one cell, so the block is what
-        // reads as "here" at a glance. Nothing outside the active space
-        // is tinted: `is_current` is selected *and* receiving keystrokes.
+        // The row the keyboard is on carries the selection over the panel
+        // every other row sits on — the item is two rows and the status
+        // glyph is one cell, so the block is what reads as "here" at a
+        // glance. Nothing outside the active space is selected:
+        // `is_current` is selected *and* receiving keystrokes.
         let surface = if agent.is_current {
-            Some(theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle))
+            Some(front_ground())
         } else {
-            Some(block_ground(OPEN))
+            Some(block_ground(is_active_space))
         };
         // The status glyph in the header's own fold column for an agent
         // in the root, and one further in for one working in a checkout
@@ -1354,23 +1347,18 @@ pub(in crate::ui::orchestrator) fn render_space_header(
     // trace of the accent, over its own lighter surface. Everything else
     // about the header is unchanged — the trace says "this row", not
     // "this block", which is what the fill underneath already says.
+    // The one overlay: exactly what an agent row in front wears, and what
+    // the caption under a minimized header wears with it. A second tone for
+    // the same meaning would read as two states. A space behind lifts
+    // nothing, header included (see [`block_ground`]).
     let ground = if is_current {
-        // The one overlay: exactly what an agent row in front wears, and
-        // what the caption under a minimized header wears with it. A
-        // second tone for the same meaning would read as two states.
-        theme::tinted(Token::Accent, Token::SurfaceRaisedSubtle)
-    } else {
+        front_ground()
+    } else if selected {
         theme::color(Token::SurfaceRaised)
+    } else {
+        block_ground(false)
     };
-    row::pad_to(
-        &mut spans,
-        rect.width,
-        if selected || !collapsed {
-            ground
-        } else {
-            theme::fade(ground)
-        },
-    );
+    row::pad_to(&mut spans, rect.width, ground);
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     hits.push((rect, WorkspaceHit::SelectSpace(space.id)));
 }

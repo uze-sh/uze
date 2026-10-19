@@ -247,12 +247,10 @@ pub(crate) fn lifted(token: Token) -> Color {
 
 /// A surface that carries a hue without becoming one.
 ///
-/// What the row the keyboard is on wears: the same panel every other row
-/// of the space sits on, with a trace of the hue that says which kind of
-/// space it is. Far lighter than [`softened`], which is a control at rest
-/// and has a label of its own to stay behind — this one is read *through*,
-/// by every word on the row, so the moment it competes with them it has
-/// stopped being a selection and started being a highlight.
+/// Far lighter than [`softened`], which is a control at rest and has a
+/// label of its own to stay behind — this one is read *through*, by every
+/// word on it, so the moment it competes with them it has stopped being a
+/// ground and started being a highlight.
 pub(crate) fn tinted(token: Token, into: Token) -> Color {
     /// How much of the hue reaches the surface, out of 255. Barely: the
     /// row is read *through* this, so anything that registers as a colour
@@ -263,32 +261,6 @@ pub(crate) fn tinted(token: Token, into: Token) -> Color {
     let hue = uze_theme::active().color(token);
     let surface = uze_theme::active().color(into);
     let blended = hue.over(surface, HUE);
-    Color::Rgb(blended.0, blended.1, blended.2)
-}
-
-/// A ground at part of its strength: the same surface, let *through* onto
-/// the backdrop rather than laid on it.
-///
-/// What a space nobody is working in wears. Not a colour of its own —
-/// there is nothing a second surface would mean that this one does not —
-/// only less of the one the active space wears, so the block still reads
-/// as a block and the space being worked in keeps the only ground at full
-/// strength in the column.
-pub(crate) fn faded(token: Token) -> Color {
-    fade(color(token))
-}
-
-/// The same, for a colour already blended — a ground that is itself a
-/// wash, faded again for the space nobody is in.
-pub(crate) fn fade(drawn: Color) -> Color {
-    /// How much of the colour reaches the backdrop, out of 255. Enough
-    /// to find the block's edge against the panel, not enough to be
-    /// mistaken for the space in front.
-    const THROUGH: u8 = 84;
-
-    let backdrop = uze_theme::active().color(Token::SurfaceBackground);
-    let (red, green, blue) = channels(drawn, Token::SurfaceBackground);
-    let blended = uze_theme::Rgb(red, green, blue).over(backdrop, THROUGH);
     Color::Rgb(blended.0, blended.1, blended.2)
 }
 
