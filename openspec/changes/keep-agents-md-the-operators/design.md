@@ -122,9 +122,24 @@ it:
   `injectSteps[].systemMessage`;
 - OpenCode: the session `context` hook's `system[]`.
 
-Whether each placement carries the same authority as `AGENTS.md` is not
-assumed. The Lab measures it first (pre-implementation probe, then tasks
-5.1 and 5.2).
+Measured before implementation (2026-10-19, experiment
+`conformance/experiments/launch_instructions_probe.py`; Claude 2.1.303,
+Codex 0.163.0, OpenCode 2.0.32, Antigravity 1.4.2; a 8.9 KB context whose
+briefing carried today's policy text):
+
+| harness | launch context | `AGENTS.md` | placement |
+|---|---|---|---|
+| Claude | the same user-role `system-reminder` part, listed first as project instructions | same part | equal |
+| Codex | a developer item, after `AGENTS.md` | a user item | higher |
+| OpenCode | the system message | same message | equal |
+| Antigravity | a user-role `SYSTEM_MESSAGE` step, **after** the user's first request | `systemInstruction` | **lower** |
+
+On all four, a context at the bound arrived whole (no Codex spill), and it
+was present again on resume. Antigravity is the open point. The section's
+order inside the document and how a model weighs each placement are not
+provable with the synthetic provider. Tasks 5.1 and 5.2 settle them with
+real models, and task 5.0 looks for a launch-scoped route into
+Antigravity's `systemInstruction` first.
 
 Alternatives considered:
 - **One preamble for everything.** Calling the policy "notes" invites the
@@ -256,17 +271,30 @@ removed.
   `uze agent work split` prints, beside the path, the two lines the parent
   hands over: commit here, and never switch the branch or make a worktree.
   A subagent that ignores them is still caught by `join`'s refusals
-  (`checkout-accounting`, "A child that left its branch"). Task 5.3 measures
-  what each harness's subagent receives.
+  (`checkout-accounting`, "A child that left its branch"). Measured
+  (2026-10-19): Claude's `Agent` subagent receives the launch context, and so
+  does a Codex `spawn_agent` that forks the parent's history. A Codex spawn
+  with `fork_turns: "none"`, an OpenCode child session (its own session id,
+  so the plugin finds no file) and an Antigravity `invoke_subagent` receive
+  only `AGENTS.md`. The Antigravity miss may come from UZE's once-per-launch
+  marker, and a control run tells the two apart (task 5.3).
 - **A degraded launch shows its instructions.** Antigravity signed out has no
   hook channel. Today's first turn exists only for a pending switch briefing,
-  given once (`continuity.rs` `take_first_turn`). → A new conversation on a
-  degraded channel gets one first turn pointing at `context.md`. A resume
+  given once (`continuity.rs` `take_first_turn`), and when the channel is
+  degraded `context.md` is not composed at all (measured: 0 bytes). → The
+  context is composed on every launch whatever the channel, and a new
+  conversation on a degraded channel gets one first turn pointing at
+  `context.md`. A resume
   gets none, and the conversation keeps what the first turn delivered.
   `deliver-agent-context` D5 removed the visible turn only where a channel
   exists, so this does not walk that back. Both cases are reported as
   degraded. The alternative, writing the region back, is what this change
   removes.
+- **Copies pile up on Codex and Antigravity.** Both keep the earlier
+  launch's copy beside the new one (measured on resume). With a 2 KB
+  instructions section, a long-lived agent carries several copies until
+  the harness compacts. → The concrete text (D3) halves the section, and
+  the cost is per launch, not per turn.
 - **The briefing loses 1,000 bytes.** → D4's measurement first. The
   instructions shrink before the briefing does.
 - **An operator who read the region as documentation loses it.** → The
