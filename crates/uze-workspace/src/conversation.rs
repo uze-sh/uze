@@ -357,7 +357,29 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
         }
     }
     let _ = fs::remove_file(store_path(home, project_root, agent));
-    let _ = fs::remove_dir_all(home.agent_context_dir(&project_id(project_root), agent.as_str()));
+    let context = home.agent_context_dir(&project_id(project_root), agent.as_str());
+    forget_context_links(project_root, &context);
+    let _ = fs::remove_dir_all(context);
+}
+
+/// Removes the links a context channel made to `context` in the project's
+/// `.worktrees/` (beside a slot as `<id>~uze`, or under `~uze/`). Taken here,
+/// when the agent ends, and never by a launch: a launch cannot tell a link
+/// to a context not yet written from one whose agent is gone, and two
+/// relaunching agents would take each other's.
+fn forget_context_links(project_root: &Path, context: &Path) {
+    let worktrees = project_root.join(crate::worktree::WORKTREES_DIRECTORY);
+    let candidates = fs::read_dir(&worktrees)
+        .into_iter()
+        .chain(fs::read_dir(worktrees.join("~uze")))
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path());
+    for link in candidates {
+        if fs::read_link(&link).is_ok_and(|target| target == context) {
+            let _ = uze_platform::fs::remove_link(&link);
+        }
+    }
 }
 
 /// The agent a verified claim resolved to, which kind of record it is, and
@@ -866,6 +888,43 @@ mod tests {
         assert!(load(&home, &root, &recycled).harnesses.is_empty());
         // And the previous task's own record is untouched by that.
         assert!(load(&home, &root, &previous).get("claude-code").is_some());
+    }
+
+    // A link made the Unix way; Windows makes a junction, which `remove_link`
+    // takes the same.
+    #[cfg(unix)]
+    #[test]
+    fn forgetting_an_agent_takes_its_context_links_and_no_one_elses() {
+        let root = uze_testkit::temp::scratch("conversation-forget-links");
+        let home = UzeHome::at(root.join("uze"));
+        let project = root.join("repo");
+        let worktrees = project.join(".worktrees");
+        fs::create_dir_all(worktrees.join("~uze")).unwrap();
+        let agent = AgentId::adopted("agent-1");
+        let other = AgentId::adopted("agent-2");
+        let mine = home.agent_context_dir(&project_id(&project), agent.as_str());
+        let theirs = home.agent_context_dir(&project_id(&project), other.as_str());
+        fs::create_dir_all(&mine).unwrap();
+        fs::create_dir_all(&theirs).unwrap();
+        std::os::unix::fs::symlink(&mine, worktrees.join("ab12cd~uze")).unwrap();
+        std::os::unix::fs::symlink(&mine, worktrees.join("~uze").join(agent.as_str())).unwrap();
+        std::os::unix::fs::symlink(&theirs, worktrees.join("ef34gh~uze")).unwrap();
+
+        forget(&home, &project, &agent);
+
+        assert!(worktrees.join("ab12cd~uze").symlink_metadata().is_err());
+        assert!(
+            worktrees
+                .join("~uze")
+                .join("agent-1")
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(
+            worktrees.join("ef34gh~uze").exists(),
+            "another agent's link stays"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
