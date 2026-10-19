@@ -419,13 +419,22 @@ fn checkout_root(project_root: &Path, cwd: &Path) -> PathBuf {
     if let Some(isolated) = worktree::isolated_checkout(cwd) {
         return isolated.directory();
     }
-    let recorded = std::fs::canonicalize(project_root).ok();
+    // The platform's rule first, which asks the disk nothing; links are
+    // resolved only when no ancestor is spelled as the root is, which is the
+    // case of a launch through a link to the tree.
+    if let Some(ancestor) = cwd
+        .ancestors()
+        .find(|ancestor| uze_platform::path::same_path(ancestor, project_root))
+    {
+        return ancestor.to_path_buf();
+    }
+    let Ok(recorded) = uze_platform::path::canonical(project_root) else {
+        return project_root.to_path_buf();
+    };
     cwd.ancestors()
         .find(|ancestor| {
-            *ancestor == project_root
-                || std::fs::canonicalize(ancestor)
-                    .ok()
-                    .is_some_and(|resolved| recorded.as_deref() == Some(resolved.as_path()))
+            uze_platform::path::canonical(ancestor)
+                .is_ok_and(|resolved| uze_platform::path::same_path(&resolved, &recorded))
         })
         .map_or_else(|| project_root.to_path_buf(), Path::to_path_buf)
 }
