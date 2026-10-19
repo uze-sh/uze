@@ -76,11 +76,10 @@ where its artifacts live. You write it. See [Project files](/docs/reference/proj
 **`agents.lock`.** What resolving `agents.yaml` produced: a commit per
 marketplace and a digest per plugin. Written by uze; deleting it loses nothing.
 
-**Bridge.** The line a harness reads to find `AGENTS.md`, when it does not read
-that file natively. See [Project context](/docs/plugins/context).
-
-**Managed region.** A block inside a file you own, between
-`<!-- uze:begin … -->` and `<!-- uze:end … -->` markers. The only place uze writes.
+**Managed region.** A block between `<!-- uze:begin … -->` and
+`<!-- uze:end … -->` markers that earlier releases wrote into `AGENTS.md` (and
+a `CLAUDE.md` bridge beside it). uze writes none any more, and `uze install`
+removes the ones left behind, except one you edited.
 
 ## Workspace
 

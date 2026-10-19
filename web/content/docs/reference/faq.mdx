@@ -30,10 +30,12 @@ next to it.
 
 ## Will uze overwrite my files?
 
-No. In a file you own, uze writes only between its own
-`<!-- uze:begin … -->` and `<!-- uze:end … -->` markers. If a file already holds
-content uze doesn't own where it would write, uze reports it and leaves the file
-alone. See [Project context](/docs/plugins/context).
+No. uze writes nothing into a file you author, `AGENTS.md` included. In your
+project it writes only `agents.yaml`, `agents.lock` and the rule files of the
+plugins you declare, each in a name of its own under `.agents/rules/`. A copy
+you edit is reported, never overwritten. Earlier releases left blocks between
+`<!-- uze:begin … -->` markers in `AGENTS.md`; `uze install` removes them, except
+one you edited. See [Project context](/docs/plugins/context).
 
 ## Does uze send anything over the network?
 

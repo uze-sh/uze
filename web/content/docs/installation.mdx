@@ -119,7 +119,9 @@ checking; in CI it is off unless you set it.
 
 2. Stop the workspace in each project where you opened it: `uze workspace stop`.
 3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
-   no longer want them, and the `uze:begin … uze:end` blocks in `AGENTS.md`.
+   no longer want them, and the rule files named `<plugin>@<market>--…` under
+   `.agents/rules/`. uze writes nothing into `AGENTS.md`, so there is nothing to
+   take out of it.
 4. Delete the binary and uze's home:
 
    ```bash

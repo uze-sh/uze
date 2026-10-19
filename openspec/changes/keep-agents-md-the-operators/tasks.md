@@ -42,8 +42,8 @@
 
 ## 6. Skills, docs and this repository
 
-- [ ] 6.1 `plugins/uze` Skills: `init` stops describing UZE regions in `AGENTS.md`, and reports and cleans a project carrying them. `worktree` and `author` drop their references to the projected region
-- [ ] 6.2 `docs/capabilities/context-manager.md`, `docs/capabilities/uze-skill.md` and `web/content/docs/` (context, installation, glossary, FAQ): what UZE writes into a project, following D1, with no em dashes in user-facing copy
+- [x] 6.1 `plugins/uze` Skills: `init` stops describing UZE regions in `AGENTS.md`, and reports and cleans a project carrying them. `worktree` and `author` drop their references to the projected region
+- [x] 6.2 `docs/capabilities/context-manager.md`, `docs/capabilities/uze-skill.md` and `web/content/docs/` (context, installation, glossary, FAQ): what UZE writes into a project, following D1, with no em dashes in user-facing copy
 - [x] 6.3 `docs/architecture/invariants.md`: replace every region invariant (the bridge protocol around line 111, "A package's instructions reach only a project that declares it", the managed-region accounting around line 1598, the policy-region identity around line 1862, "Each region of `AGENTS.md` has one owner") with "no UZE operation changes `AGENTS.md` except to remove a retired region in the primary checkout", tied to 3.3 and 3.5
 - [x] 6.4 (with 3.4, decisions.md I3) Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
 - [x] 6.5 This repository's own `AGENTS.md`: remove the "Authoring plugins" and "Concurrent work isolation" sections, and update the "`uze agent …` is an audience" bullet to name the launch context

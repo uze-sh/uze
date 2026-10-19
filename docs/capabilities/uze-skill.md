@@ -14,13 +14,16 @@
 own "Hard boundaries" section, not in Rust: `uze-core` has no idea these
 Skills exist. A Skill may read files, analyze a project, propose content, ask
 questions, and write *user-owned* content with its own file tools. It may never
-touch anything between `<!-- uze:begin -->` / `<!-- uze:end -->` markers, invent
-its own marker or receipt mechanics, or apply a change without confirmation.
+touch anything between `<!-- uze:begin -->` / `<!-- uze:end -->` markers (the
+regions earlier releases left), invent its own marker or receipt mechanics, or
+apply a change without confirmation.
 
-The enforcement that actually holds is unchanged by any of that:
-`uze agent context reconcile` is still the only code path that writes a managed
-region, so a misbehaving invocation cannot corrupt state any worse than a human
-running shell commands already could.
+The enforcement that actually holds is unchanged by any of that: UZE writes
+nothing into `AGENTS.md`, and the retired-region cleanup behind `uze install`
+and `uze agent context reconcile` is the only code path that touches it
+(`a_retired_region_cleanup_is_the_only_writer_of_agents_md`), so a misbehaving
+invocation cannot corrupt state any worse than a human running shell commands
+already could.
 
 ## How each harness invokes them
 
