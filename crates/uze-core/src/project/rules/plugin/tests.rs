@@ -238,3 +238,27 @@ fn a_copy_git_checked_out_with_crlf_is_current_and_still_updated() {
     assert_eq!(findings[0].state, CopyState::Drifted);
     let _ = fs::remove_dir_all(root);
 }
+
+// A committed link out of the checkout, made the Unix way; Windows makes a
+// junction, which a clone of a link does not reproduce.
+#[cfg(unix)]
+#[test]
+fn a_linked_agents_directory_out_of_the_checkout_gets_nothing_made_through_it() {
+    let root = checkout("plugin-rules-escaping-link");
+    let elsewhere = root.with_extension("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join(".agents")).unwrap();
+
+    let next = vec![rule("ui.md", UI)];
+    let refused = converge_copies(&root, &acme(), &next, &next);
+    assert!(
+        matches!(refused, Err(crate::UzeError::ProjectFileEscapes { .. })),
+        "{refused:?}"
+    );
+    assert!(
+        !elsewhere.join("rules").exists(),
+        "no directory was made outside the checkout"
+    );
+    let _ = fs::remove_dir_all(&elsewhere);
+    let _ = fs::remove_dir_all(root);
+}

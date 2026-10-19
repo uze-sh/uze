@@ -355,6 +355,10 @@ pub fn converge_copies(
         }
         let target = copy_location(root, namespace, &shipped.name);
         if let Some(directory) = target.parent() {
+            // Judged before anything is made: a committed `.agents` linking
+            // out of the checkout must not have directories created through
+            // it before the write itself is refused.
+            crate::persistence::contained_destination(root, directory)?;
             std::fs::create_dir_all(directory).map_err(UzeError::write(directory))?;
         }
         // Whole or not at all: a copy cut short by a crash would match
