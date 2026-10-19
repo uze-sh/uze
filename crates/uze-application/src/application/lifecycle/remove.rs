@@ -206,12 +206,18 @@ impl UzeApplication {
                     let parent = parent.clone();
                     scope.spawn(move || {
                         parent.in_scope(|| {
+                            // Forgotten as soon as it is gone: a harness
+                            // that keeps several groups in one file (the
+                            // OpenCode hook bridge) regenerates it from the
+                            // receipts still in the ledger, and a sibling
+                            // detached but still recorded reads as drift.
                             for receipt in receipts {
                                 if integration.detach_receipt(receipt)?.state
                                     != AttachmentState::Missing
                                 {
                                     return Ok(false);
                                 }
+                                state::forget_receipt(&self.home, receipt)?;
                             }
                             Ok(true)
                         })
@@ -232,24 +238,7 @@ impl UzeApplication {
                 .collect()
         });
         if detached.iter().any(|gone| !matches!(gone, Ok(true))) {
-            // Every harness was asked, so every answer counts: a harness
-            // that finished has nothing left for its receipts to own, and
-            // they are forgotten however the others ended.
-            let mut first_error = None;
-            for ((_, receipts), gone) in by_harness.iter().zip(detached) {
-                match gone {
-                    Ok(true) => {
-                        for receipt in receipts {
-                            state::forget_receipt(&self.home, receipt)?;
-                        }
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        first_error.get_or_insert(error);
-                    }
-                }
-            }
-            if let Some(error) = first_error {
+            if let Some(error) = detached.into_iter().find_map(Result::err) {
                 return Err(error);
             }
             let report = self.reconcile(package_id);

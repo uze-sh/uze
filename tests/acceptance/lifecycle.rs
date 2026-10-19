@@ -143,3 +143,58 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
         "a blocked removal must leave the drifted artifact untouched"
     );
 }
+
+/// Removing a plugin with more than one hook group: OpenCode keeps every
+/// group in one bridge file and regenerates it from the receipts still in
+/// the ledger, so a group detached but still recorded made its siblings
+/// read as drift and left the plugin installed with a half-rewritten bridge.
+#[test]
+fn a_plugin_with_several_hook_groups_removes_cleanly() {
+    let env = TestEnvironment::isolated();
+    install_fake_harnesses(&env);
+
+    let plugin = env.root().join("hooked-plugin");
+    std::fs::create_dir_all(plugin.join("scripts")).unwrap();
+    std::fs::write(plugin.join("plugin.json"), r#"{"name":"hooked"}"#).unwrap();
+    std::fs::write(plugin.join("scripts/hook"), "#!/bin/sh\nexit 0\n").unwrap();
+    let group = |id: &str| {
+        format!(
+            r#"[{{"id":"{id}","effect":"observe","hooks":[{{"type":"command","command":"${{PLUGIN_ROOT}}/scripts/hook","timeout":10}}]}}]"#
+        )
+    };
+    std::fs::write(
+        plugin.join("hooks.json"),
+        format!(
+            r#"{{"hooks":{{"SessionStart":{},"Stop":{}}}}}"#,
+            group("session-start"),
+            group("stop")
+        ),
+    )
+    .unwrap();
+
+    let (market_args, install_args) =
+        uze_testkit::marketplace::marketplace_install_args(&env.home, &plugin);
+    env.run_ok(
+        uze_bin(),
+        &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    env.run_ok(
+        uze_bin(),
+        &install_args.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let bridge = env
+        .home
+        .join(".config/opencode/plugins/hooks-hooked@test.ts");
+    assert!(bridge.is_file(), "the OpenCode hook bridge was delivered");
+
+    let remove = env.run_ok(uze_bin(), &["remove", "-m", "hooked", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_slice(&remove.stdout).expect("json report");
+    assert_eq!(report["outcome"], "REMOVED", "{report}");
+    assert!(!bridge.exists(), "the bridge went with its last group");
+    let ledger =
+        std::fs::read_to_string(env.uze_home.join("state/attachments.json")).unwrap_or_default();
+    assert!(
+        !ledger.contains("hooked@test"),
+        "no receipt outlives the plugin: {ledger}"
+    );
+}

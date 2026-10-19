@@ -384,8 +384,13 @@ impl Health<'_> {
             .collect();
 
         for package_id in orphan_ids {
-            let final_report = match self.0.detach_owned_receipts(&package_id) {
-                Ok(ReceiptTeardown::Detached { final_report, .. }) => final_report,
+            let (detached_receipts, final_report) = match self.0.detach_owned_receipts(&package_id)
+            {
+                Ok(ReceiptTeardown::Detached {
+                    detached_receipts,
+                    final_report,
+                    ..
+                }) => (detached_receipts, final_report),
                 Ok(ReceiptTeardown::Refused { .. }) => {
                     outcomes.push(MaintenanceOutcome::NeedsHumanAction {
                         plugin: package_id,
@@ -409,14 +414,18 @@ impl Health<'_> {
                     continue;
                 }
             };
-            let ledger_keys: Vec<String> = final_report
-                .receipts
-                .iter()
-                .filter(|reconciled| {
-                    state::forget_receipt(&self.0.home, &reconciled.receipt).is_ok()
-                })
-                .map(|reconciled| reconciled.ledger_key.clone())
-                .collect();
+            // A detached receipt was forgotten as it went; what is left
+            // are the ones already missing before the teardown began.
+            let mut ledger_keys = detached_receipts;
+            ledger_keys.extend(
+                final_report
+                    .receipts
+                    .iter()
+                    .filter(|reconciled| {
+                        state::forget_receipt(&self.0.home, &reconciled.receipt).is_ok()
+                    })
+                    .map(|reconciled| reconciled.ledger_key.clone()),
+            );
             if !ledger_keys.is_empty() {
                 outcomes.push(MaintenanceOutcome::OrphanCleaned {
                     plugin: package_id,
