@@ -9,12 +9,17 @@
 //! that id, and the plugin — found in the auto-discovered global plugins
 //! directory, loaded by a running server without a restart — reads it on
 //! every request. A conversation UZE did not launch has no document and is
-//! given nothing.
+//! given nothing, unless it is a child of one that has: a subagent runs in
+//! a child session with an id of its own, and the plugin follows its
+//! `parentID` (asked of `ctx.session.get`) to the nearest session holding a
+//! document.
 //!
 //! Measured on 2.0.31 (`experiments/opencode/agent-context`): the document
 //! lands in a `system` part, a resumed process reads the current one, and
 //! no copy is kept in the conversation (`opencode session export` holds
-//! none).
+//! none). Measured on 2.0.32 (`experiments/opencode/session-parent`): the
+//! `context` event of a subagent's request names only the child session,
+//! and `ctx.session.get({ sessionID })` answers it with the parent's id.
 
 use std::{
     fs,
@@ -51,14 +56,40 @@ import {{ existsSync, readFileSync }} from "node:fs";
 import {{ join }} from "node:path";
 
 const DIR = {dir};
+// A child session's chain of parents is short; the bound only keeps a
+// record that names itself from looping.
+const ANCESTORS = 8;
+
+const documentOf = (sessionID) => {{
+  const file = join(DIR, `${{sessionID}}.md`);
+  return existsSync(file) ? file : null;
+}};
+
+// A session the launch did not assign (a subagent's child session) is
+// given the document of the nearest session above it that has one.
+async function documentFor(ctx, sessionID) {{
+  let id = sessionID;
+  for (let depth = 0; id && depth <= ANCESTORS; depth++) {{
+    const file = documentOf(id);
+    if (file) return file;
+    let info;
+    try {{
+      info = await ctx.session.get({{ sessionID: id }});
+    }} catch {{
+      return null;
+    }}
+    id = (info?.data ?? info)?.parentID;
+  }}
+  return null;
+}}
 
 export default {{
   id: "uze-agent-context",
   async setup(ctx) {{
     await ctx.session.hook("context", async (event) => {{
       if (!event.sessionID || !Array.isArray(event.system)) return;
-      const file = join(DIR, `${{event.sessionID}}.md`);
-      if (!existsSync(file)) return;
+      const file = await documentFor(ctx, event.sessionID);
+      if (!file) return;
       const text = readFileSync(file, "utf8");
       const first = event.system[0];
       event.system.push(typeof first === "object" && first !== null ? {{ ...first, text }} : text);
@@ -130,6 +161,10 @@ mod tests {
         assert!(unavailable(&root, &dir).is_none());
         let source = fs::read_to_string(plugin_path(&root)).unwrap();
         assert!(source.contains("session.hook(\"context\""));
+        assert!(
+            source.contains("ctx.session.get({ sessionID: id })") && source.contains(".parentID"),
+            "a child session falls back to its parent's document"
+        );
         let dir_literal = serde_json::to_string(&dir.to_string_lossy()).unwrap();
         assert!(source.contains(&format!("const DIR = {dir_literal};")));
 
