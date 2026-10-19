@@ -96,7 +96,7 @@
 
 ## 7. Authoring Skills (plugins/uze)
 
-- [ ] 7.1 New `plugins/uze/skills/rules/SKILL.md` (`uze:rules`), following design D7:
+- [x] 7.1 New `plugins/uze/skills/rules/SKILL.md` (`uze:rules`), following design D7:
   - a trigger text that matches "create/add/write a rule", "this only applies to src/…" and "split AGENTS.md";
   - deciding rule vs `AGENTS.md` vs Skill;
   - choosing the trigger;
@@ -107,17 +107,17 @@
   - closing with `uze agent rules check`.
 
   Invocation policy and frontmatter follow the sibling Skills
-- [ ] 7.2 Extend `plugins/uze/skills/init/SKILL.md`:
+- [x] 7.2 Extend `plugins/uze/skills/init/SKILL.md`:
   - recognise `.claude/rules/`, `.cursor/rules/` (`.mdc`), `.windsurf/rules/` and `.agent/rules/`, and path-specific sections of `AGENTS.md`;
   - report them in the inventory;
   - propose migrating them to `.agents/rules/` through `uze:rules` with the mechanical frontmatter mapping;
   - flag, never rewrite, a pattern outside the dialect.
-- [ ] 7.3 Run `uze agent plugin check plugins/uze` and the marketplace check. Add the `rules` Skill to whatever lists the official plugin's Skills (marketplace description, docs)
+- [x] 7.3 Run `uze agent plugin check plugins/uze` and the marketplace check. Add the `rules` Skill to whatever lists the official plugin's Skills (marketplace description, docs)
 - [ ] 7.4 Lab or fixture proof that `uze:rules` is delivered like its siblings (invocation policy honored per harness). Reuse the existing Skill delivery scenarios rather than adding a vertical
 
 ## 8. Documentation and diagrams
 
-- [ ] 8.1 Author-facing page on project rules:
+- [x] 8.1 Author-facing page on project rules:
   - location and frontmatter;
   - the four triggers and the glob dialect;
   - writing a rule as a convention rather than an imperative;
