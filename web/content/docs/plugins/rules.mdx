@@ -11,7 +11,7 @@ reaches it only when it matters: when the agent opens a file under
 ```markdown
 ---
 trigger: glob
-globs: src/ui/**/*.rs
+globs: "**/src/ui/**/*.rs"
 ---
 
 Colours come from the theme: name a `Token`, never an RGB value.
@@ -37,17 +37,21 @@ that is always true usually belongs in `AGENTS.md`.
 
 ## Patterns
 
-`globs` is one pattern, or several separated by commas, relative to the
-project root:
+`globs` is one pattern, or several separated by commas. Quote it when it
+starts with `*`. Each pattern is either:
 
-- `**` matches any number of directories: `**/*.rs`
-- `*` matches within one directory: `src/*.ts`
-- `?` matches one character
-- anything else is matched literally
+- a file name, with no `/`, which matches at any depth: `*.sql`, `Makefile`
+- a path that starts with `**/`: `**/src/ui/**`, `**/migrations/*.sql`
 
-Braces (`{a,b}`), character classes (`[ab]`), a leading `/` and patterns with
-spaces are not supported. A rule using one is reported and not delivered, so
-that every agent agrees on what matched. Write two patterns instead of braces.
+Inside a pattern, `**` matches any number of directories, `*` matches within
+one name, `?` matches one character, and `[ab]` or `[0-9]` matches one
+character of a set. Everything else, spaces included, is matched literally.
+
+A directory pattern has to start with `**/` because Antigravity matches
+against the file's full path: `src/ui/**` would never fire there, so uze
+reports it rather than deliver it to some agents and not others. Braces
+(`{a,b}`), negated sets (`[!a]`) and a leading `/`, `./` or `../` are
+reported the same way. Write two patterns instead of braces.
 
 ## Write a rule as a convention
 

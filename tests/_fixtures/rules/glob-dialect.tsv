@@ -8,59 +8,74 @@
 # Paths are relative to the checkout root, `/` between segments.
 # Lines starting with `#` and blank lines are ignored.
 
-# `**` spans any number of whole segments, none included
-src/ui/**	src/ui/button.ts	match
-src/ui/**	src/ui/forms/field.ts	match
-src/ui/**	src/core/math.ts	no-match
-src/ui/**	src/uikit/button.ts	no-match
+# a directory is named after `**/`, since Antigravity matches against the
+# absolute path; `**` spans any number of whole segments, none included
+**/src/ui/**	src/ui/button.ts	match
+**/src/ui/**	src/ui/forms/field.ts	match
+**/src/ui/**	src/core/math.ts	no-match
+**/src/ui/**	src/uikit/button.ts	no-match
 **/*.ts	main.ts	match
 **/*.ts	src/a/b/c.ts	match
 **/*.ts	src/a/b/c.tsx	no-match
-src/**/*.test.ts	src/core/math.test.ts	match
-src/**/*.test.ts	src/math.test.ts	match
-src/**/*.test.ts	src/core/math.ts	no-match
-tests/**	tests/e2e/login.ts	match
-tests/**	src/tests/login.ts	no-match
+**/src/**/*.test.ts	src/core/math.test.ts	match
+**/src/**/*.test.ts	src/math.test.ts	match
+**/src/**/*.test.ts	src/core/math.ts	no-match
+**/tests/**	tests/e2e/login.ts	match
+**/tests/**	src/tests/login.ts	match
 **	anything/at/all.md	match
-a/**/b	a/b	match
-a/**/b	a/x/y/b	match
-a/**/b	a/x/y/c	no-match
+**/a/**/b	a/b	match
+**/a/**/b	a/x/y/b	match
+**/a/**/b	a/x/y/c	no-match
+**/mid/**/leaf.txt	mid/leaf.txt	match
 
-# `*` stays inside one segment
+# a pattern with no `/` names a file at any depth
 *.md	README.md	match
-*.md	docs/README.md	no-match
-src/*.rs	src/main.rs	match
-src/*.rs	src/cli/agent.rs	no-match
-src/*	src/main.rs	match
+*.md	docs/README.md	match
 *.md	.hidden.md	match
-src/*_test.go	src/a_test.go	match
-src/*_test.go	src/_test.go	match
-
-# `?` is one character inside one segment
-src/?.rs	src/a.rs	match
-src/?.rs	src/ab.rs	no-match
-src/?.rs	src//.rs	no-match
+Makefile	Makefile	match
+Makefile	tools/Makefile	match
+Makefile	makefile	no-match
 a?c	a/c	no-match
 
-# literals are exact, case included
-Makefile	Makefile	match
-Makefile	makefile	no-match
-docs/adr/README.md	docs/adr/README.md	match
-src/a+b.rs	src/a+b.rs	match
-src/a.rs	src/abrs	no-match
-src/$x^.rs	src/$x^.rs	match
+# `*` stays inside one segment
+**/src/*.rs	src/main.rs	match
+**/src/*.rs	src/cli/agent.rs	no-match
+**/src/*	src/main.rs	match
+**/src/*_test.go	src/a_test.go	match
+**/src/*_test.go	src/_test.go	match
+
+# `?` is one character inside one segment
+**/src/?.rs	src/a.rs	match
+**/src/?.rs	src/ab.rs	no-match
+**/src/?.rs	src//.rs	no-match
+
+# `[…]` is one character of a set or a range
+**/src/[ab].rs	src/a.rs	match
+**/src/[ab].rs	src/c.rs	no-match
+**/v[0-9].md	v7.md	match
+**/v[0-9].md	vx.md	no-match
+
+# literals are exact, case and spaces included
+**/docs/adr/README.md	docs/adr/README.md	match
+**/src/a+b.rs	src/a+b.rs	match
+**/src/a.rs	src/abrs	no-match
+**/src/$x^.rs	src/$x^.rs	match
+**/space dir/*.txt	space dir/a.txt	match
 
 # outside the dialect
-src/**/*.{ts,tsx}	-	invalid
-src/[ab].rs	-	invalid
-!src/**	-	invalid
+src/ui/**	-	invalid
+src/*.rs	-	invalid
+*/x.one	-	invalid
+**/src/**/*.{ts,tsx}	-	invalid
+**/src/[!ab].rs	-	invalid
+**/src/[ab.rs	-	invalid
+!**/src/**	-	invalid
 /src/**	-	invalid
-src/@(a|b).rs	-	invalid
-src\ui\**	-	invalid
-src/my file.rs	-	invalid
-src//ui	-	invalid
-src/ui/	-	invalid
+**/src/@(a|b).rs	-	invalid
+**/src\ui\**	-	invalid
+**/src//ui	-	invalid
+**/src/ui/	-	invalid
 ./src/**	-	invalid
-src/../ui	-	invalid
-src/**.ts	-	invalid
+**/src/../ui	-	invalid
+**/src/**.ts	-	invalid
 a**	-	invalid

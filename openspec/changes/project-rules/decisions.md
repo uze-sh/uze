@@ -88,3 +88,22 @@ weigh them. One entry each: Context, Decision, Alternative.
   the section names.
 - **Alternative.** Listing the files without changing the headline, which
   leaves "ready" above a reason the project is not.
+
+## D-dialect. Directory patterns open with `**/`; a bare name matches at any depth
+
+**Context.** Task 1.1 measured that `agy` matches a pattern against the
+touched file's absolute path. A root-relative `src/ui/**` never fires
+there, and a pattern with no `/` matches the name at any depth. The
+dialect first implemented here took both the other way, so a valid rule
+would have reached three harnesses and not the native one.
+
+**Decision.** The dialect is the measured intersection. A pattern either
+opens with `**/` or holds no `/`, in which case it is matched as if it
+opened with `**/`. `[…]` sets and ranges and spaces join the dialect. A
+`/`-holding pattern that does not open with `**/` is refused as
+`Unanchored`, and its reason names the `**/` form to write. Negated sets
+(`[!…]`, `[^…]`) stay out, because readers disagree on them. The spec, the
+shared table, the `uze:rules` Skill and the docs page moved to the new form.
+
+**Alternative.** Keep root-relative patterns and translate them for
+Antigravity. That needs a copy of every rule, which design D1 rules out.

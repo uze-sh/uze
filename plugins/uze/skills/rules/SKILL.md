@@ -11,7 +11,7 @@ versioned with the project. Its frontmatter says when it applies:
 ```markdown
 ---
 trigger: glob
-globs: src/ui/**/*.rs
+globs: "**/src/ui/**/*.rs"
 ---
 
 Colours come from the theme: name a `Token`, never an RGB value.
@@ -52,18 +52,25 @@ never as a summary of the body.
 
 ## Patterns: the supported dialect
 
-`globs` is one pattern or a comma-separated list, relative to the checkout
-root. Write only:
+`globs` is one pattern or a comma-separated list. Quote the value when it
+opens with `*`, as YAML would otherwise read it as an alias. Each pattern is
+one of two shapes:
 
-- `**` for any number of directories, `**/*.rs`;
-- `*` for any run of characters within one segment, `src/*.ts`;
-- `?` for one character;
-- literal names.
+- **A file name, with no `/`**, matched at any depth: `*.sql`, `Makefile`,
+  `*.test.ts`.
+- **A path opening with `**/`**: `**/src/ui/**`, `**/migrations/*.sql`,
+  `**/*.rs`. Antigravity matches a pattern against the file's absolute path,
+  so a pattern naming a directory has to open with `**/` to fire there;
+  `src/ui/**` never would, and is reported for that reason.
 
-Braces (`{a,b}`), classes (`[ab]`), a leading `/` and patterns with spaces
-are outside the dialect. They are reported by the check and not delivered,
-even where one harness alone would accept them, so that the four harnesses
-never disagree on what matched. Use two patterns instead of braces.
+Inside a pattern: `**` is any number of directories (none included), `*`
+any characters within one name, `?` one character, `[ab]` or `[0-9]` one
+character of a set or range, and everything else, spaces included, is
+literal. Braces (`{a,b}`), negated sets (`[!a]`), a leading `/`, `./` or
+`../` are outside the dialect. They are reported by the check and not
+delivered, even where one harness alone would accept them, so that the four
+harnesses never disagree on what matched. Use two patterns instead of
+braces.
 
 ## Write it as a convention
 
@@ -95,7 +102,8 @@ Rules kept in `.claude/rules/`, `.cursor/rules/` (`.mdc`), `.windsurf/rules/`
 or the legacy `.agent/rules/` reach only one harness. Move each into
 `.agents/rules/` with the mechanical mapping:
 
-- `paths` or `globs` → `trigger: glob` with the same patterns;
+- `paths` or `globs` → `trigger: glob`, each pattern that names a directory
+  prefixed with `**/` (`src/**` becomes `**/src/**`);
 - `alwaysApply: true` → `trigger: always_on`;
 - a `description` alone → `trigger: model_decision`.
 

@@ -1,16 +1,21 @@
-//! The one glob dialect a rule's `globs` may use: `**` (any number of
-//! whole path segments, none included), `*` (any characters inside one
-//! segment), `?` (one character inside one segment) and literal
-//! characters, matched against a path relative to the checkout root with
-//! `/` between segments.
+//! The one glob dialect a rule's `globs` may use, measured as what
+//! Antigravity and the generated engine agree on (project-rules design,
+//! "Antigravity's rules, measured"):
 //!
-//! The dialect is small on purpose. Antigravity matches a rule's patterns
-//! itself and the generated engine translates them to an ERE for the other
-//! harnesses, so a construct either reader could take differently from the
-//! other is refused here rather than delivered: a rule must never match one
-//! path on one harness and another on the next. The shared table in
-//! `tests/_fixtures/rules/glob-dialect.tsv` is what both readers are
-//! proven against.
+//! - a pattern either opens with `**/` or holds no `/` at all, in which
+//!   case it names a file at any depth by its name. Antigravity matches a
+//!   pattern against the touched file's *absolute* path, so a root-relative
+//!   `src/ui/**` never fires there, and it is refused here rather than
+//!   delivered to three harnesses out of four;
+//! - `**` is any number of whole segments, none included; `*` is any
+//!   characters inside one segment, dotfiles included; `?` is one
+//!   character; `[…]` is one character of a set or range; anything else,
+//!   spaces included, is literal.
+//!
+//! A construct either reader could take differently from the other is
+//! refused: a rule must never match one path on one harness and another on
+//! the next. The shared table in `tests/_fixtures/rules/glob-dialect.tsv`
+//! is what both readers are proven against.
 
 use std::fmt;
 
@@ -27,15 +32,17 @@ pub enum Construct {
     Empty,
     /// A pattern starting at `/`: patterns are relative to the checkout.
     Rooted,
-    /// Whitespace inside a pattern, which the engine's shell reading splits
-    /// on.
+    /// A pattern holding a `/` that does not open with `**/`, which
+    /// Antigravity matches against an absolute path and never fires.
+    Unanchored,
+    /// Whitespace other than a space, which no path a person names holds.
     Whitespace,
     /// A control character, which no path a tool names should hold and no
     /// terminal should be handed.
     Control,
     /// `{a,b}`.
     Alternation,
-    /// `[ab]`.
+    /// A `[` with no closing `]`, an empty `[]`, or a negated `[!…]`/`[^…]`.
     CharacterClass,
     /// `!`, a negation in most readers and a literal in others.
     Negation,
@@ -56,10 +63,13 @@ impl Construct {
         match self {
             Construct::Empty => "an empty pattern",
             Construct::Rooted => "a leading `/` (patterns are relative to the checkout root)",
-            Construct::Whitespace => "whitespace",
+            Construct::Unanchored => {
+                "a `/` without opening with `**/` (write `**/` before a directory, as in `**/src/ui/**`)"
+            }
+            Construct::Whitespace => "whitespace other than a space",
             Construct::Control => "a control character",
             Construct::Alternation => "`{…}` alternation",
-            Construct::CharacterClass => "a `[…]` character class",
+            Construct::CharacterClass => "an unclosed, empty or negated `[…]`",
             Construct::Negation => "`!`",
             Construct::Extended => "extended globbing (`(`, `)`, `|`)",
             Construct::Escape => "a `\\` escape",
@@ -81,7 +91,7 @@ impl fmt::Display for DialectViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "`{}` uses {}, outside the supported dialect (`**`, `*`, `?`, literals)",
+            "`{}` uses {}, outside the supported dialect (`**/…` or a file name; `**`, `*`, `?`, `[…]`, literals)",
             self.pattern,
             self.construct.describe()
         )
@@ -125,9 +135,13 @@ impl Glob {
     }
 
     /// Whether `path`, relative to the checkout root with `/` between
-    /// segments, is one this pattern names.
+    /// segments, is one this pattern names. A pattern with no `/` names a
+    /// file at any depth, as if it opened with `**/`.
     pub fn matches(&self, path: &str) -> bool {
-        let pattern: Vec<&str> = self.pattern.split('/').collect();
+        let mut pattern: Vec<&str> = self.pattern.split('/').collect();
+        if pattern.len() == 1 {
+            pattern.insert(0, "**");
+        }
         let path: Vec<&str> = path.split('/').collect();
         segments_match(&pattern, &path)
     }
@@ -169,16 +183,22 @@ fn first_construct(pattern: &str) -> Option<Construct> {
     }
     for character in pattern.chars() {
         let construct = match character {
+            ' ' | '[' | ']' => continue,
             c if c.is_whitespace() => Construct::Whitespace,
             c if c.is_control() => Construct::Control,
             '{' | '}' => Construct::Alternation,
-            '[' | ']' => Construct::CharacterClass,
             '!' => Construct::Negation,
             '(' | ')' | '|' => Construct::Extended,
             '\\' => Construct::Escape,
             _ => continue,
         };
         return Some(construct);
+    }
+    if pattern.split('/').any(|segment| tokens(segment).is_none()) {
+        return Some(Construct::CharacterClass);
+    }
+    if pattern.contains('/') && !pattern.starts_with("**/") {
+        return Some(Construct::Unanchored);
     }
     pattern.split('/').find_map(|segment| match segment {
         "" => Some(Construct::EmptySegment),
@@ -199,19 +219,81 @@ fn segments_match(pattern: &[&str], path: &[&str]) -> bool {
     }
 }
 
-/// `*` and `?` inside one segment. Compared by `char`, so `?` is one
+/// One piece of a segment's pattern.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Token {
+    Star,
+    One,
+    /// Inclusive ranges; a single character is a range of one.
+    Class(Vec<(char, char)>),
+    Literal(char),
+}
+
+/// A segment's pattern as tokens, or `None` when a `[…]` is unclosed,
+/// empty or negated (`[!…]`, `[^…]` read differently across readers).
+fn tokens(segment: &str) -> Option<Vec<Token>> {
+    let mut tokens = Vec::new();
+    let mut characters = segment.chars().peekable();
+    while let Some(character) = characters.next() {
+        tokens.push(match character {
+            '*' => Token::Star,
+            '?' => Token::One,
+            ']' => return None,
+            '[' => {
+                let mut set: Vec<char> = Vec::new();
+                loop {
+                    match characters.next()? {
+                        ']' => break,
+                        '[' => return None,
+                        member => set.push(member),
+                    }
+                }
+                if set.is_empty() || matches!(set[0], '!' | '^') {
+                    return None;
+                }
+                let mut ranges = Vec::new();
+                let mut at = 0;
+                while at < set.len() {
+                    if at + 2 < set.len() && set[at + 1] == '-' {
+                        ranges.push((set[at], set[at + 2]));
+                        at += 3;
+                    } else {
+                        ranges.push((set[at], set[at]));
+                        at += 1;
+                    }
+                }
+                Token::Class(ranges)
+            }
+            literal => Token::Literal(literal),
+        });
+    }
+    Some(tokens)
+}
+
+/// `*`, `?` and `[…]` inside one segment. Compared by `char`, so `?` is one
 /// character of a non-ASCII name rather than one byte of it.
 fn segment_matches(pattern: &str, name: &str) -> bool {
-    let pattern: Vec<char> = pattern.chars().collect();
+    let Some(pattern) = tokens(pattern) else {
+        return false;
+    };
     let name: Vec<char> = name.chars().collect();
     wildcard(&pattern, &name)
 }
 
-fn wildcard(pattern: &[char], name: &[char]) -> bool {
+fn wildcard(pattern: &[Token], name: &[char]) -> bool {
     match pattern.split_first() {
         None => name.is_empty(),
-        Some(('*', rest)) => (0..=name.len()).any(|skip| wildcard(rest, &name[skip..])),
-        Some(('?', rest)) => !name.is_empty() && wildcard(rest, &name[1..]),
-        Some((literal, rest)) => name.first() == Some(literal) && wildcard(rest, &name[1..]),
+        Some((Token::Star, rest)) => (0..=name.len()).any(|skip| wildcard(rest, &name[skip..])),
+        Some((Token::One, rest)) => !name.is_empty() && wildcard(rest, &name[1..]),
+        Some((Token::Class(ranges), rest)) => {
+            name.first().is_some_and(|character| {
+                ranges
+                    .iter()
+                    .any(|(low, high)| (*low..=*high).contains(character))
+            }) && wildcard(rest, &name[1..])
+        }
+        Some((Token::Literal(literal), rest)) => {
+            name.first() == Some(literal) && wildcard(rest, &name[1..])
+        }
     }
 }

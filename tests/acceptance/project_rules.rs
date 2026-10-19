@@ -8,7 +8,7 @@ use uze_testkit::{git::isolated_git_in as git, temp::TestEnvironment};
 use crate::util::uze_bin;
 
 const UI_RULE: &str =
-    "---\ntrigger: glob\nglobs: src/ui/**\n---\nUI-RULE-BODY: buttons use the design tokens.\n";
+    "---\ntrigger: glob\nglobs: **/src/ui/**\n---\nUI-RULE-BODY: buttons use the design tokens.\n";
 const TESTING_RULE: &str = "---\ntrigger: model_decision\ndescription: When writing or changing tests\n---\nTESTING-RULE-BODY\n";
 
 /// A repository whose `.agents/rules/` holds `rules`.
@@ -147,7 +147,7 @@ fn a_valid_set_passes_and_is_summarized() {
         .find(|rule| rule["path"] == ".agents/rules/ui.md")
         .expect("every rule is listed");
     assert_eq!(ui["trigger"], "glob");
-    assert_eq!(ui["patterns"], serde_json::json!(["src/ui/**"]));
+    assert_eq!(ui["patterns"], serde_json::json!(["**/src/ui/**"]));
 }
 
 #[test]

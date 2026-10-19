@@ -100,7 +100,7 @@ Beside the context files, look for rules that reach only one harness:
 path ("In `src/ui/`…", "For migrations…"). Report each in the inventory and
 propose moving it to `.agents/rules/`, which every harness reads, through the
 `uze:rules` Skill. The frontmatter maps mechanically: `paths` or `globs`
-becomes `trigger: glob`, `alwaysApply: true` becomes `trigger: always_on`,
+becomes `trigger: glob` (a pattern naming a directory gains a leading `**/`), `alwaysApply: true` becomes `trigger: always_on`,
 and a `description` alone becomes `trigger: model_decision`. A pattern
 outside the supported dialect (braces, character classes, a leading `/`) is
 flagged for the person to decide, never rewritten. A move is user-owned

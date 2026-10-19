@@ -374,7 +374,7 @@ fn the_rules_check_meets_the_budget() {
         fs::write(
             rules.join(format!("{name}.md")),
             format!(
-                "---\ntrigger: glob\nglobs: {name}/**, src/{name}/**/*.rs\n---\nKeep {name} tidy.\n"
+                "---\ntrigger: glob\nglobs: **/{name}/**, **/src/{name}/**/*.rs\n---\nKeep {name} tidy.\n"
             ),
         )
         .unwrap();

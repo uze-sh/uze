@@ -56,7 +56,7 @@ fn every_row_of_the_shared_dialect_table_holds() {
 #[test]
 fn an_empty_pattern_is_outside_the_dialect() {
     assert_eq!(
-        Glob::parse_list("src/**, ,tests/**").unwrap_err(),
+        Glob::parse_list("**/src/**, ,**/tests/**").unwrap_err(),
         vec![DialectViolation {
             pattern: String::new(),
             construct: Construct::Empty
@@ -84,7 +84,7 @@ fn each_trigger_is_read_with_the_field_it_needs() {
             description: "When writing tests".to_owned()
         }
     );
-    let glob = rule("---\ntrigger: glob\nglobs: src/**/*.test.ts, tests/**\n---\n").unwrap();
+    let glob = rule("---\ntrigger: glob\nglobs: **/src/**/*.test.ts, **/tests/**\n---\n").unwrap();
     assert!(glob.matches("src/core/math.test.ts"));
     assert!(glob.matches("tests/e2e/login.ts"));
     assert!(!glob.matches("src/core/math.ts"));
@@ -94,7 +94,7 @@ fn each_trigger_is_read_with_the_field_it_needs() {
 fn unquoted_antigravity_patterns_and_quoted_values_both_read() {
     let unquoted = rule("---\ntrigger: glob\nglobs: **/*.ts\n---\n").unwrap();
     assert!(unquoted.matches("a/b.ts"));
-    let quoted = rule("---\ntrigger: \"glob\"\nglobs: 'src/ui/**' # the UI\n---\n").unwrap();
+    let quoted = rule("---\ntrigger: \"glob\"\nglobs: '**/src/ui/**' # the UI\n---\n").unwrap();
     assert!(quoted.matches("src/ui/button.ts"));
 }
 
@@ -127,11 +127,11 @@ fn every_reason_a_file_is_not_a_rule() {
             NotARule::MalformedFrontmatter { line: 2 },
         ),
         (
-            b"---\ntrigger: glob\nglobs: a/**\nglobs: b/**\n---\n",
+            b"---\ntrigger: glob\nglobs: **/a/**\nglobs: **/b/**\n---\n",
             NotARule::DuplicateField(Field::Globs),
         ),
         (
-            b"---\ntrigger: glob\nglobs:\n  - src/**\n---\n",
+            b"---\ntrigger: glob\nglobs:\n  - **/src/**\n---\n",
             NotARule::BlockValue(Field::Globs),
         ),
         (
@@ -167,15 +167,19 @@ fn every_reason_a_file_is_not_a_rule() {
             },
         ),
         (
-            b"---\ntrigger: glob\nglobs: src/**/*.{ts,tsx}, docs/[ab].md, ok/**\n---\n",
+            b"---\ntrigger: glob\nglobs: **/src/**/*.{ts,tsx}, **/docs/[!ab].md, src/ui/**, **/ok/**\n---\n",
             NotARule::OutsideDialect(vec![
                 DialectViolation {
-                    pattern: "src/**/*.{ts,tsx}".to_owned(),
+                    pattern: "**/src/**/*.{ts,tsx}".to_owned(),
                     construct: Construct::Alternation,
                 },
                 DialectViolation {
-                    pattern: "docs/[ab].md".to_owned(),
-                    construct: Construct::CharacterClass,
+                    pattern: "**/docs/[!ab].md".to_owned(),
+                    construct: Construct::Negation,
+                },
+                DialectViolation {
+                    pattern: "src/ui/**".to_owned(),
+                    construct: Construct::Unanchored,
                 },
             ]),
         ),
@@ -206,7 +210,7 @@ fn a_reason_names_what_an_author_must_change() {
 fn crlf_and_a_byte_order_mark_read_like_plain_lf() {
     let read = parse_rule(
         ".agents/rules/r.md",
-        "\u{feff}---\r\ntrigger: glob\r\nglobs: src/**\r\n---\r\nbody\r\n".as_bytes(),
+        "\u{feff}---\r\ntrigger: glob\r\nglobs: **/src/**\r\n---\r\nbody\r\n".as_bytes(),
     )
     .unwrap();
     assert!(read.matches("src/a.rs"));
@@ -217,7 +221,10 @@ fn rules_are_the_markdown_files_directly_under_the_rules_directory() {
     let root = checkout(
         "rules-discovery",
         &[
-            ("ui.md", "---\ntrigger: glob\nglobs: src/ui/**\n---\nUI\n"),
+            (
+                "ui.md",
+                "---\ntrigger: glob\nglobs: **/src/ui/**\n---\nUI\n",
+            ),
             (
                 "testing.md",
                 "---\ntrigger: model_decision\ndescription: When writing tests\n---\n",
@@ -289,7 +296,7 @@ fn a_worktree_is_answered_by_its_own_root() {
 #[test]
 fn a_control_character_is_outside_the_dialect() {
     assert_eq!(
-        Glob::parse("src/\u{1b}x/**").unwrap_err().construct,
+        Glob::parse("**/src/\u{1b}x/**").unwrap_err().construct,
         Construct::Control
     );
 }

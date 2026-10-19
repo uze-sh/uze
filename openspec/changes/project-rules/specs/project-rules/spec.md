@@ -51,25 +51,33 @@ by UZE and SHALL be reported with the reason.
 - **THEN** it is reported as invalid and is not delivered
 
 ### Requirement: Glob patterns follow one documented dialect
-The system SHALL support, in `globs`, the patterns `**` (any number of path
-segments, including none), `*` (any characters within one segment), `?` (one
-character within a segment) and literal characters, matched against a path
-relative to the checkout root with `/` as the separator. A pattern using any
-other construct SHALL be reported, and the rule SHALL NOT be delivered by
-UZE, so that a rule never matches differently on an adapted harness than on
-a native one.
+A pattern in `globs` SHALL either open with `**/` or hold no `/`, in which
+case it names a file at any depth. It SHALL be built from `**` (whole
+segments, none included), `*` and `?` within a segment, `[…]` sets and
+ranges, spaces and literals, and is matched against the path relative to
+the checkout root. Any other pattern SHALL be reported and its rule not
+delivered, so a rule never matches differently across harnesses.
 
 #### Scenario: Directory pattern matches nested files
-- **WHEN** a rule declares `globs: src/ui/**`
+- **WHEN** a rule declares `globs: **/src/ui/**`
 - **THEN** it matches `src/ui/button.ts` and `src/ui/forms/field.ts`
 - **AND** it does not match `src/core/math.ts`
 
 #### Scenario: Several patterns in one rule
-- **WHEN** a rule declares `globs: src/**/*.test.ts, tests/**`
+- **WHEN** a rule declares `globs: **/src/**/*.test.ts, **/tests/**`
 - **THEN** it matches `src/core/math.test.ts` and `tests/e2e/login.ts`
 
+#### Scenario: A file name matches at any depth
+- **WHEN** a rule declares `globs: *.md`
+- **THEN** it matches `README.md` and `docs/adr/README.md`
+
+#### Scenario: A root-relative directory pattern is reported
+- **WHEN** a rule declares `globs: src/ui/**`
+- **THEN** `uze status` reports the pattern as outside the supported dialect, naming `**/src/ui/**` as the form to write
+- **AND** UZE does not deliver the rule
+
 #### Scenario: Unsupported construct is reported
-- **WHEN** a rule declares `globs: src/**/*.{ts,tsx}`
+- **WHEN** a rule declares `globs: **/src/**/*.{ts,tsx}`
 - **THEN** `uze status` reports the pattern as outside the supported dialect
 - **AND** UZE does not deliver the rule
 
@@ -85,7 +93,7 @@ On every harness that receives rules, the system SHALL deliver:
 - nothing for a `manual` rule, which the person references themselves.
 
 #### Scenario: A glob rule arrives with the file it governs
-- **WHEN** an agent reads `src/ui/button.ts` in a checkout whose `ui.md` rule declares `globs: src/ui/**`
+- **WHEN** an agent reads `src/ui/button.ts` in a checkout whose `ui.md` rule declares `globs: **/src/ui/**`
 - **THEN** the body of `ui.md` reaches the agent before its next model request
 - **AND** a later read of another file under `src/ui/` in the same session does not deliver it again
 
@@ -201,7 +209,7 @@ offending file with its reason. When it succeeds, it SHALL name each rule
 with its trigger and, for a `glob` rule, its patterns.
 
 #### Scenario: A rule with an unsupported pattern fails the check
-- **WHEN** an agent runs `uze agent rules check` in a checkout whose `ui.md` declares `globs: src/**/*.{ts,tsx}`
+- **WHEN** an agent runs `uze agent rules check` in a checkout whose `ui.md` declares `globs: **/src/**/*.{ts,tsx}`
 - **THEN** the command exits non-zero
 - **AND** its output names `.agents/rules/ui.md` and the unsupported pattern
 
