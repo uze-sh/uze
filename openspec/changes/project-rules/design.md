@@ -26,6 +26,63 @@ See proposal.md for why. What the design has to work with:
 
   Claude reads only `paths` from a rule's frontmatter and ignores every
   other field.
+- **Antigravity's rules, measured** (`agy` 1.4.2, plain `agy` in the Lab,
+  `experiments/antigravity/rules`, tasks 1.1 and 1.2). Each rule's body
+  carried a marker, and the synthetic provider's requests say where it
+  landed. That is valid evidence because `agy` itself decides what reaches
+  the request; what a model does with the text needs a real model.
+  - `always_on`: the body is inlined in `systemInstruction`, inside
+    `<user_rules>`, as `<RULE[<absolute path>]>…</RULE[…]>`.
+  - `model_decision`: only an index line,
+    `- file://<absolute path>: <description>`, under "conditional rules".
+    The body is absent until the agent reads the file.
+  - `manual`: nothing reaches the request.
+  - `glob`: nothing up front. After a `view_file` or a `write_to_file` on a
+    matching path, the body is appended to that tool's own output, after
+    "The following text is not part of the file, it is a list of
+    user-defined rules that you MUST follow:", and stays in the history.
+  - Not a rule: a file with no frontmatter, an unknown `trigger`
+    (`sometimes`) and `trigger: glob` with no `globs` reach the request in
+    no form, inlined, indexed or after a read, and `agy --print` says
+    nothing about them. The valid rules beside them are unaffected. The
+    spec's "not a rule" reporting matches what Antigravity ignores.
+  - The glob dialect. A pattern is matched against the touched file's
+    **absolute** path (doublestar, the Go library the binary links), and
+    the `globs` value is split on commas:
+
+    | pattern | touched path | fires |
+    |---|---|---|
+    | `deep/**`, `mid/**/leaf.txt`, `star/*.txt`, `q/fil?.txt`, `cls/[ab].txt`, `m1/**, m2/**` | a matching path in the checkout | no |
+    | `**/deep/**` | `deep/a/b/c.txt` | yes |
+    | `**/mid/**/leaf.txt` | `mid/leaf.txt` (`**` as zero segments) | yes |
+    | `**/*.zro` | `top.zro`, at the checkout root | yes |
+    | `**/star/*.txt` | `star/sub/b.txt` / `star/a.txt` | no / yes (`*` stays in one segment) |
+    | `**/q/fil?.txt` | `q/file.txt` | yes |
+    | `**/cls/[ab].txt` | `cls/a.txt` | yes |
+    | `**/brace/*.{ts,tsx}` | `brace/a.tsx` | no (the comma split cuts the braces) |
+    | `**/br1/*.{tsx}` | `br1/a.tsx` | yes |
+    | `**/space dir/*.txt` | `space dir/a.txt` | yes |
+    | `**/m1/**, **/m2/**` | `m2/a.txt` | yes |
+    | `"**/qt/*.txt"`, quoted | `qt/a.txt` | yes |
+    | a YAML list, `- **/ylist/**` | `ylist/a.txt` | no |
+    | `*.bare`, `*.rootbare`, no `/` | `nest/x.bare`, `r.rootbare` | yes, at any depth |
+    | `*/x.one` | `a/b/x.one` | no |
+    | `/lead/*.txt`, `./dot/*.txt`, `../../up/*.txt` | `lead/a.txt`, `dot/a.txt`, `up/a.txt` | no |
+    | `/work/rules-project/abs/*.txt`, absolute | `abs/a.txt` | yes |
+    | `work/rules-project/fsroot/*.txt` | `fsroot/a.txt` | no |
+    | `**/rules-project/above/*.txt` | `above/a.txt` | yes (`**/` reaches above the checkout) |
+
+    The measured intersection, which the shared table (task 2.2) states,
+    is a comma-separated list, quoted or not, of patterns that either open
+    with `**/` or contain no `/` (then matched against the file name, at
+    any depth), built from `**`, `*`, `?`, `[…]`, spaces and literals.
+    Excluded are a root-relative pattern naming a directory (it never
+    fires on Antigravity), `{…}` (unusable once it holds a comma), a YAML
+    list, and a leading `/`, `./` or `../`. An absolute pattern fires on
+    Antigravity but names one machine's path, so it is excluded too. The
+    engine matches `**/` against the checkout-relative path, so the two
+    can disagree only on a directory above the checkout root, which no
+    rule of a checkout can mean.
 - **The other two harnesses' hook channels:**
   - *Codex* 0.160: `PostToolUse`, `PreToolUse`, `SessionStart` and
     `UserPromptSubmit` accept
@@ -298,14 +355,38 @@ context". Both are updated in this change.
 - **Vendor drift:** Codex's hook output schema, OpenCode V2's plugin API
   (`result.content`, `context`), Claude's `SessionStart` sources. → Each is
   a Lab contract scenario, so drift is a red nightly, not a silent loss.
-- **Antigravity's own glob dialect may be wider than ours.** → The dialect
-  is the measured intersection. A pattern outside it is reported and not
-  delivered by UZE, even though Antigravity alone would accept it, so the
-  four harnesses never disagree on a match.
-- **Codex `SessionStart` after compaction is unmeasured.** → Task 1.3
-  measures it. If it does not fire, Codex's route reports that always-on
-  rules may be lost after compaction until the next session. The approach
-  does not change.
+- **Antigravity's glob dialect is not the one first assumed.** → The
+  dialect is the measured intersection ("Antigravity's rules, measured",
+  above). A pattern outside it is reported and not delivered by UZE, even
+  where Antigravity alone would accept it, so the four harnesses never
+  disagree on a match. The measurement narrows the spec's dialect: a
+  pattern naming a directory must open with `**/`, because a root-relative
+  `src/ui/**` never fires on Antigravity, and `[…]` joins the supported
+  constructs. The spec's requirement and its scenarios (`src/ui/**`,
+  `tests/**`) move to that form in task 2.2, before the matcher is written.
+- **Always-on rules after a compaction or a clear.** Measured, tasks 1.3
+  and 1.4 (`experiments/<h>/session-start-compact`, a hand-written `sh`
+  hook with no matcher in the person's own user file, no UZE). On both
+  harnesses the compaction drops the context the `startup` hook added, so
+  the re-delivery is what keeps an always-on rule alive:
+  - *Claude Code* 2.1.303: `SessionStart` fires with `source: compact` as
+    soon as `/compact` completes and with `source: clear` on `/clear`. Its
+    `additionalContext` is in the next turn's request, in the message
+    ahead of the conversation, and the `startup` context is gone from it.
+  - *Codex* 0.163.0: `SessionStart` fires with `source: compact` and
+    `source: clear`. After `/compact` it fires lazily, when the next turn
+    starts rather than when the compaction ends. Its `additionalContext`
+    arrives as a developer message in that turn's request, after the
+    thread's `compaction` item, with the `startup` context gone. `/compact`
+    is remote compaction v2 there: the Lab's provider answers the
+    `compaction_trigger` request with one `compaction` item, a shape read
+    from the binary's parser, since no real API stream was observed.
+    Codex's own handling is what the run measures, and a session against
+    the real API is what would confirm the shape.
+
+  So no limitation goes into Codex's route reason, and the engine
+  truncates its per-session record on either source, as D5 says. An
+  automatic compaction under token pressure was not driven in the Lab.
 
 ## Migration Plan
 

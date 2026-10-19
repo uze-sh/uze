@@ -1,9 +1,9 @@
 ## 1. Measurements that close the design's open edges
 
-- [ ] 1.1 Measure Antigravity's glob dialect with real `agy` sessions: which of `**`, `*`, `?`, `{a,b}`, `[ab]`, a leading `/` and a pattern with spaces match a touched file. Record the supported intersection as the shared pattern table (task 2.2), and the version measured
-- [ ] 1.2 Measure what `agy` does with a rule that has no frontmatter, an unknown `trigger`, and `trigger: glob` without `globs`. The spec's "not a rule" reporting follows what Antigravity itself ignores
-- [ ] 1.3 Measure whether Codex fires `SessionStart` (and with which `source`) after a compaction. If it does not, record the limitation in Codex's rules route reason
-- [ ] 1.4 Confirm on Claude Code that `SessionStart` with no matcher fires for `compact` and `clear`, and that its `additionalContext` reaches the model after a compaction
+- [x] 1.1 Measure Antigravity's glob dialect with real `agy` sessions: which of `**`, `*`, `?`, `{a,b}`, `[ab]`, a leading `/` and a pattern with spaces match a touched file. Record the supported intersection as the shared pattern table (task 2.2), and the version measured
+- [x] 1.2 Measure what `agy` does with a rule that has no frontmatter, an unknown `trigger`, and `trigger: glob` without `globs`. The spec's "not a rule" reporting follows what Antigravity itself ignores
+- [x] 1.3 Measure whether Codex fires `SessionStart` (and with which `source`) after a compaction. If it does not, record the limitation in Codex's rules route reason
+- [x] 1.4 Confirm on Claude Code that `SessionStart` with no matcher fires for `compact` and `clear`, and that its `additionalContext` reaches the model after a compaction
 
 ## 2. The Rule model (uze-core, no harness named)
 

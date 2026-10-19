@@ -11,6 +11,19 @@ It also builds on `project-agent-environment`: `agents.yaml` declares, and
 `agents.lock` pins a revision and an `integrity` hash over the ingested
 bytes.
 
+Neither Claude Code's nor Codex's plugin format can carry a rule. Claude
+Code's is answered by its plugins reference (task 1.3). Codex's was measured on
+0.163.0 (`experiments/codex/plugin-rules`, plain `codex`, no UZE): a plugin
+installed with `codex plugin add` whose `.codex-plugin/plugin.json`
+declares `skills` and an undeclared `"rules": "./rules/"` reached the model
+with its Skill, the control, and with none of `rules/always.md`
+(Antigravity's format), `rules/AGENTS.md` or a root `AGENTS.md`. Codex's own
+`rules` are execpolicy `.rules` files, which the binary loads from the user
+and project configuration: the plugin's `rules/lab.rules` forbidding a command
+left it running, while the same rule in `~/.codex/rules/` refused it. Codex
+stages the whole plugin tree in its cache, `rules/` included, but reads
+nothing from it, so a package's `rules/` is inert there rather than a leak.
+
 The constraint that shapes everything is what Antigravity can read. It
 reads rules from the workspace and from machine-wide locations only (its
 global rules directories, and plugins installed with `agy plugin install`).
@@ -69,17 +82,31 @@ way `uze install` does: integrity-checked, read-only. A receipt is still
 written where UZE performs the copy, for the inspect-before-detach path,
 but the judgement never depends on one.
 
-### D3: The namespace's form waits for one measurement
-The preferred form is a directory per plugin: `.agents/rules/<plugin>@<market>/`.
-It is readable, removable in one operation, and collision-free across
-marketplaces. That needs Antigravity to read rules in subdirectories of
-`.agents/rules/`, which is unmeasured (task 1.1). If it does not, the form
-falls back to a flat prefix: `.agents/rules/<plugin>@<market>--<rule>.md`.
+### D3: The namespace is a file-name prefix
+A plugin's rules are copied as `.agents/rules/<plugin>@<market>--<rule>.md`.
 
-Either way, the `project-rules` engine reads the same set Antigravity
-reads. Its "directly under `.agents/rules/`" requirement widens to include
-the namespace form, and only that form, so a project's own subdirectory
-never becomes a rule by accident on one harness only.
+The preferred form was a directory per plugin,
+`.agents/rules/<plugin>@<market>/`: readable, removable in one operation and
+collision-free across marketplaces. Measured on `agy` 1.4.2
+(`experiments/antigravity/rules`, tasks 1.1 and 1.2), Antigravity reads no
+subdirectory of `.agents/rules/`. An `always_on` rule and a `glob` rule in
+`lab-plugin@uze-lab/` reached the model in no form, and neither did one in
+a plain `plain/` subdirectory. Beside them, `lab-plugin@uze-lab--ui.md`
+(`always_on`) was inlined in `systemInstruction` and
+`lab-plugin@uze-lab--glob.md` fired on its first matching read. The `@`
+and the `--` in a file name cost nothing.
+
+So the namespace is the flat prefix, and the `project-rules` engine already
+reads it: its rules are the `*.md` files directly under `.agents/rules/`,
+which is the set Antigravity reads. Nothing in its discovery widens, and a
+subdirectory stays outside both, so a project's own subdirectory never
+becomes a rule on one harness only. What the prefix costs:
+- removing a plugin's rules is deleting the files that carry its prefix,
+  not one directory;
+- a file name holding `<plugin>@<market>--` belongs to the namespace: a
+  project's own rule named that way is judged against the plugin it names
+  (D2), and reported as an extra file when that plugin does not ship it
+  (D5).
 
 ### D4: No marker inside the copied bytes
 The copy is byte-identical to the package's rule. A `source:` field would
@@ -123,5 +150,6 @@ itself (flag, resource, region cleanup) belongs to
 - **Status on a fresh clone may need to acquire the plugin to judge the
   copies.** → Acquisition is cached and integrity-checked. Without network,
   status reports the copies as unverified rather than failing.
-- **Antigravity may not read subdirectories.** → D3's flat fallback, decided
-  by task 1.1 before any code.
+- **Antigravity reads no subdirectory of `.agents/rules/`** (measured on
+  1.4.2). → D3's flat prefix. A later Antigravity that starts reading
+  subdirectories changes nothing for the prefix form.
