@@ -88,10 +88,10 @@
 
 ## 6. Conformance Lab and journeys
 
-- [ ] 6.1 Contract scenario `rules-glob-reaches-model`, harness-neutral. A checkout with a `glob` rule and the task the PoC used; the check reads the file the agent wrote for the rule's marker, and the control file in another directory for its absence. Bindings drive Claude Code, Codex and OpenCode through their delivered engine
-- [ ] 6.2 Contract scenarios for `always_on` (session start) and `model_decision` (index line present in the provider request; body absent until the agent reads it), asserted on the synthetic provider's captured requests
-- [ ] 6.3 Contract scenario for compaction where the harness can be driven to compact in the Lab: always-on rules present in the first request after it
-- [ ] 6.4 Antigravity: declare through `bindings.unsupported` that its native rules are measured live and not in the offline Lab (vendor account gate), with the live measurement from 1.1–1.2 as evidence
+- [x] 6.1 Contract scenario `rules-glob-reaches-model`, harness-neutral (`conformance/contract/rules.py`). A checkout with a `**/ui/**` glob rule; one scripted turn writes a control file in another directory, then a matching file. The synthetic provider's requests carry the rule's body after the matching write returned and in no request before it, the one after the control's write included. Claude Code, Codex and OpenCode run the engine the workspace's setup delivers; Antigravity runs natively
+- [x] 6.2 Contract scenarios for `always_on` (in the turn's first request) and `model_decision` (its description in the first request; its body in none until the agent read the file), asserted on the synthetic provider's captured requests
+- [x] 6.3 Contract scenario for compaction: a live session compacted with `/compact`; the request after it carries the provider's compaction summary and the always-on rule. Green on Claude Code, Codex and OpenCode; Antigravity declares it (`/compact` sits behind the server-side flag `enable-compact-slash-command`, absent offline)
+- [x] 6.4 Antigravity runs the rules contract natively in the offline Lab, signed in (1.4.2): glob, always_on and model_decision green, with the 1.1–1.2 measurement (`experiments/antigravity/rules`) as the design's evidence; only the compaction scene is declared through `bindings.unsupported`, registered in `evidence/expected.json`
 - [ ] 6.5 A journey in `05-delivery`: clone a project containing `.agents/rules/`, run a harness session that edits a matching file, and check the file on disk. It `proves:` the rules docs page
 
 ## 7. Authoring Skills (plugins/uze)
