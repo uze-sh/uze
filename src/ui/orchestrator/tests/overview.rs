@@ -2465,7 +2465,7 @@ fn on_the_free_worktree(home: &UzeHome) -> Driven<'_> {
 }
 
 fn removal_asked(driven: &Driven<'_>) -> bool {
-    driven.attach.model.asks_worktree_removal()
+    driven.attach.model.asks_overview_question()
 }
 
 fn press_char(driven: &mut Driven<'_>, character: char) {
@@ -2863,6 +2863,36 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
     assert!(screen.contains("2 to check"), "{screen}");
 
     let button = count(&driven);
+    // Under the pointer the words take the hue and keep their weight.
+    driven.attach.model.hovered = Some(WorkspaceHit::OverviewIssues);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
+        driven.area.width,
+        driven.area.height,
+    ))
+    .unwrap();
+    terminal
+        .draw(|frame| {
+            super::render::render(
+                frame,
+                &driven.attach.model,
+                &identities_fixture(),
+                &mut Vec::new(),
+                &mut super::render::FrameMetrics::default(),
+            )
+        })
+        .unwrap();
+    let words = &terminal.backend().buffer()[(button.right() - 1, button.y)];
+    assert!(
+        !words.modifier.contains(ratatui::style::Modifier::BOLD),
+        "the hover made the count bold"
+    );
+    assert_ne!(
+        words.fg,
+        theme::color(uze_theme::Token::TextMuted),
+        "the hover lit nothing"
+    );
+    driven.attach.model.hovered = None;
+    driven.frame();
     driven.press(button.x, button.y);
     assert!(driven.attach.model.shows_space_issues());
     let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
@@ -2892,5 +2922,282 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
     assert!(
         driven.attach.model.space_overview.is_some(),
         "esc put the overview away with the list"
+    );
+}
+
+/// Every key the overview's foot names is pressed by clicking it, in each
+/// section a memory fixture draws, with its drawer open or not and while a
+/// search is being typed: the click lands where the keystroke does, in the
+/// scope that is live. The Agent section's own question is
+/// `the_clear_prompts_question_answers_a_click`.
+#[test]
+fn clicking_an_overview_foot_hint_is_pressing_its_key() {
+    use crate::ui::orchestrator::space_overview::Section;
+    use uze_keys::Scope;
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-foot-hint-click",
+    ));
+    // Everything a foot key of these sections can move: a projection that
+    // left one out would let a click that did nothing pass as the key.
+    let state = |driven: &Driven<'_>| {
+        format!(
+            "{:?}",
+            driven.attach.model.space_overview.as_ref().map(|overview| (
+                overview.section,
+                overview.filtering,
+                overview.memory_filter.as_str(),
+                overview.fact.as_ref().map(|(name, _)| name.as_str()),
+                overview.drawer,
+                overview.rows,
+                overview.asked,
+                overview.issues_open,
+                overview
+                    .edit
+                    .field
+                    .as_ref()
+                    .map(|field| (field.key, field.item)),
+                overview.edit.text.is_some(),
+                overview.edit.values.len(),
+                overview.question.is_some(),
+            ))
+        )
+    };
+    let browsing = [
+        Section::Memory,
+        Section::Plugins,
+        Section::Worktrees,
+        Section::Settings,
+    ]
+    .into_iter()
+    .flat_map(|section| [(section, false, false), (section, true, false)]);
+    let searching = [(Section::Memory, false, true)];
+    for (section, drawer, filtering) in browsing.chain(searching) {
+        let open = || {
+            let mut model = memory_overview(&["a", "b", "c"]);
+            let overview = model.space_overview.as_mut().expect("the overview is open");
+            overview.section = section;
+            overview.drawer = drawer;
+            overview.filtering = filtering;
+            let mut driven = driven(model, &home).on_a_roomy_terminal();
+            driven.frame();
+            driven
+        };
+        let live = if filtering {
+            Scope::SpaceOverviewFilter
+        } else {
+            Scope::SpaceOverview
+        };
+        let scopes = [Scope::Global, Scope::Workspace, live];
+        let hints: Vec<_> = open()
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter_map(|(rect, hit)| match hit {
+                WorkspaceHit::HintAction(action) => Some((*rect, *action)),
+                _ => None,
+            })
+            .collect();
+        assert!(!hints.is_empty(), "{section:?} drew no hint to click");
+        for (rect, action) in hints {
+            let mut clicked = open();
+            clicked.press(rect.x + rect.width / 2, rect.y);
+            let chord = uze_keys::active()
+                .chord_for(action, &scopes)
+                .expect("a hint names a bound key");
+            let mut pressed = open();
+            pressed.press_key(key_event(chord));
+            assert_eq!(
+                state(&clicked),
+                state(&pressed),
+                "clicking {action:?} in {section:?} (drawer {drawer}, searching {filtering}) \
+                 is not pressing it"
+            );
+        }
+    }
+}
+
+/// Clearing a space's prompts is asked first, in a dialog over the
+/// client: Cancel leaves them, Clear sends them away, each by a click.
+#[test]
+fn clearing_the_prompts_is_asked_in_a_dialog() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-clear-click",
+    ));
+    let mut model = agent_session_in("/repo");
+    let mut agent = drawer_over(&model);
+    agent.support = Some(support_fixture());
+    let root = agent.space_root.clone();
+    let (space, behind) = {
+        let space = model.session.as_ref().expect("session").selected_space();
+        (space.id, space.selected_tab)
+    };
+    model.open_space_overview(space, behind, true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.agent = Some(agent);
+    overview.answer = Some(Ok(project_space(
+        Default::default(),
+        Err("not read".to_owned()),
+    )));
+    let origin = uze_application::PromptOrigin {
+        space_label: "uze".to_owned(),
+        tab_id: 1,
+        tab_label: "Agent".to_owned(),
+        agent_binary: "claude".to_owned(),
+        agent: None,
+    };
+    model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
+        root,
+        entries: vec![uze_application::PromptEntry::new(&origin, "fix the pipeline").unwrap()],
+    });
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let clear = *driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| *hit == WorkspaceHit::HintAction(uze_keys::Action::ClearPromptHistory))
+        .map(|(rect, _)| rect)
+        .expect("the foot offers clearing");
+    let answer = |driven: &Driven<'_>, confirm: bool| {
+        *driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == WorkspaceHit::OverviewAnswer(confirm))
+            .map(|(rect, _)| rect)
+            .expect("the dialog offers both answers")
+    };
+
+    driven.press(clear.x, clear.y);
+    driven.frame();
+    assert!(
+        driven.attach.model.asks_overview_question(),
+        "nothing was asked"
+    );
+    let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
+    assert!(
+        screen.contains("Clear this space's prompts?"),
+        "the dialog does not say what it clears:\n{screen}"
+    );
+    let cancel = answer(&driven, false);
+    driven.press(cancel.x, cancel.y);
+    assert!(!driven.attach.model.asks_overview_question());
+    assert!(
+        driven.attach.channels.prompts.receiver.try_recv().is_err(),
+        "cancel cleared the prompts"
+    );
+
+    driven.frame();
+    driven.press(clear.x, clear.y);
+    driven.frame();
+    let confirm = answer(&driven, true);
+    driven.press(confirm.x, confirm.y);
+    assert!(!driven.attach.model.asks_overview_question());
+    let cleared = driven
+        .attach
+        .channels
+        .prompts
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("clear sent nothing off the frame");
+    assert!(cleared.entries.is_empty(), "the prompts are still there");
+}
+
+/// A hint clicked while a field or an instruction is being typed is the key
+/// the typing scope offers, not a click outside the form: "cancel" discards
+/// what was typed instead of saving it first, and "apply" takes it.
+#[test]
+fn a_hint_clicked_while_typing_acts_in_the_typing_scope() {
+    use crate::ui::orchestrator::space_overview::WorkspaceRow;
+    use crossterm::event::KeyCode;
+    use uze_application::{ActionState, DeclarationKey};
+    use uze_keys::Action;
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-typing-hint",
+    ));
+    let repository = uze_testkit::git::Repository::new("orchestrator-overview-typing-hint");
+    fn typing_into_slots<'a>(
+        home: &'a UzeHome,
+        repository: &uze_testkit::git::Repository,
+    ) -> Driven<'a> {
+        let mut driven = settings_over(home, repository);
+        key(&mut driven, KeyCode::Down);
+        key(&mut driven, KeyCode::Enter);
+        key(&mut driven, KeyCode::Char('x'));
+        assert!(
+            overview_of(&driven).edit.field.is_some(),
+            "the slots field did not open"
+        );
+        driven
+    }
+    // The foot's hint for the key: the lowest one drawn, where the foot is.
+    let foot_hint = |driven: &Driven<'_>, action: Action| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(action))
+            .map(|(rect, _)| *rect)
+            .max_by_key(|rect| rect.y)
+            .unwrap_or_else(|| panic!("the foot offers {action:?} while typing"))
+    };
+
+    let mut driven = typing_into_slots(&home, &repository);
+    let cancel = foot_hint(&driven, Action::Dismiss);
+    driven.press(cancel.x, cancel.y);
+    let overview = overview_of(&driven);
+    assert!(overview.edit.field.is_none(), "cancel left the field open");
+    assert!(
+        overview.edit.values.is_empty() && overview.edit.saving.is_none(),
+        "cancel saved what was typed"
+    );
+
+    let mut driven = typing_into_slots(&home, &repository);
+    let apply = foot_hint(&driven, Action::Activate);
+    driven.press(apply.x, apply.y);
+    let overview = overview_of(&driven);
+    assert!(overview.edit.field.is_none(), "apply left the field open");
+    assert!(
+        overview.edit.values.contains_key(&DeclarationKey::Slots),
+        "apply did not take what was typed"
+    );
+
+    // An instruction is the one typing state a click outside the form
+    // saves outright, so it is the one "cancel" must be seen to discard.
+    let mut driven = settings_over(&home, &repository);
+    let action = overview_of(&driven)
+        .workspace_rows()
+        .iter()
+        .position(|row| *row == WorkspaceRow::Action(ActionState::ALL[0]))
+        .expect("the first action is a row");
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .rows[1] = action;
+    key(&mut driven, KeyCode::Enter);
+    for typed in "Commit.".chars() {
+        key(&mut driven, KeyCode::Char(typed));
+    }
+    assert!(
+        overview_of(&driven).edit.text.is_some(),
+        "the instruction did not open"
+    );
+    let cancel = foot_hint(&driven, Action::Dismiss);
+    driven.press(cancel.x, cancel.y);
+    let overview = overview_of(&driven);
+    assert!(
+        overview.edit.text.is_none(),
+        "cancel left the instruction open"
+    );
+    assert!(
+        overview.edit.actions.is_empty() && overview.edit.saving.is_none(),
+        "cancel saved the instruction"
     );
 }

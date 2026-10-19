@@ -505,7 +505,10 @@ fn render_agent_tabs(
             chip.push(Span::raw(" "));
             chip.push(Span::styled(
                 theme::glyph(Symbol::MarkClose),
-                theme::fg(Token::TextDim),
+                theme::fg(widget::mark::close_tone(chip_state(
+                    model,
+                    WorkspaceHit::CloseTab(tab.id),
+                ))),
             ));
             hits.push((
                 Rect::new(

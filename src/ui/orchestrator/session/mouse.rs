@@ -140,7 +140,8 @@ impl Attach<'_> {
         let over = self.model.hit_at(mouse.column, mouse.row);
         // A click anywhere outside the overview's form leaves what is
         // being typed there; the form's own targets leave it themselves,
-        // knowing which row they land on.
+        // knowing which row they land on, and so does a hint: it is a key
+        // the typing scope offers, and "cancel" must not save first.
         if !matches!(
             over,
             Some(
@@ -148,6 +149,7 @@ impl Attach<'_> {
                     | WorkspaceHit::OverviewRow(_)
                     | WorkspaceHit::OverviewStep(..)
                     | WorkspaceHit::OverviewChoice(..)
+                    | WorkspaceHit::HintAction(_)
             )
         ) {
             self.finish_editing();
@@ -159,7 +161,7 @@ impl Attach<'_> {
                 .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
                 || self.on_content_scrollbar(mouse.column, mouse.row)
                 || over.is_some_and(WorkspaceHit::is_open_surfaces));
-        self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar);
+        self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar, over);
         match mouse {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
@@ -170,8 +172,8 @@ impl Attach<'_> {
             _ if self.model.interrupt.is_some() => {
                 self.interrupt_press(mouse.column, mouse.row);
             }
-            _ if self.model.asks_worktree_removal() => {
-                self.worktree_removal_press(mouse.column, mouse.row);
+            _ if self.model.asks_overview_question() => {
+                self.overview_question_press(mouse.column, mouse.row);
             }
             _ if self.model.shows_space_issues() => {
                 self.space_issues_press(mouse.column, mouse.row);
@@ -1428,8 +1430,8 @@ impl Attach<'_> {
             | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody
-            | WorkspaceHit::OverviewRemovalAnswer(_)
-            | WorkspaceHit::OverviewRemovalBody
+            | WorkspaceHit::OverviewAnswer(_)
+            | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}
             WorkspaceHit::OverviewDrawer => {}
             WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),

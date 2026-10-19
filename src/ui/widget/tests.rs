@@ -1434,3 +1434,35 @@ fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
         .expect("the second alert is drawn");
     assert_eq!(next, detail + 2, "no air between the alerts:\n{rows:#?}");
 }
+
+/// A toast's close mark is faint at rest and takes the danger hue under
+/// the pointer, which a click anywhere on the toast answers.
+#[test]
+fn a_toast_s_close_mark_turns_to_danger_under_the_pointer() {
+    let area = Rect::new(0, 0, 60, 12);
+    let close_colour = |state: ChipState| {
+        let mut close = Rect::default();
+        let buffer = drawn(60, 12, |frame| {
+            close = toast::stack(
+                frame,
+                area,
+                &[Toast::new(ToastKind::Done, "synced", "about it").closing(state)],
+            )[0]
+            .close;
+        });
+        buffer[(close.x, close.y)].fg
+    };
+
+    assert_eq!(
+        close_colour(ChipState::Resting),
+        theme::color(Token::TextDim)
+    );
+    assert_eq!(
+        close_colour(ChipState::Hovered),
+        theme::color(Token::StateDanger)
+    );
+    assert_eq!(
+        close_colour(ChipState::Pressed),
+        theme::color(Token::StateDanger)
+    );
+}

@@ -757,3 +757,32 @@ fn an_unnamed_shell_is_labelled_by_what_it_runs() {
     tab.pane.process = "cargo".into();
     assert_eq!(strip_label(&tab), "server", "a typed name stands");
 }
+
+/// A shell's close mark is faint at rest and takes the danger hue under
+/// the pointer: the one control on a tab that takes something away.
+#[test]
+fn a_tab_s_close_mark_turns_to_danger_under_the_pointer() {
+    let (mut model, _first, _second) = two_agents_with_shells();
+    let area = ratatui::layout::Rect::new(0, 0, 120, 30);
+    full_frame_at(&mut model, area);
+    let (close, hit) = *model
+        .hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, WorkspaceHit::CloseTab(_)))
+        .expect("a shell offers its close mark");
+    let colour_at = |model: &mut WorkspaceModel| {
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+        let mut hits = Vec::new();
+        let mut metrics = super::render::FrameMetrics::default();
+        terminal
+            .draw(|frame| {
+                super::render::render(frame, model, &identities_fixture(), &mut hits, &mut metrics)
+            })
+            .unwrap();
+        terminal.backend().buffer()[(close.x, close.y)].fg
+    };
+
+    assert_eq!(colour_at(&mut model), theme::color(Token::TextDim));
+    model.hovered = Some(hit);
+    assert_eq!(colour_at(&mut model), theme::color(Token::StateDanger));
+}

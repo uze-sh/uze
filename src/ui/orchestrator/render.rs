@@ -272,12 +272,12 @@ pub(super) fn render(
     if let Some(open) = &model.interrupt {
         render_interrupt(frame, frame.area(), open, hits);
     }
-    if let Some(asked) = model
+    if let Some(question) = model
         .space_overview
         .as_ref()
-        .and_then(|overview| overview.removal.as_ref())
+        .and_then(|overview| overview.question.as_ref())
     {
-        render_worktree_removal(frame, frame.area(), asked, hits);
+        render_overview_question(frame, frame.area(), question, hits);
     }
     if let Some(overview) = model
         .space_overview

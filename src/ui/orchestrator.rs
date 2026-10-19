@@ -70,6 +70,7 @@ mod approval;
 mod events;
 mod interrupt;
 mod notices;
+mod overview_question;
 mod proposal;
 mod space_issues;
 mod space_overview;
@@ -218,6 +219,7 @@ const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
 use interrupt::*;
+use overview_question::*;
 use proposal::*;
 use space_issues::*;
 use space_overview::*;
@@ -922,11 +924,11 @@ pub(super) enum WorkspaceHit {
     OverviewDiscard,
     /// The Remove button under a free worktree in the overview's drawer.
     OverviewRemoveWorktree,
-    /// One of the answers to whether to remove a free worktree: `true`
-    /// removes it.
-    OverviewRemovalAnswer(bool),
-    /// The removal question itself, which a click on answers nothing.
-    OverviewRemovalBody,
+    /// One of the answers to the overview's question: `true` takes the
+    /// thing away.
+    OverviewAnswer(bool),
+    /// The overview's question itself, which a click on answers nothing.
+    OverviewQuestionBody,
     /// The overview foot's count of what to check, which lists it.
     OverviewIssues,
     /// The list of the space's issues, which a click on closes nothing.
@@ -1281,7 +1283,6 @@ fn space_prompts_panel(
         path: crate::ui::display_project_path(key.as_ref().map_or(&space.root, |key| &key.1)),
         key,
         selected: 0,
-        clearing: false,
     })
 }
 
@@ -2297,7 +2298,7 @@ impl WorkspaceModel {
             && self.approval.is_none()
             && self.interrupt.is_none()
             && self.proposal.is_none()
-            && !self.asks_worktree_removal()
+            && !self.asks_overview_question()
             && self.action_index.is_none()
             && self.release_notes.is_none()
             && self.manage.is_none()
@@ -2392,6 +2393,18 @@ impl WorkspaceModel {
     /// The control still wearing its pressed skin, if any. Read at draw
     /// time rather than cleared at press time, so the flash ends with the
     /// clock instead of with whatever the press went on to do.
+    /// What the pointer is doing to `hit`.
+    pub(super) fn pointer_on(&self, hit: WorkspaceHit) -> crate::ui::widget::ChipState {
+        use crate::ui::widget::ChipState;
+        if self.pressed_hit() == Some(hit) {
+            ChipState::Pressed
+        } else if self.hovered == Some(hit) {
+            ChipState::Hovered
+        } else {
+            ChipState::Resting
+        }
+    }
+
     fn pressed_hit(&self) -> Option<WorkspaceHit> {
         self.pressed
             .filter(|(_, at)| at.elapsed() < PRESS_FLASH)

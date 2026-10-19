@@ -1172,3 +1172,38 @@ fn the_keys_belong_to_a_rows_menu_while_it_is_open() {
     press(&mut driven, Action::Activate);
     assert!(driven.attach.model.recent.asking);
 }
+
+/// While the search takes the keys, the foot's key leaves the search,
+/// clicked or pressed alike, and says so: recent stays open, even with no
+/// words typed yet.
+#[test]
+fn the_foot_key_clicked_while_searching_clears_the_search_as_esc_does() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-recent-search-foot-click",
+    ));
+    let mut driven = driven(
+        showing(
+            vec![preserved(PROJECT, "a", "parser", WorkStateView::Ready)],
+            Vec::new(),
+        ),
+        &home,
+    );
+    press(&mut driven, Action::StartFilter);
+    driven.frame();
+    let clear = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::Dismiss))
+        .map(|(rect, _)| *rect)
+        .expect("the foot offers leaving the search");
+
+    driven.press(clear.x, clear.y);
+
+    assert!(!driven.attach.model.recent.filtering);
+    assert!(
+        driven.attach.model.recent.open,
+        "the click closed recent where esc only leaves the search"
+    );
+}

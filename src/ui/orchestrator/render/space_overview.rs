@@ -1895,30 +1895,7 @@ fn render_agent(
             None => prompt.push(Span::styled(entry.preview.clone(), style)),
         }
     }
-    if agent.clearing {
-        let scopes = [
-            uze_keys::Scope::Global,
-            uze_keys::Scope::Workspace,
-            uze_keys::Scope::SpaceOverview,
-        ];
-        let question = Hints::new(&scopes)
-            .named(Action::ClearPromptHistory, "clear the space's prompts")
-            .tone(Token::StateWarning);
-        question.render(
-            frame,
-            Rect::new(list.x, list.bottom().saturating_sub(1), list.width, 1),
-        );
-    }
-    let rows = draw_lines(
-        frame,
-        Rect {
-            height: list.height.saturating_sub(u16::from(agent.clearing)),
-            ..list
-        },
-        &lines,
-        Some(agent.selected),
-        track,
-    );
+    let rows = draw_lines(frame, list, &lines, Some(agent.selected), track);
     for (rect, index) in &rows {
         hits.push((*rect, WorkspaceHit::DrawerPrompt(*index)));
     }
@@ -2984,7 +2961,7 @@ fn render_foot(
                 if popups::chip_state(model, WorkspaceHit::OverviewIssues) == ChipState::Resting {
                     theme::fg(Token::TextMuted)
                 } else {
-                    theme::fg_bold(hue)
+                    theme::fg(hue)
                 };
             Line::from(vec![
                 Span::styled(theme::glyph(Symbol::MarkAttention), theme::fg(hue)),

@@ -34,7 +34,7 @@ use ratatui::{
 };
 use uze_theme::Token;
 
-use super::{row, text};
+use super::{ChipState, mark, row, text};
 use crate::ui::theme::{self, Symbol};
 
 /// The one width every toast draws at.
@@ -111,6 +111,9 @@ pub(crate) struct Toast {
     action: Option<String>,
     /// Seconds left, or `None` for one that stays until it is answered.
     remaining: Option<u64>,
+    /// What the pointer is doing to the toast, which a click anywhere on
+    /// puts away: its close mark says so.
+    closing: ChipState,
 }
 
 impl Toast {
@@ -135,6 +138,7 @@ impl Toast {
             detail: detail.into(),
             action: None,
             remaining: None,
+            closing: ChipState::Resting,
         }
     }
 
@@ -148,6 +152,12 @@ impl Toast {
     /// How long this one has left. Absent, it stays.
     pub(crate) fn remaining(mut self, seconds: Option<u64>) -> Self {
         self.remaining = seconds;
+        self
+    }
+
+    /// What the pointer is doing to it, for its close mark.
+    pub(crate) fn closing(mut self, state: ChipState) -> Self {
+        self.closing = state;
         self
     }
 
@@ -266,7 +276,7 @@ impl Toast {
         }
         title.push(Span::styled(
             theme::glyph(Symbol::MarkClose),
-            on(theme::fg(Token::TextDim)),
+            on(theme::fg(mark::close_tone(self.closing))),
         ));
         frame.render_widget(Paragraph::new(Line::from(title)), head);
 

@@ -81,6 +81,13 @@ When the change is in `src/ui/`, chrome comes from `src/ui/widget/` and
 colour from `theme` — neither is assembled at the call site. Both are
 enforced; see the two entries in Workspace layout.
 
+Anything a person sees — a TUI surface, a CLI report or help text, the
+words in either — follows the `design-system` skill
+(`.agents/skills/design-system/`): read it before the change, run its
+checklist before handing back, and when the operator corrects something
+visual, UX, DX or wording, write the rule into it in the same change as
+the fix.
+
 ## What UZE persists
 
 Everything under `$UZE_HOME` belongs to exactly one tier, and the tier is

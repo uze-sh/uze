@@ -110,10 +110,16 @@ pub(super) fn render_recent(
     }
     if let Some(rect) = foot {
         let row = selected.and_then(|index| list.get(index));
+        // The keys a hint prints are the ones live now: while a search is
+        // typed, those of the scope that takes the typing.
         let scopes = [
             uze_keys::Scope::Global,
             uze_keys::Scope::Workspace,
-            uze_keys::Scope::Recent,
+            if model.recent.filtering {
+                uze_keys::Scope::RecentFilter
+            } else {
+                uze_keys::Scope::Recent
+            },
         ];
         let hints = |keys: Vec<(Action, String)>| {
             keys.into_iter()
@@ -132,7 +138,13 @@ pub(super) fn render_recent(
             let centred = Rect::new(rect.x + (rect.width - drawn) / 2, rect.y, drawn, 1);
             hits.extend(hint_targets(keys.render(frame, centred)));
         } else {
-            let close = hints(vec![(Action::Dismiss, "close".to_owned())]);
+            // Esc takes the search away before it takes recent away.
+            let leave = if model.recent.filtering || !model.recent.filter.is_empty() {
+                "clear"
+            } else {
+                "close"
+            };
+            let close = hints(vec![(Action::Dismiss, leave.to_owned())]);
             let close_width = close.width().min(room);
             let right = Rect::new(
                 rect.right()
@@ -189,7 +201,7 @@ fn render_search(
         };
         // The whole control answers, label and key alike: it is the
         // search's own switch, which the field beside it is the rest of.
-        toggle.render(frame, at);
+        let _ = toggle.render(frame, at);
         hits.push((at, WorkspaceHit::RecentShowAll));
         field.width = field.width.saturating_sub(toggle_width + 1);
     }

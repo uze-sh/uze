@@ -71,9 +71,6 @@ pub(super) struct AgentSupportDropdown {
     pub(super) path: String,
     /// Index into the space's prompts, newest first.
     pub(super) selected: usize,
-    /// `x` asked whether to clear the space's history; a second `x`
-    /// answers, anything else withdraws the question.
-    pub(super) clearing: bool,
 }
 
 /// What a right-click-opened [`ContextMenu`] targets — the space or tab

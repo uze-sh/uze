@@ -699,13 +699,7 @@ pub(super) fn render_query_row(
 }
 
 pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState {
-    if model.pressed_hit() == Some(hit) {
-        ChipState::Pressed
-    } else if model.hovered == Some(hit) {
-        ChipState::Hovered
-    } else {
-        ChipState::Resting
-    }
+    model.pointer_on(hit)
 }
 
 /// The work-state status for a task: what the delivery is about, where it

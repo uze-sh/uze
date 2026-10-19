@@ -6,6 +6,9 @@
 //! with. Four files spelled the disclosure chevron themselves, two of them
 //! with the predicate inverted, and nothing said they were the same mark.
 
+use uze_theme::Token;
+
+use super::ChipState;
 use crate::ui::theme::{self, Symbol};
 
 /// The chevron that says whether a group is open.
@@ -20,4 +23,14 @@ pub(crate) fn disclosure(expanded: bool) -> String {
     } else {
         Symbol::ChevronCollapsed
     })
+}
+
+/// The hue of a close mark: faint at rest, and the danger hue once the
+/// pointer is on it, so the one control that takes something away says so
+/// before it is clicked.
+pub(crate) fn close_tone(state: ChipState) -> Token {
+    match state {
+        ChipState::Resting => Token::TextDim,
+        ChipState::Hovered | ChipState::Pressed => Token::StateDanger,
+    }
 }

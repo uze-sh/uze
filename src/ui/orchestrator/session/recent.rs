@@ -30,12 +30,17 @@ impl Attach<'_> {
     /// else, withdrawing any question it was asking. Something drawn over
     /// the workspace answers the press first and moves nothing: the action
     /// index opened from recent still acts on recent's row.
-    pub(super) fn hand_recent_the_keys_or_not(&mut self, column: u16, sidebar: Rect) {
+    pub(super) fn hand_recent_the_keys_or_not(
+        &mut self,
+        column: u16,
+        sidebar: Rect,
+        over: Option<WorkspaceHit>,
+    ) {
         let model = &self.model;
         let drawn_over = model.approval.is_some()
             || model.interrupt.is_some()
             || model.proposal.is_some()
-            || model.asks_worktree_removal()
+            || model.asks_overview_question()
             || model.shows_space_issues()
             || model.release_notes.is_some()
             || model.action_index.is_some()
@@ -49,8 +54,11 @@ impl Attach<'_> {
             return;
         }
         // A click anywhere but the search leaves it, on the words typed;
-        // a click on it starts it again.
-        self.model.recent.filtering = false;
+        // a click on it starts it again. A hint is a key the search
+        // offers, and acts in it as that key would.
+        if !matches!(over, Some(WorkspaceHit::HintAction(_))) {
+            self.model.recent.filtering = false;
+        }
         let elsewhere = column >= sidebar.right();
         if elsewhere != self.model.recent.keys_elsewhere {
             self.model.recent.keys_elsewhere = elsewhere;

@@ -120,8 +120,9 @@ pub(super) struct SpaceOverviewView {
     /// The agent in front when the overview opened, and its prompts' state.
     pub(super) agent: Option<AgentSupportDropdown>,
     pub(super) worktrees: WorktreesRead,
-    /// The question about removing a free worktree, while it stands.
-    pub(super) removal: Option<WorktreeRemoval>,
+    /// What the overview asks before taking something away, while it
+    /// stands.
+    pub(super) question: Option<OverviewQuestion>,
     /// A removal is out: one at a time, since a second would judge a slot
     /// the first is taking away.
     pub(super) removing: bool,
@@ -628,7 +629,7 @@ impl SpaceOverviewView {
             edit: WorkspaceEdit::default(),
             agent: None,
             worktrees: WorktreesRead::default(),
-            removal: None,
+            question: None,
             removing: false,
             issues_open: false,
             memory_filter: String::new(),
@@ -1430,7 +1431,7 @@ impl WorkspaceModel {
             // again asks afresh.
             overview.pending = false;
             overview.worktrees.pending = false;
-            overview.removal = None;
+            overview.question = None;
             overview.edit.field = None;
             overview.edit.text = None;
             self.put_away_overviews.insert(overview.space, overview);

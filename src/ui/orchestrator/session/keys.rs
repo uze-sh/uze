@@ -25,7 +25,7 @@ impl Attach<'_> {
         if self.model.approval.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
-            || self.model.asks_worktree_removal()
+            || self.model.asks_overview_question()
             || self.model.shows_space_issues()
         {
             scopes.push(Scope::Confirm);
@@ -145,7 +145,7 @@ impl Attach<'_> {
         if self.model.approval.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
-            || self.model.asks_worktree_removal()
+            || self.model.asks_overview_question()
             || self.model.shows_space_issues()
         {
             // Nothing the question did not ask for reaches anything: not
@@ -307,8 +307,8 @@ impl Attach<'_> {
             self.interrupt_action(action);
             return Flow::Continue;
         }
-        if self.model.asks_worktree_removal() {
-            self.worktree_removal_action(action);
+        if self.model.asks_overview_question() {
+            self.overview_question_action(action);
             return Flow::Continue;
         }
         if self.model.shows_space_issues() {

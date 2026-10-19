@@ -439,7 +439,7 @@ fn render_header(
     );
     // The modal's own chrome answers this one, wherever the client hosts
     // it, so the target the hint hands back is the rect it was given.
-    close_hint.render(frame, close);
+    let _ = close_hint.render(frame, close);
 
     let name = format!("{:<NAME_WIDTH$}", "manage");
     frame.render_widget(
@@ -539,7 +539,7 @@ fn health_status(model: &TuiModel) -> Option<Line<'static>> {
         ),
     };
     let words_style = if model.health_hovered {
-        theme::fg_bold(hue)
+        theme::fg(hue)
     } else if alerts.is_empty() {
         theme::fg(Token::TextSecondary)
     } else {

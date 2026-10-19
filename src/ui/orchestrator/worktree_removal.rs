@@ -1,20 +1,18 @@
 //! Removing a free worktree from the space overview's Worktrees section.
 //!
-//! Asked first, as a dialog over the whole client: a slot's directory
+//! Asked first, as the overview's question (`overview_question`): a slot's directory
 //! often holds gigabytes of build output, and nothing in the client gives
 //! it back. Answered yes, the removal runs off the frame, where the
 //! workspace judges the slot again under its locks and may refuse it: the
 //! card was read before the question was, and what stands now decides.
 
 use super::*;
-use crate::ui::widget::dialog::{self, CANCEL, Dialog, Tone};
 
-/// The open question: which worktree, named and sized as its card was.
+/// The worktree asked about, named and sized as its card was.
 pub(super) struct WorktreeRemoval {
     pub(super) path: PathBuf,
     pub(super) name: String,
     pub(super) bytes: u64,
-    pub(super) on_confirm: bool,
 }
 
 /// What removing a worktree answered, for the overview of `space`.
@@ -59,12 +57,6 @@ pub(super) fn removal_name(primary: &Path, path: &Path) -> String {
 }
 
 impl WorkspaceModel {
-    pub(super) fn asks_worktree_removal(&self) -> bool {
-        self.space_overview
-            .as_ref()
-            .is_some_and(|overview| overview.removal.is_some())
-    }
-
     /// Whether the card selected in `overview`'s Worktrees section may be
     /// removed now.
     pub(super) fn offers_worktree_removal(&self, overview: &SpaceOverviewView) -> bool {
@@ -101,27 +93,15 @@ impl Attach<'_> {
             path: card.checkout.path.clone(),
             name: removal_name(&view.primary, &card.checkout.path),
             bytes: card.checkout.bytes,
-            on_confirm: false,
         };
-        if let Some(overview) = self.model.space_overview.as_mut() {
-            overview.removal = Some(removal);
-            self.model.dirty = true;
-        }
+        self.ask_overview_question(Asked::RemoveWorktree(removal));
     }
 
-    /// The operator's answer, by click or by key: yes removes the worktree
-    /// off the frame; no leaves it.
-    pub(super) fn answer_worktree_removal(&mut self, confirm: bool) {
+    /// Removes the worktree the operator said yes to, off the frame.
+    pub(super) fn remove_worktree(&mut self, asked: WorktreeRemoval) {
         let Some(overview) = self.model.space_overview.as_mut() else {
             return;
         };
-        let Some(asked) = overview.removal.take() else {
-            return;
-        };
-        self.model.dirty = true;
-        if !confirm {
-            return;
-        }
         overview.removing = true;
         let (space, root) = (overview.space, overview.root.clone());
         let occupied: Vec<PathBuf> = self
@@ -145,47 +125,6 @@ impl Attach<'_> {
             },
             self.channels.worktree_removals.sender.clone(),
         );
-    }
-
-    /// A key while the question is open: it answers, moves between the
-    /// answers, or does nothing — the dialog seals everything behind it.
-    pub(super) fn worktree_removal_action(&mut self, action: Action) {
-        match action {
-            Action::Activate => {
-                let confirm = self
-                    .model
-                    .space_overview
-                    .as_ref()
-                    .and_then(|overview| overview.removal.as_ref())
-                    .is_some_and(|asked| asked.on_confirm);
-                self.answer_worktree_removal(confirm);
-            }
-            Action::Dismiss => self.answer_worktree_removal(false),
-            Action::FocusNext | Action::FocusPrevious => {
-                if let Some(asked) = self
-                    .model
-                    .space_overview
-                    .as_mut()
-                    .and_then(|overview| overview.removal.as_mut())
-                {
-                    asked.on_confirm = !asked.on_confirm;
-                    self.model.dirty = true;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// A press while the question is open: on an answer it is that answer,
-    /// on the question nothing, and anywhere else it withdraws the question.
-    pub(super) fn worktree_removal_press(&mut self, column: u16, row: u16) {
-        match self.model.hit_at(column, row) {
-            Some(WorkspaceHit::OverviewRemovalAnswer(confirm)) => {
-                self.answer_worktree_removal(confirm);
-            }
-            Some(WorkspaceHit::OverviewRemovalBody) => {}
-            _ => self.answer_worktree_removal(false),
-        }
     }
 
     /// Removals that answered: said in a toast either way, and the
@@ -232,46 +171,4 @@ impl WorkspaceModel {
         }
         self.dirty = true;
     }
-}
-
-/// The question, drawn over everything but the toasts.
-pub(super) fn render_worktree_removal(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    asked: &WorktreeRemoval,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    crate::ui::widget::scrim::render(frame, area);
-    let answers = dialog::render(
-        frame,
-        area,
-        &Dialog {
-            tone: Tone::Danger,
-            title: "Remove this worktree?",
-            subject: Some(Line::from(Span::styled(
-                format!("{} ({})", asked.name, bytes_to_say(asked.bytes)),
-                theme::fg(Token::TextCode),
-            ))),
-            body: vec![
-                "Its directory is deleted, build output included. Its branch stays, and so \
-                 does every commit on it."
-                    .to_owned(),
-            ],
-            confirm: Some("Remove"),
-            focus: Some(if asked.on_confirm { 1 } else { CANCEL }),
-            field: None,
-        },
-        &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
-        WorkspaceHit::OverviewRemovalAnswer(false),
-        WorkspaceHit::OverviewRemovalAnswer(true),
-    );
-    // Before everything it covers, and the dialog's own body before that:
-    // a click on the question is not a click on what is underneath.
-    hits.splice(
-        0..0,
-        answers
-            .buttons
-            .into_iter()
-            .chain([(answers.popup, WorkspaceHit::OverviewRemovalBody)]),
-    );
 }

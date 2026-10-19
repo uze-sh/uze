@@ -30,7 +30,6 @@ pub(crate) struct Hints<'a> {
     scopes: &'a [Scope],
     entries: Vec<Entry>,
     hovered: Option<Action>,
-    tone: Option<Token>,
 }
 
 /// One hint: a key and what it does, or a run of keys that do the same
@@ -59,7 +58,6 @@ impl<'a> Hints<'a> {
             scopes,
             entries: Vec::new(),
             hovered: None,
-            tone: None,
         }
     }
 
@@ -88,13 +86,6 @@ impl<'a> Hints<'a> {
         self
     }
 
-    /// The whole line in `tone` rather than the accent: a line that asks
-    /// something rather than listing what can be done.
-    pub(crate) fn tone(mut self, tone: Token) -> Self {
-        self.tone = Some(tone);
-        self
-    }
-
     /// The columns the whole line takes, for a caller sizing the slot it
     /// will go in.
     pub(crate) fn width(&self) -> u16 {
@@ -104,6 +95,7 @@ impl<'a> Hints<'a> {
     /// Draws what fits of the line into `rect`, answering with where each
     /// key's hint landed, its name included. A hint left out for want of
     /// room is no target.
+    #[must_use = "register each target as a hit, so a click performs the key"]
     pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, rect: Rect) -> Vec<(Rect, Action)> {
         if rect.width == 0 || rect.height == 0 {
             return Vec::new();
@@ -195,23 +187,15 @@ impl<'a> Hints<'a> {
         }
     }
 
-    fn hue(&self) -> Token {
-        self.tone.unwrap_or(Token::Accent)
-    }
-
     fn key_style(&self) -> Style {
-        theme::fg_bold(self.hue())
+        theme::fg_bold(Token::Accent)
     }
 
     /// A lit label takes its key's colour and nothing else of it, so the
     /// whole hint answers the pointer, the same way on every surface,
     /// without its width or weight moving under the pointer.
     fn label_style(&self, lit: bool) -> Style {
-        match (lit, self.tone) {
-            (true, _) => theme::fg(self.hue()),
-            (false, Some(tone)) => theme::fg(tone),
-            (false, None) => theme::fg(Token::TextMuted),
-        }
+        theme::fg(if lit { Token::Accent } else { Token::TextMuted })
     }
 }
 

@@ -156,7 +156,8 @@ impl WorkspaceModel {
             .toasts
             .iter()
             .rev()
-            .map(|raised| {
+            .enumerate()
+            .map(|(index, raised)| {
                 let remaining = (!raised.stays).then(|| {
                     TOAST_TTL
                         .saturating_sub(raised.raised.elapsed())
@@ -169,7 +170,8 @@ impl WorkspaceModel {
                     raised.text.clone(),
                     raised.detail.clone(),
                 )
-                .remaining(remaining);
+                .remaining(remaining)
+                .closing(self.pointer_on(WorkspaceHit::DismissToast(index)));
                 if let Some((label, _)) = &raised.offer {
                     toast = toast.action(label.clone());
                 }

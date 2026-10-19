@@ -180,7 +180,6 @@ impl Attach<'_> {
         let Some(agent) = self.agent_panel() else {
             return;
         };
-        let clearing = std::mem::take(&mut agent.clearing);
         match action {
             Action::SelectPrevious => agent.selected = agent.selected.saturating_sub(1),
             Action::SelectNext => {
@@ -192,11 +191,12 @@ impl Attach<'_> {
                     self.model.copy_selected(text);
                 }
             }
-            Action::ClearPromptHistory if clearing => {
+            // Asked first, as the overview's question: the history is not
+            // given back.
+            Action::ClearPromptHistory if space_has_prompts => {
                 let root = agent.space_root.clone();
-                spawn_clear_prompt_history(self.home, root, self.channels.prompts.sender.clone());
+                self.ask_overview_question(Asked::ClearPrompts { root });
             }
-            Action::ClearPromptHistory => agent.clearing = space_has_prompts,
             _ => {}
         }
         self.model.dirty = true;
