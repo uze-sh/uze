@@ -766,7 +766,7 @@ pub(crate) fn render_manifest_findings(
     }
     if manifest.inherits {
         text.push_str(&format!(
-            "{} {}: `inherits` is not followed; rules it reaches are Antigravity's alone\n",
+            "{} {}: `inherits` is not followed; the rules it reaches arrive only where a harness reads the manifest itself\n",
             progress::warning_icon(),
             manifest.path
         ));

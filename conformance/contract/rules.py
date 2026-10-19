@@ -151,7 +151,7 @@ def plugin_prelude(project, declaring):
             "git add -A && git commit -q -m 'declare the rules plugin' || true",
             SETUP,
             f"cd {project}",
-            f"echo {COPIES_BEGIN}; ls -1 .agents/rules 2>/dev/null || true; echo {COPIES_END}",
+            f"echo {COPIES_BEGIN}; find .agents/rules .agents/rules.json -type f 2>/dev/null | sort; echo {COPIES_END}",
         ]
     )
 

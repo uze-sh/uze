@@ -124,19 +124,19 @@ const RULES_MANIFEST_EXPECTED: &str = "expected";
 
 impl RulesManifestCase {
     /// Lays the case out under `root`, the checkout root as its readers
-    /// will see it: `{root}` in the manifest becomes that path, so a case
-    /// can hold an absolute entry.
+    /// will see it: `{root}` in the manifest becomes that path, escaped as
+    /// a JSON string's content, so a case can hold an absolute entry.
     pub fn stage(&self, root: &Path) {
         copy_tree(&self.source, root);
         std::fs::remove_file(root.join(RULES_MANIFEST_EXPECTED))
             .expect("the case lists its answer");
         let manifest = root.join(".agents/rules.json");
         let text = std::fs::read_to_string(&manifest).expect("every case has a manifest");
-        std::fs::write(
-            &manifest,
-            text.replace("{root}", &root.display().to_string()),
-        )
-        .expect("the manifest is written");
+        let spelled =
+            serde_json::to_string(&root.display().to_string()).expect("a path serializes");
+        let inside_quotes = &spelled[1..spelled.len() - 1];
+        std::fs::write(&manifest, text.replace("{root}", inside_quotes))
+            .expect("the manifest is written");
     }
 }
 

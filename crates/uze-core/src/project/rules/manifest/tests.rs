@@ -141,6 +141,8 @@ fn a_path_is_read_relative_to_the_checkout_and_never_outside_it() {
     );
     assert_eq!(within(root, ".").unwrap(), "");
     assert_eq!(within(root, "../elsewhere"), None);
+    // A path opening with `/` is absolute on Unix only; Windows needs a
+    // drive, and the case table covers it through `{root}`.
     #[cfg(unix)]
     {
         assert_eq!(
