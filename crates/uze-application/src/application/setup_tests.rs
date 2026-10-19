@@ -723,20 +723,24 @@ fn an_edited_engine_is_reported_and_blocks_its_removal() {
 
 #[test]
 fn setup_ages_out_what_each_session_was_handed() {
-    let dir = uze_testkit::temp::scratch("setup-rules-sessions");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("old"), ".agents/rules/ui.md\n").unwrap();
-    let now = std::time::SystemTime::now();
-    rules_engine::sweep_rule_sessions(&dir, now, rules_engine::SESSION_RECORD_AGE);
+    let world = World::new("setup-rules-sessions", Machine::default(), None);
+    let sessions = world.home.rules_sessions_dir();
+    fs::create_dir_all(&sessions).unwrap();
+    fs::write(sessions.join("old"), ".agents/rules/ui.md\n").unwrap();
+    fs::write(sessions.join("recent"), ".agents/rules/ui.md\n").unwrap();
+    let a_week_and_a_day_ago = std::time::SystemTime::now()
+        - rules_engine::SESSION_RECORD_AGE
+        - std::time::Duration::from_secs(24 * 60 * 60);
+    uze_platform::fs::set_modified(&sessions.join("old"), a_week_and_a_day_ago).unwrap();
+
+    world.setup();
+
     assert!(
-        dir.join("old").exists(),
+        !sessions.join("old").exists(),
+        "setup ages out an older record"
+    );
+    assert!(
+        sessions.join("recent").exists(),
         "a record younger than a week stays"
     );
-    rules_engine::sweep_rule_sessions(
-        &dir,
-        now + rules_engine::SESSION_RECORD_AGE + std::time::Duration::from_secs(60),
-        rules_engine::SESSION_RECORD_AGE,
-    );
-    assert!(!dir.join("old").exists(), "an older one goes");
-    let _ = fs::remove_dir_all(dir);
 }
