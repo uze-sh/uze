@@ -52,7 +52,8 @@ pub struct LaunchPlan {
     /// subcommand.
     pub trailing: Vec<OsString>,
     /// Said once, on the shim's existing note channel. Present only when
-    /// something was expected to be carried over and could not be.
+    /// something was expected to be carried over and could not be; several
+    /// such things are all said, in the order they were found.
     pub note: Option<String>,
     /// Whether this launch is one UZE owns: an agent its record backs, in
     /// the directory the record puts it. Only such a launch is changed.
@@ -62,6 +63,15 @@ pub struct LaunchPlan {
 impl LaunchPlan {
     fn nothing() -> Self {
         Self::default()
+    }
+
+    /// Adds `note` to what this launch says, never in place of it: the
+    /// operator hears each thing that did not carry over.
+    fn add_note(&mut self, note: String) {
+        self.note = Some(match self.note.take() {
+            Some(earlier) => format!("{earlier}; {note}"),
+            None => note,
+        });
     }
 
     fn args(args: Vec<OsString>) -> Self {
@@ -174,7 +184,7 @@ fn plan_for(
             "the recorded conversation is no longer there; starting a new one"
         );
         let mut plan = start(home, claim.cwd, integration, owner, sections);
-        plan.note = Some(format!(
+        plan.add_note(format!(
             "the recorded conversation ({recorded}) is no longer there; starting a new one"
         ));
         return plan;
@@ -321,7 +331,7 @@ fn give_context(
     let (instructions, unread) = launch_instructions(&owner.project_root, cwd);
     if let Some(note) = unread {
         tracing::warn!(agent, harness = id, %note, "launch instructions from the default policy");
-        plan.note.get_or_insert(note);
+        plan.add_note(note);
     }
     if integration.context_channel().is_degraded()
         || integration.context_channel_unavailable().is_some()
@@ -395,8 +405,7 @@ fn give_context(
         }
         Err(error) => {
             tracing::warn!(agent, harness = id, %error, "agent context not delivered");
-            plan.note
-                .get_or_insert_with(|| format!("this agent's context was not delivered ({error})"));
+            plan.add_note(format!("this agent's context was not delivered ({error})"));
         }
     }
 }
@@ -1059,6 +1068,17 @@ mod tests {
             assert_eq!(checkout_root(&primary, &alias.join("src")), alias);
         }
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn every_note_a_launch_has_is_said() {
+        let mut plan = LaunchPlan::nothing();
+        plan.add_note("the default policy".into());
+        plan.add_note("the context was not delivered".into());
+        assert_eq!(
+            plan.note.as_deref(),
+            Some("the default policy; the context was not delivered")
+        );
     }
 
     #[test]
