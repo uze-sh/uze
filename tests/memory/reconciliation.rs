@@ -212,6 +212,38 @@ fn a_linked_worktree_is_left_as_its_branch_has_it() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// `uze install` in a slot leaves the regions its branch was cut with: the
+/// removal belongs to the primary's commit, not to every branch.
+#[test]
+fn install_in_a_linked_worktree_leaves_its_retired_regions_as_committed() {
+    let root = temp("linked-worktree-install");
+    let application = app(&root, true);
+    let slot = root.join("project");
+    fs::create_dir_all(&slot).unwrap();
+    fs::write(slot.join(".git"), "gitdir: ../.git/worktrees/ab12cd\n").unwrap();
+    fs::write(slot.join("agents.yaml"), "workspace: {}\n").unwrap();
+    left_by_an_earlier_release(&slot, "");
+    let agents_md = fs::read(slot.join("AGENTS.md")).unwrap();
+    let claude_md = fs::read(slot.join("CLAUDE.md")).unwrap();
+
+    application
+        .project()
+        .install(&slot, &uze_core::trust::AlwaysTrust)
+        .unwrap();
+    assert_eq!(fs::read(slot.join("AGENTS.md")).unwrap(), agents_md);
+    assert_eq!(fs::read(slot.join("CLAUDE.md")).unwrap(), claude_md);
+    assert!(
+        application
+            .project()
+            .plan(&slot)
+            .unwrap()
+            .stale_projection
+            .is_none(),
+        "a slot is not told to remove what its branch carries"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// The cleanup does not read the declaration, so an `agents.yaml` mid-edit
 /// neither blocks it nor changes what it takes out.
 #[test]
