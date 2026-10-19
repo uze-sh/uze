@@ -703,7 +703,7 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
     }
     if let Some(rules) = report.rules.as_ref().filter(|rules| rules.present) {
         text.push('\n');
-        text.push_str(&render_status_rules(rules, label));
+        text.push_str(&render_status_rules(rules, &report.harnesses, label));
     }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {
@@ -1022,6 +1022,7 @@ pub(crate) fn render_status_memory(report: &StatusReport, label: usize) -> Strin
 /// whether the project is ready, not for the instructions themselves.
 pub(crate) fn render_status_rules(
     rules: &uze_application::application::RulesReport,
+    harnesses: &[uze_application::application::StatusHarness],
     label: usize,
 ) -> String {
     let by_trigger = rules.by_trigger();
@@ -1038,10 +1039,25 @@ pub(crate) fn render_status_rules(
             .join(&progress::label(" · "))
     };
     let mut text = progress::report_section("Rules");
-    text.push_str(&progress::aligned_rows_from(
-        vec![vec![progress::label(rules.directory), summary]],
-        label,
-    ));
+    let mut rows = vec![vec![progress::label(rules.directory), summary]];
+    rows.extend(harnesses.iter().filter_map(|harness| {
+        let route = harness.rules.as_ref()?;
+        let delivered = match route.route {
+            "native" => format!("{} {}", progress::success_icon(), progress::label("native")),
+            "engine" => format!(
+                "{} {}",
+                progress::success_icon(),
+                progress::label("through the rules engine")
+            ),
+            _ => format!(
+                "{} {}",
+                progress::warning_icon(),
+                progress::label(format!("not delivered: {}", route.reason))
+            ),
+        };
+        Some(vec![harness.display_name.clone(), delivered])
+    }));
+    text.push_str(&progress::aligned_rows_from(rows, label));
     text.push('\n');
     for file in &rules.not_rules {
         text.push_str(&format!(

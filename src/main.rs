@@ -1028,6 +1028,54 @@ mod status_output_tests {
     }
 
     #[test]
+    fn each_installed_harness_says_how_the_rules_reach_it() {
+        let mut status = with_rules(
+            vec![summary(".agents/rules/ui.md", "glob")],
+            Vec::new(),
+            true,
+        );
+        let route = |route: &'static str, reason: &str| {
+            Some(uze_application::application::StatusRulesRoute {
+                route,
+                reason: reason.to_owned(),
+            })
+        };
+        status.report.harnesses = vec![
+            StatusHarness {
+                rules: route("native", "reads .agents/rules itself"),
+                ..harness("antigravity", "Antigravity")
+            },
+            StatusHarness {
+                rules: route("engine", "the rules engine"),
+                ..harness("claude", "Claude Code")
+            },
+            StatusHarness {
+                rules: route("unsupported", "the engine is `sh`"),
+                ..harness("codex", "Codex")
+            },
+            harness("opencode", "OpenCode"),
+        ];
+        let text = crate::progress::unpainted(&render_status(&status));
+        let rules = &text[text.find("Rules").expect("a rules section")..];
+        assert!(
+            rules.contains("Antigravity") && rules.contains("native"),
+            "{rules}"
+        );
+        assert!(rules.contains("through the rules engine"), "{rules}");
+        assert!(
+            rules.contains("not delivered: the engine is `sh`"),
+            "{rules}"
+        );
+        assert!(
+            !rules
+                .lines()
+                .take(6)
+                .any(|line| line.starts_with("OpenCode")),
+            "a harness that is not installed gets no route row: {rules}"
+        );
+    }
+
+    #[test]
     fn a_checkout_without_rules_has_no_rules_section() {
         let text =
             crate::progress::unpainted(&render_status(&with_rules(Vec::new(), Vec::new(), false)));
@@ -1068,6 +1116,7 @@ mod status_output_tests {
             context_unread: None,
             agent_context: None,
             outdated: None,
+            rules: None,
         }
     }
 

@@ -1050,6 +1050,17 @@ pub struct StatusHarness {
     /// The sentence saying the detected harness is older than its
     /// integration supports.
     pub outdated: Option<String>,
+    /// How the project's rules reach the detected harness.
+    pub rules: Option<StatusRulesRoute>,
+}
+
+/// How a project's rules reach one harness, in the words `status` shows.
+#[derive(Clone, Debug, Serialize)]
+pub struct StatusRulesRoute {
+    /// `native`, `engine` (the rules engine setup delivers) or
+    /// `unsupported`.
+    pub route: &'static str,
+    pub reason: String,
 }
 
 /// What `uze status` answers inside a project: the package manager's

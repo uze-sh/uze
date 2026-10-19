@@ -390,6 +390,17 @@ impl Health<'_> {
                     }),
                     agent_context: detected(&|| agent_context_shortfall(integration)),
                     outdated: super::harness_floor::sentence(integration, &detection),
+                    rules: detection.present.then(|| {
+                        let route = integration.rules_route();
+                        StatusRulesRoute {
+                            route: match route.route {
+                                uze_core::router::CompatibilityRoute::Native => "native",
+                                uze_core::router::CompatibilityRoute::Unsupported => "unsupported",
+                                _ => "engine",
+                            },
+                            reason: route.reason,
+                        }
+                    }),
                 }
             })
             .collect();

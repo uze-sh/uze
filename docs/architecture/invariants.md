@@ -641,12 +641,15 @@ A project's rules live in one directory it authors, `.agents/rules/`, and
 UZE only reads it: neither the check nor `status` writes a byte into the
 checkout, no harness is given a second rules directory there
 (`.claude/rules/` or any other), and reading an absent directory creates
-nothing. The tests below cover the read surfaces; the rules engine's
-delivery by setup writes only machine files, and its own test joins these
-when it lands.
+nothing. The rules engine setup delivers writes only machine files, beside
+each harness's foreign hooks and plugins, and Antigravity, which reads the
+directory itself, is given nothing.
 
 > `tests/acceptance/project_rules.rs::reading_rules_writes_nothing_into_the_project`
 > `crates/uze-core/src/project/rules/tests.rs::a_checkout_without_a_rules_directory_has_no_rules_and_nothing_wrong`
+> `crates/uze-integrations/src/rules/tests.rs::antigravity_is_left_to_its_own_rules`
+> `crates/uze-integrations/src/rules/tests.rs::claude_receives_exec_form_entries_beside_its_foreign_hooks`
+> `crates/uze-integrations/src/rules/tests.rs::opencode_receives_a_generated_plugin_and_no_config_entry`
 
 ### A generated file is never written through a link
 

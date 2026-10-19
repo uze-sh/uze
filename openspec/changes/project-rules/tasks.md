@@ -68,7 +68,7 @@
 - [x] 5.1 `uze setup` (and the workspace's automatic setup) delivers the rules engine to every detected harness whose route needs it, and reports it per harness like the other setup results
 - [x] 5.2 Sweep `runtime/rules/sessions/` entries older than seven days during setup
 - [x] 5.3 A rules read model in `uze-application`, so `src/` names no `uze_core`
-- [ ] 5.4 `uze status` reports:
+- [x] 5.4 `uze status` reports:
   - rules per trigger;
   - each file that is not a rule, with its reason;
   - the route per detected harness.

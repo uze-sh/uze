@@ -121,7 +121,11 @@ Every other format those tests read is encoded inside the test itself.
   pattern, path and expected answer (`match`, `no-match`, `invalid`), the
   format described in its header. Read by uze-core's matcher
   (`every_row_of_the_shared_dialect_table_holds` in
-  `crates/uze-core/src/project/rules/tests.rs`) and meant for the generated
-  rules engine's tests, so both readers of a rule's `globs` are proven
-  against the same rows. A `globs` value splits on the commas outside `{…}`
+  `crates/uze-core/src/project/rules/tests.rs`) and by the generated
+  rules engine's tests (`crates/uze-integrations/src/rules/engine_tests.rs`),
+  so both readers of a rule's `globs` are proven against the same rows. A `globs` value splits on the commas outside `{…}`
   before any row applies.
+- `payloads/` — hook payloads recorded per harness (Claude Code `Read`,
+  `Edit`, `Bash`; Codex `exec_command`, `apply_patch`; OpenCode `read`,
+  `edit`, `write`, `context`), which the engine's tests replay to prove path
+  recovery and what each event answers.

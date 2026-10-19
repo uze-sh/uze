@@ -2842,6 +2842,7 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
                 context_unread: Some("the project is not trusted".to_owned()),
                 agent_context: None,
                 outdated: None,
+                rules: None,
             });
     }
     model.space_overview.as_mut().expect("open").answer = Some(Ok(answer));
