@@ -31,7 +31,7 @@ rule behind it.
   - the declaration the operator asked for (`agents.yaml`, `agents.lock`);
   - agnostic artifacts: files in an open format, in a namespace UZE owns,
     that harnesses read without UZE (plugin rules under
-    `.agents/rules/<plugin>@<market>/`, from `plugin-rules`).
+    `.agents/rules/<plugin>@<market>--<rule>.md`, from `plugin-rules`).
 
   It never writes into a file the operator authors. What only means
   something inside UZE goes to the launch. On the machine, a native

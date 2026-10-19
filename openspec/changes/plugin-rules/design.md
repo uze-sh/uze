@@ -49,7 +49,7 @@ projects that declared it is the checkout's own `.agents/rules/`.
 ## Decisions
 
 ### D1: Copy into the checkout instead of delivering from the Store
-Plugin rules are copied into `.agents/rules/<namespace>/` and committed.
+Plugin rules are copied into `.agents/rules/`, each named `<plugin>@<market>--<rule>.md` (D3), and committed.
 
 Alternatives considered:
 - **Deliver from the Store at run time.** The engine would read the

@@ -30,7 +30,7 @@ See proposal.md for why. What the design works with:
   already puts `uze agent memory` in the launch context and "never in the
   projected `AGENTS.md` region".
 - **The rule's two sides were settled with the operator on 2026-10-19:**
-  - A plugin's rules copied into `.agents/rules/<plugin>@<market>/` and
+  - A plugin's rules copied into `.agents/rules/<plugin>@<market>--<rule>.md` and
     committed stay as `plugin-rules` decided. They are an agnostic artifact
     that harnesses read without UZE.
   - The rules engine installed machine-wide by `uze setup` stays as
@@ -66,7 +66,7 @@ This is the rule, and the candidate ADR:
    operator asked for them in this project.
 2. **Agnostic artifacts.** A file qualifies when it is in a documented
    format, in a namespace UZE owns, and readable by a harness without UZE. Plugin rule
-   copies in `.agents/rules/<plugin>@<market>/` qualify. The operator commits
+   copies in `.agents/rules/<plugin>@<market>--<rule>.md` qualify. The operator commits
    them, and they keep working after UZE leaves.
 3. **Never a file the operator authors.** That includes `AGENTS.md` and
    nested `AGENTS.md`, `.agents/rules/*.md` outside a plugin namespace, and
