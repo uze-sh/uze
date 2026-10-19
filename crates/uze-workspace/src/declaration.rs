@@ -148,9 +148,12 @@ pub fn policy(root: &Path) -> Result<WorktreePolicy> {
 
 /// The policy an agent's launch instructions are rendered from: the
 /// declaration as written, or the built-in default with the reason when it
-/// does not read. Git is not asked about `workspace.link`: the instructions
-/// never mention a linked file, and this is read on every relaunch, where
-/// one `git check-ignore` per link is a cost every agent pays.
+/// does not read. The one check [`declared`] makes that this does not is
+/// whether Git ignores each `workspace.link`: the instructions never mention
+/// a linked file, and this is read on every relaunch, where one
+/// `git check-ignore` per link is a cost every agent pays. A declaration
+/// refused only for that is rendered as written, and the refusal is the
+/// workspace's to report where it places a checkout.
 pub fn for_instructions(root: &Path) -> (WorktreePolicy, Option<String>) {
     let (policy, problems) = match read(root) {
         Ok(section) => section.policy(),

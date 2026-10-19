@@ -220,3 +220,19 @@ briefing is cut mid-section.
 transcript is one synthetic turn (`tests/_fixtures/foreign/transcripts`),
 so the briefing it renders is far below the share and would prove nothing
 about the bound.
+
+## P1. The launch renders a declaration refused only for an unignored link
+
+**Context.** `declaration::declared` refuses a manifest whose `workspace.link`
+names a file Git does not ignore, which takes one `git check-ignore` per
+link. The launch path runs on every relaunch, in the shim.
+
+**Decision.** `declaration::for_instructions` reads the section with every
+check but that one. A declaration refused only for an unignored link is
+rendered as written, and a section that does not read for any other reason
+gives the default policy and a note on the launch. The refusal itself is
+reported where the workspace places a checkout.
+
+**Alternative.** Run the full check at launch. That is a Git process per
+link for every agent at every relaunch, the cost `branch_on_disk` was
+written to avoid.
