@@ -348,6 +348,13 @@ fn give_context(
         integration.withdraw_context(home, session);
         return;
     };
+    let opening = agent_context::instructions_part(&instructions);
+    let notes = agent_context::notes(&sections);
+    let link = context_link(&owner.project_root, cwd, agent);
+    let isolation_directory_existed = link
+        .ancestors()
+        .find(|ancestor| ancestor.ends_with(worktree::WORKTREES_DIRECTORY))
+        .is_none_or(Path::exists);
     let delivered =
         agent_context::write(home, &owner.project_root, agent, &text).and_then(|file| {
             let dir = agent_context::dir(home, &owner.project_root, agent);
@@ -358,11 +365,21 @@ fn give_context(
                     dir: &dir,
                     file: &file,
                     text: &text,
+                    instructions: &opening,
+                    notes: notes.as_deref(),
+                    link: &link,
                     launch: launch.as_str(),
                     session,
                 },
             )
         });
+    // A channel that linked its context into a `.worktrees/` this launch
+    // created must not leave it showing in the operator's status. Asked only
+    // then: excluding it costs a Git call, and the launch path runs on every
+    // relaunch.
+    if !isolation_directory_existed && link.symlink_metadata().is_ok() {
+        let _ = checkout::exclude_isolation_directory(&owner.project_root);
+    }
     match delivered {
         Ok(contribution) => {
             plan.args.extend(contribution.args);
@@ -373,6 +390,24 @@ fn give_context(
             plan.note
                 .get_or_insert_with(|| format!("this agent's context was not delivered ({error})"));
         }
+    }
+}
+
+/// Where a channel may link the agent's context so that its path sorts
+/// after the checkout's: beside an isolated checkout as `<id>~uze`, or under
+/// `.worktrees/~uze/` for an agent in the primary. Both sit in the directory
+/// UZE already owns, and `~` sorts after every character a checkout's own
+/// path continues with.
+fn context_link(project_root: &Path, cwd: &Path, agent: &str) -> PathBuf {
+    match worktree::isolated_checkout(cwd) {
+        Some(isolated) => isolated
+            .primary
+            .join(worktree::WORKTREES_DIRECTORY)
+            .join(format!("{}~uze", isolated.name)),
+        None => project_root
+            .join(worktree::WORKTREES_DIRECTORY)
+            .join("~uze")
+            .join(agent),
     }
 }
 
@@ -934,6 +969,31 @@ mod tests {
             ))),
             "the declared behavior must be the one an agent reads: {context}"
         );
+    }
+
+    /// A harness that works in the first of its sorted workspace paths must
+    /// be handed a link that sorts after the checkout, in space UZE owns.
+    #[test]
+    fn the_context_link_sorts_after_the_checkout_inside_the_isolation_directory() {
+        let primary = Path::new("/home/me/project");
+        let slot = primary.join(".worktrees").join("ab12cd");
+        for (cwd, expected) in [
+            (slot.clone(), primary.join(".worktrees").join("ab12cd~uze")),
+            (
+                primary.to_path_buf(),
+                primary.join(".worktrees").join("~uze").join("agent-1"),
+            ),
+        ] {
+            let link = context_link(primary, &cwd, "agent-1");
+            assert_eq!(link, expected);
+            assert!(
+                link.as_os_str() > cwd.as_os_str(),
+                "{} must sort after {}",
+                link.display(),
+                cwd.display()
+            );
+            assert!(link.starts_with(primary.join(".worktrees")));
+        }
     }
 
     #[test]

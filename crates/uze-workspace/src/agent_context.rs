@@ -93,6 +93,12 @@ pub fn compose(instructions: &str, sections: &[Section]) -> Option<String> {
     Some(cut(&document, BOUND).to_owned())
 }
 
+/// The notes alone, as [`compose`] writes them after the instructions: the
+/// preamble and `sections`, or `None` when there is nothing to note.
+pub fn notes(sections: &[Section]) -> Option<String> {
+    compose("", sections)
+}
+
 /// The room `instructions` and `sections` leave of [`BOUND`], measured as
 /// [`compose`] writes them.
 pub fn room_after(instructions: &str, sections: &[Section]) -> usize {
@@ -115,7 +121,7 @@ fn given(sections: &[Section]) -> impl Iterator<Item = &Section> {
 
 /// The instructions as [`compose`] writes them: the lead and the text, held
 /// to [`INSTRUCTIONS_SHARE`], or nothing at all.
-fn instructions_part(instructions: &str) -> String {
+pub fn instructions_part(instructions: &str) -> String {
     let instructions = instructions.trim();
     if instructions.is_empty() {
         return String::new();

@@ -234,6 +234,19 @@ pub struct AgentContext<'a> {
     pub file: &'a Path,
     /// What the document holds.
     pub text: &'a str,
+    /// The document's opening part: the workspace's instructions for this
+    /// launch, with their lead, or empty. For a channel that carries
+    /// instructions apart from notes.
+    pub instructions: &'a str,
+    /// The rest of the document: the notes under their own preamble, or
+    /// `None` when there are none.
+    pub notes: Option<&'a str>,
+    /// A path in space UZE owns that sorts after the checkout's own path,
+    /// which a channel may make a link to `dir`: what it names when its
+    /// harness takes the first of its workspace paths, in sorted order, as
+    /// the directory the agent works in. Nothing is there until a channel
+    /// links it.
+    pub link: &'a Path,
     /// Unique to this launch, for a channel that must give the document
     /// once per process rather than once per model call.
     pub launch: &'a str,
