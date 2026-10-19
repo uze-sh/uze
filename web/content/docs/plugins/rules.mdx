@@ -1,0 +1,86 @@
+---
+title: Rules
+description: Instructions that arrive only where they apply
+---
+
+`AGENTS.md` reaches every agent whole, whatever it is touching. A rule
+reaches it only when it matters: when the agent opens a file under
+`src/ui/`, or when the task is a migration. Write each one once, in
+`.agents/rules/`, and every agent reads it.
+
+```markdown
+---
+trigger: glob
+globs: src/ui/**/*.rs
+---
+
+Colours come from the theme: name a `Token`, never an RGB value.
+```
+
+## Where rules live
+
+One Markdown file per rule, directly under `.agents/rules/` in your project,
+committed with it. Each file's frontmatter says when it applies; the rest of
+the file is the rule.
+
+## When a rule arrives
+
+| `trigger` | Arrives | Needs |
+|---|---|---|
+| `glob` | when the agent reads, edits or writes a file matching `globs` | `globs` |
+| `model_decision` | as one line of an index; the agent reads the rule when the task calls for it | `description`, written as when to read it |
+| `always_on` | at the start of every session | nothing more |
+| `manual` | only when someone points the agent at it | nothing more |
+
+Most rules are `glob`. Keep `always_on` rare: it costs every session, and text
+that is always true usually belongs in `AGENTS.md`.
+
+## Patterns
+
+`globs` is one pattern, or several separated by commas, relative to the
+project root:
+
+- `**` matches any number of directories: `**/*.rs`
+- `*` matches within one directory: `src/*.ts`
+- `?` matches one character
+- anything else is matched literally
+
+Braces (`{a,b}`), character classes (`[ab]`), a leading `/` and patterns with
+spaces are not supported. A rule using one is reported and not delivered, so
+that every agent agrees on what matched. Write two patterns instead of braces.
+
+## Write a rule as a convention
+
+Say what the project does, not what the agent must answer: "Handlers return
+`Result<_, ApiError>`", not "You MUST always reply with…". Keep one concern per
+file and keep it short. The `uze:rules` skill guides an agent through writing
+one:
+
+```text
+/uze:rules
+```
+
+## How each agent receives them
+
+| Agent | Route |
+|---|---|
+| Antigravity | reads `.agents/rules/` itself, with or without uze |
+| Claude Code | through the rules engine `uze setup` installs |
+| Codex | through the rules engine; a path named only inside a shell command is found on a best-effort basis |
+| OpenCode | through the rules engine |
+
+The engine reads your project's own `.agents/rules/` each time, so a branch or
+a checkout with different rules gets its own. Nothing is copied into your
+project, and nothing is compiled. On Windows the engine is not available yet,
+and `uze status` says so.
+
+## Check them
+
+```bash
+uze agent rules check
+```
+
+Validates every rule offline and names each file that is not one and why.
+`uze status` reports the same: how many rules of each kind, any file that is
+not a rule, and how each installed agent receives them. It never prints a
+rule's text.

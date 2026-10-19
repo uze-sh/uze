@@ -14,7 +14,7 @@ maintains one project context file, `AGENTS.md`, and projects it into each
 harness's own bridge/config format instead of maintaining four separately.
 
 This repository is itself the official uze marketplace: `marketplace.json` +
-`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:worktree`,
+`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`, `uze:worktree`,
 `uze:architect` and `uze:author` Skills) as the one official plugin today.
 
 ## Commands
