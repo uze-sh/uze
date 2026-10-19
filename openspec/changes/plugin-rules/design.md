@@ -108,6 +108,27 @@ becomes a rule on one harness only. What the prefix costs:
   (D2), and reported as an extra file when that plugin does not ship it
   (D5).
 
+Measured: the `.agents/rules.json` manifest. Antigravity's docs say a
+nested rule is read once registered in `.agents/rules.json`. On `agy` 1.4.2
+(`experiments/antigravity/rules-manifest`, plain `agy`, no UZE), an entry
+`{"path": ".agents/rules/acme@corp"}` made the folder's `always_on` rule
+land in `systemInstruction` and its two `glob` rules fire on the first
+matching read and on a write, the same as flat files; the absolute path
+did too. `path` is relative to the workspace root, not to `rules.json`:
+`rules/acme@corp` and `./rules/acme@corp` registered nothing, and an
+operator's `team-rules` folder at the root was read beside two plugin
+folders and a flat rule. A directory entry reads its immediate `*.md` only
+(`sub/inner.md` stayed out); an entry may also name one file.
+`include_only` and `exclude` match a path relative to the entry: `a.md`
+selected or dropped `a.md` and not `sub/a.md`, `include_only: ["sub/c.md"]`
+reached a file the entry alone does not, and `exclude: ["sub/"]` changed
+nothing. An entry for `.agents/rules`, or for a flat rule itself, still
+delivered that rule once. The registered rule held in the parent's request,
+an `invoke_subagent` subagent's and the request after `agy -c`. A
+`rules.json` that does not parse is ignored: the flat rules still applied
+and nothing it registered did. An `@` in the folder name costs nothing
+(`acme-corp/` behaved the same).
+
 ### D4: No marker inside the copied bytes
 The copy is byte-identical to the package's rule. A `source:` field would
 make the copy differ from the authenticated bytes and would need
