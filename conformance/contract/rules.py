@@ -31,6 +31,13 @@ setup` would also update it, which an offline world cannot.
   request carrying it is what says the compaction happened (a harness may
   keep the person's earlier prompts across one); the always-on rule must be
   in that request.
+- Two checkouts on one machine, one declaring the `rules-plugin` fixture,
+  whose one rule is a `glob` (`**/ui/**`): the same scripted turn (the
+  control's write, then the matching one) runs in the declaring checkout
+  in one world and in the other checkout in another, each world's machine
+  holding both. The plugin's rule body arrives after the matching write in
+  the declaring checkout, and in no request of the other, whose turn
+  reached the same step.
 """
 
 import copy
@@ -112,6 +119,43 @@ def prelude(project):
     )
 
 
+#: The plugin whose rules are copied into the checkouts that declare it,
+#: and the checkout beside the hook project on the same machine.
+RULES_PLUGIN = "rules-plugin@uze-lab"
+OTHER_PROJECT = "/work/rules-other"
+#: Printed around the hook project's rules once the declaration ran, so the
+#: run's evidence says which copies the checkout held.
+COPIES_BEGIN = "UZE_RULES_COPIES_BEGIN"
+COPIES_END = "UZE_RULES_COPIES_END"
+
+
+def plugin_prelude(project, declaring):
+    """The hook project and another checkout on one machine, `project`
+    declaring the plugin when `declaring` and the other one otherwise, and
+    the harnesses set up."""
+    declared = project if declaring else OTHER_PROJECT
+    lines = []
+    for root in (project, OTHER_PROJECT):
+        lines += [
+            f"mkdir -p {root} && cd {root}",
+            "git init -q -b main .",
+            "git config user.name lab && git config user.email lab@uze.invalid",
+            "printf 'lab project\\n' > README.md",
+            "git add -A && git commit -q -m init",
+        ]
+    return "\n".join(
+        [
+            *lines,
+            f"cd {declared}",
+            f"uze {RULES_PLUGIN} >/work/rules-plugin-add.log 2>&1 || cat /work/rules-plugin-add.log",
+            "git add -A && git commit -q -m 'declare the rules plugin' || true",
+            SETUP,
+            f"cd {project}",
+            f"echo {COPIES_BEGIN}; ls -1 .agents/rules 2>/dev/null || true; echo {COPIES_END}",
+        ]
+    )
+
+
 def _write(bindings, expected, relative):
     row = expected["aliases"]["file.write"]
     return {
@@ -128,10 +172,19 @@ def assert_contract(cfg, prov_ip, bindings):
             {
                 "rules-turn": lambda world: _turn(world, bindings, expected),
                 "rules-compact": lambda world: _compacted(world, bindings),
+                "rules-plugin-declared": lambda world: _plugin_turn(
+                    world, bindings, expected, True
+                ),
+                "rules-plugin-undeclared": lambda world: _plugin_turn(
+                    world, bindings, expected, False
+                ),
             },
         )
         _assert_turn(bindings, *found["rules-turn"])
         _assert_compacted(bindings, found["rules-compact"])
+        _assert_plugin(
+            bindings, found["rules-plugin-declared"], found["rules-plugin-undeclared"]
+        )
     start_provider(cfg, "static")
 
 
@@ -329,4 +382,79 @@ def _assert_compacted(bindings, out):
         present,
         detail,
         measured=after is not None,
+    )
+
+
+def _plugin_turn(world, bindings, expected, declaring):
+    """The control's write, then the matching one, in the hook project of a
+    machine where one of its two checkouts declares the plugin."""
+    project = bindings.hook_project
+    calls = [
+        _write(bindings, expected, CONTROL),
+        _write(bindings, expected, MATCHING),
+    ]
+    mode, env = bindings.sequence(calls, RULES_TURNS[0])
+    prov_ip = start_provider(world, mode, env)
+    prompt = f"{RULES_TURNS[0]} make the edits I name"
+    output = bindings.project_turn(
+        world, prov_ip, plugin_prelude(project, declaring), prompt, project
+    )
+    requests = _model_requests(provider_struct(world))
+    tag = "declared" if declaring else "undeclared"
+    with open(os.path.join(world.outdir, f"rules-plugin-{tag}.out"), "w") as f:
+        f.write(output)
+    with open(
+        os.path.join(world.outdir, f"rules-plugin-{tag}-requests.json"), "w"
+    ) as f:
+        json.dump(_evidence(requests), f, indent=1)
+    copies = "unread: this harness's turn does not print its prelude"
+    if COPIES_BEGIN in output and COPIES_END in output:
+        copies = output.split(COPIES_BEGIN, 1)[1].split(COPIES_END, 1)[0].split()
+    return {"requests": requests, "output": output, "copies": copies}
+
+
+def _assert_plugin(bindings, declared_turn, undeclared_turn):
+    marker = RULES["plugin_glob"]
+    turns = {}
+    for tag, found in (("declared", declared_turn), ("undeclared", undeclared_turn)):
+        turns[tag] = [r for r in found["requests"] if _carries(r, RULES_TURNS[0])]
+        check(
+            f"rules-plugin-{tag}-turn-reached-model",
+            bool(turns[tag]),
+            f"{len(turns[tag])} model requests; rules in the checkout: {found['copies']}"
+            if turns[tag]
+            else f"the turn never reached the model: {found['output'][-200:]}".replace(
+                "\n", " "
+            ),
+        )
+    after = [r for r in turns["declared"] if _results(r) >= AFTER_MATCH]
+    early = [
+        _results(r)
+        for r in turns["declared"]
+        if _results(r) < AFTER_MATCH and _carries(r, marker)
+    ]
+    fired = any(_carries(r, marker) for r in after) and not early
+    declared.presence(
+        bindings,
+        "rules-plugin-fires-where-declared",
+        "rules-plugin-fires-where-declared",
+        fired,
+        f"the plugin's glob rule is in a request after the matching write returned, "
+        f"and in none before it (early: {early}); copies: {declared_turn['copies']}",
+        measured=bool(after),
+    )
+    leaked = [_results(r) for r in turns["undeclared"] if _carries(r, marker)]
+    declared.absence(
+        bindings,
+        "rules-plugin-never-where-undeclared",
+        "rules-plugin-fires-where-declared",
+        bool(leaked),
+        settled=any(_results(r) >= AFTER_MATCH for r in turns["undeclared"]),
+        proof=fired,
+        detail="no request of the checkout that does not declare the plugin carried "
+        f"its rule, the one after the matching write included; copies there: "
+        f"{undeclared_turn['copies']}"
+        if not leaked
+        else f"the plugin's rule reached a checkout that does not declare it, with "
+        f"{leaked} tool results",
     )

@@ -118,6 +118,9 @@ RULES = {
     "always": "UZE_RULES_MARKER_ALWAYS",
     "decide_index": "UZE_RULES_MARKER_DECIDE_INDEX",
     "decide_body": "UZE_RULES_MARKER_DECIDE_BODY",
+    # The `rules-plugin` fixture's glob rule, copied into the projects that
+    # declare the plugin.
+    "plugin_glob": "UZE_RULES_MARKER_PLUGIN_GLOB",
 }
 RULES_TURNS = ("UZE_RULES_TURN_ONE", "UZE_RULES_TURN_TWO")
 #: What every provider answers a compaction with, so the request after one

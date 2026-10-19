@@ -73,6 +73,10 @@
     {
       "name": "hook-transform",
       "source": "./plugins/hook-transform"
+    },
+    {
+      "name": "rules-plugin",
+      "source": "./plugins/rules-plugin"
     }
   ]
 }

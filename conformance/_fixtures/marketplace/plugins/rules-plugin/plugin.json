@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "rules-plugin",
+  "description": "Conformance plugin rules: one glob rule, which the rules contract declares in one project and leaves out of another on the same machine, asserting it fires only in the declaring one."
+}

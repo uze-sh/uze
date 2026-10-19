@@ -384,12 +384,14 @@ def validate_marketplace(cfg):
         "lifecycle-plugin": "./plugins/lifecycle-plugin",
         "route-explicit": "./plugins/route-explicit",
         "hook-transform": "./plugins/hook-transform",
+        "rules-plugin": "./plugins/rules-plugin",
     }
     if plugins != expected:
         raise RuntimeError(f"invalid conformance marketplace inventory: {plugins}")
 
     required = (
         "plugins/flow/skills/commit/SKILL.md",
+        "plugins/rules-plugin/rules/ui.md",
         "plugins/flow/skills/review/SKILL.md",
         "plugins/flow/skills/analyze/SKILL.md",
         "plugins/flow/skills/locate/SKILL.md",
