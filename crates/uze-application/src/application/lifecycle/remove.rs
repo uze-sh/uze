@@ -133,9 +133,10 @@ pub(crate) enum ReceiptTeardown {
         report: ReconciliationReport,
         plan: PackageRemovalPlan,
     },
-    /// Every artifact the receipts own is gone, verified by `final_report` —
-    /// which is what the ledger may be forgotten against, never the snapshot
-    /// taken before detaching.
+    /// Every artifact the receipts own is gone. A receipt whose detach
+    /// reported it gone is already forgotten; `final_report` re-inspects the
+    /// rest — those already missing before detaching — and is what they may
+    /// be forgotten against, never the snapshot taken before detaching.
     Detached {
         detached_receipts: Vec<String>,
         already_missing_receipts: Vec<String>,
@@ -145,8 +146,10 @@ pub(crate) enum ReceiptTeardown {
 
 impl UzeApplication {
     /// Detaches every artifact `package_id`'s receipts own, only when all of
-    /// them reconcile as safe to remove. Leaves the ledger alone: whether a
-    /// receipt that failed to be forgotten is an error is the caller's call.
+    /// them reconcile as safe to remove. Forgets each receipt its detach
+    /// reported gone, and leaves the rest of the ledger alone: whether one
+    /// already missing that fails to be forgotten is an error is the
+    /// caller's call.
     ///
     /// `Err` only when an integration fails to detach.
     pub(crate) fn detach_owned_receipts(&self, package_id: &str) -> Result<ReceiptTeardown> {
