@@ -335,7 +335,9 @@ pub fn converge_copies(
         if let Some(directory) = target.parent() {
             std::fs::create_dir_all(directory).map_err(UzeError::write(directory))?;
         }
-        std::fs::write(&target, &shipped.bytes).map_err(UzeError::write(&target))?;
+        // Whole or not at all: a copy cut short by a crash would match
+        // neither revision, and be judged somebody's edit from then on.
+        crate::persistence::write_atomic_within(root, &target, &shipped.bytes)?;
         done.written.push(identity);
     }
     for (rule, bytes) in present {
