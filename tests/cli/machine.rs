@@ -2694,26 +2694,59 @@ fn antigravity_takes_a_session_start_hook_beside_the_rest() {
 #[test]
 fn plugin_create_refuses_instructions_and_names_an_always_on_rule() {
     let home = temporary_home("cli-create-instructions-refused");
+    let market = home.join("market");
     std::fs::create_dir_all(&home).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
-        .env("UZE_HOME", home.join("uze"))
-        .isolated_home(&home)
-        .env("PATH", uze_testkit::process::system_path())
-        .args([
-            "agent",
-            "plugin",
-            "create",
-            "greet",
-            "--market",
-            "tools",
-            "--instructions",
-        ])
-        .output()
-        .unwrap();
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\tname = Test\n\temail = t@example.invalid\n",
+    )
+    .unwrap();
+    let uze = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", home.join("uze"))
+            .isolated_home(&home)
+            .env("PATH", uze_testkit::process::system_path())
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let created = uze(&[
+        "agent",
+        "market",
+        "create",
+        "tools",
+        "--at",
+        market.to_str().unwrap(),
+    ]);
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let manifest = std::fs::read(market.join("marketplace.json")).unwrap();
+
+    let output = uze(&[
+        "agent",
+        "plugin",
+        "create",
+        "greet",
+        "--market",
+        "tools",
+        "--instructions",
+    ]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{stderr}");
     assert!(
         stderr.contains("--rules") && stderr.contains("always_on"),
         "{stderr}"
+    );
+    assert!(
+        !market.join("plugins").join("greet").exists(),
+        "nothing is scaffolded"
+    );
+    assert_eq!(
+        std::fs::read(market.join("marketplace.json")).unwrap(),
+        manifest,
+        "the marketplace lists no new plugin"
     );
 }
