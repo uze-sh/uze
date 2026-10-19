@@ -506,9 +506,10 @@ pub enum PolicyStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Placement<'a> {
     /// In a checkout of its own: the checkout as the agent should read it
-    /// (relative to the primary, `.worktrees/<id>`) and the branch it has
-    /// now, which naming the work renames.
-    Isolated { checkout: &'a Path, branch: &'a str },
+    /// (relative to the primary and spelled with `/` on every platform,
+    /// `.worktrees/<id>`) and the branch it has now, which naming the work
+    /// renames.
+    Isolated { checkout: &'a str, branch: &'a str },
     /// In the operator's own checkout, on their branch.
     InPlace,
 }
@@ -578,7 +579,6 @@ impl WorktreePolicy {
                  back; on a conflict, resolve it in the subagent's checkout, run `git \
                  rebase --continue` there, and join again; `uze agent work list` shows them. Never \
                  make a worktree with Git for this: UZE only knows the checkouts it made.\n",
-                checkout = checkout.display(),
                 target = self
                     .target
                     .as_deref()
@@ -700,7 +700,7 @@ mod tests {
 
     pub(super) fn isolated() -> Placement<'static> {
         Placement::Isolated {
-            checkout: Path::new(".worktrees/ab12cd"),
+            checkout: ".worktrees/ab12cd",
             branch: "agent/ab12cd",
         }
     }

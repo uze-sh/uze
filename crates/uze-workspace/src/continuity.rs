@@ -419,7 +419,9 @@ fn launch_instructions(project_root: &Path, cwd: &Path) -> String {
     let policy = declaration::policy(project_root).unwrap_or_default();
     match worktree::isolated_checkout(cwd) {
         Some(isolated) => {
-            let shown = PathBuf::from(worktree::WORKTREES_DIRECTORY).join(isolated.name);
+            // `/` whatever the platform: what the agent reads must match the
+            // `.worktrees/<id>` spelling everything else uses.
+            let shown = format!("{}/{}", worktree::WORKTREES_DIRECTORY, isolated.name);
             // Read now rather than taken from the slot's name: naming the
             // work renames the branch, and a resume must say the new one.
             let branch = checkout::branch_on_disk(&isolated.directory())

@@ -220,10 +220,8 @@ mod tests {
         use crate::worktree::{
             BranchPreset, BranchVocabulary, CompletionBehavior, Placement, WorktreePolicy,
         };
-        let checkout = std::path::Path::new(
-            "/home/someone-with-a-long-name/src/github.com/organization/\
-             a-rather-long-repository-name/.worktrees/ab12cd",
-        );
+        let checkout = "/home/someone-with-a-long-name/src/github.com/organization/\
+             a-rather-long-repository-name/.worktrees/ab12cd";
         for completion in [
             None,
             Some(CompletionBehavior::Merge),
