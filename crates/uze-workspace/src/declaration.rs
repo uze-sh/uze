@@ -146,6 +146,22 @@ pub fn policy(root: &Path) -> Result<WorktreePolicy> {
     Ok(declared(root)?.unwrap_or_default())
 }
 
+/// The policy an agent's launch instructions are rendered from: the
+/// declaration as written, or the built-in default with the reason when it
+/// does not read. Git is not asked about `workspace.link`: the instructions
+/// never mention a linked file, and this is read on every relaunch, where
+/// one `git check-ignore` per link is a cost every agent pays.
+pub fn for_instructions(root: &Path) -> (WorktreePolicy, Option<String>) {
+    let (policy, problems) = match read(root) {
+        Ok(section) => section.policy(),
+        Err(error) => return (WorktreePolicy::default(), Some(error.to_string())),
+    };
+    match problems.into_iter().next() {
+        Some(first) => (WorktreePolicy::default(), Some(first.reason)),
+        None => (policy.unwrap_or_default(), None),
+    }
+}
+
 /// Declares the delivery behavior, or takes the declaration back with
 /// `None`, creating the manifest when the project has none, and reports
 /// whether it had to — a caller showing a person the consequence of their

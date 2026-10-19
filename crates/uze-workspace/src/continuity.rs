@@ -11,8 +11,10 @@
 //! that is reached by *every* relaunch, including the one the terminal
 //! runtime performs when it restores a workspace with no client in the room.
 //! It therefore does no more than verifying the launch's claim against the
-//! record it names — a few `stat`s and one small read — and, on a first
-//! launch, one small write. It reads no environment: the shim decides what
+//! record it names, reading `agents.yaml` and the checkout's `HEAD` file for
+//! the agent's instructions, and writing its context: small reads and
+//! writes, and no Git process unless a channel created `.worktrees/` this
+//! launch. It reads no environment: the shim decides what
 //! the launch claims and hands it in.
 //!
 //! [`refresh`] is the other half, and runs where a background answer already
@@ -316,7 +318,11 @@ fn give_context(
 ) {
     let id = integration.id();
     let agent = owner.agent.as_str();
-    let instructions = launch_instructions(&owner.project_root, cwd);
+    let (instructions, unread) = launch_instructions(&owner.project_root, cwd);
+    if let Some(note) = unread {
+        tracing::warn!(agent, harness = id, %note, "launch instructions from the default policy");
+        plan.note.get_or_insert(note);
+    }
     if integration.context_channel().is_degraded()
         || integration.context_channel_unavailable().is_some()
     {
@@ -437,11 +443,16 @@ fn context_link(checkout: &Path, agent: &str) -> PathBuf {
 
 /// The workspace's instructions for an agent launched at `checkout`, from
 /// the policy in force and where the agent stands now. A declaration that
-/// cannot be read gives the default policy's: an agent is never launched
-/// without being told how its work is delivered.
-fn launch_instructions(project_root: &Path, cwd: &Path) -> String {
-    let policy = declaration::policy(project_root).unwrap_or_default();
-    match worktree::isolated_checkout(cwd) {
+/// cannot be read gives the default policy's, and says so on the launch's
+/// note: an agent is never launched without being told how its work is
+/// delivered, and never told the default in silence when the project
+/// declared otherwise.
+fn launch_instructions(project_root: &Path, cwd: &Path) -> (String, Option<String>) {
+    let (policy, unread) = declaration::for_instructions(project_root);
+    let note = unread.map(|reason| {
+        format!("agents.yaml's workspace section does not read ({reason}); this agent was told the default policy")
+    });
+    let instructions = match worktree::isolated_checkout(cwd) {
         Some(isolated) => {
             // `/` whatever the platform: what the agent reads must match the
             // `.worktrees/<id>` spelling everything else uses.
@@ -456,7 +467,8 @@ fn launch_instructions(project_root: &Path, cwd: &Path) -> String {
             })
         }
         None => policy.instructions(&Placement::InPlace),
-    }
+    };
+    (instructions, note)
 }
 
 /// The one visible first turn a harness with no invisible channel gets,
@@ -907,7 +919,7 @@ mod tests {
             text: BRIEFING_TEXT.to_owned(),
             share: agent_context::BRIEFING_SHARE,
         };
-        let instructions = launch_instructions(&primary, &slot);
+        let (instructions, _) = launch_instructions(&primary, &slot);
         assert_eq!(
             asked,
             [
@@ -1050,6 +1062,28 @@ mod tests {
     }
 
     #[test]
+    fn a_declaration_that_does_not_read_is_said_on_the_launch() {
+        let (home, primary, slot, id) = managed("continuity-context-unread");
+        std::fs::write(
+            primary.join("agents.yaml"),
+            "workspace:\n  delivery: sideways\n",
+        )
+        .unwrap();
+        let launch = plan(
+            &home,
+            claim(&id, &slot),
+            &Harness::with_channel(SessionContinuity::Assigned),
+        );
+        let note = launch.note.expect("the default is not given in silence");
+        assert!(note.contains("agents.yaml"), "{note}");
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(
+            context.contains(worktree::CompletionBehavior::instruction_clause(None)),
+            "the agent is still told how its work is delivered: {context}"
+        );
+    }
+
+    #[test]
     fn the_instructions_name_the_branch_the_checkout_has_now() {
         let (home, primary, slot, id) = managed("continuity-context-branch");
         let admin = primary.join(".git").join("worktrees").join("slot-1");
@@ -1069,7 +1103,7 @@ mod tests {
     #[test]
     fn an_agent_in_the_primary_checkout_is_told_it_is_on_the_operators_branch() {
         let (home, primary, _slot, _id) = managed("continuity-context-in-place");
-        let text = launch_instructions(&primary, &primary);
+        let (text, _) = launch_instructions(&primary, &primary);
         assert!(text.contains("operator's own checkout"), "{text}");
         assert!(!text.contains(".worktrees"), "{text}");
         let _ = home;
