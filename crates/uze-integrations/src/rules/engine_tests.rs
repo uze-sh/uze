@@ -583,6 +583,58 @@ struct GlobCase {
     expected: String,
 }
 
+/// What the Rust model refuses as a whole file, the engine refuses too: a
+/// rule `uze status` reports as not delivered never reaches a session.
+#[test]
+fn a_file_the_rust_model_refuses_is_never_delivered() {
+    let checkout = Checkout::new("rules-engine-refused-files");
+    checkout.rule(
+        "empty-pattern.md",
+        "trigger: glob\nglobs: **/x.rs,,**/src/c.rs",
+        "EMPTY-PATTERN",
+    );
+    checkout.rule(
+        "no-colon.md",
+        "trigger: glob\nglobs: **/src/c.rs\nnot a key value",
+        "NO-COLON",
+    );
+    checkout.rule(
+        "commented.md",
+        "# a comment the model skips\ntrigger: glob\nglobs: **/src/c.rs",
+        "COMMENTED",
+    );
+    checkout.file("src/c.rs");
+    let answer = checkout.ask(
+        &serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "s",
+            "cwd": checkout.root,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "src/c.rs"},
+        })
+        .to_string(),
+    );
+    let text = answer.context("PostToolUse");
+    for refused in ["EMPTY-PATTERN", "NO-COLON"] {
+        assert!(!text.contains(refused), "{refused} delivered: {text}");
+        let rule = format!(
+            "---\n{}\n---\nbody\n",
+            match refused {
+                "EMPTY-PATTERN" => "trigger: glob\nglobs: **/x.rs,,**/src/c.rs",
+                _ => "trigger: glob\nglobs: **/src/c.rs\nnot a key value",
+            }
+        );
+        assert!(
+            uze_core::rules::parse_rule(".agents/rules/r.md", rule.as_bytes()).is_err(),
+            "the Rust model refuses {refused} too"
+        );
+    }
+    assert!(
+        text.contains("COMMENTED"),
+        "a comment line is no fault: {text}"
+    );
+}
+
 fn glob_table() -> Vec<GlobCase> {
     fs::read_to_string(fixtures().join("glob-dialect.tsv"))
         .unwrap()

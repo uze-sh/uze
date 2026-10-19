@@ -4,7 +4,9 @@
 #
 # Columns, separated by one tab: pattern, path, expected.
 #   expected is `match`, `no-match`, or `invalid` (the pattern is outside
-#   the dialect, so no reader delivers a rule using it; path is `-`).
+#   the dialect, so no reader delivers a rule using it; path is one the
+#   pattern would name if it were accepted, so a reader that took it would
+#   be caught delivering).
 # Paths are relative to the checkout root, `/` between segments.
 # Lines starting with `#` and blank lines are ignored.
 
@@ -63,19 +65,24 @@ a?c	a/c	no-match
 **/space dir/*.txt	space dir/a.txt	match
 
 # outside the dialect
-src/ui/**	-	invalid
-src/*.rs	-	invalid
-*/x.one	-	invalid
-**/src/**/*.{ts,tsx}	-	invalid
-**/src/[!ab].rs	-	invalid
-**/src/[ab.rs	-	invalid
-!**/src/**	-	invalid
-/src/**	-	invalid
-**/src/@(a|b).rs	-	invalid
-**/src\ui\**	-	invalid
-**/src//ui	-	invalid
-**/src/ui/	-	invalid
-./src/**	-	invalid
-**/src/../ui	-	invalid
-**/src/**.ts	-	invalid
-a**	-	invalid
+src/ui/**	src/ui/a.ts	invalid
+src/*.rs	src/main.rs	invalid
+*/x.one	a/x.one	invalid
+**/src/**/*.{ts,tsx}	src/a.ts	invalid
+**/src/[!ab].rs	src/c.rs	invalid
+**/src/[^ab].rs	src/c.rs	invalid
+**/[]x.rs	]x.rs	invalid
+**/src/[a[b].rs	src/a.rs	invalid
+**/src/[ab.rs	src/[ab.rs	invalid
+!**/src/**	src/a.rs	invalid
+/src/**	src/a.rs	invalid
+**/src/@(a|b).rs	src/@(a|b).rs	invalid
+**/a|b.rs	a|b.rs	invalid
+**/x(y).rs	x(y).rs	invalid
+**/src\ui\**	src\ui\a.rs	invalid
+**/src//ui	src/ui	invalid
+**/src/ui/	src/ui	invalid
+./src/**	src/a.rs	invalid
+**/src/../ui	ui	invalid
+**/src/**.ts	src/a.ts	invalid
+a**	ab	invalid

@@ -106,7 +106,7 @@ function attr(s) {
 # `[...]` classes and literal characters. Anything else is outside it, and
 # the rule is not delivered.
 function ere(p,   n, segs, i, s, re, sep, j, c, t, end, class) {
-  if (p == "" || p ~ /[{}\\]/) return ""
+  if (p == "" || p ~ /[{}\\!()|\t]/) return ""
   if (p == "**") return "^.*$"
   if (index(p, "/") == 0) p = "**/" p
   else if (substr(p, 1, 3) != "**/") return ""
@@ -128,11 +128,15 @@ function ere(p,   n, segs, i, s, re, sep, j, c, t, end, class) {
       if (c == "*") t = t "[^/]*"
       else if (c == "?") t = t "[^/]"
       else if (c == "[") {
+        # A set or range of one character. Empty, nested or negated sets
+        # are refused, as the Rust model refuses them: readers disagree on
+        # what `[!a]` and `[^a]` mean.
+        if (substr(s, j + 1, 1) == "]") return ""
         end = index(substr(s, j + 2), "]")
         if (end == 0) return ""
         class = substr(s, j + 1, end)
         j += end + 1
-        if (substr(class, 1, 1) == "!" || substr(class, 1, 1) == "^") class = "^/" substr(class, 2)
+        if (substr(class, 1, 1) == "^" || index(class, "[")) return ""
         t = t "[" class "]"
       }
       else if (c == "]") return ""
@@ -161,7 +165,7 @@ function finish(   id, n, pats, m, res, i, p, re, hit, k) {
     n = split(globs, pats, ","); m = 0
     for (i = 1; i <= n; i++) {
       p = trim(pats[i])
-      if (p == "") continue
+      if (p == "") return
       re = ere(p)
       if (re == "") return
       res[++m] = re
@@ -196,8 +200,11 @@ state == 0 { state = (line == "---") ? 1 : 3; next }
 # the file no rule, exactly as the Rust model decides.
 state == 1 {
   if (line == "---") { state = 2; next }
+  if (trim(line) ~ /^#/) next
   if (line ~ /^[ \t-]/) { if (open_key && trim(line) != "") broken = 1; next }
   open_key = 0
+  # A line that is not `key: value` makes the file no rule.
+  if (trim(line) != "" && index(line, ":") == 0) { broken = 1; next }
   if (line ~ /^[A-Za-z_][A-Za-z0-9_-]*[ \t]*:/) {
     key = line; sub(/[ \t]*:.*/, "", key)
     value = line; sub(/^[^:]*:/, "", value)
