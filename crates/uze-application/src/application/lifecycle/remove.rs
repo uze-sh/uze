@@ -209,9 +209,8 @@ impl UzeApplication {
                     let parent = parent.clone();
                     scope.spawn(move || {
                         parent.in_scope(|| {
-                            // Forgotten as soon as it is gone: a harness
-                            // that keeps several groups in one file (the
-                            // OpenCode hook bridge) regenerates it from the
+                            // Forgotten as soon as it is gone: a detach
+                            // may rebuild a file its siblings share from the
                             // receipts still in the ledger, and a sibling
                             // detached but still recorded reads as drift.
                             for receipt in receipts {
