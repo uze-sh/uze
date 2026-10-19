@@ -482,16 +482,17 @@ fn package_store_inconsistency(package: &StoredPackage) -> Option<String> {
 /// context invisibly, if it is not: no channel at all, or one that cannot
 /// run on this machine right now.
 pub(crate) fn agent_context_shortfall(integration: &dyn IntegrationPort) -> Option<String> {
+    const FIRST_TURN: &str = "each new conversation is pointed at its instructions (and a \
+         switched agent's briefing) by a visible first turn, and no memory is given";
     if let Some(reason) = integration.context_channel_unavailable() {
         return Some(format!(
-            "agent context (memory and briefings) does not reach it ({reason})"
+            "agent context does not reach it invisibly ({reason}): {FIRST_TURN}"
         ));
     }
-    integration.context_channel().is_degraded().then(|| {
-        "agent context does not reach it: no memory is given, and a switched agent is pointed \
-         at its briefing by a visible first turn"
-            .to_owned()
-    })
+    integration
+        .context_channel()
+        .is_degraded()
+        .then(|| format!("agent context does not reach it invisibly: {FIRST_TURN}"))
 }
 
 #[cfg(test)]
