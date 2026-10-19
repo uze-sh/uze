@@ -298,8 +298,10 @@ rule_file() {
 
 # Every rule file once, relative to the checkout root: those directly under
 # .agents/rules/, and those the manifest registers. A manifest jq cannot
-# read registers nothing.
-found=$(
+# read registers nothing. A function rather than the body of `$(...)`: the
+# bash 3.2 that is macOS's /bin/sh ends a substitution at the first `)` of a
+# case pattern.
+rule_files() {
   for rule in "$root"/.agents/rules/*.md; do rule_file "${rule#"$root"/}"; done
   if [ -f "$manifest" ]; then
     entries=$("$JQ" -r --arg root "$root" "$MANIFEST" "$manifest" 2>/dev/null) || entries=
@@ -322,7 +324,20 @@ found=$(
       esac
     done
   fi
-)
+}
+found=$(rule_files)
+
+# The touched paths that count, read from stdin: each `x:` line as it is,
+# each `e:` line only while it names something in the checkout. A function
+# for the same reason as `rule_files`.
+touched_paths() {
+  while IFS= read -r line; do
+    case $line in
+      x:*) printf '%s\n' "${line#x:}" ;;
+      e:*) if [ -e "$root/${line#e:}" ]; then printf '%s\n' "${line#e:}"; fi ;;
+    esac
+  done
+}
 set --
 while IFS= read -r rel; do
   [ -n "$rel" ] && set -- "$@" "$root/$rel"
@@ -357,12 +372,7 @@ else
   candidates=$(printf '%s' "$payload" | "$JQ" -r "$CANDIDATES" 2>/dev/null) || exit 0
   [ -n "$candidates" ] || exit 0
   touched=$(printf '%s\n' "$candidates" | ROOT=$root BASE=$base CWD=$cwd awk "$NORMALIZE" 2>/dev/null) || exit 0
-  paths=$(printf '%s\n' "$touched" | while IFS= read -r line; do
-    case $line in
-      x:*) printf '%s\n' "${line#x:}" ;;
-      e:*) if [ -e "$root/${line#e:}" ]; then printf '%s\n' "${line#e:}"; fi ;;
-    esac
-  done)
+  paths=$(printf '%s\n' "$touched" | touched_paths)
   [ -n "$paths" ] || exit 0
 fi
 
