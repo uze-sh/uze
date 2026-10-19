@@ -3,9 +3,8 @@ tags: [gate, cli, packages]
 proves: web/content/docs/plugins/index.mdx
 about: |
   A person who installs plugins and starts their agents by hand gets the
-  plugins, one AGENTS.md, and nothing of the workspace: no isolation policy
-  declared for them, no workspace section in AGENTS.md, no checkout, and no
-  edit to their shell. A harness they type in a plain shell is the harness's
+  plugins and nothing of the workspace: no isolation policy declared for
+  them, no AGENTS.md written, no checkout, and no edit to their shell. A harness they type in a plain shell is the harness's
   own binary.
 
 world:
@@ -54,11 +53,8 @@ scenes:
         excludes: "workspace:"
         about: and declares no workspace policy on the person's behalf
       - file: "{project}/AGENTS.md"
-        contains: "uze:begin project:plugin-authoring"
-        about: AGENTS.md carries the package manager's own region
-      - file: "{project}/AGENTS.md"
-        excludes: "project:worktree-policy"
-        about: and nothing of the workspace's
+        exists: false
+        about: no AGENTS.md is begun, since that page is the person's to write
       - dir: "{project}/.worktrees"
         exists: false
         about: no checkout was made

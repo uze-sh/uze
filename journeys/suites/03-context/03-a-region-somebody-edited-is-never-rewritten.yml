@@ -1,23 +1,19 @@
-journey: a region somebody edited by hand is reported, never rewritten
+journey: a section an earlier uze wrote is taken back, unless somebody edited it
 tags: [gate, cli, context]
 proves: web/content/docs/plugins/context.mdx
 about: |
-  UZE owns a marked region inside a page the team owns. The marks are what
-  make that ownership takeable back — and they are also an invitation, since
-  the easiest thing in the world is to open AGENTS.md, see a sentence that is
-  nearly right, and fix it in place without noticing which side of a comment
-  you are on.
+  Earlier releases wrote sections of their own into AGENTS.md, between
+  marks. This one writes nothing there, and `uze install` takes those
+  sections back, the one change UZE ever makes to the page. The marks were
+  also an invitation: the easiest thing in the world is to open AGENTS.md,
+  see a sentence that is nearly right, and fix it in place without noticing
+  which side of a comment you are on.
 
-  What must not happen next is the one thing a naive reconcile does: compose
-  the region again from the plugin, silently, and take the edit with it. A
-  person who loses a sentence that way loses their trust in the command, not
-  just the sentence — and they lose it quietly, which is worse, because the
-  next reconcile is the one that costs them something they needed.
-
-  So the rule is the same one receipts hold for packages: what UZE did not
-  write, UZE does not destroy. It reports the region as drifted and leaves
-  it exactly as the person left it, and this journey reads the page
-  afterwards to check it did.
+  What must not happen then is the one thing a naive cleanup does: delete
+  the section by its marks and take the edit with it. A section is removed
+  only while it still holds exactly what the earlier release wrote; one a
+  person edited is left as they left it, and named as kept, so the person
+  knows there is something to decide.
 
 world:
   project: demo-app
@@ -25,7 +21,7 @@ world:
     - message: "chore: initial commit"
       files:
         README.md: "# demo-app\n"
-    - message: "docs: the team's own conventions"
+    - message: "docs: the team's conventions, beside what an earlier uze wrote"
       files:
         AGENTS.md: |
           # demo-app
@@ -35,99 +31,69 @@ world:
           ## Conventions
 
           - Conventional Commits for commit subjects.
-  files:
-    market/marketplace.json: |
-      {
-        "name": "demo",
-        "plugins": [
-          { "name": "house-rules", "source": "./plugins/house-rules", "description": "Instructions plugin." }
-        ]
-      }
-    market/plugins/house-rules/plugin.json: |
-      {
-        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-        "name": "house-rules",
-        "version": "1.0.0",
-        "description": "Shared house rules."
-      }
-    market/plugins/house-rules/AGENTS.md: |
-      # House rules
 
-      - Always run `make check` before committing.
-  # The project declares the plugin: what makes its instructions this
-  # project's to carry, since installing it only puts it on the machine.
+          <!-- uze:begin project:plugin-authoring/1c13c82595549e7f -->
+          ## Authoring plugins
+
+          - Creating a plugin is agent work, driven with these deterministic verbs, none of which needs anything but `uze` on the machine: `uze agent market create <name> --at <dir> [--description <text>]` scaffolds a marketplace as a Git repository, registers and links it in one step (or skip to the next verb when a marketplace already exists — ask `uze market list` for the names); `uze agent plugin create <name> --market <market> [--hook] [--mcp] [--instructions]` scaffolds a plugin into it; `uze agent plugin check <path>` and `uze agent market check <path>` validate offline — run the check before any install, then `uze install -m <plugin>@<market>` and iterate on the files, which the linked marketplace already reads. The guided script for the whole loop is the `uze:author` skill.
+          <!-- uze:end project:plugin-authoring/1c13c82595549e7f -->
+          <!-- uze:begin project:worktree-policy/f03c15cfb7b29e8a -->
+          ## Concurrent work isolation
+
+          This section is for an agent `uze workspace` launched. An agent started any other way can ignore it: nothing below applies to it, and the `uze agent work` commands it names refuse outside the workspace.
+
+          - As soon as a user message gives the conversation a clear topic — normally the first message — make naming your work your first command, before reading a file, planning or editing: `uze agent work name <type>/<subject>`. Types this project accepts: `feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert`. The subject is ideally one or two words, never more than three, naming the intention, not a description of the task — `fix/branch-naming`, not `fix/correct-the-problem-with-agent-branch-names`. The command always updates your label. In a checkout of your own it also renames your branch; in the operator's checkout only your label changes. Work that reaches a commit still unnamed is named by UZE from that commit's subject. Name it again with the same command whenever the work turns out to be something else — the last name given is the one that stands. Invoke the command directly; do not merely say you will name the work.
+          - An agent UZE isolated works in a checkout of its own under `.worktrees/<id>`, on branch `agent/<id>`. If your working directory is inside `.worktrees/`, you are already isolated; do not switch branches.
+          - If your working directory is not inside `.worktrees/`, you are in the operator's own checkout, on the branch they are on: commit there, as you go, and never switch, reset, stash or clean it — the operator's uncommitted work is theirs. Nothing below about delivery applies to you; the branch keeps the name it has. Naming your work still applies here, first: it names your label, never their branch.
+          - Commit your work on your own branch, as you go. Never commit to, merge into, rebase, or reset the target branch: delivery is UZE's — UZE rebases your branch onto the target, runs the project's checks and pushes it; open a request only when the project's instruction asks you to, and otherwise commit on your branch and stop, never on a Friday.
+          - If UZE tells you a rebase is paused in your checkout, resolve the conflicts preserving the intent of your change, run `git rebase --continue`, run the project's checks, and end your turn.
+          - Before spawning parallel subagents that write files, give each its own checkout: `uze agent work split <topic>` prints the path of one cut from your current commit — hand that path to the subagent. When it is done, commit in both checkouts and run `uze agent work join <topic>` to bring its commits onto your branch; on a conflict, resolve it in the subagent's checkout, run `git rebase --continue` there, and join again. `uze agent work list` shows them. Never make a worktree with Git for this: UZE only knows the checkouts it made. An agent in the operator's checkout has no branch of its own to join into, and runs its subagents one after another instead.
+          <!-- uze:end project:worktree-policy/f03c15cfb7b29e8a -->
   manifest: |
-    marketplaces:
-      demo:
-        path: ../../market
-        plugins:
-          - house-rules
+    marketplaces: {}
 
 scenes:
-  - scene: a contribution composed into the region UZE owns
-    when:
-      - shell: "{uze} setup"
-      - shell: "{uze} market add {world}/market"
-      - shell: "{uze} install -m house-rules@demo"
-      - shell: "{uze} agent context reconcile"
-        say: compose the plugin's instructions into the project's page
+  - scene: a page an earlier release wrote into, one of its sections since edited by hand
     then:
       - file: "{project}/AGENTS.md"
-        contains: "Always run `make check` before committing."
-        about: the plugin's own words are on the page
+        contains: "uze:begin project:plugin-authoring"
+        about: the page holds both old sections, as the clone brought it
       - cmd:
-          run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_contains: "matched"
+          run: "{uze} status"
+          stdout_contains: "an earlier uze wrote"
         about: |
-          and UZE reads the region as its own — which is what makes the
-          next scene a change rather than a coincidence
+          the project's own report names the old sections, before any
+          command touched the page
+      - cmd:
+          run: "{uze} agent context inspect | grep project:worktree-policy"
+          stdout_contains: "edited by hand"
+        about: |
+          and the edited one is told apart from the one still as written,
+          which is what makes the next scene a decision rather than a coincidence
 
-  - scene: somebody edits inside the marks, and reconciling leaves it alone
+  - scene: install takes back the untouched section and leaves the edited one alone
     when:
-      - shell: |
-          set -e
-          {python} - <<'EDIT'
-          from pathlib import Path
-          page = Path("{project}/AGENTS.md")
-          body = page.read_text()
-          before = "Always run `make check` before committing."
-          after = "Always run `make check` before committing, never on a Friday."
-          assert before in body, "the plugin's sentence is the one being edited"
-          page.write_text(body.replace(before, after))
-          EDIT
-        say: |
-          a person opens the page and fixes a sentence that happens to sit
-          inside UZE's region — the ordinary mistake this rule exists for
-      - shell: "{uze} agent context reconcile"
-        say: reconcile again, the way any later command would
+      - shell: "{uze} install"
+        say: converge the project, the way any later install would
     then:
       - file: "{project}/AGENTS.md"
-        contains: "Always run `make check` before committing, never on a Friday."
+        excludes: "project:plugin-authoring"
+        about: the section still exactly as the earlier release wrote it is gone
+      - file: "{project}/AGENTS.md"
+        contains: "commit on your branch and stop, never on a Friday."
         about: |
-          the person's sentence is still on the page, word for word — the
-          region was not composed again over the top of it
+          the person's sentence is still on the page, word for word, with
+          the section around it
       - file: "{project}/AGENTS.md"
         contains: "Conventional Commits for commit subjects."
         about: with the team's own section untouched as always
       - cmd:
-          run: "grep -c 'Always run' {project}/AGENTS.md"
+          run: "grep -c 'never on a Friday' {project}/AGENTS.md"
           stdout_contains: "1"
-        about: |
-          and said once, not twice: a reconcile that could not own the
-          region did not append a second copy beside it either
-
-  - scene: it is reported rather than passed over in silence
-    then:
+        about: and said once, not twice
       - cmd:
-          run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_contains: "drifted"
+          run: "{uze} agent context inspect | grep project:worktree-policy"
+          stdout_contains: "keep"
         about: |
-          UZE names the region as drifted, so a person who wants the
-          plugin's version back knows there is something to decide
-      - cmd:
-          run: "{uze} agent context inspect | grep house-rules@demo"
-          stdout_excludes: "matched"
-        about: |
-          and stops calling it matched — "we left it alone" and "it is
-          what we wrote" are different facts, and reading as matched is
-          what would let the next release quietly rewrite it
+          UZE names the edited section as kept, so a person who wants it
+          gone knows there is something left to decide

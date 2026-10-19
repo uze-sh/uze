@@ -4,9 +4,9 @@ proves: web/content/docs/workspace/terminal.mdx
 about: |
   The workspace builds on the package manager and never the reverse. Opened
   on a project that already installed its plugins and chose a policy, it
-  brings its own section of AGENTS.md in step without a command, puts its
-  shims first on PATH in its own panes so a harness typed there goes
-  through them, and leaves the package manager's lock exactly as it was.
+  writes nothing into the project's AGENTS.md, puts its shims first on PATH
+  in its own panes so a harness typed there goes through them, and leaves
+  the package manager's lock exactly as it was.
 
 world:
   project: demo-app
@@ -48,29 +48,15 @@ scenes:
         say: add and install the plugin, and remember the lock's bytes
     then:
       - file: "{project}/AGENTS.md"
-        excludes: "project:worktree-policy"
-        about: install leaves the workspace's section to the workspace
+        exists: false
+        about: install begins no AGENTS.md, which is the team's page
 
-  - scene: and then the workspace opens and keeps its own section in step
+  - scene: and then the workspace opens, and a harness typed into a pane goes through the shim
     when:
       - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
-      - wait: shell
-        until: grep -q project:worktree-policy {project}/AGENTS.md
-        timeout: 30
-        say: the workspace brings AGENTS.md in step when the space opens
-    then:
-      - file: "{project}/AGENTS.md"
-        contains: "An agent started any other way can ignore it"
-        about: the section opens by saying who it is for
-      - file: "{project}/AGENTS.md"
-        contains: "uze:begin project:plugin-authoring"
-        about: and the package manager's region is still there beside it
-
-  - scene: and then a harness typed into a pane goes through the shim
-    when:
       # Asked through Python rather than the shell's own `command -v`: the
       # pane's shell is bash here and PowerShell on Windows, and one line
       # both run is the same question asked of the PATH the pane holds. One
@@ -103,3 +89,6 @@ scenes:
       - file: "{project}/agents.lock"
         contains: "flow"
         about: the workspace changed nothing the package manager owns
+      - file: "{project}/AGENTS.md"
+        exists: false
+        about: nor began the team's page, though its policy is in force

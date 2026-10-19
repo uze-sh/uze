@@ -1,13 +1,12 @@
-journey: changing the worktree policy changes what agents read, while the workspace runs
+journey: changing the worktree policy changes what the next agent is told, and never the team's page
 tags: [gate, tui, context]
 proves: web/content/docs/workspace/agents.mdx
 about: |
-  UZE reads `workspace:` live wherever it acts on the policy itself. The
-  agents that must honour it read something else: the section the workspace
-  keeps in `AGENTS.md`. So a policy could be in force for UZE and not for
-  them, for as long as nobody ran a command. The workspace closes that gap
-  itself while it runs, and the package manager, which a person using only
-  plugins runs, never writes or counts that section.
+  UZE reads `workspace:` live wherever it acts on the policy itself, and the
+  agents that must honour it are told it at launch, in the context UZE
+  composes for each one outside the checkout. So the policy in force is the
+  one an agent is given, with no command run in between, and the team's
+  AGENTS.md is never the place it is written.
 
   A separate file from the plugin journey next door: a different claim,
   and a run stops at the first failure, so claims that share a file share a
@@ -15,56 +14,85 @@ about: |
 
 world:
   project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+    - message: "docs: the team's own conventions"
+      files:
+        AGENTS.md: |
+          # demo-app
+
+          - Conventional Commits for commit subjects.
   manifest: |
     workspace:
       target: main
+      worktree: always
 
 scenes:
-  - scene: install gives the project its AGENTS.md and leaves the policy to the workspace
+  - scene: an agent launched under the policy in force is told it
     when:
-      - shell: "{uze} install"
-        say: set the project up
-    then:
-      - file: "{project}/AGENTS.md"
-        contains: "uze:begin project:plugin-authoring"
-        about: the package manager writes its own section
-      - file: "{project}/AGENTS.md"
-        excludes: "left for a person to integrate"
-        about: and not the workspace's
-
-  - scene: and then the workspace opens and projects the policy in force
-    when:
+      - shell: "{uze} setup"
+        say: the operator provisions their harnesses, which installs the launchers
       - open: ["{uze}", "workspace"]
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
+      - click: "new"
+        say: open the new-agent picker
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: place a Claude agent
+        row_offset: 1
+        offset: 3
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
       - wait: shell
-        until: grep -q "left for a person to integrate" {project}/AGENTS.md
-        timeout: 30
-        say: the workspace brings AGENTS.md in step when the space opens
+        until: test "$(ls {uze_home}/runtime/projects/*/agents/*/CLAUDE.md 2>/dev/null | wc -l)" -ge 1
+        timeout: 60
+        say: the agent is placed and given its context
     then:
-      - file: "{project}/AGENTS.md"
-        contains: "left for a person to integrate"
-        about: the section carries the words of the policy in force
+      - cmd:
+          run: >
+            f=$(ls -t {uze_home}/runtime/projects/*/agents/*/CLAUDE.md | head -1);
+            grep -q "left for a person to integrate" "$f"
+        about: the agent's own context carries the words of the policy in force
+      - cmd:
+          run: git -C {project} diff --quiet HEAD -- AGENTS.md
+        about: and the team's page is byte for byte the one they committed
 
-  - scene: and then a changed policy reaches the file with no command run
+  - scene: and then a changed policy reaches the next agent with no command run
     when:
       - shell: |
           set -e
-          printf 'workspace:\n  target: main\n  delivery: merge\n' > {project}/agents.yaml
+          printf 'workspace:\n  target: main\n  worktree: always\n  delivery: merge\n' > {project}/agents.yaml
         say: the person changes the delivery behaviour
+      - click: "new"
+        say: place another agent
+        in: sidebar
+        expect: new agent
+      - click: " new agent "
+        say: another Claude agent
+        row_offset: 1
+        offset: 3
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 2.0
+      # The first agent's pane already says `Claude Code v`, so the gate
+      # above can hold before the second one is placed; its context file
+      # is what says it was.
       - wait: shell
-        until: grep -q "fast-forwards the target" {project}/AGENTS.md
+        until: test "$(ls {uze_home}/runtime/projects/*/agents/*/CLAUDE.md | wc -l)" -ge 2
         timeout: 60
-        say: the workspace notices the edit on its refresh clock
+        say: the second agent is placed and given its context
     then:
-      - file: "{project}/AGENTS.md"
-        contains: "fast-forwards the target"
-        about: the section carries the new policy's own words
-      - file: "{project}/AGENTS.md"
-        excludes: "left for a person to integrate"
-        about: and the superseded words are gone, not left beside them
       - cmd:
-          run: "{uze} status"
-          stdout_excludes: "AGENTS.md is behind"
-        about: and the package manager has nothing to say about the workspace's section
+          run: >
+            f=$(ls -t {uze_home}/runtime/projects/*/agents/*/CLAUDE.md | head -1);
+            grep -q "fast-forwarding the target" "$f" && ! grep -q "left for a person to integrate" "$f"
+        about: the newest agent is told the new policy's words, not the superseded ones
+      - cmd:
+          run: git -C {project} diff --quiet HEAD -- AGENTS.md
+        about: and the team's page is still the one they committed

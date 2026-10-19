@@ -97,6 +97,13 @@ scenes:
         expect: Claude Code v
         expect_timeout: 45
         pause: 2.0
+      # The first agent's pane already says `Claude Code v`, so the gate
+      # above can hold before the second one is placed; its context file
+      # is what says it was.
+      - wait: shell
+        until: test "$(ls {uze_home}/runtime/projects/*/agents/*/CLAUDE.md | wc -l)" -ge 2
+        timeout: 60
+        say: the second agent is placed and given its context
     then:
       - cmd:
           run: >
