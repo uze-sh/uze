@@ -1037,8 +1037,9 @@ mod tests {
         let link = context_link(&primary, "agent-1");
         assert!(link.as_os_str() > primary.as_os_str());
 
-        // The same tree reached through a link: what the launch's cwd says
-        // is what a channel compares against, not the resolved path.
+        // The same tree reached through a link, made the Unix way: what the
+        // launch's cwd says is what a channel compares against, not the
+        // resolved path.
         #[cfg(unix)]
         {
             let alias = root.join("alias");

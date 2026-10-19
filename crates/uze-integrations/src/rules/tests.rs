@@ -27,7 +27,7 @@ fn regenerate_goldens() {
 }
 
 // The rendered templates name the engine's path with `/`, and they ship
-// only where the engine runs; a PowerShell platform renders none.
+// only on Unix, where the engine runs; Windows renders none.
 #[cfg(unix)]
 #[test]
 fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
@@ -60,7 +60,7 @@ fn nothing_in_a_delivered_template_names_the_packager() {
 }
 
 // The rendered templates name the engine's path with `/`, and they ship
-// only where the engine runs; a PowerShell platform renders none.
+// only on Unix, where the engine runs; Windows renders none.
 #[cfg(unix)]
 #[test]
 fn the_opencode_plugin_imports_nothing_and_rides_the_two_v2_hooks() {
@@ -116,19 +116,19 @@ impl Machine {
         self.root.join("claude/settings.json")
     }
 
-    // Read only by the attach tests, which run where the engine does.
+    // Read only by the attach tests, which run on Unix, where the engine does.
     #[cfg(unix)]
     fn codex_hooks(&self) -> PathBuf {
         self.root.join(".codex/hooks.json")
     }
 
-    // Read only by the attach tests, which run where the engine does.
+    // Read only by the attach tests, which run on Unix, where the engine does.
     #[cfg(unix)]
     fn opencode_plugin(&self) -> PathBuf {
         self.root.join("opencode/plugins").join(plugin::FILE_NAME)
     }
 
-    // Read only by the attach tests, which run where the engine does.
+    // Read only by the attach tests, which run on Unix, where the engine does.
     #[cfg(unix)]
     fn json(path: &Path) -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
@@ -164,7 +164,7 @@ impl Drop for Machine {
     }
 }
 
-// Read only by the attach tests, which run where the engine does.
+// Read only by the attach tests, which run on Unix, where the engine does.
 #[cfg(unix)]
 fn foreign_claude_settings() -> serde_json::Value {
     serde_json::json!({
@@ -502,7 +502,7 @@ fn an_entry_an_earlier_build_wrote_is_replaced_not_doubled() {
     assert_eq!(start[0]["hooks"][0]["timeout"], 10);
 }
 
-// The other half of the gate above: where the engine cannot run, attaching
+// The Windows half of the gate above: where the engine cannot run, attaching
 // writes nothing and reports nothing delivered.
 #[cfg(windows)]
 #[test]
