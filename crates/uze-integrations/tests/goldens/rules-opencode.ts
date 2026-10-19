@@ -9,10 +9,14 @@ const ENGINE = "/machine/state/runtime/attachments/opencode/rules/engine";
 const SESSIONS = "/machine/state/runtime/rules/sessions";
 const SECONDS = 10;
 
-// Where the session works. The event names it where OpenCode says; the
-// plugin context otherwise; the server's own directory last.
-function directory(ctx, event) {
-  return event?.directory ?? event?.cwd ?? ctx?.directory ?? ctx?.worktree ?? process.cwd();
+// Where the session works: the location of the instance OpenCode set this
+// plugin up for, one per directory it serves. Neither the event nor the
+// process says it: the events carry no directory, `ctx.worktree` is the
+// worktree API rather than a path, and a shared service runs in the home
+// directory whatever project it serves. Without a location, nothing.
+function directory(ctx) {
+  const where = ctx?.location?.directory;
+  return typeof where === "string" ? where : "";
 }
 
 // The engine's additionalContext for `payload`, or null.
@@ -59,7 +63,7 @@ export default {
           hook_event_name: "SessionStart",
           source: "context",
           session_id: event.sessionID ?? "",
-          cwd: directory(ctx, event),
+          cwd: directory(ctx),
         });
         if (!text) return;
         const first = event.system[0];
@@ -74,7 +78,7 @@ export default {
         const text = await ask({
           hook_event_name: "PostToolUse",
           session_id: event.sessionID ?? "",
-          cwd: directory(ctx, event),
+          cwd: directory(ctx),
           tool_name: event.tool,
           tool_input: event.input ?? {},
         });

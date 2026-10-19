@@ -200,3 +200,22 @@ the engine and delivery's (tasks 3, 4, 5.1, 5.2, 5.5).
   appended to the ones `doctor` already renders; `jq` is reported only when
   some harness holds an engine receipt.
 - **Alternative:** a new `DoctorReport` field and its own rendering.
+
+## E9: OpenCode's plugin names the checkout by `ctx.location.directory`
+
+- **Context:** 6.1, measured on OpenCode 2.0.32
+  (`experiments/opencode/rules-directory`). Neither a `context` nor an
+  `execute.after` event carries a directory; `ctx.directory` is absent;
+  `ctx.worktree` is the worktree API (`list`, `create`, …), not a path, so
+  the first template handed the engine an object as `cwd` and no rule ever
+  reached an OpenCode session. `process.cwd()` is the project only in a
+  standalone launch: the shared service runs in the home directory
+  whatever it serves. OpenCode sets a plugin up once per directory it
+  serves, and that instance's `ctx.location.directory` is the session's
+  directory in both topologies.
+- **Decision:** the plugin reads `ctx.location.directory` and nothing
+  else; without one it asks with an empty `cwd`, which the engine answers
+  with nothing.
+- **Alternative:** falling back to `process.cwd()`, which under the shared
+  service is the home directory, and would hand a session the rules of
+  whatever repository the home directory is.

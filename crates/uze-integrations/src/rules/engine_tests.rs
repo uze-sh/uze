@@ -705,7 +705,10 @@ fn bun_available() -> bool {
 
 /// The plugin, loaded by real Bun with a V2-shaped plugin context, asks
 /// the real engine and hands its answer to the model: onto the request's
-/// system parts before a request, onto the tool result after a call.
+/// system parts before a request, onto the tool result after a call. The
+/// context is the one OpenCode 2.0.32 hands a plugin
+/// (`experiments/opencode/rules-directory`): the directory is the
+/// instance's `location`, and `worktree` is an API, not a path.
 #[test]
 fn the_opencode_plugin_hands_the_engines_answer_to_the_model() {
     if !bun_available() {
@@ -724,7 +727,8 @@ fn the_opencode_plugin_hands_the_engines_answer_to_the_model() {
             r#"import plugin from "./rules.ts";
 const hooks = {{}};
 await plugin.setup({{
-  directory: {root},
+  location: {{ directory: {root}, workspaceID: null, project: {{ id: "global", directory: {root} }} }},
+  worktree: {{ list: async () => [], create: async () => null }},
   session: {{ hook: async (name, fn) => {{ hooks[`session.${{name}}`] = fn; }} }},
   tool: {{ hook: async (name, fn) => {{ hooks[`tool.${{name}}`] = fn; }} }},
 }});
