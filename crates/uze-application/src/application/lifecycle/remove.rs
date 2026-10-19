@@ -151,7 +151,8 @@ impl UzeApplication {
     /// already missing that fails to be forgotten is an error is the
     /// caller's call.
     ///
-    /// `Err` only when an integration fails to detach.
+    /// `Err` only when an integration fails to detach, or the ledger fails
+    /// to forget a receipt whose detach succeeded.
     pub(crate) fn detach_owned_receipts(&self, package_id: &str) -> Result<ReceiptTeardown> {
         let report = self.reconcile(package_id);
         let (detachable_receipts, already_missing_receipts) = match plan_remove(&report) {
