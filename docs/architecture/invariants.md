@@ -679,13 +679,26 @@ file, and anything else is refused rather than delivered to some harnesses.
 > `crates/uze-core/src/project/rules/tests.rs::every_row_of_the_shared_dialect_table_holds`
 > `crates/uze-integrations/src/rules/engine_tests.rs::the_engine_answers_the_shared_glob_table_under_every_awk_here`
 
+### Every reader of `.agents/rules.json` registers the same rules
+
+`uze-core`'s discovery and the engine read the manifest as Antigravity
+measured it: each entry's path relative to the checkout root, a folder's
+immediate `*.md`, `include_only` and `exclude` relative to the entry, a file
+registered twice one rule, and nothing at all from a manifest that does not
+parse. One shared table of checkouts holds both readers to the same rules in
+the same order.
+
+> `crates/uze-core/src/project/rules/tests.rs::every_case_of_the_shared_manifest_table_holds`
+> `crates/uze-integrations/src/rules/engine_tests.rs::the_engine_reads_the_manifest_as_the_rust_model_does`
+> `crates/uze-core/src/project/rules/tests.rs::a_manifest_that_does_not_parse_adds_nothing_and_is_reported`
+
 ### A plugin's rules reach only a project that declares it
 
 A package's `rules/` rides no machine-wide envelope on any harness, and a
 machine install writes into no project. A project receives the rules only by
-declaring the plugin, as byte-identical copies named
-`.agents/rules/<plugin>@<market>--<rule>.md`; nothing is written into the
-project's own rules or another plugin's prefix, and a second project on the
+declaring the plugin, as byte-identical copies in a folder of the plugin's
+own, `.agents/rules/<plugin>@<market>/<rule>.md`; nothing is written into the
+project's own rules or another plugin's folder, and a second project on the
 same machine that does not declare the plugin receives nothing.
 
 > `tests/project/plugin_rules.rs::rules_land_byte_for_byte_in_the_declaring_project_only`
@@ -707,6 +720,22 @@ missing copy is written back.
 > `tests/project/plugin_rules.rs::an_update_refuses_to_overwrite_or_remove_a_drifted_copy`
 > `tests/project/plugin_rules.rs::a_fresh_machine_judges_a_cloned_project_without_installing`
 > `crates/uze-core/src/project/rules/plugin/tests.rs::a_copy_that_is_a_link_is_never_written_through`
+
+### UZE owns its entries of `.agents/rules.json`, never the file
+
+The folder a plugin's rules are copied to is registered by one entry UZE
+writes, added before the first copy and taken back once the folder holds
+nothing. Every other entry and key is written back unchanged and in order, a
+folder the operator registered is left as they wrote it, a manifest that
+does not parse is never written and no copy that needs it is made, and the
+manifest goes once nothing else is left in it.
+
+> `crates/uze-core/src/project/rules/manifest/tests.rs::the_operators_entries_and_keys_are_written_back_in_their_order`
+> `crates/uze-core/src/project/rules/manifest/tests.rs::a_manifest_that_does_not_parse_is_never_written`
+> `crates/uze-core/src/project/rules/manifest/tests.rs::a_folder_the_operator_registered_is_left_as_they_wrote_it`
+> `tests/project/plugin_rules.rs::the_operators_entries_are_kept`
+> `tests/project/plugin_rules.rs::an_unreadable_manifest_is_never_written`
+> `tests/project/plugin_rules.rs::removing_the_last_plugin_takes_its_entry_back`
 
 ### A generated file is never written through a link
 

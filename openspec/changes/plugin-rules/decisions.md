@@ -90,3 +90,81 @@ weigh them. One entry each: Context, Decision, Alternative.
   itself is left, since the project may have created it.
 - **Alternative.** Delete the whole prefix. That would delete an edit,
   which drift discipline forbids.
+
+## UZE's entry is an object holding only its `path`
+
+- **Context.** D7 gives UZE the entries naming a plugin folder it
+  declares, and leaves a folder the operator registered as they wrote it.
+  Both can name the same folder.
+- **Decision.** UZE's entry is exactly `{"path": ".agents/rules/<plugin>@<market>"}`.
+  Install adds one only when no entry names the folder, compared after
+  normalizing the path (`./`, a trailing `/`, an absolute path inside the
+  checkout). Remove takes back only an entry of that exact form. An entry
+  naming the folder with a filter, another key or another spelling is the
+  operator's and outlives the plugin.
+- **Alternative.** Own every entry naming the folder. Removing the plugin
+  would then delete an `exclude` the operator wrote.
+
+## The entry goes only when the folder holds nothing
+
+- **Context.** Remove leaves a drifted or extra file in the plugin's folder
+  (the decision above on removing).
+- **Decision.** The folder and its entry are taken back only when the
+  folder is empty after the pass. A folder still holding an edit keeps its
+  entry, so the file stays a rule on every harness and `uze status` names
+  it as an undeclared plugin's. An install of a plugin that ships no rules
+  reads the manifest but reports an unreadable one only when it emptied a
+  folder, so a broken manifest is not reported once per plugin.
+- **Alternative.** Take the entry back with the plugin. The edited file
+  would stay in the checkout and silently stop reaching every agent.
+
+## The entry is written before the first copy
+
+- **Context.** An install writes the copies and the entry, and can stop
+  between the two.
+- **Decision.** The entry first. An entry for a folder not yet written
+  registers nothing; a copy without its entry would sit in the checkout
+  read by no harness.
+- **Alternative.** Copies first. Their crash window is the one that loses
+  rules silently.
+
+## An unreadable manifest stops the whole plugin's copy, not only the entry
+
+- **Context.** D7: a manifest that does not parse is never written, and no
+  copy that needs it is made.
+- **Decision.** Every copy of the plugin needs the entry, so none is
+  written, drifted or extra files are not judged on that pass, and the
+  report names the manifest. Removal still deletes current copies, which
+  needs no entry, and leaves the manifest as it is. A JSON value that is not
+  an object, or whose `entries` is not a list, is unreadable the same way:
+  UZE cannot add an entry to it.
+- **Alternative.** Copy anyway. The files would land in a folder no harness
+  reads, and look delivered.
+
+## A manifest UZE rewrites is pretty-printed, whoever wrote it
+
+- **Context.** Keeping the operator's entries and keys means parsing and
+  writing the manifest back; `serde_json` with `preserve_order`, already in
+  the workspace, keeps their order and values.
+- **Decision.** Every write is 2-space pretty JSON with a final newline. An
+  operator's own whitespace is not kept, their content and order are. A
+  pass that changes nothing writes nothing, so an untouched manifest keeps
+  its bytes.
+- **Alternative.** A byte-preserving JSON editor. No crate in the workspace
+  does it, and the manifest is small enough for the diff to stay readable.
+
+## What both readers take from an entry
+
+- **Context.** Antigravity's handling of odd entries was not measured, and
+  the engine and `uze-core` must agree.
+- **Decision.** An entry whose `path` is not a non-empty string free of
+  control characters is no entry; a filter that is not a list of strings is
+  no filter, and a non-string item in one is skipped. `include_only` and
+  `exclude` items are exact paths relative to the entry, never patterns,
+  matching what was measured (`exclude: ["sub/"]` changed nothing). A path
+  that leaves the checkout registers nothing, since no rule identity can
+  name it. Hidden files in a folder follow the flat directory's existing
+  reading on each side.
+- **Alternative.** Treat filters as globs. Nothing measured says
+  Antigravity does, and a second glob dialect would be the one place the
+  readers could part.

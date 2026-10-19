@@ -146,8 +146,9 @@ Rules are the one capability that is never delivered machine-wide: a rule
 fires whenever a path matches, so delivered for every project it would
 govern code in projects that never asked for it. Instead `uze <name>@<market>`
 in a project, and `uze install` there, copy each rule byte for byte into
-that project's checkout as `.agents/rules/<name>@<market>--<rule>.md`, and
-the consumer commits the copies beside `agents.lock`. Every harness reads
+that project's checkout as `.agents/rules/<name>@<market>/<rule>.md`,
+registering that folder in `.agents/rules.json`, and the consumer commits
+the copies and the manifest beside `agents.lock`. Every harness reads
 them from there, Antigravity natively and the others through the rules
 engine, and a clone has them without running UZE. `uze install -m`
 reports them as delivered per project only. An update of the plugin is a

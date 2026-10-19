@@ -49,7 +49,7 @@ projects that declared it is the checkout's own `.agents/rules/`.
 ## Decisions
 
 ### D1: Copy into the checkout instead of delivering from the Store
-Plugin rules are copied into `.agents/rules/`, each named `<plugin>@<market>--<rule>.md` (D3), and committed.
+Plugin rules are copied into `.agents/rules/<plugin>@<market>/`, the folder registered in `.agents/rules.json` (D3), and committed.
 
 Alternatives considered:
 - **Deliver from the Store at run time.** The engine would read the
@@ -174,5 +174,6 @@ itself (flag, resource, region cleanup) belongs to
   copies.** → Acquisition is cached and integrity-checked. Without network,
   status reports the copies as unverified rather than failing.
 - **Antigravity reads no subdirectory of `.agents/rules/`** (measured on
-  1.4.2). → D3's flat prefix. A later Antigravity that starts reading
-  subdirectories changes nothing for the prefix form.
+  1.4.2). → D3 registers the folder in `.agents/rules.json`, which it does
+  read (measured, `rules-manifest`). A later Antigravity that starts
+  reading subdirectories on its own reads each copy once.

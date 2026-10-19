@@ -22,6 +22,20 @@ receive the same files through the rules engine `uze setup` installs. Every
 harness reads the one directory and the one format, so a rule is written
 once.
 
+A subfolder of `.agents/rules/` is read only once `.agents/rules.json`
+registers it, the way Antigravity reads it and so UZE and the engine too:
+
+```json
+{"entries": [{"path": ".agents/rules/team"}]}
+```
+
+`path` is relative to the checkout root, not to the manifest. A folder
+entry reads the `*.md` directly in it, a file entry that one file;
+`include_only` and `exclude` list paths relative to the entry. A manifest
+that does not parse registers nothing, and `inherits` reaches Antigravity
+alone. Keep the project's own rules flat unless a folder genuinely helps,
+and never add or edit an entry naming a plugin's folder: those are UZE's.
+
 ## Is it a rule at all?
 
 Decide this first. Most instructions are not rules.
@@ -89,8 +103,10 @@ braces.
 uze agent rules check
 ```
 
-It validates every file under `.agents/rules/` offline, needs no workspace,
-and exits non-zero naming each file that is not a deliverable rule and why
+It validates every file under `.agents/rules/` and every file
+`.agents/rules.json` registers, offline, needs no workspace, and exits
+non-zero on a manifest that does not parse or naming each file that is not
+a deliverable rule and why
 (no frontmatter, an unknown trigger, a missing `globs` or `description`, a
 pattern outside the dialect). On success it lists each rule with its
 trigger and patterns. Run it after every change to a rule, and before you
@@ -120,13 +136,15 @@ instead: written once in the plugin's `rules/`, and copied into every
 project that declares the plugin. Keep a rule in the project when it names
 this project's own layout, or when only this project follows it.
 
-A plugin's rules arrive as `.agents/rules/<plugin>@<market>--<rule>.md`.
-Those files are the plugin's, judged against the revision `agents.lock`
-pins. Never edit one in place: `uze status` reports the edit as drift,
-and no install or update overwrites it, so the project silently stops
-following the plugin for that rule. Either change the rule in the plugin
-and update, or take ownership of the change: move the file out of the
-namespace (rename it without the prefix) so it becomes the project's own.
+A plugin's rules arrive in a folder of the plugin's own,
+`.agents/rules/<plugin>@<market>/<rule>.md`, registered in
+`.agents/rules.json` by an entry UZE writes. Those files are the
+plugin's, judged against the revision `agents.lock` pins. Never edit one
+in place: `uze status` reports the edit as drift, and no install or update
+overwrites it, so the project silently stops following the plugin for that
+rule. Either change the rule in the plugin and update, or take ownership
+of the change: move the file out of the plugin's folder into
+`.agents/rules/` so it becomes the project's own.
 
 To move a project rule into a plugin:
 
@@ -137,8 +155,9 @@ To move a project rule into a plugin:
 3. `uze agent plugin check <plugin directory>`, then publish the
    marketplace as the `uze:author` Skill describes.
 4. In each project, delete the project's own copy and run
-   `uze <plugin>@<market>`: the plugin's copy takes its place under the
-   prefix. Commit both changes together, with `agents.lock`.
+   `uze <plugin>@<market>`: the plugin's copy takes its place in the
+   plugin's folder. Commit both changes together, with `agents.lock` and
+   `.agents/rules.json`.
 5. `uze agent rules check` in the project, and `uze status`, which counts
    the plugin's rules apart from the project's own.
 
