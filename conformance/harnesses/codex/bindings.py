@@ -141,12 +141,16 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
         exec` never asks. So the person opens the project once through the
         launcher, answers the folder trust on screen (`prepare`, the hook
         review included), leaves, and the headless turn runs in the same
-        home afterwards."""
-        final = f"""{prelude}
+        home afterwards. The prelude's own output is replayed after the
+        launch: drawn before it, the onboarding's screen reads consume it."""
+        final = f"""{{
+{prelude}
+}} >/work/prelude.out 2>&1
 cd {cwd}
 set +e
 codex
 echo {self.PROJECT_OPENED}
+cat /work/prelude.out
 timeout 240 codex exec {shlex.quote(prompt)} 2>&1
 """
         tui = Tui(cfg, codex_container(cfg, prov_ip, final), "codex-project")

@@ -35,9 +35,12 @@ setup` would also update it, which an offline world cannot.
   whose one rule is a `glob` (`**/ui/**`): the same scripted turn (the
   control's write, then the matching one) runs in the declaring checkout
   in one world and in the other checkout in another, each world's machine
-  holding both. The plugin's rule body arrives after the matching write in
-  the declaring checkout, and in no request of the other, whose turn
-  reached the same step.
+  holding both. The declaring checkout holds the copy under the plugin's
+  folder and the `.agents/rules.json` entry registering it, read off the
+  disk, and the other holds neither. The plugin's rule body arrives after
+  the matching write in the declaring checkout, once per request (a rule
+  read both flat and through the folder would arrive twice), and in no
+  request of the other, whose turn reached the same step.
 """
 
 import copy
@@ -123,10 +126,17 @@ def prelude(project):
 #: and the checkout beside the hook project on the same machine.
 RULES_PLUGIN = "rules-plugin@uze-lab"
 OTHER_PROJECT = "/work/rules-other"
-#: Printed around the hook project's rules once the declaration ran, so the
-#: run's evidence says which copies the checkout held.
+#: The folder a declaration copies the plugin's rules into, the manifest
+#: that registers it, and the rule copied there.
+PLUGIN_FOLDER = f".agents/rules/{RULES_PLUGIN}"
+MANIFEST = ".agents/rules.json"
+PLUGIN_COPY = f"{PLUGIN_FOLDER}/ui.md"
+#: Printed around each checkout's rule files and its manifest once the
+#: declaration ran, so the run's evidence is what the disk held.
 COPIES_BEGIN = "UZE_RULES_COPIES_BEGIN"
 COPIES_END = "UZE_RULES_COPIES_END"
+MANIFEST_BEGIN = "UZE_RULES_MANIFEST_BEGIN"
+MANIFEST_END = "UZE_RULES_MANIFEST_END"
 
 
 def plugin_prelude(project, declaring):
@@ -150,10 +160,50 @@ def plugin_prelude(project, declaring):
             f"uze {RULES_PLUGIN} >/work/rules-plugin-add.log 2>&1 || cat /work/rules-plugin-add.log",
             "git add -A && git commit -q -m 'declare the rules plugin' || true",
             SETUP,
+            *(_disk(root) for root in (project, OTHER_PROJECT)),
             f"cd {project}",
-            f"echo {COPIES_BEGIN}; find .agents/rules .agents/rules.json -type f 2>/dev/null | sort; echo {COPIES_END}",
         ]
     )
+
+
+def _disk(root):
+    """Prints `root`'s rule files and its manifest on one line each."""
+    return (
+        f"cd {root}; echo {COPIES_BEGIN} {root}; "
+        f"find .agents -type f 2>/dev/null | sort | tr '\\n' ' '; echo {COPIES_END}; "
+        f"echo {MANIFEST_BEGIN} {root}; tr -d '\\n' 2>/dev/null < {MANIFEST} || true; echo; "
+        f"echo {MANIFEST_END}"
+    )
+
+
+def _read_disk(output, root):
+    """What `_disk` printed for `root`: its files under `.agents`, and its
+    manifest's text (`None` when it had none), or `None` for a turn whose
+    output does not carry the prelude's."""
+    copies = _between(output, f"{COPIES_BEGIN} {root}", COPIES_END)
+    manifest = _between(output, f"{MANIFEST_BEGIN} {root}", MANIFEST_END)
+    if copies is None or manifest is None:
+        return None
+    return {"files": copies.split(), "manifest": manifest.strip() or None}
+
+
+def _between(output, begin, end):
+    if begin not in output:
+        return None
+    rest = output.split(begin, 1)[1]
+    return rest.split(end, 1)[0] if end in rest else None
+
+
+def _registered(disk):
+    """Whether the manifest registers the plugin's folder, and why not."""
+    if disk["manifest"] is None:
+        return False, "no manifest"
+    try:
+        entries = json.loads(disk["manifest"]).get("entries", [])
+    except (ValueError, AttributeError):
+        return False, f"the manifest does not parse: {disk['manifest'][:120]}"
+    paths = [e.get("path") for e in entries if isinstance(e, dict)]
+    return PLUGIN_FOLDER in paths, f"entries {paths}"
 
 
 def _write(bindings, expected, relative):
@@ -223,10 +273,14 @@ def _model_requests(struct):
             markers = dict(before.get("rule_markers", {}))
             for marker, present in request.get("rule_markers", {}).items():
                 markers[marker] = markers.get(marker, False) or present
+            counts = dict(before.get("rule_counts", {}))
+            for marker, count in request.get("rule_counts", {}).items():
+                counts[marker] = counts.get(marker, 0) + count
             seen.append(
                 {
                     **request,
                     "rule_markers": markers,
+                    "rule_counts": counts,
                     "tool_results": _results(before) + _results(request),
                 }
             )
@@ -237,6 +291,10 @@ def _model_requests(struct):
 
 def _carries(request, marker):
     return bool(request.get("rule_markers", {}).get(marker))
+
+
+def _count(request, marker):
+    return request.get("rule_counts", {}).get(marker, 0)
 
 
 def _results(request):
@@ -351,6 +409,7 @@ def _evidence(requests):
         {
             "tool_results": _results(r),
             "markers": sorted(k for k, v in r.get("rule_markers", {}).items() if v),
+            "rule_counts": r.get("rule_counts", {}),
         }
         for r in requests
     ]
@@ -407,14 +466,48 @@ def _plugin_turn(world, bindings, expected, declaring):
         os.path.join(world.outdir, f"rules-plugin-{tag}-requests.json"), "w"
     ) as f:
         json.dump(_evidence(requests), f, indent=1)
-    copies = "unread: this harness's turn does not print its prelude"
-    if COPIES_BEGIN in output and COPIES_END in output:
-        copies = output.split(COPIES_BEGIN, 1)[1].split(COPIES_END, 1)[0].split()
-    return {"requests": requests, "output": output, "copies": copies}
+    disks = {root: _read_disk(output, root) for root in (project, OTHER_PROJECT)}
+    with open(os.path.join(world.outdir, f"rules-plugin-{tag}-disk.json"), "w") as f:
+        json.dump(disks, f, indent=1)
+    copies = disks[project]["files"] if disks[project] else "unread"
+    return {
+        "requests": requests,
+        "output": output,
+        "copies": copies,
+        "disks": disks,
+        "declaring": project if declaring else OTHER_PROJECT,
+    }
+
+
+def _assert_disk(project, declared_turn, undeclared_turn):
+    """Each world's declaring checkout holds the copy and the manifest entry
+    `uze` wrote, and the other checkout holds neither."""
+    held, bare = [], []
+    for found in (declared_turn, undeclared_turn):
+        for root, disk in found["disks"].items():
+            if disk is None:
+                (held if root == found["declaring"] else bare).append(
+                    f"{root}: the turn's output does not carry the prelude's"
+                )
+                continue
+            copied = PLUGIN_COPY in disk["files"]
+            registered, entries = _registered(disk)
+            line = f"{root}: copy {'present' if copied else 'absent'}, {entries}"
+            if root == found["declaring"]:
+                held.append((copied and registered, line))
+            else:
+                bare.append((not copied and not registered, line))
+    for name, rows in (
+        ("rules-plugin-folder-and-entry-where-declared", held),
+        ("rules-plugin-no-folder-nor-entry-where-undeclared", bare),
+    ):
+        ok = len(rows) == 2 and all(isinstance(r, tuple) and r[0] for r in rows)
+        check(name, ok, "; ".join(r[1] if isinstance(r, tuple) else r for r in rows))
 
 
 def _assert_plugin(bindings, declared_turn, undeclared_turn):
     marker = RULES["plugin_glob"]
+    _assert_disk(bindings.hook_project, declared_turn, undeclared_turn)
     turns = {}
     for tag, found in (("declared", declared_turn), ("undeclared", undeclared_turn)):
         turns[tag] = [r for r in found["requests"] if _carries(r, RULES_TURNS[0])]
@@ -442,6 +535,20 @@ def _assert_plugin(bindings, declared_turn, undeclared_turn):
         f"the plugin's glob rule is in a request after the matching write returned, "
         f"and in none before it (early: {early}); copies: {declared_turn['copies']}",
         measured=bool(after),
+    )
+    twice = [(_results(r), _count(r, marker)) for r in after if _count(r, marker) > 1]
+    declared.absence(
+        bindings,
+        "rules-plugin-reaches-model-once",
+        "rules-plugin-fires-where-declared",
+        bool(twice),
+        settled=bool(after),
+        proof=fired,
+        detail="every request after the matching write carries the plugin's rule "
+        f"once (counts: {[_count(r, marker) for r in after]})"
+        if not twice
+        else f"the plugin's rule reached the model more than once for one write "
+        f"(tool results, count): {twice}",
     )
     leaked = [_results(r) for r in turns["undeclared"] if _carries(r, marker)]
     declared.absence(

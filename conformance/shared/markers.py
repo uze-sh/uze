@@ -210,6 +210,9 @@ def summary(body):
         "rule_markers": {
             m: m in body for m in (*RULES.values(), *RULES_TURNS, COMPACTION)
         },
+        # How many times each rule's text is in the request: one delivery
+        # read twice (a flat file and a registered folder) shows as two.
+        "rule_counts": {m: body.count(m) for m in RULES.values() if m in body},
         "instruction_markers": {m: m in body for m in INSTRUCTIONS.values()},
         # A prompt carried by a message of the request's own, not only by
         # the call that spawned it: what tells a subagent's request apart.

@@ -26,7 +26,7 @@
   - two projects on one machine, only one declaring the plugin.
 
 - [x] 3.7 Folder layout (D3, D7): copies under `.agents/rules/<plugin>@<market>/`, the folder registered in `.agents/rules.json`, owning only UZE's entries; an unparseable manifest never written; the manifest created and removed with the first and last plugin. Tests for every scenario of the folder requirement
-- [ ] 3.8 Lab: the plugin-rules contract on all four harnesses with the folder layout, Antigravity reading it through the manifest
+- [x] 3.8 Lab: the plugin-rules contract on all four harnesses with the folder layout, Antigravity reading it through the manifest
 
 ## 4. Reporting and Skills
 
