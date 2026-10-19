@@ -123,8 +123,8 @@
   - writing a rule as a convention rather than an imperative;
   - the per-harness route table;
   - what `uze status` reports.
-- [ ] 8.2 Update `docs/architecture/core-components.mmd` (`project` includes rules) and `containers.mmd` (integrations project rules), then run `make artifacts`
-- [ ] 8.3 Add the guarded properties to `docs/architecture/invariants.md`, each tied to its test:
+- [x] 8.2 Update `docs/architecture/core-components.mmd` (`project` includes rules) and `containers.mmd` (integrations project rules), then run `make artifacts`
+- [x] 8.3 Add the guarded properties to `docs/architecture/invariants.md`, each tied to its test:
   - no rules directory written into a project;
   - the engine fails open;
   - Antigravity receives nothing.

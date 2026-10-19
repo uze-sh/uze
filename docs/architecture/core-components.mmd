@@ -9,7 +9,7 @@ C4Component
     Component(package, "package", "Rust module", "Where a package's bytes come from and where they live", $link="crates/uze-core/src/package.rs")
     Component(capability, "capability", "Rust module", "What a plugin declares, portably: skill, agent, hook, and the per-harness harness block", $link="crates/uze-core/src/capability.rs")
     Component(delivery, "delivery", "Rust module", "How a capability reaches a harness: router, engine, receipts, directories replaced whole", $link="crates/uze-core/src/delivery.rs")
-    Component(project, "project", "Rust module", "What a project declares and the package manager writes into it: the manifest, the lock, AGENTS.md's regions, the anchor", $link="crates/uze-core/src/project.rs")
+    Component(project, "project", "Rust module", "What a project declares and the package manager writes into it: the manifest, the lock, its rules, AGENTS.md's regions, the anchor", $link="crates/uze-core/src/project.rs")
     Component(machine, "machine", "Rust module", "The local environment outside UZE's own state, the process table included", $link="crates/uze-core/src/machine.rs")
   }
   ContainerDb(store, "Store", "store/", "Installed package bytes; no harness reads them")

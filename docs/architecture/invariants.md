@@ -651,6 +651,30 @@ directory itself, is given nothing.
 > `crates/uze-integrations/src/rules/tests.rs::claude_receives_exec_form_entries_beside_its_foreign_hooks`
 > `crates/uze-integrations/src/rules/tests.rs::opencode_receives_a_generated_plugin_and_no_config_entry`
 
+### The rules engine fails open and reads only the session's checkout
+
+The engine `uze setup` delivers never denies or delays a tool call: missing
+`jq` or Git, an unknown payload, a file that is not a rule or a session id
+it cannot use each answer nothing and let the call proceed. It reads the
+rules of the checkout the session stands in, paths outside it are
+discarded, and a checkout without rules costs one directory check.
+
+> `crates/uze-integrations/src/rules/engine_tests.rs::every_failure_lets_the_call_proceed_with_nothing_added`
+> `crates/uze-integrations/src/rules/engine_tests.rs::a_file_that_is_not_a_rule_is_skipped_and_the_rules_beside_it_still_answer`
+> `crates/uze-integrations/src/rules/engine_tests.rs::paths_are_read_relative_to_the_session_and_never_outside_the_checkout`
+> `crates/uze-integrations/src/rules/engine_tests.rs::a_checkout_without_rules_or_outside_git_pays_nothing`
+> `crates/uze-integrations/src/rules/engine_tests.rs::each_checkout_is_answered_with_its_own_rules`
+
+### Every reader of a rule's patterns agrees on what matched
+
+`uze-core`'s matcher and the engine's translation are proven against one
+shared table, under every `awk` the machine has, and the dialect is the
+intersection Antigravity measured: a pattern opens with `**/` or names a
+file, and anything else is refused rather than delivered to some harnesses.
+
+> `crates/uze-core/src/project/rules/tests.rs::every_row_of_the_shared_dialect_table_holds`
+> `crates/uze-integrations/src/rules/engine_tests.rs::the_engine_answers_the_shared_glob_table_under_every_awk_here`
+
 ### A generated file is never written through a link
 
 A link at the path of a file UZE generates (an agent definition) is someone
