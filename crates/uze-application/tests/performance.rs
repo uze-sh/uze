@@ -363,6 +363,28 @@ fn status_meets_the_budget() {
     world.within_budget("status", |app| app.health().status(&world.project));
 }
 
+/// A checkout with a handful of rules, one of them refused: the check is a
+/// directory read and a frontmatter parse per file, nothing more.
+#[test]
+fn the_rules_check_meets_the_budget() {
+    let world = World::build("budget-rules");
+    let rules = world.project.join(".agents/rules");
+    fs::create_dir_all(&rules).unwrap();
+    for name in ["ui", "api", "db", "docs", "tests"] {
+        fs::write(
+            rules.join(format!("{name}.md")),
+            format!(
+                "---\ntrigger: glob\nglobs: {name}/**, src/{name}/**/*.rs\n---\nKeep {name} tidy.\n"
+            ),
+        )
+        .unwrap();
+    }
+    fs::write(rules.join("notes.md"), "no frontmatter\n").unwrap();
+    world.within_budget("agent rules check", |app| {
+        app.project().rules(&world.project)
+    });
+}
+
 /// The agent's own surface: the read path a naming call takes before its
 /// one ref rename, answered from the project's own files plus one Git call.
 #[test]

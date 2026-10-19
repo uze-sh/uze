@@ -86,6 +86,9 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
              proportional to what it holds",
         ),
     ),
+    // A directory read and a small frontmatter parse per file, with no
+    // workspace, harness or network: the same read `status` makes.
+    ("agent rules check", PerformanceClass::Budgeted),
     // Context reads and the reconcile they lead to sit on the same
     // surface, for the same audience: a person asks `status`, an agent
     // asks these.
@@ -249,6 +252,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     (
         "status",
         "crates/uze-application/tests/performance.rs::status_meets_the_budget",
+    ),
+    (
+        "agent rules check",
+        "crates/uze-application/tests/performance.rs::the_rules_check_meets_the_budget",
     ),
     (
         "inspect",

@@ -157,7 +157,8 @@ pub enum NotARule {
     /// could resolve differently.
     DuplicateField(Field),
     /// A field the trigger reads is written as a YAML block (a list, a
-    /// folded string) rather than on its own line.
+    /// folded string, a value continued on an indented line) rather than on
+    /// its own line.
     BlockValue(Field),
     MissingTrigger,
     UnknownTrigger(String),
@@ -277,8 +278,9 @@ impl Fields {
 fn read_fields(head: &str) -> std::result::Result<Fields, NotARule> {
     let mut fields = Fields::default();
     let mut seen: Vec<Field> = Vec::new();
-    // The field whose value may continue on the lines below it: a block a
-    // rule's own field must not be written as.
+    // The rule field on the line above: an indented or list line beneath it
+    // continues its value, which a reader of one line per field would
+    // silently cut short.
     let mut open: Option<Field> = None;
     for (index, line) in head.lines().enumerate() {
         let trimmed = line.trim();
@@ -306,9 +308,7 @@ fn read_fields(head: &str) -> std::result::Result<Fields, NotARule> {
         if matches!(value.as_str(), "|" | ">" | "|-" | ">-" | "|+" | ">+") {
             return Err(NotARule::BlockValue(field));
         }
-        if value.is_empty() {
-            open = Some(field);
-        }
+        open = Some(field);
         *fields.slot(field) = Some(value);
     }
     Ok(fields)

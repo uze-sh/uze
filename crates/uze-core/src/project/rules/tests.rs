@@ -138,6 +138,10 @@ fn every_reason_a_file_is_not_a_rule() {
             b"---\ntrigger: model_decision\ndescription: >\n  folded\n---\n",
             NotARule::BlockValue(Field::Description),
         ),
+        (
+            b"---\ntrigger: model_decision\ndescription: When writing\n  tests\n---\n",
+            NotARule::BlockValue(Field::Description),
+        ),
         (b"---\ndescription: hello\n---\n", NotARule::MissingTrigger),
         (b"---\ntrigger:\n---\n", NotARule::MissingTrigger),
         (
@@ -280,4 +284,12 @@ fn a_worktree_is_answered_by_its_own_root() {
         main.canonical().unwrap()
     );
     fs::remove_dir_all(main).unwrap();
+}
+
+#[test]
+fn a_control_character_is_outside_the_dialect() {
+    assert_eq!(
+        Glob::parse("src/\u{1b}x/**").unwrap_err().construct,
+        Construct::Control
+    );
 }

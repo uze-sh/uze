@@ -870,6 +870,7 @@ fn project_space(
         issues: Vec::new(),
         held_back: Vec::new(),
         memory: Default::default(),
+        rules: None,
     };
     uze_application::SpaceOverview::Project(Box::new(uze_application::ProjectSpace {
         status: uze_application::application::ProjectStatus {

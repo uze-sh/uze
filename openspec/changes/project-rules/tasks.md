@@ -7,11 +7,11 @@
 
 ## 2. The Rule model (uze-core, no harness named)
 
-- [ ] 2.1 `uze-core::project::rules`: parse a rule file's frontmatter (`trigger`, `globs`, `description`; unknown fields ignored) into a typed Rule or a typed reason it is not deliverable (no frontmatter, unknown or missing trigger, missing required field, pattern outside the dialect)
-- [ ] 2.2 Glob dialect: a matcher for `**`, `*`, `?` and literals, relative to the checkout root, plus the validator that rejects anything else. One shared fixture table (pattern, path, expected) lives where both the Rust tests and the engine's tests (5.4) read it
-- [ ] 2.3 Discovery: the rules of a checkout are the `*.md` files directly under `<root>/.agents/rules/`, named by their checkout-relative path. Worktrees resolve to their own root
-- [ ] 2.4 `UzeHome::rules_sessions_dir()` under `runtime/`, and register it with `every_path_uze_owns_is_named_in_the_map`
-- [ ] 2.5 Unit tests: every reason a file is not a rule, each trigger's required fields, the full fixture table, a checkout with no `.agents/rules/`
+- [x] 2.1 `uze-core::project::rules`: parse a rule file's frontmatter (`trigger`, `globs`, `description`; unknown fields ignored) into a typed Rule or a typed reason it is not deliverable (no frontmatter, unknown or missing trigger, missing required field, pattern outside the dialect)
+- [x] 2.2 Glob dialect: a matcher for `**`, `*`, `?` and literals, relative to the checkout root, plus the validator that rejects anything else. One shared fixture table (pattern, path, expected) lives where both the Rust tests and the engine's tests (5.4) read it
+- [x] 2.3 Discovery: the rules of a checkout are the `*.md` files directly under `<root>/.agents/rules/`, named by their checkout-relative path. Worktrees resolve to their own root
+- [x] 2.4 `UzeHome::rules_sessions_dir()` under `runtime/`, and register it with `every_path_uze_owns_is_named_in_the_map`
+- [x] 2.5 Unit tests: every reason a file is not a rule, each trigger's required fields, the full fixture table, a checkout with no `.agents/rules/`
 
 ## 3. The engine templates (uze-integrations::rules)
 
@@ -67,7 +67,7 @@
 
 - [ ] 5.1 `uze setup` (and the workspace's automatic setup) delivers the rules engine to every detected harness whose route needs it, and reports it per harness like the other setup results
 - [ ] 5.2 Sweep `runtime/rules/sessions/` entries older than seven days during setup
-- [ ] 5.3 A rules read model in `uze-application`, so `src/` names no `uze_core`
+- [x] 5.3 A rules read model in `uze-application`, so `src/` names no `uze_core`
 - [ ] 5.4 `uze status` reports:
   - rules per trigger;
   - each file that is not a rule, with its reason;
@@ -75,7 +75,7 @@
 
   It never prints a rule body. Add `TestBackend`/snapshot tests for the output
 - [ ] 5.5 `uze doctor` reports a missing engine dependency (`jq`) and a delivered engine whose entry or file drifted, naming the harnesses affected
-- [ ] 5.6 `uze agent rules check [<path>]`. Behavior:
+- [x] 5.6 `uze agent rules check [<path>]`. Behavior:
   - resolve the checkout from the path;
   - run the shared validator;
   - exit non-zero with file and reason per offender;
@@ -83,7 +83,7 @@
   - say "no rules" (exit zero) when there is no `.agents/rules/`.
 
   Hidden from `uze --help` like the rest of `uze agent`. CLI tests for each spec scenario
-- [ ] 5.7 Classify `uze agent rules check` (and any changed leaf command) in `command_performance.rs`. Both it and `status` are `Budgeted`: rule discovery is a directory read and a small-file parse
+- [x] 5.7 Classify `uze agent rules check` (and any changed leaf command) in `command_performance.rs`. Both it and `status` are `Budgeted`: rule discovery is a directory read and a small-file parse
 - [ ] 5.8 Name `uze agent rules check` in the `uze:rules` Skill. No UZE text is projected into `AGENTS.md` (`keep-agents-md-the-operators`)
 
 ## 6. Conformance Lab and journeys

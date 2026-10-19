@@ -178,7 +178,7 @@ pub(crate) enum Command {
     },
     /// The agent's own surface: what an agent calls to take part in the
     /// project it works in. Only `work` needs an agent `uze workspace`
-    /// launched; `context`, `market`, `plugin` and `artifacts` answer any
+    /// launched; `context`, `market`, `plugin`, `artifacts` and `rules` answer any
     /// agent, however it was started. Hidden from this help on purpose — its
     /// audience reads the instruction text UZE projects into the project,
     /// not `uze --help`.
@@ -219,6 +219,12 @@ pub(crate) enum AgentAction {
     Artifacts {
         #[command(subcommand)]
         action: AgentArtifactsAction,
+    },
+    /// The rules this checkout keeps under .agents/rules, and whether each
+    /// one is deliverable
+    Rules {
+        #[command(subcommand)]
+        action: AgentRulesAction,
     },
     /// This project's context (AGENTS.md) — what it declares, what
     /// reconciling it would write, and writing it
@@ -397,6 +403,18 @@ pub(crate) enum AgentArtifactsAction {
     /// Draw every declared diagram and say what that found
     Check {
         /// The project to check; the working directory by default
+        path: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AgentRulesAction {
+    /// Validate every file under .agents/rules, offline
+    Check {
+        /// Any path inside the checkout to check; the working directory by
+        /// default
         path: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,

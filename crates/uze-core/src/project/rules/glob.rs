@@ -30,6 +30,9 @@ pub enum Construct {
     /// Whitespace inside a pattern, which the engine's shell reading splits
     /// on.
     Whitespace,
+    /// A control character, which no path a tool names should hold and no
+    /// terminal should be handed.
+    Control,
     /// `{a,b}`.
     Alternation,
     /// `[ab]`.
@@ -54,6 +57,7 @@ impl Construct {
             Construct::Empty => "an empty pattern",
             Construct::Rooted => "a leading `/` (patterns are relative to the checkout root)",
             Construct::Whitespace => "whitespace",
+            Construct::Control => "a control character",
             Construct::Alternation => "`{…}` alternation",
             Construct::CharacterClass => "a `[…]` character class",
             Construct::Negation => "`!`",
@@ -166,6 +170,7 @@ fn first_construct(pattern: &str) -> Option<Construct> {
     for character in pattern.chars() {
         let construct = match character {
             c if c.is_whitespace() => Construct::Whitespace,
+            c if c.is_control() => Construct::Control,
             '{' | '}' => Construct::Alternation,
             '[' | ']' => Construct::CharacterClass,
             '!' => Construct::Negation,

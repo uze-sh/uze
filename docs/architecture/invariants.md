@@ -635,6 +635,19 @@ however the directories on the way are linked.
 > `crates/uze-application/src/application/services/artifacts.rs::an_entry_linked_out_of_the_project_refuses_the_declaration`
 > `src/ui/extension_host.rs::no_write_reaches_through_a_directory_linked_out_of_the_root`
 
+### No rules directory is written into a project
+
+A project's rules live in one directory it authors, `.agents/rules/`, and
+UZE only reads it: neither the check nor `status` writes a byte into the
+checkout, no harness is given a second rules directory there
+(`.claude/rules/` or any other), and reading an absent directory creates
+nothing. The tests below cover the read surfaces; the rules engine's
+delivery by setup writes only machine files, and its own test joins these
+when it lands.
+
+> `tests/acceptance/project_rules.rs::reading_rules_writes_nothing_into_the_project`
+> `crates/uze-core/src/project/rules/tests.rs::a_checkout_without_a_rules_directory_has_no_rules_and_nothing_wrong`
+
 ### A generated file is never written through a link
 
 A link at the path of a file UZE generates (an agent definition) is someone

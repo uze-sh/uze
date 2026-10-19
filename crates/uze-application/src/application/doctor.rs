@@ -392,7 +392,7 @@ impl Health<'_> {
                 }
             })
             .collect();
-        let issues: Vec<String> = context
+        let mut issues: Vec<String> = context
             .contributions
             .iter()
             .filter(|contribution| !matches!(contribution.state, AttachmentState::Matched))
@@ -449,7 +449,14 @@ impl Health<'_> {
             .plan(project_root)
             .map(|plan| EnvironmentDrift::from(&plan))
             .unwrap_or_default();
+        let rules = self
+            .0
+            .project()
+            .rules(&context.canonical)
+            .map_err(|error| issues.push(format!("rules: {error}")))
+            .ok();
         Ok(StatusReport {
+            rules,
             root: context.canonical.clone(),
             instructions,
             drift,

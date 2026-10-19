@@ -701,6 +701,10 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
         text.push('\n');
         text.push_str(&render_status_memory(report, label));
     }
+    if let Some(rules) = report.rules.as_ref().filter(|rules| rules.present) {
+        text.push('\n');
+        text.push_str(&render_status_rules(rules, label));
+    }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {
             text.push_str(&format!(
@@ -780,6 +784,13 @@ fn status_label_width(report: &StatusReport, context: &[Vec<String>]) -> usize {
         .filter_map(|row| row.first())
         .map(|cell| progress::width(cell))
         .chain([plugins, drift, progress::width("machine")])
+        .chain(
+            report
+                .rules
+                .as_ref()
+                .filter(|rules| rules.present)
+                .map(|rules| progress::width(rules.directory)),
+        )
         .max()
         .unwrap_or_default()
 }
@@ -812,6 +823,13 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
     }
     if status.commands_awaiting_approval.is_some() {
         return attention("commands await your approval".to_owned());
+    }
+    if let Some(rules) = report.rules.as_ref().filter(|rules| !rules.is_clean()) {
+        return attention(format!(
+            "{} in {} not delivered",
+            count(rules.not_rules.len(), "file"),
+            rules.directory
+        ));
     }
     match &report.portability {
         Portability::Portable => format!(
@@ -995,6 +1013,44 @@ pub(crate) fn render_status_memory(report: &StatusReport, label: usize) -> Strin
     }
     // A section's end, as every other section here has before what
     // follows it.
+    text.push('\n');
+    text
+}
+
+/// The checkout's rules counted by trigger, and every file there that is
+/// not delivered with the reason. Never a rule's body: the person asked
+/// whether the project is ready, not for the instructions themselves.
+pub(crate) fn render_status_rules(
+    rules: &uze_application::application::RulesReport,
+    label: usize,
+) -> String {
+    let by_trigger = rules.by_trigger();
+    let summary = if rules.rules.is_empty() {
+        progress::label("none")
+    } else {
+        std::iter::once(count(rules.rules.len(), "rule"))
+            .chain(
+                by_trigger
+                    .iter()
+                    .map(|counted| format!("{} {}", counted.rules, counted.trigger)),
+            )
+            .collect::<Vec<_>>()
+            .join(&progress::label(" · "))
+    };
+    let mut text = progress::report_section("Rules");
+    text.push_str(&progress::aligned_rows_from(
+        vec![vec![progress::label(rules.directory), summary]],
+        label,
+    ));
+    text.push('\n');
+    for file in &rules.not_rules {
+        text.push_str(&format!(
+            "{} {}: {}\n",
+            progress::warning_icon(),
+            file.path,
+            uze_application::inert(&file.reason)
+        ));
+    }
     text.push('\n');
     text
 }

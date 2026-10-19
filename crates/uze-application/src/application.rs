@@ -57,6 +57,7 @@ mod project_environment;
 mod read_models;
 mod requirements;
 mod retired_regions;
+mod rules;
 mod runtime_shim;
 pub mod services;
 mod setup;
@@ -66,6 +67,7 @@ pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason}
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
 pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};
+pub use rules::{NotARuleSummary, RuleSummary, RulesReport, TriggerCount};
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
 

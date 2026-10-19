@@ -1021,6 +1021,10 @@ pub struct StatusReport {
     /// What agents and the operator keep for this project and the machine,
     /// with the harnesses' own entries beside UZE's.
     pub memory: crate::application::memory::MemoryReport,
+    /// The checkout's rules, read by the same validator `uze agent rules
+    /// check` runs. `None` only when the directory could not be read,
+    /// which is then one of [`Self::issues`].
+    pub rules: Option<crate::application::RulesReport>,
 }
 
 /// One registered harness as `uze status` reports it, keyed by integration

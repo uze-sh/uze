@@ -185,6 +185,11 @@ pub enum UzeError {
     /// check is a gate rather than something to read.
     #[error("{0}")]
     ArtifactsNotDrawable(String),
+    /// Files under a checkout's `.agents/rules/` are not deliverable rules.
+    /// The report printed before this names each and why; this is the
+    /// verdict, so the check is a gate.
+    #[error("{0}")]
+    RulesNotDeliverable(String),
     /// An agent could not be placed where it was asked for. Nothing was
     /// started: a launch that lands somewhere other than what the operator
     /// chose is worse than no launch, and a notice after the fact would not

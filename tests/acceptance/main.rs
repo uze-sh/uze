@@ -14,6 +14,7 @@ mod lifecycle;
 mod multi_harness;
 mod package_and_workspace;
 mod package_only;
+mod project_rules;
 mod runtime_shim;
 mod session_continuity;
 mod util;

@@ -881,6 +881,7 @@ mod status_output_tests {
             issues: Vec::new(),
             held_back: Vec::new(),
             memory: Default::default(),
+            rules: None,
         };
         ProjectStatus {
             report,
@@ -955,6 +956,82 @@ mod status_output_tests {
         ))
         .expect("a bridge gap is owed a command");
         assert_eq!(step, "uze install");
+    }
+
+    fn with_rules(
+        rules: Vec<uze_application::application::RuleSummary>,
+        not_rules: Vec<uze_application::application::NotARuleSummary>,
+        directory_present: bool,
+    ) -> ProjectStatus {
+        let mut status = report(present(), Portability::Portable);
+        status.report.rules = Some(uze_application::application::RulesReport {
+            root: std::path::PathBuf::from("/project"),
+            directory: ".agents/rules",
+            present: directory_present,
+            rules,
+            not_rules,
+        });
+        status
+    }
+
+    fn summary(path: &str, trigger: &'static str) -> uze_application::application::RuleSummary {
+        uze_application::application::RuleSummary {
+            path: path.to_owned(),
+            trigger,
+            patterns: Vec::new(),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn rules_are_counted_by_trigger() {
+        let status = with_rules(
+            vec![
+                summary(".agents/rules/a.md", "glob"),
+                summary(".agents/rules/b.md", "glob"),
+                summary(".agents/rules/c.md", "always_on"),
+            ],
+            Vec::new(),
+            true,
+        );
+        let text = crate::progress::unpainted(&render_status(&status));
+        assert!(text.contains("Rules"), "{text}");
+        assert!(
+            text.contains(".agents/rules   3 rules · 1 always_on · 2 glob"),
+            "{text}"
+        );
+        assert!(
+            text.contains("ready"),
+            "a clean set leaves the project ready: {text}"
+        );
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_rule_is_named_with_its_reason() {
+        let status = with_rules(
+            vec![summary(".agents/rules/ui.md", "glob")],
+            vec![uze_application::application::NotARuleSummary {
+                path: ".agents/rules/notes.md".to_owned(),
+                reason: "has no frontmatter, so no `trigger`".to_owned(),
+            }],
+            true,
+        );
+        let text = crate::progress::unpainted(&render_status(&status));
+        assert!(
+            text.contains(".agents/rules/notes.md: has no frontmatter, so no `trigger`"),
+            "{text}"
+        );
+        assert!(
+            text.contains("1 file in .agents/rules not delivered"),
+            "the headline says the project needs attention: {text}"
+        );
+    }
+
+    #[test]
+    fn a_checkout_without_rules_has_no_rules_section() {
+        let text =
+            crate::progress::unpainted(&render_status(&with_rules(Vec::new(), Vec::new(), false)));
+        assert!(!text.contains("Rules"), "{text}");
     }
 
     #[test]

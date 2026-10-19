@@ -10,6 +10,7 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
         AgentAction::Work { action } => run_agent_work(app, action),
         AgentAction::Memory { action } => run_agent_memory(app, action),
         AgentAction::Artifacts { action } => run_agent_artifacts(action),
+        AgentAction::Rules { action } => run_agent_rules(app, action),
         AgentAction::Context { action } => run_context(app, action),
         AgentAction::Market { action } => run_agent_market(app, action),
         AgentAction::Plugin { action } => run_agent_plugin(app, action),
@@ -634,6 +635,90 @@ pub(crate) fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
     if report.verdict().is_none() {
         out.push_str(&format!(
             "\n{} every artifact draws, every edge routes, every link opens a file\n",
+            progress::success_icon()
+        ));
+    }
+    out
+}
+
+/// Validates the checkout's rules with the validator `uze status` reports
+/// from. Like the artifacts check, the verdict is the exit code: an agent
+/// that has just written a rule is told it will not be delivered, rather
+/// than handed a report it could decide it passed.
+pub(crate) fn run_agent_rules(app: &UzeApplication, action: AgentRulesAction) -> Result<()> {
+    let AgentRulesAction::Check { path, format } = action;
+    let report = app.project().rules(&context_path(path))?;
+    emit(format, &report, render_rules_check);
+    if report.is_clean() {
+        return Ok(());
+    }
+    let checked = report.not_rules.len() + report.rules.len();
+    Err(uze_application::UzeError::RulesNotDeliverable(format!(
+        "{} of {} under {} {}",
+        report.not_rules.len(),
+        count(checked, "file"),
+        report.directory,
+        if report.not_rules.len() == 1 {
+            "is not a deliverable rule"
+        } else {
+            "are not deliverable rules"
+        }
+    )))
+}
+
+pub(crate) fn render_rules_check(report: &uze_application::application::RulesReport) -> String {
+    if !report.present {
+        return format!(
+            "no rules: {} has no {}\n",
+            progress::path(&report.root),
+            report.directory
+        );
+    }
+    let checked = report.rules.len() + report.not_rules.len();
+    let mut out = progress::report_title(
+        report.directory,
+        Some(&format!("{} checked", count(checked, "file"))),
+    );
+    out.push('\n');
+    let mut rows: Vec<(&str, Vec<String>)> = report
+        .rules
+        .iter()
+        .map(|rule| {
+            let scope = match (&rule.description, rule.patterns.is_empty()) {
+                (_, false) => uze_application::inert(&rule.patterns.join(", ")).into_owned(),
+                (Some(description), true) => uze_application::inert(description).into_owned(),
+                (None, true) => String::new(),
+            };
+            (
+                rule.path.as_str(),
+                vec![
+                    progress::success_icon(),
+                    rule.path.clone(),
+                    progress::label(rule.trigger),
+                    scope,
+                ],
+            )
+        })
+        .chain(report.not_rules.iter().map(|file| {
+            (
+                file.path.as_str(),
+                vec![
+                    progress::error_icon(),
+                    file.path.clone(),
+                    progress::label("not a rule"),
+                    progress::error_text(uze_application::inert(&file.reason)),
+                ],
+            )
+        }))
+        .collect();
+    rows.sort_by(|left, right| left.0.cmp(right.0));
+    out.push_str(&progress::aligned_rows(
+        rows.into_iter().map(|(_, row)| row).collect(),
+    ));
+    out.push('\n');
+    if report.is_clean() {
+        out.push_str(&format!(
+            "\n{} every file is a deliverable rule\n",
             progress::success_icon()
         ));
     }
