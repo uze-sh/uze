@@ -199,7 +199,8 @@ fn instruction_delivery(
 }
 
 /// The project's rules, read where they live: the checkout root's
-/// `.agents/rules`, which every harness and the engine read.
+/// `.agents/rules` and `.agents/rules.json`, which every harness and the
+/// engine read.
 fn rules_delivery(
     integration: &dyn IntegrationPort,
     context: &project_context::ProjectContext,
@@ -208,7 +209,7 @@ fn rules_delivery(
 ) -> ResourceDelivery {
     let root =
         uze_core::rules::checkout_root(&context.root).unwrap_or_else(|_| context.root.clone());
-    if !root.join(uze_core::rules::RULES_DIR).is_dir() {
+    if !uze_core::rules::has_rules(&root) {
         return ResourceDelivery::AbsentFromProject;
     }
     if !present {

@@ -242,3 +242,71 @@ fn reading_rules_writes_nothing_into_the_project() {
         );
     }
 }
+
+#[test]
+fn a_folder_registered_in_the_manifest_is_a_rule_of_the_checkout() {
+    let env = TestEnvironment::isolated();
+    let root = checkout(&env, &[("testing.md", TESTING_RULE)]);
+    std::fs::create_dir_all(root.join(".agents/rules/team")).unwrap();
+    std::fs::write(root.join(".agents/rules/team/ui.md"), UI_RULE).unwrap();
+    std::fs::write(
+        root.join(".agents/rules.json"),
+        r#"{"entries": [{"path": ".agents/rules/team"}]}"#,
+    )
+    .unwrap();
+
+    let output = env.run(uze_bin(), &["status", "--format", "json"]);
+    assert!(output.status.success(), "{}", said(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let paths: Vec<&str> = report["rules"]["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|rule| rule["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        paths,
+        [".agents/rules/team/ui.md", ".agents/rules/testing.md"]
+    );
+
+    let output = env.run(uze_bin(), &["agent", "rules", "check"]);
+    assert!(output.status.success(), "{}", said(&output));
+    assert!(stdout(&output).contains(".agents/rules/team/ui.md"));
+}
+
+#[test]
+fn a_manifest_that_does_not_parse_adds_nothing_and_status_says_so() {
+    let env = TestEnvironment::isolated();
+    let root = checkout(&env, &[("testing.md", TESTING_RULE)]);
+    std::fs::create_dir_all(root.join(".agents/rules/team")).unwrap();
+    std::fs::write(root.join(".agents/rules/team/ui.md"), UI_RULE).unwrap();
+    std::fs::write(
+        root.join(".agents/rules.json"),
+        r#"{ "entries": [ { "path": ".agents/rules/team" } "#,
+    )
+    .unwrap();
+
+    let output = env.run(uze_bin(), &["status"]);
+    assert!(output.status.success(), "{}", said(&output));
+    let text = stdout(&output);
+    assert!(
+        text.contains(".agents/rules.json: registers nothing"),
+        "{text}"
+    );
+    assert!(
+        text.contains("1 rule"),
+        "the flat rule is still the rule: {text}"
+    );
+
+    let output = env.run(uze_bin(), &["status", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["rules"]["rules"].as_array().unwrap().len(), 1);
+    assert!(report["rules"]["manifest"]["unreadable"].is_string());
+
+    let output = env.run(uze_bin(), &["agent", "rules", "check"]);
+    assert!(
+        !output.status.success(),
+        "the check fails: {}",
+        said(&output)
+    );
+}

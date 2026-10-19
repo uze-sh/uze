@@ -664,6 +664,15 @@ pub(crate) fn run_agent_rules(app: &UzeApplication, action: AgentRulesAction) ->
     if report.is_clean() {
         return Ok(());
     }
+    if report.not_rules.is_empty()
+        && let Some(reason) = report.unreadable_manifest()
+    {
+        return Err(uze_application::UzeError::RulesNotDeliverable(format!(
+            "{} registers nothing: {}",
+            uze_application::application::RULES_MANIFEST_FILE,
+            uze_application::inert(reason)
+        )));
+    }
     let checked = report.not_rules.len() + report.rules.len();
     Err(uze_application::UzeError::RulesNotDeliverable(format!(
         "{} of {} under {} {}",
@@ -728,6 +737,7 @@ pub(crate) fn render_rules_check(report: &uze_application::application::RulesRep
         rows.into_iter().map(|(_, row)| row).collect(),
     ));
     out.push('\n');
+    out.push_str(&render_manifest_findings(report));
     if report.is_clean() {
         out.push_str(&format!(
             "\n{} every file is a deliverable rule\n",
@@ -735,6 +745,33 @@ pub(crate) fn render_rules_check(report: &uze_application::application::RulesRep
         ));
     }
     out
+}
+
+/// What `.agents/rules.json` itself needs said: that it does not parse, or
+/// that it names manifests UZE does not read.
+pub(crate) fn render_manifest_findings(
+    report: &uze_application::application::RulesReport,
+) -> String {
+    let Some(manifest) = &report.manifest else {
+        return String::new();
+    };
+    let mut text = String::new();
+    if let Some(reason) = &manifest.unreadable {
+        text.push_str(&format!(
+            "{} {}: registers nothing, {}\n",
+            progress::warning_icon(),
+            manifest.path,
+            uze_application::inert(reason)
+        ));
+    }
+    if manifest.inherits {
+        text.push_str(&format!(
+            "{} {}: `inherits` is not followed; rules it reaches are Antigravity's alone\n",
+            progress::warning_icon(),
+            manifest.path
+        ));
+    }
+    text
 }
 
 /// `uze agent memory …` — the facts later agents are given, on any harness.

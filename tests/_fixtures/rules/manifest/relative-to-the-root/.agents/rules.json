@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "path": "rules/acme@corp"
+    },
+    {
+      "path": "./rules/acme@corp"
+    },
+    {
+      "path": "team-rules"
+    }
+  ]
+}

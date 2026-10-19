@@ -106,3 +106,60 @@ mod tests {
         let _ = std::fs::remove_dir_all(&override_dir);
     }
 }
+
+/// One case of the shared `.agents/rules.json` table
+/// (`tests/_fixtures/rules/manifest/<name>/`): a checkout's rule files and
+/// manifest, and the rule identities every reader of the manifest must
+/// answer with, in order. The Rust rule model and the generated engine
+/// both read it, so neither can drift from the other alone.
+pub struct RulesManifestCase {
+    pub name: String,
+    /// Relative to the checkout root, sorted.
+    pub expected: Vec<String>,
+    source: PathBuf,
+}
+
+/// The file beside each case's tree that lists what it must answer.
+const RULES_MANIFEST_EXPECTED: &str = "expected";
+
+impl RulesManifestCase {
+    /// Lays the case out under `root`, the checkout root as its readers
+    /// will see it: `{root}` in the manifest becomes that path, so a case
+    /// can hold an absolute entry.
+    pub fn stage(&self, root: &Path) {
+        copy_tree(&self.source, root);
+        std::fs::remove_file(root.join(RULES_MANIFEST_EXPECTED))
+            .expect("the case lists its answer");
+        let manifest = root.join(".agents/rules.json");
+        let text = std::fs::read_to_string(&manifest).expect("every case has a manifest");
+        std::fs::write(
+            &manifest,
+            text.replace("{root}", &root.display().to_string()),
+        )
+        .expect("the manifest is written");
+    }
+}
+
+/// Every case of the shared `.agents/rules.json` table, by name.
+pub fn rules_manifest_cases() -> Vec<RulesManifestCase> {
+    let directory = root().join("rules/manifest");
+    let mut cases: Vec<RulesManifestCase> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("read {}: {error}", directory.display()))
+        .flatten()
+        .map(|entry| {
+            let source = entry.path();
+            let expected = std::fs::read_to_string(source.join(RULES_MANIFEST_EXPECTED))
+                .unwrap_or_else(|error| panic!("{}: {error}", source.display()))
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            RulesManifestCase {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                expected,
+                source,
+            }
+        })
+        .collect();
+    cases.sort_by(|a, b| a.name.cmp(&b.name));
+    cases
+}

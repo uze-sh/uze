@@ -1,4 +1,5 @@
-//! A project's rules: Markdown files under `.agents/rules/` in a checkout,
+//! A project's rules: Markdown files directly under `.agents/rules/` in a
+//! checkout, and those its `.agents/rules.json` registers ([`manifest`]),
 //! each opening with Antigravity's frontmatter (`trigger`, and `globs` or
 //! `description` where the trigger needs one). The project authors and
 //! versions them; this module only reads them, and says of each file
@@ -24,6 +25,7 @@ use crate::skill::split_frontmatter;
 use crate::{Result, UzeError};
 
 mod glob;
+pub mod manifest;
 pub mod plugin;
 
 pub use glob::{Construct, DialectViolation, Glob};
@@ -341,18 +343,30 @@ pub struct NotARuleFile {
     pub reason: NotARule,
 }
 
-/// What a checkout's `.agents/rules/` holds.
+/// What a checkout's `.agents/rules/` and `.agents/rules.json` hold.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectRules {
     /// The checkout root the rules were read from.
     pub root: PathBuf,
-    /// Whether the checkout has a `.agents/rules/` directory at all; a
-    /// checkout without one has no rules and nothing wrong.
+    /// Whether the checkout has a `.agents/rules/` directory or a
+    /// `.agents/rules.json` at all; a checkout with neither has no rules
+    /// and nothing wrong.
     pub present: bool,
     /// Sorted by path.
     pub rules: Vec<Rule>,
     /// Sorted by path.
     pub not_rules: Vec<NotARuleFile>,
+    pub manifest: ManifestFindings,
+}
+
+/// What a report says about `.agents/rules.json` itself.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ManifestFindings {
+    /// Why the manifest registers nothing although it exists.
+    pub unreadable: Option<String>,
+    /// The manifest names further manifests through `inherits`, which
+    /// Antigravity reads and no reader of UZE's follows.
+    pub inherits: bool,
 }
 
 impl ProjectRules {
@@ -378,33 +392,54 @@ pub fn checkout_root(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Whether the checkout rooted at `root` keeps rules anywhere a reader
+/// looks: a `.agents/rules/` directory or a `.agents/rules.json`.
+pub fn has_rules(root: &Path) -> bool {
+    root.join(RULES_DIR).is_dir() || root.join(manifest::MANIFEST_FILE).is_file()
+}
+
 /// Reads every rule of the checkout rooted at `root`: the `*.md` files
-/// directly under `<root>/.agents/rules/`. A subdirectory is not read —
-/// a project's own folder there never becomes a rule on one harness only.
+/// directly under `<root>/.agents/rules/`, and every file its
+/// `.agents/rules.json` registers. A subdirectory nothing registers is not
+/// read: a project's own folder there never becomes a rule on one harness
+/// only.
 pub fn discover(root: &Path) -> Result<ProjectRules> {
     let root = root.canonical().map_err(UzeError::read(root))?;
     let directory = root.join(RULES_DIR);
     let mut found = ProjectRules {
+        present: has_rules(&root),
         root,
-        present: directory.is_dir(),
         rules: Vec::new(),
         not_rules: Vec::new(),
+        manifest: ManifestFindings::default(),
     };
     if !found.present {
         return Ok(found);
     }
-    let entries = std::fs::read_dir(&directory).map_err(UzeError::read(&directory))?;
-    let mut files: Vec<(String, PathBuf)> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| is_rule_file(path))
-        .filter_map(|path| {
-            let name = path.file_name()?.to_str()?.to_owned();
-            Some((format!("{RULES_DIR}/{name}"), path))
-        })
-        .collect();
-    files.sort();
-    for (identity, path) in files {
+    let mut identities = std::collections::BTreeSet::new();
+    if directory.is_dir() {
+        let entries = std::fs::read_dir(&directory).map_err(UzeError::read(&directory))?;
+        identities.extend(
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| is_rule_file(path))
+                .filter_map(|path| {
+                    let name = path.file_name()?.to_str()?.to_owned();
+                    Some(format!("{RULES_DIR}/{name}"))
+                }),
+        );
+    }
+    match manifest::load(&found.root) {
+        manifest::Manifest::Absent => {}
+        manifest::Manifest::Unreadable(reason) => found.manifest.unreadable = Some(reason),
+        manifest::Manifest::Read(document) => {
+            found.manifest.inherits = document.inherits();
+            identities.extend(manifest::registered_files(&found.root, &document));
+        }
+    }
+    for identity in identities {
+        let path = found.root.join(&identity);
         let outcome = std::fs::read(&path)
             .map_err(|error| NotARule::Unreadable(error.to_string()))
             .and_then(|bytes| parse_rule(&identity, &bytes));
@@ -419,8 +454,8 @@ pub fn discover(root: &Path) -> Result<ProjectRules> {
     Ok(found)
 }
 
-/// Whether a directory entry is one rule file: the one place discovery
-/// decides membership. A plugin's copies (`<plugin>@<market>--<rule>.md`,
+/// Whether a path is one rule file: the one place discovery decides
+/// membership. A plugin's copies (`<plugin>@<market>/<rule>.md`,
 /// [`plugin`]) are rule files by this same test, so nothing widens for
 /// them.
 fn is_rule_file(path: &Path) -> bool {

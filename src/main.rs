@@ -956,8 +956,46 @@ mod status_output_tests {
             present: directory_present,
             rules,
             not_rules,
+            manifest: None,
         });
         status
+    }
+
+    fn with_manifest(unreadable: Option<&str>, inherits: bool) -> ProjectStatus {
+        let mut status = with_rules(
+            vec![summary(".agents/rules/a.md", "always_on")],
+            Vec::new(),
+            true,
+        );
+        status.report.rules.as_mut().unwrap().manifest =
+            Some(uze_application::application::ManifestSummary {
+                path: ".agents/rules.json",
+                unreadable: unreadable.map(str::to_owned),
+                inherits,
+            });
+        status
+    }
+
+    #[test]
+    fn a_manifest_that_does_not_parse_is_reported_and_needs_attention() {
+        let status = with_manifest(Some("it is not JSON: EOF while parsing"), false);
+        let text = crate::progress::unpainted(&render_status(&status));
+        assert!(
+            text.contains(".agents/rules.json: registers nothing, it is not JSON"),
+            "{text}"
+        );
+        assert!(text.contains(".agents/rules.json does not parse"), "{text}");
+    }
+
+    #[test]
+    fn a_manifest_that_inherits_is_reported_and_still_ready() {
+        let status = with_manifest(None, true);
+        let text = crate::progress::unpainted(&render_status(&status));
+        assert!(
+            text.contains(".agents/rules.json: `inherits` is not followed"),
+            "{text}"
+        );
+        assert!(text.contains("ready"), "{text}");
     }
 
     fn summary(path: &str, trigger: &'static str) -> uze_application::application::RuleSummary {
@@ -998,7 +1036,7 @@ mod status_output_tests {
         let copy = |rule: &str, trigger| uze_application::application::RuleSummary {
             plugin: Some("acme-conventions@acme".to_owned()),
             ..summary(
-                &format!(".agents/rules/acme-conventions@acme--{rule}"),
+                &format!(".agents/rules/acme-conventions@acme/{rule}"),
                 trigger,
             )
         };
@@ -1018,7 +1056,7 @@ mod status_output_tests {
                 plugin: "acme-conventions@acme".to_owned(),
                 rules: Some(3),
                 files: vec![uze_application::application::RuleCopyFinding {
-                    path: ".agents/rules/acme-conventions@acme--two.md".to_owned(),
+                    path: ".agents/rules/acme-conventions@acme/two.md".to_owned(),
                     state: "drifted",
                 }],
                 unverified: None,
@@ -1035,7 +1073,7 @@ mod status_output_tests {
             "{text}"
         );
         assert!(
-            text.contains(".agents/rules/acme-conventions@acme--two.md: edited"),
+            text.contains(".agents/rules/acme-conventions@acme/two.md: edited"),
             "the drifted file is named: {text}"
         );
         assert!(

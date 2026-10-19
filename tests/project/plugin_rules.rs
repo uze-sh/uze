@@ -1,6 +1,6 @@
 //! A plugin's rules in the projects that declare it (plugin-rules): copied
-//! byte for byte into the declaring checkout's `.agents/rules/` under the
-//! plugin's prefix, judged against the revision `agents.lock` pins, and
+//! byte for byte into a folder of the plugin's own under the declaring
+//! checkout's `.agents/rules/`, registered in `.agents/rules.json`, judged against the revision `agents.lock` pins, and
 //! carried by add, install, update and remove without ever overwriting a
 //! copy somebody edited.
 
@@ -21,8 +21,18 @@ const UI: &str = "---\ntrigger: glob\nglobs: **/ui/**\n---\nUI components live i
 const OWN: &str = "---\ntrigger: manual\n---\nThe project's own.\n";
 const LEGACY: &str = "---\ntrigger: always_on\n---\nThis organization writes tests first.\n";
 
+const MANIFEST: &str = ".agents/rules.json";
+
+fn folder() -> String {
+    format!(".agents/rules/{PLUGIN}@{MARKET}")
+}
+
 fn copy(rule: &str) -> String {
-    format!(".agents/rules/{PLUGIN}@{MARKET}--{rule}")
+    format!("{}/{rule}", folder())
+}
+
+fn manifest(project: &Path) -> serde_json::Value {
+    serde_json::from_str(&read(project, MANIFEST)).unwrap()
 }
 
 struct World {
@@ -144,9 +154,16 @@ fn rules_land_byte_for_byte_in_the_declaring_project_only() {
         OWN,
         "the project's own rule with the same name is untouched"
     );
+    let rules = report.rules.expect("the copies are reported");
+    assert_eq!(rules.written, [copy("legacy.md"), copy("ui.md")]);
     assert_eq!(
-        report.rules.expect("the copies are reported").written,
-        [copy("legacy.md"), copy("ui.md")]
+        rules.manifest,
+        uze_application::application::RulesManifestChange::Registered
+    );
+    assert_eq!(
+        manifest(&declaring),
+        serde_json::json!({"entries": [{"path": folder()}]}),
+        "the folder is registered, and the manifest holds nothing else"
     );
     assert!(
         !other.join(".agents").exists(),
@@ -183,7 +200,7 @@ fn a_machine_install_writes_into_no_project() {
         .unwrap();
 
     assert!(!project.join(".agents").exists());
-    assert!(!cwd.join(".agents/rules").join(copy("ui.md")).exists());
+    assert!(!cwd.join(folder()).exists());
 }
 
 #[test]
@@ -198,15 +215,7 @@ fn a_fresh_machine_judges_a_cloned_project_without_installing() {
     for committed in ["agents.yaml", "agents.lock"] {
         fs::copy(project.join(committed), clone.join(committed)).unwrap();
     }
-    fs::create_dir_all(clone.join(".agents/rules")).unwrap();
-    for entry in fs::read_dir(project.join(".agents/rules")).unwrap() {
-        let entry = entry.unwrap();
-        fs::copy(
-            entry.path(),
-            clone.join(".agents/rules").join(entry.file_name()),
-        )
-        .unwrap();
-    }
+    uze_testkit::fixtures::copy_tree(&project.join(".agents"), &clone.join(".agents"));
     let project = clone;
 
     let fresh_home = world.base.join("fresh");
@@ -359,9 +368,84 @@ fn removing_the_plugin_removes_its_rules_only() {
     assert_eq!(rules.extra, [copy("mine.md")]);
     assert!(!project.join(copy("ui.md")).exists());
     assert_eq!(read(&project, ".agents/rules/own.md"), LEGACY);
+    assert!(
+        project.join(MANIFEST).exists(),
+        "a folder still holding a file keeps the entry that has it read"
+    );
     assert_eq!(
         app.project().plugin_rules(&project).undeclared,
         [format!("{PLUGIN}@{MARKET}")],
         "the file left behind is named as an undeclared plugin's"
     );
+}
+
+#[test]
+fn the_operators_entries_are_kept() {
+    let world = World::new("plugin-rules-operator-manifest");
+    let app = world.registered_machine("home");
+    let project = world.project("a");
+    fs::create_dir_all(project.join(".agents/rules/team")).unwrap();
+    fs::write(project.join(".agents/rules/team/own.md"), OWN).unwrap();
+    let operator = r#"{"entries": [{"path": ".agents/rules/team"}], "note": "the team's"}"#;
+    fs::write(project.join(MANIFEST), operator).unwrap();
+
+    world.add(&app, &project);
+
+    let written = manifest(&project);
+    assert_eq!(
+        written["entries"][0],
+        serde_json::json!({"path": ".agents/rules/team"})
+    );
+    assert_eq!(written["entries"][1], serde_json::json!({"path": folder()}));
+    assert_eq!(written["note"], "the team's");
+    let discovered = app.project().rules(&project).unwrap();
+    assert_eq!(discovered.rules.len(), 3, "{discovered:?}");
+
+    app.project().remove(PLUGIN, &project).unwrap();
+    assert_eq!(
+        manifest(&project),
+        serde_json::from_str::<serde_json::Value>(operator).unwrap(),
+        "only UZE's entry went"
+    );
+    assert!(!project.join(folder()).exists());
+}
+
+#[test]
+fn an_unreadable_manifest_is_never_written() {
+    let world = World::new("plugin-rules-broken-manifest");
+    let app = world.registered_machine("home");
+    let project = world.project("a");
+    fs::create_dir_all(project.join(".agents")).unwrap();
+    let broken = "{ \"entries\": [ { \"path\": \".agents/rules/team\" } ";
+    fs::write(project.join(MANIFEST), broken).unwrap();
+
+    let report = world.add(&app, &project);
+
+    let rules = report.rules.expect("the manifest is reported");
+    assert!(
+        matches!(
+            rules.manifest,
+            uze_application::application::RulesManifestChange::Unreadable(_)
+        ),
+        "{rules:?}"
+    );
+    assert!(rules.written.is_empty());
+    assert_eq!(read(&project, MANIFEST), broken, "its bytes are kept");
+    assert!(!project.join(folder()).exists());
+    let discovered = app.project().rules(&project).unwrap();
+    assert!(discovered.unreadable_manifest().is_some());
+}
+
+#[test]
+fn removing_the_last_plugin_takes_its_entry_back() {
+    let world = World::new("plugin-rules-remove-last");
+    let app = world.registered_machine("home");
+    let project = world.project("a");
+    world.add(&app, &project);
+    assert!(project.join(MANIFEST).exists());
+
+    app.project().remove(PLUGIN, &project).unwrap();
+
+    assert!(!project.join(folder()).exists(), "the folder is gone");
+    assert!(!project.join(MANIFEST).exists(), "and the manifest with it");
 }

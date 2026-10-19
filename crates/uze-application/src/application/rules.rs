@@ -14,18 +14,36 @@ use uze_core::rules::{self, Activation, Trigger};
 
 use super::services::Project;
 
-/// What a checkout's `.agents/rules/` holds.
+/// What a checkout's `.agents/rules/` and `.agents/rules.json` hold.
 #[derive(Clone, Debug, Serialize)]
 pub struct RulesReport {
     /// The checkout root the rules were read from.
     pub root: PathBuf,
     /// `.agents/rules`, relative to [`Self::root`].
     pub directory: &'static str,
-    /// Whether the checkout has that directory at all.
+    /// Whether the checkout has that directory or a manifest at all.
     pub present: bool,
     pub rules: Vec<RuleSummary>,
     /// Every file there that is not delivered, with its reason.
     pub not_rules: Vec<NotARuleSummary>,
+    /// What is wrong with `.agents/rules.json` itself; absent when nothing
+    /// is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<ManifestSummary>,
+}
+
+/// What a report says of `.agents/rules.json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ManifestSummary {
+    /// `.agents/rules.json`, relative to the checkout root.
+    pub path: &'static str,
+    /// Why it registers nothing although it exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unreadable: Option<String>,
+    /// It names further manifests through `inherits`, which Antigravity
+    /// reads and UZE does not follow: rules found there reach Antigravity
+    /// alone.
+    pub inherits: bool,
 }
 
 /// One deliverable rule, by its frontmatter.
@@ -61,9 +79,24 @@ pub struct TriggerCount {
 }
 
 impl RulesReport {
-    /// Every file under the directory is a deliverable rule.
+    /// Every file read is a deliverable rule, and the manifest, when
+    /// there is one, parses. A manifest that `inherits` is reported and
+    /// still clean: what it registers itself is delivered.
     pub fn is_clean(&self) -> bool {
-        self.not_rules.is_empty()
+        self.not_rules.is_empty() && self.unreadable_manifest().is_none()
+    }
+
+    /// Why `.agents/rules.json` registers nothing although it exists.
+    pub fn unreadable_manifest(&self) -> Option<&str> {
+        self.manifest.as_ref()?.unreadable.as_deref()
+    }
+
+    /// Whether `.agents/rules.json` names further manifests UZE does not
+    /// follow.
+    pub fn manifest_inherits(&self) -> bool {
+        self.manifest
+            .as_ref()
+            .is_some_and(|manifest| manifest.inherits)
     }
 
     /// The rules the project wrote itself, as opposed to the copies a
@@ -92,7 +125,14 @@ impl RulesReport {
 
 impl From<rules::ProjectRules> for RulesReport {
     fn from(found: rules::ProjectRules) -> Self {
+        let manifest =
+            (found.manifest != rules::ManifestFindings::default()).then(|| ManifestSummary {
+                path: rules::manifest::MANIFEST_FILE,
+                unreadable: found.manifest.unreadable.clone(),
+                inherits: found.manifest.inherits,
+            });
         Self {
+            manifest,
             root: found.root,
             directory: rules::RULES_DIR,
             present: found.present,

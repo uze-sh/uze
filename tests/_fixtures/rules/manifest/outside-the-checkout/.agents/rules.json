@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "path": "../outside"
+    },
+    {
+      "path": ".agents/rules/../../.."
+    }
+  ]
+}

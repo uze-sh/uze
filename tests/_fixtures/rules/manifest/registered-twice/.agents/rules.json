@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "path": ".agents/rules"
+    },
+    {
+      "path": ".agents/rules/flat.md"
+    },
+    {
+      "path": ".agents/rules/team"
+    },
+    {
+      "path": ".agents/rules/team/"
+    },
+    {
+      "path": "./.agents/rules/team/ui.md"
+    }
+  ]
+}

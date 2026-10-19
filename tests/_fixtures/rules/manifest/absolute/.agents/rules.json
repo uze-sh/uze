@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "path": "{root}/.agents/rules/acme@corp"
+    },
+    {
+      "path": "/elsewhere/rules"
+    }
+  ]
+}

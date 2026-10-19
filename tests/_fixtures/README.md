@@ -125,6 +125,14 @@ Every other format those tests read is encoded inside the test itself.
   rules engine's tests (`crates/uze-integrations/src/rules/engine_tests.rs`),
   so both readers of a rule's `globs` are proven against the same rows. A `globs` value splits on the commas outside `{…}`
   before any row applies.
+- `manifest/<case>/` — `.agents/rules.json` as one table of checkouts:
+  each case is a tree of rule files and a manifest (`{root}` in it stands
+  for the checkout root, so a case can hold an absolute entry), and
+  `expected` lists the rule identities every reader must answer with, in
+  order. Staged by `uze_testkit::fixtures::rules_manifest_cases` and read
+  by uze-core's discovery (`every_case_of_the_shared_manifest_table_holds`)
+  and by the engine (`the_engine_reads_the_manifest_as_the_rust_model_does`),
+  so the two readers of the manifest cannot part.
 - `payloads/` — hook payloads recorded per harness (Claude Code `Read`,
   `Edit`, `Bash`; Codex `exec_command`, `apply_patch`; OpenCode `read`,
   `edit`, `write`, `context`), which the engine's tests replay to prove path

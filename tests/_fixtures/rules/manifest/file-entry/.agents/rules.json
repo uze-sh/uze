@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "path": ".agents/rules/acme@corp/style.md"
+    },
+    {
+      "path": ".agents/rules/acme@corp/notes.txt"
+    }
+  ]
+}

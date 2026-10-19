@@ -24,13 +24,18 @@ pub(crate) const HEADER: &str = "#!/bin/sh\n# rules/engine — generated";
 /// - `NORMALIZE` (awk) makes each one a path relative to the checkout root
 ///   and drops anything outside it; a shell token, or a field that only
 ///   looks like a path, must also exist to count;
+/// - `MANIFEST` (jq) reads `.agents/rules.json` as `uze-core`'s rule model
+///   reads it (`uze_core::rules::manifest`): each entry's path relative to
+///   the checkout root, its `include_only` and `exclude` relative to the
+///   entry, and nothing at all from a manifest it cannot parse;
 /// - `RULES` (awk) parses each rule's frontmatter, translates its globs to
 ///   EREs and composes the answer, recording what it handed per session.
 pub(crate) const SOURCE: &str = r#"#!/bin/sh
 # rules/engine — generated; do not edit, it is written again.
 #
 # Hands a coding agent the rules its project keeps in .agents/rules/ of the
-# checkout it is working in, at the moment each one applies. The harness
+# checkout it is working in, and those its .agents/rules.json registers, at
+# the moment each one applies. The harness
 # runs this as a command hook with its hook payload on stdin; the answer is
 #   {"hookSpecificOutput":{"hookEventName":<event>,"additionalContext":<text>}}
 # on stdout, or nothing at all. It only ever adds context: it never denies,
@@ -106,6 +111,37 @@ BEGIN {
   n = split(line, words, " ")
   for (i = 1; i <= n; i++) emit("e", words[i])
 }
+'
+
+# One line per thing an entry asks for, every path relative to the checkout
+# root: `x:` a file it excludes, then `f:` each file it includes only, or
+# `e:` the directory or file it names, then `-` where the entry ends. An
+# entry whose path leaves the checkout, or is no clean string, says nothing.
+MANIFEST='
+def clean: type == "string" and length > 0
+  and (explode | any(. < 32 or (. >= 127 and . < 160)) | not);
+def strings: if type == "array" then map(select(clean)) else [] end;
+def within: (if startswith("/") then
+    (if . == $root then "" elif startswith($root + "/") then .[($root | length) + 1:] else null end)
+  else . end)
+  | if . == null then null else
+      reduce split("/")[] as $s ([];
+        if . == null then null
+        elif $s == "" or $s == "." then .
+        elif $s == ".." then (if length == 0 then null else .[:-1] end)
+        else . + [$s] end)
+      | if . == null then null else join("/") end
+    end;
+def under($t): if $t == "" then . else $t + "/" + . end;
+if (.entries | type) == "array" then .entries[] else empty end
+| select(type == "object" and (.path | clean))
+| (.path | within) as $t
+| select($t != null)
+| ((.exclude | strings)[] | under($t) | within | select(. != null and . != "") | "x:" + .),
+  (if (.include_only | type) == "array"
+   then (.include_only | strings)[] | under($t) | within | select(. != null and . != "") | "f:" + .
+   else "e:" + $t end),
+  "-"
 '
 
 RULES='
@@ -274,15 +310,57 @@ case $event in
   *) exit 0 ;;
 esac
 
-# The checkout the session is in, and the one stat a checkout without rules
+# The checkout the session is in, and the two stats a checkout without rules
 # costs.
 [ -n "$cwd" ] && cd "$cwd" 2>/dev/null || exit 0
 root=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$root" ] || exit 0
-[ -d "$root/.agents/rules" ] || exit 0
+manifest=$root/.agents/rules.json
+[ -d "$root/.agents/rules" ] || [ -f "$manifest" ] || exit 0
+nl='
+'
+
+# Prints `$1`, relative to the checkout root, when it is a rule file as the
+# Rust model decides one: a readable file named `<something>.md`.
+rule_file() {
+  case $1 in ''|*"$nl"*) return 0 ;; esac
+  case ${1##*/} in ?*.md) ;; *) return 0 ;; esac
+  [ -f "$root/$1" ] && [ -r "$root/$1" ] && printf '%s\n' "$1"
+  return 0
+}
+
+# Every rule file once, relative to the checkout root: those directly under
+# .agents/rules/, and those the manifest registers. A manifest jq cannot
+# read registers nothing.
+found=$(
+  for rule in "$root"/.agents/rules/*.md; do rule_file "${rule#"$root"/}"; done
+  if [ -f "$manifest" ]; then
+    entries=$("$JQ" -r --arg root "$root" "$MANIFEST" "$manifest" 2>/dev/null) || entries=
+    excluded=
+    printf '%s\n' "$entries" | while IFS= read -r line; do
+      case $line in
+        x:*) excluded=$excluded${line#x:}$nl ;;
+        f:*) rule_file "${line#f:}" ;;
+        e:*)
+          target=${line#e:}
+          if [ -d "$root/$target" ]; then
+            for rule in "$root/${target:+$target/}"*.md; do
+              rel=${rule#"$root"/}
+              case $nl$excluded in *"$nl$rel$nl"*) ;; *) rule_file "$rel" ;; esac
+            done
+          else
+            case $nl$excluded in *"$nl$target$nl"*) ;; *) rule_file "$target" ;; esac
+          fi ;;
+        -) excluded= ;;
+      esac
+    done
+  fi
+)
 set --
-for rule in "$root"/.agents/rules/*.md; do
-  [ -f "$rule" ] && [ -r "$rule" ] && set -- "$@" "$rule"
-done
+while IFS= read -r rel; do
+  [ -n "$rel" ] && set -- "$@" "$root/$rel"
+done <<RULE_FILES
+$(printf '%s\n' "$found" | sort -u)
+RULE_FILES
 [ $# -gt 0 ] || exit 0
 
 # What this session was already handed: generated state, so losing it costs

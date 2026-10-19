@@ -22,7 +22,9 @@ use uze_core::{
     project_lock::{LockedPlugin, ProjectLock},
     rules::{
         self,
-        plugin::{self as plugin_rules, Convergence, CopyState, Namespace, ShippedRule},
+        plugin::{
+            self as plugin_rules, Convergence, CopyState, ManifestChange, Namespace, ShippedRule,
+        },
     },
 };
 
@@ -48,10 +50,17 @@ pub struct RuleCopies {
     /// Files in the plugin's namespace that it does not ship, left in place.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub extra: Vec<String>,
+    /// What became of the plugin folder's entry in `.agents/rules.json`.
+    #[serde(skip_serializing_if = "is_unchanged")]
+    pub manifest: ManifestChange,
     /// Why the plugin's rules at the locked revision could not be read
     /// here, so nothing was replaced or removed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unverified: Option<String>,
+}
+
+fn is_unchanged(change: &ManifestChange) -> bool {
+    *change == ManifestChange::Unchanged
 }
 
 impl RuleCopies {
@@ -62,6 +71,7 @@ impl RuleCopies {
             && self.removed.is_empty()
             && self.drifted.is_empty()
             && self.extra.is_empty()
+            && is_unchanged(&self.manifest)
             && self.unverified.is_none()
     }
 
@@ -72,6 +82,7 @@ impl RuleCopies {
             removed: done.removed,
             drifted: done.drifted,
             extra: done.extra,
+            manifest: done.manifest,
             unverified,
         }
     }

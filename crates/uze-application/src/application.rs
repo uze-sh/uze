@@ -67,7 +67,7 @@ pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason}
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
 pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};
-pub use rules::{NotARuleSummary, RuleSummary, RulesReport, TriggerCount};
+pub use rules::{ManifestSummary, NotARuleSummary, RuleSummary, RulesReport, TriggerCount};
 pub use rules_engine::RulesSetup;
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
@@ -84,6 +84,8 @@ pub use project_environment::{
     UpdateScope,
 };
 pub use uze_core::anchor::AnchorKind;
+pub use uze_core::rules::manifest::MANIFEST_FILE as RULES_MANIFEST_FILE;
+pub use uze_core::rules::plugin::ManifestChange as RulesManifestChange;
 
 pub struct UzeApplication {
     home: UzeHome,

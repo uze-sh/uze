@@ -1,0 +1,10 @@
+{
+  "inherits": [
+    "../shared/.agents/rules.json"
+  ],
+  "entries": [
+    {
+      "path": ".agents/rules/team"
+    }
+  ]
+}

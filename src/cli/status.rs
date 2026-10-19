@@ -841,6 +841,12 @@ pub(crate) fn status_headline(status: &ProjectStatus) -> String {
         return attention("commands await your approval".to_owned());
     }
     if let Some(rules) = report.rules.as_ref().filter(|rules| !rules.is_clean()) {
+        if rules.not_rules.is_empty() {
+            return attention(format!(
+                "{} does not parse",
+                uze_application::application::RULES_MANIFEST_FILE
+            ));
+        }
         return attention(format!(
             "{} in {} not delivered",
             count(rules.not_rules.len(), "file"),
@@ -1110,6 +1116,7 @@ pub(crate) fn render_status_rules(
             uze_application::inert(&file.reason)
         ));
     }
+    text.push_str(&super::agent::render_manifest_findings(rules));
     for plugin in &plugin_rules.plugins {
         if let Some(reason) = &plugin.unverified {
             text.push_str(&format!(

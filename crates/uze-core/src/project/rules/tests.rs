@@ -300,3 +300,102 @@ fn a_control_character_is_outside_the_dialect() {
         Construct::Control
     );
 }
+
+/// A case of the shared manifest table staged as a checkout: the root as
+/// discovery canonicalizes it, so an absolute entry names the same place.
+fn staged(case: &uze_testkit::fixtures::RulesManifestCase) -> PathBuf {
+    let scratch = uze_testkit::temp::scratch(&format!("rules-manifest-{}", case.name));
+    let root = scratch.canonical().unwrap();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    case.stage(&root);
+    root
+}
+
+#[test]
+fn every_case_of_the_shared_manifest_table_holds() {
+    let cases = uze_testkit::fixtures::rules_manifest_cases();
+    assert!(cases.len() >= 10, "the table is read: {}", cases.len());
+    for case in cases {
+        let root = staged(&case);
+        let found = discover(&root).unwrap();
+        assert!(
+            found.not_rules.is_empty(),
+            "{}: {:?}",
+            case.name,
+            found.not_rules
+        );
+        let paths: Vec<&str> = found.rules.iter().map(|rule| rule.path.as_str()).collect();
+        assert_eq!(paths, case.expected, "{}", case.name);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn a_registered_folder_is_read_as_the_projects_own_rules() {
+    let case = uze_testkit::fixtures::rules_manifest_cases()
+        .into_iter()
+        .find(|case| case.name == "folder")
+        .unwrap();
+    let root = staged(&case);
+    let found = discover(&root).unwrap();
+    assert!(found.present);
+    assert_eq!(found.manifest, ManifestFindings::default());
+    assert!(
+        found
+            .rules
+            .iter()
+            .any(|rule| rule.path == ".agents/rules/team/ui.md")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_manifest_that_does_not_parse_adds_nothing_and_is_reported() {
+    for name in ["does-not-parse", "not-an-object", "entries-not-a-list"] {
+        let case = uze_testkit::fixtures::rules_manifest_cases()
+            .into_iter()
+            .find(|case| case.name == name)
+            .unwrap();
+        let root = staged(&case);
+        let found = discover(&root).unwrap();
+        let paths: Vec<&str> = found.rules.iter().map(|rule| rule.path.as_str()).collect();
+        assert_eq!(paths, [".agents/rules/flat.md"], "{name}");
+        assert!(found.manifest.unreadable.is_some(), "{name}");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn inherits_is_not_followed_and_is_reported() {
+    let case = uze_testkit::fixtures::rules_manifest_cases()
+        .into_iter()
+        .find(|case| case.name == "inherits")
+        .unwrap();
+    let root = staged(&case);
+    let found = discover(&root).unwrap();
+    assert!(found.manifest.inherits);
+    assert_eq!(found.manifest.unreadable, None);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_manifest_alone_is_a_place_rules_are_kept() {
+    let root = checkout("rules-manifest-alone", &[]);
+    fs::create_dir_all(root.join("team-rules")).unwrap();
+    fs::write(
+        root.join("team-rules/a.md"),
+        "---\ntrigger: always_on\n---\nA\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join(".agents")).unwrap();
+    fs::write(
+        root.join(manifest::MANIFEST_FILE),
+        r#"{"entries": [{"path": "team-rules"}]}"#,
+    )
+    .unwrap();
+    assert!(has_rules(&root));
+    let found = discover(&root).unwrap();
+    assert!(found.present);
+    assert_eq!(found.rules[0].path, "team-rules/a.md");
+    fs::remove_dir_all(root).unwrap();
+}

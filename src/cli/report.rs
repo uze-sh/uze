@@ -664,8 +664,35 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
 /// can open each one.
 pub(crate) fn render_rule_copies(copies: &[uze_application::application::RuleCopies]) -> String {
     use progress::Change;
+    use uze_application::application::{RULES_MANIFEST_FILE, RulesManifestChange};
     let mut lines = String::new();
     for plugin in copies {
+        match &plugin.manifest {
+            RulesManifestChange::Unchanged => {}
+            RulesManifestChange::Registered => lines.push_str(&progress::change(
+                Change::Updated,
+                RULES_MANIFEST_FILE,
+                Some(&format!("registers {}'s folder", plugin.plugin)),
+            )),
+            RulesManifestChange::Unregistered => lines.push_str(&progress::change(
+                Change::Updated,
+                RULES_MANIFEST_FILE,
+                Some(&format!("no longer registers {}'s folder", plugin.plugin)),
+            )),
+            RulesManifestChange::Removed => lines.push_str(&progress::change(
+                Change::Removed,
+                RULES_MANIFEST_FILE,
+                Some("nothing else was left in it"),
+            )),
+            RulesManifestChange::Unreadable(reason) => lines.push_str(&progress::change(
+                Change::Attention,
+                RULES_MANIFEST_FILE,
+                Some(&format!(
+                    "does not parse, so it was left as it is, and {}'s rules with it: {reason}",
+                    plugin.plugin
+                )),
+            )),
+        }
         for path in &plugin.written {
             lines.push_str(&progress::change(Change::Added, path, None));
         }

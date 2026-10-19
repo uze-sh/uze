@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "path": ".agents/rules/one",
+      "include_only": [
+        "a.md"
+      ]
+    },
+    {
+      "path": ".agents/rules/two",
+      "include_only": [
+        "sub/c.md",
+        "missing.md"
+      ]
+    }
+  ]
+}

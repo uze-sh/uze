@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "path": ".agents/rules/one",
+      "exclude": [
+        "a.md"
+      ]
+    },
+    {
+      "path": ".agents/rules/two",
+      "exclude": [
+        "sub/"
+      ]
+    }
+  ]
+}

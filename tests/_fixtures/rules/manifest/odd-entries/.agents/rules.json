@@ -1,0 +1,26 @@
+{
+  "entries": [
+    7,
+    "text",
+    {
+      "path": 3
+    },
+    {
+      "path": ""
+    },
+    {
+      "path": ".agents/rules/bad\nname"
+    },
+    {
+      "path": ".agents/rules/team",
+      "include_only": "ui.md",
+      "exclude": [
+        1,
+        null
+      ]
+    },
+    {
+      "note": "no path"
+    }
+  ]
+}

@@ -857,3 +857,64 @@ console.log(JSON.stringify({{ system: context.system, read: read.result.content,
         "only a completed call"
     );
 }
+
+/// The paths of the rules an answer hands over, in the order it hands them.
+fn handed(answer: &Answer, event: &str) -> Vec<String> {
+    if answer.is_silent() {
+        return Vec::new();
+    }
+    answer
+        .context(event)
+        .split("<rule path=\"")
+        .skip(1)
+        .map(|rest| rest.split('"').next().unwrap().to_owned())
+        .collect()
+}
+
+/// `.agents/rules.json` read by the engine exactly as `uze-core` reads it:
+/// every case of the shared table, the same rules in the same order.
+#[test]
+fn the_engine_reads_the_manifest_as_the_rust_model_does() {
+    let cases = uze_testkit::fixtures::rules_manifest_cases();
+    assert!(cases.len() >= 10, "the table is read: {}", cases.len());
+    for case in cases {
+        let checkout = Checkout::new(&format!("rules-engine-manifest-{}", case.name));
+        case.stage(&checkout.root);
+        let answer = checkout.ask(&checkout.session_start("claude", "s", "startup"));
+        assert_eq!(
+            handed(&answer, "SessionStart"),
+            case.expected,
+            "{}: {}",
+            case.name,
+            answer.0
+        );
+        let model: Vec<String> = uze_core::rules::discover(&checkout.root)
+            .unwrap()
+            .rules
+            .into_iter()
+            .map(|rule| rule.path)
+            .collect();
+        assert_eq!(model, case.expected, "{}: the Rust model agrees", case.name);
+    }
+}
+
+#[test]
+fn a_rule_in_a_registered_folder_answers_a_tool_call_like_a_flat_one() {
+    let checkout = Checkout::new("rules-engine-manifest-glob");
+    checkout.write(
+        ".agents/rules/acme@corp/ui.md",
+        "---\ntrigger: glob\nglobs: **/src/ui/**\n---\nUse the design tokens.\n",
+    );
+    checkout.write(
+        ".agents/rules.json",
+        r#"{"entries": [{"path": ".agents/rules/acme@corp"}]}"#,
+    );
+    checkout.file("src/ui/button.ts");
+    let context = checkout
+        .ask(&checkout.recorded("claude-read", "s", "src/ui/button.ts"))
+        .context("PostToolUse");
+    assert_eq!(
+        context,
+        "<rule path=\".agents/rules/acme@corp/ui.md\" trigger=\"glob\" matched=\"src/ui/button.ts\">\nUse the design tokens.\n</rule>"
+    );
+}
