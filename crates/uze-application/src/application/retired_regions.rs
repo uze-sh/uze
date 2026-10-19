@@ -65,11 +65,36 @@ impl UzeApplication {
     }
 }
 
-/// Whether `project_root` is where the cleanup runs: a main working tree,
-/// whose `.git` is a directory. A linked worktree's is a file, and its
-/// `AGENTS.md` belongs to the branch checked out there.
+/// Whether `project_root` is where the cleanup runs: anywhere but inside a
+/// linked worktree, whose `AGENTS.md` belongs to the branch checked out
+/// there. Read from the nearest `.git` at or above the project, since a
+/// project may sit below its repository's root: a directory is a main
+/// working tree, and a file is one too unless it points into a repository's
+/// `worktrees/` (a submodule and `--separate-git-dir` point elsewhere). A
+/// project in no repository has no slots to protect.
 pub(super) fn applies_at(project_root: &Path) -> bool {
-    project_root.join(".git").is_dir()
+    let Some(dot_git) = project_root
+        .ancestors()
+        .map(|ancestor| ancestor.join(".git"))
+        .find(|candidate| candidate.symlink_metadata().is_ok())
+    else {
+        return true;
+    };
+    if dot_git.is_dir() {
+        return true;
+    }
+    let pointer = std::fs::read_to_string(&dot_git).unwrap_or_default();
+    let gitdir = Path::new(
+        pointer
+            .trim()
+            .strip_prefix("gitdir:")
+            .unwrap_or_default()
+            .trim(),
+    );
+    !gitdir
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "worktrees")
 }
 
 fn is_retired(identity: &str) -> bool {
@@ -415,6 +440,20 @@ mod tests {
         std::fs::write(slot.join(".git"), "gitdir: ../../.git/worktrees/ab12cd\n").unwrap();
         assert!(applies_at(&primary));
         assert!(!applies_at(&slot));
+        std::fs::create_dir_all(slot.join("svc")).unwrap();
+        assert!(
+            !applies_at(&slot.join("svc")),
+            "a project below a slot's root is the slot's"
+        );
+
+        // A project below its repository's root, and a submodule's checkout,
+        // are main working trees.
+        std::fs::create_dir_all(primary.join("svc")).unwrap();
+        assert!(applies_at(&primary.join("svc")));
+        let submodule = primary.join("vendor").join("lib");
+        std::fs::create_dir_all(&submodule).unwrap();
+        std::fs::write(submodule.join(".git"), "gitdir: ../../.git/modules/lib\n").unwrap();
+        assert!(applies_at(&submodule));
         let _ = std::fs::remove_dir_all(root);
     }
 }
