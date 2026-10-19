@@ -32,13 +32,17 @@ it.
 
 ### Requirement: The instructions state the agent's own situation
 The section SHALL state the agent's actual situation, as the launcher knows
-it: whether it is isolated, its checkout, its branch, the target and the
-completion behavior. It SHALL NOT ask the agent to infer its situation from
-its working directory.
+it at compose time: whether it is isolated, its checkout, the branch its
+checkout has then, the target and the completion behavior. It SHALL NOT ask
+the agent to infer its situation from its working directory.
 
 #### Scenario: An isolated agent
 - **WHEN** an agent is launched in slot `ab12cd` of a project targeting `main`
 - **THEN** its section names `.worktrees/ab12cd`, branch `agent/ab12cd` and target `main`
+
+#### Scenario: A resume after naming
+- **WHEN** the agent named its work `fix/x` and its session is resumed
+- **THEN** the resumed section names branch `fix/x`
 
 #### Scenario: An agent in the operator's checkout
 - **WHEN** an agent is launched in the operator's own checkout
@@ -54,11 +58,16 @@ push the instructions out.
 - **WHEN** a launch has a full briefing and more memory than fits
 - **THEN** the instructions section is whole, and the document is within the bound
 
-### Requirement: A degraded channel carries the instructions visibly
-On a harness whose context channel is degraded, the instructions SHALL be
-delivered by the first turn the degraded channel already uses, and the
-launch SHALL be reported as degraded.
+### Requirement: A degraded channel carries the instructions on a new conversation
+On a harness whose context channel is degraded or unavailable, a launch
+that starts a new conversation SHALL give one visible first turn pointing at
+the agent's context, which carries the instructions. A resume SHALL give no
+first turn. Both SHALL be reported as degraded, naming the channel.
 
-#### Scenario: A degraded launch
-- **WHEN** the workspace launches an agent on a harness whose channel is unavailable
+#### Scenario: A degraded new conversation
+- **WHEN** the workspace launches a new agent on a harness whose channel is unavailable
 - **THEN** the agent's first turn points at its context, which carries the instructions, and status reports the channel as degraded
+
+#### Scenario: A degraded resume
+- **WHEN** that agent's session is resumed with the channel still unavailable
+- **THEN** no first turn is given: the conversation keeps what its first turn delivered, and status reports the channel as degraded, so the instructions are not refreshed

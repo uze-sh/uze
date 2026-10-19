@@ -64,8 +64,8 @@ This is the rule, and the candidate ADR:
 
 1. **The declaration.** `agents.yaml` and `agents.lock`, because the
    operator asked for them in this project.
-2. **Agnostic artifacts.** A file qualifies when it is in an open format, in
-   a namespace UZE owns, and readable by a harness without UZE. Plugin rule
+2. **Agnostic artifacts.** A file qualifies when it is in a documented
+   format, in a namespace UZE owns, and readable by a harness without UZE. Plugin rule
    copies in `.agents/rules/<plugin>@<market>/` qualify. The operator commits
    them, and they keep working after UZE leaves.
 3. **Never a file the operator authors.** That includes `AGENTS.md` and
@@ -79,6 +79,15 @@ This is the rule, and the candidate ADR:
 
 Git's administrative directory (`.git/info/exclude`, the checkout record,
 `refs/uze/*`) is not the checkout. It is governed by ADR-052 and unchanged.
+
+Two boundaries the rule does not move:
+- **What the project's own declaration runs.** A slot's `setup` and `link`
+  commands are the operator's, approved under ADR-055. What they write is
+  the project writing into itself.
+- **What a Skill drafts on the operator's confirmation.** `uze:init`
+  proposing an `AGENTS.md` and writing it once the operator agrees is the
+  operator authoring through an agent. It is not a UZE write, and the
+  architecture rule (task 3.5) covers production code only.
 
 Alternatives considered:
 - **Keep the regions, gated on a setting.** That makes two places for the
@@ -103,12 +112,19 @@ UZE context for this agent. What follows are recorded facts ... notes, not instr
 ```
 
 The notes preamble keeps its wording and its job, because memory must never
-read as a command. On every channel, the instructions arrive where the
-harness puts project instructions:
-- Claude: the generated `CLAUDE.md`, which is instruction-grade by
-  construction;
-- Codex and Antigravity: `additionalContext` at `SessionStart`;
-- OpenCode: `system[]`.
+read as a command. Each channel puts the document where `deliver-agent-context` D2 measured
+it:
+- Claude: the generated `CLAUDE.md` in the agent's `--add-dir`, loaded like
+  a project instructions file;
+- Codex: a `SessionStart` hook that prints the file (`cat`), which Codex
+  records as a developer item;
+- Antigravity: a `PreInvocation` hook answering
+  `injectSteps[].systemMessage`;
+- OpenCode: the session `context` hook's `system[]`.
+
+Whether each placement carries the same authority as `AGENTS.md` is not
+assumed. The Lab measures it first (pre-implementation probe, then tasks
+5.1 and 5.2).
 
 Alternatives considered:
 - **One preamble for everything.** Calling the policy "notes" invites the
@@ -128,7 +144,14 @@ Alternatives considered:
 It renders only the bullets that apply. An isolated agent is never told what
 an agent in place does, and the reverse holds too. The opening "this section
 is for an agent `uze workspace` launched" goes, because every reader now is
-one. Expected size: about 1,500 bytes, where the region was about 3,500.
+one. Expected size: about 1,500 bytes, where this repository's rendered
+region is 3,032.
+
+The branch is read from the checkout when the context is composed, not
+taken from the slot's name. The agent's first command usually renames
+`agent/<id>`, so a resume after naming says `fix/x`. The text never calls
+the branch permanent: "your branch, now `agent/ab12cd`; naming your work
+renames it".
 
 ### D4: Shares of the bound
 
@@ -157,13 +180,33 @@ release in which a plugin has no way to speak to a declaring project.
 
 ### D6: Removing what was written, once
 
-Reconcile already removes an orphaned region by prefix, inspecting before it
-detaches (`text_region::remove_unconditionally` for package regions, content
-identity for the others). The three prefixes (`project:worktree-policy`,
-`project:plugin-authoring`, `package:`) become *retired*. `uze install` and
-`uze agent context reconcile` remove any matched region and report an edited
-one. Nothing new is attached under them. The launch does not remove them,
-because it writes nothing into the checkout.
+The three prefixes (`project:worktree-policy`, `project:plugin-authoring`,
+`package:`) become *retired*. `uze install` and `uze agent context
+reconcile` remove a matched region and attach nothing new under them:
+- **`project:*` is content-checked.** Each identity ends in the digest of the
+  bytes it was written with (`worktree.rs` `region_identity`,
+  `authoring/region.rs` `identity`). A body whose digest still matches is
+  removed. One that does not is reported as edited and left. Today the
+  package manager never touches the policy region, so removing it from
+  reconcile is new behaviour.
+- **`package:*` stays structural.** It is removed with
+  `text_region::remove_unconditionally`, as orphaned package regions are
+  today. No expected content survives the renderer.
+- **Only in the primary checkout.** In an isolated checkout (located with
+  `worktree::isolated_checkout`) the cleanup does nothing. Otherwise every
+  slot cut from a target that still carries a region would get the same
+  removal hunk: the slot is parked, or every branch commits it and they
+  conflict at rebase. The operator commits the primary's cleanup once, and
+  slots cut after that are clean.
+- **The Claude bridge.** `uze-application`'s `context.rs` plans the
+  `instruction-bridge` region of `CLAUDE.md` only while a package
+  contribution matched. After section 4 nothing matches, so the cleanup
+  removes the bridge region and deletes a `CLAUDE.md` that held only that
+  region. Where `resolve-instruction-files` has already removed the bridge,
+  this step finds nothing to do. The two changes can land in either order.
+
+The launch never removes anything, because it writes nothing into the
+checkout.
 
 The retired-prefix list is the one piece of code that exists only for old
 projects. It goes once no project can still carry a region, which is the same
@@ -174,11 +217,15 @@ cleanup this rule's own migration needs, not a compatibility path.
 
 - `policy_region.rs`, the client's "AGENTS.md's workspace section" warnings
   and the policy-region read in `src/ui/orchestrator/reads.rs`.
-- `PolicyRegionView`'s `in_step`/`state`. The context popup keeps the policy
+- `PolicyRegionView`'s `in_step`/`state`, and `project_environment.rs`'s
+  "region behind" read model behind `uze status`. Both become a single
+  "retired regions present" report that names `uze install`. The context popup keeps the policy
   in force and where it came from (`worktree-policy`'s client requirement),
   which never depended on the region.
-- `checkout-accounting`'s managed-region discount. Only the lock discount
-  remains.
+- `checkout-accounting`'s managed-region discount (`git_facts.rs`,
+  `shelf.rs`). Only the lock discount remains, which is safe because the
+  cleanup never runs in a slot (D6). `shelve-work-not-checkouts`' "derived
+  content alone is not shelved" scenario is edited to match.
 - The invariants about region ownership, replaced by one invariant: no UZE
   operation changes `AGENTS.md` except to remove a retired region.
 - The architecture suite gains a rule: no production code outside the
@@ -204,14 +251,21 @@ removed.
   verbs. A harness that fails keeps the move blocked, not the region.
 - **Subagents may not see the launch context.** A harness's own subagent
   gets the parent's `AGENTS.md`, but may not get an `--add-dir` `CLAUDE.md`
-  or a `SessionStart` context. → The verbs that matter (`split`, `join`) are
-  run by the parent. A subagent working in a split checkout only needs to
-  commit there, and the parent tells it so when it hands over the path. Task
-  5.3 measures what a subagent receives on each harness.
+  or a `SessionStart` context. A split checkout carries no instructions at
+  all. → The verbs that matter (`split`, `join`) are run by the parent.
+  `uze agent work split` prints, beside the path, the two lines the parent
+  hands over: commit here, and never switch the branch or make a worktree.
+  A subagent that ignores them is still caught by `join`'s refusals
+  (`checkout-accounting`, "A child that left its branch"). Task 5.3 measures
+  what each harness's subagent receives.
 - **A degraded launch shows its instructions.** Antigravity signed out has no
-  hook channel, so the instructions ride the visible first turn. → It is
-  reported as degraded already, and a signed-out Antigravity cannot work
-  anyway. The alternative, writing the region back, is what this change
+  hook channel. Today's first turn exists only for a pending switch briefing,
+  given once (`continuity.rs` `take_first_turn`). → A new conversation on a
+  degraded channel gets one first turn pointing at `context.md`. A resume
+  gets none, and the conversation keeps what the first turn delivered.
+  `deliver-agent-context` D5 removed the visible turn only where a channel
+  exists, so this does not walk that back. Both cases are reported as
+  degraded. The alternative, writing the region back, is what this change
   removes.
 - **The briefing loses 1,000 bytes.** → D4's measurement first. The
   instructions shrink before the briefing does.
@@ -227,5 +281,7 @@ removed.
 3. After `plugin-rules` ships, retire the `package:` prefix and the
    `--instructions` flag.
 
-Rollback: re-enable the region writer. The launch section is additive, and
-the region removal is idempotent.
+Rollback covers steps 1 and 2 only: re-enable the region writer. The launch
+section is additive, and the region removal is idempotent. Once step 3
+deletes the package resource and `authoring/region.rs`, there is nothing to
+roll back to.

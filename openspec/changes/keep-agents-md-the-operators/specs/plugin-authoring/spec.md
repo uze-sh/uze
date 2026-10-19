@@ -1,5 +1,16 @@
 ## MODIFIED Requirements
 
+### Requirement: Authoring verbs are deterministic, agent-facing, and unaliased for people
+The system SHALL expose plugin authoring only as deterministic verbs under `uze agent …`: each verb takes its full input on the command line (or its defaults), performs exactly one artifact-producing step, prints a machine-readable answer, and never prompts interactively. The authoring verbs SHALL be hidden from `uze --help` like the rest of the `agent` grammar and SHALL NOT gain person-facing aliases, since a person's CLI surface carries only what a person performs by hand.
+
+#### Scenario: An agent drives the full authoring loop without a person's input
+- **WHEN** an agent runs `uze agent market create`, then `uze agent plugin create`, then `uze agent plugin check`, providing all arguments up front
+- **THEN** each command performs its one step and exits zero with a summary an agent can parse, and no command ever waits for interactive input
+
+#### Scenario: Authoring verbs stay off the person's help surface
+- **WHEN** a person runs `uze --help` or `uze agent --help`
+- **THEN** the authoring verbs are not listed; they are reachable by following the `uze:author` Skill, and no person-facing alias of them exists — browsing what a marketplace offers is `uze market`'s answer, not a second authoring spelling
+
 ### Requirement: The authoring verbs are documented for every agent
 The authoring verbs SHALL be documented by the `uze:author` Skill, which the
 official plugin delivers natively to every harness, so an agent reaches them

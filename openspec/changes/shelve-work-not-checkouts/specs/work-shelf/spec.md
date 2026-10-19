@@ -42,7 +42,7 @@ SHALL NOT be shelved, and the checkout SHALL be pinned with that reason
 - **THEN** no shelf is made and the checkout is free with that output in place
 
 #### Scenario: Derived content alone is not shelved
-- **WHEN** an agent ends with only a managed region of the instruction file changed
+- **WHEN** an agent ends with only a lock file change that moves no pin
 - **THEN** no shelf is made and the checkout is free
 
 #### Scenario: A submodule with changes of its own pins the checkout

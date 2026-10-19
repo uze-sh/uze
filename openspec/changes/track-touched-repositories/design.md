@@ -259,7 +259,7 @@ undoing.
   and carry the path; Codex's pre payload should carry the full patch.
 - **The residual gap's size.** The design assumes agents run Git where they
   edit through the shell. Measure on real sessions before deciding whether a
-  nudge in the projected `AGENTS.md` region is worth it.
+  nudge in the launch instructions is worth it (`keep-agents-md-the-operators`: UZE projects nothing into `AGENTS.md`).
 - **The embedded trust boundary.** `PackageSource::Embedded` crosses the
   trust boundary (`package/acquisition.rs`) on the ground that "the
   operator trusted the binary, not necessarily every capability a future

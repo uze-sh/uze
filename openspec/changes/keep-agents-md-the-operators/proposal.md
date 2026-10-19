@@ -106,4 +106,11 @@ rule behind it.
   repository's own `AGENTS.md`.
 - Conformance Lab: the naming-first and `work` verb scenarios run from the
   launch context on all four harnesses.
+- Other open changes edited to match: `project-agent-environment`
+  (agents-manifest: a policy change reaches the next launch),
+  `prove-plugin-delivery` (9.2 becomes a leak check),
+  `track-touched-repositories` (a nudge would go in the launch
+  instructions) and `shelve-work-not-checkouts` (derived content is the lock
+  only). `resolve-instruction-files` owns the `CLAUDE.md` bridge, and this
+  change's cleanup is a no-op once that change removes it.
 - No new dependency.

@@ -154,7 +154,7 @@
 ## 9. Climb toward native, measured first
 
 - [ ] 9.1 Antigravity: experiment with a receipt-owned `~/.gemini/config/plugins.json` entry pointing at UZE's generated directory. If skills, MCP and hooks load in place, replace the staging copy and import-manifest dependency. Otherwise record the measurement.
-- [ ] 9.2 Antigravity: measure plugin `rules/AGENTS.md`. If it reaches the model, deliver `Instruction` through the generated plugin and retire its `unsupported`.
+- [ ] 9.2 Antigravity: measure whether a generated plugin's `rules/` reaches the model, as a leak check only. Plugin `Instruction` is retired by `keep-agents-md-the-operators` in favour of `plugin-rules`' `always_on` rules, so nothing is delivered through it; a `rules/` that reaches the model is stripped, per `project-rules`' guard.
 - [ ] 9.3 Antigravity: re-measure plugin-bundled `hooks.json` on the current release. If they fire, move hooks into the generated plugin.
 - [ ] 9.4 OpenCode: rerun `experiments/opencode/permission-evaluate` on the current release. If `resources` or `source.id` carries the call's input, deliver deny and ask natively and retire the declarations.
 - [ ] 9.5 Codex: measure a UZE package as a native Agent Plugin (root `plugin.json` plus `hooks/hooks.json`). If it holds, ship hooks inside the generated plugin instead of merging into `~/.codex/hooks.json`, and decide the explicit/generated route precedence.

@@ -285,20 +285,17 @@ everywhere.
 - **THEN** both resolve to the built-in default and project the same
   `AGENTS.md` text
 
-### Requirement: A policy change reaches the projected instructions
-A change to the worktree policy in `agents.yaml` SHALL be reported as
-outstanding until the projected `AGENTS.md` region carries it. The policy
-is read live wherever UZE itself acts on it, but the agents that must
-honor it read the projected text — so a policy the projection has not
-caught up to is a policy only half in force.
+### Requirement: A policy change reaches the next launch
+A change to the worktree policy in `agents.yaml` SHALL reach every agent
+launched or resumed after it, through its launch instructions
+(`keep-agents-md-the-operators`), with no reconciliation step and nothing
+written into `AGENTS.md`. An agent already running keeps the policy it was
+launched under.
 
-#### Scenario: A changed policy makes the projection stale
-- **WHEN** `workspace.delivery` is changed and nothing has reconciled
-  the project context since
-- **THEN** the projected region is reported stale, naming the declared
-  value and the projected one
+#### Scenario: A changed policy reaches the next agent
+- **WHEN** `workspace.delivery` is changed and an agent is launched afterwards
+- **THEN** its launch instructions state the new delivery, and `AGENTS.md` is unchanged
 
-#### Scenario: Reconciliation clears it
-- **WHEN** the project context is reconciled after that change
-- **THEN** the region carries the new policy's text and the report is
-  clear
+#### Scenario: Nothing is reported outstanding
+- **WHEN** `workspace.delivery` is changed and no command has run since
+- **THEN** `uze status` reports no projection as stale

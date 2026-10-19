@@ -17,8 +17,8 @@ SHALL still require a working tree with no uncommitted change.
 - **THEN** the checkout holds work and is parked
 
 #### Scenario: A managed region reprojected inside a slot
-- **WHEN** the only change in a checkout is to `AGENTS.md`, including one that removes a region an earlier UZE wrote
-- **THEN** the checkout holds work and is parked: UZE writes no region there to discount
+- **WHEN** `uze install` runs in an isolated checkout whose `AGENTS.md` still carries a retired region
+- **THEN** the region is left as committed, nothing in the checkout changes, and the checkout stays free
 
 #### Scenario: A hand edit beside a managed region
 - **WHEN** the instruction file has any uncommitted change

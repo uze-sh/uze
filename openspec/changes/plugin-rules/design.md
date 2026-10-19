@@ -54,18 +54,10 @@ committed, as `agents.lock` is.
 
 It was confirmed on 2026-10-19 against the rule in
 `keep-agents-md-the-operators` D1. UZE writes into a project only the
-declaration and agnostic artifacts. A copy here qualifies: Antigravity's open
-rule format, a namespace UZE owns, and readable by a harness without UZE.
+declaration and agnostic artifacts. A copy here qualifies: Antigravity's
+documented rule format, a namespace UZE owns, and readable by a harness without UZE.
 What the rule forbids is writing into a file the operator authors, which a
 copy never does.
-
-### D6: `always_on` replaces the package instructions
-A plugin's `AGENTS.md` resource used to become a region of the project's
-`AGENTS.md`, which the rule above forbids. An `always_on` rule says the same
-thing to every agent of a declaring project, through the same route as the
-plugin's other rules. Nothing about it is a second mechanism. The retirement
-itself (flag, resource, region cleanup) belongs to
-`keep-agents-md-the-operators`, ordered after this change.
 
 ### D2: Ownership comes from the namespace and the lock, not from receipts
 Receipts live in `$UZE_HOME`, but the copies travel through git to
@@ -104,6 +96,14 @@ destructive mutation, inspect before detach):
 
 The person resolves drift by reverting the file or by taking ownership of
 the change, moving it out of the namespace into the project's own rules.
+
+### D6: `always_on` replaces the package instructions
+A plugin's `AGENTS.md` resource used to become a region of the project's
+`AGENTS.md`, which the rule D1 cites forbids. An `always_on` rule says the same
+thing to every agent of a declaring project, through the same route as the
+plugin's other rules. Nothing about it is a second mechanism. The retirement
+itself (flag, resource, region cleanup) belongs to
+`keep-agents-md-the-operators`, ordered after this change.
 
 ## Candidate ADRs
 
