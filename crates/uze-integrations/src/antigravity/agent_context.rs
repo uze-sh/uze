@@ -71,7 +71,15 @@ pub(super) fn deliver(ctx: &AgentContext) -> Result<ContextContribution> {
     write_notes_hook(ctx)?;
     let named = link(ctx.dir, ctx.link);
     Ok(ContextContribution {
-        args: vec!["--add-dir".into(), named.as_os_str().to_owned()],
+        // The checkout root is named too: it is a prefix of every path
+        // inside it, so it sorts first even when the agent was launched in
+        // a directory below it that the link would sort ahead of.
+        args: vec![
+            "--add-dir".into(),
+            ctx.checkout.as_os_str().to_owned(),
+            "--add-dir".into(),
+            named.as_os_str().to_owned(),
+        ],
         env: Vec::new(),
     })
 }
@@ -197,6 +205,7 @@ mod tests {
         AgentContext {
             dir,
             file,
+            checkout: Path::new("/repo"),
             text: "## Instructions\n\nfacts \"quoted\"",
             instructions: "## Instructions",
             notes: Some("facts \"quoted\""),
@@ -218,8 +227,13 @@ mod tests {
 
         assert_eq!(
             contribution.args,
-            ["--add-dir".into(), link.as_os_str().to_owned()],
-            "the directory is named by a path that sorts after the checkout"
+            [
+                "--add-dir".into(),
+                std::ffi::OsString::from("/repo"),
+                "--add-dir".into(),
+                link.as_os_str().to_owned()
+            ],
+            "the checkout root is named first, and the directory by a path that sorts after it"
         );
         assert_eq!(
             fs::canonicalize(&link).unwrap(),

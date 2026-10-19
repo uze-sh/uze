@@ -350,7 +350,8 @@ fn give_context(
     };
     let opening = agent_context::instructions_part(&instructions);
     let notes = agent_context::notes(&sections);
-    let link = context_link(&owner.project_root, cwd, agent);
+    let checkout = checkout_root(&owner.project_root, cwd);
+    let link = context_link(&checkout, agent);
     let isolation_directory_existed = link
         .ancestors()
         .find(|ancestor| ancestor.ends_with(worktree::WORKTREES_DIRECTORY))
@@ -367,6 +368,7 @@ fn give_context(
                     text: &text,
                     instructions: &opening,
                     notes: notes.as_deref(),
+                    checkout: &checkout,
                     link: &link,
                     launch: launch.as_str(),
                     session,
@@ -393,18 +395,40 @@ fn give_context(
     }
 }
 
+/// The root of the checkout the agent was launched in, spelled the way the
+/// launch's own `cwd` spells it: a channel comparing paths as strings must
+/// not meet `/private/tmp/x` beside `/tmp/x`. An isolated checkout is read
+/// from `cwd` itself; for the primary, the ancestor of `cwd` that is the
+/// project root, falling back to the root as recorded.
+fn checkout_root(project_root: &Path, cwd: &Path) -> PathBuf {
+    if let Some(isolated) = worktree::isolated_checkout(cwd) {
+        return isolated.directory();
+    }
+    let recorded = std::fs::canonicalize(project_root).ok();
+    cwd.ancestors()
+        .find(|ancestor| {
+            *ancestor == project_root
+                || std::fs::canonicalize(ancestor)
+                    .ok()
+                    .is_some_and(|resolved| recorded.as_deref() == Some(resolved.as_path()))
+        })
+        .map_or_else(|| project_root.to_path_buf(), Path::to_path_buf)
+}
+
 /// Where a channel may link the agent's context so that its path sorts
-/// after the checkout's: beside an isolated checkout as `<id>~uze`, or under
-/// `.worktrees/~uze/` for an agent in the primary. Both sit in the directory
-/// UZE already owns, and `~` sorts after every character a checkout's own
-/// path continues with.
-fn context_link(project_root: &Path, cwd: &Path, agent: &str) -> PathBuf {
-    match worktree::isolated_checkout(cwd) {
+/// after the checkout root's: beside an isolated checkout as `<id>~uze`, or
+/// under `.worktrees/~uze/` for an agent in the primary. Both sit in the
+/// directory UZE already owns. A slot's link sorts after the slot itself and
+/// everything inside it, since `/` sorts below `~`; the primary's sorts
+/// after the root, which is its prefix, but not after every directory under
+/// it, which is why a channel names the root too.
+fn context_link(checkout: &Path, agent: &str) -> PathBuf {
+    match worktree::isolated_checkout(checkout) {
         Some(isolated) => isolated
             .primary
             .join(worktree::WORKTREES_DIRECTORY)
             .join(format!("{}~uze", isolated.name)),
-        None => project_root
+        None => checkout
             .join(worktree::WORKTREES_DIRECTORY)
             .join("~uze")
             .join(agent),
@@ -986,7 +1010,7 @@ mod tests {
                 primary.join(".worktrees").join("~uze").join("agent-1"),
             ),
         ] {
-            let link = context_link(primary, &cwd, "agent-1");
+            let link = context_link(&checkout_root(primary, &cwd), "agent-1");
             assert_eq!(link, expected);
             assert!(
                 link.as_os_str() > cwd.as_os_str(),
@@ -996,6 +1020,32 @@ mod tests {
             );
             assert!(link.starts_with(primary.join(".worktrees")));
         }
+    }
+
+    /// A launch below the checkout root, or through a link to it, still
+    /// names the root as the launch spells it, and the link sorts after it.
+    #[test]
+    fn the_checkout_root_is_spelled_as_the_launch_spells_it() {
+        let root = uze_testkit::temp::scratch("continuity-checkout-root");
+        let primary = root.join("repo");
+        std::fs::create_dir_all(primary.join("src")).unwrap();
+        let slot = primary.join(".worktrees").join("ab12cd");
+        std::fs::create_dir_all(slot.join("src")).unwrap();
+
+        assert_eq!(checkout_root(&primary, &primary.join("src")), primary);
+        assert_eq!(checkout_root(&primary, &slot.join("src")), slot);
+        let link = context_link(&primary, "agent-1");
+        assert!(link.as_os_str() > primary.as_os_str());
+
+        // The same tree reached through a link: what the launch's cwd says
+        // is what a channel compares against, not the resolved path.
+        #[cfg(unix)]
+        {
+            let alias = root.join("alias");
+            std::os::unix::fs::symlink(&primary, &alias).unwrap();
+            assert_eq!(checkout_root(&primary, &alias.join("src")), alias);
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

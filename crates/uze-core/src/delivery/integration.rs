@@ -243,6 +243,9 @@ pub struct AgentContext<'a> {
     /// The rest of the document: the notes under their own preamble, or
     /// `None` when there are none.
     pub notes: Option<&'a str>,
+    /// The root of the checkout the agent was launched in, spelled as the
+    /// launch's working directory spells it.
+    pub checkout: &'a Path,
     /// A path in space UZE owns that sorts after the checkout's own path,
     /// which a channel may make a link to `dir`: what it names when its
     /// harness takes the first of its workspace paths, in sorted order, as

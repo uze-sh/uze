@@ -198,6 +198,7 @@ mod tests {
                 text: "facts",
                 instructions: "",
                 notes: Some("facts"),
+                checkout: &root,
                 link: &root.join("link"),
                 launch: "l",
                 session: Some(&session),
