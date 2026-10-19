@@ -213,10 +213,10 @@ pub(super) fn make_executable(path: &Path) -> Result<()> {
 /// is one file serving every package.
 ///
 /// "Left" is read from the harness's own config files, not from the receipt
-/// ledger. The prune runs inside a detach, and the lifecycle only rewrites
-/// the ledger once every detach of the removal has returned — so the
-/// receipt being detached, and during `uze remove` each of its siblings, is
-/// still listed there while its entry is already gone from the config.
+/// ledger. The prune runs inside a detach, and the lifecycle forgets a
+/// receipt only once its detach has returned — so the receipt being
+/// detached is still listed there while its entry is already gone from the
+/// config.
 pub(super) fn prune_shared_wrapper(uze_home: &UzeHome, integration_id: &str, target: HookTarget) {
     // A ledger that cannot be read has not said the wrapper is unused; it
     // has said nothing. Deleting on that answer is a destructive mutation
