@@ -213,3 +213,28 @@ fn a_copy_that_is_a_link_is_never_written_through() {
     assert_eq!(done.drifted, [acme().copy_identity("ui.md")]);
     assert_eq!(fs::read_to_string(&elsewhere).unwrap(), UI);
 }
+
+/// A clone on Windows with `core.autocrlf` holds every committed copy in
+/// CRLF: current, not edited, and still replaced by an update.
+#[test]
+fn a_copy_git_checked_out_with_crlf_is_current_and_still_updated() {
+    let root = checkout("plugin-rules-crlf");
+    let installed = vec![rule("ui.md", UI)];
+    converge_copies(&root, &acme(), &installed, &installed).unwrap();
+    let copy = copy_location(&root, &acme(), "ui.md");
+    fs::write(&copy, UI.replace('\n', "\r\n")).unwrap();
+
+    let findings = inspect_copies(&root, &acme(), &installed).unwrap();
+    assert_eq!(findings[0].state, CopyState::Current);
+
+    let updated = vec![rule("ui.md", &UI.replace("live in", "belong in"))];
+    let done = converge_copies(&root, &acme(), &installed, &updated).unwrap();
+    assert!(done.drifted.is_empty(), "{done:?}");
+    assert!(fs::read_to_string(&copy).unwrap().contains("belong in"));
+
+    // A real edit is still somebody's, whatever its line endings.
+    fs::write(&copy, "edited by hand\r\n").unwrap();
+    let findings = inspect_copies(&root, &acme(), &updated).unwrap();
+    assert_eq!(findings[0].state, CopyState::Drifted);
+    let _ = fs::remove_dir_all(root);
+}

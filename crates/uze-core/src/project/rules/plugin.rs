@@ -234,6 +234,26 @@ fn present_copies(root: &Path, namespace: &Namespace) -> Result<BTreeMap<String,
     Ok(present)
 }
 
+/// Whether a copy holds `shipped`, line endings aside. A checkout on
+/// Windows with `core.autocrlf` (Git for Windows' default) has every
+/// committed copy in CRLF while the Store keeps the plugin's own bytes; that
+/// is Git's doing at checkout, not anybody's edit.
+fn same_text(copy: &[u8], shipped: &[u8]) -> bool {
+    copy == shipped || without_carriage_returns(copy) == without_carriage_returns(shipped)
+}
+
+fn without_carriage_returns(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut iter = bytes.iter().peekable();
+    while let Some(&byte) = iter.next() {
+        if byte == b'\r' && iter.peek() == Some(&&b'\n') {
+            continue;
+        }
+        out.push(byte);
+    }
+    out
+}
+
 /// Every file of `namespace` in the checkout rooted at `root`, and every
 /// rule of `expected` it lacks, judged against `expected`: the plugin's
 /// rules at the locked revision. Reads the checkout and nothing else.
@@ -247,7 +267,7 @@ pub fn inspect_copies(
     for shipped in expected {
         let state = match present.remove(&shipped.name) {
             None => CopyState::Missing,
-            Some(Some(bytes)) if bytes == shipped.bytes => CopyState::Current,
+            Some(Some(bytes)) if same_text(&bytes, &shipped.bytes) => CopyState::Current,
             Some(_) => CopyState::Drifted,
         };
         findings.push(CopyFinding {
@@ -323,8 +343,10 @@ pub fn converge_copies(
         let identity = namespace.copy_identity(&shipped.name);
         let replaceable = match present.remove(&shipped.name) {
             None => true,
-            Some(Some(bytes)) if bytes == shipped.bytes => continue,
-            Some(Some(bytes)) => find(previous, &shipped.name).is_some_and(|old| old == bytes),
+            Some(Some(bytes)) if same_text(&bytes, &shipped.bytes) => continue,
+            Some(Some(bytes)) => {
+                find(previous, &shipped.name).is_some_and(|old| same_text(&old, &bytes))
+            }
             Some(None) => false,
         };
         if !replaceable {
@@ -343,7 +365,7 @@ pub fn converge_copies(
     for (rule, bytes) in present {
         let identity = namespace.copy_identity(&rule);
         match (find(previous, &rule), bytes) {
-            (Some(old), Some(bytes)) if old == bytes => {
+            (Some(old), Some(bytes)) if same_text(&old, &bytes) => {
                 let target = copy_location(root, namespace, &rule);
                 std::fs::remove_file(&target).map_err(UzeError::write(&target))?;
                 done.removed.push(identity);
