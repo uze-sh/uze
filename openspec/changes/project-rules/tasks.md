@@ -84,7 +84,7 @@
 
   Hidden from `uze --help` like the rest of `uze agent`. CLI tests for each spec scenario
 - [ ] 5.7 Classify `uze agent rules check` (and any changed leaf command) in `command_performance.rs`. Both it and `status` are `Budgeted`: rule discovery is a directory read and a small-file parse
-- [ ] 5.8 Name `uze agent rules check` in the `uze agent` region UZE projects into `AGENTS.md`
+- [ ] 5.8 Name `uze agent rules check` in the `uze:rules` Skill. No UZE text is projected into `AGENTS.md` (`keep-agents-md-the-operators`)
 
 ## 6. Conformance Lab and journeys
 

@@ -96,8 +96,10 @@ without the hook ignored every rule.
   - `uze agent rules check` is a new agent-audience leaf command, classified
     in `command_performance.rs`.
 - `plugins/uze`: a new `rules` Skill, and `init` extended to detect and
-  migrate harness-specific rules. The `uze agent` region UZE projects into
-  `AGENTS.md` names the new check.
+  migrate harness-specific rules. The check is named by the `uze:rules`
+  Skill and, for agents the workspace launches, by their launch
+  instructions. UZE writes nothing into `AGENTS.md`
+  (`keep-agents-md-the-operators`).
 - Conformance Lab: one contract scenario per harness proving a `glob` rule
   changes what the agent writes, and the controls proving it does not leak.
 - Docs: the rules page for authors; ADR at archive time.

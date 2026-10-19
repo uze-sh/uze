@@ -1,0 +1,42 @@
+## 1. The launch section
+
+- [ ] 1.1 `WorktreePolicy::instructions` takes the agent's situation (isolated or in place, slot directory, branch, target, completion) and renders only the bullets that apply, naming clause first. Drop the "this section is for an agent `uze workspace` launched" opening. Unit tests per situation, plus byte-stability across two renders
+- [ ] 1.2 `agent_context::compose` gains the instructions part ahead of the notes preamble (D2). The preamble's wording is unchanged and introduces only the sections after it. Test the order, and that a context with instructions and no notes still composes
+- [ ] 1.3 The launch composes the section for every launch and resume the workspace owns, through each harness's existing channel, and for no launch it does not own. Integration tests for an isolated launch, an in-place launch, and a shim launch outside the workspace (no section)
+
+## 2. Shares of the bound
+
+- [ ] 2.1 Add the instructions share and reduce the briefing share as in D4. Keep `the_shares_add_up_to_the_bound`, and add a test that a full briefing and an overfull memory never cut the instructions
+- [ ] 2.2 Test that the composed document stays at or under `BOUND` with multi-byte text in every section
+- [ ] 2.3 Measure the largest briefing in the Lab's recorded runs and the rendered policy for the longest declared vocabulary. If 4,000 bytes cuts a real briefing, shorten the policy text, never raising `BOUND`
+
+## 3. Stop writing AGENTS.md
+
+- [ ] 3.1 Remove the policy region sync at launch (`services/policy_region.rs`), the client's "AGENTS.md's workspace section" warnings, and the policy-region read in `src/ui/orchestrator/reads.rs`. The context popup keeps showing the policy in force and its provenance
+- [ ] 3.2 Remove `package::authoring::region` and its reconcile step
+- [ ] 3.3 Retire the `project:worktree-policy` and `project:plugin-authoring` prefixes: `uze install` and `uze agent context reconcile` remove a matched region, report an edited one naming the file, and attach nothing. Tests: all three regions present and removed byte-exactly around the operator's text, an edited region kept and reported, a project without `AGENTS.md` left without one
+- [ ] 3.4 `checkout-accounting`: drop the managed-region discount and keep the lock discount. Update `accounting_tests.rs` and `shelf_tests.rs` to the new scenarios
+- [ ] 3.5 Architecture suite: a rule that no production code outside the retired-prefix cleanup writes `AGENTS.md`
+
+## 4. Plugin instructions become rules (after `plugin-rules` ships)
+
+- [ ] 4.1 Remove the package `AGENTS.md` resource from `project::context`, and retire the `package:` prefix the same way as 3.3
+- [ ] 4.2 `uze agent plugin create --instructions` fails, naming `--rules` with an `always_on` rule. Remove `authoring/instructions.md`
+- [ ] 4.3 `uze agent plugin check` reports a plugin-root `AGENTS.md` as not delivered and names the replacement
+- [ ] 4.4 `plugins/uze/plugin.json`'s description and any official plugin resource that relied on instructions
+
+## 5. Conformance
+
+- [ ] 5.1 Contract scenario per harness: an agent given the policy only through the launch context runs `uze agent work name` as its first command, and the checkout has no UZE region
+- [ ] 5.2 Contract scenario per harness: an isolated agent asked to parallelize uses `uze agent work split|join` and makes no worktree with Git
+- [ ] 5.3 Measure what each harness's own subagent receives from the launch context. Record each result in the integration's README. A harness whose subagent misses it is documented, not worked around
+- [ ] 5.4 Antigravity signed out: the instructions arrive in the first turn and status reports the channel as degraded
+
+## 6. Skills, docs and this repository
+
+- [ ] 6.1 `plugins/uze` Skills: `init` stops describing UZE regions in `AGENTS.md`, and reports and cleans a project carrying them. `worktree` and `author` drop their references to the projected region
+- [ ] 6.2 `docs/capabilities/context-manager.md`, `docs/capabilities/uze-skill.md` and `web/content/docs/` (context, installation, glossary, FAQ): what UZE writes into a project, following D1, with no em dashes in user-facing copy
+- [ ] 6.3 `docs/architecture/invariants.md`: replace the region-ownership invariants with "no UZE operation changes `AGENTS.md` except to remove a retired region", tied to 3.3 and 3.5
+- [ ] 6.4 Update `docs/architecture/checkout-ownership.mmd`. Run `make artifacts` and `cargo test -p uze-extensions`
+- [ ] 6.5 This repository's own `AGENTS.md`: remove the "Authoring plugins" and "Concurrent work isolation" sections, and update the "`uze agent …` is an audience" bullet to name the launch context
+- [ ] 6.6 Journeys: the workspace chapter checks that a launch leaves `AGENTS.md` byte-identical, and the packages chapter checks that `uze install` removes old regions

@@ -176,6 +176,14 @@ Per harness:
 All entries and files are receipt-owned like portable hooks' entries, and
 inspected by content identity before replacement or removal.
 
+This placement follows the rule in `keep-agents-md-the-operators` D1: a
+machine-side native delivery that works inside a launch and outside one.
+The engine fires in any session of the harness, whether the workspace
+launched it or not, and has no `uze` on its execution path. Confirmed with
+the operator on 2026-10-19. A launch-scoped engine was considered and
+rejected, because rules would then reach only launched agents, while the
+files they come from are the project's own.
+
 ### D5: The engine's contract
 - **In:** the harness's hook payload on stdin (`hook_event_name`, `cwd`,
   `session_id`, `tool_name`, `tool_input`). OpenCode's plugin builds the

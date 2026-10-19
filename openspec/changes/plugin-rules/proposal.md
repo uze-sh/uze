@@ -42,6 +42,11 @@ conventions would govern code in every other project on the machine.
   or out of date against the lock.
 - **The `uze:author` Skill** gains the rules capability, the way it covers
   hooks and MCP.
+- **Rules replace a plugin's instructions.** An `always_on` rule is how a
+  plugin speaks to every agent of a project that declares it. The package
+  `AGENTS.md` resource and `--instructions` are retired by
+  `keep-agents-md-the-operators` once this change ships, so there is never
+  a release with no way for a plugin to do that.
 
 ## Capabilities
 

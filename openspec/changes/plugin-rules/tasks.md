@@ -28,7 +28,7 @@
 ## 4. Reporting and Skills
 
 - [ ] 4.1 `uze status`: per plugin, the rule count and copy state, naming each file that is not current. Without network, the copies are reported as unverified
-- [ ] 4.2 `uze:author` Skill: the `--rules` flag. Rules shipped in a plugin are delivered per project and committed by the consumer. Validate with `uze agent plugin check`
+- [ ] 4.2 `uze:author` Skill: the `--rules` flag. Rules shipped in a plugin are delivered per project and committed by the consumer. An `always_on` rule is how a plugin speaks to every agent of a declaring project (D6). Validate with `uze agent plugin check`
 - [ ] 4.3 `uze:rules` Skill: when a rule belongs in a shared plugin rather than the project, and how to move a project rule into one (the D5 "take ownership" path in reverse)
 
 ## 5. Conformance and journeys
