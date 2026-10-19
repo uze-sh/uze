@@ -17,7 +17,8 @@ record naming the agent, UZE's own launcher):
   the primary checkout's carries one marker, the slot's another. One turn
   scripts the harness's own subagent tool. The parent's requests carry
   the instructions, state the slot as the working directory and carry the
-  slot's `AGENTS.md`, never the primary's; the subagent's own request (its
+  slot's `AGENTS.md`, never the primary's, and hold the instructions to
+  their last sentence; the subagent's own request (its
   task in a message of its own, not only in the call that spawned it)
   carries the instructions too.
 - An agent in the operator's checkout: its request carries the
@@ -228,6 +229,14 @@ def _assert_slot(bindings, out):
         told,
         f"{len(parent)} requests of the agent's own turn; the instructions are in "
         f"{sum(_carries(r, 'lead') for r in parent)}",
+    )
+    whole = any(_carries(r, "lead") and _carries(r, "tail") for r in parent)
+    check(
+        "instructions-arrive-whole",
+        whole,
+        "a request of the agent's own carries the instructions to their last sentence"
+        if whole
+        else "the instructions arrived without their last sentence",
     )
     stated = _directories(parent)
     check(

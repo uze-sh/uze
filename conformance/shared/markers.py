@@ -137,6 +137,9 @@ COMPACTION = "UZE_LAB_COMPACTION_SUMMARY"
 #: subagent's.
 INSTRUCTIONS = {
     "lead": "UZE instructions for this launch.",
+    # The last sentence of an isolated agent's instructions: what a cut
+    # policy loses first.
+    "tail": "UZE only knows the checkouts it made.",
     "first_turn": "holds UZE's instructions for this launch",
     "primary_agents_md": "UZE_INSTRUCTIONS_PRIMARY_AGENTS_MD",
     "slot_agents_md": "UZE_INSTRUCTIONS_SLOT_AGENTS_MD",
