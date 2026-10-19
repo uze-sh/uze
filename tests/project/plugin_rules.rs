@@ -193,6 +193,23 @@ fn a_fresh_machine_judges_a_cloned_project_without_installing() {
     world.add(&world.registered_machine("first"), &project);
     fs::write(project.join(copy("legacy.md")), "edited\n").unwrap();
 
+    // What a clone carries: the committed files, in a checkout of its own.
+    let clone = world.project("clone");
+    for committed in ["agents.yaml", "agents.lock"] {
+        fs::copy(project.join(committed), clone.join(committed)).unwrap();
+    }
+    fs::create_dir_all(clone.join(".agents/rules")).unwrap();
+    for entry in fs::read_dir(project.join(".agents/rules")).unwrap() {
+        let entry = entry.unwrap();
+        fs::copy(
+            entry.path(),
+            clone.join(".agents/rules").join(entry.file_name()),
+        )
+        .unwrap();
+    }
+    let project = clone;
+
+    let fresh_home = world.base.join("fresh");
     let fresh = world.machine("fresh");
     assert!(fresh.plugins().list().unwrap().is_empty());
     let status = plugin_status(&fresh, &project);
@@ -206,6 +223,12 @@ fn a_fresh_machine_judges_a_cloned_project_without_installing() {
     assert!(
         fresh.plugins().list().unwrap().is_empty(),
         "judging acquires the locked revision read-only and installs nothing"
+    );
+    let stored = UzeHome::at(&fresh_home).plugins_dir();
+    assert!(
+        fs::read_dir(&stored).map_or(true, |mut entries| entries.next().is_none()),
+        "nothing reached the fresh machine's Store: {}",
+        stored.display()
     );
 }
 
