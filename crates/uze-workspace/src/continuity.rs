@@ -1062,6 +1062,24 @@ mod tests {
     }
 
     #[test]
+    fn a_reftable_stub_head_falls_back_to_the_slot_branch() {
+        let (home, primary, slot, id) = managed("continuity-context-reftable");
+        let admin = primary.join(".git").join("worktrees").join("slot-1");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(slot.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+        std::fs::write(admin.join("HEAD"), "ref: refs/heads/.invalid\n").unwrap();
+
+        plan(
+            &home,
+            claim(&id, &slot),
+            &Harness::with_channel(SessionContinuity::Assigned),
+        );
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(context.contains("`agent/slot-1`"), "{context}");
+        assert!(!context.contains(".invalid"), "{context}");
+    }
+
+    #[test]
     fn a_declaration_that_does_not_read_is_said_on_the_launch() {
         let (home, primary, slot, id) = managed("continuity-context-unread");
         std::fs::write(

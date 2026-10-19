@@ -42,9 +42,14 @@ pub fn branch_on_disk(checkout: &Path) -> Option<String> {
     let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
     head.trim()
         .strip_prefix("ref: refs/heads/")
-        .filter(|branch| !branch.is_empty())
+        // A reftable repository keeps a stub `HEAD` naming `.invalid` for
+        // tools that read the file; the real ref is elsewhere.
+        .filter(|branch| !branch.is_empty() && *branch != REFTABLE_STUB)
         .map(str::to_owned)
 }
+
+/// The branch a reftable repository's stub `HEAD` file names.
+const REFTABLE_STUB: &str = ".invalid";
 
 /// The branch checked out in `root`, or `None` for a detached `HEAD`.
 /// `symbolic-ref` rather than `rev-parse --abbrev-ref`: it still names the
