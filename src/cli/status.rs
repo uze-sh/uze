@@ -906,24 +906,14 @@ pub(crate) fn render_status_instructions(
         || instructions.path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let state = if !instructions.exists {
-        format!("{} {}", progress::warning_icon(), progress::label("absent"))
-    } else if instructions.managed_regions == 0 {
+    let state = if instructions.exists {
         format!(
             "{} {}",
             progress::success_icon(),
             progress::label("present")
         )
     } else {
-        format!(
-            "{} {}",
-            progress::success_icon(),
-            progress::label(format!(
-                "{} {} managed by UZE",
-                instructions.managed_regions,
-                plural(instructions.managed_regions, "region", "regions")
-            ))
-        )
+        format!("{} {}", progress::warning_icon(), progress::label("absent"))
     };
     vec![name, state]
 }
@@ -934,7 +924,6 @@ pub(crate) fn render_status_instructions(
 pub(crate) fn render_portability_gaps(portability: &Portability) -> String {
     let gaps: Vec<String> = match portability {
         Portability::Portable | Portability::NoContext => return String::new(),
-        Portability::PartiallyPortable { gaps } => gaps.clone(),
         Portability::VendorLocked { files } => files
             .iter()
             .map(|path| {
@@ -1165,16 +1154,7 @@ pub(crate) fn render_status_harness(
         HarnessContextDelivery::Native => ok("native"),
         HarnessContextDelivery::Projected => ok("inside the workspace"),
         HarnessContextDelivery::NotDetected => progress::label("not installed"),
-        HarnessContextDelivery::Bridge {
-            state: uze_application::AttachmentState::Matched,
-            ..
-        } => ok("bridged"),
-        HarnessContextDelivery::Bridge { needed: false, .. } => ok("reads AGENTS.md natively"),
-        HarnessContextDelivery::Bridge { .. } => format!(
-            "{} {}",
-            progress::warning_icon(),
-            progress::label("needs reconciling")
-        ),
+        HarnessContextDelivery::ReadsNatively => ok("reads AGENTS.md natively"),
     };
     vec![display_name.to_owned(), state]
 }
@@ -1312,45 +1292,26 @@ pub(crate) fn render_context_status(status: &ProjectContextStatus) -> String {
             HarnessContextDelivery::Native => progress::success_text("native"),
             HarnessContextDelivery::Projected => progress::success_text("inside the workspace"),
             HarnessContextDelivery::NotDetected => progress::label("not installed"),
-            HarnessContextDelivery::Bridge { needed: false, .. } => format!(
+            HarnessContextDelivery::ReadsNatively => format!(
                 "{}  {}",
                 progress::success_text("native"),
                 progress::label("no bridge needed")
             ),
-            HarnessContextDelivery::Bridge { state, .. } => {
-                let word = attachment_word(*state);
-                if matches!(state, uze_application::AttachmentState::Matched) {
-                    progress::success_text(format!("bridge {word}"))
-                } else {
-                    progress::warning_text(format!("bridge {word}"))
-                }
-            }
         };
         rows.push(vec![harness.display_name.clone(), delivery]);
     }
     text.push_str(&progress::aligned_rows(rows));
     text.push('\n');
     let mut notes = String::new();
-    for contribution in &status.contributions {
-        notes.push_str(&format!(
-            "  {}   {}\n",
-            contribution.package_id,
-            progress::label(format!("{:?}", contribution.state).to_lowercase())
-        ));
-    }
-    for orphan in &status.orphaned_regions {
-        notes.push_str(&format!(
-            "{} {orphan}   {}\n",
-            progress::warning_icon(),
-            progress::label("orphaned: no installed package claims it")
-        ));
-    }
-    for malformed in &status.malformed_regions {
-        notes.push_str(&format!(
-            "{} {malformed}   {}\n",
-            progress::error_icon(),
-            progress::label("malformed: its markers cannot be trusted")
-        ));
+    if let Some(regions) = &status.retired_regions {
+        for row in retired_plan_rows(regions) {
+            notes.push_str(&format!(
+                "{} {}   {}\n",
+                progress::warning_icon(),
+                row[1],
+                row[2]
+            ));
+        }
     }
     for warning in &status.warnings {
         notes.push_str(&format!("{} {warning}\n", progress::warning_icon()));
@@ -1362,25 +1323,10 @@ pub(crate) fn render_context_status(status: &ProjectContextStatus) -> String {
     text
 }
 
-/// A receipt's state as the word a person reads.
-pub(crate) fn attachment_word(state: uze_application::AttachmentState) -> &'static str {
-    use uze_application::AttachmentState;
-    match state {
-        AttachmentState::Matched => "in place",
-        AttachmentState::Missing => "missing",
-        AttachmentState::Drifted => "drifted",
-        AttachmentState::Conflict => "in conflict",
-        AttachmentState::Blocked => "blocked",
-    }
-}
-
 pub(crate) fn render_portability(portability: &Portability) -> String {
     match portability {
         Portability::NoContext => "no instructions file yet".to_owned(),
         Portability::Portable => "portable".to_owned(),
-        Portability::PartiallyPortable { gaps } => {
-            format!("partially portable: {}", gaps.join("; "))
-        }
         Portability::VendorLocked { files } => format!(
             "locked to one vendor: {}",
             files
@@ -1392,63 +1338,55 @@ pub(crate) fn render_portability(portability: &Portability) -> String {
     }
 }
 
-pub(crate) fn render_action(action: &PlannedAction) -> String {
-    match action {
-        PlannedAction::Attach => progress::accent("write"),
-        PlannedAction::NoChange => progress::label("unchanged"),
-        PlannedAction::Remove => progress::warning_text("remove"),
-        PlannedAction::Blocked(reason) => progress::error_text(format!("blocked: {reason}")),
-    }
+fn file_name_of(path: &std::path::Path) -> String {
+    path.file_name().map_or_else(
+        || progress::path(path),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
-/// Bridge rows show the human label (`app.integration_label`); the plan's
-/// own keys stay the stable ids — which is what `--format json` emits.
-pub(crate) fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> String {
+/// One row per region an earlier release wrote: the file, the region,
+/// and what the cleanup will do with it.
+fn retired_plan_rows(regions: &RetiredRegionsPlan) -> Vec<Vec<String>> {
+    let file = file_name_of(&regions.file);
     let mut rows = Vec::new();
-    for contribution in &plan.agents_md_plan.contributions {
+    for identity in &regions.remove {
         rows.push(vec![
-            "AGENTS.md".to_owned(),
-            contribution.package_id.as_str().to_owned(),
-            render_action(&contribution.action),
+            file.clone(),
+            identity.clone(),
+            progress::warning_text("remove, written by an earlier release"),
         ]);
     }
-    for orphan in &plan.agents_md_plan.orphans {
+    for (identity, reason) in &regions.keep {
         rows.push(vec![
-            "AGENTS.md".to_owned(),
-            orphan.region_identity.clone(),
-            render_action(&orphan.action),
+            file.clone(),
+            identity.clone(),
+            progress::warning_text(format!("keep: {reason}")),
         ]);
     }
-    for bridge in &plan.bridges {
+    for bridge in &regions.bridges {
+        let fate = match &bridge.fate {
+            BridgeFate::Region => progress::warning_text("remove, written by an earlier release"),
+            BridgeFate::File => {
+                progress::warning_text("delete the file, which holds nothing but this bridge")
+            }
+            BridgeFate::Kept(reason) => progress::warning_text(format!("keep: {reason}")),
+        };
         rows.push(vec![
-            bridge.file.file_name().map_or_else(
-                || progress::path(&bridge.file),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            app.health().integration_label(&bridge.integration),
-            render_action(&bridge.action),
+            file_name_of(&bridge.file),
+            "@AGENTS.md bridge".to_owned(),
+            fate,
         ]);
     }
-    if let Some(regions) = &plan.retired_regions {
-        let file = regions.file.file_name().map_or_else(
-            || progress::path(&regions.file),
-            |name| name.to_string_lossy().into_owned(),
-        );
-        for identity in &regions.remove {
-            rows.push(vec![
-                file.clone(),
-                identity.clone(),
-                progress::warning_text("remove, written by an earlier release"),
-            ]);
-        }
-        for (identity, reason) in &regions.keep {
-            rows.push(vec![
-                file.clone(),
-                identity.clone(),
-                progress::warning_text(format!("keep: {reason}")),
-            ]);
-        }
-    }
+    rows
+}
+
+pub(crate) fn render_context_plan(plan: &ContextPlan) -> String {
+    let rows = plan
+        .retired_regions
+        .as_ref()
+        .map(retired_plan_rows)
+        .unwrap_or_default();
     let checked = rows.len();
     if !plan.has_changes() {
         return format!(
@@ -1467,44 +1405,10 @@ pub(crate) fn render_context_plan(plan: &ContextPlan, app: &UzeApplication) -> S
     )
 }
 
-pub(crate) fn render_context_reconciliation(
-    report: &ContextReconciliationReport,
-    app: &UzeApplication,
-) -> String {
+pub(crate) fn render_context_reconciliation(report: &ContextReconciliationReport) -> String {
     let mut rows = Vec::new();
-    for package in &report.packages {
-        rows.push(vec![
-            "AGENTS.md".to_owned(),
-            package.package_id.to_string(),
-            progress::label(format!("{:?}", package.state).to_lowercase()),
-        ]);
-    }
-    for orphan in &report.removed_orphans {
-        rows.push(vec![
-            "AGENTS.md".to_owned(),
-            orphan.clone(),
-            progress::label("removed, orphaned"),
-        ]);
-    }
-    for (orphan, reason) in &report.blocked_orphans {
-        rows.push(vec![
-            "AGENTS.md".to_owned(),
-            orphan.clone(),
-            progress::error_text(format!("blocked: {reason}")),
-        ]);
-    }
-    for (package, reason) in &report.failed {
-        rows.push(vec![
-            "AGENTS.md".to_owned(),
-            package.to_string(),
-            progress::error_text(format!("failed: {reason}")),
-        ]);
-    }
     if let Some(regions) = &report.retired_regions {
-        let file = regions.file.file_name().map_or_else(
-            || progress::path(&regions.file),
-            |name| name.to_string_lossy().into_owned(),
-        );
+        let file = file_name_of(&regions.file);
         for identity in &regions.removed {
             rows.push(vec![
                 file.clone(),
@@ -1519,16 +1423,18 @@ pub(crate) fn render_context_reconciliation(
                 progress::warning_text(format!("kept: {reason}")),
             ]);
         }
-    }
-    for bridge in &report.bridges {
-        rows.push(vec![
-            bridge.file.file_name().map_or_else(
-                || progress::path(&bridge.file),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            app.health().integration_label(&bridge.integration),
-            progress::label(format!("{:?}", bridge.state).to_lowercase()),
-        ]);
+        for bridge in &regions.bridges {
+            let fate = match &bridge.fate {
+                BridgeFate::Region => progress::label("removed, written by an earlier release"),
+                BridgeFate::File => progress::label("deleted, it held nothing but this bridge"),
+                BridgeFate::Kept(reason) => progress::warning_text(format!("kept: {reason}")),
+            };
+            rows.push(vec![
+                file_name_of(&bridge.file),
+                "@AGENTS.md bridge".to_owned(),
+                fate,
+            ]);
+        }
     }
     let lines = if rows.is_empty() {
         String::new()

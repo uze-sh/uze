@@ -35,7 +35,6 @@ pub struct ScaffoldCapabilities {
     pub hook: bool,
     pub mcp: bool,
     pub agent: bool,
-    pub instructions: bool,
     pub rules: bool,
 }
 
@@ -393,12 +392,6 @@ fn write_plugin_files(
                 ),
         )?;
     }
-    if caps.instructions {
-        write_file(
-            &plugin_root.join("AGENTS.md"),
-            include_str!("authoring/instructions.md"),
-        )?;
-    }
     if caps.rules {
         let rules = plugin_root.join(crate::rules::plugin::PACKAGE_RULES_DIR);
         create_dir(&rules)?;
@@ -634,6 +627,7 @@ pub fn check_plugin(root: &Path) -> Result<ValidationReport> {
         Err(error) => findings.push(error.to_string()),
     }
     check_rules(root, &id, &mut delivers, &mut findings, &mut warnings)?;
+    warnings.extend(undelivered_agents_md(root));
     findings.extend(escaping_references(root));
     Ok(ValidationReport {
         delivers,
@@ -673,6 +667,20 @@ fn check_rules(
             }),
     );
     Ok(())
+}
+
+/// A root `AGENTS.md`, which no release delivers any more: a warning, since
+/// the plugin still installs and every other capability still reaches its
+/// harnesses, but what the file says reaches no agent.
+fn undelivered_agents_md(root: &Path) -> Option<String> {
+    let file = root.join(crate::project_context::AGENTS_MD_FILE_NAME);
+    file.is_file().then(|| {
+        format!(
+            "{}: not delivered; a plugin speaks to every agent of a project that declares it \
+             through a rule with `trigger: always_on` under `rules/`",
+            file.display()
+        )
+    })
 }
 
 /// What a hook group's handlers leave out of a platform: a line with no

@@ -15,7 +15,6 @@
 
 use std::{fs, path::Path};
 
-use crate::shared::plan::unsupported;
 use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
@@ -390,9 +389,6 @@ impl IntegrationPort for ClaudeIntegration {
             CapabilityKind::Mcp => self.mcp_exposure_plan(resource),
             CapabilityKind::Agent => self.agent_exposure_plan(resource),
             CapabilityKind::Hook => self.hook_exposure_plan(resource),
-            CapabilityKind::Instruction => unsupported(
-                "Claude Code attachment is only modeled for Agent Skills, Agents, MCP servers, and portable Hooks.",
-            ),
         }
     }
 

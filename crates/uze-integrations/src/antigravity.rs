@@ -98,7 +98,7 @@ use crate::shared::agent::{
 };
 use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::mcp::McpEntry;
-use crate::shared::plan::{blocked, unsupported};
+use crate::shared::plan::blocked;
 use crate::shared::process::{is_cli_safe_token, real_executable};
 use crate::shared::provision::{
     OfficialRoute, native_installer_destination, official_installer, provision_cli,
@@ -516,9 +516,6 @@ impl IntegrationPort for AntigravityIntegration {
             CapabilityKind::Mcp => self.mcp_exposure_plan(resource),
             CapabilityKind::Agent => self.agent_exposure_plan(resource),
             CapabilityKind::Hook => self.hook_exposure_plan(resource),
-            CapabilityKind::Instruction => unsupported(
-                "Antigravity attachment is only modeled for Agent Skills, Agents, MCP servers, and portable Hooks.",
-            ),
         }
     }
 

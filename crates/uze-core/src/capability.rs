@@ -36,7 +36,6 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilityKind {
-    Instruction,
     AgentSkill,
     Mcp,
     Agent,
@@ -162,7 +161,6 @@ impl Resource {
                     .unwrap_or(&self.capability.path);
                 agent::logical_name(relative, &self.capability.payload)
             }
-            CapabilityKind::Instruction => None,
         }
     }
 

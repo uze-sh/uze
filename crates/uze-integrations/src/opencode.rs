@@ -61,7 +61,7 @@ use crate::shared::agent::{
 use crate::shared::dialect::{AgentDialect, Shape, agent_block, withheld};
 use crate::shared::json_config;
 use crate::shared::mcp::McpEntry;
-use crate::shared::plan::{blocked, unsupported};
+use crate::shared::plan::blocked;
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
 use uze_core::capability::harness::Findings;
@@ -416,9 +416,6 @@ impl IntegrationPort for OpenCodeIntegration {
             CapabilityKind::Mcp => self.mcp_plan(resource),
             CapabilityKind::Agent => self.agent_plan(resource),
             CapabilityKind::Hook => self.hook_plan(resource),
-            CapabilityKind::Instruction => unsupported(
-                "OpenCode portability is implemented only for Agent Skills, Agents, MCP, and portable Hooks in this slice.",
-            ),
         }
     }
     fn attach(&self, resource: &Resource) -> Result<Option<ManagedArtifact>> {

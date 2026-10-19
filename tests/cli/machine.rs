@@ -2687,3 +2687,33 @@ fn antigravity_takes_a_session_start_hook_beside_the_rest() {
     let _ = std::fs::remove_dir_all(home);
     let _ = std::fs::remove_dir_all(fake_bin);
 }
+
+/// `--instructions` scaffolded a plugin `AGENTS.md`, which no release
+/// delivers any more: the flag is refused with the way a plugin speaks to
+/// every agent now, and nothing is scaffolded.
+#[test]
+fn plugin_create_refuses_instructions_and_names_an_always_on_rule() {
+    let home = temporary_home("cli-create-instructions-refused");
+    std::fs::create_dir_all(&home).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+        .env("UZE_HOME", home.join("uze"))
+        .isolated_home(&home)
+        .env("PATH", uze_testkit::process::system_path())
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "greet",
+            "--market",
+            "tools",
+            "--instructions",
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("--rules") && stderr.contains("always_on"),
+        "{stderr}"
+    );
+}

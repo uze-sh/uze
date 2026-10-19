@@ -275,15 +275,14 @@ fn install_project_environment_is_a_no_op_once_everything_is_installed() {
     );
 }
 
-/// `uze install` leaves the project context reconciled — declaring an
-/// environment and projecting it are one command. A projection that could
-/// not be written was reported as `NoChanges`, which reads as "everything
-/// already agrees", while the half of the environment the agents actually
-/// read had not moved at all.
+/// `uze install` takes out what an earlier release wrote into `AGENTS.md`.
+/// A cleanup that could not be written was reported as `NoChanges`, which
+/// reads as "everything already agrees", while the old text stayed where
+/// the agents read it.
 // Unix file modes, which Windows does not keep.
 #[cfg(unix)]
 #[test]
-fn install_reports_a_projection_it_could_not_write_instead_of_no_changes() {
+fn install_reports_a_cleanup_it_could_not_write_instead_of_no_changes() {
     use std::os::unix::fs::PermissionsExt;
     let fx = Fixture::new("install-projection-failed");
     fx.add_marketplace_to_global_registry();
@@ -301,9 +300,8 @@ fn install_reports_a_projection_it_could_not_write_instead_of_no_changes() {
         .install(&fx.project_root, &AlwaysTrust)
         .unwrap();
 
-    // A projection that is behind (an earlier release's region is still in
-    // the shared file, for install to remove) and an installed package
-    // whose bytes the projection is composed from cannot be read.
+    // An earlier release's region is still in the shared file, for install
+    // to remove, and the project's directory cannot be written.
     let agents_md = fx.project_root.join("AGENTS.md");
     fs::write(&agents_md, "").unwrap();
     let body = "## Authoring plugins\n\n- old text\n";
@@ -313,18 +311,17 @@ fn install_reports_a_projection_it_could_not_write_instead_of_no_changes() {
         uze_core::digest::short_hex(body.as_bytes())
     );
     uze_core::text_region::attach(&agents_md, &identity, body).unwrap();
-    let unreadable = fx
-        .uze_home
-        .join("store/plugins/test-market/flow/skills/uze-e2e/SKILL.md");
-    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+    if unsafe { libc::geteuid() } == 0 {
+        return; // root writes into a read-only directory anyway
+    }
+    fs::set_permissions(&fx.project_root, fs::Permissions::from_mode(0o555)).unwrap();
 
-    let failure = app
-        .project()
-        .install(&fx.project_root, &AlwaysTrust)
-        .expect_err("the projection failed, so the command did");
+    let failure = app.project().install(&fx.project_root, &AlwaysTrust);
+    fs::set_permissions(&fx.project_root, fs::Permissions::from_mode(0o755)).unwrap();
+    let failure = failure.expect_err("the cleanup failed, so the command did");
     assert!(
-        !format!("{failure}").is_empty(),
-        "and the refusal names what went wrong"
+        format!("{failure}").contains("AGENTS.md"),
+        "and the refusal names what went wrong: {failure}"
     );
 }
 

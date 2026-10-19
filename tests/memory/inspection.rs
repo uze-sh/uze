@@ -1,5 +1,7 @@
 //! L1 contract for the read-only Context Manager surface:
-//! `UzeApplication::context_inspect`/`context_plan`.
+//! `UzeApplication::context_inspect`/`context_plan`, and for what `uze
+//! status` says about the project's `AGENTS.md`, which is the operator's
+//! alone.
 //!
 //! The central proof this file exists for: inspection and planning are
 //! genuinely zero-write, in every state a real project can be in, including
@@ -19,67 +21,45 @@ use uze_application::{SpaceOverview, UzeApplication};
 use uze_core::PackageSource;
 use uze_core::{
     Result, UzeHome,
-    integration::{AttachmentReceipt, AttachmentState, HarnessDetection, IntegrationPort},
+    integration::{AttachmentReceipt, HarnessDetection, IntegrationPort},
     router::HarnessCapabilities,
 };
 
 // --- uze status: thin composition, distinct scope from doctor -------------
 
 #[test]
-fn status_reports_healthy_with_zero_issues_once_reconciled() {
+fn status_reports_healthy_with_zero_issues() {
     let root = temp("status-healthy");
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
+    fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
     let status = application.health().status(&project).unwrap();
     assert!(matches!(status.portability, Portability::Portable));
     assert_eq!(status.packages_installed, 1);
-    assert_eq!(status.packages_contributing_here.len(), 1);
     assert!(status.issues.is_empty());
+    assert!(!status.drift.stale_projection);
 }
 
 #[test]
-fn status_surfaces_a_missing_bridge_as_an_issue_before_reconcile() {
-    let root = temp("status-issue");
+fn status_names_a_region_an_earlier_release_left_as_owing_install() {
+    let root = temp("status-retired-region");
     let application = app(&root, true);
-    install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
+    left_by_an_earlier_release(&project);
 
     let status = application.health().status(&project).unwrap();
-    assert!(!status.issues.is_empty());
-    assert!(status.issues.iter().any(|issue| issue.contains("Missing")));
-}
-
-#[test]
-fn status_distinguishes_installed_from_contributing_here() {
-    let root = temp("status-counts");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    // A second, Skill-only package: installed globally, but contributes no
-    // Instruction resource, so it must not count as "contributing here".
-    install(
-        &application,
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/uze"),
-    );
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
-
-    let status = application.health().status(&project).unwrap();
-    assert_eq!(status.packages_installed, 2);
-    assert_eq!(status.packages_contributing_here.len(), 1);
+    assert!(status.drift.stale_projection, "{:?}", status.drift);
+    assert!(status.instructions.exists);
 }
 
 /// The space overview shows what `uze status` says, never a second
-/// reading of it: one project, one installed plugin it locks and
-/// contributes, one it locks and the machine lacks.
+/// reading of it: one project, one installed plugin it locks, one it locks
+/// and the machine lacks.
 #[test]
 fn the_space_overview_agrees_with_status() {
     let root = temp("space-overview-agrees");
@@ -90,7 +70,7 @@ fn the_space_overview_agrees_with_status() {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
+    fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
     fs::write(
         project.join("agents.lock"),
         format!("version: 1\nplugins:\n  {name}:\n    marketplace: {market}\n  absent:\n    marketplace: {market}\n"),
@@ -127,13 +107,6 @@ fn the_space_overview_agrees_with_status() {
         assert_eq!(row.plugin, health.plugin);
         assert_eq!(row.installed, health.installed);
         assert_eq!(row.differs_from_lock, health.differs_from_lock);
-        assert_eq!(
-            row.contributing,
-            status
-                .report
-                .packages_contributing_here
-                .contains(&row.package)
-        );
         assert_eq!(row.freshness.is_some(), row.installed);
     }
     assert!(
@@ -141,7 +114,7 @@ fn the_space_overview_agrees_with_status() {
             .plugins
             .plugins
             .iter()
-            .any(|row| row.package == installed.id && row.installed && row.contributing)
+            .any(|row| row.package == installed.id && row.installed)
     );
     assert!(
         space
@@ -268,6 +241,22 @@ fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     out
 }
 
+/// What an earlier release left in `project`: a package region in
+/// `AGENTS.md` beside the operator's text, and the bridge in `CLAUDE.md`.
+fn left_by_an_earlier_release(project: &Path) {
+    fs::write(
+        project.join("AGENTS.md"),
+        "# Mine\n\n<!-- uze:begin package:greet:tools:instructions -->\nSay hello.\n\
+         <!-- uze:end package:greet:tools:instructions -->\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("CLAUDE.md"),
+        "<!-- uze:begin instruction-bridge -->\n@AGENTS.md\n<!-- uze:end instruction-bridge -->\n",
+    )
+    .unwrap();
+}
+
 fn harness_delivery<'a>(
     status: &'a ProjectContextStatus,
     integration: &str,
@@ -290,8 +279,7 @@ fn context_inspect_never_writes_anything_in_a_populated_project() {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
-    // Reconcile once so there's real managed state to inspect.
-    application.context().reconcile(&project).unwrap();
+    left_by_an_earlier_release(&project);
 
     let before = snapshot(&project);
     let status = application.context().inspect(&project).unwrap();
@@ -300,7 +288,11 @@ fn context_inspect_never_writes_anything_in_a_populated_project() {
         before, after,
         "context_inspect must not create, delete, or modify any file"
     );
-    assert_eq!(status.contributions[0].state, AttachmentState::Matched);
+    let retired = status
+        .retired_regions
+        .expect("the old regions are reported");
+    assert_eq!(retired.remove, vec!["package:greet:tools:instructions"]);
+    assert_eq!(retired.bridges.len(), 1);
 }
 
 #[test]
@@ -311,15 +303,16 @@ fn context_plan_never_writes_anything() {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
+    left_by_an_earlier_release(&project);
 
-    // Before any reconcile at all — the state with the most "would create"
-    // actions, and therefore the state most tempting to accidentally write.
+    // Before any reconcile at all — the state with the most to remove, and
+    // therefore the state most tempting to accidentally write.
     let before = snapshot(&project);
     let plan = application.context().plan(&project).unwrap();
     let after = snapshot(&project);
     assert_eq!(
         before, after,
-        "context_plan must not write anything even when everything is missing"
+        "context_plan must not write anything even with everything to remove"
     );
     assert!(plan.has_changes());
 }
@@ -349,24 +342,22 @@ fn a_project_with_only_claude_md_is_vendor_locked() {
 }
 
 #[test]
-fn agents_md_plus_a_bridging_claude_md_is_portable() {
+fn agents_md_alone_is_portable_and_claude_reads_it_with_no_bridge() {
     let root = temp("portable");
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
+    fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
     let status = application.context().inspect(&project).unwrap();
     assert!(matches!(status.portability, Portability::Portable));
     assert!(matches!(
         harness_delivery(&status, "claude-code"),
-        HarnessContextDelivery::Bridge {
-            needed: true,
-            state: AttachmentState::Matched
-        }
+        HarnessContextDelivery::ReadsNatively
     ));
+    assert!(!project.join("CLAUDE.md").exists());
 }
 
 #[test]
@@ -377,14 +368,14 @@ fn an_absent_bridge_harness_shows_not_detected_not_a_gap() {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
+    fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
     let status = application.context().inspect(&project).unwrap();
     assert!(matches!(
         harness_delivery(&status, "claude-code"),
         HarnessContextDelivery::NotDetected
     ));
-    // An absent harness must never turn Portable into PartiallyPortable.
+    // An absent harness is never a gap in the project's portability.
     assert!(matches!(status.portability, Portability::Portable));
 }
 
@@ -458,16 +449,17 @@ fn scenario_d_manual_agents_md_with_no_packages_is_left_alone() {
         .unwrap();
     assert!(agents_source.has_user_content);
     assert!(agents_source.managed_region_identities.is_empty());
-    assert!(status.contributions.is_empty());
+    assert!(status.retired_regions.is_none());
 
-    // Reconcile must also leave it alone: no packages means nothing to add.
+    // Reconcile must also leave it alone: there is nothing to take out.
     application.context().reconcile(&project).unwrap();
     assert_eq!(fs::read(project.join("AGENTS.md")).unwrap(), before);
 }
 
-/// E) AGENTS.md manual + UZE regions coexisting.
+/// E) A manual AGENTS.md in a project declaring a plugin that still ships
+/// one of its own: reconcile adds nothing to it.
 #[test]
-fn scenario_e_manual_agents_md_plus_uze_region_coexist() {
+fn scenario_e_a_declared_plugins_agents_md_never_reaches_the_project() {
     let root = temp("scenario-e");
     let application = app(&root, false);
     install(&application, fixture_a());
@@ -481,33 +473,16 @@ fn scenario_e_manual_agents_md_plus_uze_region_coexist() {
     .unwrap();
 
     application.context().reconcile(&project).unwrap();
-    let content = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    assert!(content.starts_with("# My own conventions\n\nAlways write tests.\n"));
-    assert!(content.contains("uze-instructions-fixture-a"));
-
-    let status = application.context().inspect(&project).unwrap();
-    let agents_source = status
-        .sources
-        .iter()
-        .find(|s| s.file_name == "AGENTS.md")
-        .unwrap();
-    assert!(
-        agents_source.has_user_content,
-        "manual conventions are still there"
-    );
     assert_eq!(
-        agents_source
-            .managed_region_identities
-            .iter()
-            .filter(|identity| identity.starts_with("package:"))
-            .count(),
-        1
+        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
+        "# My own conventions\n\nAlways write tests.\n"
     );
 }
 
-/// F) CLAUDE.md manual + UZE bridge coexisting.
+/// F) A manual CLAUDE.md is the operator's: reconcile adds no bridge to
+/// it, and creates no AGENTS.md beside it.
 #[test]
-fn scenario_f_manual_claude_md_content_plus_bridge_coexist() {
+fn scenario_f_manual_claude_md_gets_no_bridge() {
     let root = temp("scenario-f");
     let application = app(&root, true);
     install(&application, fixture_a());
@@ -521,34 +496,16 @@ fn scenario_f_manual_claude_md_content_plus_bridge_coexist() {
     .unwrap();
 
     application.context().reconcile(&project).unwrap();
-    let content = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert!(content.starts_with("## My personal Claude workflow notes\n"));
-    assert!(content.contains("@AGENTS.md"));
-
-    let status = application.context().inspect(&project).unwrap();
-    let claude_source = status
-        .sources
-        .iter()
-        .find(|s| s.file_name == "CLAUDE.md")
-        .unwrap();
-    assert!(
-        claude_source.has_user_content,
-        "the hand-written notes are still there, outside the bridge region"
-    );
     assert_eq!(
-        claude_source.managed_region_identities,
-        vec!["instruction-bridge".to_owned()]
+        fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
+        "## My personal Claude workflow notes\n"
     );
-    // And no automatic migration ever happened: CLAUDE.md's own prose was
-    // never copied into AGENTS.md, and AGENTS.md holds only the package's
-    // own contribution.
-    let agents_content = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    assert!(!agents_content.contains("personal Claude workflow"));
+    assert!(!project.join("AGENTS.md").exists());
 }
 
-/// Both recognized files present at once, fully reconciled: exactly the
-/// "everything together" state Fase 10 asks for, on top of the
-/// per-scenario A–F coverage above.
+/// Both recognized files present at once: exactly the "everything
+/// together" state Fase 10 asks for, on top of the per-scenario A–F
+/// coverage above.
 #[test]
 fn all_recognized_files_together_are_fully_portable() {
     let root = temp("all-recognized");
@@ -557,6 +514,7 @@ fn all_recognized_files_together_are_fully_portable() {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     declare_fixtures(&project);
+    fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
     fs::write(project.join("CLAUDE.md"), "## My Claude workflow notes\n").unwrap();
 
     application.context().reconcile(&project).unwrap();
@@ -576,8 +534,8 @@ fn all_recognized_files_together_are_fully_portable() {
             .unwrap()
             .contains("My Claude workflow notes")
     );
-    // One warning expected: CLAUDE.md carries content beyond its bridge,
-    // which is legitimate and disclosed, not a gap.
+    // One warning expected: CLAUDE.md carries content of its own, which is
+    // legitimate and disclosed, not a gap.
     assert_eq!(status.warnings.len(), 1);
 }
 
@@ -601,14 +559,8 @@ fn context_operations_never_alter_the_installed_package_set() {
     assert_eq!(before[0].id, after[0].id);
 }
 
-/// Declares both instruction fixtures in the project's `agents.yaml`: a
-/// package's instructions reach a project only when it declares them.
+/// Declares the plugin that still ships an `AGENTS.md` in the project's
+/// `agents.yaml`.
 fn declare_fixtures(project: &Path) {
-    uze_testkit::project::declare(
-        project,
-        &[
-            "uze-instructions-fixture-a@local",
-            "uze-instructions-fixture-b@local",
-        ],
-    );
+    uze_testkit::project::declare(project, &["uze-instructions-fixture-a@local"]);
 }

@@ -215,7 +215,6 @@ pub fn executable_capabilities(resources: &[&Resource]) -> Vec<ExecutableCapabil
             CapabilityKind::Hook => hook_executions(resource),
             CapabilityKind::AgentSkill => document_executions(resource, ExecutionKind::Skill),
             CapabilityKind::Agent => document_executions(resource, ExecutionKind::Agent),
-            CapabilityKind::Instruction => Vec::new(),
         })
         .collect()
 }

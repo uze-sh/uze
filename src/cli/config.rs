@@ -20,13 +20,11 @@ pub(crate) fn run_context(app: &UzeApplication, action: ContextAction) -> Result
         }
         ContextAction::Plan { path, format } => {
             let plan = app.context().plan(&context_path(path))?;
-            emit(format, &plan, |plan| render_context_plan(plan, app));
+            emit(format, &plan, render_context_plan);
         }
         ContextAction::Reconcile { path, format } => {
             let report = app.context().reconcile(&context_path(path))?;
-            emit(format, &report, |report| {
-                render_context_reconciliation(report, app)
-            });
+            emit(format, &report, render_context_reconciliation);
         }
     }
     Ok(())

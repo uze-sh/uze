@@ -1184,20 +1184,30 @@ pub(crate) fn drain_worker_results(
 /// `Applied profile "default" to 3 harnesses · 1 approximation` — the one
 /// concise status line the spec asks for; per-harness detail lives in the
 /// Harnesses panel's badges (`model.profile_apply_results`), not here.
-/// How a reconciliation went: a region it could not write or an orphan
-/// it refused to remove is named, since the pass still finishing would
-/// otherwise read as everything having landed.
+/// How a reconciliation went: a region an earlier release wrote that it
+/// left in place is named, since the pass still finishing would otherwise
+/// read as everything having been taken out.
 fn context_applied(message: String, report: &ContextReconciliationReport) -> Status {
     let problems: Vec<String> = report
-        .failed
+        .retired_regions
         .iter()
-        .map(|(package, reason)| format!("{package} not written: {reason}"))
-        .chain(
-            report
-                .blocked_orphans
+        .flat_map(|regions| {
+            regions
+                .kept
                 .iter()
-                .map(|(region, reason)| format!("{region} not removed: {reason}")),
-        )
+                .map(|(region, reason)| format!("{region} not removed: {reason}"))
+                .chain(
+                    regions
+                        .bridges
+                        .iter()
+                        .filter_map(|bridge| match &bridge.fate {
+                            uze_application::application::BridgeFate::Kept(reason) => Some(
+                                format!("{} bridge not removed: {reason}", bridge.file.display()),
+                            ),
+                            _ => None,
+                        }),
+                )
+        })
         .collect();
     if problems.is_empty() {
         Status::Success(message)
@@ -1739,18 +1749,18 @@ mod tests {
         model
     }
 
-    fn reconciled(
-        failed: Vec<(String, String)>,
-        blocked_orphans: Vec<(String, String)>,
-    ) -> ContextReconciliationReport {
+    fn reconciled(kept: Vec<(String, String)>) -> ContextReconciliationReport {
         ContextReconciliationReport {
             agents_md: PathBuf::from("AGENTS.md"),
-            packages: Vec::new(),
-            removed_orphans: Vec::new(),
-            blocked_orphans,
-            failed,
-            retired_regions: None,
-            bridges: Vec::new(),
+            retired_regions: Some(uze_application::application::RetiredRegionsStatus {
+                file: PathBuf::from("AGENTS.md"),
+                removed: Vec::new(),
+                kept,
+                bridges: vec![uze_application::application::RetiredBridge {
+                    file: PathBuf::from("CLAUDE.md"),
+                    fate: uze_application::application::BridgeFate::File,
+                }],
+            }),
         }
     }
 
@@ -1768,26 +1778,26 @@ mod tests {
     }
 
     #[test]
-    fn a_reconciliation_that_wrote_everything_says_so() {
+    fn a_reconciliation_that_removed_everything_says_so() {
         assert_eq!(
-            after_applying_context(reconciled(Vec::new(), Vec::new())),
+            after_applying_context(reconciled(Vec::new())),
             Status::Success("Context reconciled".to_owned())
         );
     }
 
-    /// The pass finishing is not the same as every region landing: the
-    /// ones it could not write or refused to remove are named.
+    /// The pass finishing is not the same as every old region going: the
+    /// ones it left in place are named.
     #[test]
     fn a_reconciliation_that_left_regions_behind_names_them() {
-        let status = after_applying_context(reconciled(
-            vec![("lint".to_owned(), "permission denied".to_owned())],
-            vec![("old-plugin".to_owned(), "malformed markers".to_owned())],
-        ));
+        let status = after_applying_context(reconciled(vec![(
+            "project:worktree-policy/0123abcd".to_owned(),
+            "it was edited by hand, so it is left as it is".to_owned(),
+        )]));
         assert_eq!(
             status,
             Status::Error(
-                "Context reconciled except lint not written: permission denied \
-                 · old-plugin not removed: malformed markers"
+                "Context reconciled except project:worktree-policy/0123abcd not removed: \
+                 it was edited by hand, so it is left as it is"
                     .to_owned()
             )
         );

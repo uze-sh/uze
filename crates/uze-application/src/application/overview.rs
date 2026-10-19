@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn context_truth_table_is_exact() {
-        use Portability::{NoContext, PartiallyPortable, Portable, VendorLocked};
+        use Portability::{NoContext, Portable, VendorLocked};
         // (agents_md, portability) → ContextState, covering every reachable
         // combination plus the inspection-unavailable case.
         assert_eq!(derive_context(false, None), ContextState::None);
@@ -656,10 +656,6 @@ mod tests {
         assert_eq!(derive_context(true, Some(&Portable)), ContextState::Ready);
         assert_eq!(
             derive_context(true, Some(&VendorLocked { files: vec![] })),
-            ContextState::Issue
-        );
-        assert_eq!(
-            derive_context(true, Some(&PartiallyPortable { gaps: vec![] })),
             ContextState::Issue
         );
     }

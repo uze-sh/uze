@@ -1,17 +1,11 @@
-//! L1 contract: `UzeApplication::context_reconcile` composes what globally
-//! installed packages contribute into one project's shared `AGENTS.md`, and
-//! separately reconciles the small set of harnesses that need a bridge into
-//! it rather than reading it natively.
+//! L1 contract: `uze agent context reconcile` writes nothing into a
+//! project's `AGENTS.md`. What it does is take out, once and in a main
+//! working tree only, what an earlier release wrote there: a package's
+//! instructions region, and the `@AGENTS.md` bridge in a harness's own file
+//! that went with it.
 //!
-//! Deterministic by construction: bridge-capable integrations here are test
-//! doubles with a controllable `detect()`, not the real CLIs, so this suite
-//! passes identically whether or not those binaries are installed on the
-//! machine running it. Real-CLI evidence is separate L2a research, not this
-//! tier's job — see the session's final report for that empirical spike.
-//!
-//! `uze add` is exercised here exactly as any other test uses it: nothing
-//! about it changes for Instructions. `context_reconcile` is a wholly
-//! separate, explicit, project-scoped operation layered on top.
+//! Deterministic by construction: the bridge-declaring integration here is
+//! a test double with a controllable `detect()`, not the real CLI.
 
 use std::{
     fs,
@@ -19,50 +13,36 @@ use std::{
 };
 
 use uze_application::UzeApplication;
-use uze_application::application::{BridgeStatus, ContextReconciliationReport};
+use uze_application::application::BridgeFate;
 use uze_core::PackageSource;
 use uze_core::{
     Result, UzeError, UzeHome,
-    integration::{AttachmentReceipt, AttachmentState, HarnessDetection, IntegrationPort},
+    integration::{AttachmentReceipt, HarnessDetection, IntegrationPort},
     router::HarnessCapabilities,
+    text_region,
 };
 
 fn temp(label: &str) -> PathBuf {
     uze_testkit::temp::scratch(label)
 }
 
-fn fixture_a() -> PathBuf {
+/// A plugin that still ships a root `AGENTS.md`, as the instructions
+/// capability once read.
+fn plugin_shipping_agents_md() -> PathBuf {
     uze_testkit::fixtures::canonical("instructions-a")
 }
 
-fn fixture_b() -> PathBuf {
-    uze_testkit::fixtures::canonical("instructions-b")
-}
-
-/// A deterministic stand-in for the one bridge-capable harness (Claude
-/// Code): `context_reconcile` itself never calls
-/// `exposure_plan`/`attach_receipt` on it — it only reads `id()`/`detect()`
-/// directly. `add_plugin`'s pre-existing, unmodified per-resource loop does
-/// still call `exposure_plan` for every registered integration on every
-/// resource including this package's Instruction resource, exactly as it
-/// already does for Skills/MCP on an integration that does not support
-/// them — reporting `Unsupported` and attaching nothing, same as every real
-/// integration's fallthrough arm does today. Present/absent is controlled
-/// explicitly rather than depending on what happens to be installed on the
-/// machine running the test.
+/// A stand-in for the one harness that declares a file of its own beside
+/// `AGENTS.md` (Claude Code), present or absent on demand.
 struct StubBridgeHarness {
-    stub_id: &'static str,
     present: bool,
 }
 
 impl IntegrationPort for StubBridgeHarness {
     fn id(&self) -> &'static str {
-        self.stub_id
+        "claude-code"
     }
 
-    /// The one bridged harness in v0 declares its bridge like any real
-    /// integration would — the Application reads `context_delivery`, never
-    /// a vendor name.
     fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
         uze_core::integration::ContextDelivery::Bridge {
             file_name: "CLAUDE.md",
@@ -96,428 +76,159 @@ fn app(root: &Path, claude_present: bool) -> UzeApplication {
     UzeApplication::new(
         UzeHome::at(root.join("uze-home")),
         vec![Box::new(StubBridgeHarness {
-            stub_id: "claude-code",
             present: claude_present,
         })],
     )
 }
 
-fn install(app: &UzeApplication, path: PathBuf) {
-    app.plugins()
-        .add(PackageSource::local(path), &uze_core::trust::AlwaysTrust)
-        .expect("fixture installs cleanly");
-}
-
-fn agents_md_content(project: &Path) -> String {
-    fs::read_to_string(project.join("AGENTS.md")).unwrap_or_default()
-}
-
-fn bridge<'a>(report: &'a ContextReconciliationReport, integration: &str) -> &'a BridgeStatus {
-    report
-        .bridges
-        .iter()
-        .find(|bridge| bridge.integration == integration)
-        .unwrap_or_else(|| panic!("no bridge status reported for {integration}"))
-}
-
-// --- A: baseline without UZE / B: decomposition / C: attach / D: discovery-shape ---
-
-#[test]
-fn a_single_package_composes_agents_md_and_bridges_only_present_harnesses() {
-    let root = temp("single-package");
-    let application = app(&root, true);
-    install(&application, fixture_a());
-
+/// A main working tree: `.git` is a directory.
+fn primary(root: &Path) -> PathBuf {
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    // A: baseline — before reconciling, UZE has written nothing into the project.
+    project
+}
+
+const OPERATOR: &str = "# My project\n\nRun the tests before you commit.\n";
+
+/// What an earlier release left: the operator's text, one package region
+/// after it, and the bridge in `CLAUDE.md` after `claude_md`, each written
+/// the way that release wrote them.
+fn left_by_an_earlier_release(project: &Path, claude_md: &str) {
+    let agents_md = project.join("AGENTS.md");
+    fs::write(&agents_md, OPERATOR).unwrap();
+    text_region::attach(
+        &agents_md,
+        "package:greet:tools:instructions",
+        "Say hello.\n",
+    )
+    .unwrap();
+    let bridge = project.join("CLAUDE.md");
+    if !claude_md.is_empty() {
+        fs::write(&bridge, claude_md).unwrap();
+    }
+    text_region::attach(&bridge, "instruction-bridge", "@AGENTS.md").unwrap();
+}
+
+#[test]
+fn a_declared_plugin_shipping_agents_md_adds_nothing_to_the_project() {
+    let root = temp("plugin-agents-md-adds-nothing");
+    let application = app(&root, true);
+    application
+        .plugins()
+        .add(
+            PackageSource::local(plugin_shipping_agents_md()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .expect("fixture installs cleanly");
+    let project = primary(&root);
+    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
+    fs::write(project.join("AGENTS.md"), OPERATOR).unwrap();
+
+    let report = application.context().reconcile(&project).unwrap();
+    assert!(report.retired_regions.is_none(), "{report:?}");
+    assert_eq!(
+        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
+        OPERATOR
+    );
+    assert!(!project.join("CLAUDE.md").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_project_without_agents_md_gets_none() {
+    let root = temp("no-agents-md-stays-none");
+    let application = app(&root, true);
+    let project = primary(&root);
+
+    let report = application.context().reconcile(&project).unwrap();
+    assert!(report.retired_regions.is_none());
     assert!(!project.join("AGENTS.md").exists());
     assert!(!project.join("CLAUDE.md").exists());
+    fs::remove_dir_all(root).unwrap();
+}
 
-    // B/C: decomposition + attach.
+#[test]
+fn a_package_region_and_a_bridge_only_claude_md_go_together() {
+    let root = temp("package-region-and-bridge-go");
+    let application = app(&root, true);
+    let project = primary(&root);
+    left_by_an_earlier_release(&project, "");
+
+    let plan = application.context().plan(&project).unwrap();
+    assert!(plan.has_changes());
     let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages.len(), 1);
-    assert_eq!(report.packages[0].state, AttachmentState::Matched);
-    assert!(report.removed_orphans.is_empty());
-
-    let content = agents_md_content(&project);
-    assert!(content.contains("uze-instructions-fixture-a"));
-
-    // D: Codex/OpenCode/Antigravity receive nothing extra — no artifact
-    // beyond the shared AGENTS.md file itself is ever created for them.
-    assert!(!project.join(".codex").exists());
-    assert!(!project.join(".opencode").exists());
-
-    // The bridge-capable harness was "present", so it gets a real bridge,
-    // matched.
+    let regions = report.retired_regions.expect("the old regions were found");
+    assert_eq!(regions.removed, vec!["package:greet:tools:instructions"]);
+    assert_eq!(regions.bridges[0].fate, BridgeFate::File);
     assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Matched
+        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
+        OPERATOR,
+        "the operator's text is byte-identical"
+    );
+    assert!(!project.join("CLAUDE.md").exists());
+    assert!(
+        !application.context().plan(&project).unwrap().has_changes(),
+        "a second pass finds nothing"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_operators_lines_in_claude_md_stay_when_the_bridge_goes() {
+    let root = temp("bridge-goes-operator-lines-stay");
+    let application = app(&root, false);
+    let project = primary(&root);
+    left_by_an_earlier_release(&project, "# Claude only\n\nPrefer small diffs.\n\n");
+
+    let report = application.context().reconcile(&project).unwrap();
+    let regions = report.retired_regions.unwrap();
+    assert_eq!(
+        regions.bridges[0].fate,
+        BridgeFate::Region,
+        "a harness that is not detected still has its leftover taken out"
     );
     let claude_md = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert!(claude_md.contains("@AGENTS.md"));
-    assert!(claude_md.contains("uze:begin instruction-bridge"));
+    assert!(claude_md.contains("Prefer small diffs."), "{claude_md}");
+    assert!(!claude_md.contains("@AGENTS.md"), "{claude_md}");
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn an_absent_bridge_harness_receives_no_bridge_file_at_all() {
-    let root = temp("absent-harness");
-    // Claude Code absent from this machine.
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-
-    let _report = application.context().reconcile(&project).unwrap();
-    assert!(
-        !project.join("CLAUDE.md").exists(),
-        "an absent harness must never receive a bridge file"
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-// --- E/F/G: inspect MATCHED / user edit outside stays MATCHED / edit inside becomes DRIFTED ---
-
-#[test]
-fn editing_outside_the_managed_region_stays_matched_editing_inside_becomes_drifted() {
-    let root = temp("drift-scoping");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
-
-    // F: user prose appended around the managed region.
-    let agents_md = project.join("AGENTS.md");
-    let mut content = fs::read_to_string(&agents_md).unwrap();
-    content = format!("# My project\n\n{content}\nMore of my own notes.\n");
-    fs::write(&agents_md, &content).unwrap();
-
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(
-        report.packages[0].state,
-        AttachmentState::Matched,
-        "editing outside the managed region must not be reported as drift"
-    );
-    assert!(
-        fs::read_to_string(&agents_md)
-            .unwrap()
-            .contains("More of my own notes.")
-    );
-
-    // G: user edits text INSIDE the managed region.
-    let tampered = fs::read_to_string(&agents_md).unwrap().replace(
-        "Fixture A conformance marker",
-        "TAMPERED conformance marker",
-    );
-    fs::write(&agents_md, &tampered).unwrap();
-
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages[0].state, AttachmentState::Drifted);
-    // Reconcile must not have overwritten the user's edit.
-    assert_eq!(fs::read_to_string(&agents_md).unwrap(), tampered);
-    fs::remove_dir_all(root).unwrap();
-}
-
-// --- H/I: remove when MATCHED preserves user content / remove when DRIFTED blocks ---
-
-#[test]
-fn a_matched_region_can_be_cleanly_removed_preserving_user_content() {
-    let root = temp("clean-removal");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    let agents_md = project.join("AGENTS.md");
-    fs::write(&agents_md, "user text A\n").unwrap();
-    application.context().reconcile(&project).unwrap();
-    let mut content = fs::read_to_string(&agents_md).unwrap();
-    content.push_str("user text B\n");
-    fs::write(&agents_md, &content).unwrap();
-
-    // Package A is no longer installed: reconciling with an empty desired
-    // set (simulated here by removing the package from the store first)
-    // must remove exactly its region.
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-a")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert!(report.packages.is_empty());
-    assert_eq!(report.removed_orphans.len(), 1);
-    let content = fs::read_to_string(&agents_md).unwrap();
-    assert!(content.starts_with("user text A\n"), "{content}");
-    assert!(content.ends_with("user text B\n"), "{content}");
-    assert!(!content.contains("uze:begin package:"), "{content}");
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// The Store is the machine's: a package installed there for another
-/// project, or for the machine alone, is not this project's to carry. Only
-/// what `agents.yaml` declares reaches its `AGENTS.md`, and a package taken
-/// out of the declaration leaves it on the next reconcile while it stays
-/// installed.
-#[test]
-fn only_a_declared_package_s_instructions_reach_the_project() {
-    let root = temp("declared-only");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    install(&application, fixture_b());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    let agents_md = project.join("AGENTS.md");
-    fs::write(&agents_md, "mine\n").unwrap();
-
-    application.context().reconcile(&project).unwrap();
-    assert_eq!(
-        agents_md_content(&project),
-        "mine\n",
-        "nothing declared, nothing carried"
-    );
-
-    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
-    application.context().reconcile(&project).unwrap();
-    let content = agents_md_content(&project);
-    assert!(
-        content.contains("package:uze-instructions-fixture-a"),
-        "{content}"
-    );
-    assert!(
-        !content.contains("package:uze-instructions-fixture-b"),
-        "{content}"
-    );
-
-    uze_testkit::project::declare(&project, &["uze-instructions-fixture-b@local"]);
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.removed_orphans.len(), 1);
-    let content = agents_md_content(&project);
-    assert!(
-        !content.contains("package:uze-instructions-fixture-a"),
-        "{content}"
-    );
-    assert!(
-        content.contains("package:uze-instructions-fixture-b"),
-        "{content}"
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// While a package is still installed, drift in *its* region must block
-/// reconciliation from touching it — this is the strong, content-verified
-/// guarantee `text_region::attach`/`inspect` always provide.
-#[test]
-fn a_still_installed_packages_drifted_region_is_reported_and_never_rewritten() {
-    let root = temp("drift-still-installed");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
-
-    let agents_md = project.join("AGENTS.md");
-    let tampered = fs::read_to_string(&agents_md)
-        .unwrap()
-        .replace("Fixture A conformance marker", "TAMPERED");
-    fs::write(&agents_md, &tampered).unwrap();
-
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages[0].state, AttachmentState::Drifted);
-    assert_eq!(fs::read_to_string(&agents_md).unwrap(), tampered);
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// Once a package is *removed*, its Store bytes are gone — there is no
-/// `expected_content` left to verify drift against for its now-orphaned
-/// region. Orphan cleanup's ownership proof is therefore structural only
-/// (exact, well-formed UZE markers), documented explicitly as a weaker
-/// guarantee than `detach`'s in `text_region::remove_unconditionally`. A
-/// malformed/duplicated marker shape still refuses, exactly like `detach`.
-#[test]
-fn an_orphaned_regions_cleanup_is_structural_not_content_verified_but_still_refuses_malformed_markers()
- {
-    let root = temp("orphan-cleanup-shape");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
-
-    // Even content edited post-hoc inside an about-to-be-orphaned region is
-    // removed along with it: once the owning package is gone, there is
-    // nothing left to compare that content to.
-    let agents_md = project.join("AGENTS.md");
-    let edited = fs::read_to_string(&agents_md)
-        .unwrap()
-        .replace("Fixture A conformance marker", "edited before removal");
-    fs::write(&agents_md, &edited).unwrap();
-
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-a")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.removed_orphans.len(), 1);
-    assert!(report.blocked_orphans.is_empty());
-    assert!(
-        !fs::read_to_string(&agents_md)
-            .unwrap()
-            .contains("edited before removal")
-    );
-
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// The bridge's own drift protection is unaffected by orphan cleanup's
-/// weaker rule: `reconcile`'s "remove" path always goes through `detach`,
-/// which is content-verified, because the bridge's expected content
-/// (`@AGENTS.md`) is a fixed constant this module always knows, never
-/// something that becomes unrecoverable when a package is removed.
-#[test]
-fn a_drifted_bridge_line_blocks_its_own_removal_even_after_the_last_package_is_gone() {
-    let root = temp("bridge-drift-blocks");
+fn a_linked_worktree_is_left_as_its_branch_has_it() {
+    let root = temp("linked-worktree-untouched");
     let application = app(&root, true);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-    application.context().reconcile(&project).unwrap();
+    let slot = root.join("project");
+    fs::create_dir_all(&slot).unwrap();
+    fs::write(slot.join(".git"), "gitdir: ../.git/worktrees/ab12cd\n").unwrap();
+    left_by_an_earlier_release(&slot, "");
+    let agents_md = fs::read(slot.join("AGENTS.md")).unwrap();
+    let claude_md = fs::read(slot.join("CLAUDE.md")).unwrap();
 
-    let claude_md = project.join("CLAUDE.md");
-    let tampered_bridge = fs::read_to_string(&claude_md)
-        .unwrap()
-        .replace("@AGENTS.md", "@SOMETHING-ELSE.md");
-    fs::write(&claude_md, &tampered_bridge).unwrap();
-
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-a")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Drifted
-    );
-    assert_eq!(fs::read_to_string(&claude_md).unwrap(), tampered_bridge);
+    let report = application.context().reconcile(&slot).unwrap();
+    assert!(report.retired_regions.is_none());
+    assert!(!application.context().plan(&slot).unwrap().has_changes());
+    assert_eq!(fs::read(slot.join("AGENTS.md")).unwrap(), agents_md);
+    assert_eq!(fs::read(slot.join("CLAUDE.md")).unwrap(), claude_md);
     fs::remove_dir_all(root).unwrap();
 }
 
-// --- Fase C.6: two packages coexist, independent removal, single shared bridge ---
-
+/// The cleanup does not read the declaration, so an `agents.yaml` mid-edit
+/// neither blocks it nor changes what it takes out.
 #[test]
-fn two_packages_share_one_agents_md_and_exactly_one_bridge_per_harness() {
-    let root = temp("two-packages");
-    let application = app(&root, true);
-    install(&application, fixture_a());
-    install(&application, fixture_b());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
+fn a_manifest_that_does_not_parse_does_not_change_the_cleanup() {
+    let root = temp("unreadable-manifest-cleanup");
+    let application = app(&root, false);
+    let project = primary(&root);
+    left_by_an_earlier_release(&project, "");
+    fs::write(project.join("agents.yaml"), "marketplaces: [oops\n").unwrap();
 
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages.len(), 2);
-    assert!(
-        report
-            .packages
-            .iter()
-            .all(|status| status.state == AttachmentState::Matched)
-    );
-    let content = agents_md_content(&project);
-    assert!(content.contains("uze-instructions-fixture-a"));
-    assert!(content.contains("uze-instructions-fixture-b"));
-
-    // Exactly one bridge file per harness regardless of package count.
-    assert_eq!(report.bridges.len(), 1);
-    let claude_md = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-    assert_eq!(claude_md.matches("@AGENTS.md").count(), 1);
-
-    // Removing package A leaves B's region and the bridge intact.
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-a")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages.len(), 1);
+    application.context().reconcile(&project).unwrap();
     assert_eq!(
-        report.packages[0].package_id,
-        "uze-instructions-fixture-b@local"
-    );
-    assert_eq!(report.removed_orphans.len(), 1);
-    let content = agents_md_content(&project);
-    assert!(!content.contains("uze-instructions-fixture-a"));
-    assert!(content.contains("uze-instructions-fixture-b"));
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Matched
-    );
-    assert!(
-        project.join("CLAUDE.md").exists(),
-        "bridge must survive while B is still installed"
-    );
-
-    // Removing package B leaves AGENTS.md empty of managed content and
-    // removes the now-unneeded bridge region — Fase C.5's core claim. The
-    // bridge *file* itself is left behind, empty: `text_region::detach`
-    // deliberately never deletes a file it did not independently prove it
-    // is safe to delete (see `text_region.rs`'s
-    // `detach_leaves_an_empty_file_rather_than_deleting_a_preexisting_file`)
-    // — it cannot tell "UZE created this file from nothing" apart from "the
-    // user's own file happened to end up empty," so it treats both alike.
-    application
-        .plugins()
-        .remove("uze-instructions-fixture-b")
-        .unwrap();
-    let report = application.context().reconcile(&project).unwrap();
-    assert!(report.packages.is_empty());
-    assert_eq!(report.removed_orphans.len(), 1);
-    assert_eq!(
-        bridge(&report, "claude-code").state,
-        AttachmentState::Missing
-    );
-    assert_eq!(
-        fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
-        "",
-        "the bridge region is gone; the file it leaves behind is empty, not deleted"
+        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
+        OPERATOR
     );
     fs::remove_dir_all(root).unwrap();
 }
-
-// --- reinstall/update must not duplicate regions ---
-
-#[test]
-fn reconciling_repeatedly_never_duplicates_regions_or_bridges() {
-    let root = temp("no-duplication");
-    let application = app(&root, true);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    declare_fixtures(&project);
-
-    application.context().reconcile(&project).unwrap();
-    let after_first = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    let bridge_after_first = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-
-    application.context().reconcile(&project).unwrap();
-    application.context().reconcile(&project).unwrap();
-    let after_repeat = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-    let bridge_after_repeat = fs::read_to_string(project.join("CLAUDE.md")).unwrap();
-
-    assert_eq!(
-        after_first, after_repeat,
-        "repeated reconcile must be byte-idempotent"
-    );
-    assert_eq!(bridge_after_first, bridge_after_repeat);
-    assert_eq!(after_repeat.matches("uze:begin package:").count(), 1);
-    fs::remove_dir_all(root).unwrap();
-}
-
-// --- adversarial: markers that look like managed content, malformed shape ---
 
 #[test]
 fn a_project_root_that_does_not_exist_is_a_clean_error_not_a_write() {
@@ -530,88 +241,22 @@ fn a_project_root_that_does_not_exist_is_a_clean_error_not_a_write() {
     assert!(matches!(error, UzeError::NotDirectory(_)));
 }
 
+/// A well-formed marker for an identity no release of UZE wrote belongs to
+/// something else, and the cleanup does not assume it.
 #[test]
-fn reconcile_never_touches_the_project_when_no_package_provides_instructions() {
-    let root = temp("no-instructions");
-    let application = app(&root, true);
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    fs::write(project.join("AGENTS.md"), "just my own notes\n").unwrap();
-
-    let report = application.context().reconcile(&project).unwrap();
-    assert!(report.packages.is_empty());
-    assert_eq!(
-        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
-        "just my own notes\n"
-    );
-    assert!(!project.join("CLAUDE.md").exists());
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// A pre-existing AGENTS.md that already contains a well-formed UZE marker
-/// for an identity not shaped like this module's own
-/// (`package:<id>:instructions`) is left completely untouched — it belongs
-/// to some other, unrelated concern (or a package id that happens to
-/// collide only superficially), and this reconciler must not assume
-/// ownership of it.
-#[test]
-fn a_foreign_looking_managed_region_outside_our_naming_shape_is_left_untouched() {
+fn a_foreign_looking_managed_region_is_left_untouched() {
     let root = temp("foreign-region");
     let application = app(&root, false);
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    fs::write(
-        project.join("AGENTS.md"),
-        "<!-- uze:begin some-other-concern -->\nnot ours\n<!-- uze:end some-other-concern -->\n",
-    )
-    .unwrap();
+    let project = primary(&root);
+    let foreign =
+        "<!-- uze:begin some-other-concern -->\nnot ours\n<!-- uze:end some-other-concern -->\n";
+    fs::write(project.join("AGENTS.md"), foreign).unwrap();
 
     let report = application.context().reconcile(&project).unwrap();
-    assert!(report.removed_orphans.is_empty());
-    assert!(report.blocked_orphans.is_empty());
+    assert!(report.retired_regions.is_none());
     assert_eq!(
         fs::read_to_string(project.join("AGENTS.md")).unwrap(),
-        "<!-- uze:begin some-other-concern -->\nnot ours\n<!-- uze:end some-other-concern -->\n"
+        foreign
     );
-    fs::remove_dir_all(root).unwrap();
-}
-
-/// Declares both instruction fixtures in the project's `agents.yaml`: a
-/// package's instructions reach a project only when it declares them.
-fn declare_fixtures(project: &Path) {
-    uze_testkit::project::declare(
-        project,
-        &[
-            "uze-instructions-fixture-a@local",
-            "uze-instructions-fixture-b@local",
-        ],
-    );
-}
-
-/// An `agents.yaml` that does not parse says nothing about which regions
-/// are owed: reading the context still answers, and reconciling refuses
-/// rather than taking back the regions already there over a typo.
-#[test]
-fn a_manifest_that_does_not_parse_never_costs_the_project_its_regions() {
-    let root = temp("unreadable-manifest");
-    let application = app(&root, false);
-    install(&application, fixture_a());
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
-    application.context().reconcile(&project).unwrap();
-    let reconciled = agents_md_content(&project);
-    assert!(reconciled.contains("package:uze-instructions-fixture-a"));
-
-    fs::write(project.join("agents.yaml"), "marketplaces: [oops\n").unwrap();
-    application
-        .context()
-        .inspect(&project)
-        .expect("reading the context still answers");
-    application
-        .context()
-        .reconcile(&project)
-        .expect_err("a write refuses a declaration it cannot read");
-    assert_eq!(agents_md_content(&project), reconciled);
     fs::remove_dir_all(root).unwrap();
 }

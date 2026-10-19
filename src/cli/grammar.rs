@@ -306,8 +306,9 @@ pub(crate) enum AgentPluginAction {
         /// Also scaffold an agents/<name>.md definition stub
         #[arg(long)]
         agent: bool,
-        /// Also scaffold an instruction contribution
-        #[arg(long)]
+        /// Retired: refused with the way a plugin speaks to every agent now,
+        /// an `always_on` rule under `--rules`
+        #[arg(long, hide = true)]
         instructions: bool,
         /// Also scaffold rules/ with one example rule, copied into the
         /// checkout of every project that declares the plugin

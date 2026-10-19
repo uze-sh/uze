@@ -13,7 +13,6 @@ use serde::Serialize;
 use uze_core::{
     PackageSource, Result, UzeError, UzeHome, UzeStore,
     capability::CapabilityKind,
-    context::{self as instruction_context},
     detection_cache::DetectionCache,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
     integration::{

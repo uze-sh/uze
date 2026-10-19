@@ -17,14 +17,15 @@ use std::{
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use cli::*;
 use progress::count;
-use uze_application::{Chime, HostEntry, PlannedAction, Result, UzeHome, WorkspaceEntry};
+use uze_application::{Chime, HostEntry, Result, UzeHome, WorkspaceEntry};
 use uze_application::{
     UzeApplication,
     application::{
-        AddPluginReport, ContextPlan, ContextReconciliationReport, DoctorReport,
+        AddPluginReport, BridgeFate, ContextPlan, ContextReconciliationReport, DoctorReport,
         HarnessContextDelivery, HarnessHealth, MachineStatusReport, MarketplaceRemovalReport,
         MarketplaceSummary, PluginInspection, Portability, ProjectContextStatus, ProjectStatus,
-        ProvisionRoute, RemovePluginReport, RemoveProjectPluginReport, StatusReport,
+        ProvisionRoute, RemovePluginReport, RemoveProjectPluginReport, RetiredRegionsPlan,
+        StatusReport,
     },
 };
 // `Chime` arrives through the facade's own re-export (see uze-application).
@@ -879,7 +880,6 @@ mod status_output_tests {
             portability,
             harnesses: Vec::new(),
             packages_installed: 0,
-            packages_contributing_here: Vec::new(),
             project_lock: ProjectLockStatus::Absent,
             drift: EnvironmentDrift::default(),
             issues: Vec::new(),
@@ -899,7 +899,6 @@ mod status_output_tests {
         InstructionsFile {
             path: std::path::PathBuf::from("/project/AGENTS.md"),
             exists: true,
-            managed_regions: 2,
         }
     }
 
@@ -907,7 +906,6 @@ mod status_output_tests {
         InstructionsFile {
             path: std::path::PathBuf::from("/project/AGENTS.md"),
             exists: false,
-            managed_regions: 0,
         }
     }
 
@@ -915,27 +913,14 @@ mod status_output_tests {
     fn the_coverage_section_names_the_file_it_is_about() {
         let text = render_status(&report(present(), Portability::Portable));
         assert!(text.contains("AGENTS.md"), "{text}");
-        assert!(text.contains("2 regions managed by UZE"), "{text}");
+        assert!(text.contains("present"), "{text}");
+        assert!(!text.contains("managed by UZE"), "{text}");
     }
 
     #[test]
     fn an_absent_file_is_the_finding_rather_than_a_silent_gap() {
         let text = render_status(&report(absent(), Portability::NoContext));
         assert!(text.contains("absent"), "{text}");
-    }
-
-    /// The gaps used to be reachable only by running `context inspect`,
-    /// which is now the agent's command; a person reading "needs
-    /// attention" has to be told what about.
-    #[test]
-    fn a_bridge_gap_is_named_where_a_person_reads_it() {
-        let text = render_status(&report(
-            present(),
-            Portability::PartiallyPortable {
-                gaps: vec!["claude-code: bridge Missing".to_owned()],
-            },
-        ));
-        assert!(text.contains("claude-code: bridge Missing"), "{text}");
     }
 
     #[test]
@@ -952,14 +937,10 @@ mod status_output_tests {
     }
 
     #[test]
-    fn a_reconcilable_gap_is_owed_the_command_that_closes_it() {
-        let step = status_next_step(&report(
-            present(),
-            Portability::PartiallyPortable {
-                gaps: vec!["claude-code: bridge Missing".to_owned()],
-            },
-        ))
-        .expect("a bridge gap is owed a command");
+    fn a_region_an_earlier_release_wrote_is_owed_the_command_that_removes_it() {
+        let mut status = report(present(), Portability::Portable);
+        status.report.drift.stale_projection = true;
+        let step = status_next_step(&status).expect("a retired region is owed a command");
         assert_eq!(step, "uze install");
     }
 

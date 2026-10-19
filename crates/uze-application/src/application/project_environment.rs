@@ -149,18 +149,23 @@ impl Project<'_> {
         })
     }
 
-    /// Whether `AGENTS.md` still carries a region an earlier release wrote,
-    /// which `uze install` removes. Asked of the primary checkout only: a
-    /// slot's file is its branch's, and the cleanup never runs there.
+    /// Whether `AGENTS.md`, or a harness's file bridged to it, still
+    /// carries a region an earlier release wrote, which `uze install`
+    /// removes. Asked of the primary checkout only: a slot's files are its
+    /// branch's, and the cleanup never runs there.
     ///
-    /// One read of the file, and no harness is asked anything.
+    /// One read of each file, and no harness is asked anything.
     fn stale_projection(&self, canonical: &Path) -> Option<StaleProjection> {
         if !super::retired_regions::applies_at(canonical) {
             return None;
         }
-        let agents_md = canonical.join(uze_core::project_context::AGENTS_MD_FILE_NAME);
-        let plan = super::retired_regions::plan(&agents_md)?;
-        let projected_identity = plan.remove.into_iter().next()?;
+        let plan = super::retired_regions::plan(&self.0.retired_region_files(canonical))?;
+        let projected_identity = plan.remove.into_iter().next().or_else(|| {
+            plan.bridges
+                .iter()
+                .any(|bridge| !matches!(bridge.fate, BridgeFate::Kept(_)))
+                .then(|| uze_core::retired_region::INSTRUCTION_BRIDGE.to_owned())
+        })?;
         let region = projected_identity.rsplit_once('/').map_or_else(
             || projected_identity.clone(),
             |(prefix, _)| prefix.to_owned(),
@@ -750,24 +755,10 @@ impl Project<'_> {
             project_lock::save_lock(&canonical, &lock)?;
         }
 
-        // Moving a pin changes what this project's packages contribute to
-        // `AGENTS.md`, so declaring and projecting stay one command, as
-        // they are for `install`.
-        let report = UpdateReport {
+        Ok(UpdateReport {
             scope: UpdateScope::Project,
-            reconciled: false,
             outcomes,
             rules,
-        };
-        let reconciled = if report.changed_content() {
-            self.0.context().reconcile(&canonical)?;
-            true
-        } else {
-            false
-        };
-        Ok(UpdateReport {
-            reconciled,
-            ..report
         })
     }
 
@@ -843,7 +834,6 @@ impl Project<'_> {
         }
         Ok(UpdateReport {
             scope: UpdateScope::Machine,
-            reconciled: false,
             outcomes,
             rules: Vec::new(),
         })
@@ -996,19 +986,18 @@ impl Project<'_> {
         // locked revision, and one somebody edited is named and left.
         rules.extend(self.converge_declared_rules(&canonical, &lock)?);
 
-        // Installing changes what this project's packages contribute to
-        // `AGENTS.md`, and a region the package manager owns there can fall
-        // behind on its own. Leaving either to a second command is how the
-        // agents came to read something the project no longer says.
+        // Sixth, what an earlier release wrote into `AGENTS.md` and the
+        // bridges beside it, taken out once in a main working tree. Nothing
+        // is written into either otherwise.
         let nothing_moved = installed_plugins.is_empty() && removed_plugins.is_empty();
-        let attempted = (!nothing_moved || self.stale_projection(&canonical).is_some())
+        let attempted = self
+            .stale_projection(&canonical)
+            .is_some()
             .then(|| self.0.context().reconcile(&canonical));
-        // Declaring an environment and projecting it are one command, so a
-        // projection that failed fails the command. Swallowed, it reported
+        // A cleanup that failed fails the command. Swallowed, it reported
         // `NoChanges` — "everything already agrees" — over a read-only
-        // `AGENTS.md` or a bridge that could not be written, and the half of
-        // the environment the agents actually read never moved. Re-running
-        // `install` converges the rest again and retries this.
+        // `AGENTS.md`. Re-running `install` converges the rest again and
+        // retries this.
         let reconciled = match attempted {
             Some(outcome) => {
                 outcome?;
@@ -1747,8 +1736,6 @@ pub enum UpdateScope {
 pub struct UpdateReport {
     pub scope: UpdateScope,
     pub outcomes: Vec<UpdateOutcome>,
-    /// Whether the project's context was reconciled afterwards.
-    pub reconciled: bool,
     /// What happened to each updated plugin's copies in the checkout; only
     /// plugins with something to say.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1760,16 +1747,6 @@ impl UpdateReport {
         self.outcomes
             .iter()
             .any(|outcome| matches!(outcome, UpdateOutcome::Moved { .. }))
-    }
-
-    /// Whether any package's content changed, pinned or not — which is what
-    /// the project's context has to follow.
-    pub fn changed_content(&self) -> bool {
-        self.moved()
-            || self
-                .outcomes
-                .iter()
-                .any(|outcome| matches!(outcome, UpdateOutcome::FollowedLink { .. }))
     }
 
     /// Every harness an updated package stayed installed without reaching,

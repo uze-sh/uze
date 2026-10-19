@@ -4,7 +4,7 @@
 //! that the package manager, or both modules, need: what a project declares
 //! ([`manifest`]) and what resolving it produced ([`project_lock`]), where
 //! that project begins ([`project_root`], [`anchor`]), the instruction
-//! context it carries ([`context`], [`project_context`]), the mechanism for
+//! context it carries ([`project_context`]), the mechanism for
 //! owning a slice of a file UZE did not write ([`text_region`]), the regions
 //! earlier releases wrote there ([`retired_region`]), and the per-project
 //! directory under `UzeHome` ([`record`]).
@@ -19,7 +19,6 @@
 //! `uze_core::project_lock`, and a name that changes between the inside and
 //! the outside costs more than the prefix saves.
 pub mod anchor;
-pub mod context;
 pub mod manifest;
 pub mod memory;
 pub mod project_context;

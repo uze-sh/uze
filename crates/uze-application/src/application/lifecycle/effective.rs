@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 
 use uze_core::{
-    capability::{CapabilityKind, Resource},
+    capability::Resource,
     exposure::{ExposureMechanism, PackageExposurePlan},
     integration::{AttachmentState, IntegrationPort},
     router::CompatibilityRoute,
@@ -32,13 +32,10 @@ pub(crate) struct PlannedDelivery {
 
 impl PlannedDelivery {
     /// The capabilities the harness is expected to hold once the package
-    /// is delivered: every one with a route, that nothing blocks, and that
-    /// is not project context (which reaches a harness through `AGENTS.md`).
+    /// is delivered: every one with a route, and that nothing blocks.
     pub(crate) fn expected(&self) -> impl Iterator<Item = &CapabilityDelivery> {
         self.capabilities.iter().filter(|capability| {
-            capability.kind != CapabilityKind::Instruction
-                && capability.route != CompatibilityRoute::Unsupported
-                && capability.blocked.is_none()
+            capability.route != CompatibilityRoute::Unsupported && capability.blocked.is_none()
         })
     }
 }
@@ -164,12 +161,10 @@ impl UzeApplication {
                     (CompatibilityRoute::Unsupported, None, None)
                 }
             };
-            if resolved.capability.kind != CapabilityKind::Instruction {
-                shortfalls.extend(CapabilityShortfall::of(
-                    &resolved,
-                    (route, plan.evidence.clone()),
-                ));
-            }
+            shortfalls.extend(CapabilityShortfall::of(
+                &resolved,
+                (route, plan.evidence.clone()),
+            ));
             capabilities.push(CapabilityDelivery {
                 identity,
                 kind: resource.capability.kind,

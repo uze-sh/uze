@@ -272,24 +272,20 @@ impl UzeApplication {
                             let receipt = integration.attach_receipt(&resolved)?;
                             // Delivered short of native, or not delivered at
                             // all because the harness has nothing for it: both
-                            // are said. Project instructions reach a harness
-                            // through the context, never through this path.
-                            if resolved.capability.kind != CapabilityKind::Instruction {
-                                let plan = integration.exposure_plan(&resolved);
-                                let route = if receipt.is_none()
-                                    && matches!(
-                                        plan.mechanism,
-                                        uze_core::exposure::ExposureMechanism::Unsupported { .. }
-                                    ) {
-                                    uze_core::router::CompatibilityRoute::Unsupported
-                                } else {
-                                    plan.route
-                                };
-                                delivery.shortfalls.extend(CapabilityShortfall::of(
-                                    &resolved,
-                                    (route, plan.evidence),
-                                ));
-                            }
+                            // are said.
+                            let plan = integration.exposure_plan(&resolved);
+                            let route = if receipt.is_none()
+                                && matches!(
+                                    plan.mechanism,
+                                    uze_core::exposure::ExposureMechanism::Unsupported { .. }
+                                ) {
+                                uze_core::router::CompatibilityRoute::Unsupported
+                            } else {
+                                plan.route
+                            };
+                            delivery
+                                .shortfalls
+                                .extend(CapabilityShortfall::of(&resolved, (route, plan.evidence)));
                             Ok(receipt)
                         });
                 let receipt = match attached {

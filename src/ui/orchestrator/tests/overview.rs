@@ -859,12 +859,10 @@ fn project_space(
         instructions: uze_application::application::InstructionsFile {
             path: PathBuf::from("/repo/AGENTS.md"),
             exists: true,
-            managed_regions: 0,
         },
         portability: uze_application::application::Portability::Portable,
         harnesses: Vec::new(),
         packages_installed: 0,
-        packages_contributing_here: Vec::new(),
         project_lock: uze_application::application::ProjectLockStatus::Absent,
         drift: Default::default(),
         issues: Vec::new(),
@@ -2779,7 +2777,6 @@ fn the_plugins_are_a_compact_table_and_the_drawer_folds_as_it_narrows() {
             locked: true,
             installed: true,
             differs_from_lock: false,
-            contributing: true,
             commit: Some("3605f817abcdef0123".to_owned()),
             freshness: Some(Freshness {
                 state,

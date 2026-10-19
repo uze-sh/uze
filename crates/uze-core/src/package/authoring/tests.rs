@@ -35,13 +35,12 @@ fn scratch(label: &str) -> PathBuf {
 fn every_scaffold_passes_its_own_check() -> Result<()> {
     let _git_identity = git_identity();
     let description = r#"Deploys: things "fast" — it's #1"#;
-    for flags in 0..32_u8 {
+    for flags in 0..16_u8 {
         let caps = ScaffoldCapabilities {
             hook: flags & 1 != 0,
             mcp: flags & 2 != 0,
             agent: flags & 4 != 0,
-            instructions: flags & 8 != 0,
-            rules: flags & 16 != 0,
+            rules: flags & 8 != 0,
         };
         let root = scratch(&format!("authoring-scaffold-{flags}"));
         let market = scaffold_marketplace("tools", Some("Test tools"), &root.join("market"))?;
@@ -586,6 +585,44 @@ fn check_reports_a_skill_a_harness_could_not_read() -> Result<()> {
             report.findings
         );
     }
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+#[test]
+fn check_reports_a_root_agents_md_as_not_delivered_and_names_the_rule() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-check-agents-md");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
+    fs::write(plugin.join("AGENTS.md"), "Say hello first.\n").unwrap();
+
+    let report = check_plugin(&plugin)?;
+    assert!(report.is_clean(), "{:?}", report.findings);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("AGENTS.md")
+                && warning.contains("not delivered")
+                && warning.contains("always_on")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(
+        report
+            .delivers
+            .iter()
+            .all(|identity| !identity.contains("AGENTS.md")),
+        "{:?}",
+        report.delivers
+    );
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

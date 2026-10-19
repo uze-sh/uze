@@ -168,9 +168,11 @@ pub enum ContextDelivery {
     /// instructions file), observed for portability reporting only — never
     /// written by UZE.
     Native { files: &'static [&'static str] },
-    /// Reaches the shared context only through a delimited bridge region
-    /// (an `@AGENTS.md` import) inside the harness's own native file, which
-    /// `agent context inspect|plan|reconcile` maintain.
+    /// Reads the shared `AGENTS.md` itself, beside its own native file
+    /// `file_name`. Earlier releases wrote an `@AGENTS.md` bridge region
+    /// into that file while a package contributed to `AGENTS.md`; nothing
+    /// writes one any more, and the retired-regions cleanup takes a
+    /// leftover one out.
     Bridge { file_name: &'static str },
     /// No project-context delivery is modeled for this harness; `context`
     /// commands never report it.

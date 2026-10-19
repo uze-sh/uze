@@ -482,7 +482,6 @@ pub(super) fn claude_exact_coverage(
                     .as_ref()
                     .is_some_and(|name| mcp_servers.contains(name)),
                 CapabilityKind::Hook => has_hooks,
-                CapabilityKind::Instruction => false,
             }
         })
         .map(|resource| resource.identity())

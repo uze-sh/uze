@@ -61,8 +61,6 @@ pub struct SpacePlugin {
     pub installed: bool,
     /// Installed at a revision other than the lock's.
     pub differs_from_lock: bool,
-    /// Its instructions have a region in this project's `AGENTS.md`.
-    pub contributing: bool,
     /// The commit installed, when it came from one.
     pub commit: Option<String>,
     /// `None` when it is not installed.
@@ -127,23 +125,16 @@ impl Workspace<'_> {
 fn space_plugins(status: &ProjectStatus, installed: &[PluginSummary]) -> SpacePlugins {
     let report = &status.report;
     let summary = |package: &str| installed.iter().find(|summary| summary.id == package);
-    let contributing = |package: &str| {
-        report
-            .packages_contributing_here
-            .iter()
-            .any(|id| id == package)
-    };
     let (lock_problem, locked) = match &report.project_lock {
         ProjectLockStatus::Absent => (None, Vec::new()),
         ProjectLockStatus::Malformed { reason } => (Some(reason.clone()), Vec::new()),
         ProjectLockStatus::Present { plugins } => (None, plugins.clone()),
     };
-    let mut plugins: Vec<SpacePlugin> = locked
+    let plugins: Vec<SpacePlugin> = locked
         .into_iter()
         .map(|health| {
             let summary = summary(&health.package);
             SpacePlugin {
-                contributing: contributing(&health.package),
                 commit: summary.and_then(|summary| summary.commit.clone()),
                 freshness: summary.map(|summary| summary.freshness.clone()),
                 plugin: health.plugin,
@@ -154,25 +145,6 @@ fn space_plugins(status: &ProjectStatus, installed: &[PluginSummary]) -> SpacePl
             }
         })
         .collect();
-    for package in &report.packages_contributing_here {
-        if plugins.iter().any(|plugin| &plugin.package == package) {
-            continue;
-        }
-        let summary = summary(package);
-        plugins.push(SpacePlugin {
-            plugin: summary.map_or_else(
-                || package.split('@').next().unwrap_or(package).to_owned(),
-                |summary| summary.active_name.clone(),
-            ),
-            package: package.clone(),
-            locked: false,
-            installed: true,
-            differs_from_lock: false,
-            contributing: true,
-            commit: summary.and_then(|summary| summary.commit.clone()),
-            freshness: summary.map(|summary| summary.freshness.clone()),
-        });
-    }
     SpacePlugins {
         lock_problem,
         plugins,

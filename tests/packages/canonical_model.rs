@@ -19,7 +19,7 @@ use uze_core::PackageSource;
 use uze_core::{
     Result, UzeHome,
     capability::CapabilityKind,
-    integration::{AttachmentReceipt, AttachmentState, HarnessDetection, IntegrationPort},
+    integration::{AttachmentReceipt, HarnessDetection, IntegrationPort},
     router::HarnessCapabilities,
 };
 
@@ -190,83 +190,38 @@ fn status_context_inspect_and_context_plan_produce_valid_json() {
 
     let plan = application.context().plan(&project).unwrap();
     let plan_json = serde_json::to_value(&plan).unwrap();
-    assert!(plan_json.get("agents_md_plan").is_some());
+    assert!(plan_json.get("retired_regions").is_some());
     fs::remove_dir_all(root).unwrap();
 }
 
-// --- reconcile continues to respect ownership; drift stays blocked --------
+// --- a plugin never writes into the project's AGENTS.md -------------------
 
 #[test]
-fn installing_the_skill_package_never_touches_managed_regions_of_other_packages() {
-    let root = temp("ownership-preserved");
+fn installing_and_reconciling_never_touch_the_operators_agents_md() {
+    let root = temp("agents-md-untouched");
     let application = app(&root);
-    application
-        .plugins()
-        .add(
-            PackageSource::local(uze_testkit::fixtures::canonical("instructions-a")),
-            &uze_core::trust::AlwaysTrust,
-        )
-        .unwrap();
     let project = root.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
-    application.context().reconcile(&project).unwrap();
-    let before = fs::read_to_string(project.join("AGENTS.md")).unwrap();
-
-    // Installing an unrelated Skill-only package (the official uze skill
-    // itself) must not touch the project's AGENTS.md at all — it
-    // contributes no Instruction resource.
-    application
-        .plugins()
-        .add(
-            PackageSource::local(official_package()),
-            &uze_core::trust::AlwaysTrust,
-        )
-        .unwrap();
-    assert_eq!(
-        fs::read_to_string(project.join("AGENTS.md")).unwrap(),
-        before
-    );
-
-    // Reconciling again picks up nothing new from the skill package (it has
-    // no AGENTS.md contribution) and still respects the existing region.
-    let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages.len(), 1);
-    assert_eq!(report.packages[0].state, AttachmentState::Matched);
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn drift_is_still_blocked_with_the_skill_package_also_installed() {
-    let root = temp("drift-still-blocked");
-    let application = app(&root);
-    application
-        .plugins()
-        .add(
-            PackageSource::local(official_package()),
-            &uze_core::trust::AlwaysTrust,
-        )
-        .unwrap();
-    application
-        .plugins()
-        .add(
-            PackageSource::local(uze_testkit::fixtures::canonical("instructions-a")),
-            &uze_core::trust::AlwaysTrust,
-        )
-        .unwrap();
-    let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
-    uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
-    application.context().reconcile(&project).unwrap();
-
     let agents_md = project.join("AGENTS.md");
-    let tampered = fs::read_to_string(&agents_md)
-        .unwrap()
-        .replace("Fixture A conformance marker", "TAMPERED");
-    fs::write(&agents_md, &tampered).unwrap();
+    fs::write(&agents_md, "# Mine\n\nWrite tests first.\n").unwrap();
 
+    // One plugin still ships a root `AGENTS.md`; the other is Skill-only.
+    for package in [
+        uze_testkit::fixtures::canonical("instructions-a"),
+        official_package(),
+    ] {
+        application
+            .plugins()
+            .add(PackageSource::local(package), &uze_core::trust::AlwaysTrust)
+            .unwrap();
+    }
     let report = application.context().reconcile(&project).unwrap();
-    assert_eq!(report.packages[0].state, AttachmentState::Drifted);
-    assert_eq!(fs::read_to_string(&agents_md).unwrap(), tampered);
+
+    assert!(report.retired_regions.is_none());
+    assert_eq!(
+        fs::read_to_string(&agents_md).unwrap(),
+        "# Mine\n\nWrite tests first.\n"
+    );
     fs::remove_dir_all(root).unwrap();
 }

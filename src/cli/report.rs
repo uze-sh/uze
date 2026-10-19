@@ -81,13 +81,6 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
         }
     }
     lines.push_str(&render_rule_copies(&report.rules));
-    if report.reconciled {
-        lines.push_str(&progress::change(
-            Change::Updated,
-            "AGENTS.md",
-            Some("reconciled"),
-        ));
-    }
     let outcome = if report.outcomes.is_empty() {
         match report.scope {
             UpdateScope::Project => "this project declares no plugins".to_owned(),
@@ -192,9 +185,6 @@ pub(crate) fn render_update_report(report: &uze_application::application::Update
     if !report.rules.is_empty() {
         text.push_str(&format!("\n{}", progress::report_section("Rules")));
         text.push_str(&render_rule_copies(&report.rules));
-    }
-    if report.reconciled {
-        text.push_str("  Project context reconciled\n");
     }
     text
 }
@@ -306,10 +296,11 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
             let lost = match (&one.blocked, one.route) {
                 (Some(reason), _) => Some(format!("blocked: {reason}")),
                 (None, CompatibilityRoute::Native) => None,
-                (None, route) if one.kind != uze_application::CapabilityKind::Instruction => Some(
-                    format!("{}: {}", route_word(route), leading_sentence(&one.evidence)),
-                ),
-                _ => None,
+                (None, route) => Some(format!(
+                    "{}: {}",
+                    route_word(route),
+                    leading_sentence(&one.evidence)
+                )),
             };
             if let Some(lost) = lost {
                 notes.push_str(&progress::change(
@@ -393,9 +384,6 @@ impl Reach {
         match delivered {
             None => Reach::Unsupported,
             Some(one) if one.blocked.is_some() => Reach::Blocked,
-            Some(one) if one.kind == uze_application::CapabilityKind::Instruction => {
-                Reach::Delivered
-            }
             Some(one) => match one.route {
                 CompatibilityRoute::Native => Reach::Delivered,
                 CompatibilityRoute::Adaptable | CompatibilityRoute::Degraded => Reach::Adapted,
@@ -555,7 +543,6 @@ fn harness_rows(
 pub(crate) fn capability_word(kind: uze_application::CapabilityKind) -> &'static str {
     use uze_application::CapabilityKind;
     match kind {
-        CapabilityKind::Instruction => "instruction",
         CapabilityKind::AgentSkill => "skill",
         CapabilityKind::Mcp => "mcp",
         CapabilityKind::Agent => "agent",
@@ -589,13 +576,6 @@ pub(crate) fn render_effective_delivery(
             .exposed_name
             .as_deref()
             .unwrap_or(capability.identity.as_str());
-        if capability.kind == uze_application::CapabilityKind::Instruction {
-            out.push_str(&format!(
-                "  {kind:<10}  {name}  {}\n",
-                progress::label("through the project context")
-            ));
-            continue;
-        }
         if let Some(reason) = &capability.blocked {
             out.push_str(&format!(
                 "  {kind:<10}  {name}  {}\n",
@@ -1078,7 +1058,6 @@ mod tests {
                 revision: revision.to_owned(),
                 deliveries: Vec::new(),
             }],
-            reconciled: false,
             rules: Vec::new(),
         }
     }

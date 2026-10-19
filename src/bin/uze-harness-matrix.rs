@@ -27,7 +27,7 @@ use uze_core::{
     acquisition::{PackageSource, Provenance, ResolvedSource},
     capability::Resource,
     capability::{Capability, CapabilityKind},
-    integration::{ContextDelivery, IntegrationPort, SessionContinuity},
+    integration::{IntegrationPort, SessionContinuity},
     router::CompatibilityRoute,
     store::StoredPackage,
 };
@@ -567,13 +567,9 @@ fn harness_tab(integration: &dyn IntegrationPort, fixtures: &Fixtures) -> String
         route_of(integration, &fixtures.hooks),
         why(integration, &fixtures.hooks),
     ));
-    let context = match integration.context_delivery() {
-        ContextDelivery::Bridge { file_name } => {
-            format!("read through the `{file_name}` bridge (`@AGENTS.md`)")
-        }
-        _ => "read natively".to_owned(),
-    };
-    out.push_str(&format!("| Project `AGENTS.md` | {NATIVE} | {context} |\n"));
+    out.push_str(&format!(
+        "| Project `AGENTS.md` | {NATIVE} | read natively |\n"
+    ));
     out.push_str(&format!(
         "| Workspace: resume a relaunched agent | {} | |\n",
         continuity_symbol(integration)
@@ -856,10 +852,7 @@ fn matrix_json() -> String {
     let mut rows = Vec::new();
     for harness in harnesses() {
         let integration = harness.integration.as_ref();
-        let context = match integration.context_delivery() {
-            ContextDelivery::Bridge { .. } => "bridge",
-            _ => "native",
-        };
+        let context = "native";
         let package = package_route(integration).map(route_name).unwrap_or("none");
         rows.push(format!(
             "    {{\n      \"name\": {},\n      \"icon\": {},\n      \"url\": {},\n      \"context\": \"{context}\",\n      \"skills\": \"{}\",\n      \"mcp\": \"{}\",\n      \"agents\": \"{}\",\n      \"hooks\": \"{}\",\n      \"session\": \"{}\",\n      \"package\": \"{package}\"\n    }}",

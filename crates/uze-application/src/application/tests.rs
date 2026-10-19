@@ -2617,7 +2617,7 @@ fn a_harness_reading_the_project_itself_declares_native_context_support() {
 }
 
 #[test]
-fn a_runtime_projection_outranks_the_persistent_bridge() {
+fn a_runtime_projection_outranks_reading_the_project_itself() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
@@ -2633,7 +2633,7 @@ fn a_runtime_projection_outranks_the_persistent_bridge() {
 }
 
 #[test]
-fn a_shadowed_shim_is_reported_instead_of_the_projection_it_defeats() {
+fn a_shadowed_shim_is_reported_for_what_only_the_projection_carries() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
@@ -2643,13 +2643,14 @@ fn a_shadowed_shim_is_reported_instead_of_the_projection_it_defeats() {
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, false);
-    assert_eq!(support.instructions, ContextMechanism::ShimMissing);
+    // `AGENTS.md` is read by the harness itself, shim or not.
+    assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::ShimMissing);
     assert_eq!(support.project_agents, ContextMechanism::ShimMissing);
 }
 
 #[test]
-fn a_bridge_without_a_runtime_projection_stays_a_bridge() {
+fn a_harness_once_bridged_reads_agents_md_itself_without_a_projection() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
@@ -2659,7 +2660,7 @@ fn a_bridge_without_a_runtime_projection_stays_a_bridge() {
         projects_at_runtime: false,
     };
     let support = HarnessContextSupport::declared(&integration, true);
-    assert_eq!(support.instructions, ContextMechanism::Bridge);
+    assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::Unsupported);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
 }

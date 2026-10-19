@@ -118,6 +118,14 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             rules,
             format,
         } => {
+            if instructions {
+                return Err(uze_application::UzeError::MarketplaceScaffold(
+                    "`--instructions` is gone: a plugin's AGENTS.md is no longer delivered. \
+                     A plugin speaks to every agent of a project that declares it through a \
+                     rule with `trigger: always_on`; scaffold one with `--rules`"
+                        .to_owned(),
+                ));
+            }
             let report = with_spinner(&format!("Scaffolding plugin {name}..."), || {
                 app.project().create_plugin(
                     &market,
@@ -128,7 +136,6 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         hook,
                         mcp,
                         agent,
-                        instructions,
                         rules,
                     },
                 )

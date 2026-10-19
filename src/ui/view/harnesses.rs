@@ -416,10 +416,6 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
-        ContextMechanism::Bridge => (
-            format!("{} Bridged", theme::glyph(Symbol::MarkNative)),
-            theme::fg(Token::StateSuccess),
-        ),
         ContextMechanism::ShimMissing => (
             format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention)),
             theme::fg(Token::StateWarning),
@@ -567,16 +563,19 @@ mod tests {
 
     #[test]
     fn each_resource_is_answered_independently() {
-        // A harness may discover `.agents/` on its own while still needing
-        // a bridge file for `AGENTS.md`.
-        let rows = context_rows(&support(ContextMechanism::Bridge, ContextMechanism::Native));
+        // A harness may read `AGENTS.md` itself while `.agents/` reaches
+        // it only through the workspace.
+        let rows = context_rows(&support(
+            ContextMechanism::Native,
+            ContextMechanism::ShimMissing,
+        ));
         assert_eq!(
             rows[0].1,
-            format!("{} Bridged", theme::glyph(Symbol::MarkNative))
+            format!("{} Native", theme::glyph(Symbol::MarkNative))
         );
         assert_eq!(
             rows[1].1,
-            format!("{} Native", theme::glyph(Symbol::MarkNative))
+            format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention))
         );
     }
 

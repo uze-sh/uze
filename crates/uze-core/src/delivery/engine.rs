@@ -41,7 +41,6 @@ pub fn package_resources_at(id: &PackageId, root: &Path) -> Result<Vec<Resource>
             ));
         }
     }
-    resources.extend(instruction_resources(id, root)?);
     resources.extend(mcp_resources(id, root)?);
     resources.extend(agent_resources(id, root)?);
     resources.extend(hook_resources(id, root)?);
@@ -110,26 +109,6 @@ fn agent_resources(id: &PackageId, package_root: &Path) -> Result<Vec<Resource>>
         ))
     })
     .collect()
-}
-
-/// Discovers a package's optional root-level `AGENTS.md`. A package does not ship a whole project instructions file; it
-/// ships the portable content a project's own `AGENTS.md` later composes,
-/// one delimited region per contributing package.
-fn instruction_resources(id: &PackageId, package_root: &Path) -> Result<Vec<Resource>> {
-    let path = package_root.join("AGENTS.md");
-    if !path.is_file() {
-        return Ok(Vec::new());
-    }
-    let payload = read_file(&path)?;
-    Ok(vec![Resource::from_package(
-        id.clone(),
-        package_root.to_path_buf(),
-        Capability {
-            kind: CapabilityKind::Instruction,
-            path,
-            payload,
-        },
-    )])
 }
 
 /// Discovers a package's optional root-level `mcp.json` (Agent Plugins 1.0
@@ -235,12 +214,28 @@ fn read_file(path: &Path) -> Result<Vec<u8>> {
 /// A package's `commands/` directory is no longer a canonical surface
 /// (ADR-030): the same explicit-action semantics are carried by a Skill's
 /// `invoke:` policy. Discovery below covers only the canonical surfaces
-/// that remain: `skills/`, `AGENTS.md`, `mcp.json`.
+/// that remain: `skills/`, `agents/`, `mcp.json`, `hooks.json`.
 #[cfg(test)]
 mod discovery_tests {
     use super::*;
     use Path;
     use std::fs;
+
+    #[test]
+    fn a_root_agents_md_is_not_a_capability() {
+        // A plugin speaks to every agent of a declaring project through an
+        // `always_on` rule; the root `AGENTS.md` is never delivered.
+        let root = uze_testkit::temp::scratch("agents-md-ignored");
+        let pkg = root.join("pkg");
+        fs::create_dir_all(pkg.join("skills/review")).unwrap();
+        fs::write(pkg.join("AGENTS.md"), "Use tabs.\n").unwrap();
+        fs::write(pkg.join("skills/review/SKILL.md"), "skill").unwrap();
+        let id = PackageId::from_plugin_name("demo", Path::new("plugin.json")).unwrap();
+        let resources = package_resources_at(&id, &pkg).unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].capability.kind, CapabilityKind::AgentSkill);
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn a_commands_directory_is_not_a_canonical_surface_anymore() {

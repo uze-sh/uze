@@ -12,7 +12,6 @@
 
 use std::{fs, path::Path, path::PathBuf};
 
-use crate::shared::plan::unsupported;
 use uze_core::capability::agent::AgentDocument;
 use uze_core::{
     Result, UzeError,
@@ -438,9 +437,6 @@ impl IntegrationPort for CodexIntegration {
             CapabilityKind::Mcp => self.mcp_exposure_plan(resource),
             CapabilityKind::Agent => self.agent_exposure_plan(resource),
             CapabilityKind::Hook => self.hook_exposure_plan(resource),
-            CapabilityKind::Instruction => unsupported(
-                "Codex attachment is only modeled for Agent Skills, Agents, MCP servers, and portable Hooks.",
-            ),
         }
     }
 

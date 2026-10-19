@@ -356,11 +356,6 @@ impl Health<'_> {
     pub fn status(&self, project_root: &std::path::Path) -> Result<StatusReport> {
         let context = self.0.context().inspect(project_root)?;
         let installed = self.0.store.package_ids()?.len();
-        let contributing = context
-            .contributions
-            .iter()
-            .map(|contribution| contribution.package_id.clone())
-            .collect();
         let agents_md = context
             .canonical
             .join(uze_core::project_context::AGENTS_MD_FILE_NAME);
@@ -404,32 +399,7 @@ impl Health<'_> {
                 }
             })
             .collect();
-        let mut issues: Vec<String> = context
-            .contributions
-            .iter()
-            .filter(|contribution| !matches!(contribution.state, AttachmentState::Matched))
-            .map(|contribution| format!("{}: {:?}", contribution.package_id, contribution.state))
-            .chain(
-                context
-                    .harnesses
-                    .iter()
-                    .filter_map(|harness| match &harness.delivery {
-                        HarnessContextDelivery::Bridge {
-                            needed: true,
-                            state,
-                        } if *state != AttachmentState::Matched => {
-                            Some(format!("{}: bridge {:?}", harness.display_name, state))
-                        }
-                        _ => None,
-                    }),
-            )
-            .chain(
-                context
-                    .malformed_regions
-                    .iter()
-                    .map(|region| format!("{region}: malformed")),
-            )
-            .collect();
+        let mut issues: Vec<String> = Vec::new();
         // Read out of the sources the inspection already observed rather
         // than asked of the filesystem again: `status` and `agent context
         // inspect` must never disagree about whether the file is there.
@@ -443,12 +413,10 @@ impl Health<'_> {
                         .canonical
                         .join(uze_core::project_context::AGENTS_MD_FILE_NAME),
                     exists: false,
-                    managed_regions: 0,
                 },
                 |source| InstructionsFile {
                     path: source.path.clone(),
                     exists: source.exists,
-                    managed_regions: source.managed_region_identities.len(),
                 },
             );
         let project_lock = self.0.project().lock_status(project_root);
@@ -477,7 +445,6 @@ impl Health<'_> {
             portability: context.portability,
             harnesses,
             packages_installed: installed,
-            packages_contributing_here: contributing,
             project_lock,
             issues,
             held_back: held_back_notes(self.0, None),

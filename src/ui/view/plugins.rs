@@ -1340,7 +1340,6 @@ fn kind_key(kind: CapabilityKind) -> &'static str {
         CapabilityKind::Agent => "agents",
         CapabilityKind::Hook => "hooks",
         CapabilityKind::Mcp => "mcp",
-        CapabilityKind::Instruction => "instructions",
     }
 }
 
@@ -1351,7 +1350,6 @@ fn resource_kind_label(kind: CapabilityKind) -> &'static str {
         CapabilityKind::Agent => "agent",
         CapabilityKind::Hook => "hook",
         CapabilityKind::Mcp => "mcp server",
-        CapabilityKind::Instruction => "instructions",
     }
 }
 
@@ -1375,9 +1373,7 @@ fn preview_markdown(resource: &PluginCapability) -> String {
     let text = &resource.preview.text;
     match resource.kind {
         CapabilityKind::Mcp | CapabilityKind::Hook => format!("```json\n{text}\n```\n"),
-        CapabilityKind::AgentSkill | CapabilityKind::Agent | CapabilityKind::Instruction => {
-            text.clone()
-        }
+        CapabilityKind::AgentSkill | CapabilityKind::Agent => text.clone(),
     }
 }
 

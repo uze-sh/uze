@@ -741,7 +741,6 @@ fn plugin_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
                     String::new()
                 }
             };
-            let instructions = installed(if plugin.contributing { "yes" } else { "no" });
             let commit = installed(plugin.commit.as_deref().map_or("", short_commit));
             lines.push(SectionLine {
                 spans: table.row(vec![
@@ -751,8 +750,7 @@ fn plugin_lines(project: &ProjectSpace, room: u16) -> Vec<SectionLine> {
                         PLUGINS[1].width,
                         Token::TextMuted,
                     ),
-                    cell(&instructions, PLUGINS[2].width, Token::TextSecondary),
-                    cell(&commit, PLUGINS[3].width, Token::TextMuted),
+                    cell(&commit, PLUGINS[2].width, Token::TextMuted),
                     Span::styled(word, theme::fg(tone)),
                 ]),
                 row: Some(index),
@@ -2163,7 +2161,7 @@ fn worktree_tone(state: WorktreeState) -> Token {
 
 /// The Plugins table: the plugin, where it comes from, whether
 /// `AGENTS.md` carries its instructions, its commit, and its state.
-const PLUGINS: [Column; 5] = [
+const PLUGINS: [Column; 4] = [
     Column {
         heading: "plugin",
         width: 22,
@@ -2173,11 +2171,6 @@ const PLUGINS: [Column; 5] = [
         heading: "marketplace",
         width: 14,
         keep: 3,
-    },
-    Column {
-        heading: "AGENTS.md",
-        width: 11,
-        keep: 2,
     },
     Column {
         heading: "commit",
@@ -2669,16 +2662,6 @@ impl DrawerLines {
             },
         );
         if plugin.installed {
-            self.pair(
-                "AGENTS.md",
-                if plugin.contributing {
-                    "carries its instructions"
-                } else {
-                    "no instructions of its own"
-                }
-                .to_owned(),
-                Token::TextPrimary,
-            );
             self.pair(
                 "commit",
                 plugin.commit.clone().unwrap_or_else(|| "—".to_owned()),

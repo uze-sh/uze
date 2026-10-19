@@ -74,12 +74,10 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
         ResourceDelivery::Projected => (State::Ready, "loaded (shim)"),
-        ResourceDelivery::Bridged => (State::Ready, "loaded (bridge)"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
             UndeliveredReason::ShimMissing => (State::Warning, "run uze setup"),
-            UndeliveredReason::Bridge(_) => (State::Warning, "not loaded"),
             UndeliveredReason::Unsupported => (State::Error, "not supported"),
         },
     }
@@ -181,12 +179,11 @@ fn capability_state(support: &AgentSupport, kind: CapabilityKind) -> CapabilityS
 
 /// The order a reader meets a plugin's resources in: what they invoke
 /// first, what runs on its own after.
-const RESOURCE_ORDER: [CapabilityKind; 5] = [
+const RESOURCE_ORDER: [CapabilityKind; 4] = [
     CapabilityKind::AgentSkill,
     CapabilityKind::Agent,
     CapabilityKind::Hook,
     CapabilityKind::Mcp,
-    CapabilityKind::Instruction,
 ];
 
 /// A plugin's resources by kind, in reading order, leaving out the kinds
@@ -216,7 +213,6 @@ pub(crate) fn resource_groups(
 
 pub(crate) fn capability_label(kind: CapabilityKind) -> &'static str {
     match kind {
-        CapabilityKind::Instruction => "Instructions",
         CapabilityKind::AgentSkill => "Skills",
         CapabilityKind::Mcp => "MCP",
         CapabilityKind::Agent => "Agents",
@@ -230,7 +226,7 @@ mod tests {
     use uze_application::application::{
         AgentContextStatus, ContextMechanism, HarnessContextSupport, HarnessHealth,
     };
-    use uze_core::integration::{AttachmentState, HarnessDetection, PublicationStatus};
+    use uze_core::integration::{HarnessDetection, PublicationStatus};
 
     fn health(present: bool) -> HarnessHealth {
         HarnessHealth {
@@ -353,29 +349,14 @@ mod tests {
     }
 
     #[test]
-    fn a_native_reader_and_a_matched_bridge_both_read_as_delivered() {
-        let native = support(true, ResourceDelivery::Native, ResourceDelivery::Native);
-        assert_eq!(native.instructions_label, "native");
-        assert!(matches!(native.instructions, State::Ready));
-
-        let bridged = support(
+    fn a_native_reader_reads_as_delivered_whatever_the_agents_directory_gets() {
+        let native = support(
             true,
-            ResourceDelivery::Bridged,
+            ResourceDelivery::Native,
             ResourceDelivery::Undelivered(UndeliveredReason::Unsupported),
         );
-        assert_eq!(bridged.instructions_label, "loaded (bridge)");
-        assert!(matches!(bridged.instructions, State::Ready));
-        assert_eq!(bridged.project_skills_label, "not supported");
-    }
-
-    #[test]
-    fn a_broken_bridge_is_a_warning_naming_the_missing_delivery() {
-        let support = support(
-            true,
-            ResourceDelivery::Undelivered(UndeliveredReason::Bridge(AttachmentState::Missing)),
-            ResourceDelivery::AbsentFromProject,
-        );
-        assert_eq!(support.instructions_label, "not loaded");
-        assert!(matches!(support.instructions, State::Warning));
+        assert_eq!(native.instructions_label, "native");
+        assert!(matches!(native.instructions, State::Ready));
+        assert_eq!(native.project_skills_label, "not supported");
     }
 }

@@ -1,5 +1,8 @@
 //! A project's portable instruction context: the shared `AGENTS.md`, the
-//! regions UZE manages in it, and the bridges projected from it.
+//! harnesses' own files beside it, and how each harness reads it.
+//!
+//! The file is the operator's. Nothing here writes it, except to take out
+//! what an earlier release left there (`retired_regions`).
 
 use std::{
     collections::BTreeSet,
@@ -8,48 +11,21 @@ use std::{
 
 use uze_core::{
     Result, UzeError,
-    context::{self as instruction_context, InstructionContribution},
-    integration::{AttachmentState, ContextDelivery},
-    manifest,
+    integration::ContextDelivery,
     project_context::{AGENTS_MD_FILE_NAME, AgentsMdGuard},
     text_region,
 };
 
-use super::retired_regions::{self, plan_action_for_region};
+use super::retired_regions;
 
 use super::services::Context;
 use super::*;
 
-/// `PERSISTENT CONTEXT DELIVERY STRATEGY`: the region a harness that reads
-/// `AGENTS.md` only through a bridge gets in its own native file inside the
-/// project (see `docs/capabilities/context-manager.md`). Which harness needs
-/// one is each integration's own `context_delivery()` declaration; this is
-/// only the bridge protocol they share.
-///
-/// Kept alongside the `EXPERIMENTAL RUNTIME DELIVERY STRATEGY` (the PATH
-/// shim): whether runtime projection ever replaces this bridge waits on an
-/// empirical interactive comparison, and neither is folded into the other
-/// before it.
-///
-/// Package-independent: the bridge serves however many packages contribute
-/// to `AGENTS.md` and is owned by none of them.
-pub(super) const INSTRUCTION_BRIDGE_IDENTITY: &str = "instruction-bridge";
-
-/// The import syntax a bridge-needing harness uses to pull another Markdown
-/// file into its own native instructions file.
-pub(super) const INSTRUCTION_BRIDGE_CONTENT: &str = "@AGENTS.md";
-
 impl Context<'_> {
     #[tracing::instrument(name = "context.inspect", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn inspect(&self, project_root: &Path) -> Result<ProjectContextStatus> {
-        let ContextScope {
-            canonical,
-            agents_md: agents_md_path,
-            contributions,
-            ..
-        } = self.scope(project_root)?;
-        let observation = instruction_context::inspect_agents_md(&agents_md_path, &contributions);
-        let agents_md_exists = agents_md_path.is_file();
+        let canonical = self.scope(project_root)?;
+        let agents_md_exists = canonical.join(AGENTS_MD_FILE_NAME).is_file();
 
         // The observed project files are the shared canonical `AGENTS.md`
         // plus whatever each registered integration declares through
@@ -93,12 +69,7 @@ impl Context<'_> {
             .integrations
             .iter()
             .filter_map(|integration| {
-                let delivery = self.harness_context_delivery(
-                    integration.as_ref(),
-                    project_root,
-                    &canonical,
-                    observation.has_any_matched_contribution(),
-                )?;
+                let delivery = self.harness_context_delivery(integration.as_ref(), project_root)?;
                 Some(HarnessContextStatus {
                     integration: integration.id().to_owned(),
                     display_name: integration.display_name().to_owned(),
@@ -107,24 +78,15 @@ impl Context<'_> {
             })
             .collect::<Vec<_>>();
 
-        let portability = derive_portability(agents_md_exists, &sources, &harnesses);
+        let portability = derive_portability(agents_md_exists, &sources);
         let warnings = derive_warnings(agents_md_exists, &sources);
+        let retired_regions = self.retired_regions(&canonical);
 
         Ok(ProjectContextStatus {
             root: project_root.to_path_buf(),
             canonical,
             sources,
-            contributions: observation
-                .packages
-                .into_iter()
-                .map(|(package_id, inspection)| PackageInstructionStatus {
-                    package_id: package_id.as_str().to_owned(),
-                    state: inspection.state,
-                    reason: inspection.reason,
-                })
-                .collect(),
-            orphaned_regions: observation.orphaned_regions,
-            malformed_regions: observation.malformed_regions,
+            retired_regions,
             harnesses,
             portability,
             warnings,
@@ -133,121 +95,42 @@ impl Context<'_> {
 
     #[tracing::instrument(name = "context.plan", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn plan(&self, project_root: &Path) -> Result<ContextPlan> {
-        let ContextScope {
-            canonical,
-            agents_md,
-            contributions,
-            ..
-        } = self.scope(project_root)?;
-        let agents_md_plan = instruction_context::plan_agents_md(&agents_md, &contributions);
-
-        // Bridge planning asks the question `reconcile` asks — would
-        // AGENTS.md end up with a matched contribution — read from the plan.
-        let would_have_contribution = agents_md_plan.contributions.iter().any(|plan| {
-            matches!(
-                plan.action,
-                instruction_context::PlannedAction::Attach
-                    | instruction_context::PlannedAction::NoChange
-            )
-        });
-
-        let bridges = self
-            .detected_bridges(&canonical)
-            .map(|(integration, bridge_file)| {
-                let state = text_region::inspect(
-                    &bridge_file,
-                    INSTRUCTION_BRIDGE_IDENTITY,
-                    INSTRUCTION_BRIDGE_CONTENT,
-                )
-                .state;
-                BridgePlan {
-                    integration: integration.id().to_owned(),
-                    file: bridge_file,
-                    action: plan_action_for_region(would_have_contribution, state, "bridge"),
-                }
-            })
-            .collect();
-
-        let retired_regions = retired_regions::applies_at(&canonical)
-            .then(|| retired_regions::plan(&agents_md))
-            .flatten();
-
+        let canonical = self.scope(project_root)?;
         Ok(ContextPlan {
-            agents_md,
-            agents_md_plan,
-            retired_regions,
-            bridges,
+            agents_md: canonical.join(AGENTS_MD_FILE_NAME),
+            retired_regions: self.retired_regions(&canonical),
         })
     }
 
+    /// Takes out what an earlier release wrote into the project's files,
+    /// in a main working tree. Nothing is written into them otherwise.
     #[tracing::instrument(name = "context.reconcile", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn reconcile(&self, project_root: &Path) -> Result<ContextReconciliationReport> {
-        let ContextScope {
-            canonical,
-            agents_md,
-            contributions,
-            unreadable_manifest,
-        } = self.scope(project_root)?;
-        // A declaration that does not parse says nothing about which
-        // regions are owed, and taking them back on that silence would
-        // cost the project its context over a typo.
-        if let Some(error) = unreadable_manifest {
-            return Err(error);
-        }
-        // A whole-file read-modify-write, so one pass at a time per project.
-        let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
-        let agents_md_report = instruction_context::reconcile_agents_md(&agents_md, &contributions);
-
+        let canonical = self.scope(project_root)?;
+        let files = self.0.retired_region_files(&canonical);
         let retired_regions = if retired_regions::applies_at(&canonical) {
-            retired_regions::remove(&agents_md)?
+            // A whole-file read-modify-write, so one pass at a time per project.
+            let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
+            retired_regions::remove(&files)?
         } else {
             None
         };
-
-        let bridges = self
-            .detected_bridges(&canonical)
-            .map(|(integration, bridge_file)| {
-                let inspection = text_region::reconcile(
-                    &bridge_file,
-                    INSTRUCTION_BRIDGE_IDENTITY,
-                    INSTRUCTION_BRIDGE_CONTENT,
-                    agents_md_report.has_any_matched_contribution(),
-                );
-                BridgeStatus {
-                    integration: integration.id().to_owned(),
-                    file: bridge_file,
-                    state: inspection.state,
-                    reason: inspection.reason,
-                }
-            })
-            .collect();
-
         Ok(ContextReconciliationReport {
-            agents_md,
-            packages: agents_md_report
-                .packages
-                .into_iter()
-                .map(|(package_id, inspection)| PackageInstructionStatus {
-                    package_id: package_id.as_str().to_owned(),
-                    state: inspection.state,
-                    reason: inspection.reason,
-                })
-                .collect(),
-            removed_orphans: agents_md_report.removed_orphans,
-            blocked_orphans: agents_md_report.blocked_orphans,
-            failed: agents_md_report
-                .failed
-                .into_iter()
-                .map(|(package_id, reason)| (package_id.as_str().to_owned(), reason))
-                .collect(),
+            agents_md: files.agents_md,
             retired_regions,
-            bridges,
         })
     }
 
-    /// The project `project_root` belongs to, its shared instruction file,
-    /// and what the installed packages contribute to it.
-    fn scope(&self, project_root: &Path) -> Result<ContextScope> {
+    /// What the cleanup would take out at `canonical`, or `None` in a
+    /// linked worktree or when nothing is left to take.
+    fn retired_regions(&self, canonical: &Path) -> Option<RetiredRegionsPlan> {
+        retired_regions::applies_at(canonical)
+            .then(|| retired_regions::plan(&self.0.retired_region_files(canonical)))
+            .flatten()
+    }
+
+    /// The project `project_root` belongs to.
+    fn scope(&self, project_root: &Path) -> Result<PathBuf> {
         if !project_root.is_dir() {
             return Err(UzeError::NotDirectory(project_root.to_path_buf()));
         }
@@ -261,36 +144,7 @@ impl Context<'_> {
                     hint: "context is a project's; stand inside one".to_owned(),
                 }
             })?;
-        // Read anyway, as declaring nothing, so `status` still answers
-        // about a project whose `agents.yaml` does not parse; only a write
-        // refuses it.
-        let (manifest, unreadable_manifest) = match manifest::load(&canonical) {
-            Ok(manifest) => (manifest.unwrap_or_default(), None),
-            Err(error) => (Default::default(), Some(error)),
-        };
-        Ok(ContextScope {
-            agents_md: canonical.join(AGENTS_MD_FILE_NAME),
-            contributions: self.instruction_contributions(&manifest)?,
-            canonical,
-            unreadable_manifest,
-        })
-    }
-
-    /// Every detected harness that reads a bridge, with the bridge file it
-    /// reads in this project.
-    fn detected_bridges<'s>(
-        &'s self,
-        canonical: &'s Path,
-    ) -> impl Iterator<Item = (&'s dyn IntegrationPort, PathBuf)> + 's {
-        self.0.integrations.iter().filter_map(move |integration| {
-            let ContextDelivery::Bridge { file_name } = integration.context_delivery() else {
-                return None;
-            };
-            self.0
-                .detect_cached(integration.as_ref())
-                .present
-                .then(|| (integration.as_ref(), canonical.join(file_name)))
-        })
+        Ok(canonical)
     }
 
     /// How one harness receives this project's `AGENTS.md`, or `None` for a
@@ -300,77 +154,27 @@ impl Context<'_> {
         &self,
         integration: &dyn IntegrationPort,
         project_root: &Path,
-        canonical: &Path,
-        bridge_needed: bool,
     ) -> Option<HarnessContextDelivery> {
-        let file_name = match integration.context_delivery() {
-            ContextDelivery::None => return None,
+        match integration.context_delivery() {
+            ContextDelivery::None => None,
             _ if !self.0.detect_cached(integration).present => {
-                return Some(HarnessContextDelivery::NotDetected);
+                Some(HarnessContextDelivery::NotDetected)
             }
-            ContextDelivery::Native { .. } => return Some(HarnessContextDelivery::Native),
-            ContextDelivery::Bridge { file_name } => file_name,
-        };
-        let projection = self.0.runtime_projection_at(integration, project_root);
-        if ContextMechanism::for_instructions(integration, projection)
-            == ContextMechanism::RuntimeShim
-        {
-            return Some(HarnessContextDelivery::Projected);
-        }
-        let state = text_region::inspect(
-            &canonical.join(file_name),
-            INSTRUCTION_BRIDGE_IDENTITY,
-            INSTRUCTION_BRIDGE_CONTENT,
-        )
-        .state;
-        Some(HarnessContextDelivery::Bridge {
-            needed: bridge_needed,
-            state,
-        })
-    }
-
-    /// The instructions of the installed packages this project declares in
-    /// `agents.yaml`. The Store is the machine's, so a package installed for
-    /// another project, or for the machine alone, is in it too; composing
-    /// those in would make a versioned `AGENTS.md` say whatever the machine
-    /// that last reconciled it happened to hold.
-    fn instruction_contributions(
-        &self,
-        manifest: &manifest::ProjectManifest,
-    ) -> Result<Vec<InstructionContribution>> {
-        let declared: BTreeSet<String> = manifest
-            .declared_plugins()
-            .map(|(plugin, marketplace)| format!("{plugin}@{marketplace}"))
-            .collect();
-        let mut contributions = Vec::new();
-        for package_id in self.0.store.package_ids()? {
-            if !declared.contains(package_id.as_str()) {
-                continue;
-            }
-            let package = self.0.store.package(&package_id)?;
-            let resources = uze_core::engine::package_resources_at(&package_id, &package.root)?;
-            for resource in resources {
-                if resource.capability.kind != CapabilityKind::Instruction {
-                    continue;
-                }
-                contributions.push(InstructionContribution {
-                    package_id: package_id.clone(),
-                    content: String::from_utf8_lossy(&resource.capability.payload).into_owned(),
-                });
+            ContextDelivery::Native { .. } => Some(HarnessContextDelivery::Native),
+            ContextDelivery::Bridge { .. } => {
+                let projection = self.0.runtime_projection_at(integration, project_root);
+                Some(
+                    if ContextMechanism::for_instructions(integration, projection)
+                        == ContextMechanism::RuntimeShim
+                    {
+                        HarnessContextDelivery::Projected
+                    } else {
+                        HarnessContextDelivery::ReadsNatively
+                    },
+                )
             }
         }
-        Ok(contributions)
     }
-}
-
-/// Where one context read starts: the resolved project, its shared
-/// instruction file, and the installed packages' contributions to it.
-struct ContextScope {
-    canonical: PathBuf,
-    agents_md: PathBuf,
-    contributions: Vec<InstructionContribution>,
-    /// Why `agents.yaml` could not be read, when it could not.
-    unreadable_manifest: Option<UzeError>,
 }
 
 /// A vendor-specific instructions file carrying content of its own.
@@ -381,38 +185,21 @@ fn carries_vendor_content(source: &InstructionSourceObservation) -> bool {
 fn derive_portability(
     agents_md_exists: bool,
     sources: &[InstructionSourceObservation],
-    harnesses: &[HarnessContextStatus],
 ) -> Portability {
-    if !agents_md_exists {
-        let vendor_files: Vec<PathBuf> = sources
-            .iter()
-            .filter(|source| carries_vendor_content(source))
-            .map(|source| source.path.clone())
-            .collect();
-        return if vendor_files.is_empty() {
-            Portability::NoContext
-        } else {
-            Portability::VendorLocked {
-                files: vendor_files,
-            }
-        };
+    if agents_md_exists {
+        return Portability::Portable;
     }
-    let gaps: Vec<String> = harnesses
+    let vendor_files: Vec<PathBuf> = sources
         .iter()
-        .filter_map(|harness| match &harness.delivery {
-            HarnessContextDelivery::Bridge {
-                needed: true,
-                state,
-            } if *state != AttachmentState::Matched => {
-                Some(format!("{}: bridge {:?}", harness.integration, state))
-            }
-            _ => None,
-        })
+        .filter(|source| carries_vendor_content(source))
+        .map(|source| source.path.clone())
         .collect();
-    if gaps.is_empty() {
-        Portability::Portable
+    if vendor_files.is_empty() {
+        Portability::NoContext
     } else {
-        Portability::PartiallyPortable { gaps }
+        Portability::VendorLocked {
+            files: vendor_files,
+        }
     }
 }
 
@@ -440,8 +227,8 @@ fn derive_warnings(
     if agents_md_exists {
         for source in &vendor_specific_with_content {
             warnings.push(format!(
-                "{} carries content beyond the shared bridge — this is expected and supported \
-                 (vendor-specific instructions alongside portable ones), not a gap.",
+                "{} carries instructions of its own beside AGENTS.md — this is expected and \
+                 supported (vendor-specific instructions alongside portable ones), not a gap.",
                 source.file_name
             ));
         }
