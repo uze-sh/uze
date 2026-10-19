@@ -155,11 +155,37 @@ fn link(dir: &Path, link: &Path) -> std::path::PathBuf {
         }
         uze_platform::fs::symlink(dir, link)
     })();
+    if let Some(parent) = link.parent() {
+        sweep_dangling_links(parent);
+    }
     match made {
         Ok(()) => link.to_path_buf(),
         Err(error) => {
             tracing::warn!(link = %link.display(), %error, "the agent's context could not be linked beside its checkout");
             dir.to_path_buf()
+        }
+    }
+}
+
+/// Context links beside `link` that no longer reach anything: an agent's
+/// runtime directory swept, a slot's agent gone. Only links this channel
+/// names (`<id>~uze` beside a slot, anything in a `~uze` directory) are
+/// taken, and a link that still resolves is kept, since another agent may be
+/// reading through it.
+fn sweep_dangling_links(parent: &Path) {
+    let in_link_directory = parent.file_name().is_some_and(|name| name == "~uze");
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ours = in_link_directory || entry.file_name().to_string_lossy().ends_with("~uze");
+        let dangling = path
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+            && !path.exists();
+        if ours && dangling {
+            let _ = uze_platform::fs::remove_link(&path);
         }
     }
 }
@@ -269,6 +295,49 @@ mod tests {
         assert_eq!(
             fs::canonicalize(&link).unwrap(),
             fs::canonicalize(&dir).unwrap()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // A dangling link is made the Unix way here; Windows makes a junction
+    // to a directory, which `remove_link` takes the same.
+    #[cfg(unix)]
+    #[test]
+    fn a_launch_takes_back_the_context_links_that_no_longer_reach_anything() {
+        let root = uze_testkit::temp::scratch("antigravity-agent-context-sweep");
+        let worktrees = root.join("repo").join(".worktrees");
+        fs::create_dir_all(worktrees.join("~uze")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone-a"), worktrees.join("old~uze")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone-b"), worktrees.join("~uze").join("old"))
+            .unwrap();
+        let live = root.join("live");
+        fs::create_dir_all(&live).unwrap();
+        std::os::unix::fs::symlink(&live, worktrees.join("other~uze")).unwrap();
+        std::os::unix::fs::symlink(root.join("gone-c"), worktrees.join("someone-elses")).unwrap();
+
+        let dir = root.join("agent");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("context.md");
+        deliver(&context(&dir, &file, &worktrees.join("ab12cd~uze"))).unwrap();
+        deliver(&context(
+            &dir,
+            &file,
+            &worktrees.join("~uze").join("agent-1"),
+        ))
+        .unwrap();
+
+        assert!(worktrees.join("old~uze").symlink_metadata().is_err());
+        assert!(
+            worktrees
+                .join("~uze")
+                .join("old")
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(worktrees.join("other~uze").exists(), "a live link is kept");
+        assert!(
+            worktrees.join("someone-elses").symlink_metadata().is_ok(),
+            "a link this channel never names is not its to take"
         );
         let _ = fs::remove_dir_all(root);
     }
