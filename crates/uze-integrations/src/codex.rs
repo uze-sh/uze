@@ -45,7 +45,7 @@ mod session;
 mod skills;
 mod trust;
 
-pub(crate) use hooks::HOOKS;
+pub(crate) use hooks::{HOOKS, RULES};
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;
@@ -207,6 +207,18 @@ impl IntegrationPort for CodexIntegration {
             AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
             AgentsDirectoryResource::Agents => ProjectResourceRoute::RuntimeProjection,
         }
+    }
+
+    fn withheld_paths(&self, package: &StoredPackage) -> Vec<uze_core::integration::WithheldPath> {
+        crate::rules::withheld(package).into_iter().collect()
+    }
+
+    fn rules_route(&self) -> uze_core::integration::RulesRoute {
+        crate::rules::adapted_route(hooks::RULES_REASON)
+    }
+
+    fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        RULES.attach(&self.uze_home, self.id(), &self.hooks_config_path())
     }
 
     fn runtime_contribution(&self, ctx: &RuntimeContext) -> HarnessRuntimeContribution {
@@ -584,6 +596,9 @@ impl IntegrationPort for CodexIntegration {
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
                 HOOKS.inspect_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
             }
+            artifact if crate::rules::is_rules_artifact(artifact) => {
+                crate::rules::inspect(artifact)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -617,6 +632,9 @@ impl IntegrationPort for CodexIntegration {
                     self.id(),
                     &HookEntry::recorded(artifact).expect("a hook config entry"),
                 );
+            }
+            artifact if crate::rules::is_rules_artifact(artifact) => {
+                return crate::rules::detach(artifact);
             }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if let Some(origin) = marketplace::receipt_origin::<CodexMarketplace>(kind) =>

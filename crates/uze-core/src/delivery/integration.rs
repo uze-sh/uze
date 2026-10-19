@@ -565,6 +565,22 @@ pub trait IntegrationPort: Send + Sync {
         ProjectResourceRoute::Unsupported
     }
 
+    /// How a project's rules reach this harness. Default `Unsupported`: an
+    /// integration answers only from its own vendor's measured behavior.
+    fn rules_route(&self) -> RulesRoute {
+        RulesRoute::unsupported("no route for a project's rules has been measured for this harness")
+    }
+
+    /// Delivers the rules engine into this harness's own configuration, for
+    /// a route that [needs one](RulesRoute::needs_engine), and returns the
+    /// artifacts it now owns; each is recorded under
+    /// [`state::SETUP_OWNER`] and later inspected and detached through
+    /// [`Self::inspect_receipt`] and [`Self::detach_receipt`] like any
+    /// other. Idempotent. Nothing by default.
+    fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        Ok(Vec::new())
+    }
+
     /// The prefix a human types to explicitly invoke an exposed capability
     /// on this harness (e.g. `/` for slash commands, `$` for Codex's
     /// explicit skill invocation, nothing for a bare-name harness).
@@ -725,12 +741,13 @@ pub trait IntegrationPort: Send + Sync {
         Vec::new()
     }
 
-    /// Paths of `package`, relative to its root, that this harness would
-    /// load as components the canonical format does not define and that
-    /// its delivery therefore leaves out. Only paths the package actually
+    /// Paths of `package`, relative to its root, that this harness's
+    /// delivery leaves out though the harness would load them — a component
+    /// the canonical format does not define, or one that must not reach it
+    /// machine-wide — each with why. Only paths the package actually
     /// contains. Empty by default: a harness that mirrors nothing withholds
     /// nothing. Presentation only, so `inspect` can say what did not travel.
-    fn withheld_paths(&self, _package: &StoredPackage) -> Vec<String> {
+    fn withheld_paths(&self, _package: &StoredPackage) -> Vec<WithheldPath> {
         Vec::new()
     }
 
@@ -972,6 +989,54 @@ pub enum ProjectResourceRoute {
     RuntimeProjection,
     /// Neither; the integration's facts say why.
     Unsupported,
+}
+
+/// One path of a package a harness's delivery leaves out
+/// (`IntegrationPort::withheld_paths`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WithheldPath {
+    /// Relative to the package root.
+    pub path: String,
+    pub reason: String,
+}
+
+/// How a project's rules (`.agents/rules/` of the checkout) reach a harness
+/// (`IntegrationPort::rules_route`), and why.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RulesRoute {
+    /// `Native` where the harness reads the rules itself, `Adaptable` where
+    /// the rules engine machine setup delivers hands them over, and
+    /// `Unsupported` where neither reaches it.
+    pub route: crate::router::CompatibilityRoute,
+    pub reason: String,
+}
+
+impl RulesRoute {
+    pub fn native(reason: impl Into<String>) -> Self {
+        Self {
+            route: crate::router::CompatibilityRoute::Native,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn adapted(reason: impl Into<String>) -> Self {
+        Self {
+            route: crate::router::CompatibilityRoute::Adaptable,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn unsupported(reason: impl Into<String>) -> Self {
+        Self {
+            route: crate::router::CompatibilityRoute::Unsupported,
+            reason: reason.into(),
+        }
+    }
+
+    /// Whether machine setup delivers something for this route.
+    pub fn needs_engine(&self) -> bool {
+        self.route == crate::router::CompatibilityRoute::Adaptable
+    }
 }
 
 /// One measured fact about a harness that a delivery depends on.

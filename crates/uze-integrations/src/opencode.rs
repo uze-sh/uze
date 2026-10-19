@@ -51,7 +51,7 @@ mod provision;
 mod session;
 mod skills;
 
-pub(crate) use hooks::HOOKS;
+pub(crate) use hooks::{HOOKS, RULES};
 
 use crate::hooks as hook_projection;
 use crate::shared::agent::{
@@ -193,6 +193,28 @@ impl IntegrationPort for OpenCodeIntegration {
     /// next, and a later launch's would reach none (measured,
     /// `experiments/opencode/project-agents`). The one path left,
     /// `.opencode/agents` inside the checkout, is a write UZE never makes.
+    fn withheld_paths(
+        &self,
+        package: &uze_core::store::StoredPackage,
+    ) -> Vec<uze_core::integration::WithheldPath> {
+        crate::rules::withheld(package).into_iter().collect()
+    }
+
+    fn rules_route(&self) -> uze_core::integration::RulesRoute {
+        crate::rules::adapted_route(hooks::RULES_REASON)
+    }
+
+    fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        RULES.attach(
+            &self.uze_home,
+            self.id(),
+            &self
+                .config_root()
+                .join("plugins")
+                .join(crate::rules::plugin::FILE_NAME),
+        )
+    }
+
     fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
         match resource {
             AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
@@ -454,6 +476,9 @@ impl IntegrationPort for OpenCodeIntegration {
     }
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
+        if crate::rules::is_rules_artifact(&receipt.artifact) {
+            return crate::rules::inspect(&receipt.artifact);
+        }
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
             return self.inspect_hook_bridge(receipt, path);
         }
@@ -470,6 +495,9 @@ impl IntegrationPort for OpenCodeIntegration {
         let inspection = self.inspect_receipt(receipt);
         if inspection.state != AttachmentState::Matched {
             return Ok(inspection);
+        }
+        if crate::rules::is_rules_artifact(&receipt.artifact) {
+            return crate::rules::detach(&receipt.artifact);
         }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {

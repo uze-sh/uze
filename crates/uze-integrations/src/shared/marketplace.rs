@@ -362,7 +362,12 @@ pub(crate) fn materialize_explicit_package<D: MarketplaceDialect>(
     let package_root =
         uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
     uze_core::persistence::replace_dir(&dir, |staging| {
-        crate::shared::tree::mirror_tree(&package.root, staging, &package_root, &[])
+        crate::shared::tree::mirror_tree(
+            &package.root,
+            staging,
+            &package_root,
+            &[crate::rules::PACKAGE_RULES_DIR],
+        )
     })?;
     Ok(dir)
 }

@@ -139,6 +139,13 @@ fn same_attachment(left: &AttachmentReceipt, right: &AttachmentReceipt) -> bool 
         && left.resource_identity == right.resource_identity
 }
 
+/// The owner a receipt names for something machine setup delivered on its
+/// own account rather than for a package: the rules engine. No package id
+/// can take this form, since every one is qualified by its marketplace
+/// (`<name>@<market>`), so a sweep for receipts whose package is gone
+/// passes these by.
+pub const SETUP_OWNER: &str = "setup";
+
 pub fn receipts(home: &UzeHome, package_id: Option<&str>) -> Result<Vec<AttachmentReceipt>> {
     let ledger: AttachmentLedger = read_json_or_default(&attachments_path(home))?;
     Ok(ledger

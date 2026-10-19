@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"{session}","cwd":"{root}","tool_name":"edit","tool_input":{"path":"{path}","oldString":"export const button = 1;","newString":"export const button = 2;"}}

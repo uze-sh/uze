@@ -386,7 +386,7 @@ pub struct HarnessDelivery {
     /// Paths of the package this harness would load as components no
     /// canonical capability defines, and so never receives.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub withheld: Vec<String>,
+    pub withheld: Vec<uze_core::integration::WithheldPath>,
 }
 
 /// When a plugin was last written, as something a person can place in

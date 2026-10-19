@@ -10,4 +10,5 @@ pub mod opencode;
 pub mod registry;
 
 pub(crate) mod hooks;
+pub(crate) mod rules;
 mod shared;

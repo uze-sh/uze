@@ -5,6 +5,7 @@ use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 use crate::hooks::{
     Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
 };
+use crate::rules::{RulesDelivery, RulesTarget};
 
 /// Codex mirrors Claude Code's event names in its own `hooks.json` command
 /// form: observations, approvals and denials are expressible. Input
@@ -64,6 +65,23 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         entry: EntryShape::EventLine,
     },
 };
+
+/// Codex has no rules of its own; the rules engine answers through its
+/// `SessionStart` and `PostToolUse` command hooks in the user-level
+/// `hooks.json`, which Codex trusts without the hook trust a project's own
+/// file needs. The tools are the ones a hook sees a file reached through
+/// since code mode (see [`TOOLS`]), with the outer `exec_command` beside
+/// them, in Codex's shell-line entry form.
+pub(crate) const RULES: RulesTarget = RulesTarget {
+    key: "codex",
+    delivery: RulesDelivery::Entries {
+        shape: EntryShape::EventLine,
+        tools: "Bash|exec_command|shell|apply_patch",
+    },
+};
+
+/// Why Codex's rules route is adapted, and what it can miss.
+pub(crate) const RULES_REASON: &str = "Codex has no rules of its own; the rules engine hands each rule over through a `SessionStart` and a `PostToolUse` hook's `additionalContext`. Codex reads files through its shell, so the path a command touched is recovered from its words: a best effort that can miss a path built from a variable, while a patch names its files exactly";
 
 /// Measured, never recalled: every native name and field here is the one a
 /// Lab census saw a call reach a hook with (`hook_tools` in

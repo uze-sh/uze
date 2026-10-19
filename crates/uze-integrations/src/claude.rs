@@ -49,7 +49,7 @@ mod runtime;
 mod session;
 mod skills;
 
-pub(crate) use hooks::HOOKS;
+pub(crate) use hooks::{HOOKS, RULES};
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;
@@ -66,7 +66,7 @@ use crate::shared::provision::{
 use mcp::attach_mcp_entry;
 use plugin::ClaudeMarketplace;
 use uze_core::capability::harness::Findings;
-use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::integration::{HarnessFact, ProjectResourceRoute, RulesRoute};
 use uze_core::project_context::AgentsDirectoryResource;
 /// Claude Code peer integration. Its transparent-attachment strategy is a
 /// UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
@@ -329,6 +329,14 @@ impl IntegrationPort for ClaudeIntegration {
         ProjectResourceRoute::RuntimeProjection
     }
 
+    fn rules_route(&self) -> RulesRoute {
+        crate::rules::adapted_route(hooks::RULES_REASON)
+    }
+
+    fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        RULES.attach(&self.uze_home, self.id(), &self.hooks_config_path())
+    }
+
     fn provision(&self, runner: &dyn ProcessRunner) -> Result<ProvisioningResult> {
         let executable = self.provisioning_executable();
         let route = OfficialRoute {
@@ -472,7 +480,7 @@ impl IntegrationPort for ClaudeIntegration {
     /// The plugin UZE handed Claude must still be there, in Claude's cache
     /// as much as in UZE's marketplace; and a user agent is named by its
     /// frontmatter `name`, which must be the label it is filed under.
-    fn withheld_paths(&self, package: &StoredPackage) -> Vec<String> {
+    fn withheld_paths(&self, package: &StoredPackage) -> Vec<uze_core::integration::WithheldPath> {
         generate::withheld_paths(package)
     }
 
@@ -579,6 +587,9 @@ impl IntegrationPort for ClaudeIntegration {
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
                 HOOKS.inspect_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
             }
+            artifact if crate::rules::is_rules_artifact(artifact) => {
+                crate::rules::inspect(artifact)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -615,6 +626,7 @@ impl IntegrationPort for ClaudeIntegration {
                 self.id(),
                 &HookEntry::recorded(artifact).expect("a hook config entry"),
             ),
+            artifact if crate::rules::is_rules_artifact(artifact) => crate::rules::detach(artifact),
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if let Some(origin) = marketplace::receipt_origin::<ClaudeMarketplace>(kind) =>
             {

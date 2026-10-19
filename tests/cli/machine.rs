@@ -2133,12 +2133,14 @@ fn inspect_names_the_paths_a_harness_does_not_receive() {
 
     let inspected = uze_json_at(&home, &path, &["inspect", "crew"]);
     for view in inspected["deliveries"].as_array().unwrap() {
-        let expected = if view["integration"] == "claude-code" {
-            serde_json::json!(["commands", "bin"])
-        } else {
-            serde_json::Value::Null
-        };
-        assert_eq!(view["withheld"], expected, "{view}");
+        let withheld: Option<Vec<&str>> = view["withheld"].as_array().map(|paths| {
+            paths
+                .iter()
+                .map(|withheld| withheld["path"].as_str().unwrap())
+                .collect()
+        });
+        let expected = (view["integration"] == "claude-code").then(|| vec!["commands", "bin"]);
+        assert_eq!(withheld, expected, "{view}");
     }
     let text = uze_at(
         &home,
@@ -2147,7 +2149,8 @@ fn inspect_names_the_paths_a_harness_does_not_receive() {
     );
     let text = String::from_utf8_lossy(&text.stdout);
     assert!(
-        text.contains("commands not delivered") && text.contains("bin not delivered"),
+        text.contains("commands not delivered: no portable equivalent")
+            && text.contains("bin not delivered"),
         "{text}"
     );
     assert!(!text.contains("monitors"), "{text}");

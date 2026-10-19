@@ -3,6 +3,18 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{HookRunner, HookTarget, UNBOUND};
+use crate::rules::{RulesDelivery, RulesTarget};
+
+/// OpenCode has no command hooks to start the engine from, so a generated
+/// V2 plugin in the global plugin directory asks it: `context` before every
+/// model request, `execute.after` after every tool call.
+pub(crate) const RULES: RulesTarget = RulesTarget {
+    key: "opencode",
+    delivery: RulesDelivery::Plugin,
+};
+
+/// Why OpenCode's rules route is adapted.
+pub(crate) const RULES_REASON: &str = "OpenCode has no rules of its own; a generated plugin asks the rules engine before every model request, so the always-on rules survive a compaction, and appends the rules a tool call's paths match to the result the model reads";
 
 /// OpenCode V2 has no declarative hook file, so UZE generates an owned,
 /// rebuildable plugin (the bridge) that rides the plugin API: the tool

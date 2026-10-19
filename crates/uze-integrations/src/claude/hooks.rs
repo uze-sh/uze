@@ -5,6 +5,7 @@ use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 use crate::hooks::{
     Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
 };
+use crate::rules::{RulesDelivery, RulesTarget};
 
 /// Claude Code documents `PreToolUse`/`PostToolUse`/`Stop` command hooks
 /// with per-group matchers: observations, approvals, denials and asks
@@ -83,6 +84,22 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
         entry: EntryShape::EventExec,
     },
 };
+
+/// Claude Code's own rules live in a `.claude/rules/` inside the project,
+/// which UZE declines to create (design D3), so the rules engine answers
+/// through the channel those rules arrive in: a `SessionStart` entry with
+/// no matcher (every source, a compaction included) and a `PostToolUse`
+/// entry on its file and shell tools, in `settings.json`, exec form.
+pub(crate) const RULES: RulesTarget = RulesTarget {
+    key: "claude",
+    delivery: RulesDelivery::Entries {
+        shape: EntryShape::EventExec,
+        tools: "Read|Edit|MultiEdit|Write|Bash",
+    },
+};
+
+/// Why Claude Code's rules route is adapted rather than native.
+pub(crate) const RULES_REASON: &str = "Claude Code reads its own rules only from a `.claude/rules/` directory inside the project, which UZE declines to create so the project keeps one rules directory; the rules engine hands each rule over through a `SessionStart` and a `PostToolUse` hook's `additionalContext`, the channel Claude's own rules arrive in";
 
 /// Measured, never recalled: every native name and field here is the one a
 /// Lab census saw a call reach a hook with (`hook_tools` in

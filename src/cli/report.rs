@@ -321,11 +321,14 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
     }
     text.push_str("\n\n");
     for delivery in &report.deliveries {
-        for path in &delivery.withheld {
+        for withheld in &delivery.withheld {
             notes.push_str(&progress::change(
                 progress::Change::Attention,
                 &delivery.display_name,
-                Some(&format!("{path} not delivered: no portable equivalent")),
+                Some(&format!(
+                    "{} not delivered: {}",
+                    withheld.path, withheld.reason
+                )),
             ));
         }
     }

@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"{session}","cwd":"{root}","tool_name":"read","tool_input":{"path":"{root}/{path}"}}

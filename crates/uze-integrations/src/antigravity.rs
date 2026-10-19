@@ -308,6 +308,19 @@ impl IntegrationPort for AntigravityIntegration {
         ProjectResourceRoute::Native
     }
 
+    fn withheld_paths(&self, package: &StoredPackage) -> Vec<uze_core::integration::WithheldPath> {
+        crate::rules::withheld(package).into_iter().collect()
+    }
+
+    /// `agy` reads `.agents/rules/` of the checkout itself, in this format,
+    /// with its own four triggers (1.2.17; the PoC of 2026-10-06), so the
+    /// engine is never delivered here.
+    fn rules_route(&self) -> uze_core::integration::RulesRoute {
+        uze_core::integration::RulesRoute::native(
+            "Antigravity reads `.agents/rules/` of the checkout itself, so UZE delivers nothing for it",
+        )
+    }
+
     fn capabilities(&self) -> HarnessCapabilities {
         HarnessCapabilities {
             // Agent Skills and MCP servers are delivered natively through
