@@ -458,8 +458,15 @@ pub fn discover(root: &Path) -> Result<ProjectRules> {
 /// membership. A plugin's copies (`<plugin>@<market>/<rule>.md`,
 /// [`plugin`]) are rule files by this same test, so nothing widens for
 /// them.
+/// A visible `*.md` file. A hidden one (`.draft.md`) is no rule: the
+/// engine's shell glob never sees it, and a rule one reader takes and the
+/// other does not would be reported delivered while it is not.
 fn is_rule_file(path: &Path) -> bool {
-    path.is_file() && path.extension().is_some_and(|extension| extension == "md")
+    path.is_file()
+        && path.extension().is_some_and(|extension| extension == "md")
+        && !path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with('.'))
 }
 
 #[cfg(test)]
