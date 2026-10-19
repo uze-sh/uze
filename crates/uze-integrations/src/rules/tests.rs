@@ -110,14 +110,20 @@ impl Machine {
         self.root.join("claude/settings.json")
     }
 
+    // Read only by the attach tests, which run where the engine does.
+    #[cfg(unix)]
     fn codex_hooks(&self) -> PathBuf {
         self.root.join(".codex/hooks.json")
     }
 
+    // Read only by the attach tests, which run where the engine does.
+    #[cfg(unix)]
     fn opencode_plugin(&self) -> PathBuf {
         self.root.join("opencode/plugins").join(plugin::FILE_NAME)
     }
 
+    // Read only by the attach tests, which run where the engine does.
+    #[cfg(unix)]
     fn json(path: &Path) -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     }
@@ -152,6 +158,8 @@ impl Drop for Machine {
     }
 }
 
+// Read only by the attach tests, which run where the engine does.
+#[cfg(unix)]
 fn foreign_claude_settings() -> serde_json::Value {
     serde_json::json!({
         "model": "opus",
@@ -163,6 +171,9 @@ fn foreign_claude_settings() -> serde_json::Value {
     })
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn claude_receives_exec_form_entries_beside_its_foreign_hooks() {
     let machine = Machine::new("rules-claude-attach");
@@ -222,6 +233,9 @@ fn claude_receives_exec_form_entries_beside_its_foreign_hooks() {
     );
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn codex_receives_shell_line_entries_in_its_user_hooks_file() {
     let machine = Machine::new("rules-codex-attach");
@@ -254,6 +268,9 @@ fn codex_receives_shell_line_entries_in_its_user_hooks_file() {
     }
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn opencode_receives_a_generated_plugin_and_no_config_entry() {
     let machine = Machine::new("rules-opencode-attach");
@@ -287,6 +304,9 @@ fn opencode_receives_a_generated_plugin_and_no_config_entry() {
     );
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn an_operators_plugin_of_the_same_name_is_never_written_over() {
     let machine = Machine::new("rules-opencode-foreign");
@@ -353,6 +373,9 @@ fn every_harness_reports_its_route_and_why() {
     assert!(!machine.antigravity.rules_route().needs_engine());
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn removal_takes_only_the_engines_entries_and_refuses_an_edited_one() {
     let machine = Machine::new("rules-claude-detach");
@@ -447,6 +470,9 @@ fn a_foreign_or_unrunnable_engine_is_drift() {
     assert_eq!(fs::read_to_string(&engine).unwrap(), engine::SOURCE);
 }
 
+// The engine is a POSIX `sh` script: a PowerShell platform is delivered
+// nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
+#[cfg(unix)]
 #[test]
 fn an_entry_an_earlier_build_wrote_is_replaced_not_doubled() {
     let machine = Machine::new("rules-codex-upgrade");
@@ -468,4 +494,18 @@ fn an_entry_an_earlier_build_wrote_is_replaced_not_doubled() {
     let start = Machine::json(&machine.codex_hooks())["hooks"]["SessionStart"].clone();
     assert_eq!(start.as_array().unwrap().len(), 1, "{start}");
     assert_eq!(start[0]["hooks"][0]["timeout"], 10);
+}
+
+// The other half of the gate above: where the engine cannot run, attaching
+// writes nothing and reports nothing delivered.
+#[cfg(windows)]
+#[test]
+fn a_powershell_platform_is_delivered_no_engine() {
+    let machine = Machine::new("rules-windows-nothing");
+    let integrations: [&dyn IntegrationPort; 3] =
+        [&machine.claude, &machine.codex, &machine.opencode];
+    for integration in integrations {
+        assert!(machine.attach(integration).is_empty());
+    }
+    assert!(!machine.claude_settings().exists());
 }
