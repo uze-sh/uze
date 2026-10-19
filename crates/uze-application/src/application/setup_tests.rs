@@ -666,6 +666,7 @@ fn setup_delivers_the_rules_engine_once_and_reports_its_route() {
         setup_receipts(&world).len() == 1 && engine.exists(),
         "what setup delivered belongs to no package, so it is never an orphan: {maintained:?}"
     );
+    let _jq = with_the_engine_dependency_on_path(&world);
     assert!(
         world
             .app
@@ -676,6 +677,22 @@ fn setup_delivers_the_rules_engine_once_and_reports_its_route() {
             .all(|concern| concern.subject != "rules"),
         "a matched engine raises nothing"
     );
+}
+
+/// The engine's dependency on a `PATH` of the world's own, held under the
+/// environment lock: the report looks it up on the process's `PATH`, which
+/// other tests in this binary change while they run.
+fn with_the_engine_dependency_on_path(world: &World) -> uze_testkit::env::ProcessEnvGuard<'static> {
+    let bin = world.root.join("dependency-bin");
+    fs::create_dir_all(&bin).unwrap();
+    let dependency = bin.join(uze_platform::executable::file_name(
+        uze_core::hook::WRAPPER_DEPENDENCY,
+    ));
+    fs::write(&dependency, "#!/bin/sh\nexit 0\n").unwrap();
+    uze_platform::executable::make_runnable(&dependency).unwrap();
+    let mut environment = uze_testkit::env::scope();
+    environment.set("PATH", &bin);
+    environment
 }
 
 #[test]
