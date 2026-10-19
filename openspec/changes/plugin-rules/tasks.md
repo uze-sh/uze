@@ -33,7 +33,7 @@
 
 ## 5. Conformance and journeys
 
-- [ ] 5.1 Contract scenario: a plugin with a `glob` rule declared in project A and absent from project B, both on one machine. The rule fires in A on each harness and never in B
+- [x] 5.1 Contract scenario: a plugin with a `glob` rule declared in project A and absent from project B, both on one machine. The rule fires in A on each harness and never in B
 - [ ] 5.2 Journey in `02-packages`:
   - add a rules plugin to a project;
   - commit;

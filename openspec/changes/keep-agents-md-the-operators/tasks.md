@@ -5,7 +5,7 @@
 - [x] 1.3 Read the branch from the checkout at compose time, never from the slot name, so a resume after `uze agent work name` states the new branch. Test: name, resume, assert the section
 - [x] 1.4 The launch composes the section for every launch and resume the workspace owns, through each harness's existing channel, and for no launch it does not own. Integration tests for an isolated launch, an in-place launch, and a shim launch outside the workspace (no section)
 - [x] 1.4a Antigravity (D2a): write the instructions part as an `always_on` rule in the agent's context directory, and keep the notes on the `PreInvocation` hook. Lab: `systemInstruction` on launch, resume and `invoke_subagent`
-- [ ] 1.4b OpenCode (D2b): the `context` plugin falls back to the parent session's context through `ctx.session.get(...).parentID`. Lab: a child session receives the instructions
+- [x] 1.4b OpenCode (D2b): the `context` plugin falls back to the parent session's context through `ctx.session.get(...).parentID`. Lab: a child session receives the instructions
 - [x] 1.5 Degraded channel: compose `context.md` on every launch whatever the channel (today a degraded launch composes nothing). A launch that starts a new conversation on a degraded or unavailable channel gets one first turn pointing at `context.md` (beside today's switch-briefing first turn, never two). A resume gets none. Both are reported as degraded. Unit tests in `continuity.rs` for new, resumed and switched launches
 - [x] 1.6 `uze agent work split` prints, beside the path, the two lines a parent hands to its subagent: commit in this checkout, and never switch the branch or make a worktree
 
@@ -13,7 +13,7 @@
 
 - [x] 2.1 Add the instructions share and reduce the briefing share as in D4. Keep `the_shares_add_up_to_the_bound`, and add a test that a full briefing and an overfull memory never cut the instructions
 - [x] 2.2 Test that the composed document stays at or under `BOUND` with multi-byte text in every section
-- [ ] 2.3 Measure the largest briefing in the Lab's recorded runs and the rendered policy for the longest declared vocabulary. If 4,000 bytes cuts a real briefing, shorten the policy text, never raising `BOUND`
+- [x] 2.3 Measure the largest briefing in the Lab's recorded runs and the rendered policy for the longest declared vocabulary. If 4,000 bytes cuts a real briefing, shorten the policy text, never raising `BOUND`
 
 ## 3. Stop writing AGENTS.md
 
@@ -34,11 +34,11 @@
 
 ## 5. Conformance
 
-- [ ] 5.0 Precondition, fixed on its own before this change: Antigravity takes the first path in `workspacePaths` (sorted by path) as its working directory, so the agent's `--add-dir` context directory must never sort before the checkout. Add a Lab check that the "Command Working Directory" is the checkout
+- [x] 5.0 Precondition, fixed on its own before this change: Antigravity takes the first path in `workspacePaths` (sorted by path) as its working directory, so the agent's `--add-dir` context directory must never sort before the checkout. Add a Lab check that the "Command Working Directory" is the checkout
 - [ ] 5.1 Contract scenario per harness: an agent given the policy only through the launch context runs `uze agent work name` as its first command, and the checkout has no UZE region
 - [ ] 5.2 Contract scenario per harness: an isolated agent asked to parallelize uses `uze agent work split|join` and makes no worktree with Git
-- [ ] 5.3 Promote the pre-implementation subagent probe to a recorded result per harness (Claude and forked Codex receive the context; Codex `fork_turns: "none"`, OpenCode child sessions and Antigravity `invoke_subagent` do not), with Antigravity's control run without UZE's marker. Record each in the integration's README. A harness whose subagent misses it is documented, not worked around
-- [ ] 5.4 Antigravity signed out: the instructions arrive in the first turn and status reports the channel as degraded
+- [x] 5.3 Promote the pre-implementation subagent probe to a recorded result per harness (Claude and forked Codex receive the context; Codex `fork_turns: "none"`, OpenCode child sessions and Antigravity `invoke_subagent` do not), with Antigravity's control run without UZE's marker. Record each in the integration's README. A harness whose subagent misses it is documented, not worked around. Recorded on 2026-10-19 (Lab contract `instructions`): Claude, Codex (default spawn, forked), OpenCode (after 1.4b) and Antigravity (after 1.4a) receive the instructions; Codex with `fork_turns: "none"` does not
+- [x] 5.4 Antigravity signed out: the instructions arrive in the first turn and status reports the channel as degraded
 
 ## 6. Skills, docs and this repository
 

@@ -166,3 +166,57 @@ writing UZE text, and it is the retired-region case of D6.
 
 **Alternative.** Sanction it too. A sanction the rule never matches would be
 documentation pretending to be enforcement.
+
+## L1. The policy is shortened to fit its 2,000-byte share
+
+**Context.** Task 2.3 measures the rendered policy against D4's shares.
+Measured on 2026-10-19 with `instructions_part` (the lead and the policy,
+isolated, branch `agent/ab12cd`, target `main`): with Conventional Commits
+and `delivery: push`, the shape this repository declares, the part came to
+2,191 bytes for a 30-byte checkout path, 2,195 for a 34-byte one and 2,267
+for a 106-byte one. Gitflow and the flat preset came within 35 bytes of
+those, and only the `agent` preset (no naming clause) fit, at 1,198 to
+1,418. Every naming vocabulary therefore had its last bullet cut, and the
+sentence lost first was "Never make a worktree with Git for this". The
+Antigravity signed-out run in the Lab showed it as a `context.md` of
+2,001 bytes.
+
+**Decision.** The policy text is shortened, never the share raised. The
+naming clause drops its counter-example and two restatements, and the
+delivery, rebase and split clauses lose their repetitions. After the cut
+the same part measures 1,891 (30-byte path), 1,895 (34) and 1,967 (106) with
+Conventional Commits and push, 1,757 to 1,833 with no delivery, and 1,261 in
+place. `the_longest_policy_fits_its_share_uncut` holds the longest preset
+vocabulary, every delivery clause, a 106-byte checkout and a long branch and
+target under the share. A project's own `types:` list longer than
+Conventional Commits' can still be cut, and is then cut from the end like
+any section. The Lab's `instructions-arrive-whole` checks the last sentence
+reaches the model.
+
+**Alternative.** Move bytes from the briefing share to the instructions.
+D4 orders it the other way: the instructions shrink before the briefing
+does.
+
+## L2. No recorded briefing is cut by the 4,000-byte share
+
+**Context.** Task 2.3 also asks for the largest real briefing. The Lab
+records no briefing UZE rendered from a real switch: the briefing contract
+seeds a 48-byte one, and `experiments/launch_instructions_probe.py` pads a
+synthetic one to 4,700 bytes on purpose, to bring the document near the
+bound. This machine holds no briefing either (none of 65 conversation
+records carries one, since a delivered briefing is retired).
+
+**Decision.** The share stays at 4,000. A briefing UZE renders is bounded by
+`briefing::BOUND` (`BRIEFING_SHARE - 32`, 3,968 bytes) before it is
+composed, so `compose` never cuts one. Inside that bound the renderer drops
+whole sections from the end when the conversation fills them (their own
+bounds add up to about 5,700 bytes), Git first and the goal last, which
+`when_the_whole_does_not_fit_git_is_cut_before_the_goal` pins. That held at
+the old 5,000 share too (4,968 bytes), so D4's reduction changes how much
+of a very long conversation reaches the next harness, never whether the
+briefing is cut mid-section.
+
+**Alternative.** Record a real switch briefing in the Lab first. A Lab
+transcript is one synthetic turn (`tests/_fixtures/foreign/transcripts`),
+so the briefing it renders is far below the share and would prove nothing
+about the bound.
