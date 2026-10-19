@@ -333,7 +333,7 @@ def judge(cfg, result, log, document, one, two, ended):
     else:
         common.check(
             "li-3-instructions-on-resume",
-            False,
+            bool(second),
             f"no resumed model request (first process ended: {ended}, turn two sent: {two})",
         )
     _write(cfg, result)
