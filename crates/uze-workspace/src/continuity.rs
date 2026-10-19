@@ -328,7 +328,7 @@ fn give_context(
 ) {
     let id = integration.id();
     let agent = owner.agent.as_str();
-    let (instructions, unread) = launch_instructions(&owner.project_root, cwd);
+    let (instructions, unread) = launch_instructions(home, owner, cwd);
     if let Some(note) = unread {
         tracing::warn!(agent, harness = id, %note, "launch instructions from the default policy");
         plan.add_note(note);
@@ -450,14 +450,26 @@ fn context_link(checkout: &Path, agent: &str) -> PathBuf {
     }
 }
 
+/// The branch the agent's record names, which naming the work keeps in
+/// step with the one it renamed.
+fn recorded_branch(home: &UzeHome, owner: &conversation::Owner) -> Option<String> {
+    let store = crate::task::load(home, &owner.project_root).ok()?;
+    let branch = &store.get(&owner.agent)?.isolation()?.branch;
+    (!branch.is_empty()).then(|| branch.clone())
+}
+
 /// The workspace's instructions for an agent launched at `checkout`, from
 /// the policy in force and where the agent stands now. A declaration that
 /// cannot be read gives the default policy's, and says so on the launch's
 /// note: an agent is never launched without being told how its work is
 /// delivered, and never told the default in silence when the project
 /// declared otherwise.
-fn launch_instructions(project_root: &Path, cwd: &Path) -> (String, Option<String>) {
-    let (policy, unread) = declaration::for_instructions(project_root);
+fn launch_instructions(
+    home: &UzeHome,
+    owner: &conversation::Owner,
+    cwd: &Path,
+) -> (String, Option<String>) {
+    let (policy, unread) = declaration::for_instructions(&owner.project_root);
     let note = unread.map(|reason| {
         format!("agents.yaml's workspace section does not read ({reason}); this agent was told the default policy")
     });
@@ -468,7 +480,10 @@ fn launch_instructions(project_root: &Path, cwd: &Path) -> (String, Option<Strin
             let shown = format!("{}/{}", worktree::WORKTREES_DIRECTORY, isolated.name);
             // Read now rather than taken from the slot's name: naming the
             // work renames the branch, and a resume must say the new one.
+            // The record is asked only when the file cannot answer (a
+            // reftable repository): naming the work updates both.
             let branch = checkout::branch_on_disk(&isolated.directory())
+                .or_else(|| recorded_branch(home, owner))
                 .unwrap_or_else(|| format!("{}{}", worktree::BRANCH_PREFIX, isolated.name));
             policy.instructions(&Placement::Isolated {
                 checkout: &shown,
@@ -928,7 +943,8 @@ mod tests {
             text: BRIEFING_TEXT.to_owned(),
             share: agent_context::BRIEFING_SHARE,
         };
-        let (instructions, _) = launch_instructions(&primary, &slot);
+        let owner = conversation::owner_of(&home, claim(&id, &slot)).unwrap();
+        let (instructions, _) = launch_instructions(&home, &owner, &slot);
         assert_eq!(
             asked,
             [
@@ -989,7 +1005,7 @@ mod tests {
             "{context}"
         );
         assert!(context.contains("`.worktrees/slot-1`"), "{context}");
-        assert!(context.contains("`agent/slot-1`"), "{context}");
+        assert!(context.contains(&format!("`agent/{id}`")), "{context}");
         assert!(
             !context.contains(agent_context::PREAMBLE),
             "no notes, no preamble: {context}"
@@ -1095,8 +1111,30 @@ mod tests {
             &Harness::with_channel(SessionContinuity::Assigned),
         );
         let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
-        assert!(context.contains("`agent/slot-1`"), "{context}");
         assert!(!context.contains(".invalid"), "{context}");
+        let store = task::load(&home, &primary).unwrap();
+        let recorded = store.agents[0].isolation().unwrap().branch.clone();
+        assert!(
+            context.contains(&format!("`{recorded}`")),
+            "the record's branch: {context}"
+        );
+
+        // Naming the work updates the record, so a reftable checkout still
+        // says the new name.
+        let mut store = store;
+        let agent = store.agents[0].id.clone();
+        store
+            .get_mut(&agent)
+            .unwrap()
+            .take_name("fix/naming".into());
+        task::save(&home, &primary, &store).unwrap();
+        plan(
+            &home,
+            claim(&id, &slot),
+            &Harness::with_channel(SessionContinuity::Assigned),
+        );
+        let context = std::fs::read_to_string(context_file(&home, &primary)).unwrap();
+        assert!(context.contains("`fix/naming`"), "{context}");
     }
 
     #[test]
@@ -1140,8 +1178,13 @@ mod tests {
 
     #[test]
     fn an_agent_in_the_primary_checkout_is_told_it_is_on_the_operators_branch() {
-        let (home, primary, _slot, _id) = managed("continuity-context-in-place");
-        let (text, _) = launch_instructions(&primary, &primary);
+        let (home, primary, _slot, id) = managed("continuity-context-in-place");
+        let owner = conversation::Owner {
+            project_root: primary.clone(),
+            agent: AgentId::adopted(&id),
+            isolated: false,
+        };
+        let (text, _) = launch_instructions(&home, &owner, &primary);
         assert!(text.contains("operator's own checkout"), "{text}");
         assert!(!text.contains(".worktrees"), "{text}");
         let _ = home;
