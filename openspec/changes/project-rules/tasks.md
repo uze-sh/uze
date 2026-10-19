@@ -84,7 +84,7 @@
 
   Hidden from `uze --help` like the rest of `uze agent`. CLI tests for each spec scenario
 - [x] 5.7 Classify `uze agent rules check` (and any changed leaf command) in `command_performance.rs`. Both it and `status` are `Budgeted`: rule discovery is a directory read and a small-file parse
-- [ ] 5.8 Name `uze agent rules check` in the `uze:rules` Skill. No UZE text is projected into `AGENTS.md` (`keep-agents-md-the-operators`)
+- [x] 5.8 Name `uze agent rules check` in the `uze:rules` Skill. No UZE text is projected into `AGENTS.md` (`keep-agents-md-the-operators`)
 
 ## 6. Conformance Lab and journeys
 
@@ -113,7 +113,7 @@
   - propose migrating them to `.agents/rules/` through `uze:rules` with the mechanical frontmatter mapping;
   - flag, never rewrite, a pattern outside the dialect.
 - [x] 7.3 Run `uze agent plugin check plugins/uze` and the marketplace check. Add the `rules` Skill to whatever lists the official plugin's Skills (marketplace description, docs)
-- [ ] 7.4 Lab or fixture proof that `uze:rules` is delivered like its siblings (invocation policy honored per harness). Reuse the existing Skill delivery scenarios rather than adding a vertical
+- [x] 7.4 Lab or fixture proof that `uze:rules` is delivered like its siblings (invocation policy honored per harness). Reuse the existing Skill delivery scenarios rather than adding a vertical
 
 ## 8. Documentation and diagrams
 
