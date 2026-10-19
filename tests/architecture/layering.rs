@@ -1498,3 +1498,79 @@ fn the_platform_crate_is_a_leaf_and_the_terminal_reaches_only_it_and_documents()
     terminal.sort();
     assert_eq!(terminal, ["uze-document", "uze-platform"]);
 }
+
+/// The project's `AGENTS.md` is the operator's: no UZE operation creates,
+/// changes or appends to it, except the cleanup that takes out the regions
+/// earlier releases wrote there. A production file that names the file and
+/// also writes is a writer of it, and only the ones sanctioned below may be.
+#[test]
+fn a_retired_region_cleanup_is_the_only_writer_of_agents_md() {
+    /// Each writer, and why it may write.
+    const SANCTIONED: &[(&str, &str)] = &[(
+        "crates/uze-application/src/application/retired_regions.rs",
+        "takes out the regions an earlier release wrote, once, in a main working tree",
+    )];
+    const NAMES: &[&str] = &["AGENTS_MD_FILE_NAME", "\"AGENTS.md\"", "agents_md"];
+    /// What only ever rewrites an instruction file: naming `AGENTS.md`
+    /// anywhere in the same file is enough.
+    const REGION_WRITES: &[&str] = &[
+        "text_region::attach",
+        "text_region::detach",
+        "text_region::reconcile",
+        "text_region::converge",
+        "text_region::remove_unconditionally",
+    ];
+    /// What writes any file: a writer of `AGENTS.md` when the file is named
+    /// on the same line.
+    const FILE_WRITES: &[&str] = &[
+        "fs::write(",
+        "write_atomic",
+        "remove_file(",
+        "OpenOptions",
+        "fs::copy(",
+        "fs::rename(",
+    ];
+
+    let root = repository_root();
+    let mut offenders = Vec::new();
+    for scope in ["crates", "src"] {
+        for (path, source) in production_sources(&root.join(scope)) {
+            let relative = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .display()
+                .to_string()
+                .replace('\\', "/");
+            if relative.contains("/tests/") {
+                continue;
+            }
+            let names = |text: &str| NAMES.iter().any(|name| occurrences(text, name) > 0);
+            let rewrites_regions = names(&source)
+                && REGION_WRITES
+                    .iter()
+                    .any(|write| occurrences(&source, write) > 0);
+            let writes_the_file = source.lines().any(|line| {
+                names(line) && FILE_WRITES.iter().any(|write| occurrences(line, write) > 0)
+            });
+            if rewrites_regions || writes_the_file {
+                offenders.push(relative);
+            }
+        }
+    }
+    for (sanctioned, _) in SANCTIONED {
+        assert!(
+            offenders.iter().any(|offender| offender == sanctioned),
+            "{sanctioned} is sanctioned as a writer of AGENTS.md but writes none: drop it"
+        );
+    }
+    offenders.retain(|offender| SANCTIONED.iter().all(|(file, _)| offender != file));
+    assert!(
+        offenders.is_empty(),
+        "architecture rule violated: the retired-region cleanup is the only writer of AGENTS.md\n\n  \
+         these name AGENTS.md and write: {offenders:?}\n\n  \
+         Why: the file is the operator's. What only means something inside UZE reaches an \
+         agent through its launch, and what a plugin tells every agent is an always_on rule.\n\n  \
+         Fix: write nothing into AGENTS.md. A file that reads it and writes something else \
+         says so by naming what it writes, not the file it read."
+    );
+}
