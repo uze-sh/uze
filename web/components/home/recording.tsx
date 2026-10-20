@@ -12,10 +12,10 @@ const CAST = '/casts/landing.cast';
 const SIZE = { cols: 140, rows: 36 };
 const CHAPTERS: { label: string; at: number }[] = [
   { label: 'open the workspace', at: 0 },
-  { label: 'add a plugin', at: 3.8 },
-  { label: 'agents side by side', at: 14.3 },
-  { label: 'review and deliver', at: 43.6 },
-  { label: 'pick up anywhere', at: 61.5 },
+  { label: 'add a plugin', at: 3.9 },
+  { label: 'agents side by side', at: 15.4 },
+  { label: 'review and deliver', at: 49.6 },
+  { label: 'pick up anywhere', at: 67.4 },
 ];
 // Three agents named, each in its own worktree, and the code surface on
 // the change OpenCode left uncommitted.

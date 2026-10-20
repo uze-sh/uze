@@ -86,7 +86,8 @@ beats:
     pause: 3.0
   # ── 3. agents side by side ──────────────────────────────────────────────
   - use: launch-claude
-    with: {say: 'an agent on Claude Code, in a worktree of its own', menu_pause: 0.5, pause: 0.6}
+    with: {say: 'an agent on Claude Code, in a worktree of its own', menu_pause: 0.5, pause: 0.6,
+           typed: /tmp/demos/demo-api, completed: demo-api}
   # No commit asked for here: committing is what the plugin's skill does,
   # once the change is there.
   - type: add a /ping route to src/router.rs that answers pong, then commit it with the git:commit skill
