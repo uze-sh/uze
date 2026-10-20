@@ -74,9 +74,9 @@ scenes:
       - type: "+"
         submit: false
         say: one more slot
-        # The drawer's value, which reads the change back: the section's
-        # own heading says "saved" whatever was written.
-        expect: 'value\s+3'
+        # The stepper's own row, which reads the change back once it is
+        # written: its value, then "saved" beside it.
+        expect: 'Slots\s+\S\s+3\s+\+\s+saved'
         expect_timeout: 20
         pause: 1.5
     then:
