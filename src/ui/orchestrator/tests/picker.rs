@@ -647,6 +647,37 @@ fn a_long_directory_gives_way_to_what_is_typed() {
     );
 }
 
+/// Esc on the harness step closes the popup as it does on the directory
+/// step: nothing is placed and nothing is left open.
+#[test]
+fn esc_on_the_harness_step_closes_the_popup() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-esc-harness"));
+    set_up_every_harness(&home);
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, Path::new("/"));
+    let mut driven = driven(model, &home);
+    confirm_the_directory(&mut driven);
+    assert!(
+        driven.attach.model.agent_picker.is_some(),
+        "on the harnesses"
+    );
+
+    driven.press_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+
+    assert!(
+        driven.attach.model.agent_picker.is_none(),
+        "the popup closed"
+    );
+    assert!(driven.attach.model.directory_step.is_none());
+    assert!(
+        !driven.attach.model.placement_pending,
+        "and nothing is placed"
+    );
+}
+
 /// A click on a directory is Enter on it: the popup moves to the
 /// harnesses, for that directory.
 #[test]

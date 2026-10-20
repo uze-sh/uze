@@ -624,3 +624,28 @@ fn a_closed_tab_leaves_no_status_behind_for_the_next_pane() {
     assert!(model.remembered.completed_agent_panes.is_empty());
     assert!(model.input_echo_until.is_empty());
 }
+
+/// A prompt is recorded in the history of the project its agent works in,
+/// not of a space: two agents of one space, in `front` and in `back`, each
+/// keep their prompts in their own project's history.
+#[test]
+fn a_prompt_is_recorded_under_its_agents_project() {
+    let mut session = session("/home/someone");
+    let space = session.workspace.selected_space;
+    let mut agent_in = |cwd: &str| {
+        let pane = session.add_tab(space, "agent".into(), None, 80, 24, cwd.into());
+        session.update_pane_status(pane, cwd.into(), "agent".into());
+        pane
+    };
+    agent_in("/front");
+    let back = agent_in("/back");
+    let mut model = model_of(session);
+    let (recorder, recorded) = std::sync::mpsc::channel();
+    model.prompt_recorder = Some(recorder);
+
+    model.note_agent_prompt_submission(back, &identities_fixture(), Some("ship it"));
+
+    let (project, _, prompt) = recorded.try_recv().expect("the prompt was recorded");
+    assert_eq!(project, std::path::PathBuf::from("/back"));
+    assert_eq!(prompt, "ship it");
+}

@@ -196,6 +196,38 @@ fn an_agent_losing_its_last_tab_reconciles_its_project() {
     );
 }
 
+/// Where an agent's tab opens: in the space of the tab it takes over from
+/// (an isolation, a switch, a resume of a lost checkout); for work resumed
+/// from recent, in a space working in its project even when another is in
+/// front, else in the one in front. Never a space of its own.
+#[test]
+fn an_agent_lands_in_its_tabs_space_or_where_its_project_is_worked() {
+    let model = three_spaces();
+    let session = model.session.as_ref().unwrap();
+    let (one, three) = (
+        session.workspace.spaces[0].id,
+        session.workspace.spaces[2].id,
+    );
+    assert_eq!(session.workspace.selected_space, three, "three is in front");
+    let tab_of_one = session.workspace.spaces[0].tabs[0].id;
+
+    assert_eq!(
+        model.landing_space(None, Some(tab_of_one), Path::new("/elsewhere")),
+        Some(one),
+        "an isolated or switched agent stays in its tab's space"
+    );
+    assert_eq!(
+        model.landing_space(None, None, Path::new("/one")),
+        Some(one),
+        "resumed work lands in the space working in its project"
+    );
+    assert_eq!(
+        model.landing_space(None, None, Path::new("/nowhere")),
+        Some(three),
+        "and in the space in front when none works there"
+    );
+}
+
 /// What the client keeps of where agents work follows the agents: a
 /// project an agent left is handed to the next sweep once, and the
 /// directories it stood in are not kept for the life of the client.
