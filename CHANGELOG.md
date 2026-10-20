@@ -4,6 +4,30 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.18](https://github.com/uze-sh/uze/compare/v1.0.0-beta.17...v1.0.0-beta.18) - 2026-10-20
+
+### Features
+
+- **ui:** Add the design-system skill and make every foot hint act on click ([#279](https://github.com/uze-sh/uze/pull/279)) ([559ab9f](https://github.com/uze-sh/uze/commit/559ab9f7cc1680f2cbe60440347971d73845f3f7))
+- Move UZE's AGENTS.md regions into launch context and rules ([#280](https://github.com/uze-sh/uze/pull/280)) [**breaking**] ([4ff171d](https://github.com/uze-sh/uze/commit/4ff171d98993397b2bab1757f7dd56355f786046))
+- **workspace:** Remove the space root and choose each agent's directory ([#285](https://github.com/uze-sh/uze/pull/285)) [**breaking**] ([56e1f07](https://github.com/uze-sh/uze/commit/56e1f07f620f315173813e8569ad1e4a8928bb6b))
+
+### Fixes
+
+- **remove:** Forget each receipt as soon as it is detached ([#281](https://github.com/uze-sh/uze/pull/281)) ([635225e](https://github.com/uze-sh/uze/commit/635225eef57d4f0388a316c6f624375d8125e763))
+
+### Documentation
+
+- Move path-specific guidance from AGENTS.md into .agents/rules ([#283](https://github.com/uze-sh/uze/pull/283)) ([86fa65c](https://github.com/uze-sh/uze/commit/86fa65c36dd74a03ef535227a85184c7b8fc29f1))
+
+### Tests
+
+- **remove:** Give the several-hook-groups test a handler Windows can run ([#284](https://github.com/uze-sh/uze/pull/284)) ([1616aab](https://github.com/uze-sh/uze/commit/1616aab9517ccadfb9203f5680207be7021d6604))
+
+### Style
+
+- **ui:** Lift only the sidebar's space in front onto the panel ([#282](https://github.com/uze-sh/uze/pull/282)) ([4e31f58](https://github.com/uze-sh/uze/commit/4e31f58c2204b67ef9a924747666862e19896f99))
+
 ## [1.0.0-beta.17](https://github.com/uze-sh/uze/compare/v1.0.0-beta.16...v1.0.0-beta.17) - 2026-10-18
 
 ### Features
