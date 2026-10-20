@@ -48,17 +48,20 @@ export default function HomePage() {
               {/* One row for the one thing to do: the command, and the way
                   into the docs at its height. The source is a click away in
                   the header and at the foot of the page. */}
-              <div className="mt-7 flex w-full max-w-[34rem] flex-col gap-3 sm:flex-row sm:items-start">
-                <div className="min-w-0 flex-1">
-                  <InstallTabs />
-                </div>
-                <Link
-                  href="/docs/quickstart"
-                  className="inline-flex shrink-0 items-center justify-center px-5 py-2.5 font-mono text-[13px] font-semibold transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:mt-[30px] sm:h-[46px]"
-                  style={{ background: 'var(--color-accent)', color: 'var(--color-paper)' }}
-                >
-                  Get started
-                </Link>
+              <div className="mt-7 w-full max-w-[36rem]">
+                <InstallTabs
+                  action={
+                    <Link
+                      href="/docs/quickstart"
+                      className="group inline-flex items-center gap-2 font-mono text-[13px] font-semibold text-ink underline decoration-line decoration-1 underline-offset-[6px] transition-colors hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Get started
+                      <span aria-hidden className="transition-transform group-hover:translate-x-0.5">
+                        →
+                      </span>
+                    </Link>
+                  }
+                />
               </div>
             </div>
           }

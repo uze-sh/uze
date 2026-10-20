@@ -23,21 +23,49 @@ export function InstallCommand({ command }: { command: string }) {
   }
 
   return (
-    <div className="flex items-stretch border border-line bg-surface/40 font-mono text-[12.5px]">
+    <div className="glass flex items-center rounded-lg font-mono text-[13.5px]">
       {/* Wraps rather than scrolls: a horizontal scrollbar under a command
           is a thing to fight, and the copy button already removes the reason
           to select it by hand. */}
-      <code className="flex-1 px-3 py-2.5 leading-6 text-ink whitespace-pre-wrap break-words">
+      <code className="flex-1 px-4 py-3.5 leading-6 text-ink whitespace-pre-wrap break-words">
         <span className="text-muted select-none">$ </span>
         {command}
       </code>
       <button
         type="button"
         onClick={copy}
-        className="shrink-0 border-s border-line px-3 text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent transition-colors"
+        aria-label={copied ? 'Copied' : 'Copy the command'}
+        className="me-2 shrink-0 rounded-md p-2 text-muted transition-colors hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
-        {copied ? 'copied' : 'copy'}
+        {copied ? <CheckIcon /> : <CopyIcon />}
       </button>
     </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--color-success)"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
   );
 }
