@@ -156,10 +156,12 @@ fn a_plugin_with_several_hook_groups_removes_cleanly() {
     let plugin = env.root().join("hooked-plugin");
     std::fs::create_dir_all(plugin.join("scripts")).unwrap();
     std::fs::write(plugin.join("plugin.json"), r#"{"name":"hooked"}"#).unwrap();
-    std::fs::write(plugin.join("scripts/hook"), "#!/bin/sh\nexit 0\n").unwrap();
+    // A JavaScript handler runs in OpenCode's own Bun, so the bridge is
+    // delivered on every platform; a `sh` script is unrunnable on Windows.
+    std::fs::write(plugin.join("scripts/hook.mjs"), "process.exit(0);\n").unwrap();
     let group = |id: &str| {
         format!(
-            r#"[{{"id":"{id}","effect":"observe","hooks":[{{"type":"command","command":"${{PLUGIN_ROOT}}/scripts/hook","timeout":10}}]}}]"#
+            r#"[{{"id":"{id}","effect":"observe","hooks":[{{"type":"command","command":"${{PLUGIN_ROOT}}/scripts/hook.mjs","timeout":10}}]}}]"#
         )
     };
     std::fs::write(
