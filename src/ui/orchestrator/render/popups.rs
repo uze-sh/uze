@@ -33,8 +33,17 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
 /// is beneath. A card, not a floating surface: the popup is anchored to the
 /// control that opened it and measures itself — its height budgets its two
 /// border rows and nothing else, and each row leads with its own inset.
-fn new_agent_card(frame: &mut ratatui::Frame<'_>, popup: Rect) -> Rect {
+///
+/// The whole card answers a click, ahead of its rows: one on the line
+/// being typed into, the title or the border is inside the popup, and must
+/// not read as one outside it.
+fn new_agent_card(
+    frame: &mut ratatui::Frame<'_>,
+    popup: Rect,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> Rect {
     frame.render_widget(Clear, popup);
+    hits.push((popup, WorkspaceHit::NewAgentBody));
     Surface::card().title(" new agent ").render(frame, popup)
 }
 
@@ -48,7 +57,7 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, step.rows + 2);
-    let inner = new_agent_card(frame, popup);
+    let inner = new_agent_card(frame, popup, hits);
     render_root_picker(frame, &step.picker, &mut Rows::over(inner), hits);
 }
 
@@ -80,7 +89,7 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
         }
     };
     let popup = popup_beside(area, anchor, width, rows + 2);
-    let inner = new_agent_card(frame, popup);
+    let inner = new_agent_card(frame, popup, hits);
 
     if picker.options.is_empty() {
         frame.render_widget(

@@ -203,8 +203,9 @@ impl Attach<'_> {
                         }
                         self.confirm_directory();
                     }
-                    // Click outside the picker's own rows discards it —
-                    // same rule `renaming` uses.
+                    Some(WorkspaceHit::NewAgentBody) => {}
+                    // Click outside the popup discards it — same rule
+                    // `renaming` uses.
                     _ => self.model.directory_step = None,
                 }
                 self.model.dirty = true;
@@ -230,8 +231,9 @@ impl Attach<'_> {
                         self.model.agent_picker = None;
                         self.open_manage_at(Route::Harnesses);
                     }
-                    // Click outside the picker's own rows discards it —
-                    // same rule `renaming` uses.
+                    Some(WorkspaceHit::NewAgentBody) => {}
+                    // Click outside the popup discards it — same rule
+                    // `renaming` uses.
                     _ => self.model.agent_picker = None,
                 }
                 self.model.dirty = true;
@@ -1418,6 +1420,7 @@ impl Attach<'_> {
             | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody
+            | WorkspaceHit::NewAgentBody
             | WorkspaceHit::OverviewAnswer(_)
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}

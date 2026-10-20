@@ -628,6 +628,28 @@ fn clicking_a_directory_is_choosing_it() {
     );
 }
 
+/// A click on the line being typed into, or anywhere in the popup that is
+/// not a row, is inside it: the popup stays open, as typed.
+#[test]
+fn a_click_on_the_line_being_typed_keeps_the_popup_open() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-click-input"));
+    let root = uze_testkit::temp::TempDir::new("popup-click-input-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path());
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let first_row = driven.hit(|hit| matches!(hit, WorkspaceHit::PickDirectory(0)));
+
+    // The line typed into stands right above the first directory.
+    driven.press(first_row.x + 2, first_row.y - 1);
+
+    assert!(
+        driven.attach.model.directory_step.is_some(),
+        "a click on the input closed the popup"
+    );
+}
+
 /// Esc closes the popup, whichever step it is on, and nothing is placed.
 #[test]
 fn esc_closes_the_new_agent_popup_and_places_nothing() {

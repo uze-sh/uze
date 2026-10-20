@@ -858,6 +858,10 @@ pub(super) enum WorkspaceHit {
     InterruptAnswer(bool),
     /// That question itself, which a click on answers nothing.
     InterruptBody,
+    /// The new agent's popup outside its rows — the line typed into, its
+    /// title, its border — which a click on keeps open and answers
+    /// nothing.
+    NewAgentBody,
     /// A toast's offer to read a machine fact an agent proposed.
     ReviewProposal,
     /// One of the answers to that question.
