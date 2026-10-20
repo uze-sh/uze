@@ -247,11 +247,22 @@ fn a_project_an_agent_left_is_swept_once_and_not_kept() {
         model.left_projects.contains(Path::new("/front")),
         "the project the agent left is not handed to the sweep"
     );
+
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-left-project-swept",
+    ));
+    let (sender, _receiver) = std::sync::mpsc::channel();
+    let (evaluations, _answers) = std::sync::mpsc::channel();
+    model.occupancy_stale = true;
+    sync_slot_occupancy(&mut model, &home, &sender, &evaluations);
+    assert!(
+        model.left_projects.is_empty(),
+        "the sweep took the project it was handed"
+    );
     model.note_space_projects(&identities_fixture());
-    assert_eq!(
-        model.left_projects.len(),
-        1,
-        "and only once, however often the session moves"
+    assert!(
+        model.left_projects.is_empty(),
+        "and it is handed once, however often the session moves"
     );
 }
 
