@@ -1786,6 +1786,8 @@ struct WorkspaceModel {
     /// The projects each space's agents work in, read again whenever the
     /// session moves rather than while a frame is drawn.
     space_projects: BTreeMap<SpaceId, Vec<PathBuf>>,
+    /// The project each space's most recently started agent works in.
+    latest_projects: BTreeMap<SpaceId, PathBuf>,
     /// The directory of the agent whose context is in front, read again
     /// with the session: what everything about a project is drawn for.
     agent_in_front: Option<PathBuf>,

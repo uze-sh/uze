@@ -13,8 +13,10 @@ impl WorkspaceModel {
             return;
         };
         let mut space_projects = BTreeMap::new();
+        let mut latest_projects = BTreeMap::new();
         for space in &session.workspace.spaces {
             let mut projects: Vec<PathBuf> = Vec::new();
+            let mut latest: Option<(TabId, PathBuf)> = None;
             for tab in space
                 .tabs
                 .iter()
@@ -26,13 +28,22 @@ impl WorkspaceModel {
                     .entry(directory.clone())
                     .or_insert_with(|| project_of_directory(&directory))
                     .clone();
+                // Tab ids are minted in the order tabs are opened, so the
+                // highest is the agent started last, wherever it was dragged.
+                if latest.as_ref().is_none_or(|(id, _)| tab.id > *id) {
+                    latest = Some((tab.id, project.clone()));
+                }
                 if !projects.contains(&project) {
                     projects.push(project);
                 }
             }
             space_projects.insert(space.id, projects);
+            if let Some((_, project)) = latest {
+                latest_projects.insert(space.id, project);
+            }
         }
         self.space_projects = space_projects;
+        self.latest_projects = latest_projects;
         self.agent_in_front = context_agent(self, identities)
             .and_then(|agent| self.tab(agent))
             .map(|tab| named_checkout(&tab.pane.cwd));
@@ -101,7 +112,7 @@ impl WorkspaceModel {
             .and_then(|directory| self.projects.get(directory).cloned());
         in_front.or_else(|| {
             let space = self.session.as_ref()?.selected_space().id;
-            self.projects_of(space).last().cloned()
+            self.latest_projects.get(&space).cloned()
         })
     }
 

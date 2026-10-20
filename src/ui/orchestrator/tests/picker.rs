@@ -67,6 +67,42 @@ fn confirm_the_directory(driven: &mut Driven<'_>) {
     driven.press_key(key_event(enter));
 }
 
+/// The directory step opens where the space is working: the project of
+/// the agent in front; with the space's own shell in front, the project of
+/// the agent started last, however its tabs were dragged; with no agent,
+/// nowhere in particular.
+#[test]
+fn the_directory_step_offers_where_the_space_is_working() {
+    let mut session = session("/home/someone");
+    let space = session.workspace.selected_space;
+    let shell = session.selected_tab().id;
+    assert!(
+        model_of(session.clone()).directory_to_offer().is_none(),
+        "a space with nothing but its shell offers nowhere in particular"
+    );
+    let mut agent_in = |cwd: &str| {
+        let pane = session.add_tab(space, "agent".into(), None, 80, 24, cwd.into());
+        session.update_pane_status(pane, cwd.into(), "agent".into());
+        session.selected_tab().id
+    };
+    let front = agent_in("/front");
+    let landing = agent_in("/landing");
+    session.reorder_tab(landing, Some(front));
+
+    session.select_tab(front);
+    assert_eq!(
+        model_of(session.clone()).directory_to_offer(),
+        Some(Path::new("/front").to_path_buf()),
+        "the agent in front's project"
+    );
+    session.select_tab(shell);
+    assert_eq!(
+        model_of(session).directory_to_offer(),
+        Some(Path::new("/landing").to_path_buf()),
+        "the project of the agent started last, though it was dragged first"
+    );
+}
+
 /// The step asks one question — where — and any directory answers it.
 #[test]
 fn the_directory_step_offers_any_directory() {
