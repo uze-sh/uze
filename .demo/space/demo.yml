@@ -105,7 +105,11 @@ beats:
   # ── Settings ────────────────────────────────────────────────────────────
   - say: agents.yaml's workspace section, as a form
     key: '2'
-    expect: saved to agents.yaml as you edit
+    # The agent in front works in a worktree, so its Settings edit that
+    # checkout's agents.yaml and say so; the project's own hint is the
+    # primary checkout's.
+    expect: this worktree's agents\.yaml
+    expect_in: pane
     expect_timeout: 6
     pause: 1.6
   - say: a change is written as it is made
