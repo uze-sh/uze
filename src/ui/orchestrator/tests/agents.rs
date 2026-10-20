@@ -710,6 +710,11 @@ fn agents_sit_one_step_inside_their_space() {
             .unwrap_or_else(|| panic!("{text:?} in {row:?}"));
         row[..byte].chars().count()
     };
+    // The harness stands against the row's end, the trailing column every
+    // caption in the column ends in: one pad off the divider.
+    let at_the_end = |row: &str, text: &str| {
+        column_of(row, text) + text.chars().count() == row.chars().count() - 2
+    };
     use crate::ui::theme::Symbol;
     let idle = theme::glyph(Symbol::StatusIdle);
     let tree = three_spaces();
@@ -720,7 +725,7 @@ fn agents_sit_one_step_inside_their_space() {
     assert_eq!(column_of(&rows[header + 1], &idle), fold, "{rows:?}");
     let agent = column_of(&rows[header + 1], "shell");
     assert_eq!(agent, name, "{rows:?}");
-    assert_eq!(column_of(&rows[header + 2], "agent"), agent, "{rows:?}");
+    assert!(at_the_end(&rows[header + 2], "agent"), "{rows:?}");
 
     let flat = agents_in_the_root_session();
     let Sidebar { rows, hits, .. } = sidebar(&flat, &identities_in_the_root());
@@ -729,7 +734,7 @@ fn agents_sit_one_step_inside_their_space() {
     let fold = column_of(&rows[header], &theme::glyph(Symbol::ChevronExpanded));
     assert_eq!(column_of(&rows[header + 1], &idle), fold, "{rows:?}");
     assert_eq!(column_of(&rows[header + 1], "agent 1"), name, "{rows:?}");
-    assert_eq!(column_of(&rows[header + 2], "claude"), name, "{rows:?}");
+    assert!(at_the_end(&rows[header + 2], "claude"), "{rows:?}");
 
     let both = a_space_with_both_groups();
     let Sidebar { rows, hits, .. } = sidebar(&both, &identities_in_the_root());
@@ -748,10 +753,9 @@ fn agents_sit_one_step_inside_their_space() {
         name + 1,
         "a step further in: {rows:?}"
     );
-    assert_eq!(
-        column_of(&rows[agents[1] as usize], "claude"),
-        name + 1,
-        "and its caption keeps under its name: {rows:?}"
+    assert!(
+        at_the_end(&rows[agents[1] as usize], "claude"),
+        "and its harness against the row's end: {rows:?}"
     );
 }
 

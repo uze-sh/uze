@@ -729,6 +729,12 @@ pub(super) struct TreeCaption {
     /// is gone.
     pub(super) detail: String,
     pub(super) detail_color: Color,
+    /// The project the agent works in, in a space of several: led by the
+    /// row, with the harness against its end.
+    pub(super) project: Option<String>,
+    /// Whether `detail` is the harness, which stands against the row's
+    /// end, rather than words about the checkout, which lead it.
+    pub(super) harness: bool,
 }
 
 impl TreeCaption {
@@ -765,12 +771,12 @@ impl TreeCaption {
         let detail = if lost {
             "checkout removed".to_owned()
         } else {
-            let harness = agent.harness.unwrap_or(tab.pane.process.as_str());
-            match project_named_on_row(model, tab) {
-                Some(project) => format!("{harness} · {project}"),
-                None => harness.to_owned(),
-            }
+            agent
+                .harness
+                .unwrap_or(tab.pane.process.as_str())
+                .to_owned()
         };
+        let project = (!lost).then(|| project_named_on_row(model, tab)).flatten();
         let detail_color = if lost {
             theme::color(Token::StateWarning)
         } else {
@@ -781,6 +787,8 @@ impl TreeCaption {
             resumable,
             detail,
             detail_color,
+            project,
+            harness: !lost,
         }
     }
 }
@@ -1109,7 +1117,31 @@ pub(super) fn draw_tree(
             // used to run under the caption and off the right edge, so
             // the one thing the row was pinning there — "resume" — was
             // what disappeared.
-            {
+            //
+            // The harness stands against the row's end, the one trailing
+            // column every caption in the sidebar ends in, and is the only
+            // part lit with the row; the project, when the row names one,
+            // leads in the column's quiet hue.
+            if caption.harness {
+                let harness = text::columns(&caption.detail) as u16;
+                if let Some(project) = &caption.project {
+                    let taken: u16 = spans.iter().map(|span| span.width() as u16).sum::<u16>()
+                        + harness
+                        + 1
+                        + TRAILING_PAD;
+                    let room = detail_rect.width.saturating_sub(taken).max(1);
+                    spans.push(Span::styled(
+                        text::elide(project, room as usize),
+                        theme::fg(Token::TextDim),
+                    ));
+                }
+                row::push_trailing(
+                    &mut spans,
+                    detail_rect.width,
+                    caption.detail.clone(),
+                    caption.detail_color,
+                );
+            } else {
                 let taken: u16 = spans
                     .iter()
                     .chain(&trailing)

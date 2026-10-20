@@ -109,6 +109,10 @@ on "cancel" must not save first.
 - A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end
   (`space · main`, `git`), never in a column of its own.
+- An agent's caption row leads with its project (only in a space of
+  several), in the column's quiet hue, and ends with its harness in the
+  trailing column. Only the harness takes the row's lit caption token
+  (`caption_color`), never a fixed colour and never the whole line.
 - A click anywhere inside a popover keeps it open; only a click outside it
   dismisses it.
 

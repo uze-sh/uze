@@ -654,27 +654,37 @@ fn a_minimized_spaces_caption_counts_its_agents() {
 /// names its own; in a space of one project, none does.
 #[test]
 fn an_agents_row_names_its_project_only_in_a_space_of_several() {
+    // The row under an agent's label: its project leading, when it names
+    // one, and its harness against the end.
+    let caption_of = |rows: &[String], label: &str| {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(label))
+            .unwrap_or_else(|| panic!("{label} in {rows:?}"));
+        rows[at + 1].clone()
+    };
     let mut session = session("/repo");
     let space = session.workspace.selected_space;
     let agent = session.add_tab(space, "agent 1".into(), None, 80, 24, "/repo".into());
     session.update_pane_status(agent, "/repo".into(), "agent".into());
     let rows = sidebar(&model_of(session.clone()), &identities_fixture()).rows;
-    assert!(
-        !rows.iter().any(|row| row.contains("agent · repo")),
-        "{rows:?}"
-    );
+    let one = caption_of(&rows, "agent 1");
+    assert!(!one.contains("repo"), "one project, not named: {one:?}");
 
     let other = session.add_tab(space, "agent 2".into(), None, 80, 24, "/web".into());
     session.update_pane_status(other, "/web".into(), "agent".into());
     let rows = sidebar(&model_of(session), &identities_fixture()).rows;
-    assert!(
-        rows.iter().any(|row| row.contains("agent · repo")),
-        "{rows:?}"
-    );
-    assert!(
-        rows.iter().any(|row| row.contains("agent · web")),
-        "{rows:?}"
-    );
+    for (label, project) in [("agent 1", "repo"), ("agent 2", "web")] {
+        let caption = caption_of(&rows, label);
+        let (project_at, harness_at) = (
+            caption.find(project).expect("the project is named"),
+            caption.rfind("agent").expect("the harness is named"),
+        );
+        assert!(
+            project_at < harness_at,
+            "the project leads and the harness ends the row: {caption:?}"
+        );
+    }
 }
 
 /// The projects agents work in and each agent's directory are read as
