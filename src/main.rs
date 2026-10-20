@@ -726,7 +726,7 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
     // inside a client is never what that means. Open a space for this
     // directory in the uze already running, and leave.
     if std::env::var_os("UZE_PANE").is_some() {
-        let project = uze_application::space_root(&cwd()?);
+        let project = uze_application::project_root_of(&cwd()?);
         // Home is where a shell starts, not a project somebody chose: a
         // launch there opens nothing, here as on a first launch.
         if uze_platform::home::is_home(&project) {

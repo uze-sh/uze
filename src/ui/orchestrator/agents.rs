@@ -383,6 +383,6 @@ fn project_of_directory(directory: &Path) -> PathBuf {
     if !directory.exists() {
         return uze_application::slot_key(directory);
     }
-    let project = uze_application::space_root(directory);
+    let project = uze_application::project_root_of(directory);
     project.canonical().unwrap_or(project)
 }

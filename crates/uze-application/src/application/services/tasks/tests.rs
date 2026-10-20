@@ -279,13 +279,13 @@ mod placement_tests {
             .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
             .unwrap();
         assert_eq!(
-            crate::space_root(&placement.cwd),
-            crate::space_root(&root),
+            crate::project_root_of(&placement.cwd),
+            crate::project_root_of(&root),
             "an agent's checkout lands in the space its repository already has"
         );
         assert_eq!(
-            crate::space_root(&placement.cwd.join("crates")),
-            crate::space_root(&root),
+            crate::project_root_of(&placement.cwd.join("crates")),
+            crate::project_root_of(&root),
             "so does a subdirectory of it"
         );
     }

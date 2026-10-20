@@ -136,13 +136,13 @@ pub fn unanchored_checkout(path: &std::path::Path) -> Option<String> {
     uze_workspace::checkout::guard(path).err()
 }
 
-/// The root of the space a directory belongs to.
+/// The project a directory belongs to.
 ///
-/// A slot is never a space of its own. It is a checkout of the project, so
-/// it carries the project's own anchor files, and asking the workspace
-/// resolver alone answers the slot itself — opening a second space over one
+/// A slot is never a project of its own. It is a checkout of the project,
+/// so it carries the project's own anchor files, and asking the workspace
+/// resolver alone answers the slot itself — a second project over one
 /// repository, rooted inside `.worktrees`. An agent's checkout belongs to
-/// the space its repository already has.
-pub fn space_root(cwd: &std::path::Path) -> std::path::PathBuf {
+/// the project its repository is.
+pub fn project_root_of(cwd: &std::path::Path) -> std::path::PathBuf {
     anchor_root_or_self(&slot_key(cwd))
 }

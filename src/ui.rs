@@ -117,7 +117,7 @@ pub fn run(home: UzeHome) -> Result<()> {
     // a terminal that can show it. Sending `.` instead would have the
     // terminal runtime resolve it against its own directory.
     let launch = uze_terminal::SpaceSeat {
-        project: uze_application::space_root(&std::env::current_dir().map_err(|source| {
+        project: uze_application::project_root_of(&std::env::current_dir().map_err(|source| {
             uze_application::UzeError::Read {
                 path: PathBuf::from("."),
                 source,

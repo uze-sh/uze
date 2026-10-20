@@ -456,7 +456,7 @@ pub(crate) fn attach_workspace(
     // `Landing`). Resolving the project *before* attaching is what makes a
     // repository and a subdirectory of it land in the same space.
     let seat = uze_terminal::SpaceSeat {
-        project: uze_application::space_root(&launch.project),
+        project: uze_application::project_root_of(&launch.project),
     };
     let Attached {
         mut stream,
