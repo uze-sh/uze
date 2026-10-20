@@ -57,10 +57,18 @@ impl WorkspaceModel {
 
     /// A space working in `project`: the one in front when it is one, else
     /// the first listed.
+    ///
+    /// `project` is compared as it is spelled, against the projects the
+    /// session's agents were resolved to when it moved: this is asked while
+    /// a row of recent is drawn, where nothing may wait on the filesystem,
+    /// and a project UZE recorded is already the canonical one.
     pub(super) fn space_working_in(&self, project: &Path) -> Option<SpaceId> {
-        let project = project_of_directory(project);
         let session = self.session.as_ref()?;
-        let works_there = |space: &SpaceId| self.projects_of(*space).contains(&project);
+        let works_there = |space: &SpaceId| {
+            self.projects_of(*space)
+                .iter()
+                .any(|known| uze_platform::path::same_path(known, project))
+        };
         let selected = session.workspace.selected_space;
         if works_there(&selected) {
             return Some(selected);
