@@ -878,10 +878,9 @@ pub(super) fn rename_spans(buffer: &RenameBuffer) -> Vec<Span<'static>> {
     ]
 }
 
-/// The row under a minimized space's header: where the space's agents
-/// work — their project while they work in one, how many while they work
-/// in several. Lit along with its header, and selecting the space like any
-/// caption. A space with no agent works nowhere and has none.
+/// The row under a minimized space's header: how many agents it holds,
+/// which is what folding it hid. Lit along with its header, and selecting
+/// the space like any caption. A space with no agent has none.
 ///
 /// Drawn only for the space in front. A name is what a person reads down a
 /// column of spaces, and the path under every one of them was a second
@@ -901,10 +900,10 @@ pub(super) fn render_space_caption(
     space: &Space,
     identities: &[AgentIdentity],
 ) {
-    let caption = match model.projects_of(space.id) {
-        [] => return,
-        [project] => crate::ui::display_project_path(project),
-        several => format!("{} projects", several.len()),
+    let caption = match agent_tabs_of(space, identities).len() {
+        0 => return,
+        1 => "1 agent".to_owned(),
+        several => format!("{several} agents"),
     };
     let Some(rect) = rows.slot(1).visible() else {
         return;

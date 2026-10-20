@@ -23,7 +23,7 @@ shell's directory SHALL NOT count, wherever it moved.
 
 #### Scenario: A shell does not make a project the space's
 - **WHEN** a shell of a space with no agent `cd`s into `back`
-- **THEN** the space works in no project: it has no caption, and resuming work of `back` does not land in it
+- **THEN** the space works in no project, and resuming work of `back` does not land in it
 
 ### Requirement: A new agent is one question with its harness in a field
 Starting a new agent SHALL ask for the directory it runs in, chosen from
@@ -130,19 +130,17 @@ create a space.
 - **THEN** the agent opens in the space the operator is looking at
 
 ### Requirement: A space holding several projects names each agent's project
-The sidebar SHALL caption a minimized space in front with its project's
-directory while its agents stand in one project, with the number of
-projects while they stand in several, and with nothing while it holds no
-agent. In a space whose agents stand in several projects, each agent's row
-SHALL name its project.
+The sidebar SHALL caption a minimized space in front with the number of
+agents it holds, and with nothing while it holds no agent. In a space whose
+agents stand in several projects, each agent's row SHALL name its project.
 
 #### Scenario: A space of one project
-- **WHEN** every agent of a minimized space in front stands in one project
-- **THEN** the space's caption names that project and no agent row names it
+- **WHEN** a minimized space in front holds two agents of one project
+- **THEN** its caption reads `2 agents`, and opened, no agent row names the project
 
 #### Scenario: A space of three projects
-- **WHEN** a minimized space in front has agents in three projects
-- **THEN** its caption says three projects, and each agent's row names its own
+- **WHEN** a space has agents in three projects
+- **THEN** opened, each agent's row names its own project
 
 #### Scenario: A space with no agent
 - **WHEN** a space holds only shells

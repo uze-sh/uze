@@ -108,13 +108,13 @@
 - rejected: Storing the identities in the model.
 - blast:    `WorkspaceModel::agent_in_front`.
 
-## D12 — A space's caption stays under the minimized space in front
+## D12 — A space's caption stays under the minimized space in front, and counts its agents
 
 - status:   pending
 - task:     2.7
 - commit:
 - trigger:  The spec captioned every space with its project, while the sidebar draws a caption only under the minimized space in front, a choice the operator made before this change: a path under every name is a second column to read past.
-- decided:  The spec now says what the sidebar does: the caption of the minimized space in front names its project or how many, and rows name their project in a space of several.
+- decided:  The spec now says what the sidebar does: only the minimized space in front has a caption. It counts the space's agents (`2 agents`), which is what folding hid; the operator found the directory there less useful than the count. Rows name their project in a space of several.
 - rejected: Drawing a caption under every open space, which reverses that choice.
 - blast:    The spec only.
 

@@ -58,12 +58,12 @@ fn only_the_active_spaces_agent_carries_the_selected_dot() {
 }
 
 /// A space header says what the space is called, and the fold beside
-/// it is what asks where that is: minimized, the caption under the
-/// name says the directory, pinned to the row's right edge like every
-/// other caption in the column. The whole row still selects the space
+/// it hides its agents: minimized, the caption under the name counts
+/// them, pinned to the row's right edge like every other caption in the
+/// column. The whole row still selects the space
 /// — the header carries no control of its own but the fold.
 #[test]
-fn the_fold_is_what_asks_a_space_where_it_is() {
+fn a_folded_space_counts_its_agents_at_the_rows_end() {
     let mut model = agent_session_in("/repo");
     // A name the root does not contain, so each reads as itself alone.
     let label = "workbench".to_owned();
@@ -93,14 +93,14 @@ fn the_fold_is_what_asks_a_space_where_it_is() {
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
     let header = space_header(&hits, space);
     let caption = rows[header.y as usize + 1].clone();
-    let at = caption.find("/repo");
-    assert!(at.is_some(), "minimized, it says where: {caption}");
+    let at = caption.find("1 agent");
+    assert!(at.is_some(), "minimized, it counts its agents: {caption}");
     // Against the row's trailing column, the one every caption in the
     // sidebar ends in, whatever the path's length.
     // By column, not by byte: the gutter ahead of it is three bytes
     // wide and one column.
     let at = at.expect("asserted above");
-    let end = (caption[..at].chars().count() + "/repo".chars().count()) as u16;
+    let end = (caption[..at].chars().count() + "1 agent".chars().count()) as u16;
     assert_eq!(
         end,
         header.right() - crate::ui::widget::TRAILING_PAD,
@@ -613,11 +613,10 @@ fn the_gutter_marks_the_selected_space_and_no_other() {
     );
 }
 
-/// A minimized space's caption says where its agents work: their project
-/// while they work in one, how many while they work in several, and
-/// nothing at all for a space of shells, wherever those stand.
+/// A minimized space's caption says how many agents it holds, whichever
+/// projects they work in, and nothing at all for a space of shells.
 #[test]
-fn a_minimized_spaces_caption_names_where_its_agents_work() {
+fn a_minimized_spaces_caption_counts_its_agents() {
     let caption = |model: &WorkspaceModel| {
         let space = model.session.as_ref().unwrap().workspace.selected_space;
         let Sidebar { rows, hits, .. } = sidebar(model, &identities_fixture());
@@ -631,8 +630,8 @@ fn a_minimized_spaces_caption_names_where_its_agents_work() {
     let mut one = model_of(session.clone());
     toggle_space_collapsed(&mut one, space);
     assert!(
-        caption(&one).contains("repo"),
-        "one project: {}",
+        caption(&one).contains("1 agent") && !caption(&one).contains("repo"),
+        "one agent, and no path: {}",
         caption(&one)
     );
 
@@ -640,17 +639,14 @@ fn a_minimized_spaces_caption_names_where_its_agents_work() {
     session.update_pane_status(other, "/web".into(), "agent".into());
     let mut two = model_of(session);
     toggle_space_collapsed(&mut two, space);
-    assert!(
-        caption(&two).contains("2 projects"),
-        "two: {}",
-        caption(&two)
-    );
+    assert!(caption(&two).contains("2 agents"), "two: {}", caption(&two));
 
     let mut shells = model_of(super::support::session("/repo/services/api"));
     toggle_space_collapsed(&mut shells, SpaceId(1));
     assert!(
-        !caption(&shells).contains("api"),
-        "a shell names no project"
+        !caption(&shells).contains("agent") && !caption(&shells).contains("api"),
+        "a space of shells has no caption: {}",
+        caption(&shells)
     );
 }
 
@@ -822,13 +818,12 @@ fn a_folded_space_says_through_its_header_what_its_agents_did() {
     assert!(lit, "{folded:?}");
 }
 
-/// A minimized space keeps a caption under its header saying where
-/// its work is — the directory, never an agent and never the branch
-/// its root is on, which its agents say for themselves once it is
-/// open — and only while it is the space in front. Open over its
-/// agents it has no caption at all.
+/// A minimized space keeps a caption under its header counting its
+/// agents — never a directory or a branch, which its agents say for
+/// themselves once it is open — and only while it is the space in front.
+/// Open over its agents it has no caption at all.
 #[test]
-fn only_the_minimized_space_in_front_says_where_it_is() {
+fn only_the_minimized_space_in_front_counts_its_agents() {
     let rows_at = |model: &WorkspaceModel, space: SpaceId| {
         let Sidebar { rows, hits, .. } = sidebar(model, &identities_fixture());
         let header = space_header(&hits, space).y as usize;
@@ -847,20 +842,19 @@ fn only_the_minimized_space_in_front_says_where_it_is() {
     toggle_space_collapsed(&mut model, front);
     let (_, row) = rows_at(&model, front);
     assert!(
-        row.contains("/three") && !row.contains("shell"),
-        "minimized and in front, the directory it is in: {row:?}"
+        row.contains("1 agent") && !row.contains("/three") && !row.contains("shell"),
+        "minimized and in front, how many agents: {row:?}"
     );
 
-    // Known, the branch stays out of it: the row answers where, and a
-    // branch name does not say where.
+    // Known, the branch stays out of it.
     model
         .remembered
         .branches
         .insert(PathBuf::from("/three"), "main".into());
     let (_, row) = rows_at(&model, front);
     assert!(
-        row.contains("/three") && !row.contains("main"),
-        "still the directory: {row:?}"
+        row.contains("1 agent") && !row.contains("main"),
+        "still the count: {row:?}"
     );
 
     // Behind, the name is the whole of it: a path under every space
