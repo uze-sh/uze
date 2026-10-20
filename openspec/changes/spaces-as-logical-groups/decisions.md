@@ -134,6 +134,6 @@
 - task:     3.1
 - commit:
 - trigger:  `CreateTab` naming a space moved the asking client into it, so an agent placed after the operator moved on pulled them back.
-- decided:  The tab is put in front in its own space; the client is moved only when that is the space it is looking at.
+- decided:  The tab is put in front in its own space; the client is moved only when that is the space it is looking at. Work resumed or isolated is asked for now, so the client follows it with `SelectSpace` wherever it lands.
 - rejected: Leaving the jump, which takes the keyboard away mid-typing.
 - blast:    `CreateTab` handling in `runtime/server.rs`.

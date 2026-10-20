@@ -935,7 +935,9 @@ pub(super) struct PlacementResolution {
     /// leaves the operator the row they asked from.
     pub(super) replacing: Option<TabId>,
     /// The space a new agent was asked for from, which it opens in
-    /// whichever space is in front when the placement lands.
+    /// whichever space is in front when the placement lands. `None` for
+    /// work resumed or isolated, which lands where its project or its row
+    /// is, and takes the operator there.
     pub(super) space: Option<SpaceId>,
 }
 

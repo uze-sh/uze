@@ -908,3 +908,58 @@ fn clicking_the_agent_you_are_already_in_selects_the_agent_itself() {
         "the agent's own tab"
     );
 }
+
+/// Work resumed takes the operator to the space it lands in, wherever that
+/// is: it was asked for now. A new agent asked for in one space does not,
+/// since the operator may have moved on while its checkout was prepared.
+#[test]
+fn resumed_work_takes_the_operator_to_its_space() {
+    let repository = uze_testkit::git::Repository::new("orchestrator-resume-follows");
+    let root = repository.root().to_path_buf();
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-resume-follows-home",
+    ));
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let place = || {
+        app.workspace()
+            .place_new_agent(&root, None, "claude-code", &[])
+            .expect("the agent is placed")
+    };
+    let model = three_spaces();
+    let origin = model.session.as_ref().unwrap().workspace.spaces[0].id;
+    let mut driven = driven(model, &home);
+    let selects = |sent: &[ClientRequest]| {
+        sent.iter()
+            .any(|request| matches!(request, ClientRequest::SelectSpace { .. }))
+    };
+
+    driven.placements_answered(super::PlacementResolution {
+        label: "agent 2".to_owned(),
+        command: vec!["claude".to_owned()],
+        placement: Ok(place()),
+        replacing: None,
+        space: Some(origin),
+    });
+    let sent = driven.sent();
+    assert!(!selects(&sent), "a new agent waits in its space: {sent:?}");
+
+    driven.placements_answered(super::PlacementResolution {
+        label: "agent 3".to_owned(),
+        command: vec!["claude".to_owned()],
+        placement: Ok(place()),
+        replacing: None,
+        space: None,
+    });
+    let sent = driven.sent();
+    let created = sent.iter().find_map(|request| match request {
+        ClientRequest::CreateTab { space, .. } => *space,
+        _ => None,
+    });
+    assert!(
+        sent.iter().any(|request| matches!(
+            request,
+            ClientRequest::SelectSpace { space } if Some(*space) == created
+        )),
+        "resumed work is followed into the space it opened in: {sent:?}"
+    );
+}

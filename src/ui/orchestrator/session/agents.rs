@@ -567,6 +567,10 @@ impl Attach<'_> {
         // keeps in step with the layout.
         let agent = placement.placement.agent().as_str().to_owned();
         let size = self.model.last_size;
+        // A new agent was asked for in one space, and waits there if the
+        // operator moved on; work resumed is asked for now, wherever it
+        // lands, and the operator is taken to it.
+        let follow = space.is_none();
         let Some(space) = self
             .model
             .landing_space(space, replacing, &placement.project)
@@ -587,6 +591,9 @@ impl Attach<'_> {
             launch_key: placement.launch_key,
             size,
         });
+        if follow {
+            let _ = send_request(&mut self.stream, &ClientRequest::SelectSpace { space });
+        }
         // The agent this one took over from stood in a directory that no
         // longer exists: nothing it is told can reach the task any more,
         // and the operator asked for that task to continue here. Sent
