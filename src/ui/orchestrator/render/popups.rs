@@ -12,7 +12,7 @@ pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
 const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
 /// Wide enough for a directory's name beside what is known about it.
-const NEW_AGENT_POPUP_WIDTH: u16 = 64;
+const NEW_AGENT_POPUP_WIDTH: u16 = 54;
 /// The rows around the listing: the harness, the line typed into and the
 /// foot, each closed off by a rule.
 const NEW_AGENT_POPUP_CHROME: u16 = 6;
