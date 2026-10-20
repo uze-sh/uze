@@ -105,7 +105,7 @@ impl RenameBuffer {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum TabDragGroup {
     /// The agent rows of one space's sidebar list, by space id and by
-    /// group: the column draws the agents in the space's own root above
+    /// group: the column draws the agents in their project's own tree above
     /// the isolated ones, and a row dragged out of its group would have
     /// to land somewhere the order it was dropped into does not exist.
     Agents(SpaceId, AgentGroup),

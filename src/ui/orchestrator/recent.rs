@@ -84,8 +84,8 @@ impl Recent {
     }
 
     /// Whether a read already answered for the repository `directory` lies
-    /// in, so a space rooted below a project's root does not read the
-    /// same repository twice.
+    /// in, so a directory below a project's root does not read the same
+    /// repository twice.
     pub(super) fn covers(&self, directory: &Path) -> bool {
         self.reads.iter().any(|(primary, read)| {
             matches!(read.answer, Some(Some(_))) && directory.starts_with(primary)

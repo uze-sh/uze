@@ -1,4 +1,4 @@
-//! Tests for the "+ space" root picker.
+//! Tests for the directory picker a new agent chooses its directory with.
 //!
 //! Every case works on real directories under a disposable temp root and
 //! addresses them absolutely, so nothing here depends on the developer's

@@ -643,7 +643,7 @@ pub(in crate::ui::orchestrator) fn agents_in_drawing_order<'a>(
 /// pane happens to sit in.
 pub(in crate::ui::orchestrator) fn agent_group(model: &WorkspaceModel, tab: TabId) -> AgentGroup {
     // The record's own answer, not the branch: every agent is on one now,
-    // and an agent in the space's root would have grouped itself with the
+    // and an agent in its project's own tree would have grouped itself with the
     // isolated ones the moment its row learnt what branch that was.
     if let Some(task) = model.tab_task(tab) {
         return if task.isolated {
@@ -667,8 +667,8 @@ pub(in crate::ui::orchestrator) fn agent_group(model: &WorkspaceModel, tab: TabI
 }
 
 /// The two groups a space's column is drawn in, in the order it draws
-/// them: the agents sharing the space's own root, then the ones working
-/// in a checkout of their own.
+/// them: the agents working in their project's own tree, then the ones
+/// working in a checkout of their own.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(in crate::ui::orchestrator) enum AgentGroup {
     InTheRoot,
@@ -964,8 +964,8 @@ pub(super) fn block_ground(in_front: bool) -> Color {
 /// during a drag is an accent bar down the item's leading column, on
 /// both of its rows so it reads as the whole item.
 ///
-/// An agent in the space's own root stands where its space stands — it
-/// works there, so there is no level to draw. The isolated ones hang off
+/// An agent in its project's own tree stands where its space stands — it
+/// works in the tree itself, so there is no level to draw. The isolated ones hang off
 /// a trunk of their own, one column in, because their work does: the
 /// group that is somewhere else gets the one indent in the column, and
 /// the line down it says those rows are one collection. A group of one
@@ -992,7 +992,7 @@ pub(super) fn draw_tree(
     agents: &[SidebarAgent<'_>],
     captions: &[TreeCaption],
 ) {
-    // Two groups: the agents working in the space's own root, then the
+    // Two groups: the agents working in their project's own tree, then the
     // isolated ones. A blank row between them, and only when both have
     // somebody in them — a separator between collections, never between
     // siblings. Isolating an agent moves its row from the first group to
@@ -1095,7 +1095,7 @@ pub(super) fn draw_tree(
             // The only thing this edge carries. What a pull and a push
             // would move used to stand here too, and it is not the
             // agent's: it is read from the checkout, so every agent
-            // sharing one — four in a space's own root is an ordinary
+            // sharing one — four in a project's own tree is an ordinary
             // day — printed the same two numbers under its own name. It
             // is said once now, on the header of the space whose checkout
             // it is about (see `push_trailing_sync`), which is where the
@@ -1377,7 +1377,7 @@ pub(in crate::ui::orchestrator) fn render_space_header(
 /// separator the two collections are split by, and a second axis saying
 /// the same thing costs a colour that then means nothing else.
 /// The one column between the space's gutter and an agent's row: empty
-/// for an agent in the space's own root, and the isolated group's trunk
+/// for an agent in its project's own tree, and the isolated group's trunk
 /// for one working in a checkout of its own.
 ///
 /// One column, not two. Every step here is paid twice — once by the
@@ -1399,7 +1399,7 @@ pub(in crate::ui::orchestrator) fn render_space_header(
 /// says it is the other collection.
 #[derive(Clone, Copy)]
 pub(super) enum Branch {
-    /// In the space's own root, or the only isolated one: no level, no
+    /// In its project's own tree, or the only isolated one: no level, no
     /// line.
     None,
     /// The first of the isolated ones, opening the trunk.

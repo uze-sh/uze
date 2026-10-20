@@ -1529,10 +1529,10 @@ struct Remembered {
     /// The key a background resolution is currently in flight for, so the
     /// per-frame check cannot queue the same read repeatedly.
     agent_support_pending: Option<SupportKey>,
-    /// The last prompt history the drawer read, tagged with its space.
+    /// The last prompt history the overview read, tagged with whose it is.
     drawer_prompts: Option<PromptHistoryResolution>,
-    /// The space root a prompt history read is out for, so opening the
-    /// overview again before it answers does not queue another.
+    /// Whose prompt history a read is out for, so opening the overview
+    /// again before it answers does not queue another.
     prompt_history_pending: Option<PromptsOf>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
@@ -2298,7 +2298,7 @@ impl WorkspaceModel {
         if belongs { remembered } else { agent }
     }
     /// None of the modal overlays that own mouse input while they're open
-    /// (rename buffer, new-space root picker, agent picker, support
+    /// (rename buffer, new agent's directory step, agent picker, support
     /// dropdown, status catalog, isolation tip,
     /// context menu, Git overlay) are
     /// currently up — the precondition for forwarding a drag/release/scroll

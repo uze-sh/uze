@@ -45,7 +45,7 @@ impl Attach<'_> {
         }
     }
 
-    /// Bracketed paste. Only three surfaces take one: the root picker, a
+    /// Bracketed paste. Only three surfaces take one: the new agent's directory step, a
     /// rename buffer, and — with nothing open — the focused pane.
     pub(super) fn paste(&mut self, text: String) -> Flow {
         match text {

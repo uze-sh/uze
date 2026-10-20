@@ -1346,7 +1346,7 @@ pub(super) fn spawn_code_measure(root: PathBuf, sender: mpsc::Sender<MeasureReso
     });
 }
 
-/// A space's recorded prompts, tagged with the root they were read for.
+/// An agent's recorded prompts, tagged with whose they are.
 pub(super) struct PromptHistoryResolution {
     pub(super) of: PromptsOf,
     pub(super) entries: Vec<uze_application::PromptEntry>,
@@ -1440,7 +1440,7 @@ pub(super) fn spawn_space_overview(
     });
 }
 
-/// Measures the worktrees of the space rooted at `root`, for the
+/// Measures the worktrees of the project at `root`, for the
 /// overview's Worktrees section: [`spawn_checkouts`]' read, a walk of every
 /// directory of every checkout, answered by space so an overview put away
 /// meanwhile drops it.

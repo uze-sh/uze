@@ -1,4 +1,4 @@
-//! What floats over the workspace: the agent picker, the context menu, a commit's account, the status catalog, the root picker, the delivery notification and the action index.
+//! What floats over the workspace: the agent picker, the context menu, a commit's account, the status catalog, the new agent's popup, the delivery notification and the action index.
 
 use super::*;
 

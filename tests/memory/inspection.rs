@@ -145,7 +145,7 @@ fn a_space_with_no_project_or_no_root_is_answered_as_such() {
             .workspace()
             .space_overview(&root.join("gone"))
             .unwrap(),
-        SpaceOverview::RootGone { .. }
+        SpaceOverview::DirectoryGone { .. }
     ));
 }
 

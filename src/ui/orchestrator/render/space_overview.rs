@@ -154,12 +154,13 @@ fn render_overview_frame(
         overview,
     );
     let message = match &overview.answer {
-        Some(Ok(SpaceOverview::RootGone { root })) => {
-            Some(format!("{} no longer exists", display_path(root)))
+        Some(Ok(SpaceOverview::DirectoryGone { directory })) => {
+            Some(format!("{} no longer exists", display_path(directory)))
         }
-        Some(Ok(SpaceOverview::NotAProject { root })) => {
-            Some(format!("{} is not inside a project", display_path(root)))
-        }
+        Some(Ok(SpaceOverview::NotAProject { directory })) => Some(format!(
+            "{} is not inside a project",
+            display_path(directory)
+        )),
         Some(Err(reason)) => Some(reason.clone()),
         _ => None,
     };

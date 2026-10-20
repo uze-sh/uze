@@ -913,8 +913,8 @@ pub(super) fn checkout_lost(bound_checkout: Option<&PathBuf>, cwd: &Path) -> boo
         || cwd.to_string_lossy().ends_with(" (deleted)")
 }
 
-/// The new-agent picker inherits the selected pane's live directory. The
-/// runtime's workspace root is only a fallback for callers that omit it.
+/// The selected pane's live directory, where a shell opened beside nothing
+/// in particular starts.
 pub(super) fn selected_pane_cwd(model: &WorkspaceModel) -> Option<PathBuf> {
     let session = model.session.as_ref()?;
     let tab = session.selected_tab();

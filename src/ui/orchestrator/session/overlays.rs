@@ -1,4 +1,4 @@
-//! What an overlay does with an action: the action index, the root picker, a rename, the drawer, the agent picker and the context menu.
+//! What an overlay does with an action: the action index, the new agent's directory step, a rename, the drawer, the agent picker and the context menu.
 
 use super::*;
 

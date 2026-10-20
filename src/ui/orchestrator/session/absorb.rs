@@ -339,7 +339,7 @@ impl Attach<'_> {
         }
         // A directory the sidebar names is read the moment it is known,
         // not when its pane next goes quiet or on the refresh clock: a
-        // folded space's root or an agent nobody selected otherwise
+        // project a folded space works in or an agent nobody selected otherwise
         // showed its path for as long as `TASK_REFRESH` before its branch.
         let unread = self.model.unread_named_directories(&self.identities);
         for cwd in &unread {

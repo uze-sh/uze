@@ -14,12 +14,12 @@ use crate::application::{
     memory::{Entry, MemoryScope, UnreadableFact},
 };
 
-/// One space's overview. A root that is gone and a directory that is no
-/// project are answers the screen shows, never failures.
+/// The overview of the project an agent works in. A directory that is gone
+/// and one that is no project are answers the screen shows, never failures.
 #[derive(Clone, Debug)]
 pub enum SpaceOverview {
-    RootGone { root: PathBuf },
-    NotAProject { root: PathBuf },
+    DirectoryGone { directory: PathBuf },
+    NotAProject { directory: PathBuf },
     Project(Box<ProjectSpace>),
 }
 
@@ -80,22 +80,22 @@ pub struct SpaceMemory {
 }
 
 impl Workspace<'_> {
-    /// The overview of the space rooted at `root`. Reads only what
+    /// The overview of the project at `root`. Reads only what
     /// `uze status` reads, plus the installed plugins' index and UZE's
     /// own agent records, and asks Git only whether each declared link is
     /// ignored: no network.
     #[tracing::instrument(name = "workspace.space_overview", skip_all, fields(root = %root.display()), err)]
     pub fn space_overview(&self, root: &Path) -> Result<SpaceOverview> {
         if !root.is_dir() {
-            return Ok(SpaceOverview::RootGone {
-                root: root.to_path_buf(),
+            return Ok(SpaceOverview::DirectoryGone {
+                directory: root.to_path_buf(),
             });
         }
         let status = match self.0.health().project_status(root) {
             Ok(status) => status,
             Err(UzeError::NoProject { .. }) => {
                 return Ok(SpaceOverview::NotAProject {
-                    root: root.to_path_buf(),
+                    directory: root.to_path_buf(),
                 });
             }
             Err(error) => return Err(error),
