@@ -65,6 +65,13 @@ pub(super) struct RootPicker {
     /// match first.
     matched: Vec<usize>,
     selected: usize,
+    /// The first match the window shows. Kept rather than derived from the
+    /// selection: the pointer selects the row it is over, and a window
+    /// that put the selection at its foot moved a new row under the
+    /// pointer on every frame, which the pointer then selected.
+    top: std::cell::Cell<usize>,
+    /// How many rows the window last showed, for the wheel to scroll by.
+    shown: std::cell::Cell<usize>,
     /// The project the operator is standing in, when it is one of the
     /// rows. The prompt opens on it and returns to it whenever the
     /// listing is read again with nothing typed, so "another agent in this
@@ -103,6 +110,8 @@ impl RootPicker {
             listing: Vec::new(),
             matched: Vec::new(),
             selected: 0,
+            top: std::cell::Cell::new(0),
+            shown: std::cell::Cell::new(1),
             marked: standing_in.map(Path::to_path_buf),
             picked: None,
         };
@@ -179,9 +188,35 @@ impl RootPicker {
     }
 
     /// First match to draw when only `height` rows are available — the
-    /// list scrolls just enough to keep the selection on screen.
+    /// list scrolls only when the selection leaves the window, and only
+    /// far enough to bring it back.
     pub(super) fn window_start(&self, height: usize) -> usize {
-        (self.selected + 1).saturating_sub(height.max(1))
+        let height = height.max(1);
+        let mut top = self.top.get();
+        if self.selected < top {
+            top = self.selected;
+        } else if self.selected >= top + height {
+            top = self.selected + 1 - height;
+        }
+        top = top.min(self.matched.len().saturating_sub(height));
+        self.top.set(top);
+        self.shown.set(height);
+        top
+    }
+
+    /// Scrolls the window by `delta` rows, the way the wheel does, taking
+    /// the selection along only as far as it must to stay on screen.
+    pub(super) fn scroll(&mut self, delta: isize) {
+        let shown = self.shown.get();
+        let last_top = self.matched.len().saturating_sub(shown);
+        let top = self.top.get().saturating_add_signed(delta).min(last_top);
+        self.top.set(top);
+        if self.matched.is_empty() {
+            return;
+        }
+        self.selected = self.selected.clamp(top, top + shown - 1);
+        self.touched = true;
+        self.reland();
     }
 
     pub(super) fn select(&mut self, index: usize) {
@@ -324,6 +359,7 @@ impl RootPicker {
         }
         self.matched = leading;
         self.selected = 0;
+        self.top.set(0);
         // Typing is choosing: the best match leads the list, and it is the
         // one `Enter` takes. A line ending in a separator has typed no
         // segment, so it has chosen nothing inside what it names.

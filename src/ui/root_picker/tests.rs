@@ -341,6 +341,27 @@ fn the_window_scrolls_only_far_enough_to_keep_the_selection_visible() {
     assert_eq!(picker.window_start(8), 1);
 }
 
+/// A selection moved back up inside the window leaves it where it is: the
+/// pointer selects the row it is over, and a window that followed it would
+/// slide another row under the pointer on every frame.
+#[test]
+fn a_selection_inside_the_window_does_not_move_it() {
+    let directories: Vec<String> = (0..12).map(|index| format!("d{index:02}")).collect();
+    let borrowed: Vec<&str> = directories.iter().map(String::as_str).collect();
+    let (_root, mut picker) = picker_over("root-picker-window-still", &borrowed);
+    picker.select(11);
+    assert_eq!(picker.window_start(8), 4, "scrolled to the end");
+
+    picker.select(5);
+    assert_eq!(
+        picker.window_start(8),
+        4,
+        "a row on screen keeps the window"
+    );
+    picker.select(2);
+    assert_eq!(picker.window_start(8), 2, "one above it scrolls just to it");
+}
+
 /// The directory being listed is what the prompt lands on until something
 /// in it is chosen — picking it needs no gesture at all.
 #[test]
@@ -459,4 +480,29 @@ fn a_symlink_to_a_directory_is_offered_and_a_file_is_not() {
     let picker = RootPicker::opened_in(&root.join("listed").display().to_string(), None);
 
     assert_eq!(names(&picker), vec!["linked".to_owned()]);
+}
+
+/// The wheel scrolls the window a row at a time, and the selection goes
+/// along only as far as it must to stay on screen.
+#[test]
+fn the_wheel_scrolls_the_window_and_keeps_the_selection_on_screen() {
+    let directories: Vec<String> = (0..12).map(|index| format!("d{index:02}")).collect();
+    let borrowed: Vec<&str> = directories.iter().map(String::as_str).collect();
+    let (_root, mut picker) = picker_over("root-picker-wheel", &borrowed);
+    picker.select(3);
+    assert_eq!(picker.window_start(8), 0);
+
+    picker.scroll(1);
+    assert_eq!(picker.window_start(8), 1, "the window moved");
+    assert_eq!(
+        picker.selected(),
+        3,
+        "the selection, still on screen, did not"
+    );
+
+    for _ in 0..10 {
+        picker.scroll(1);
+    }
+    assert_eq!(picker.window_start(8), 4, "no further than the end");
+    assert_eq!(picker.selected(), 4, "the selection kept on screen");
 }

@@ -1151,7 +1151,7 @@ impl Attach<'_> {
                     .as_mut()
                     .map(|step| &mut step.picker)
                 {
-                    picker.move_selection(if mouse.kind == MouseEventKind::ScrollUp {
+                    picker.scroll(if mouse.kind == MouseEventKind::ScrollUp {
                         -1
                     } else {
                         1

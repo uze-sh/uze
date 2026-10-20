@@ -507,10 +507,9 @@ fn the_directory_step_lines_its_rows_up_in_one_column() {
 }
 
 /// A listing taller than the popup is reached with the wheel too: it
-/// walks the directories the way the arrow keys do, and the window
-/// follows the one selected.
+/// scrolls the window a row a turn, and the selection stays on screen.
 #[test]
-fn the_wheel_walks_the_directories_the_step_offers() {
+fn the_wheel_scrolls_the_directories_the_popup_offers() {
     let home = UzeHome::at(uze_testkit::temp::scratch("popup-wheel"));
     let root = uze_testkit::temp::TempDir::new("popup-picker-wheel");
     for index in 0..40 {
@@ -532,8 +531,19 @@ fn the_wheel_walks_the_directories_the_step_offers() {
         driven.frame();
         driven.mouse(row.x, row.y, MouseEventKind::ScrollDown);
     }
-    let selection = |driven: &Driven<'_>| {
-        driven
+    let window = |driven: &mut Driven<'_>| {
+        driven.frame();
+        let shown: Vec<usize> = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter_map(|(_, hit)| match hit {
+                WorkspaceHit::PickDirectory(index) => Some(*index),
+                _ => None,
+            })
+            .collect();
+        let selected = driven
             .attach
             .model
             .directory_step
@@ -541,18 +551,20 @@ fn the_wheel_walks_the_directories_the_step_offers() {
             .expect("still open")
             .picker
             .selection()
+            .expect("a row is selected");
+        (shown, selected)
     };
-    assert_eq!(
-        selection(&driven),
-        Some(24),
-        "the first turn takes the row in front, and the rest walk it"
-    );
+    let (shown, selected) = window(&mut driven);
+    assert_eq!(shown.first(), Some(&25), "a row a turn: {shown:?}");
+    assert!(shown.contains(&selected), "the selection is on screen");
 
     for _ in 0..40 {
         driven.frame();
         driven.mouse(row.x, row.y, MouseEventKind::ScrollUp);
     }
-    assert_eq!(selection(&driven), Some(0), "and stops at the top");
+    let (shown, selected) = window(&mut driven);
+    assert_eq!(shown.first(), Some(&0), "and stops at the top");
+    assert!(shown.contains(&selected), "the selection is on screen");
 }
 
 /// The popup floats beside the `new` it was asked from, over the pane,
