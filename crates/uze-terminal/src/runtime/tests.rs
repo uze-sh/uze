@@ -1025,9 +1025,15 @@ fn a_tab_asked_for_in_a_space_opens_there() {
             _ => None,
         })
         .expect("the tab was opened in the space it was asked for");
+    let looking_at = server.selection_of(1).space;
     let _ = send_request(&mut writer, &crate::ClientRequest::Detach);
     let _ = serving.join();
     assert_eq!(tabs, 2);
+    assert_ne!(
+        looking_at,
+        Some(origin),
+        "the client that asked was pulled into the space it was not looking at"
+    );
 }
 
 /// A tab is opened in the space the client selected last, so selecting

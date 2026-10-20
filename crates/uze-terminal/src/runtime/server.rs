@@ -444,12 +444,16 @@ impl Server {
                             continue;
                         }
                     };
-                    let (pane, tab, space) = {
+                    let (pane, tab, space, looking_at) = {
                         let mut session = self.session.lock().expect("session poisoned");
-                        let space = space
-                            .or(self.selection_of(client).space)
+                        let looking_at = self
+                            .selection_of(client)
+                            .space
                             .filter(|space| session.space(*space).is_some())
                             .unwrap_or(session.workspace.selected_space);
+                        let space = space
+                            .filter(|space| session.space(*space).is_some())
+                            .unwrap_or(looking_at);
                         let cwd = cwd.unwrap_or_else(|| {
                             uze_platform::home::user_home().unwrap_or_else(|| PathBuf::from("."))
                         });
@@ -465,10 +469,17 @@ impl Server {
                             .space(space)
                             .expect("the space the tab was added to")
                             .selected_tab;
-                        (pane, tab, space)
+                        (pane, tab, space, looking_at)
                     };
+                    // In front in its own space, and the client brought to
+                    // it only when it is the space the client is looking
+                    // at: a tab asked for in another space — an agent whose
+                    // checkout was ready after the operator moved on —
+                    // waits there rather than pulling them back.
                     self.update_selection(client, |selection| {
-                        selection.space = Some(space);
+                        if space == looking_at {
+                            selection.space = Some(space);
+                        }
                         selection.tabs.insert(space, tab);
                     });
                     if self.spawn_pane(pane, launch).is_err() {
