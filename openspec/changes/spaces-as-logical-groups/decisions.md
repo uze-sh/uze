@@ -147,3 +147,13 @@
 - decided:  The popup asks for the directory, with the harness in a field prefilled with the last one used (kept in the client layout) and moved with `←` `→` (first `Tab`, which the operator rejected: `Tab` is how a directory is completed); its foot names its keys only (a sentence saying where and with what crowded them out, the operator found), and rows say `space · <branch>` or `git`.
 - rejected: The two steps with a way back, which made the common case two keys and the steps row a second thing to read.
 - blast:    `DirectoryStep`, `session/agents.rs`, `render/popups.rs`, the `RootPicker` scope's keys, `WorkspaceLayout.last_harness`.
+
+## D16 — An older release does not restore this build's workspace
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  The nightly upgrade journey opened beta.15 after this build: it cannot read the workspace document's shape 3, so it opens with no tabs, finds this build's agent not running and closes its task.
+- decided:  Accepted as the cost of shape 3 (the ladder step 2→3, a one-way door). What still holds, and what the journey now proves, is that the older release neither collects nor takes the checkout named after the agent: the directory and its work stay. The journey's `released:` moves past this change once a release carries shape 3.
+- rejected: Writing shape 2 beside shape 3 for older releases, which keeps a space root this change exists to remove.
+- blast:    `journeys/suites/07-upgrade/01-the-previous-release-hands-over-its-work.yml`.

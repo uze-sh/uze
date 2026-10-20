@@ -153,14 +153,17 @@ scenes:
             import glob, json, os
             agents = [a for s in glob.glob('{uze_home}/state/projects/*/agents.json')
                       for a in json.load(open(s))['agents'] if a.get('isolation')]
-            own = [a for a in agents if a['isolation'].get('checkout') == a['id']]
+            named = lambda a: a['isolation'].get('checkout') or a['isolation'].get('last_checkout')
+            own = [a for a in agents if named(a) == a['id']]
             kept = [a['id'] for a in own if os.path.isdir('{project}/.worktrees/' + a['id'])]
             print('kept' if own and kept == [a['id'] for a in own] else 'lost: %s' % agents)
             "
           stdout_contains: kept
         about: |
-          this build placed its agent in a directory named after the agent;
-          the release, which looks a checkout's owner up by the directory's
-          name, still finds it its agent's and neither collects nor takes it
+          this build placed its agent in a directory named after the agent,
+          and the release neither collects nor takes it. The release cannot
+          read this build's workspace (shape 3), so it does not bring the
+          agent's tab back and may close its task — but the checkout, named
+          after the agent, stays where it is, with its work.
       - git: { worktrees: 3 }
         about: and Git still registers both agents' checkouts
