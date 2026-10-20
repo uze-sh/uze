@@ -78,11 +78,6 @@ where its artifacts live. You write it. See [Project files](/docs/reference/proj
 **`agents.lock`.** What resolving `agents.yaml` produced: a commit per
 marketplace and a digest per plugin. Written by uze; deleting it loses nothing.
 
-**Managed region.** A block between `<!-- uze:begin … -->` and
-`<!-- uze:end … -->` markers that earlier releases wrote into `AGENTS.md` (and
-a `CLAUDE.md` bridge beside it). uze writes none any more, and `uze install`
-removes the ones left behind, except one you edited.
-
 ## Workspace
 
 **Workspace.** The terminal UI that opens when you run `uze workspace`.

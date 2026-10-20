@@ -38,20 +38,6 @@ delivered, how to name it) with its context when it starts
 ([Agents](/docs/workspace/agents)), and an agent asked to write a plugin
 follows the `uze:author` skill.
 
-Earlier releases wrote blocks into `AGENTS.md`, marked like this:
-
-```markdown
-<!-- uze:begin … -->
-…
-<!-- uze:end … -->
-```
-
-and a one-line `CLAUDE.md` that imported `AGENTS.md` for Claude Code. In your
-main checkout, `uze install` removes those blocks once and leaves your own
-text as it was. A block you edited by hand is reported and left for you. The
-`CLAUDE.md` goes with the last block, or keeps your own lines if you wrote
-any. Commit the result once; checkouts made after that are clean.
-
 ## Project skills, agents and rules
 
 Skills the project keeps in `.agents/skills` reach Codex, OpenCode and

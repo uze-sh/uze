@@ -37,7 +37,7 @@ uze status -m                 # this machine: every installed plugin
 
 `uze install` creates `agents.yaml` when the project has none, records what it
 resolved in `agents.lock`, drops from the lock what `agents.yaml` no longer
-declares, and leaves `AGENTS.md` reconciled. `install`, `update` and `status`
+declares, and copies the declared plugins' rules into `.agents/rules/`. `install`, `update` and `status`
 take a project directory, and otherwise act on the project you are in.
 
 | Flag | On | Does |
