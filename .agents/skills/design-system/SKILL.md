@@ -103,8 +103,10 @@ on "cancel" must not save first.
 - A choice that rarely changes is a field prefilled with the last answer
   (`harness ‹ Claude Code ›`, moved with `Tab`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
-- A popover's foot says what Enter does, with what it is about (`enter new
-  in ~/uze with Claude Code`), and its other keys against the end.
+- A popover's foot names its keys and nothing else (`enter new · tab
+  harness · esc close`). What Enter acts on is already on screen, in the
+  field and the row marked; a sentence repeating it crowds the keys out.
+- A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end
   (`space · main`, `git`), never in a column of its own.
 - A click anywhere inside a popover keeps it open; only a click outside it

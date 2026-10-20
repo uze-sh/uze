@@ -144,6 +144,6 @@
 - task:     1.2
 - commit:
 - trigger:  The operator chose a one-step popup: the harness rarely changes, so asking for it after every directory cost a second confirmation in the common case.
-- decided:  The popup asks for the directory, with the harness in a field prefilled with the last one used (kept in the client layout) and moved with `Tab`; its foot says what Enter does, and rows say `space · <branch>` or `git`. `Tab` no longer walks into a directory: `Right` does.
+- decided:  The popup asks for the directory, with the harness in a field prefilled with the last one used (kept in the client layout) and moved with `Tab`; its foot names its keys only (a sentence saying where and with what crowded them out, the operator found), and rows say `space · <branch>` or `git`. `Tab` no longer walks into a directory: `Right` does.
 - rejected: The two steps with a way back, which made the common case two keys and the steps row a second thing to read.
 - blast:    `DirectoryStep`, `session/agents.rs`, `render/popups.rs`, the `RootPicker` scope's keys, `WorkspaceLayout.last_harness`.

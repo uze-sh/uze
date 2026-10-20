@@ -11,9 +11,8 @@ pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u
 
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
 const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
-/// Wide enough for a directory's name and what is known about it, and for
-/// the foot saying where the agent starts and with what.
-const NEW_AGENT_POPUP_WIDTH: u16 = 68;
+/// Wide enough for a directory's name beside what is known about it.
+const NEW_AGENT_POPUP_WIDTH: u16 = 66;
 /// The rows around the listing: the harness, the line typed into and the
 /// foot, each closed off by a rule.
 const NEW_AGENT_POPUP_CHROME: u16 = 6;
@@ -164,8 +163,8 @@ fn render_harness_field(
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
 
-/// What Enter does, said with what it is about — where the agent starts
-/// and which harness runs it — and the popup's other keys against the end.
+/// The popup's keys, Enter's first: what it does is the field and the
+/// row marked above, so the foot only names the keys.
 fn render_new_agent_foot(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -177,52 +176,19 @@ fn render_new_agent_foot(
         Some(WorkspaceHit::HintAction(action)) => Some(action),
         _ => None,
     };
+    let enter = if step.chosen_harness().is_some() {
+        "new"
+    } else {
+        SET_ONE_UP
+    };
     let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
+        .named(Action::Activate, enter)
         .named(Action::FocusNext, "harness")
         .named(Action::Dismiss, "close")
         .hovered(hovered);
-    let keys_width = keys.width().min(rect.width / 2);
-    let enter = uze_keys::active()
-        .chord_for(Action::Activate, &NEW_AGENT_SCOPES)
-        .map_or_else(String::new, |chord| chord.to_string());
-    let lit = hovered == Some(Action::Activate);
-    let room = rect.width.saturating_sub(keys_width + 2 * TRAILING_PAD);
-    let words = usize::from(room).saturating_sub(PICKER_LEAD + text::columns(&enter) + 1);
-    // The directory gives way first, and from its head: its end is what
-    // says which one it is.
-    let what = match (step.picker.chosen(), step.chosen_harness()) {
-        (_, None) => SET_ONE_UP.to_owned(),
-        (Some(directory), Some(option)) => {
-            let around = text::columns(&format!("new in  with {}", option.display_name));
-            let directory = text::elide_head(
-                &crate::ui::display_project_path(&directory),
-                words.saturating_sub(around),
-            );
-            format!("new in {directory} with {}", option.display_name)
-        }
-        (None, Some(_)) => "open the directory".to_owned(),
-    };
-    let line = Line::from(vec![
-        picker_lead(),
-        Span::styled(format!("{enter} "), theme::fg_bold(Token::Accent)),
-        Span::styled(
-            text::elide(&what, words),
-            theme::fg(if lit {
-                Token::Accent
-            } else {
-                Token::TextSecondary
-            }),
-        ),
-    ]);
-    let said = Rect {
-        width: room,
-        ..rect
-    };
-    frame.render_widget(Paragraph::new(line), said);
-    hits.push((said, WorkspaceHit::HintAction(Action::Activate)));
     let at = Rect {
-        x: rect.right().saturating_sub(keys_width + TRAILING_PAD),
-        width: keys_width,
+        x: rect.x + PICKER_LEAD as u16,
+        width: rect.width.saturating_sub(PICKER_LEAD as u16 + TRAILING_PAD),
         ..rect
     };
     for (rect, action) in keys.render(frame, at) {

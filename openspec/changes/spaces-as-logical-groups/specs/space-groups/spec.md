@@ -54,16 +54,16 @@ nothing.
 The popup SHALL be anchored beside the `new` of the space it was asked
 from, floating over the pane, and nothing in the sidebar SHALL move while
 it is open. Its listing SHALL keep the height it opened with, up to nine
-rows, scrolling inside it. Its foot SHALL say what Enter does: where the
-agent starts and with which harness.
+rows, scrolling inside it. Its foot SHALL name its keys, each one a target
+that does what the key does.
 
 #### Scenario: The popup opens beside `new`
 - **WHEN** the operator presses `new` on a space
 - **THEN** the popup opens beside that `new`, over the pane, and every row of the sidebar stays where it was
 
-#### Scenario: The foot says what Enter does
-- **WHEN** the popup is on `~/uze` with Claude Code in the field
-- **THEN** its foot reads `new in ~/uze with Claude Code`
+#### Scenario: The foot names the keys
+- **WHEN** the popup is open with a harness set up
+- **THEN** its foot reads `enter new · tab harness · esc close`, and a click on `new` starts the agent
 
 ### Requirement: The directory listing says what it knows
 A row of the listing SHALL say, against its end, when its directory is a

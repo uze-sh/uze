@@ -642,33 +642,35 @@ fn the_harness_field_offers_the_last_one_and_tab_moves_it() {
     );
 }
 
-/// The foot says what Enter does, with what it is about: the directory
-/// the agent starts in and the harness that runs it.
+/// The foot names the popup's keys and nothing else, and its `new` is
+/// Enter: a click on it starts the agent.
 #[test]
-fn the_foot_says_where_and_with_what_enter_starts_the_agent() {
+fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
     let home = UzeHome::at(uze_testkit::temp::scratch("popup-foot"));
     set_up_every_harness(&home);
     let root = uze_testkit::temp::TempDir::new("popup-foot-root");
     std::fs::create_dir_all(root.join("engine")).unwrap();
     let mut model = agent_session_in("/repo");
     directory_step_over(&mut model, root.path(), &home);
-    let harness = model
-        .directory_step
-        .as_ref()
-        .and_then(|step| step.chosen_harness())
-        .expect("a harness is set up")
-        .display_name
-        .clone();
     if let Some(step) = model.directory_step.as_mut() {
         step.picker.select(0);
     }
 
     let (rows, _) = drawn(&mut model);
+    let foot = rows
+        .iter()
+        .find(|row| row.contains("harness") && row.contains("close"))
+        .expect("the foot is drawn");
+    assert!(foot.contains("new"), "{foot}");
+    assert!(!foot.contains("engine"), "no sentence about where: {foot}");
 
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let new = driven.hit(|hit| *hit == WorkspaceHit::HintAction(uze_keys::Action::Activate));
+    driven.press(new.x, new.y);
     assert!(
-        rows.iter()
-            .any(|row| row.contains("new in") && row.contains("engine") && row.contains(&harness)),
-        "{rows:#?}"
+        driven.attach.model.placement_pending,
+        "the agent was started"
     );
 }
 
