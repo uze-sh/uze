@@ -53,11 +53,15 @@ sandbox:
     - mkdir -p {home}/landing-bin && ln -sf {project}/target/release/uze {home}/landing-bin/uze
   reset:
     # The sandbox's own terminal server, by pid, verified through /proc —
-    # never a pattern kill, which would match the shell running it.
+    # never a pattern kill, which would match the shell running it. Known by
+    # the sandbox's HOME, not by its flags: it was matched on `--root` once,
+    # and when the flag became `--project` the server outlived every reset,
+    # so the next take met it with its workspace deleted and opened on a
+    # "runtime replaced" toast.
     - |
       for pid in $(pgrep -x uze 2>/dev/null); do
-        cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
-        case "$cmd" in *"terminal serve --root {fixtures}/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+        tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep -qx 'HOME={home}' || continue
+        case "$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null)" in *"terminal serve"*) kill -TERM "$pid" 2>/dev/null ;; esac
       done
     # And the previous attempt's own client, which outlives the tmux session
     # that ran it and writes its layout back after the reset: the next take

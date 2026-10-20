@@ -84,7 +84,7 @@ sandbox:
     - |
       for pid in $(pgrep -x uze 2>/dev/null); do
         cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null) || continue
-        case "$cmd" in *"terminal serve --root /tmp/uzeinstall/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+        case "$cmd" in *"terminal serve --project /tmp/uzeinstall/"*) kill -TERM "$pid" 2>/dev/null ;; esac
       done
   # Every take is a machine that has never seen uze or Claude Code: the
   # install and the setup are what the video shows, so neither may be done.
