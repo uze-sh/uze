@@ -113,6 +113,9 @@ on "cancel" must not save first.
   several), in the column's quiet hue, and ends with its harness in the
   trailing column. Only the harness takes the row's lit caption token
   (`caption_color`), never a fixed colour and never the whole line.
+- A name too long for its row is cut at its end (`uze-audit-20…`), on
+  every row of a list, the selected one included; a path is cut at its head
+  (`…/projects/uze`). Never in the middle.
 - A click anywhere inside a popover keeps it open; only a click outside it
   dismisses it.
 

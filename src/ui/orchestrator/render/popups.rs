@@ -749,8 +749,15 @@ fn render_root_picker(
         // The row the keyboard is on wears the bar a menu's row does: the
         // one Enter takes.
         if picker.selection() == Some(index) {
-            render_agent_picker_row(frame, rect, &candidate.name, true);
+            // Cut at its end like every other row, leaving the mark its
+            // room and a column between them.
             let width = text::columns(&mark.text) as u16;
+            let gap = if width > 0 { width + 1 } else { 0 };
+            let room = usize::from(
+                rect.width
+                    .saturating_sub(PICKER_LEAD as u16 + gap + TRAILING_PAD),
+            );
+            render_agent_picker_row(frame, rect, &text::elide(&candidate.name, room), true);
             let at = Rect {
                 x: rect.right().saturating_sub(width + TRAILING_PAD),
                 width,

@@ -686,6 +686,38 @@ fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
     );
 }
 
+/// A name longer than the popup is cut at its end, the row in front
+/// included, and never runs under what the row says against its end.
+#[test]
+fn a_long_name_is_cut_at_its_end_on_every_row() {
+    let root = uze_testkit::temp::TempDir::new("popup-long-name-root");
+    let long = "a-project-whose-name-is-far-longer-than-the-popup-is-wide";
+    uze_testkit::git::mark_repository(&root.join(long));
+    std::fs::create_dir_all(root.join(format!("{long}-too"))).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path(), &bare_home("popup-long-name"));
+    if let Some(step) = model.directory_step.as_mut() {
+        step.picker.select(0);
+    }
+
+    let (rows, _) = drawn(&mut model);
+
+    let ellipsis = theme::glyph(crate::ui::theme::Symbol::Ellipsis);
+    let named: Vec<&String> = rows
+        .iter()
+        .filter(|row| row.contains("a-project-whose"))
+        .collect();
+    assert_eq!(named.len(), 2, "{rows:#?}");
+    for row in named {
+        assert!(row.contains(&ellipsis), "cut at its end: {row}");
+    }
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("a-project-whose") && row.contains(&format!("{ellipsis} git"))),
+        "the selected row keeps its mark whole: {rows:#?}"
+    );
+}
+
 /// The listing says which directories are repositories, so the one a
 /// project lives in stands out among the rest.
 #[test]
