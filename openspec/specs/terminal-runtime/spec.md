@@ -5,7 +5,9 @@ What the workspace client does with the terminals the runtime keeps alive:
 how their tabs are ordered and moved, and the code surface that shows the
 active tab's checkout — what changed in it, what it contains, and the edits
 made to it — without disturbing any pane's process.
+
 ## Requirements
+
 ### Requirement: Drag-to-reorder agent tabs in the sidebar
 The workspace TUI client SHALL let a user reorder an agent tab within its
 space's sidebar list by dragging its row up or down among the other agent
@@ -344,27 +346,6 @@ process.
 - **AND THEN** every pane's process SHALL be unaffected by the surface
   having been open
 
-### Requirement: A space is a root, and the runtime knows nothing else about it
-The terminal runtime SHALL identify a space by its root alone. It SHALL NOT
-carry, persist or report a kind for a space, and nothing it does with panes,
-tabs or processes SHALL depend on one. Asked to open a space for a root, it
-SHALL reuse that root's existing space, creating one only when there is
-none. A persisted workspace from a version that recorded a kind per space
-SHALL be read by the rule `upgrade-resilience` states for a document of an
-older version.
-
-#### Scenario: A root names one space
-- **WHEN** a client opens a space for a root that already has one
-- **THEN** the existing space is selected and none is created
-
-#### Scenario: The space round-trips through a restart
-- **WHEN** a space is created and the server is restarted
-- **THEN** the restored space is the same space, at the same root
-
-#### Scenario: A workspace persisted by an older version
-- **WHEN** the runtime restores a persisted workspace whose spaces carry a kind
-- **THEN** it reads it as the older document it is, and the operator is told what was done about it
-
 ### Requirement: The workspace claim names the process holding it
 
 The server serving a workspace SHALL record its own process id in the
@@ -464,7 +445,7 @@ neither exists it SHALL say so rather than reporting a missing file.
 ### Requirement: A workspace written by an earlier build opens on this one
 
 The persisted workspace SHALL be carried across to the shape this build
-reads, keeping every space, its root, its tabs and each tab's directory
+reads, keeping every space, its label, its tabs and each tab's directory
 and launch. A field an earlier shape carried that this one dropped SHALL
 be the only thing lost. Spaces SHALL NOT be lost because the workspace was
 written by an earlier build whose shape this one knows.
@@ -473,7 +454,7 @@ written by an earlier build whose shape this one knows.
 
 - **WHEN** UZE is upgraded and the persisted workspace was written by an
   earlier shape this build knows
-- **THEN** the same spaces SHALL open, with the same roots, tabs and
+- **THEN** the same spaces SHALL open, with the same labels, tabs and
   directories
 - **AND THEN** nothing SHALL be reported
 
@@ -483,6 +464,13 @@ written by an earlier build whose shape this one knows.
   own
 - **THEN** every space SHALL open without it
 - **AND THEN** nothing else about the workspace SHALL change
+
+#### Scenario: The shape that rooted every space
+
+- **WHEN** the workspace was written when a space was identified by its root
+- **THEN** every space SHALL open without its root and with an id of its own
+- **AND THEN** every tab SHALL stand where it stood, the space's first
+  shell included
 
 ### Requirement: The runtime says what it could not carry across
 
@@ -586,45 +574,6 @@ in one document under the user's UZE state.
 - **THEN** the new client attaches to the running server whenever it answers this build's handshake, and every pane keeps its process
 - **AND THEN** a server that cannot answer it is ended instead, and the spaces, tabs and panes it held are restored by the server that replaces it
 
-### Requirement: A space has a root
-The system SHALL give every space a root directory, chosen when the space is
-created, and SHALL derive the space's behaviour from it: an agent or a shell
-created in the space starts from it, and a root that is a Git repository
-with a commit gives agents isolated checkouts. Starting `uze` SHALL ensure a
-space rooted at the launch directory's workspace root exists, creating it
-only when none has that root, and SHALL select it for that client. Creating
-a space explicitly SHALL ask for its root.
-
-#### Scenario: The launch directory becomes a space
-- **WHEN** a user starts `uze` in a directory no space is rooted at
-- **THEN** a space rooted there is created, labelled from the directory, and selected for that client
-
-#### Scenario: A known root is selected, not duplicated
-- **WHEN** a user starts `uze` in a directory a space is already rooted at
-- **THEN** that space is selected for the client and no space is created
-
-#### Scenario: A new space starts from a chosen root
-- **WHEN** a user creates a space and confirms a root
-- **THEN** the space's first shell opens in that root and agents created in it start from it
-
-#### Scenario: The root asked for is prefilled
-- **WHEN** a user creates a space explicitly
-- **THEN** the root is asked for, prefilled with the selected space's root
-
-### Requirement: A new space's root is chosen, not typed
-Creating a space SHALL offer the directories that exist rather than accept a
-path typed blind: the prompt SHALL name a directory to list and a segment to
-match inside it, SHALL narrow the offered directories as that segment is
-typed, and SHALL create the space at the directory the person lands on.
-
-#### Scenario: The listing narrows as the root is typed
-- **WHEN** a user opens the new-space prompt and types part of a directory's name
-- **THEN** only the directories of the listed directory whose names match are offered
-
-#### Scenario: The chosen directory becomes the root
-- **WHEN** a user confirms one of the offered directories
-- **THEN** a space rooted at that directory is created
-
 ### Requirement: A tab belongs with the agent it was born from
 A shell opened while an agent is in front of the person SHALL belong with
 that agent and SHALL start in that agent's own directory. The tab strip
@@ -659,12 +608,17 @@ carry that client's own selection.
 ### Requirement: A launch inside a pane opens a space
 The system SHALL mark every pane it spawns so a `uze` started inside one
 can tell, and such a `uze` SHALL NOT open a client inside the client: it
-SHALL ask the running server for a space rooted at its directory's
-workspace root, created when none is, and exit reporting the space.
+SHALL ask the running server for the space a launch in its directory
+selects, created when none has a tab in that project, and exit reporting
+the space.
 
 #### Scenario: Nested launch opens a space and leaves
-- **WHEN** `uze` is started inside one of the server's own panes, in a directory no space is rooted at
-- **THEN** a space rooted there appears in the running client and the nested `uze` exits without attaching a client
+- **WHEN** `uze` is started inside one of the server's own panes, in a project no space has a tab in
+- **THEN** a space whose shell stands in that project appears in the running client and the nested `uze` exits without attaching a client
+
+#### Scenario: Nested launch in a project a space works in
+- **WHEN** `uze` is started inside a pane, in a project a space already has a tab in
+- **THEN** no space is created, and the nested `uze` exits naming that space
 
 ### Requirement: The workspace reaches harnesses through its own shims
 The workspace SHALL start every pane with the shims directory ahead of any
@@ -742,3 +696,65 @@ provision, and that answer SHALL take the vendor's official route.
   and no other installer runs
 - **AND** declining the question sets up nothing, and the workspace opens
 
+### Requirement: A space is its id and its label
+The terminal runtime SHALL identify a space by an id that survives a
+restart and is never given to another space, and SHALL carry with it a
+label and its tabs and nothing else: no directory. A tab's directory SHALL
+be the only place a space's whereabouts are kept. Creating a space SHALL
+never select another.
+
+#### Scenario: Two spaces working in one directory
+- **WHEN** a client creates a space while another holds tabs in the same directory
+- **THEN** a second space is created, and both are kept
+
+#### Scenario: The space round-trips through a restart
+- **WHEN** a space is created and the server is restarted
+- **THEN** the restored space has the same id, label and tabs, each tab in its own directory
+
+#### Scenario: A closed space's id is not reused
+- **WHEN** the space with the highest id is closed, the server restarts, and a space is created
+- **THEN** the new space's id is one no space had before
+
+### Requirement: Creating a space asks for its name
+Creating a space explicitly SHALL ask for its name and nothing else. The new
+space's first shell SHALL open in the operator's home directory.
+
+#### Scenario: A named space
+- **WHEN** the operator creates a space and names it `storefront`
+- **THEN** a space labelled `storefront` exists, its shell standing in the home directory
+
+#### Scenario: A name left empty
+- **WHEN** the operator confirms the prompt without a name
+- **THEN** the space is labelled `space` numbered as the labels already taken require
+
+### Requirement: A launch selects the space working in its project
+Starting `uze` in a project SHALL select, for that client, a space with an
+agent tab standing in that project, its root or below it; else one with any
+tab there. Only when none has one SHALL it create a space labelled from the
+project, its first shell there. A directory in no project counts as its
+own. Started in the home directory, it SHALL select what the client last
+had and create nothing.
+
+#### Scenario: A space already works there
+- **WHEN** the operator starts `uze` in a project an agent of space `storefront` stands in
+- **THEN** `storefront` is selected and no space is created
+
+#### Scenario: A project no space works in
+- **WHEN** the operator starts `uze` in a project no space has a tab in
+- **THEN** a space labelled from that project is created and selected, its shell standing in the project
+
+#### Scenario: An agent's space wins over a shell's
+- **WHEN** one space has a shell in the project, another has an agent there, and the operator starts `uze` in it
+- **THEN** the space with the agent is selected
+
+#### Scenario: Starting again where a launch opened a space
+- **WHEN** a launch in a project created a space, nothing was started in it, and `uze` is started there again
+- **THEN** that space is selected and no space is created
+
+#### Scenario: A space standing above the project
+- **WHEN** the only space holds a shell standing in the home directory, and the operator starts `uze` in a project below it
+- **THEN** that space is not selected, and a space for the project is created
+
+#### Scenario: A launch from home
+- **WHEN** the operator starts `uze` in their home directory
+- **THEN** no space is created, and the client lands where it last was

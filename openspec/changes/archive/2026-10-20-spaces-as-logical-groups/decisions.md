@@ -1,6 +1,6 @@
 ## D1 — A launch takes a space with a shell in the project when none has an agent there
 
-- status:   pending
+- status:   accepted
 - task:     3.2
 - commit:
 - trigger:  The server's first space has only a shell in the launch project, and a launch matched by agent tabs alone would miss it and open a second space on the very next attach.
@@ -10,7 +10,7 @@
 
 ## D2 — "An agent tab" in the runtime is a tab launched with an environment
 
-- status:   pending
+- status:   accepted
 - task:     3.2
 - commit:
 - trigger:  The runtime must tell agent tabs from shells without knowing what an agent is.
@@ -20,7 +20,7 @@
 
 ## D3 — The harness step reads no project
 
-- status:   pending
+- status:   accepted
 - task:     1.4
 - commit:
 - trigger:  The plan had the harness picker describe the chosen project's harnesses, but what the picker shows (set up or not, continuity gap) is the machine's, not a project's.
@@ -30,7 +30,7 @@
 
 ## D4 — A directory in no project is its own; only home creates nothing
 
-- status:   pending
+- status:   accepted
 - task:     3.7
 - commit:
 - trigger:  The spec said a launch outside any project creates nothing, but telling "no project" from "a plain directory somebody chose" needs a second resolution rule beside `space_root`.
@@ -40,7 +40,7 @@
 
 ## D5 — The client layout keeps its shape; the old fold field is ignored
 
-- status:   pending
+- status:   accepted
 - task:     3.4
 - commit:
 - trigger:  The plan had the client layout climb to shape 2, but the layout file carries no shape field and is read best-effort with serde defaults.
@@ -50,7 +50,7 @@
 
 ## D6 — The agent's directory is its own tab's, not the task record's
 
-- status:   pending
+- status:   accepted
 - task:     1.1
 - commit:
 - trigger:  The design said the task record's checkout, else the launch directory; the client already reads an agent tab's directory everywhere else (`named_checkout(pane.cwd)`), and a finished agent's respawned shell is no longer an agent tab, so its moving `cwd` is never read as the agent's.
@@ -60,7 +60,7 @@
 
 ## D7 — Put-away overviews stay keyed by space, checked by project
 
-- status:   pending
+- status:   accepted
 - task:     2.3
 - commit:
 - trigger:  The tasks said to key put-away overviews by agent; the resolutions that update a put-away overview (worktree removal, declaration save) carry its space.
@@ -70,7 +70,7 @@
 
 ## D8 — A directory that is gone resolves to its project by spelling
 
-- status:   pending
+- status:   accepted
 - task:     2.7
 - commit:
 - trigger:  Resolving a missing directory walked up from its parent and answered whatever sat above, `/` included.
@@ -80,7 +80,7 @@
 
 ## D9 — "+ space" creates the space and puts it up for its name
 
-- status:   pending
+- status:   accepted
 - task:     3.6
 - commit:
 - trigger:  The spec asks for the name and nothing else; the workspace already has an inline rename on a space's header.
@@ -90,7 +90,7 @@
 
 ## D10 — `CreateTab` carries its space from the start
 
-- status:   pending
+- status:   accepted
 - task:     1.5, 3.5
 - commit:
 - trigger:  The plan sent `SelectSpace` before `CreateTab` in phase 1 and replaced it in phase 3; the change was implemented in one pass.
@@ -100,7 +100,7 @@
 
 ## D11 — The agent in front is read once per session update
 
-- status:   pending
+- status:   accepted
 - task:     2.1
 - commit:
 - trigger:  Everything that describes a project (badge, surfaces, overview, prefill) needs the agent whose context is in front, and the model holds no harness identities to work it out on demand.
@@ -110,7 +110,7 @@
 
 ## D12 — A space's caption stays under the minimized space in front, and counts its agents
 
-- status:   pending
+- status:   accepted
 - task:     2.7
 - commit:
 - trigger:  The spec captioned every space with its project, while the sidebar draws a caption only under the minimized space in front, a choice the operator made before this change: a path under every name is a second column to read past.
@@ -120,7 +120,7 @@
 
 ## D13 — An overview answer carries the project it was read for
 
-- status:   pending
+- status:   accepted
 - task:     2.6
 - commit:
 - trigger:  D7 kept overviews keyed by space; one space now holds the overviews of several projects, each counting its reads from its own start, so an answer could land in another project's overview.
@@ -130,7 +130,7 @@
 
 ## D14 — A tab asked in another space does not move the client
 
-- status:   pending
+- status:   accepted
 - task:     3.1
 - commit:
 - trigger:  `CreateTab` naming a space moved the asking client into it, so an agent placed after the operator moved on pulled them back.
@@ -140,7 +140,7 @@
 
 ## D15 — The harness is a field, not a step
 
-- status:   pending
+- status:   accepted
 - task:     1.2
 - commit:
 - trigger:  The operator chose a one-step popup: the harness rarely changes, so asking for it after every directory cost a second confirmation in the common case.
@@ -150,7 +150,7 @@
 
 ## D16 — An older release does not restore this build's workspace
 
-- status:   pending
+- status:   accepted
 - task:     4.1
 - commit:
 - trigger:  The nightly upgrade journey opened beta.15 after this build: it cannot read the workspace document's shape 3, so it opens with no tabs, finds this build's agent not running and closes its task.
