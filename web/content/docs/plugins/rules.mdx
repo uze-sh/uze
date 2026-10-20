@@ -57,15 +57,24 @@ starts with `*`. Each pattern is either:
 - a file name, with no `/`, which matches at any depth: `*.sql`, `Makefile`
 - a path that starts with `**/`: `**/src/ui/**`, `**/migrations/*.sql`
 
-Inside a pattern, `**` matches any number of directories, `*` matches within
-one name, `?` matches one character, and `[ab]` or `[0-9]` matches one
-character of a set. Everything else, spaces included, is matched literally.
+Inside a pattern, `**` matches any number of whole directories, `*` matches
+within one name, `?` matches one character, and `[ab]` or `[0-9]` matches one
+character of a set. Any other character, spaces included, is matched
+literally, except the ones listed below.
 
-A directory pattern has to start with `**/` because Antigravity matches
-against the file's full path: `src/ui/**` would never fire there, so uze
-reports it rather than deliver it to some agents and not others. Braces
-(`{a,b}`), negated sets (`[!a]`) and a leading `/`, `./` or `../` are
-reported the same way. Write two patterns instead of braces.
+A rule must match the same files in every agent, so uze reports a pattern
+that could be read two ways, rather than deliver the rule to some agents and
+not others:
+
+- a `/` in a pattern that does not start with `**/`: Antigravity matches
+  against the file's full path, so `src/ui/**` would never fire there
+- braces (`{a,b}`): write two patterns instead
+- `!` anywhere, a negated set (`[^a]`), or an empty or unclosed `[`
+- `(`, `)`, `|` or `\`
+- a leading `/`, a `.` or `..` segment, an empty segment (`a//b`) or a
+  trailing `/`
+- `**` that is not a whole segment, as in `src/**.ts`
+- an empty pattern, whitespace other than a space, or a control character
 
 ## Write a rule as a convention
 
@@ -173,6 +182,6 @@ rule's text. An offline check that fails a build is in
 [Agent CLI](/docs/reference/agent-cli).
 
 In the workspace, the harness's details under **Manage** and the agent's
-section of the space view show `.agents/rules` beside `AGENTS.md`: **Native**,
+overview (`Alt+O`) show `.agents/rules` beside `AGENTS.md`: **Native**,
 **Rules engine**, **Run uze setup** when the engine has not been installed for
 that agent yet, or **Not supported**.

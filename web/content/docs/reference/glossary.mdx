@@ -11,7 +11,7 @@ Each entry is the short version. The link goes to the page that explains it.
 Antigravity. See [Harnesses](/docs/reference/harnesses).
 
 **Plugin (package).** What you install once. A directory holding skills, MCP
-servers, agents and hooks. See [Creating a plugin](/docs/plugins/creating).
+servers, agents, hooks and rules. See [Creating a plugin](/docs/plugins/creating).
 
 **Marketplace.** A Git repository with a `marketplace.json`, remote or cloned
 locally. Every plugin is resolved through one. `uze-official` ships inside the
@@ -66,8 +66,10 @@ it. Experimental. See
 **Machine scope.** What lives in `~/.uze`: the store, your agents' setup,
 marketplaces and configuration. `-m` makes a command act on it alone.
 
-**Project scope.** What lives in a project: `agents.yaml`, `agents.lock` and
-`AGENTS.md`. A command run inside a project maintains them.
+**Project scope.** What lives in a project: `agents.yaml`, `agents.lock` and,
+under `.agents/rules/`, the rules of the plugins it declares. A command run
+inside a project maintains them. `AGENTS.md` is yours, and uze writes nothing
+into it.
 
 **`agents.yaml`.** What the project declares: marketplaces and plugins and,
 under `workspace:`, how its agents work, what they are asked at each state, and
@@ -86,14 +88,19 @@ removes the ones left behind, except one you edited.
 **Workspace.** The terminal UI that opens when you run `uze workspace`.
 See [Workspace](/docs/workspace).
 
+**Space.** A named group of agents in the workspace. It has no directory of
+its own: each agent in it keeps its own project. See
+[Space](/docs/workspace/space).
+
 **Terminal runtime.** A local server that owns the terminals, so an agent keeps
 running after you close the UI.
 
 **Primary checkout.** The project's own working tree, on the branch you have
 checked out. An agent works here until it is given a worktree.
 
-**Worktree.** A Git worktree of its own for one agent, at `.worktrees/<id>` on
-branch `agent/<id>`. An agent gets one at launch when `workspace.worktree` is
+**Worktree.** A Git worktree of its own for one agent, at `.worktrees/<id>`, on
+branch `agent/<id>` until the agent names its work, which renames the
+branch. An agent gets one at launch when `workspace.worktree` is
 `always`, or when you move it with **To worktree**.
 
 **Slot.** A worktree uze made and reuses for the next agent instead of

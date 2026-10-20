@@ -33,7 +33,8 @@ with `Enter`, and closes with `Esc`.
 
 Every prompt this agent was given, newest first and grouped by age: the
 harness, when it was asked, and the prompt itself. `Enter` copies the
-selected prompt. `X` twice clears this agent's prompts, and no other's.
+selected prompt. `X` clears this agent's prompts, and no other's, after
+asking, with the keyboard on **cancel**.
 
 The drawer shows the agent: its harness, its checkout, and what of the
 project reaches it (`AGENTS.md`, project skills and agents) and how it
@@ -77,8 +78,8 @@ The drawer explains the key you are on, its default and the value it has now.
 
 ## Plugins
 
-The plugins the project declares, with their marketplace, whether they carry
-instructions into `AGENTS.md`, the commit installed and where each stands:
+The plugins the project declares, with their marketplace, the commit installed
+and where each stands:
 installed, linked, behind or with an update available, different from
 `agents.lock`, or missing. Below the list, anything that has drifted between
 `agents.yaml`, `agents.lock` and the store is spelled out. `uze install`
@@ -105,11 +106,9 @@ copying it. A machine fact an agent proposes waits for your approval before
 it reaches any agent. Facts are notes, never instructions, and memory holds
 no secrets.
 
-This section lists the project's facts: their name, kind, origin (the
-harness that wrote it, or `uze` for one written outside an agent) and when
-they changed. The line
-under the list counts the machine facts that reach agents here too. `/`
-searches by name, description, kind and origin as you type, and `Esc`
+This section lists the project's facts and the machine's together, newest
+first: their name, kind, scope, origin (the harness that wrote it, or `uze`
+for one written outside an agent) and when they changed. `/` searches by name, description, kind, scope and origin as you type, and `Esc`
 clears the search. `Enter` reads the selected fact in the drawer, which also
 shows the file it lives in; the wheel or `PageUp`/`PageDown` scrolls a long
 one. Nothing is changed from here: a fact is a file,

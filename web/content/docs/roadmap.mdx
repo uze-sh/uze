@@ -17,7 +17,7 @@ too, installed by `irm https://uze.sh/i | iex` (see
 - **Harness management**: detection, provisioning through official routes, and
   a cached readiness report for Claude Code, Codex, OpenCode and Antigravity.
 - **Capability portability**: skills with invocation policy, MCP servers,
-  portable agents, a plugin's own `AGENTS.md` contribution, and portable hooks
+  portable agents, rules, and portable hooks
   (one script for every platform, with `allow`, `ask`, `deny` and `transform`),
   each delivered through the most native route the harness can preserve.
 - **Plugin requirements**: a plugin names the programs its scripts need;
@@ -91,5 +91,5 @@ supported when it lands.
 The plugin ecosystem grows through the official marketplace (`marketplace.json`
 at the repository root, embedded in the binary as `uze-official`) plus any
 community marketplace registered with `uze market add`. The one official plugin
-today is `plugins/uze`, carrying the `uze:init`, `uze:worktree`,
+today is `plugins/uze`, carrying the `uze:init`, `uze:rules`, `uze:worktree`,
 `uze:architect` and `uze:author` Skills.

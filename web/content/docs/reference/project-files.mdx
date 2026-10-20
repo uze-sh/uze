@@ -97,9 +97,10 @@ name is refused: the only thing it could express is shadowing the built-in one.
 ### `workspace`
 
 How [`uze workspace`](/docs/workspace/agents) runs the agents it launches, and
-where the project keeps the artifacts that describe it. One flat section. The
-layout of the worktrees themselves (`.worktrees/<id>`, branch `agent/<id>`) is
-fixed infrastructure and is deliberately *not* declared here.
+where the project keeps the artifacts that describe it. One flat section.
+Where a worktree lives, `.worktrees/<id>`, is fixed and deliberately *not*
+declared here. Its branch starts as `agent/<id>` and takes the name the agent
+gives its work, judged by `branch`.
 
 The section is the workspace's. The package manager carries it without reading
 it, so a mistake in it never fails `uze install` or `uze status`; the workspace
@@ -192,11 +193,10 @@ commands are waiting for you.
   checkout, so only what it reads belongs there.
 </Callout>
 
-The policy lives here rather than in machine state because
-`uze install` projects it into the tracked `AGENTS.md`: anything
-resolved outside the project would rewrite a shared file to whichever machine
-ran the command. A worktree's own manifest is ignored for the same reason:
-the primary checkout owns the policy.
+The policy lives here rather than in machine state because it is the
+project's decision, shared by everyone who clones it. Placement reads the
+primary checkout's file: a worktree's own `agents.yaml` is its agent's work,
+and applies once delivered.
 
 #### `actions`
 

@@ -32,10 +32,11 @@ live rather than run once: you leave, they keep working, and you come back to
 them where they were. Each agent says whether it is working or waiting, so you
 do not hunt for the one that stopped.
 
-**What is different.** uze arranges agents by project: a space is a
-repository, and every agent in it works on a branch of its own in its own
-worktree, which uze creates, watches through Git and lands for you (a rebase,
-your checks, then a fast-forward of your branch or a push of its own). herdr goes further in other
+**What is different.** In uze a space is a named group of agents, which can
+hold agents of several projects. An agent can work on a branch of its own in
+its own worktree, which uze creates, watches through Git and lands for you (a
+rebase, your checks, then a fast-forward of your branch or a push of its
+own). herdr goes further in other
 directions, such as reaching sessions on other machines over SSH and
 supporting more agent CLIs; if that is what you need, it is worth a look.
 See [the workspace](/docs/workspace).

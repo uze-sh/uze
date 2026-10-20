@@ -32,9 +32,9 @@ cargo llvm-cov --workspace --summary-only \
 | `journeys/` | what **uze** does, end to end | the real CLI and TUI in a disposable world |
 | `conformance/` | what a **vendor harness** does | the real harness binary, offline |
 
-Integration suites live under `tests/`, one `main.rs` per domain (`cli/`,
-`memory/`, `packages/`, `workspace/`, `lifecycle/`, `projection/`,
-`integrations/`, `acceptance/`), with shared infrastructure (an isolated
+Integration suites live under `tests/`, one `main.rs` per domain
+(`acceptance/`, `architecture/`, `cli/`, `integrations/`, `lifecycle/`,
+`memory/`, `packages/`, `project/`, `projection/`), with shared infrastructure (an isolated
 `TestEnvironment`, a `FakeHarness`, canonical fixtures) in `crates/uze-testkit`.
 `tests/README.md` documents the L0–L4 taxonomy and where a new test goes.
 
@@ -126,8 +126,8 @@ everywhere.
 ## Playground
 
 `playground/` holds disposable worlds to try this checkout by hand, and a plugin
-that declares every capability uze delivers (a skill, an agent, an MCP server,
-hooks and an `AGENTS.md` contribution):
+that declares every capability uze delivers (skills, an agent, an MCP server,
+hooks and rules):
 
 ```bash
 make playground-plugin    # build its MCP server and link its marketplace to this checkout
@@ -158,5 +158,6 @@ merge. Versions come from one place:
 ## Marketplace
 
 This repository is itself the official uze marketplace: `marketplace.json` +
-`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:worktree`,
-`uze:architect` and `uze:author` Skills) as the one official plugin.
+`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`,
+`uze:worktree`, `uze:architect` and `uze:author` Skills) as the one official
+plugin.

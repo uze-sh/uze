@@ -117,7 +117,7 @@ checking; in CI it is off unless you set it.
    uze remove <plugin> -m # once per plugin
    ```
 
-2. Stop the workspace in each project where you opened it: `uze workspace stop`.
+2. Stop the workspace and every process in it: `uze workspace stop`.
 3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
    no longer want them, the plugin folders named `<plugin>@<market>` under
    `.agents/rules/`, and their entries in `.agents/rules.json`. uze writes nothing into `AGENTS.md`, so there is nothing to
