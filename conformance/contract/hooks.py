@@ -690,10 +690,13 @@ def _post_tool_deny(cfg, bindings, expected):
             bool(ran),
             f"records: {found.get('post-guard')}",
         )
-        check(
+        declared.presence(
+            bindings,
+            "hooks-post-deny-reason-relayed",
             "hooks-post-deny-reason-relayed",
             reason,
             "the reason reached the conversation",
+            measured=bool(ran),
         )
         check_absence(
             "hooks-post-deny-no-hook-error",

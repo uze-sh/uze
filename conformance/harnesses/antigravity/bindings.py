@@ -160,6 +160,19 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
                 "the offline Lab's recorded flag set, so no session here can "
                 "be compacted on demand"
             )
+        if prop == "hooks-post-deny-reason-relayed":
+            # Measured on 1.4.3. The vendor documents a `PostToolUse` hook's
+            # output as an empty object; a decision there is not read. Up to
+            # 1.4.2 an output it could not read replaced the tool's result
+            # with an error carrying the hook's text, which is how the reason
+            # reached the conversation; 1.4.3 logs it and keeps the result
+            # (google-antigravity/antigravity-cli#1282).
+            return (
+                "Antigravity reads nothing from a post-tool hook but an empty "
+                "object, so a denial after the tool ran cannot carry its "
+                "reason to the model (measured on 1.4.3; until 1.4.2 it "
+                "arrived only as the error an unreadable hook output caused)"
+            )
         if prop == "agent-vendor-fields-block-model":
             return (
                 "Antigravity drops an agent that carries `model` (measured on "

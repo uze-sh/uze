@@ -157,6 +157,28 @@
         "1.4.2"
       ],
       "observed_at": "2026-10-19"
+    },
+    {
+      "harness": "antigravity",
+      "check": "hooks-post-deny-reason-relayed",
+      "suite": "hooks > post-tool-deny",
+      "reason": "Antigravity documents a PostToolUse hook's output as an empty object and reads no decision there. Up to 1.4.2 an output it could not read replaced the tool's result with an error carrying the hook's text, which is how the reason reached the conversation; 1.4.3 logs it and keeps the result (google-antigravity/antigravity-cli#1282). The declaration fails the day a post-tool denial's reason reaches the model.",
+      "measurement": "the post-tool guard ran on the marked command, and its reason never reached the conversation",
+      "versions": [
+        "1.4.3"
+      ],
+      "observed_at": "2026-10-20"
+    },
+    {
+      "harness": "antigravity",
+      "check": "hooks-api-key-mode-runs-no-hook",
+      "suite": "hooks > api-key",
+      "reason": "The same vendor-format control hook that denies in the vertical's signed-in session runs nothing under GEMINI_API_KEY: google-antigravity/antigravity-cli#893, fixed in 1.1.25 and back on 1.4.3. The declaration fails the day the hook fires under an API key again.",
+      "measurement": "the hook loaded but never ran under GEMINI_API_KEY, and the command ran",
+      "versions": [
+        "1.4.3"
+      ],
+      "observed_at": "2026-10-20"
     }
   ]
 }

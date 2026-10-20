@@ -621,6 +621,35 @@ gate exists to catch); dropping the API-key probe now that it passes (it is
 what would say the gate closed again, and a regression to #893 must read as
 a red check, not as a mode dependency users discover in the field).
 
+## Antigravity 1.4.3: #893 is back, and a post-tool reason was never delivered
+
+**Context.** On 2026-10-20 the channel moved from 1.3.5 to 1.4.3 and two
+hook checks went red. `hooks-api-key-mode-hook-executes` did exactly what
+the previous section asked of it: the control hook loaded and never ran on
+the API key while it still denied signed in — #893, back. And
+`hooks-post-deny-reason-relayed` lost a reason it had only ever carried by
+accident: the vendor documents a `PostToolUse` hook's output as an empty
+object and reads no decision there. Up to 1.4.2 an output it could not read
+replaced the tool's result with an error carrying the hook's text, which is
+how the reason reached the conversation; 1.4.3 fixed that bug
+(google-antigravity/antigravity-cli#1282) by logging the output and keeping
+the result.
+
+**Chosen.** Both become declarations registered for 1.4.3 alone, measured
+every run. The API-key probe is `hooks-api-key-mode-runs-no-hook` again; the
+post-tool reason is declined by the binding with the vendor's contract as
+its reason. Either escalates the day the binary does the thing again, the
+way the 1.1.25 escalation worked. The red check did its job — the
+regression was seen within hours of the release — and carrying it on a red
+gate past that point held every pull request that reaches the Lab hostage
+to a vendor release.
+
+**Discarded.** Keeping `hooks-api-key-mode-hook-executes` asserted until
+the vendor ships a fix (it blocks unrelated work, and the report says the
+same thing as a declaration); asserting the post-tool reason (its green was
+a vendor bug, and asserting it would ask UZE for a channel the harness does
+not have).
+
 
 ---
 

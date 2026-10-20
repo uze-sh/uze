@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import shared.common as common
 from shared.common import (
     check,
+    declare,
     describe,
     docker_base,
     make_screen,
@@ -615,10 +616,12 @@ def phase_hooks_api_key_mode(cfg, prov_ip):
     bug stayed on the report. On 1.1.25 the identical probe measured the
     hook firing under the API key — four independent CI runs on 2026-09-03,
     while the issue was still open upstream — which escalated the
-    declaration exactly as ADR-035 says it must. From here on the mode is
-    asserted: the hook must deny the command on the API key as it does
-    signed in, and a regression to #893 fails the vertical rather than
-    hiding behind a declaration whose reason stopped being true.
+    declaration exactly as ADR-035 says it must, and the mode was asserted.
+    1.4.3 brought #893 back (2026-10-20): the identical probe ran nothing
+    under the API key again. It is a declaration again, registered for the
+    versions it was measured on, so the regression stays on the report
+    without holding every pull request hostage to a vendor release — and
+    the build that fixes it escalates the declaration once more.
     """
     outcome = hook_turn(
         cfg,
@@ -632,15 +635,19 @@ def phase_hooks_api_key_mode(cfg, prov_ip):
     if outcome is None:
         return
     executes = bool(outcome["markers"].get("blocked by protect-env"))
-    check(
-        "hooks-api-key-mode-hook-executes",
-        executes,
-        "the vendor-format deny hook fires under GEMINI_API_KEY as it does "
-        "signed in (`blocked by protect-env` reached the conversation)"
-        if executes
-        else "the hook loaded but never ran under GEMINI_API_KEY"
+    # 1.4.3 brought #893 back, and it is carried as a declaration again,
+    # registered for that version alone: the run keeps measuring, and the
+    # build that runs the hook again escalates it back to an assertion.
+    declare(
+        "hooks-api-key-mode-runs-no-hook",
+        not executes,
+        "Antigravity loads a vendor-format hook under GEMINI_API_KEY and "
+        "never runs it, while the same hook denies signed in "
+        "(google-antigravity/antigravity-cli#893, back on 1.4.3)",
+        "the hook loaded but never ran under GEMINI_API_KEY"
         + (" — the permission prompt surfaced instead" if outcome["prompted"] else "")
-        + " (google-antigravity/antigravity-cli#893 is back)",
+        if not executes
+        else "the vendor-format deny hook fired under GEMINI_API_KEY",
     )
 
 
