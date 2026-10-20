@@ -12,7 +12,7 @@ pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
 const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
 /// Wide enough for a directory's name beside what is known about it.
-const NEW_AGENT_POPUP_WIDTH: u16 = 66;
+const NEW_AGENT_POPUP_WIDTH: u16 = 64;
 /// The rows around the listing: the harness, the line typed into and the
 /// foot, each closed off by a rule.
 const NEW_AGENT_POPUP_CHROME: u16 = 6;
@@ -163,8 +163,9 @@ fn render_harness_field(
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
 
-/// The popup's keys, Enter's first: what it does is the field and the
-/// row marked above, so the foot only names the keys.
+/// The popup's keys, Enter's first and the way out against the end: what
+/// Enter does is the field and the row marked above, so the foot only
+/// names the keys.
 fn render_new_agent_foot(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -184,14 +185,28 @@ fn render_new_agent_foot(
     let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
         .named(Action::Activate, enter)
         .named(Action::FocusNext, "harness")
+        .hovered(hovered);
+    let close = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
         .named(Action::Dismiss, "close")
         .hovered(hovered);
+    let close_width = close.width();
+    let end = rect.right().saturating_sub(TRAILING_PAD);
+    let start = rect.x + PICKER_LEAD as u16;
     let at = Rect {
-        x: rect.x + PICKER_LEAD as u16,
-        width: rect.width.saturating_sub(PICKER_LEAD as u16 + TRAILING_PAD),
+        x: start,
+        width: end.saturating_sub(start + close_width + 1),
         ..rect
     };
-    for (rect, action) in keys.render(frame, at) {
+    let away = Rect {
+        x: end.saturating_sub(close_width),
+        width: close_width,
+        ..rect
+    };
+    for (rect, action) in keys
+        .render(frame, at)
+        .into_iter()
+        .chain(close.render(frame, away))
+    {
         hits.push((rect, WorkspaceHit::HintAction(action)));
     }
 }

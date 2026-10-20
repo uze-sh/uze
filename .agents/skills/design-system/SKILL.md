@@ -104,7 +104,7 @@ on "cancel" must not save first.
   (`harness ‹ Claude Code ›`, moved with `Tab`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
 - A popover's foot names its keys and nothing else (`enter new · tab
-  harness · esc close`). What Enter acts on is already on screen, in the
+  harness`), with `esc close` alone against its end. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.
 - A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end

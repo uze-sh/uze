@@ -63,7 +63,7 @@ that does what the key does.
 
 #### Scenario: The foot names the keys
 - **WHEN** the popup is open with a harness set up
-- **THEN** its foot reads `enter new · tab harness · esc close`, and a click on `new` starts the agent
+- **THEN** its foot reads `enter new · tab harness`, with `esc close` against its end, and a click on `new` starts the agent
 
 ### Requirement: The directory listing says what it knows
 A row of the listing SHALL say, against its end, when its directory is a
