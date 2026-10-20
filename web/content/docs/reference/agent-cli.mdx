@@ -4,9 +4,9 @@ description: The commands agents call, hidden from uze --help
 ---
 
 `uze agent …` is written for agents, not for you: it is hidden from
-`uze --help`, and the agents learn it from the block uze writes into
-`AGENTS.md` and from the [Skills](/docs/reference/skills). You can run
-`context`, `artifacts`, `market` and `plugin` yourself; `work` answers only an
+`uze --help`, and the agents learn it from the instructions uze gives every
+agent it launches and from the [Skills](/docs/reference/skills). You can run
+`context`, `artifacts`, `rules`, `market` and `plugin` yourself; `work` answers only an
 agent `uze workspace` launched.
 
 ```bash
@@ -14,6 +14,11 @@ uze agent work name <type>/<subject>   # name the work: the tab's label, and the
 uze agent work split <topic>           # a checkout for a subagent, printed as a path
 uze agent work join <topic>            # bring the subagent's commits onto this branch
 uze agent work list                    # this agent's subagent checkouts
+uze agent memory remember <name>       # keep a fact for later agents, read from stdin (-m: the machine's)
+uze agent memory list [words]          # the facts kept here, or those holding any of the words
+uze agent memory show <name>           # one fact in full
+uze agent memory forget <name>         # remove a fact
+uze agent rules check [path]           # validate every rule under .agents/rules, offline
 uze agent artifacts check [path]       # draw every declared diagram, fail on one that does not
 uze agent context inspect [path]       # what each agent currently sees of AGENTS.md
 uze agent context plan [path]          # what reconciling would remove

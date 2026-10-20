@@ -22,19 +22,23 @@ agents with `uze update <plugin> -m`.
     <Folder name="agents">
       <File name="planner.md" />
     </Folder>
+    <Folder name="rules">
+      <File name="conventions.md" />
+    </Folder>
     <Folder name="skills">
       <Folder name="release-notes">
         <File name="SKILL.md" />
       </Folder>
     </Folder>
-    <File name="AGENTS.md" />
     <File name="hooks.json" />
     <File name="mcp.json" />
     <File name="plugin.json" />
   </Folder>
 </Files>
 
-Only `plugin.json` is required; ship what you need. These are open standards
+Only `plugin.json` is required; ship what you need. A rule under `rules/` is
+how a plugin tells the agents of every project that declares it something
+([Rules](/docs/plugins/rules)). These are open standards
 ([Agent Plugins](https://agent-plugins.org), [Agent Skills](https://agentskills.io),
 MCP), not a uze format, so a plugin written for uze is a plugin for everyone.
 
@@ -49,24 +53,22 @@ description: Write release notes from the commits since the last tag
 What the agent should do when this skill runs.
 ```
 
-## By hand
+## Try it and share it
 
-The same steps the skill runs:
+Install the plugin from its marketplace, and deliver each change you make to
+your agents:
 
 ```bash
-uze agent market create my-market --at ~/my-market   # once
-uze agent plugin create my-plugin --market my-market  # --mcp, --hook, --agent, --rules
-uze agent plugin check ~/my-market/plugins/my-plugin  # validate, offline
-uze install -m my-plugin@my-market                    # install it
-uze update my-plugin -m                               # after each change
+uze install -m my-plugin@my-market   # install it
+uze update my-plugin -m              # after each change
 ```
-
-To keep the marketplace in the project itself, versioned with it, run
-`uze agent market create <name> --local` in the project instead: it writes
-`marketplace.json` at the root and the plugins under `plugins/`.
 
 To publish, push the marketplace repository. Anyone can then
 `uze market add` it.
+
+A marketplace can also live inside the project itself, versioned with it. To
+scaffold and check plugins without the skill, see the authoring commands in
+[Agent CLI](/docs/reference/agent-cli).
 
 <Cards>
   <Card title="Plugin format" href="/docs/reference/plugin-format" description="Every file and field, in full" />

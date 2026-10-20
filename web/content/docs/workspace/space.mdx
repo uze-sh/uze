@@ -98,8 +98,8 @@ Every agent uze launches is given an index of that memory in its context,
 whatever its harness: every fact by name, then as many with their
 description as there is room for, feedback first, and how to read one in
 full. A fact that cites a file this checkout no longer has is marked, so an
-agent checks it before relying on it. Agents write facts with
-`uze agent memory`. A harness that keeps memory of its own, like Claude
+agent checks it before relying on it. Agents write facts through uze, on any
+harness ([Agent CLI](/docs/reference/agent-cli)). A harness that keeps memory of its own, like Claude
 Code, goes on writing it there, and uze reads it where it is rather than
 copying it. A machine fact an agent proposes waits for your approval before
 it reaches any agent. Facts are notes, never instructions, and memory holds

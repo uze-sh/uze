@@ -8,12 +8,14 @@ description: Every file a plugin can ship, and how each one reaches each agent
     <Folder name="agents">
       <File name="<name>.md" />
     </Folder>
+    <Folder name="rules">
+      <File name="<name>.md" />
+    </Folder>
     <Folder name="skills">
       <Folder name="<name>">
         <File name="SKILL.md" />
       </Folder>
     </Folder>
-    <File name="AGENTS.md" />
     <File name="hooks.json" />
     <File name="mcp.json" />
     <File name="plugin.json" />
@@ -90,7 +92,7 @@ as it keeps to the standard in the three places it covers:
 - Each skill sits at `skills/<name>/SKILL.md`, one level deep.
 - `mcp.json` carries its own `$schema` and a `type` on every server.
 
-Agents, hooks, `AGENTS.md`, a skill's `invoke` and `harness` blocks, and
+Agents, hooks, rules, a skill's `invoke` and `harness` blocks, and
 `${PLUGIN_ROOT}` outside `mcp.json` are uze's additions. The standard leaves
 these to each tool, so its clients ignore them rather than reject the plugin.
 

@@ -97,14 +97,8 @@ and `uze status` says so.
 When the same conventions hold for every repository of a team, write them
 once in a plugin instead of copying files between projects. A plugin ships
 rules as Markdown files directly under its `rules/` directory, in the same
-format. Scaffold one with:
-
-```bash
-uze agent plugin create acme-conventions --market acme --rules
-```
-
-`uze agent plugin check` validates the plugin's rules with the same checks as
-`uze agent rules check`. Patterns are matched against paths relative to the
+format. The `uze:author` skill scaffolds one for you, and checks the rules
+before you install it. Patterns are matched against paths relative to the
 project that receives the rule.
 
 ### Declaring the plugin
@@ -172,17 +166,11 @@ take ownership of the change by moving it out of the plugin's folder into
 
 ## Check them
 
-```bash
-uze agent rules check
-```
-
-Validates every rule offline, the ones `.agents/rules.json` registers
-included, and names each file that is not one and why, or the manifest when it
-does not parse.
-`uze status` reports the same: how many rules of each kind, any file that is
-not a rule, each declared plugin's rules and whether their copies match the
-lock, and how each installed agent receives them. It never prints a rule's
-text.
+`uze status` says how many rules of each kind the project has, any file that
+is not a rule and why, each declared plugin's rules and whether their copies
+match the lock, and how each installed agent receives them. It never prints a
+rule's text. An offline check that fails a build is in
+[Agent CLI](/docs/reference/agent-cli).
 
 In the workspace, the harness's details under **Manage** and the agent's
 section of the space view show `.agents/rules` beside `AGENTS.md`: **Native**,

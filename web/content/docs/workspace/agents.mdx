@@ -172,12 +172,9 @@ takes the approval back; see
 ## Subagents
 
 An agent that splits its work across subagents asks uze for a checkout for
-each one, the same way it names its work:
-
-```bash
-uze agent work split parser   # a checkout cut from the agent's commit, printed as a path
-uze agent work join parser    # the subagent's commits land on the agent's branch
-```
+each one, cut from its own commit, and brings their commits back onto its
+branch when they are done. You do nothing: the agent does it, the way it names
+its work ([Agent CLI](/docs/reference/agent-cli#subagent-checkouts)).
 
 The subagent's checkout comes from the same pool, so it starts warm. Joining
 replays its commits onto the agent's branch with no merge commit. The checkout
