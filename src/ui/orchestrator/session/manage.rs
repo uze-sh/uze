@@ -48,14 +48,15 @@ impl Attach<'_> {
         };
         // The project the modal is about is the one the operator is working
         // in — the agent's in front, else the one the space's agents last
-        // worked in — not the directory this process was started from.
-        // Those are routinely different (a shell opens at home; the work is
-        // in a repository), and the Overview read its prompt history, its
-        // context status and its project's plugins against the wrong one
-        // of them.
-        let root = self.model.directory_to_offer().unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-        });
+        // worked in, else none: home — never the directory this process was
+        // started from. Those are routinely different (a shell opens at
+        // home; the work is in a repository), and the Overview read its
+        // prompt history, its context status and its project's plugins
+        // against the wrong one of them.
+        let root = self
+            .model
+            .directory_to_offer()
+            .unwrap_or_else(home_directory);
         self.model.manage = Some(self.manage_memory.open(
             self.home,
             &root,

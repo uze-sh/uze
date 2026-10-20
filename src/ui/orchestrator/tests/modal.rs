@@ -204,6 +204,24 @@ fn the_modal_is_about_the_space_it_was_opened_over() {
         PathBuf::from("/repo"),
         "the modal speaks about the space, not about where uze was started"
     );
+
+    // A space with no agent works in no project: the modal is about home.
+    let mut shells = super::support::driven(model_of(session("/tmp")), &home);
+    shells.press_key(key_event(manage_chord()));
+    assert_eq!(
+        Some(
+            shells
+                .attach
+                .model
+                .manage
+                .as_ref()
+                .expect("the modal opened")
+                .context_root
+                .clone()
+        ),
+        uze_platform::home::user_home(),
+        "a space with no agent speaks about home, not where uze was started"
+    );
 }
 
 /// The modal reopens on the screen it was closed on, and the layout
