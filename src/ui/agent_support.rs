@@ -78,7 +78,7 @@ impl AgentSupport {
 fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
-        ResourceDelivery::Projected => (State::Ready, "loaded (shim)"),
+        ResourceDelivery::Projected => (State::Ready, "loaded"),
         ResourceDelivery::RulesEngine => (State::Ready, "rules engine"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
@@ -323,9 +323,9 @@ mod tests {
             ResourceDelivery::Projected,
             ResourceDelivery::Projected,
         );
-        assert_eq!(support.instructions_label, "loaded (shim)");
+        assert_eq!(support.instructions_label, "loaded");
         assert!(matches!(support.instructions, State::Ready));
-        assert_eq!(support.project_skills_label, "loaded (shim)");
+        assert_eq!(support.project_skills_label, "loaded");
         assert!(matches!(support.project_skills, State::Ready));
     }
 
@@ -343,7 +343,7 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "none in project");
         assert!(matches!(support.instructions, State::Neutral));
-        assert_eq!(support.project_skills_label, "loaded (shim)");
+        assert_eq!(support.project_skills_label, "loaded");
         assert!(matches!(support.project_skills, State::Ready));
     }
 

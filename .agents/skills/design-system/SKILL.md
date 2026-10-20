@@ -233,6 +233,8 @@ nothing loose. The settled specifics:
 - A blank line between column headers and rows, and above a drawer's
   buttons.
 - Lists are tight. Label and value are never squeezed together.
+- In a form whose keys have a blank line between them (Settings), a
+  group heading has two above it, so the groups read apart.
 - Add space only where it was asked for. Padding the whole drawer when the
   top was meant is a regression.
 
@@ -250,6 +252,18 @@ operator rather than assume.
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
   (a small star pulsing, in the default theme); the CLI's is
   `progress::spinner`. Never hand-pick frames.
+
+**Drawers.**
+- A drawer's title is the name the list shows (`Linked files`), never
+  the key it is stored under; the kind line above it is one word
+  (`setting`, `memory`).
+- A setting's drawer teaches: what it decides, each option with what it
+  does (the default marked `· default` on its option, not a row of its
+  own), and an `example` of how a project writes it.
+- A path beside a label stays on one line, cut at its head.
+- A section's status line is short and in a quiet tone
+  (`worktree copy · applies once delivered`); the accent hues are for
+  state that is changing.
 
 **Declutter.**
 - Nothing redundant: a hint the footer already shows, a branch the
