@@ -124,7 +124,7 @@ pub fn detach_mcp_entry(executable: &Path, command_home: &Path, entry_name: &str
 // Its stand-in programs are POSIX shell scripts.
 #[cfg(all(test, unix))]
 mod tests {
-    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+    use std::{fs, path::Path};
 
     use uze_core::UzeError;
 
@@ -134,15 +134,14 @@ mod tests {
     /// ever ran.
     fn knowing_claude(home: &Path) -> std::path::PathBuf {
         let executable = home.join("claude");
-        fs::write(
+        uze_testkit::process::install_executable(
             &executable,
             format!(
                 "#!/bin/sh\n[ \"$2\" = add ] && echo added >> '{}'\nexit 0\n",
                 home.join("calls").display()
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+            )
+            .as_bytes(),
+        );
         executable
     }
 

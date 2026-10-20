@@ -34,8 +34,7 @@ impl Checkout {
         // answers with; the scratch directory may sit behind a link.
         let root = root.canonicalize().unwrap();
         let engine = scratch.join("engine");
-        fs::write(&engine, engine::SOURCE).unwrap();
-        fs::set_permissions(&engine, fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(&engine, engine::SOURCE.as_bytes());
         Self {
             sessions: scratch.join("sessions"),
             scratch,
@@ -749,8 +748,7 @@ fn the_engine_answers_the_shared_glob_table_under_every_awk_here() {
         } else {
             format!("#!/bin/sh\nexec {found} \"$@\"\n")
         };
-        fs::write(shim.join("awk"), program).unwrap();
-        fs::set_permissions(shim.join("awk"), fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(&shim.join("awk"), program.as_bytes());
         engine_answers_the_glob_table(Some(&shim));
         let _ = fs::remove_dir_all(shim);
     }
