@@ -66,13 +66,16 @@ scenes:
         say: move onto Slots
         expect: Slots
         pause: 0.3
-      - key: "+"
+      # Typed rather than sent as a key name: a character every platform's
+      # terminal delivers the same way.
+      - type: "+"
+        submit: false
         say: one more slot
-        # Written as soon as it is made: the key says so once the file
-        # holds it.
-        expect: saved
+        # The drawer's value, which reads the change back: the section's
+        # own heading says "saved" whatever was written.
+        expect: 'value\s+3'
         expect_timeout: 20
-        pause: 1.0
+        pause: 1.5
     then:
       - file: "{project}/agents.yaml"
         contains: "slots: 3"
