@@ -122,6 +122,18 @@ pub(crate) fn chord_of(event: KeyEvent) -> Option<Chord> {
     {
         mods.shift = true;
     }
+    // A symbol has no case to fold, and the shift that typed it is spent on
+    // the symbol itself: `+` is shift+`=` on most layouts, and the Windows
+    // console reports that shift where Unix terminals send the bare
+    // character. Kept, the same keystroke would be `+` on one host and
+    // `shift++` on the other, and a binding to `+` would never fire there.
+    if let KeyCode::Char(character) = event.code
+        && !character.is_uppercase()
+        && !character.is_lowercase()
+        && !character.is_whitespace()
+    {
+        mods.shift = false;
+    }
     Some(Chord::new(mods, key))
 }
 
@@ -216,6 +228,20 @@ mod tests {
         let without_flag = press(KeyCode::Char('I'), KeyModifiers::ALT);
         assert_eq!(chord_of(with_flag), Some(chord("alt+shift+i")));
         assert_eq!(chord_of(without_flag), Some(chord("alt+shift+i")));
+    }
+
+    #[test]
+    fn a_symbol_is_one_chord_whether_or_not_its_shift_is_reported() {
+        // The Windows console reports the shift that typed `+`; a Unix
+        // terminal sends the bare character. Both are the chord `+`.
+        let with_flag = press(KeyCode::Char('+'), KeyModifiers::SHIFT);
+        let without_flag = press(KeyCode::Char('+'), KeyModifiers::NONE);
+        assert_eq!(chord_of(with_flag), Some(chord("+")));
+        assert_eq!(chord_of(without_flag), Some(chord("+")));
+        assert_eq!(
+            chord_of(press(KeyCode::Char('?'), KeyModifiers::SHIFT)),
+            Some(chord("?"))
+        );
     }
 
     #[test]
