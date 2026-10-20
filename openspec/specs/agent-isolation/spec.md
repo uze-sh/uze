@@ -7,39 +7,20 @@ turns out to be what the work needs.
 
 ## Requirements
 
-### Requirement: A space has one kind, and any directory can be one
-The system SHALL give a space no kind to choose. A space is a directory
-the operator opened, and every directory MAY be one — a Git repository or
-not. One directory SHALL be the root of at most one space: opening a
-directory that already has a space SHALL select it rather than create a
-second.
-
-#### Scenario: Creating a space asks nothing but where
-- **WHEN** the operator creates a space
-- **THEN** they choose a directory and nothing else, and the space exists
-
-#### Scenario: A directory that is not a repository is a space like any other
-- **WHEN** the operator creates a space over a directory that is not a Git working tree
-- **THEN** the space is created, and agents can be launched in it
-
-#### Scenario: One root, one space
-- **WHEN** a space exists over a root and the operator picks the same root again
-- **THEN** the existing space is selected and none is created
-
-### Requirement: An agent starts in the space's own directory
-The system SHALL start every agent in the space's root, on whatever branch
-that directory is on, without creating a checkout or a branch, and SHALL
-record it with its identity, the harness it runs and when it started. An
-agent that is not isolated SHALL have no branch of its own, no delivery and
-no preserved work; its conversation SHALL be recorded and resumed as any
-agent's is. Several agents MAY share one root.
+### Requirement: An agent starts in the directory chosen for it
+The system SHALL start every agent that is not isolated in the directory
+chosen for it, on whatever branch that directory is on, without creating a
+checkout or a branch, and SHALL record it with its identity, the harness it
+runs and when it started. Such an agent SHALL have no branch of its own, no
+delivery and no preserved work; its conversation SHALL be recorded and
+resumed as any agent's is. Several agents MAY share one directory.
 
 #### Scenario: Launching an agent creates nothing on disk
-- **WHEN** an agent is launched in a space
-- **THEN** no checkout and no branch are created, and the agent runs in the space's root
+- **WHEN** an agent that is not isolated is launched in a chosen directory
+- **THEN** no checkout and no branch are created, and the agent runs in that directory
 
 #### Scenario: The operator's branch is never changed under them
-- **WHEN** an agent runs in the space's root
+- **WHEN** an agent runs in the directory chosen for it
 - **THEN** UZE never switches or resets the branch that directory is on
 
 ### Requirement: A root agent's work is read but never delivered
@@ -125,16 +106,17 @@ it.
 
 ### Requirement: An isolated agent is the subject of delivery
 The system SHALL treat an isolated agent exactly as a task is treated
-today: its work is delivered by the project's completion behaviour, it can
-be named, and its checkout is a slot that is reused when the agent ends.
-An agent that is not isolated SHALL be none of those things.
+today: its work is delivered by the project's completion behaviour when the
+project declares one, it can be named, and its checkout is a slot that is
+reused when the agent ends. An agent that is not isolated SHALL be none of
+those things.
 
-Readiness is not among them. Where the work in a checkout stands is read
-for every agent, isolated or not — what an unisolated one lacks is a
-branch UZE cut, and therefore a delivery UZE may run.
+#### Scenario: Readiness is read for every agent
+- **WHEN** an agent that is not isolated has work in its checkout
+- **THEN** where that work stands is read as for an isolated agent, and only the delivery, which needs a branch UZE cut, is withheld
 
 #### Scenario: Delivery is offered for an isolated agent
-- **WHEN** an isolated agent has commits its target does not have
+- **WHEN** an isolated agent has commits its target does not have and the project declares a completion behavior
 - **THEN** the same delivery the project's policy describes is offered for it
 
 #### Scenario: An agent in the root is never delivered
@@ -157,16 +139,15 @@ not isolated SHALL leave nothing to release.
 
 ### Requirement: The column groups an agent by where it works
 The sidebar SHALL draw a space's agents in two groups, those working in the
-space's root first and the isolated ones after, each in its own order, with
-a blank row between them only when both groups have an agent. An isolated
-agent's row SHALL carry the connector that says it branches off the project;
-a root agent's SHALL not. The groups SHALL be drawn in different colours, so
-a row's group is answered without reading it. Isolating an agent SHALL move
-its row from the first group to the second.
+directory chosen for them first and the isolated ones after, each in its
+own order, with a blank row between them only when both groups have an
+agent. An isolated agent's row SHALL carry the connector that says it
+branches off the project; the others' SHALL not. The groups SHALL be drawn
+in different colours. Isolating an agent SHALL move its row to the second.
 
 #### Scenario: A space with both kinds of agent
-- **WHEN** a space has agents in its root and isolated agents
-- **THEN** the root's agents are drawn first, then a blank row, then the isolated ones
+- **WHEN** a space has agents in the directories chosen for them and isolated agents
+- **THEN** the former are drawn first, then a blank row, then the isolated ones
 
 #### Scenario: A space with one kind of agent
 - **WHEN** every agent of a space is in the same group
@@ -176,14 +157,18 @@ its row from the first group to the second.
 - **WHEN** an agent is isolated
 - **THEN** its row leaves the first group and appears in the second
 
+#### Scenario: Agents of several projects
+- **WHEN** a space holds agents of two projects, some isolated and some not
+- **THEN** the groups are the same two, whatever project each agent is in
+
 ### Requirement: A project may declare that its agents start isolated
 The system SHALL let a project declare, as `workspace.worktree` in its
 manifest, when an agent launched in it gets a worktree: `always`, at
 launch, or `manual`, only when the operator moves it with **To worktree**.
 Where it declares `always`, an agent SHALL be placed in a slot at launch,
 and the isolation action SHALL have nothing to offer. Where it declares
-`manual`, or nothing, an agent SHALL start in the root. No other value
-SHALL be accepted, and a refusal SHALL name both.
+`manual`, or nothing, an agent SHALL start in the directory chosen for it.
+No other value SHALL be accepted, and a refusal SHALL name both.
 
 #### Scenario: A project that isolates by default
 - **WHEN** a project's manifest declares `workspace.worktree: always` and an agent is launched
@@ -191,7 +176,7 @@ SHALL be accepted, and a refusal SHALL name both.
 
 #### Scenario: A project that declares nothing
 - **WHEN** a project's manifest declares no `workspace.worktree` and an agent is launched
-- **THEN** the agent starts in the space's root
+- **THEN** the agent starts in the directory chosen for it
 
 #### Scenario: A manual project moves agents on request
 - **WHEN** a project declares `workspace.worktree: manual` and the operator chooses "To worktree" on an agent
@@ -207,7 +192,7 @@ so a space can be created without the pointer.
 
 #### Scenario: The chord creates a space
 - **WHEN** the operator presses the chord bound to creating a space
-- **THEN** the prompt that chooses a directory opens
+- **THEN** the prompt that names the space opens
 
 ### Requirement: Preserved work is found without the space it was left in
 The preserved-work list SHALL answer from UZE's records of every project it
@@ -258,44 +243,16 @@ entry SHALL name its project when selected.
 - **THEN** it is drawn from what UZE recorded, without asking Git about any
   repository, and the operator waits on nothing
 
-### Requirement: A resumed agent returns to its own project's space
-Resuming preserved work SHALL place the agent in a space rooted at the
-project the work belongs to, never in whichever space the operator was
-looking at. A space is matched by its canonical root alone: its name, its
-identity and when it was opened SHALL NOT affect the match, because work is
-bound to a project and never to a space.
+### Requirement: A space has no kind, and its agents choose their directory
+The system SHALL give a space no kind to choose. A space is a named group
+of agents, and an agent of it MAY run in any directory, a Git repository or
+not. A directory SHALL NOT identify a space: the projects a space works in
+are the directories its agents were started in.
 
-When no space is rooted at that project, resuming SHALL open one and place
-the agent there. The operator SHALL be left looking at the resumed agent.
+#### Scenario: Creating a space asks nothing but its name
+- **WHEN** the operator creates a space
+- **THEN** they give it a name and nothing else, and the space exists
 
-#### Scenario: A space on the project is already open
-- **WHEN** the operator resumes work whose project already has a space open
-- **THEN** the agent opens in that space, and no second space is created for the same root
-
-#### Scenario: The space was closed and a new one opened on the same directory
-- **WHEN** the space the work was left in was closed, and a different space was later opened on the same project directory
-- **THEN** the agent opens in that space, however it is named and whenever it was opened
-
-#### Scenario: No space on the project is open
-- **WHEN** the operator resumes work whose project has no space open
-- **THEN** a space rooted at that project is opened and the agent opens in it
-
-#### Scenario: A space rooted above the project
-- **WHEN** an open space's root contains the project but no space is rooted at the project itself
-- **THEN** a space rooted at the project is opened, and the space above it receives no tab
-
-#### Scenario: Resuming from a different project
-- **WHEN** the operator resumes work belonging to a project other than the one they were looking at
-- **THEN** the space they were looking at receives no tab
-
-#### Scenario: Several spaces on one project
-- **WHEN** more than one open space is rooted at the work's project
-- **THEN** the agent opens in the selected one when it is among them, and otherwise in the first, and no further space is created
-
-#### Scenario: The checkout was removed by hand
-- **WHEN** the operator resumes work whose checkout no longer exists
-- **THEN** the agent is given a checkout again on its own branch, in a space rooted at its project
-
-#### Scenario: The project itself is gone
-- **WHEN** the operator resumes work whose project directory no longer exists
-- **THEN** nothing is opened, the reason is said, and the entry stays in the list
+#### Scenario: A directory that is not a repository is a directory like any other
+- **WHEN** the operator starts an agent in a directory that is not a Git working tree
+- **THEN** the agent starts there, in the space the operator is in

@@ -4,17 +4,19 @@
 What the workspace Overview says about the project and the marketplace at the
 current directory: semantic states computed by the Application layer, shown
 according to the kind of workspace, with indicators that each carry one meaning.
+
 ## Requirements
+
 ### Requirement: Overview reports semantic project state
-The system SHALL report the workspace project half as semantic states, not file facts: `Environment` ∈ {NotConfigured, Invalid, InstallRequired, Ready}, `Memory` ∈ {None, Ready, Issue}, and a `Plugins` quantity. The state SHALL be computed by the Application layer; the TUI SHALL render it verbatim and never re-derive it from `agents.lock` bytes.
+The system SHALL report the workspace project half as semantic states, not file facts: `Environment` ∈ {NotConfigured, Invalid, InstallRequired, Ready}, `Context` ∈ {None, Ready, Issue}, and a `Plugins` quantity. The state SHALL be computed by the Application layer; the TUI SHALL render it verbatim and never re-derive it from `agents.lock` bytes.
 
 #### Scenario: Plain directory
 - **WHEN** the cwd contains neither `agents.lock` nor `marketplace.json`
-- **THEN** Environment is `NotConfigured`, Memory is `None`, Plugins shows none, and no MARKETPLACE column is rendered
+- **THEN** Environment is `NotConfigured`, Context is `None`, Plugins shows none, and no MARKETPLACE column is rendered
 
 #### Scenario: AGENTS.md only
 - **WHEN** the cwd contains `AGENTS.md` and no anchors
-- **THEN** Environment is `NotConfigured` and Memory is `Ready`
+- **THEN** Environment is `NotConfigured` and Context is `Ready`
 
 #### Scenario: Valid lock, everything installed
 - **WHEN** `agents.lock` parses and every declared plugin is installed in the Store
@@ -84,4 +86,3 @@ when the Application reports `Ready`.
 #### Scenario: Invalid state is never actionable as install
 - **WHEN** Environment is `Invalid` or `NotConfigured`
 - **THEN** no `i install` action is offered
-

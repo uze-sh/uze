@@ -127,6 +127,8 @@ naming them, and the absorbed records are listed under
 - [055 — A project's commands run only once the operator approved them](055-a-projects-commands-run-only-once-the-operator-approved-them.md)
 - [056 — The terminal runtime serves the person, not the panes](056-the-terminal-runtime-serves-the-person-not-the-panes.md)
 - [057 — A harness has a version floor, and nothing is kept below it](057-a-harness-has-a-version-floor-and-nothing-is-kept-below-it.md)
+- [058 — A space is a group of agents, not a directory](058-a-space-is-a-group-of-agents-not-a-directory.md)
+- [059 — Delivery names a destination, and UZE stops at writing it](059-delivery-names-a-destination-and-uze-stops-at-writing-it.md)
 
 ## Consolidated records
 

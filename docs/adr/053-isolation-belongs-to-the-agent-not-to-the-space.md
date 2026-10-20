@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+> Superseded in part by [058](058-a-space-is-a-group-of-agents-not-a-directory.md):
+> a space is no longer a directory, so "one root means one space" no
+> longer holds. This record's decision, that isolation is a property of
+> the agent, stands.
+
 ## Context
 
 Every space was a worktree space: an agent created in it got a slot of its
