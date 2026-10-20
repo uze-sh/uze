@@ -1593,7 +1593,11 @@ impl Attach<'_> {
         let Some((space, behind, root)) = self.model.session.as_ref().and_then(|session| {
             let space = session.selected_space();
             let directory = named_checkout(&self.model.tab(agent.tab)?.pane.cwd);
-            let root = self.model.projects.get(&directory)?.clone();
+            // The checkout the agent works in: what its Settings read and
+            // write, so a change made in an isolated checkout is that
+            // checkout's work, committed and delivered with it.
+            let root = uze_application::isolated_checkout_root(&directory)
+                .or_else(|| self.model.projects.get(&directory).cloned())?;
             Some((space.id, space.selected_tab, root))
         }) else {
             return;

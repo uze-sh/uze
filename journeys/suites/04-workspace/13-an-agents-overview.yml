@@ -1,12 +1,15 @@
-journey: an agent's overview opens without a shell, and edits agents.yaml in place
+journey: an agent's overview opens without a shell, and edits its own checkout's agents.yaml in place
 tags: [gate, tui, workspace]
 proves: web/content/docs/workspace/space.mdx
 about: |
   The overview is a surface of the client, not a program in a pane: opening
   it over an agent starts nothing on the machine. Its Settings section is a
-  form over the `workspace:` section of `agents.yaml`, and a change made
-  there is written to the file as soon as it is made, with the comments the
-  file already had kept where they were.
+  form over the `workspace:` section of the `agents.yaml` in the checkout the
+  agent works in, and a change made there is written to that file as soon as
+  it is made, with the comments it already had kept where they were. For an
+  agent in a worktree that is the worktree's file: the change is part of its
+  work, and the project's own file, which places every new agent, is left
+  as it was.
 
   Every check reads the machine: the shells the world is running, and the
   file on disk. Screen text is only the gate that a gesture landed.
@@ -56,7 +59,7 @@ scenes:
       - process: { matching: "{shell}", same_as: shells }
         about: opening the overview started no shell, nor anything else in a pane
 
-  - scene: a setting changed in the overview is written to agents.yaml, comments kept
+  - scene: a setting changed in the overview is written to the worktree's agents.yaml, comments kept
     when:
       - key: "2"
         say: show the Settings section
@@ -77,12 +80,15 @@ scenes:
         expect_timeout: 20
         pause: 1.5
     then:
-      - file: "{project}/agents.yaml"
+      - file: "{project}/.worktrees/*/agents.yaml"
         contains: "slots: 3"
-        about: the change is in the file on disk
+        about: the change is in the agent's worktree, on disk
       - file: "{project}/agents.yaml"
+        excludes: "slots: 3"
+        about: and the project's own file, which places new agents, is untouched
+      - file: "{project}/.worktrees/*/agents.yaml"
         contains: "# The team's settings, kept by hand."
         about: the comment above the section is kept
-      - file: "{project}/agents.yaml"
+      - file: "{project}/.worktrees/*/agents.yaml"
         contains: "# every agent in a checkout of its own"
         about: and the comment beside a key it did not touch

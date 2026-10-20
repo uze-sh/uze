@@ -111,4 +111,5 @@ workspace without knowing its keys.
 - **No change to `uze-terminal`:** tabs stay PTYs, and the space keeps the
   shell its server opens.
 - **No new dependency, and no persisted format.** The only file the screen
-  writes is the project's `agents.yaml`, through the existing editor.
+  writes is the `agents.yaml` of the checkout the agent works in, through
+  the existing editor.

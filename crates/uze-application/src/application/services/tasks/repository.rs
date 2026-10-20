@@ -4,9 +4,10 @@ use super::*;
 
 impl Workspace<'_> {
     /// The project's declared policy, or the defaults when its manifest
-    /// declares none. Read from the primary checkout on purpose: a worktree
-    /// never declares a policy of its own, and nothing machine-scoped
-    /// participates, so the same repository resolves identically everywhere.
+    /// declares none. Read from the primary checkout on purpose: what a
+    /// worktree's own file declares is that worktree's work, in force only
+    /// once delivered, and nothing machine-scoped participates, so the same
+    /// repository resolves identically everywhere.
     /// A malformed manifest is an error rather than a silent default.
     pub(in crate::application::services) fn policy(
         &self,

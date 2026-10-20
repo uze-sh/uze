@@ -1471,9 +1471,12 @@ pub(super) fn spawn_space_worktrees(
         let _pass = crate::telemetry::background_pass!("tui.space_worktrees", parent: &parent);
         let view = answered_or(
             || {
+                // The project's worktrees, wherever the overview stands: an
+                // agent's own checkout is one of them, and Git is not run
+                // inside it on its behalf.
                 tui_application(home)
                     .ok()
-                    .and_then(|app| app.workspace().checkouts(&root))
+                    .and_then(|app| app.workspace().checkouts(&uze_application::slot_key(&root)))
             },
             None,
         );
@@ -1523,8 +1526,11 @@ pub(super) fn spawn_worktree_removal(
                 tui_application(home)
                     .map_err(|error| error.to_string())
                     .and_then(|app| {
-                        app.workspace()
-                            .remove_free_checkout(&root, &path, &occupied)
+                        app.workspace().remove_free_checkout(
+                            &uze_application::slot_key(&root),
+                            &path,
+                            &occupied,
+                        )
                     })
             },
             Err("removing the worktree failed".to_owned()),

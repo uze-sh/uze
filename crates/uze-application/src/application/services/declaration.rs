@@ -17,17 +17,28 @@ use uze_core::{
 use uze_workspace::{
     approval::{self, ProjectCommands},
     declaration::{self, Checked, DeclarationKey, DeclarationProblem, DeclaredValue, Edit},
+    worktree::isolated_checkout,
 };
 
 use super::{Workspace, artifacts, policy_commands::primary_of};
 
 pub use uze_workspace::declaration::{ActionState, Choices as DeclarationChoices};
 
-/// The project's `workspace:` section, key by key.
+/// One checkout's `workspace:` section, key by key.
+///
+/// A checkout's own file: the primary's, which is what places agents, or
+/// an isolated checkout's, which is that checkout's work until it is
+/// delivered and reaches the primary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationView {
     /// The `agents.yaml` it is read from, and written to.
     pub manifest: PathBuf,
+    /// Whether it is the primary checkout's file, the one every agent is
+    /// placed by. An isolated checkout's is in force only once delivered.
+    pub in_force: bool,
+    /// The setup and gate lines the file declares that the project's
+    /// approval does not cover, as approval names them.
+    pub awaiting: Vec<String>,
     /// Whether that file exists yet. Without it every key is its default,
     /// and the first save creates it.
     pub exists: bool,
@@ -83,11 +94,12 @@ pub enum DeclarationApplied {
 }
 
 impl Workspace<'_> {
-    /// The `workspace:` section of the project `root` belongs to.
+    /// The `workspace:` section of the checkout `root` is in.
     #[tracing::instrument(name = "workspace.declaration_view", skip_all, fields(root = %root.display()), err)]
     pub fn declaration_view(&self, root: &Path) -> Result<DeclarationView> {
         let primary = primary_of(root);
-        let path = manifest::manifest_path_for(&primary);
+        let checkout = checkout_of(root);
+        let path = manifest::manifest_path_for(&checkout);
         let source = authored(&path)?;
         let text = source.as_deref().unwrap_or_default();
         let editable = ManifestDocument::from_source(&path, text)
@@ -96,9 +108,25 @@ impl Workspace<'_> {
                 UzeError::MalformedManifest { reason, .. } => reason,
                 other => other.to_string(),
             });
-        let mut checked = checked(&primary, text);
+        let mut checked = checked(&checkout, text);
+        // Judged against the project's approval: an approval is the
+        // project's, whichever checkout the lines are read in.
+        let awaiting = checked
+            .policy
+            .as_ref()
+            .and_then(|policy| approval::consent(&self.0.home, &primary, policy).awaiting())
+            .map(|awaiting| {
+                awaiting
+                    .commands
+                    .iter()
+                    .map(|command| command.shown())
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(DeclarationView {
             manifest: path,
+            in_force: checkout == primary,
+            awaiting,
             exists: source.is_some(),
             entries: DeclarationKey::ALL
                 .into_iter()
@@ -119,11 +147,14 @@ impl Workspace<'_> {
                 .collect(),
             editable,
             problems: checked.problems,
+            // A link is copied from the primary's ignored files into each
+            // checkout, so what may be linked is read there.
             choices: declaration::choices(&primary),
         })
     }
 
-    /// Writes `edits` into the project's `agents.yaml` as it is now,
+    /// Writes `edits` into the `agents.yaml` of the checkout `root` is in,
+    /// as it is now,
     /// creating it with only the keys they set when there is none, unless
     /// the workspace would refuse the result. An edit names a key, so it
     /// applies to whatever the file holds when it lands. Never approves a
@@ -132,11 +163,12 @@ impl Workspace<'_> {
     pub fn apply_declaration(&self, root: &Path, edits: &[Edit]) -> Result<DeclarationApplied> {
         let _mutation = MutationLock::acquire(&self.0.home)?;
         let primary = primary_of(root);
-        let path = manifest::manifest_path_for(&primary);
+        let checkout = checkout_of(root);
+        let path = manifest::manifest_path_for(&checkout);
         let held = authored(&path)?;
         let before = held.as_deref().unwrap_or_default();
         let document = edited(&path, held.as_deref(), edits)?;
-        let after = checked(&primary, document.source());
+        let after = checked(&checkout, document.source());
         if !after.problems.is_empty() {
             return Ok(DeclarationApplied::Refused {
                 problems: after.problems,
@@ -149,7 +181,7 @@ impl Workspace<'_> {
             });
         }
         let awaits_approval_again = after.policy.as_ref().is_some_and(|candidate| {
-            let held = checked(&primary, before).policy.unwrap_or_default();
+            let held = checked(&checkout, before).policy.unwrap_or_default();
             ProjectCommands::of(candidate).digest() != ProjectCommands::of(&held).digest()
                 && approval::consent(&self.0.home, &primary, candidate)
                     .awaiting()
@@ -161,6 +193,12 @@ impl Workspace<'_> {
             awaits_approval_again,
         })
     }
+}
+
+/// The checkout `root` is in: an isolated checkout's own directory, or
+/// the primary.
+fn checkout_of(root: &Path) -> PathBuf {
+    isolated_checkout(root).map_or_else(|| primary_of(root), |checkout| checkout.directory())
 }
 
 /// The file as its author left it, or `None` when there is none.
@@ -181,14 +219,14 @@ fn edited(path: &Path, source: Option<&str>, edits: &[Edit]) -> Result<ManifestD
     Ok(document)
 }
 
-/// The workspace's reading of `text`, with the artifact rule the places
-/// it declares are followed by.
-fn checked(primary: &Path, text: &str) -> Checked {
-    let mut checked = declaration::check(primary, text);
+/// The workspace's reading of `text` in `checkout`, with the artifact rule
+/// the places it declares are followed by.
+fn checked(checkout: &Path, text: &str) -> Checked {
+    let mut checked = declaration::check(checkout, text);
     let refusal = checked
         .artifacts
         .as_ref()
-        .and_then(|declared| artifacts::refusal(primary, &declared.paths));
+        .and_then(|declared| artifacts::refusal(checkout, &declared.paths));
     if let Some(reason) = refusal {
         checked.problems.push(DeclarationProblem {
             key: Some(DeclarationKey::Artifacts.name().to_owned()),

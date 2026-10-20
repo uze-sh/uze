@@ -438,6 +438,17 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 ("read-only".to_owned(), Token::TextSecondary)
             } else if overview
                 .declaration()
+                .is_some_and(|declaration| !declaration.in_force)
+            {
+                // An isolated checkout's file is its agent's work: new
+                // agents are placed by the primary's until it is delivered.
+                (
+                    "this worktree's agents.yaml · new agents follow the project's until it is delivered"
+                        .to_owned(),
+                    Token::StateInfo,
+                )
+            } else if overview
+                .declaration()
                 .is_some_and(|declaration| !declaration.exists)
             {
                 (
@@ -1410,7 +1421,9 @@ impl Form {
     }
 }
 
-/// What `uze status` says about the project's commands, by their line.
+/// Which of the commands the form shows the project's approval leaves
+/// waiting, by their line: judged on the file the form edits, so a line
+/// added in an isolated checkout reads as waiting there too.
 struct CommandStates<'a> {
     awaiting: Vec<&'a str>,
 }
@@ -1419,12 +1432,10 @@ impl<'a> CommandStates<'a> {
     fn of(project: &'a ProjectSpace) -> Self {
         Self {
             awaiting: project
-                .status
-                .commands_awaiting_approval
-                .iter()
-                .flat_map(|awaiting| &awaiting.commands)
-                .map(|command| command.line.as_str())
-                .collect(),
+                .workspace
+                .as_ref()
+                .map(|declaration| declaration.awaiting.iter().map(String::as_str).collect())
+                .unwrap_or_default(),
         }
     }
 

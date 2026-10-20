@@ -57,7 +57,11 @@ linked files, tracked directories for artifacts. An agent action is a text
 box of its own, where `Enter` starts a new line and `Ctrl+S` finishes.
 
 Each change is written to `agents.yaml` as soon as you make it, and the key
-shows **saved**. The file is read again before every write, its comments are
+shows **saved**. It is the file of the checkout the agent works in: for an
+agent in the project's own tree, the project's, which places every new
+agent; for an agent in a worktree, that worktree's, so the change is part of
+its work, committed and delivered with it, and new agents follow the
+project's file until then. The file is read again before every write, its comments are
 kept, and the result is checked by the same parser the workspace reads it
 with: a change that would not parse is refused, shown at its key, and nothing
 is written. `x` discards refused changes. When the file uses something the

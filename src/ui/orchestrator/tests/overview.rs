@@ -963,6 +963,8 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
         _ => None,
     };
     let view = DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
         entries: DeclarationKey::ALL
@@ -1080,6 +1082,8 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
         _ => None,
     };
     let view = DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
         entries: DeclarationKey::ALL
@@ -1176,6 +1180,8 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
 fn undeclared(exists: bool) -> uze_application::DeclarationView {
     use uze_application::{DeclarationEntry, DeclarationKey, DeclarationView};
     DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("agents.yaml"),
         exists,
         entries: DeclarationKey::ALL
@@ -1398,6 +1404,8 @@ fn a_number_steps_with_its_minus_and_plus() {
     let root = first_tab(&model).pane.cwd.clone();
     model.open_space_overview(space, behind, root, true);
     let view = DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
         entries: DeclarationKey::ALL
@@ -1506,6 +1514,8 @@ fn a_link_is_picked_from_what_the_repository_ignores() {
         branches: Vec::new(),
     };
     let view = DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
         entries: DeclarationKey::ALL
@@ -1587,6 +1597,8 @@ fn an_action_is_written_over_several_lines() {
     let root = first_tab(&model).pane.cwd.clone();
     model.open_space_overview(space, behind, root, true);
     let view = DeclarationView {
+        in_force: true,
+        awaiting: Vec::new(),
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
         entries: DeclarationKey::ALL
@@ -3416,4 +3428,65 @@ fn a_declaration_changed_on_disk_reads_the_overview_again() {
     assert_eq!(asked(&driven), before, "an unchanged stamp reads nothing");
     stamped(&mut driven, 2);
     assert_eq!(asked(&driven), before + 1, "a moved stamp reads it again");
+}
+
+/// An agent's overview stands on the checkout it works in: an isolated
+/// agent's Settings read and write its own worktree's `agents.yaml`, and an
+/// agent in the project's own tree the project's. The directory a new
+/// agent is offered stays the project, whichever.
+#[test]
+fn the_overview_stands_on_the_agents_own_checkout() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-checkout"));
+    let opened_on = |cwd: &str| {
+        let mut driven = driven(agent_session_in(cwd), &home);
+        driven.frame();
+        let button = driven.hit(|hit| *hit == WorkspaceHit::OpenOverview);
+        driven.press(button.x + 1, button.y);
+        let root = overview_of(&driven).root.clone();
+        let offered = driven.attach.model.directory_to_offer();
+        (root, offered)
+    };
+
+    let (root, offered) = opened_on("/repo/.worktrees/a");
+    assert_eq!(
+        root,
+        PathBuf::from("/repo/.worktrees/a"),
+        "the agent's worktree"
+    );
+    assert_eq!(
+        offered,
+        Some(PathBuf::from("/repo")),
+        "a new agent is still offered the project"
+    );
+
+    let (root, _) = opened_on("/repo");
+    assert_eq!(root, PathBuf::from("/repo"), "the project's own tree");
+}
+
+/// In a worktree the Settings say whose file it is and when it applies,
+/// and a command only that file declares reads as waiting for approval.
+#[test]
+fn a_worktrees_settings_say_they_apply_once_delivered() {
+    use uze_application::DeclarationView;
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-worktree-settings",
+    ));
+    let mut view: DeclarationView = undeclared(true);
+    view.in_force = false;
+    let mut driven =
+        overview_answered(&home, Some(Ok(project_space(Default::default(), Ok(view)))));
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("open")
+        .section = crate::ui::orchestrator::space_overview::Section::Settings;
+
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+
+    assert!(
+        screen.contains("this worktree's agents.yaml"),
+        "the file is said to be the worktree's: {screen}"
+    );
 }

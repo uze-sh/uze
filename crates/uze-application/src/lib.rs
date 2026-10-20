@@ -114,6 +114,12 @@ pub fn slot_key(cwd: &std::path::Path) -> std::path::PathBuf {
         .unwrap_or_else(|| cwd.to_path_buf())
 }
 
+/// The isolated checkout a directory lies in, by its own directory, or
+/// `None` in the operator's own tree. Lexical, like [`slot_key`].
+pub fn isolated_checkout_root(cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    isolated_checkout(cwd).map(|checkout| checkout.directory())
+}
+
 /// Whether a directory is one of the isolated checkouts UZE places agents
 /// in, rather than the operator's own tree.
 ///

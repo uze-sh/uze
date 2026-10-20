@@ -398,3 +398,91 @@ fn an_action_starts_its_block_when_the_file_has_none() {
         "{after}"
     );
 }
+
+/// The project with `AUTHORED` committed, and an isolated checkout of it
+/// under `.worktrees/<id>`, as placement cuts one.
+fn project_with_a_worktree(label: &str) -> (Repository, std::path::PathBuf) {
+    let repository = project(label, None);
+    repository.commit_file("agents.yaml", AUTHORED);
+    let checkout = repository.root().join(".worktrees").join("a1b2c3");
+    repository.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "agent/a1b2c3",
+        checkout.to_str().unwrap(),
+        "HEAD",
+    ]);
+    (repository, checkout)
+}
+
+/// A change made in an isolated checkout is that checkout's work: written
+/// to its own `agents.yaml`, to be committed and delivered with it, and
+/// never to the primary's, which places every agent meanwhile.
+#[test]
+fn an_edit_in_a_worktree_is_written_there_and_leaves_the_primary_alone() {
+    let app = application("declaration-worktree-edit");
+    let (repository, checkout) = project_with_a_worktree("declaration-worktree-edit");
+
+    app.workspace()
+        .apply_declaration(&checkout, &[set(DeclarationKey::Delivery, text("push"))])
+        .unwrap();
+
+    let own = fs::read_to_string(checkout.join("agents.yaml")).unwrap();
+    assert!(own.contains("delivery: push"), "{own}");
+    assert!(
+        own.contains("# merged locally until CI exists"),
+        "its comments are kept: {own}"
+    );
+    assert_eq!(
+        written(&repository),
+        AUTHORED,
+        "the primary's file is untouched"
+    );
+
+    let view = app.workspace().declaration_view(&checkout).unwrap();
+    assert_eq!(view.manifest, checkout.join("agents.yaml"));
+    assert!(!view.in_force, "a worktree's file is not in force");
+    assert!(
+        app.workspace()
+            .declaration_view(repository.root())
+            .unwrap()
+            .in_force,
+        "the primary's is"
+    );
+}
+
+/// A command added in an isolated checkout waits for the project's
+/// approval like any other: approval is the project's, wherever the line
+/// is read.
+#[test]
+fn a_command_added_in_a_worktree_waits_for_the_projects_approval() {
+    let app = application("declaration-worktree-awaits");
+    let (_repository, checkout) = project_with_a_worktree("declaration-worktree-awaits");
+
+    let applied = app
+        .workspace()
+        .apply_declaration(
+            &checkout,
+            &[set(
+                DeclarationKey::Gate,
+                DeclaredValue::Commands(vec![ShellCommand::spelled("make test", "make test")]),
+            )],
+        )
+        .unwrap();
+
+    assert_eq!(
+        applied,
+        DeclarationApplied::Written {
+            created: false,
+            awaits_approval_again: true,
+        }
+    );
+    let view = app.workspace().declaration_view(&checkout).unwrap();
+    assert!(
+        view.awaiting.iter().any(|line| line.contains("make test")),
+        "the line reads as waiting: {:?}",
+        view.awaiting
+    );
+}

@@ -235,6 +235,27 @@ each problem shown at its key until it is changed or discarded.
 - **WHEN** `agents.yaml` uses a YAML anchor
 - **THEN** the Settings section is read-only and says why
 
+### Requirement: The Settings section edits the agent's own checkout
+The Settings section SHALL read and write the `agents.yaml` of the
+checkout the agent works in: the project's own tree, or the agent's
+isolated checkout. A change made in an isolated checkout SHALL stay there,
+to be committed and delivered with that agent's work, and the section
+SHALL say that new agents follow the project's file until it is
+delivered. Commands SHALL be judged against the project's approval
+wherever they are read.
+
+#### Scenario: An agent in a worktree
+- **WHEN** the operator changes `delivery` in the overview of an agent working in `.worktrees/a1`
+- **THEN** `.worktrees/a1/agents.yaml` holds the change and the project's own `agents.yaml` is untouched
+
+#### Scenario: An agent in the project's own tree
+- **WHEN** the operator changes `slots` in the overview of an agent working in the project's tree
+- **THEN** the project's `agents.yaml` holds it, and the next agent is placed by it
+
+#### Scenario: A command added in a worktree
+- **WHEN** the operator adds a `gate` line in a worktree's Settings
+- **THEN** the line reads as waiting for approval
+
 ### Requirement: The overview says nothing of other agents
 The overview SHALL NOT count, list or describe agents other than the one
 it was opened on: what the space holds is the sidebar's to show.
