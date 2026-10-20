@@ -159,12 +159,26 @@ beats:
     expect: first steps
     expect_timeout: 20
     pause: 2.0
-  # With one harness set up there is nothing to choose, so the new-agent
-  # chord places the agent straight away rather than opening a picker. The
-  # proof is its row in the sidebar; what Claude Code draws on its first
-  # run is its own onboarding, which is the honest first frame here.
-  - say: a new agent — Claude Code starts, in a checkout of its own
+  # The new-agent chord opens the one-step popup: the one harness set up is
+  # already in its field, and a space with no agent yet offers no directory
+  # in particular, so the project is typed, Tab completing it. The proof is
+  # the agent's row in the sidebar; what Claude Code draws on its first run
+  # is its own onboarding, which is the honest first frame here.
+  - say: a new agent, with the one harness set up, in the project typed
     key: M-n
+    expect: 'harness\s+‹ Claude Code ›'
+    expect_timeout: 6
+    pause: 0.8
+  - type: /tmp/uzeinstall/work/my-a
+    submit: false
+    expect: 'my-a▏'
+    pause: 0.4
+  - key: Tab
+    expect: 'my-app/▏'
+    expect_timeout: 4
+    pause: 0.6
+  - say: Claude Code starts, in a checkout of its own
+    key: Enter
     expect: agent 1
     expect_in: sidebar
     expect_timeout: 20
