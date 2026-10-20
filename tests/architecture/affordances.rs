@@ -298,6 +298,13 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::DiscardChanges,
         Control("the Discard button under the edits agents.yaml refused"),
     );
+    put(
+        Action::ReviewCommands,
+        Control(
+            "the Review button in the Settings drawer while commands wait, and the \
+             review hint along the overview's foot",
+        ),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }

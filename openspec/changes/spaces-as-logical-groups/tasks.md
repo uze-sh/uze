@@ -38,7 +38,7 @@
 
 ## 4. Journeys and verification
 
-- [ ] 4.1 Update `journeys/suites/04-workspace/05-a-picked-checkout-opens-its-project.yml` and `07-a-repository-the-prompt-has-to-walk-to.yml` to the directory step, and add a journey for one space holding agents of two projects (after the operator validates by hand)
-- [ ] 4.2 No dead code: `grep` for every name 1.9, 2.11 and 3.8 retired finds only the ladder step; no `#[allow(dead_code)]`, no unused parameter, no compatibility branch for the old shape outside `uze-document`'s ladder; then a `code:polish` pass over the branch, fixing what it confirms
-- [ ] 4.3 `make check` green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`, `openspec validate --all --strict`
-- [ ] 4.4 `make install` and validate by hand: a space `storefront` with agents in `front`, `back` and `landing`, a restart, a `uze` launched in `back`, and one launched in home
+- [x] 4.1 Update `journeys/suites/04-workspace/05-a-picked-checkout-opens-its-project.yml` and `07-a-repository-the-prompt-has-to-walk-to.yml` to the directory step, and add a journey for one space holding agents of two projects (after the operator validates by hand)
+- [x] 4.2 No dead code: `grep` for every name 1.9, 2.11 and 3.8 retired finds only the ladder step; no `#[allow(dead_code)]`, no unused parameter, no compatibility branch for the old shape outside `uze-document`'s ladder; then a `code:polish` pass over the branch, fixing what it confirms
+- [x] 4.3 `make check` green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`, `openspec validate --all --strict`
+- [x] 4.4 `make install` and validate by hand: a space `storefront` with agents in `front`, `back` and `landing`, a restart, a `uze` launched in `back`, and one launched in home

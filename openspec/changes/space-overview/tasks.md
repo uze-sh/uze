@@ -27,18 +27,18 @@
 
 - [x] 4.1 Move the manage header's tabs into `widget/` as a generic tab bar (label, optional mark, active index, shrink to number + mark); manage renders through it unchanged
 - [x] 4.2 Move the drawer's core into `widget/` (width and drag state passed in); manage's `drawer` calls it
-- [ ] 4.3 `Choice` (an inline enum, options shown on focus) and a list editor row set, each only as the Settings section needs it
+- [x] 4.3 `Choice` (an inline enum, options shown on focus) and a list editor row set, each only as the Settings section needs it
 
 ## 5. Surface (src/ui)
 
 - [x] 5.1 `WorkspaceModel.space_overview` keyed by `SpaceId`; `orchestrator/space_overview.rs` drawn in the pane's rect from `render.rs`'s no-extension arm: header with activity, section bar, cause line, the five sections (Agent first), drawer, footer; loading, "not a project" and "root gone"
-- [ ] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, a written change and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
+- [x] 5.2 `spawn_space_overview` and its `absorb_*`: on open, refresh, a written change and a stamp change of `agents.yaml`/`agents.lock`/`AGENTS.md`; one in flight per space; walk coalesced; stale answers dropped
 - [x] 5.3 `land_on_space`/`step_space` open the overview; put away by a tab, an agent row, `+`, another space or Esc; never by `close_extension_left_behind`
 - [x] 5.4 An `overview` tab leading the strip (`WorkspaceHit::OpenOverview`), selected while shown
 - [x] 5.5 Actions: `review_commands_for(project)`; a fact's body through `memory().show` on the read thread
 - [x] 5.6 Settings editing saves each committed change on the read thread, one save out at a time and edits made meanwhile sent after it; a written answer drops the edits it carried, re-reads and raises a toast; a refused one keeps them marked with each problem at its key, and `x` drops them
 - [x] 5.7 `Scope::SpaceOverview` and `Scope::SpaceOverviewEditing` in `uze-keys`, `Action::OpenSpaceOverview` in `Scope::Workspace`, default bindings
-- [ ] 5.8 `TestBackend` tests: the agent button opens it only in an agent's context; the confirming broadcast keeps it; selecting another agent turns it; selecting the space's row puts it away and lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; an agent whose directory is gone; Review by keyboard; an edit written with no Save; a refused edit kept with its problem and discarded; edits made while a save is out written after it
+- [x] 5.8 `TestBackend` tests: the agent button opens it only in an agent's context; the confirming broadcast keeps it; selecting another agent turns it; selecting the space's row puts it away and lands on its shell; Enter copies a prompt; section switch by number; a loading section; a stale answer dropped; an agent whose directory is gone; Review by keyboard; an edit written with no Save; a refused edit kept with its problem and discarded; edits made while a save is out written after it
 
 - [x] 5.9 A Worktrees section: the catalog's grid moved to `widget::grid`; cards from `Workspace::checkouts` read by `spawn_space_worktrees` while the section is in front and on refresh, stale answers dropped; state, owner and live tab per card; drawer; `SelectSection(6)`
 - [x] 5.10 `TestBackend` tests: a card per worktree with branch and size; keys and a click select; the wheel scrolls whole cards without selecting; hover lifts a card; the measure is off the frame and a stale answer dropped; the empty state; the warning
@@ -49,9 +49,9 @@
 
 ## 6. Journey
 
-- [ ] 6.1 A journey in `04-workspace`: opening an agent's overview from the agent button gains no shell in the process table; a workspace edit made in the overview changes `agents.yaml` on disk with its comments kept
+- [x] 6.1 A journey in `04-workspace`: opening an agent's overview from the agent button gains no shell in the process table; a workspace edit made in the overview changes `agents.yaml` on disk with its comments kept
 
 ## 7. Docs and gate
 
-- [ ] 7.1 The workspace docs page (`web/content/docs/workspace/`) describes the overview and the Settings section, and the journey's `proves:` names it
-- [ ] 7.2 `make check` green
+- [x] 7.1 The workspace docs page (`web/content/docs/workspace/`) describes the overview and the Settings section, and the journey's `proves:` names it
+- [x] 7.2 `make check` green
