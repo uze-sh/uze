@@ -129,14 +129,15 @@ create a space.
 - **WHEN** the operator resumes work of a project no open space works in
 - **THEN** the agent opens in the space the operator is looking at
 
-### Requirement: A space holding several projects names each agent's project
+### Requirement: Each agent's row names its project
 The sidebar SHALL caption a minimized space in front with the number of
-agents it holds, and with nothing while it holds no agent. In a space whose
-agents stand in several projects, each agent's row SHALL name its project.
+agents it holds, and with nothing while it holds no agent. Every agent's
+row SHALL name the project it works in, with its harness against the row's
+end, since a space is bound to no directory.
 
 #### Scenario: A space of one project
 - **WHEN** a minimized space in front holds two agents of one project
-- **THEN** its caption reads `2 agents`, and opened, no agent row names the project
+- **THEN** its caption reads `2 agents`, and opened, each agent's row names the project
 
 #### Scenario: A space of three projects
 - **WHEN** a space has agents in three projects

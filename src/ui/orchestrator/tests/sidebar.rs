@@ -650,10 +650,10 @@ fn a_minimized_spaces_caption_counts_its_agents() {
     );
 }
 
-/// In a space whose agents work in several projects, each agent's row
-/// names its own; in a space of one project, none does.
+/// Every agent's row names the project it works in, whatever else its
+/// space holds, with its harness against the row's end.
 #[test]
-fn an_agents_row_names_its_project_only_in_a_space_of_several() {
+fn every_agents_row_names_its_project_and_ends_with_its_harness() {
     // The row under an agent's label: its project leading, when it names
     // one, and its harness against the end.
     let caption_of = |rows: &[String], label: &str| {
@@ -669,7 +669,10 @@ fn an_agents_row_names_its_project_only_in_a_space_of_several() {
     session.update_pane_status(agent, "/repo".into(), "agent".into());
     let rows = sidebar(&model_of(session.clone()), &identities_fixture()).rows;
     let one = caption_of(&rows, "agent 1");
-    assert!(!one.contains("repo"), "one project, not named: {one:?}");
+    assert!(
+        one.contains("repo"),
+        "a space of one project names it too: {one:?}"
+    );
 
     let other = session.add_tab(space, "agent 2".into(), None, 80, 24, "/web".into());
     session.update_pane_status(other, "/web".into(), "agent".into());

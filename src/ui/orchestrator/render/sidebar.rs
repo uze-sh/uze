@@ -708,10 +708,10 @@ pub(super) struct SidebarAgent<'a> {
     pub(super) tick: usize,
 }
 
-/// The project `tab`'s agent works in, when its space's agents work in
-/// more than one.
+/// The project `tab`'s agent works in, once it is known. Every row names
+/// it: a space is no directory, and its caption counts agents rather than
+/// saying where they work, so the row is the one place that says it.
 fn project_named_on_row(model: &WorkspaceModel, tab: &Tab) -> Option<String> {
-    tab_space(model, tab.id).filter(|space| model.projects_of(space.id).len() > 1)?;
     model
         .projects
         .get(&named_checkout(&tab.pane.cwd))
@@ -729,8 +729,8 @@ pub(super) struct TreeCaption {
     /// is gone.
     pub(super) detail: String,
     pub(super) detail_color: Color,
-    /// The project the agent works in, in a space of several: led by the
-    /// row, with the harness against its end.
+    /// The project the agent works in, leading the row, with the harness
+    /// against its end.
     pub(super) project: Option<String>,
     /// Whether `detail` is the harness, which stands against the row's
     /// end, rather than words about the checkout, which lead it.
@@ -765,9 +765,8 @@ impl TreeCaption {
         // recognized harness (`agent_tabs_of`), so the pane's own process
         // is a fallback for a race, not a second answer.
         //
-        // In a space whose agents work in several projects, the project
-        // too: there it is what tells two agents apart, and a space of one
-        // project says it once, under its name.
+        // The project too, leading the row: a space is no directory, so
+        // the row is the one place that says where its agent works.
         let detail = if lost {
             "checkout removed".to_owned()
         } else {
