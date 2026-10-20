@@ -277,6 +277,7 @@ impl Attach<'_> {
                     self.start_agent(option, picker.launch);
                 }
             }
+            Action::EraseBack => self.back_to_directories(),
             _ => self.model.agent_picker = None,
         }
         self.model.dirty = true;

@@ -50,6 +50,15 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
     (buffer_rows(&buffer), buffer)
 }
 
+/// The line typed into: the row under the one naming the steps.
+fn prompt_row_of(rows: &[String]) -> String {
+    let steps = rows
+        .iter()
+        .position(|row| row.contains("directory › harness"))
+        .expect("the popup is drawn");
+    rows[steps + 1].clone()
+}
+
 /// Enter on the directory step, as the keyboard sends it.
 fn confirm_the_directory(driven: &mut Driven<'_>) {
     let enter = uze_keys::active()
@@ -432,10 +441,12 @@ fn the_directory_step_lines_its_rows_up_in_one_column() {
     let values = column(&rows[prompt], "cr");
     assert_eq!(column(&rows[prompt + 1], "craude"), values, "{rows:?}");
     assert_eq!(column(&rows[prompt + 2], "scribble"), values, "{rows:?}");
-    let head = |row: usize| buffer[(values as u16, row as u16)].fg;
-    assert_eq!(head(prompt + 1), theme::color(Token::Accent), "{rows:?}");
+    // "craude", which "cr" is the head of, is the one Enter takes, so it
+    // wears the harness step's bar; "scribble" matched further in.
+    let cell = |row: usize| &buffer[(values as u16, row as u16)];
+    assert_eq!(cell(prompt + 1).bg, theme::color(Token::Accent), "{rows:?}");
     assert_eq!(
-        head(prompt + 2),
+        cell(prompt + 2).fg,
         theme::color(Token::TextInactive),
         "{rows:?}"
     );
@@ -548,11 +559,7 @@ fn the_directory_step_opens_empty_over_the_directory_it_lists() {
     directory_step_over(&mut model, &home);
 
     let (rows, _) = drawn(&mut model);
-    let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
-    let prompt = rows
-        .iter()
-        .find(|row| row.contains(&format!("{cursor} ")) || row.contains(&cursor))
-        .expect("the prompt row is drawn");
+    let prompt = prompt_row_of(&rows);
     assert!(prompt.contains('~'), "the row says where it is: {prompt}");
 }
 
@@ -567,13 +574,7 @@ fn a_long_directory_gives_way_to_what_is_typed() {
     let mut model = agent_session_in("/repo");
     let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
     directory_step_over(&mut model, &deep);
-    let prompt_row = |model: &mut WorkspaceModel| {
-        drawn(model)
-            .0
-            .into_iter()
-            .find(|row| row.contains(&cursor))
-            .expect("the prompt row is drawn")
-    };
+    let prompt_row = |model: &mut WorkspaceModel| prompt_row_of(&drawn(model).0);
 
     let prompt = prompt_row(&mut model);
     assert!(
@@ -648,6 +649,83 @@ fn a_click_on_the_line_being_typed_keeps_the_popup_open() {
         driven.attach.model.directory_step.is_some(),
         "a click on the input closed the popup"
     );
+}
+
+/// The popup names its two steps and lights the one it is on: the
+/// directory first, then the harness, with the directory chosen standing
+/// in for its word once it is.
+#[test]
+fn the_popup_names_its_steps_and_lights_the_one_it_is_on() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-steps"));
+    set_up_every_harness(&home);
+    let root = uze_testkit::temp::TempDir::new("popup-steps-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path());
+    let (rows, _) = drawn(&mut model);
+    assert!(
+        rows.iter().any(|row| row.contains("directory › harness")),
+        "the steps are named: {rows:#?}"
+    );
+
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = driven.hit(|hit| matches!(hit, WorkspaceHit::PickDirectory(0)));
+    driven.press(row.x, row.y);
+    let (rows, _) = drawn(&mut driven.attach.model);
+    assert!(
+        rows.iter().any(|row| row.contains("engine › harness")),
+        "the directory chosen names the first step: {rows:#?}"
+    );
+}
+
+/// The harness step goes back to the directory step, on the directory
+/// chosen: by a click on that directory, or by `Backspace`.
+#[test]
+fn the_harness_step_goes_back_to_the_directory_chosen() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-back"));
+    set_up_every_harness(&home);
+    let root = uze_testkit::temp::TempDir::new("popup-back-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path());
+    let mut driven = driven(model, &home);
+    let to_harnesses = |driven: &mut Driven<'_>| {
+        driven.frame();
+        let row = driven.hit(|hit| matches!(hit, WorkspaceHit::PickDirectory(0)));
+        driven.press(row.x, row.y);
+        assert!(
+            driven.attach.model.agent_picker.is_some(),
+            "on the harnesses"
+        );
+        driven.frame();
+    };
+    let back_on_engine = |driven: &Driven<'_>| {
+        let step = driven
+            .attach
+            .model
+            .directory_step
+            .as_ref()
+            .expect("back on the directories");
+        assert!(driven.attach.model.agent_picker.is_none());
+        assert_eq!(
+            step.picker.chosen().as_deref(),
+            Some(root.join("engine").as_path()),
+            "on the directory chosen"
+        );
+    };
+
+    to_harnesses(&mut driven);
+    let back = driven.hit(|hit| *hit == WorkspaceHit::NewAgentBack);
+    driven.press(back.x, back.y);
+    back_on_engine(&driven);
+
+    to_harnesses(&mut driven);
+    driven.press_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Backspace,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    back_on_engine(&driven);
 }
 
 /// Esc closes the popup, whichever step it is on, and nothing is placed.

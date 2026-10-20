@@ -862,6 +862,9 @@ pub(super) enum WorkspaceHit {
     /// title, its border — which a click on keeps open and answers
     /// nothing.
     NewAgentBody,
+    /// The directory chosen for a new agent, on its harness step: goes back
+    /// to choosing it.
+    NewAgentBack,
     /// A toast's offer to read a machine fact an agent proposed.
     ReviewProposal,
     /// One of the answers to that question.

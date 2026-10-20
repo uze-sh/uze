@@ -497,6 +497,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
         bind(Scope::AgentPicker, "esc", Action::Dismiss),
+        bind(Scope::AgentPicker, "backspace", Action::EraseBack),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),

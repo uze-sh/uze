@@ -231,6 +231,7 @@ impl Attach<'_> {
                         self.model.agent_picker = None;
                         self.open_manage_at(Route::Harnesses);
                     }
+                    Some(WorkspaceHit::NewAgentBack) => self.back_to_directories(),
                     Some(WorkspaceHit::NewAgentBody) => {}
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
@@ -879,6 +880,13 @@ impl Attach<'_> {
                     picker.selected = index;
                     self.model.dirty = true;
                 }
+                // The way back to the directory lights under the pointer,
+                // as every other control does.
+                let back = hit.filter(|hit| *hit == WorkspaceHit::NewAgentBack);
+                if self.model.hovered != back {
+                    self.model.hovered = back;
+                    self.model.dirty = true;
+                }
             }
             _ if self.model.context_menu.is_some() => {
                 // Hovering a row selects it, same as Up/Down — so the
@@ -1421,6 +1429,7 @@ impl Attach<'_> {
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody
             | WorkspaceHit::NewAgentBody
+            | WorkspaceHit::NewAgentBack
             | WorkspaceHit::OverviewAnswer(_)
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}

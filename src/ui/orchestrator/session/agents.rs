@@ -69,6 +69,31 @@ impl Attach<'_> {
         );
     }
 
+    /// Takes a new agent's harness step back to its directory step, on the
+    /// directory chosen, in the same place and size. A harness asked for a
+    /// resume has no directory step to go back to, and stays.
+    pub(super) fn back_to_directories(&mut self) {
+        let Some(picker) = self.model.agent_picker.as_ref() else {
+            return;
+        };
+        let (AgentLaunch::New(place), Some(rows)) = (&picker.launch, picker.rows) else {
+            return;
+        };
+        let directory = place.directory.clone();
+        let (space, anchor) = (place.space, picker.anchor);
+        let beside = directory
+            .parent()
+            .map_or_else(|| "~".to_owned(), |parent| parent.display().to_string());
+        self.model.agent_picker = None;
+        self.model.directory_step = Some(DirectoryStep {
+            picker: RootPicker::opened_in(&beside, Some(&directory)),
+            space,
+            anchor,
+            rows,
+        });
+        self.model.dirty = true;
+    }
+
     /// Asks which harness runs the agent — unless exactly one is set up,
     /// where the picker would be a single row to confirm, and the agent
     /// starts at once. None set up still opens it: its one row is the way

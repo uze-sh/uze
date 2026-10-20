@@ -227,7 +227,15 @@ pub(super) fn render(
         render_directory_step(frame, frame.area(), step, hits);
     }
     if let Some(picker) = &model.agent_picker {
-        render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
+        let back_hovered = model.hovered == Some(WorkspaceHit::NewAgentBack);
+        render_agent_picker(
+            frame,
+            frame.area(),
+            picker.anchor,
+            picker,
+            back_hovered,
+            hits,
+        );
     }
     if let Some(anchor) = model.status_catalog {
         render_status_catalog(frame, frame.area(), anchor, model.tick);
