@@ -174,6 +174,8 @@ pub(super) struct WorktreesRead {
 
 pub(super) struct WorktreesResolution {
     pub(super) space: SpaceId,
+    /// The project the read was for: a space holds overviews of several.
+    pub(super) root: PathBuf,
     pub(super) asked: u64,
     pub(super) view: Option<CheckoutsView>,
 }
@@ -407,18 +409,23 @@ pub(super) fn action_moment(state: ActionState) -> &'static str {
 
 pub(super) struct SpaceOverviewResolution {
     pub(super) space: SpaceId,
+    /// The project the read was for: a space holds overviews of several,
+    /// each counting its reads from its own start.
+    pub(super) root: PathBuf,
     pub(super) asked: u64,
     pub(super) answer: std::result::Result<SpaceOverview, String>,
 }
 
 pub(super) struct FactBodyResolution {
     pub(super) space: SpaceId,
+    pub(super) root: PathBuf,
     pub(super) name: String,
     pub(super) body: std::result::Result<String, String>,
 }
 
 pub(super) struct DeclarationSaveResolution {
     pub(super) space: SpaceId,
+    pub(super) root: PathBuf,
     pub(super) sent: SentEdits,
     pub(super) outcome: std::result::Result<DeclarationApplied, String>,
 }
@@ -640,6 +647,13 @@ impl SpaceOverviewView {
             .iter()
             .filter(|checkout| made_for_an_agent(checkout))
             .collect()
+    }
+
+    /// Whether an answer asked for `root` in `space` is this overview's:
+    /// the same space and the same project, since one space holds the
+    /// overviews of every project its agents work in.
+    pub(super) fn answers(&self, space: SpaceId, root: &Path) -> bool {
+        self.space == space && self.root == root
     }
 
     pub(super) fn project(&self) -> Option<&ProjectSpace> {
@@ -1408,7 +1422,7 @@ impl WorkspaceModel {
         let Some(overview) = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space)
+            .filter(|overview| overview.answers(resolution.space, &resolution.root))
         else {
             return false;
         };
@@ -1441,7 +1455,7 @@ impl WorkspaceModel {
         let Some(overview) = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space)
+            .filter(|overview| overview.answers(resolution.space, &resolution.root))
         else {
             return false;
         };
@@ -1484,7 +1498,7 @@ impl WorkspaceModel {
         let Some(overview) = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space)
+            .filter(|overview| overview.answers(resolution.space, &resolution.root))
         else {
             return false;
         };
@@ -1509,10 +1523,13 @@ impl WorkspaceModel {
         let open = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space);
+            .filter(|overview| overview.answers(resolution.space, &resolution.root));
         let overview = match open {
             Some(overview) => overview,
-            None => self.put_away_overviews.get_mut(&resolution.space)?,
+            None => self
+                .put_away_overviews
+                .get_mut(&resolution.space)
+                .filter(|overview| overview.root == resolution.root)?,
         };
         self.dirty = true;
         let edit = &mut overview.edit;

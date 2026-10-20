@@ -18,6 +18,7 @@ pub(super) struct WorktreeRemoval {
 /// What removing a worktree answered, for the overview of `space`.
 pub(super) struct RemovalResolution {
     pub(super) space: SpaceId,
+    pub(super) root: PathBuf,
     pub(super) name: String,
     pub(super) bytes: u64,
     pub(super) outcome: std::result::Result<(), String>,
@@ -142,10 +143,13 @@ impl WorkspaceModel {
         let open = self
             .space_overview
             .as_mut()
-            .filter(|overview| overview.space == resolution.space);
+            .filter(|overview| overview.answers(resolution.space, &resolution.root));
         let overview = match open {
             Some(overview) => Some(overview),
-            None => self.put_away_overviews.get_mut(&resolution.space),
+            None => self
+                .put_away_overviews
+                .get_mut(&resolution.space)
+                .filter(|overview| overview.root == resolution.root),
         };
         if let Some(overview) = overview {
             overview.removing = false;

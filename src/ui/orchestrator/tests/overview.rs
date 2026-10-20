@@ -310,6 +310,46 @@ fn the_overview_follows_the_agent_and_leaves_with_its_context() {
     );
 }
 
+/// One space holds the overviews of every project its agents work in, and
+/// each counts its reads from its own start: an answer read for one
+/// project is never drawn as another's, whichever lands first.
+#[test]
+fn an_answer_for_one_project_is_not_drawn_in_anothers_overview() {
+    use crate::ui::orchestrator::space_overview::SpaceOverviewResolution;
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    let answer = || {
+        Ok(project_space(
+            Default::default(),
+            Err("not read".to_owned()),
+        ))
+    };
+
+    model.open_space_overview(space, behind, PathBuf::from("/front"), true);
+    model.space_overview.as_mut().unwrap().asked = 1;
+    model.open_space_overview(space, behind, PathBuf::from("/back"), true);
+    model.space_overview.as_mut().unwrap().asked = 1;
+
+    assert!(
+        !model.absorb_space_overview(SpaceOverviewResolution {
+            space,
+            root: PathBuf::from("/front"),
+            asked: 1,
+            answer: answer(),
+        }),
+        "front's answer was taken by back's overview"
+    );
+    assert!(model.space_overview.as_ref().unwrap().answer.is_none());
+    assert!(model.absorb_space_overview(SpaceOverviewResolution {
+        space,
+        root: PathBuf::from("/back"),
+        asked: 1,
+        answer: answer(),
+    }));
+}
+
 /// A section longer than the pane scrolls: its groove is drawn, and
 /// the wheel over the overview walks the list the way the arrows do,
 /// carrying the selection past the first screenful.
@@ -2328,6 +2368,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     let model = &mut driven.attach.model;
     let stale = WorktreesResolution {
         space,
+        root: PathBuf::from("/repo"),
         asked: 0,
         view: Some(worktrees(2)),
     };
@@ -2337,6 +2378,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     );
     let elsewhere = WorktreesResolution {
         space: uze_terminal::SpaceId(space.0 + 1),
+        root: PathBuf::from("/repo"),
         asked: 1,
         view: Some(worktrees(2)),
     };
@@ -2346,6 +2388,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     );
     let current = WorktreesResolution {
         space,
+        root: PathBuf::from("/repo"),
         asked: 1,
         view: Some(worktrees(2)),
     };
@@ -2357,6 +2400,7 @@ fn the_worktrees_are_measured_off_the_frame_and_a_stale_answer_is_dropped() {
     model.put_away_space_overview();
     let late = WorktreesResolution {
         space,
+        root: PathBuf::from("/repo"),
         asked: 1,
         view: Some(worktrees(5)),
     };
@@ -2453,6 +2497,7 @@ fn worktrees_are_ordered_by_where_they_stand_and_the_selection_follows() {
     let space = overview.space;
     model.absorb_space_worktrees(WorktreesResolution {
         space,
+        root: PathBuf::from("/repo"),
         asked,
         view: Some(view),
     });
@@ -2700,6 +2745,7 @@ fn a_removed_worktree_says_what_it_freed_and_is_read_again() {
         .sender
         .send(RemovalResolution {
             space,
+            root: PathBuf::from("/repo"),
             name: ".worktrees/slot-01".to_owned(),
             bytes: 6 * 1024 * 1024,
             outcome: Ok(()),

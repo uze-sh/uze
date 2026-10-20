@@ -1433,6 +1433,7 @@ pub(super) fn spawn_space_overview(
         );
         let _ = sender.send(SpaceOverviewResolution {
             space,
+            root,
             asked,
             answer,
         });
@@ -1462,7 +1463,12 @@ pub(super) fn spawn_space_worktrees(
             },
             None,
         );
-        let _ = sender.send(WorktreesResolution { space, asked, view });
+        let _ = sender.send(WorktreesResolution {
+            space,
+            root,
+            asked,
+            view,
+        });
     });
 }
 
@@ -1511,6 +1517,7 @@ pub(super) fn spawn_worktree_removal(
         );
         let _ = sender.send(RemovalResolution {
             space,
+            root,
             name,
             bytes,
             outcome,
@@ -1544,7 +1551,12 @@ pub(super) fn spawn_fact_body(
             },
             Err("reading the fact failed".to_owned()),
         );
-        let _ = sender.send(FactBodyResolution { space, name, body });
+        let _ = sender.send(FactBodyResolution {
+            space,
+            root,
+            name,
+            body,
+        });
     });
 }
 
@@ -1573,6 +1585,7 @@ pub(super) fn spawn_declaration_save(
         );
         let _ = sender.send(DeclarationSaveResolution {
             space,
+            root,
             sent,
             outcome,
         });
