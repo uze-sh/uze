@@ -1,7 +1,7 @@
-# The space overview, as a spec, performed by the real binary: two agents
-# start on the project, then the overview (Alt+O) is read section by
-# section, the way the docs page walks it: what the agents were asked and
-# what reaches them, the agents.yaml settings saved as they are edited, the
+# The agent overview, as a spec, performed by the real binary: two agents
+# start on the project, then the overview of the one in front (Alt+O) is
+# read section by section, the way the docs page walks it: what it was
+# asked, the agents.yaml settings saved as they are edited, the
 # project's plugins, the facts its agents keep, and their worktrees.
 #
 #   tui-record seed   .demo/space   # build the sandbox (first run, or after a /tmp wipe)
@@ -29,9 +29,9 @@ video:
   cast: '{root}/uze-space.cast'
   speed: 1.2
   wait_collapse: 1.0
-  # The Agent section, with the prompts and what reaches the agent in front:
-  # the overview's first screen, for reduced motion.
-  poster_when: 'prompts asked in this space'
+  # The Agent section, with the prompts the agent in front was given: the
+  # overview's first screen, for reduced motion.
+  poster_when: 'prompts this agent was given'
 sandbox:
   cwd: '{fixtures}/demo-api'
   reset:
@@ -75,10 +75,19 @@ beats:
     expect: added to this project
     expect_timeout: 90
     pause: 1.2
+  # Committed off camera: an agent's checkout is cut from the project's
+  # HEAD, and the overview reads the agent's checkout, so a declaration left
+  # uncommitted in the operator's tree would never reach its Plugins section.
+  # The fixture rewind takes the commit back out before the next attempt.
+  - shell: |
+      cd {fixtures}/demo-api || exit 1
+      git add -A -- . ':!.worktrees' && git commit -qm 'chore: add the git plugin'
+    pause: 0.2
   # Two agents, each in a worktree of its own, so the overview has prompts
   # to list and worktrees to show.
   - use: launch-claude
-    with: {say: 'an agent on Claude Code', menu_pause: 0.4, pause: 0.5}
+    with: {say: 'an agent on Claude Code', menu_pause: 0.4, pause: 0.5,
+           typed: /tmp/demos/demo-api, completed: demo-api}
   - type: add a /ping route to src/router.rs that answers pong
     expect: 'esc to interrupt|for \d+s · done'
     expect_timeout: 120
@@ -88,9 +97,9 @@ beats:
   - type: cover GET /health with a test in src/health.rs
     pause: 1.2
   # ── Agent ───────────────────────────────────────────────────────────────
-  - say: the space's overview, over the tab in front
+  - say: the overview of the agent in front
     key: M-o
-    expect: prompts asked in this space
+    expect: prompts this agent was given
     expect_timeout: 8
     pause: 3.0
   # ── Settings ────────────────────────────────────────────────────────────
@@ -144,7 +153,7 @@ beats:
     pause: 2.6
   - say: and back to the agent
     key: Escape
-    refuse: prompts asked in this space
+    refuse: prompts this agent was given
     pause: 1.0
   - say: out, the cut stops here, before the screen blanks
     end: C-q
