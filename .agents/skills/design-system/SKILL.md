@@ -115,6 +115,8 @@ on "cancel" must not save first.
   column's quiet hue, and ends with its harness in the
   trailing column. Only the harness takes the row's lit caption token
   (`caption_color`), never a fixed colour and never the whole line.
+  The harness is drawn only in the space in front; a space behind says
+  where its agents work and nothing more.
 - A name too long for its row is cut at its end (`uze-audit-20…`), on
   every row of a list, the selected one included; a path is cut at its head
   (`…/projects/uze`). Never in the middle.

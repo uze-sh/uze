@@ -701,6 +701,8 @@ pub(super) struct SidebarAgent<'a> {
     /// Selected *and* in the active space: the one agent receiving
     /// keystrokes.
     pub(super) is_current: bool,
+    /// Whether its space is the one in front.
+    pub(super) in_active_space: bool,
     pub(super) status: AgentTabStatus,
     pub(super) renaming: Option<&'a RenameBuffer>,
     pub(super) drop_target: bool,
@@ -735,6 +737,10 @@ pub(super) struct TreeCaption {
     /// Whether `detail` is the harness, which stands against the row's
     /// end, rather than words about the checkout, which lead it.
     pub(super) harness: bool,
+    /// Whether the harness is drawn: only in the space in front, where the
+    /// agents are the ones being told apart. The spaces behind say where
+    /// their agents work and nothing more.
+    pub(super) show_harness: bool,
 }
 
 impl TreeCaption {
@@ -788,6 +794,7 @@ impl TreeCaption {
             detail_color,
             project,
             harness: !lost,
+            show_harness: agent.in_active_space,
         }
     }
 }
@@ -833,6 +840,7 @@ impl<'a> SidebarAgent<'a> {
             renaming,
             drop_target,
             harness: agent_identity_for_tab(identities, tab),
+            in_active_space: is_active_space,
             tick: model.tick,
         }
     }
@@ -1122,11 +1130,14 @@ pub(super) fn draw_tree(
             // part lit with the row; the project, when the row names one,
             // leads in the column's quiet hue.
             if caption.harness {
-                let harness = text::columns(&caption.detail) as u16;
+                let harness = if caption.show_harness {
+                    text::columns(&caption.detail) as u16 + 1
+                } else {
+                    0
+                };
                 if let Some(project) = &caption.project {
                     let taken: u16 = spans.iter().map(|span| span.width() as u16).sum::<u16>()
                         + harness
-                        + 1
                         + TRAILING_PAD;
                     let room = detail_rect.width.saturating_sub(taken).max(1);
                     spans.push(Span::styled(
@@ -1134,12 +1145,14 @@ pub(super) fn draw_tree(
                         theme::fg(Token::TextDim),
                     ));
                 }
-                row::push_trailing(
-                    &mut spans,
-                    detail_rect.width,
-                    caption.detail.clone(),
-                    caption.detail_color,
-                );
+                if caption.show_harness {
+                    row::push_trailing(
+                        &mut spans,
+                        detail_rect.width,
+                        caption.detail.clone(),
+                        caption.detail_color,
+                    );
+                }
             } else {
                 let taken: u16 = spans
                     .iter()

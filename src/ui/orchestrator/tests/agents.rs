@@ -725,7 +725,10 @@ fn agents_sit_one_step_inside_their_space() {
     assert_eq!(column_of(&rows[header + 1], &idle), fold, "{rows:?}");
     let agent = column_of(&rows[header + 1], "shell");
     assert_eq!(agent, name, "{rows:?}");
-    assert!(at_the_end(&rows[header + 2], "agent"), "{rows:?}");
+    // Behind, the row says where its agent works and not what runs it.
+    assert!(!rows[header + 2].contains("agent"), "{rows:?}");
+    let front = space_header(&hits, SpaceId(3)).y as usize;
+    assert!(at_the_end(&rows[front + 2], "agent"), "{rows:?}");
 
     let flat = agents_in_the_root_session();
     let Sidebar { rows, hits, .. } = sidebar(&flat, &identities_in_the_root());
