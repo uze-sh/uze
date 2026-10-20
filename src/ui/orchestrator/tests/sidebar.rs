@@ -516,12 +516,13 @@ fn one_name_in_the_column_is_bright_and_bold() {
     );
 }
 
-/// Every space's name is bold, the one in front included whether or not
-/// its header is the row receiving keystrokes: a name heads its block.
-/// The ground and the rail answer which block is in front, and the hue
-/// which row has the keyboard.
+/// The name of the space in front is bold whether or not its header
+/// is the row receiving keystrokes — which, for a space of nothing
+/// but agents, it can never be: there is no tab of its own to land
+/// on, so clicking its header changed nothing a reader could see.
+/// The weight answers which block, where the hue answers which row.
 #[test]
-fn every_space_name_is_bold_and_only_the_current_row_is_bright() {
+fn the_name_of_the_space_in_front_is_bold_even_when_an_agent_is_current() {
     let model = three_spaces();
     let Sidebar {
         rows, hits, buffer, ..
@@ -549,16 +550,8 @@ fn every_space_name_is_bold_and_only_the_current_row_is_bright() {
         theme::color(Token::TextBright),
         "without taking the hue off the agent: {rows:?}"
     );
-    let (bold, hue) = weight(SpaceId(1), "one");
-    assert!(
-        bold,
-        "and a space behind heads its block the same: {rows:?}"
-    );
-    assert_ne!(
-        hue,
-        theme::color(Token::TextBright),
-        "without being the bright row: {rows:?}"
-    );
+    let (bold, _) = weight(SpaceId(1), "one");
+    assert!(!bold, "and no other space's name is: {rows:?}");
 }
 
 /// The leading column carries a rail beside the selected space and

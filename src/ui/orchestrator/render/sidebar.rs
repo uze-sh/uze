@@ -1344,12 +1344,13 @@ pub(in crate::ui::orchestrator) fn render_space_header(
         .as_ref()
         .filter(|(target, _)| *target == RenameTarget::Space(space.id))
         .map(|(_, buffer)| buffer);
-    // Bold always: a space's name heads its block, in front or not, and
-    // the lifted ground and the rail are what say which block is in
-    // front. Bright only while the header is also the row receiving
-    // keystrokes — when the space is minimized or speaks for no agent of
-    // its own — so the column still holds one bright name.
-    let name_style = label_style(is_current, true);
+    // Bold while this is the space in front, and bright with it only
+    // while the header is also the row receiving keystrokes — which is
+    // when the space is minimized or speaks for no agent of its own, and
+    // exactly when no agent row of it can be current. So the column
+    // holds one bright name and, above it, the weight saying which block
+    // that name is in.
+    let name_style = label_style(is_current, selected);
     let fold = mark::disclosure(!collapsed);
     let mut spans = vec![
         space_gutter(selected, is_current),
