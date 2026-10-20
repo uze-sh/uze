@@ -98,6 +98,14 @@ on "cancel" must not save first.
 - A context menu opens at the cursor.
 - Dropdowns float over content and never push it down.
 - A modal keeps its height while you filter inside it.
+- A popover's rows stand on its own ground: no raised band under the line
+  typed into or under its list. The row Enter takes is the one marked.
+- A popover that asks in steps names them on its first row (`directory ›
+  harness`), the step it is on lit; a step done shows its answer in place
+  of its name, and a click on that answer, or `Backspace`, goes back to it.
+  Every step keeps the popover's place and size.
+- A click anywhere inside a popover keeps it open; only a click outside it
+  dismisses it.
 
 **Closing:**
 - Esc closes everything, and a modal or a drawer says so nowhere: its

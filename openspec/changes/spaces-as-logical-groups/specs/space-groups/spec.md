@@ -58,6 +58,20 @@ either step SHALL close it.
 - **WHEN** the operator presses Esc in either step
 - **THEN** the popover closes and no agent is placed
 
+### Requirement: The new-agent popup names its steps
+The popup's first row SHALL name its two steps, directory then harness,
+with the step it is on lit. On the harness step the directory chosen SHALL
+stand in for the first step's name, and a click on it, or `Backspace`,
+SHALL go back to the directory step on that directory.
+
+#### Scenario: The steps are named
+- **WHEN** the directory step is open
+- **THEN** its first row reads `directory › harness`, `directory` lit
+
+#### Scenario: Going back
+- **WHEN** the operator chose `engine` and, on the harness step, clicks `engine`
+- **THEN** the directory step is open again, on `engine`
+
 ### Requirement: The new-agent popover keeps its size
 The popover SHALL be as tall as the directory step's listing up to ten
 rows and SHALL keep its size through both steps, however many directories
