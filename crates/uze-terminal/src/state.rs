@@ -304,7 +304,8 @@ impl Session {
             uze_platform::path::canonical(path).unwrap_or_else(|_| path.to_path_buf())
         };
         let project = canonical(&seat.project);
-        let standing_in = |tab: &&Tab| canonical(&tab.pane.cwd).starts_with(&project);
+        let standing_in =
+            |tab: &&Tab| uze_platform::path::is_within(&canonical(&tab.pane.cwd), &project);
         let with = |counts: fn(&Tab) -> bool| {
             self.workspace
                 .spaces
