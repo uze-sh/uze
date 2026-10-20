@@ -27,6 +27,11 @@ sandbox:
     # and not under `clear`, which removes directories and passes over a
     # file without a word — the take then opened on the key the last one set.
     - rm -f {home}/.uze/keys.json
+    # Management opens on its marketplace list, and the space and landing
+    # takes leave the operator's own marketplace in this shared home: its
+    # owner's name is this machine's user, so the leak scan refuses the take.
+    # This video is about keys, so the list holds the built-in one alone.
+    - env -i HOME={home} PATH={home}/.uze/shims:{home}/.local/bin:{home}/bin:/usr/bin:/bin {project}/target/release/uze market remove ai >/dev/null 2>&1 || true
 fixtures:
   - include: ../_shared/demo-app.yml
 # What the video shows, in order. The status line under the content says
