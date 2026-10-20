@@ -30,48 +30,48 @@ export function InstallTabs({ action }: { action?: ReactNode }) {
 
   return (
     <div className="text-left">
+      <div
+        role="tablist"
+        aria-label="Install on"
+        className="mb-2.5 inline-flex rounded-md border border-line p-0.5 font-mono text-[11.5px]"
+      >
+        {platforms.map((platform) => {
+          const selected = platform.id === active;
+          return (
+            <button
+              key={platform.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActive(platform.id)}
+              className={`rounded-[5px] px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${
+                selected ? 'bg-ink text-paper' : 'text-muted hover:text-ink'
+              }`}
+            >
+              {platform.label}
+            </button>
+          );
+        })}
+      </div>
       <div role="tabpanel">
         <InstallCommand command={current.command} />
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div
-          role="tablist"
-          aria-label="Install on"
-          className="inline-flex rounded-md border border-line p-0.5 font-mono text-[11.5px]"
-        >
-          {platforms.map((platform) => {
-            const selected = platform.id === active;
-            return (
-              <button
-                key={platform.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setActive(platform.id)}
-                className={`rounded-[5px] px-2.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${
-                  selected ? 'bg-ink text-paper' : 'text-muted hover:text-ink'
-                }`}
-              >
-                {platform.label}
-              </button>
-            );
-          })}
+      <div className="mt-2.5 flex items-baseline gap-x-4">
+        {/* Every platform's note in the one cell, the others invisible: the
+            cell is always the size of the longest, so switching platform
+            moves nothing beside it. */}
+        <div className="grid min-w-0 flex-1 px-0.5 text-xs leading-5 text-muted">
+          {platforms.map((platform) => (
+            <p
+              key={platform.id}
+              aria-hidden={platform.id !== active}
+              className={`col-start-1 row-start-1 ${platform.id === active ? '' : 'invisible'}`}
+            >
+              {platform.note}
+            </p>
+          ))}
         </div>
-        {action ? <div className="ms-auto shrink-0">{action}</div> : null}
-      </div>
-      {/* Every platform's note in the one cell, the others invisible: the
-          cell is always the size of the longest, so switching platform
-          moves nothing below it. */}
-      <div className="mt-2 grid px-0.5 text-xs text-muted">
-        {platforms.map((platform) => (
-          <p
-            key={platform.id}
-            aria-hidden={platform.id !== active}
-            className={`col-start-1 row-start-1 ${platform.id === active ? '' : 'invisible'}`}
-          >
-            {platform.note}
-          </p>
-        ))}
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
     </div>
   );
