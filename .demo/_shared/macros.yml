@@ -4,33 +4,63 @@
 # once.
 
 macros:
-  # The new-agent control sits on the selected space's own sidebar row, and
-  # its menu opens over the sidebar's edge — so the harness is aimed at
-  # across the whole screen, not in one band. `{ready}` is what the harness
-  # draws once it can take a prompt.
-  launch:
+  # The new-agent control sits on the selected space's own sidebar row and
+  # opens one popup: the harness in a field at its top, a directory listing
+  # under a filter line. A space with no agent yet offers no directory in
+  # particular (the home directory), so the first agent's project is typed,
+  # with Tab completing it the way a shell would; the harness field starts
+  # on the first harness set up, since `reset` writes a layout that
+  # remembers none. `{ready}` is what the harness draws once it can take a
+  # prompt.
+  launch-first:
     - say: '{say}'
       click: new
       in: sidebar
-      expect: new agent
+      expect: 'harness\s+‹ {harness} ›'
       expect_timeout: 6
       pause: '{menu_pause}'
-    - click: '{harness}'
-      in: screen
-      offset: 2
+    - type: '{typed}'
+      submit: false
+      expect: 'demos/demo-\w+▏'
+      pause: 0.4
+    - key: Tab
+      expect: '{completed}/▏'
+      expect_timeout: 4
+      pause: 0.6
+    - key: Enter
+      expect: '{ready}'
+      expect_timeout: '{timeout}'
+      pause: '{pause}'
+  # Every agent after the first: the popup opens on the project of the agent
+  # in front, already chosen (`space · <branch>`), and the harness field on
+  # the one used last, so the next harness is one → away. That holds while
+  # the specs start them in setup order (Claude Code, Codex, OpenCode).
+  launch-next:
+    - say: '{say}'
+      click: new
+      in: sidebar
+      expect: 'space\s+·\s+main'
+      expect_timeout: 6
+      pause: '{menu_pause}'
+    - key: Right
+      expect: 'harness\s+‹ {harness} ›'
+      expect_timeout: 4
+      pause: 0.5
+    - key: Enter
       expect: '{ready}'
       expect_timeout: '{timeout}'
       pause: '{pause}'
   launch-claude:
-    - use: launch
+    - use: launch-first
       with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
+             typed: '{typed}', completed: '{completed}',
              harness: Claude Code, ready: Claude Code v, timeout: 25}
   launch-codex:
-    - use: launch
+    - use: launch-next
       with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
              harness: Codex, ready: Ask Codex to do anything, timeout: 40}
   launch-opencode:
-    - use: launch
+    - use: launch-next
       with: {say: '{say}', menu_pause: '{menu_pause}', pause: '{pause}',
              harness: OpenCode, ready: 'ctrl\+p commands', timeout: 25}
 

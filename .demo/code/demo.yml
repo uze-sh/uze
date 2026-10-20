@@ -8,15 +8,17 @@
 #
 # `tui-record` ships with the `tui` plugin: uze install -m tui@ai
 #
-# It records in the workspace sandbox the other demos share
-# (.demo/_shared/workspace.yml) — one {root}, one {fixtures}, one
-# remembered HEAD — against the shared `demo-app` fixture.
+# It records in the sandbox the agent demos share
+# (.demo/_shared/agents.yml) — one {root}, one {fixtures}, one remembered
+# HEAD — against the shared `demo-app` fixture.
 #
-# No harness is started here, so this spec grants no credential and installs
-# no harness binary: the surface it films reads Git and the checkout, and
-# nothing else. Seed .demo/demo.yml first if you also want the agents.
+# A surface reads the checkout of the agent in front, and a space is bound
+# to no directory, so the take starts one Claude Code agent and asks it
+# nothing: the grant is used to open the harness, never to spend a turn.
 
-extends: ../_shared/workspace.yml
+extends:
+  - ../_shared/agents.yml
+  - ../_shared/macros.yml
 
 video:
   title: uze — code
@@ -44,14 +46,16 @@ fixtures:
 # so none of those three words proves anything.
 beats:
   - say: uze is open on a project, a real shell in the space
-    pause: 1.4
-  # The dirty state is made here rather than in `reset`, because the fixture
-  # rewind that runs before every attempt would take it straight back out.
-  # This is what an agent's first pass leaves behind, written by hand so the
-  # take costs no model and no waiting.
-  - say: an agent has been editing this checkout
+    pause: 1.0
+  - use: launch-claude
+    with: {say: 'an agent, in a checkout of its own', menu_pause: 0.4, pause: 0.8,
+           typed: /tmp/demos/demo-app, completed: demo-app}
+  # The dirty state is made in the agent's checkout, which exists only once
+  # the agent above is placed. This is what its first pass leaves behind,
+  # written by hand so the take costs no model turn and no waiting.
+  - say: the agent has been editing its checkout
     shell: |
-      cd {fixtures}/demo-app
+      cd {fixtures}/demo-app/.worktrees/*/ || exit 1
       python3 - <<'EDIT'
       import pathlib
       router = pathlib.Path("src/router.rs")

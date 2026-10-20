@@ -8,15 +8,17 @@
 #
 # `tui-record` ships with the `tui` plugin: uze install -m tui@ai
 #
-# It records in the workspace sandbox the other demos share
-# (.demo/_shared/workspace.yml) — one {root}, one {fixtures}, one
-# remembered HEAD — against the shared `demo-app` fixture.
+# It records in the sandbox the agent demos share
+# (.demo/_shared/agents.yml) — one {root}, one {fixtures}, one remembered
+# HEAD — against the shared `demo-app` fixture.
 #
-# No harness is started here, so this spec grants no credential and installs
-# no harness binary: the surface it films reads Git and the checkout, and
-# nothing else.
+# A surface reads the checkout of the agent in front, and a space is bound
+# to no directory, so the take starts one Claude Code agent and asks it
+# nothing: the grant is used to open the harness, never to spend a turn.
 
-extends: ../_shared/workspace.yml
+extends:
+  - ../_shared/agents.yml
+  - ../_shared/macros.yml
 
 video:
   title: uze — spec
@@ -31,14 +33,27 @@ video:
   # The surface open on the checkout's own change, its proposal rendered:
   # the frame that says what this surface is for.
   poster_when: 'add-rate-limiting/proposal\.md'
-sandbox:
-  reset:
-    # What makes add-rate-limiting *this checkout's* change: a design the
-    # operator is drafting, untracked. Written here, after the clean and
-    # before the rewind, because the rewind is `reset --hard` — it reverts a
-    # tracked file and leaves an untracked one alone.
-    - |
-      cat > {fixtures}/demo-app/openspec/changes/add-rate-limiting/design.md <<'DESIGN'
+fixtures:
+  - include: ../_shared/demo-app.yml
+# What the video shows, in order. Edit this list first.
+#
+# Every `expect` reads the frame the surface draws: the content heading names
+# the change and the file on show (`add-rate-limiting/tasks.md`), which is
+# the narrowest proof that a selection moved. The bands are proved by their
+# headings, drawn in capitals.
+beats:
+  - say: uze is open on a project that plans its changes with OpenSpec
+    pause: 1.0
+  - use: launch-claude
+    with: {say: 'an agent, in a checkout of its own', menu_pause: 0.4, pause: 0.8,
+           typed: /tmp/demos/demo-app, completed: demo-app}
+  # What makes add-rate-limiting *this agent's* change: a design it is
+  # drafting, untracked in its checkout. Written by hand once the checkout
+  # exists, so the take costs no model turn; the sidebar's count is read on
+  # a thread, so the wait is what proves it arrived, and the cut squeezes it.
+  - shell: |
+      for w in {fixtures}/demo-app/.worktrees/*/; do
+      cat > "$w"openspec/changes/add-rate-limiting/design.md <<'DESIGN'
       ## Context
 
       The router dispatches every request straight to its handler; there
@@ -55,17 +70,12 @@ sandbox:
 
       The client is told how long to wait rather than left to guess.
       DESIGN
-fixtures:
-  - include: ../_shared/demo-app.yml
-# What the video shows, in order. Edit this list first.
-#
-# Every `expect` reads the frame the surface draws: the content heading names
-# the change and the file on show (`add-rate-limiting/tasks.md`), which is
-# the narrowest proof that a selection moved. The bands are proved by their
-# headings, drawn in capitals.
-beats:
-  - say: uze is open on a project that plans its changes with OpenSpec
-    pause: 1.4
+      done
+    pause: 0.2
+  - wait: screen
+    until: tasks\s+3/7
+    timeout: 15
+    pause: 0.6
   - say: the sidebar says how far this checkout's own work has got
     click: tasks
     in: sidebar

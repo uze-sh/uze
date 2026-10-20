@@ -8,15 +8,17 @@
 #
 # `tui-record` ships with the `tui` plugin: uze install -m tui@ai
 #
-# It records in the workspace sandbox the other demos share
-# (.demo/_shared/workspace.yml) — one {root}, one {fixtures}, one
-# remembered HEAD — against the shared `demo-app` fixture.
+# It records in the sandbox the agent demos share
+# (.demo/_shared/agents.yml) — one {root}, one {fixtures}, one remembered
+# HEAD — against the shared `demo-app` fixture.
 #
-# No harness is started here, so this spec grants no credential and installs
-# no harness binary: the surface it films reads Git and the checkout, and
-# nothing else. Seed .demo/demo.yml first if you also want the agents.
+# A surface reads the checkout of the agent in front, and a space is bound
+# to no directory, so the take starts one Claude Code agent and asks it
+# nothing: the grant is used to open the harness, never to spend a turn.
 
-extends: ../_shared/workspace.yml
+extends:
+  - ../_shared/agents.yml
+  - ../_shared/macros.yml
 
 video:
   title: uze — architect
@@ -51,7 +53,10 @@ fixtures:
 # lists every level whether or not you are on one, so it proves nothing.
 beats:
   - say: uze is open on a project that wrote its architecture down
-    pause: 1.4
+    pause: 1.0
+  - use: launch-claude
+    with: {say: 'an agent, in a checkout of its own', menu_pause: 0.4, pause: 0.8,
+           typed: /tmp/demos/demo-app, completed: demo-app}
   - say: the diagrams the project declares, drawn in cells
     click: arch
     in: strip
