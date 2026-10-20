@@ -79,7 +79,33 @@ pub struct SpaceMemory {
     pub unreadable: Vec<UnreadableFact>,
 }
 
+/// The files whose change the overview of a project shows: what it declares,
+/// what it locked and what it tells every agent.
+const DECLARING_FILES: [&str; 3] = ["agents.yaml", "agents.lock", "AGENTS.md"];
+
 impl Workspace<'_> {
+    /// A stamp of what `root` declares, read from the file system alone
+    /// (each of [`DECLARING_FILES`]' size and modification time, or its
+    /// absence), so a client can poll it cheaply and read the overview
+    /// again only when it moved. At `trace`: it is asked every second
+    /// while an overview is open.
+    #[tracing::instrument(name = "workspace.declaration_stamp", level = "trace", skip_all, fields(root = %root.display()))]
+    pub fn declaration_stamp(&self, root: &Path) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for name in DECLARING_FILES {
+            let metadata = std::fs::metadata(root.join(name)).ok();
+            metadata
+                .as_ref()
+                .map(std::fs::Metadata::len)
+                .hash(&mut hasher);
+            metadata
+                .and_then(|metadata| metadata.modified().ok())
+                .hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
     /// The overview of the project at `root`. Reads only what
     /// `uze status` reads, plus the installed plugins' index and UZE's
     /// own agent records, and asks Git only whether each declared link is

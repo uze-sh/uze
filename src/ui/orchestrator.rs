@@ -1623,6 +1623,9 @@ struct Remembered {
     /// Each checkout's [`StampResolution`] as last read, and when the next
     /// read was asked for; a checkout whose stamp moves is evaluated.
     checkout_stamps: BTreeMap<PathBuf, u64>,
+    /// The stamp of what the open overview's project declares, with that
+    /// project, as the checkout watch last read it.
+    declaration_stamp: Option<(PathBuf, u64)>,
     last_checkout_watch: Option<Instant>,
     checkout_watch_pending: bool,
     /// A pull the operator asked for is running.

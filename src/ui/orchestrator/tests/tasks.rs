@@ -858,6 +858,7 @@ fn a_checkout_whose_stamp_moved_is_evaluated_at_once() {
             .sender
             .send(super::StampResolution {
                 stamps: vec![(checkout.clone(), Some(value))],
+                declaration: None,
             })
             .unwrap();
         driven.attach.absorb_checkout_stamps();

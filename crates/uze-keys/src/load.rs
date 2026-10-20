@@ -439,6 +439,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::SpaceOverview, "shift+up", Action::MoveItemUp),
         bind(Scope::SpaceOverview, "shift+down", Action::MoveItemDown),
         bind(Scope::SpaceOverview, "x", Action::DiscardChanges),
+        bind(Scope::SpaceOverview, "v", Action::ReviewCommands),
         // Clearing the space's prompts, shifted off the `x` that discards
         // edits.
         bind(Scope::SpaceOverview, "X", Action::ClearPromptHistory),

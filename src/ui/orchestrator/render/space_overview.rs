@@ -2853,6 +2853,11 @@ fn foot_keys(
             ]);
             if overview.edit.is_refused() {
                 keys.push((Action::DiscardChanges, "discard"));
+            } else if overview
+                .project()
+                .is_some_and(|project| project.status.commands_awaiting_approval.is_some())
+            {
+                keys.push((Action::ReviewCommands, "review"));
             }
             match overview.selected_workspace_row() {
                 Some(WorkspaceRow::Key(key)) if is_number(key) => {

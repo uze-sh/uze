@@ -425,6 +425,10 @@ impl Attach<'_> {
             spawn_checkout_watch(
                 self.home,
                 self.model.watched_checkouts(),
+                self.model
+                    .space_overview
+                    .as_ref()
+                    .map(|overview| overview.root.clone()),
                 self.channels.checkout_stamps.sender.clone(),
             );
         }
@@ -514,6 +518,27 @@ impl Attach<'_> {
     pub(in crate::ui::orchestrator) fn absorb_checkout_stamps(&mut self) {
         while let Ok(resolution) = self.channels.checkout_stamps.receiver.try_recv() {
             self.model.remembered.checkout_watch_pending = false;
+            // What the open overview's project declares moved — an edit by
+            // hand, an install, an agent writing `AGENTS.md` — so the
+            // overview is read again. Its first read only sets the stamp:
+            // the overview just read it.
+            if let Some(declaration) = resolution.declaration {
+                let before = self
+                    .model
+                    .remembered
+                    .declaration_stamp
+                    .replace(declaration.clone());
+                let moved = before
+                    .is_some_and(|(root, stamp)| root == declaration.0 && stamp != declaration.1);
+                let still_open = self
+                    .model
+                    .space_overview
+                    .as_ref()
+                    .is_some_and(|overview| overview.root == declaration.0);
+                if moved && still_open {
+                    self.refresh_space_overview();
+                }
+            }
             // Each answer is every checkout watched now: one no longer
             // asked about is forgotten, so coming back is a first read.
             let watched: BTreeSet<&PathBuf> = resolution

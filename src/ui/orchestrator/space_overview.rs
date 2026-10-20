@@ -465,6 +465,7 @@ pub(super) fn overview_answers(action: Action) -> bool {
             | Action::MoveItemUp
             | Action::MoveItemDown
             | Action::DiscardChanges
+            | Action::ReviewCommands
             | Action::NextValue
             | Action::PreviousValue
             | Action::SaveFile
@@ -1746,7 +1747,9 @@ impl Attach<'_> {
             return;
         };
         self.model.dirty = true;
-        if overview.edit.text.is_some() {
+        if action == Action::ReviewCommands {
+            self.review_overview_commands();
+        } else if overview.edit.text.is_some() {
             self.instruction_action(action);
         } else if overview.filtering {
             self.memory_search_action(action);

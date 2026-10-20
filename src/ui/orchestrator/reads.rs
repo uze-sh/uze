@@ -549,6 +549,9 @@ pub(super) fn spawn_pull(home: &UzeHome, cwd: PathBuf, sender: mpsc::Sender<Pull
 /// working tree.
 pub(super) struct StampResolution {
     pub(super) stamps: Vec<(PathBuf, Option<u64>)>,
+    /// The stamp of what the open overview's project declares, with the
+    /// project it was read for.
+    pub(super) declaration: Option<(PathBuf, u64)>,
 }
 
 /// Reads the change stamp of every checkout on screen. Off the render
@@ -559,29 +562,38 @@ pub(super) struct StampResolution {
 pub(super) fn spawn_checkout_watch(
     home: &UzeHome,
     checkouts: Vec<(PathBuf, Option<String>)>,
+    overview: Option<PathBuf>,
     sender: mpsc::Sender<StampResolution>,
 ) {
     let home = home.clone();
     thread::spawn(move || {
-        let stamps = answered_or(
+        let (stamps, declaration) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
                         let workspace = app.workspace();
-                        checkouts
+                        let stamps = checkouts
                             .into_iter()
                             .map(|(checkout, published)| {
                                 let stamp =
                                     workspace.checkout_stamp(&checkout, published.as_deref());
                                 (checkout, stamp)
                             })
-                            .collect()
+                            .collect();
+                        let declaration = overview.map(|root| {
+                            let stamp = workspace.declaration_stamp(&root);
+                            (root, stamp)
+                        });
+                        (stamps, declaration)
                     })
                     .unwrap_or_default()
             },
-            Vec::new(),
+            (Vec::new(), None),
         );
-        let _ = sender.send(StampResolution { stamps });
+        let _ = sender.send(StampResolution {
+            stamps,
+            declaration,
+        });
     });
 }
 

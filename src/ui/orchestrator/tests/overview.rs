@@ -3271,3 +3271,149 @@ fn a_hint_clicked_while_typing_acts_in_the_typing_scope() {
         "cancel saved the instruction"
     );
 }
+
+/// An overview opened over the space in front, `answer` in hand, driven.
+fn overview_answered<'a>(
+    home: &'a UzeHome,
+    answer: Option<Result<uze_application::SpaceOverview, String>>,
+) -> Driven<'a> {
+    let session = session("/repo");
+    let space = session.selected_space().id;
+    let behind = session.selected_tab().id;
+    let mut model = model_of(session);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.answer = answer;
+    let mut driven = driven(model, home).on_a_roomy_terminal();
+    driven.frame();
+    driven
+}
+
+/// Until the project is read, the overview says it is reading it rather
+/// than drawing an empty section.
+#[test]
+fn a_section_not_read_yet_says_it_is_reading() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-loading"));
+    let mut driven = overview_answered(&home, None);
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("reading the project"), "{screen}");
+}
+
+/// An agent whose directory is gone still has an overview: it says the
+/// directory no longer exists, offers a refresh, and lists no section.
+#[test]
+fn an_agent_whose_directory_is_gone_is_said_so() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-gone"));
+    let gone = uze_application::SpaceOverview::DirectoryGone {
+        directory: PathBuf::from("/repo"),
+    };
+    let mut driven = overview_answered(&home, Some(Ok(gone)));
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("no longer exists"), "{screen}");
+    assert!(
+        !driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .any(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_))),
+        "no section is offered over a directory that is gone"
+    );
+}
+
+/// The server confirming the selection the overview was opened over —
+/// the broadcast every gesture is answered with — leaves it open.
+#[test]
+fn the_confirming_broadcast_keeps_the_overview() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-confirmed",
+    ));
+    let mut driven = driven(agent_session_in("/repo"), &home);
+    driven.frame();
+    let button = driven.hit(|hit| *hit == WorkspaceHit::OpenOverview);
+    driven.press(button.x + 1, button.y);
+    assert!(driven.attach.model.space_overview.is_some(), "it opened");
+
+    let same = driven.attach.model.session.clone().expect("session");
+    driven
+        .events_sender
+        .as_ref()
+        .expect("the reader is connected")
+        .send(ClientEvent::SessionUpdated { session: same })
+        .unwrap();
+    driven.pump();
+
+    assert!(
+        driven.attach.model.space_overview.is_some(),
+        "the confirming broadcast put the overview away"
+    );
+}
+
+/// Commands waiting for approval are reviewed from the keyboard as they
+/// are by the drawer's button: the key opens the question about them.
+#[test]
+fn commands_waiting_are_reviewed_from_the_keyboard() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-review-home",
+    ));
+    let project = uze_testkit::temp::scratch("orchestrator-overview-review");
+    std::fs::write(
+        project.join("agents.yaml"),
+        "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
+    )
+    .unwrap();
+    let awaiting = uze_application::UzeApplication::new(home.clone(), Vec::new())
+        .workspace()
+        .commands_awaiting_approval(&project)
+        .expect("an unapproved project waits");
+    let mut answer = project_space(Default::default(), Err("not read".to_owned()));
+    if let uze_application::SpaceOverview::Project(space) = &mut answer {
+        space.status.commands_awaiting_approval = Some(awaiting.clone());
+    }
+    let mut driven = overview_answered(&home, Some(Ok(answer)));
+    driven.attach.model.commands_await(awaiting, false);
+    let review = uze_keys::active()
+        .chord_for(
+            uze_keys::Action::ReviewCommands,
+            &[uze_keys::Scope::SpaceOverview],
+        )
+        .expect("reviewing has a key");
+
+    driven.press_key(key_event(review));
+
+    assert!(
+        driven.attach.model.approval.is_some(),
+        "the key opened the question about the commands"
+    );
+}
+
+/// What the project declares moving on disk — `agents.yaml`,
+/// `agents.lock` or `AGENTS.md` — reads the overview again; the first
+/// stamp only sets what later ones are compared with.
+#[test]
+fn a_declaration_changed_on_disk_reads_the_overview_again() {
+    use crate::ui::orchestrator::reads::StampResolution;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-stamp"));
+    let answer = project_space(Default::default(), Err("not read".to_owned()));
+    let mut driven = overview_answered(&home, Some(Ok(answer)));
+    let asked = |driven: &Driven<'_>| overview_of(driven).asked;
+    let stamped = |driven: &mut Driven<'_>, stamp: u64| {
+        let stamps = &driven.attach.channels.checkout_stamps;
+        stamps
+            .sender
+            .send(StampResolution {
+                stamps: Vec::new(),
+                declaration: Some((PathBuf::from("/repo"), stamp)),
+            })
+            .unwrap();
+        driven.attach.absorb_checkout_stamps();
+    };
+    let before = asked(&driven);
+
+    stamped(&mut driven, 1);
+    assert_eq!(asked(&driven), before, "the first stamp reads nothing");
+    stamped(&mut driven, 1);
+    assert_eq!(asked(&driven), before, "an unchanged stamp reads nothing");
+    stamped(&mut driven, 2);
+    assert_eq!(asked(&driven), before + 1, "a moved stamp reads it again");
+}

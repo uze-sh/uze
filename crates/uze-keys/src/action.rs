@@ -358,6 +358,8 @@ actions! {
         "Move down", "Move the entry in focus down its list";
     DiscardChanges => "discard-changes", false,
         "Discard", "Drop the edits agents.yaml refused";
+    ReviewCommands => "review-commands", false,
+        "Review", "Read the project's commands waiting for approval, and answer";
 }
 
 impl fmt::Display for Action {
