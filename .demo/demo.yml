@@ -38,9 +38,14 @@ video:
   speed: 1.2                # reads as a person; at 1.45 the extension scene read as fast-forward
   wait_collapse: 1.5        # what an agent's thinking time collapses to
   # The poster: named by what must be on screen, so a re-cut cannot
-  # silently move it to a half-drawn frame: the space's overview on its
-  # Agent section, the prompts both agents were given.
-  poster_when: 'prompts asked in this space'
+  # silently move it to a half-drawn frame: the spec surface open on the
+  # change in the agent's checkout, both agents in the sidebar beside it.
+  # Not the overview: the prompt it lists is wider than its column, and a
+  # selected row that does not fit slides, so no still of it reads whole.
+  # `tasks.md` alone, since the terminal draws only the cells that change
+  # and the change's name is not rewritten with it; the still lands a frame
+  # early, on the proposal (the plugin's gif_frame_at off-by-one).
+  poster_when: 'tasks\.md'
 fixtures:
   - include: _shared/demo-app.yml
   - include: _shared/demo-web.yml
@@ -61,7 +66,8 @@ beats:
     clear: 8
     pause: 0.9
   - use: launch-claude
-    with: {say: 'an agent is placed, in a checkout of its own', menu_pause: 0.9, pause: 1.6}
+    with: {say: 'an agent is placed, in a checkout of its own', menu_pause: 0.9, pause: 1.6,
+           typed: /tmp/demos/demo-app, completed: demo-app}
   # The tabs carry the agent mark, aimed at by glyph rather than by
   # character, with both spellings named: `mark.sparkle` is `✦` in the
   # default set and a private-use codepoint in the nerd one, so a spec that
@@ -116,16 +122,15 @@ beats:
   - say: asked for something else — this one without a commit
     type: add a Routes section to README.md listing every route in src/router.rs, without committing
     pause: 1.6
-  # The agent's own drawer moved into the space's overview: its Agent
-  # section lists what the space's agents were asked, and its drawer what
-  # reaches the agent in front.
+  # The overview is the agent's: its Agent section lists what the agent in
+  # front was asked, and its drawer what reaches that harness.
   - say: 'what uze delivered to *this* harness, and what it was asked'
     key: M-o
-    expect: prompts asked in this space
+    expect: prompts this agent was given
     expect_timeout: 8
     pause: 3.2
   - key: Escape
-    refuse: prompts asked in this space
+    refuse: prompts this agent was given
     pause: 0.8
   - say: wait for that agent's first edit — the only stretch the cut squeezes
     wait: shell

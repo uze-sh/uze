@@ -103,7 +103,42 @@ sandbox:
         grep -qsF "\"$repo\"]" {home}/.codex/config.toml ||
           printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$repo" >> {home}/.codex/config.toml
       done
+    # Codex holds back every hook in its hooks.json until the person trusts
+    # it, and asks on its first screen: the take then types its prompt into
+    # that review. UZE reports the review and never answers it, so the
+    # sandbox answers it here, as the review's own `t trust all` would: a
+    # `trusted_hash` per handler, Codex's identity of it (the algorithm
+    # UZE's codex/trust.rs reads, and the Lab reproduced). Rewritten every
+    # attempt, since `uze setup` at seed rewrites the hooks it trusts.
+    - python3 -I {home}/trust-codex-hooks.py {home}/.codex
   write:
+    - path: '{home}/trust-codex-hooks.py'
+      text: |
+        import hashlib, json, pathlib, re, sys
+        codex = pathlib.Path(sys.argv[1])
+        hooks_file = codex / "hooks.json"
+        config = codex / "config.toml"
+        if not hooks_file.exists():
+            sys.exit(0)
+        def snake(name):
+            return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        entries = []
+        for event, groups in json.loads(hooks_file.read_text()).get("hooks", {}).items():
+            for g, group in enumerate(groups):
+                for h, handler in enumerate(group.get("hooks", [])):
+                    normal = {"event_name": snake(event), "hooks": [{
+                        "async": bool(handler.get("async", False)),
+                        "command": handler["command"],
+                        "timeout": handler.get("timeout", 600),
+                        "type": handler.get("type", "command")}]}
+                    if group.get("matcher") is not None:
+                        normal["matcher"] = group["matcher"]
+                    canonical = json.dumps(normal, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                    key = f"{hooks_file}:{snake(event)}:{g}:{h}"
+                    entries.append(f'[hooks.state."{key}"]\ntrusted_hash = "sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"\n')
+        text = config.read_text() if config.exists() else ""
+        text = re.sub(r'\[hooks\.state\."[^"]*"\]\ntrusted_hash = "[^"]*"\n*', "", text)
+        config.write_text(text.rstrip("\n") + "\n\n" + "\n".join(entries))
     # Codex runs its commands in a sandbox and asks before one that writes
     # outside the checkout: `uze agent work name` records the name under
     # ~/.uze, and `git add`/`git commit` write a worktree's metadata, which
