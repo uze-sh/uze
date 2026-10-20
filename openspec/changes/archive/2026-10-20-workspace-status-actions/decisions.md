@@ -1,6 +1,6 @@
 ## D1 — Leave the policy popup alone: there is none that edits `delivery`
 
-- status:   pending
+- status:   accepted
 - task:     1.5
 - commit:
 - trigger:  1.5 asked to "update the policy popup's choices", but no surface in `src/` calls `set_completion`; the client only reads `delivery_policy` for the target.
@@ -10,7 +10,7 @@
 
 ## D2 — Drop the status's pressed inversion
 
-- status:   pending
+- status:   accepted
 - task:     5.1
 - commit:
 - trigger:  design D10 had an action invert for the frame a press lasts, but the spec says no status in the strip's zones is set apart by a ground of its own.
@@ -20,7 +20,7 @@
 
 ## D3 — Ask the remote about every task, so a branch the remote no longer holds keeps no request number
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:
 - trigger:  running the request lookup in every project (not only `pr`) means `adopt_request` now also drops the number of a task whose branch is gone from the remote — typically a request merged and its branch deleted.
@@ -30,7 +30,7 @@
 
 ## D4 — Remove `Forge` from the read model
 
-- status:   pending
+- status:   accepted
 - task:     2.3
 - commit:
 - trigger:  with the chip's subject `#<n>` or `→ <target>` whatever the behavior, nothing in the client used `AgentView::forge` any more, and the only toast that named the forge's word ("agent opening the PR") went with the fixed messages.
@@ -40,7 +40,7 @@
 
 ## D5 — Lift `state.published` in the two themes where its muted form failed contrast
 
-- status:   pending
+- status:   accepted
 - task:     5.1
 - commit:
 - trigger:  the new muted tokens derive as `@state.<x>/c0`, and in `dracula` (`#6272a4`, 3.0:1 at full strength) and `tokyo-night-light` (`#707280`) the published hue was already at the 3:1 floor, so its muted form failed the palette check.
@@ -50,7 +50,7 @@
 
 ## D6 — Gate the journeys' instruction claims on the agent's pane, and check the machine for what the gesture did not do
 
-- status:   pending
+- status:   accepted
 - task:     6.2
 - commit:
 - trigger:  6.2 asked to check the instruction "against the pane process's input", but the journeys' harness stand-in only echoes what it is sent; the scripted agent that writes an `.inbox` needs `AGENT_SCRIPTS`, which the journey runner does not provide.
@@ -98,12 +98,3 @@
 - rejected: a merge or rebase pull — a click that can rewrite or merge the operator's own commits is not a click.
 - blast:    none beyond the operator's own target moving forward, which is what they asked for.
 
-## D10 — The target's pull count pulls
-
-- status:   accepted
-- task:     8.4
-- commit:
-- trigger:  by hand, the operator expected the `↓9` beside the change count to pull, as an editor's sync count does; it only reported.
-- decided:  a click runs `landing::pull_target`, the clock's own fast-forward without its one restraint (never moving a target the operator stands on), since the operator asked. Diverged, unpublished or blocked by uncommitted changes, it is refused with the reason in a toast. The push count stays a report.
-- rejected: a merge or rebase pull — a click that can merge or rewrite the operator's own commits is not a click.
-- blast:    the operator's own target moves forward when they ask.

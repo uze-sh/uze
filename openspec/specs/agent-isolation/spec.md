@@ -106,16 +106,17 @@ it.
 
 ### Requirement: An isolated agent is the subject of delivery
 The system SHALL treat an isolated agent exactly as a task is treated
-today: its work is delivered by the project's completion behaviour, it can
-be named, and its checkout is a slot that is reused when the agent ends.
-An agent that is not isolated SHALL be none of those things.
+today: its work is delivered by the project's completion behaviour when the
+project declares one, it can be named, and its checkout is a slot that is
+reused when the agent ends. An agent that is not isolated SHALL be none of
+those things.
 
-Readiness is not among them. Where the work in a checkout stands is read
-for every agent, isolated or not — what an unisolated one lacks is a
-branch UZE cut, and therefore a delivery UZE may run.
+#### Scenario: Readiness is read for every agent
+- **WHEN** an agent that is not isolated has work in its checkout
+- **THEN** where that work stands is read as for an isolated agent, and only the delivery, which needs a branch UZE cut, is withheld
 
 #### Scenario: Delivery is offered for an isolated agent
-- **WHEN** an isolated agent has commits its target does not have
+- **WHEN** an isolated agent has commits its target does not have and the project declares a completion behavior
 - **THEN** the same delivery the project's policy describes is offered for it
 
 #### Scenario: An agent in the root is never delivered
