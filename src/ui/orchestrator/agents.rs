@@ -14,6 +14,10 @@ impl WorkspaceModel {
         };
         let mut space_projects = BTreeMap::new();
         let mut latest_projects = BTreeMap::new();
+        // Only the directories agents stand in now are kept: one an agent
+        // left is resolved again if one comes back, and the map does not
+        // grow with the life of the client.
+        let mut known = std::mem::take(&mut self.projects);
         for space in &session.workspace.spaces {
             let mut projects: Vec<PathBuf> = Vec::new();
             let mut latest: Option<(TabId, PathBuf)> = None;
@@ -23,11 +27,11 @@ impl WorkspaceModel {
                 .filter(|tab| is_agent_tab(identities, tab))
             {
                 let directory = named_checkout(&tab.pane.cwd);
-                let project = self
-                    .projects
-                    .entry(directory.clone())
-                    .or_insert_with(|| project_of_directory(&directory))
-                    .clone();
+                let project = known
+                    .remove(&directory)
+                    .or_else(|| self.projects.get(&directory).cloned())
+                    .unwrap_or_else(|| project_of_directory(&directory));
+                self.projects.insert(directory, project.clone());
                 // Tab ids are minted in the order tabs are opened, so the
                 // highest is the agent started last, wherever it was dragged.
                 if latest.as_ref().is_none_or(|(id, _)| tab.id > *id) {
@@ -42,6 +46,16 @@ impl WorkspaceModel {
                 latest_projects.insert(space.id, project);
             }
         }
+        // A project no agent works in any more is swept once more, for the
+        // agent that just left it.
+        let working: BTreeSet<&PathBuf> = space_projects.values().flatten().collect();
+        self.left_projects.extend(
+            self.space_projects
+                .values()
+                .flatten()
+                .filter(|project| !working.contains(project))
+                .cloned(),
+        );
         self.space_projects = space_projects;
         self.latest_projects = latest_projects;
         self.agent_in_front = context_agent(self, identities)

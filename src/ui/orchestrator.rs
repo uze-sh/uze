@@ -1787,6 +1787,9 @@ struct WorkspaceModel {
     space_projects: BTreeMap<SpaceId, Vec<PathBuf>>,
     /// The project each space's most recently started agent works in.
     latest_projects: BTreeMap<SpaceId, PathBuf>,
+    /// Projects no agent works in any more, since the last sweep took them:
+    /// the one an agent left is still the one to reconcile.
+    left_projects: BTreeSet<PathBuf>,
     /// The directory of the agent whose context is in front, read again
     /// with the session: what everything about a project is drawn for.
     agent_in_front: Option<PathBuf>,

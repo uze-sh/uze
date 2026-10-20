@@ -738,10 +738,6 @@ pub(super) fn sync_slot_occupancy(
         .filter_map(launched_agent_id)
         .map(str::to_owned)
         .collect();
-    // Every project an agent has stood in this session: an agent that
-    // just left took its tab with it, and its project is still the one
-    // to sweep. Never a shell's directory, which names no project.
-    let agent_projects: BTreeSet<PathBuf> = model.projects.values().cloned().collect();
     for (pane, cwd) in &live {
         // The directory the pane was given, not `/proc`'s note about what
         // became of it: a pane first seen *after* its checkout was
@@ -824,12 +820,15 @@ pub(super) fn sync_slot_occupancy(
         OccupancyPass::Full
     };
     // A repository is named by any path inside it: the checkout a pane just
-    // left, or every project an agent worked in — for the sweep, and for
-    // an agent in a project's own tree, which is keyed by that project.
+    // left, every project an agent works in, and every one an agent just
+    // left — for the sweep, and for an agent in a project's own tree, which
+    // is keyed by that project. Never a shell's directory, which names no
+    // project.
     let mut look_in: Vec<PathBuf> = vanished;
     look_in.extend(retrying);
     if sweeping || agent_left {
-        look_in.extend(agent_projects);
+        look_in.extend(model.working_projects());
+        look_in.extend(std::mem::take(&mut model.left_projects));
     }
     model.occupancy_pending = true;
     spawn_occupancy_reconcile(

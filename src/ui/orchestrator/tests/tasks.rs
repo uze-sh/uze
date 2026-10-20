@@ -196,6 +196,33 @@ fn an_agent_losing_its_last_tab_reconciles_its_project() {
     );
 }
 
+/// What the client keeps of where agents work follows the agents: a
+/// project an agent left is handed to the next sweep once, and the
+/// directories it stood in are not kept for the life of the client.
+#[test]
+fn a_project_an_agent_left_is_swept_once_and_not_kept() {
+    let mut model = agent_session_in("/front");
+    assert!(model.projects.contains_key(Path::new("/front")));
+
+    first_tab_mut(&mut model).pane.process = "bash".into();
+    model.note_space_projects(&identities_fixture());
+
+    assert!(
+        model.projects.is_empty(),
+        "the directory no agent stands in is still kept"
+    );
+    assert!(
+        model.left_projects.contains(Path::new("/front")),
+        "the project the agent left is not handed to the sweep"
+    );
+    model.note_space_projects(&identities_fixture());
+    assert_eq!(
+        model.left_projects.len(),
+        1,
+        "and only once, however often the session moves"
+    );
+}
+
 /// A checkout removed from under a live pane is the one change to a
 /// repository nothing else asks about: the pane is still there, so no
 /// slot was released and no reconciliation is due. Unasked, the row
