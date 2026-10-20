@@ -15,11 +15,6 @@ Or it gets **a worktree of its own**: a separate checkout of the repository
 under `.worktrees/`, on a branch of its own. Two agents can then never touch
 each other's files, or yours.
 
-A new agent's worktree starts from your target branch as the remote last had
-it (`origin/main`), so it is not born behind work that already merged, even
-when your own `main` has not been pulled. When your local branch carries
-commits the remote does not, it starts from yours.
-
 - **One agent:** right-click it → **To worktree**. It moves to its own worktree
   and takes your uncommitted changes with it, as a copy. When the tree holds
   uncommitted work, **To worktree, no changes** cuts the worktree from the last
@@ -30,6 +25,11 @@ commits the remote does not, it starts from yours.
   workspace:
     worktree: always   # manual (default) | always
   ```
+
+A new agent's worktree starts from your target branch as the remote last had
+it (`origin/main`), so it is not born behind work that already merged, even
+when your own `main` has not been pulled. When your local branch carries
+commits the remote does not, it starts from yours.
 
 Checkouts are reused, so a second agent does not pay for a fresh
 `node_modules/` or a cold build. An agent that ends never keeps its

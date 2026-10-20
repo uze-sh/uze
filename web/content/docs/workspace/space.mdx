@@ -1,6 +1,6 @@
 ---
 title: Space
-description: One screen for the agent in front, covering what it was asked and its project's settings, plugins, memory and worktrees
+description: One screen for the agent in front, covering what it was asked, its settings, and its project's plugins, memory and worktrees
 ---
 
 <Demo
@@ -10,24 +10,14 @@ description: One screen for the agent in front, covering what it was asked and i
   caption="Alt+O opens it over the agent in front, or a shell beside it."
 />
 
-`Alt+O`, or the `⋯` button at the right end of the tab strip, opens the
-overview of the agent in front. It is there only for an agent and the shells
-opened beside it: a shell of the space works in no project, so it has none.
-It stands where the pane is, over the tab in front, and `Alt+O` or `Esc` puts
-it away again. Selecting another agent turns it to that agent; selecting the
-space's row or one of its shells, or opening Spec, Architect or Code, puts it
-away. When you open it again it is on the section you left, and it reads the
-project again.
+The overview is one screen about the agent in front: what it was asked, its
+settings, and its project's plugins, memory and worktrees. Press `Alt+O`, or
+click the `⋯` button at the right end of the tab strip, to open it. `Alt+O` or
+`Esc` puts it away.
 
-The top line names the agent and its directory. Under it are five sections. `1` to `5`
-jump to one and `←` `→` move between them. A section with something to look
-at carries a mark, and its first line says what it is. The foot shows the
-keys for the section you are on and, on the right, how many things are left
-to check. Click that count for the whole list.
-
-The detail of the row you are on opens in a drawer on the right. Drag its
-edge to make it wider. On a narrow screen it opens over the list instead,
-with `Enter`, and closes with `Esc`.
+Its five sections are **Agent**, **Settings**, **Plugins**, **Memory** and
+**Worktrees**. `1` to `5` jump to one, and `←` `→` move between them. Select a
+row to read its detail in the drawer on the right.
 
 ## Agent
 
@@ -131,3 +121,20 @@ commit on it. It refuses if anything is working inside it, if an agent holds
 it or if it has uncommitted work. See
 [Where an agent works](/docs/workspace/agents#where-an-agent-works) for how
 checkouts are reused.
+
+## Moving around
+
+The overview is there only for an agent and the shells opened beside it: a
+shell of the space works in no project, so it has none. It stands where the
+pane is, over the tab in front. Selecting another agent turns it to that
+agent; selecting the space's row or one of its shells, or opening Spec,
+Architect or Code, puts it away. When you open it again it is on the section
+you left, and it reads the project again.
+
+The top line names the agent and its directory. A section with something to
+look at carries a mark, and its first line says what it is. The foot shows the
+keys for the section you are on and, on the right, how many things are left
+to check. Click that count for the whole list.
+
+Drag the drawer's edge to make it wider. On a narrow screen it opens over the
+list instead, with `Enter`, and closes with `Esc`.

@@ -82,6 +82,10 @@ You can also skip this step. When the workspace opens, it sets up every agent
 already on your machine that is not set up yet, without asking and without
 updating it. It asks which to install only when your machine has none.
 
+```bash
+uze setup list    # what is installed and ready
+```
+
 Some installers put the agent in a directory your current shell does not
 search yet. `uze setup` still verifies it there, tells you where it is, and
 reminds you to open a new shell before running it by name. An agent already
@@ -92,10 +96,6 @@ the workspace, which puts them first on `PATH` in its own panes. If an earlier
 uze added a `# >>> uze shims path >>>` block to your `.bashrc`, `.zshrc` or
 `config.fish`, uze no longer manages it: delete it by hand if you want your
 own shells to stop putting the shims first.
-
-```bash
-uze setup list    # what is installed and ready
-```
 
 ## Staying current
 

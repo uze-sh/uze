@@ -3,8 +3,9 @@ title: Terminal
 description: The server behind the workspace, resuming after a reboot, prompt history and logs
 ---
 
-The workspace's panes belong to a local server, not to the window you look at.
-That is why closing the workspace never stops an agent.
+Closing the workspace never stops an agent. Its panes belong to a local
+server, not to the window you look at, and the next `uze workspace` attaches
+to it again.
 
 ```bash
 uze workspace          # attach the workspace, starting its server when needed
