@@ -100,10 +100,13 @@ on "cancel" must not save first.
 - A modal keeps its height while you filter inside it.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.
-- A popover that asks in steps names them on its first row (`directory ›
-  harness`), the step it is on lit; a step done shows its answer in place
-  of its name, and a click on that answer, or `Backspace`, goes back to it.
-  Every step keeps the popover's place and size.
+- A choice that rarely changes is a field prefilled with the last answer
+  (`harness ‹ Claude Code ›`, moved with `Tab`), never a step of its own:
+  the common case is the one question and Enter. Its arrows are its keys.
+- A popover's foot says what Enter does, with what it is about (`enter new
+  in ~/uze with Claude Code`), and its other keys against the end.
+- A listing row says what is known about its entry against its end
+  (`space · main`, `git`), never in a column of its own.
 - A click anywhere inside a popover keeps it open; only a click outside it
   dismisses it.
 

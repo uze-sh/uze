@@ -65,6 +65,12 @@ impl WorkspaceModel {
 
     /// The projects `space`'s agents work in, in the order their tabs are
     /// listed.
+    /// The branch the checkout at `directory` was last read on, when one
+    /// was: a project's primary, or a directory outside any slot.
+    pub(super) fn branch_of(&self, directory: &Path) -> Option<&str> {
+        self.remembered.branches.get(directory).map(String::as_str)
+    }
+
     pub(super) fn projects_of(&self, space: SpaceId) -> &[PathBuf] {
         self.space_projects.get(&space).map_or(&[], Vec::as_slice)
     }

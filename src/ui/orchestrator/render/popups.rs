@@ -2,19 +2,21 @@
 
 use super::*;
 
-/// The rows the new agent's popup keeps through both of its steps: the
-/// directory step's listing and the line typed into, up to
-/// [`NEW_AGENT_POPUP_MAX_ROWS`], and never so few that the harnesses would
-/// not fit.
+/// The directories the new agent's popup lists at once: as many as match,
+/// between [`NEW_AGENT_POPUP_MIN_ROWS`] and [`NEW_AGENT_POPUP_MAX_ROWS`].
 pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u16 {
-    let rows = u16::try_from(directories + 1).unwrap_or(u16::MAX);
+    let rows = u16::try_from(directories).unwrap_or(u16::MAX);
     rows.clamp(NEW_AGENT_POPUP_MIN_ROWS, NEW_AGENT_POPUP_MAX_ROWS)
 }
 
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
-const NEW_AGENT_POPUP_MAX_ROWS: u16 = 10;
-/// Wide enough for a directory's name beside the path it is typed from.
-const NEW_AGENT_POPUP_WIDTH: u16 = 40;
+const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
+/// Wide enough for a directory's name and what is known about it, and for
+/// the foot saying where the agent starts and with what.
+const NEW_AGENT_POPUP_WIDTH: u16 = 68;
+/// The rows around the listing: the harness, the line typed into and the
+/// foot, each closed off by a rule.
+const NEW_AGENT_POPUP_CHROME: u16 = 6;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -29,10 +31,10 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
-/// The card both steps of a new agent are drawn in, cleared over whatever
-/// is beneath. A card, not a floating surface: the popup is anchored to the
-/// control that opened it and measures itself — its height budgets its two
-/// border rows and nothing else, and each row leads with its own inset.
+/// The card a new agent is chosen in, cleared over whatever is beneath. A
+/// card, not a floating surface: the popup is anchored to the control that
+/// opened it and measures itself — its height budgets its two border rows
+/// and nothing else, and each row leads with its own inset.
 ///
 /// The whole card answers a click, ahead of its rows: one on the line
 /// being typed into, the title or the border is inside the popup, and must
@@ -47,82 +49,189 @@ fn new_agent_card(
     Surface::card().title(" new agent ").render(frame, popup)
 }
 
-/// The height of a new agent's popup holding `rows` of its steps: the two
-/// border rows and the row naming the steps.
-fn new_agent_popup_height(rows: u16) -> u16 {
-    rows + 3
-}
-
-/// The row naming the new agent's two steps, the one it is on lit:
-/// `directory › harness` while the directory is chosen, and the directory
-/// chosen in place of the word once it is — a click on it, or `Backspace`,
-/// goes back to choosing it.
-fn render_new_agent_steps(
-    frame: &mut ratatui::Frame<'_>,
-    rect: Rect,
-    chosen: Option<&Path>,
-    back_hovered: bool,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    let separator = format!(" {} ", theme::glyph(Symbol::ChevronRight));
-    let harness_hue = match chosen {
-        Some(_) => Token::TextBright,
-        None => Token::TextFaint,
-    };
-    let (first, first_hue) = match chosen {
-        Some(directory) => {
-            let room = usize::from(rect.width)
-                .saturating_sub(PICKER_LEAD + separator.chars().count() + "harness".len());
-            let hue = if back_hovered {
-                Token::TextBright
-            } else {
-                Token::TextSecondary
-            };
-            (
-                text::elide_head(&crate::ui::display_project_path(directory), room),
-                hue,
-            )
+/// A line with `left` at its start and `right` against its end, `right`
+/// kept whole and `left` cut to what is left over.
+fn spread(rect: Rect, left: Vec<Span<'static>>, right: Vec<Span<'static>>) -> Line<'static> {
+    let right_width: usize = right.iter().map(Span::width).sum();
+    let room = usize::from(rect.width).saturating_sub(right_width + usize::from(TRAILING_PAD));
+    let mut spans = Vec::new();
+    let mut used = 0;
+    for span in left {
+        let width = span.width();
+        if used + width > room {
+            let cut = text::elide(&span.content, room.saturating_sub(used));
+            used += text::columns(&cut);
+            spans.push(Span::styled(cut, span.style));
+            break;
         }
-        None => ("directory".to_owned(), Token::TextBright),
-    };
-    let first_width = Span::raw(first.as_str()).width() as u16;
-    if chosen.is_some() {
-        hits.push((
-            Rect::new(rect.x + PICKER_LEAD as u16, rect.y, first_width, 1),
-            WorkspaceHit::NewAgentBack,
-        ));
+        used += width;
+        spans.push(span);
     }
-    let line = Line::from(vec![
-        picker_lead(),
-        Span::styled(first, theme::fg(first_hue)),
-        Span::styled(separator, theme::fg(Token::TextFaint)),
-        Span::styled("harness", theme::fg(harness_hue)),
-    ]);
-    frame.render_widget(Paragraph::new(line), rect);
+    spans.push(Span::raw(" ".repeat(room.saturating_sub(used))));
+    spans.extend(right);
+    Line::from(spans)
 }
 
-/// The new agent's first step: the directory it runs in, floating beside
-/// the `new` it was asked from, over the pane, so nothing in the sidebar
-/// moves while it is open.
+/// A hairline across the popup, between two of its parts.
+fn popup_rule(frame: &mut ratatui::Frame<'_>, rows: &mut Rows) {
+    if let Some(rect) = rows.next(1) {
+        let _ = Rule::new(Edge::Top).render(frame, rect);
+    }
+}
+
+/// The new agent's popup, floating beside the `new` it was asked from,
+/// over the pane, so nothing in the sidebar moves while it is open: the
+/// harness it runs, the directory it runs in, and what Enter does.
 pub(in crate::ui::orchestrator) fn render_directory_step(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
+    model: &WorkspaceModel,
     step: &DirectoryStep,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let height = new_agent_popup_height(step.rows);
+    let height = step.rows + NEW_AGENT_POPUP_CHROME + 2;
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
     let inner = new_agent_card(frame, popup, hits);
-    let mut rows = Rows::over(inner);
+    let foot = Rect::new(inner.x, inner.bottom().saturating_sub(1), inner.width, 1);
+    let mut rows = Rows::over(Rect {
+        height: inner.height.saturating_sub(1),
+        ..inner
+    });
     if let Some(rect) = rows.next(1) {
-        render_new_agent_steps(frame, rect, None, false, hits);
+        render_harness_field(frame, rect, model, step, hits);
     }
-    render_root_picker(frame, &step.picker, &mut rows, hits);
+    popup_rule(frame, &mut rows);
+    render_root_picker(frame, model, step, &mut rows, hits);
+    let mut above_foot = Rows::over(Rect::new(foot.x, foot.y.saturating_sub(1), foot.width, 1));
+    popup_rule(frame, &mut above_foot);
+    render_new_agent_foot(frame, foot, model, step, hits);
 }
 
-/// The new agent's harness step, listing `agent_options` — in the popup
-/// the directory step opened, at its place and size, or measuring itself
-/// when a resume asked for it. Not built on the management modal's dialog
+/// The scopes the popup's keys are read from.
+const NEW_AGENT_SCOPES: [uze_keys::Scope; 2] =
+    [uze_keys::Scope::Global, uze_keys::Scope::RootPicker];
+
+/// The harness the agent will run, between the arrows that change it. A
+/// click on either arrow is its key.
+fn render_harness_field(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let arrow_hue = |action: Action| {
+        if model.hovered == Some(WorkspaceHit::HintAction(action)) {
+            Token::Accent
+        } else {
+            Token::TextFaint
+        }
+    };
+    let left = vec![
+        picker_lead(),
+        Span::styled("harness", theme::fg(Token::TextDim)),
+    ];
+    let right = match step.chosen_harness() {
+        Some(option) => {
+            let mut right = vec![Span::styled(
+                format!("{} ", theme::glyph(Symbol::StepPrevious)),
+                theme::fg(arrow_hue(Action::FocusPrevious)),
+            )];
+            right.push(Span::styled(
+                option.display_name.clone(),
+                theme::fg_bold(Token::Accent),
+            ));
+            right.push(Span::styled(
+                format!(" {}", theme::glyph(Symbol::StepNext)),
+                theme::fg(arrow_hue(Action::FocusNext)),
+            ));
+            right
+        }
+        None => vec![Span::styled(NO_AGENT_SET_UP, theme::fg(Token::TextMuted))],
+    };
+    let right_width: u16 = right.iter().map(|span| span.width() as u16).sum();
+    let end = rect.right().saturating_sub(TRAILING_PAD);
+    if step.harnesses.len() > 1 {
+        hits.push((
+            Rect::new(end.saturating_sub(right_width), rect.y, 2, 1),
+            WorkspaceHit::HintAction(Action::FocusPrevious),
+        ));
+        hits.push((
+            Rect::new(end.saturating_sub(2), rect.y, 2, 1),
+            WorkspaceHit::HintAction(Action::FocusNext),
+        ));
+    }
+    frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
+}
+
+/// What Enter does, said with what it is about — where the agent starts
+/// and which harness runs it — and the popup's other keys against the end.
+fn render_new_agent_foot(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let hovered = match model.hovered {
+        Some(WorkspaceHit::HintAction(action)) => Some(action),
+        _ => None,
+    };
+    let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
+        .named(Action::FocusNext, "harness")
+        .named(Action::Dismiss, "close")
+        .hovered(hovered);
+    let keys_width = keys.width().min(rect.width / 2);
+    let enter = uze_keys::active()
+        .chord_for(Action::Activate, &NEW_AGENT_SCOPES)
+        .map_or_else(String::new, |chord| chord.to_string());
+    let lit = hovered == Some(Action::Activate);
+    let room = rect.width.saturating_sub(keys_width + 2 * TRAILING_PAD);
+    let words = usize::from(room).saturating_sub(PICKER_LEAD + text::columns(&enter) + 1);
+    // The directory gives way first, and from its head: its end is what
+    // says which one it is.
+    let what = match (step.picker.chosen(), step.chosen_harness()) {
+        (_, None) => SET_ONE_UP.to_owned(),
+        (Some(directory), Some(option)) => {
+            let around = text::columns(&format!("new in  with {}", option.display_name));
+            let directory = text::elide_head(
+                &crate::ui::display_project_path(&directory),
+                words.saturating_sub(around),
+            );
+            format!("new in {directory} with {}", option.display_name)
+        }
+        (None, Some(_)) => "open the directory".to_owned(),
+    };
+    let line = Line::from(vec![
+        picker_lead(),
+        Span::styled(format!("{enter} "), theme::fg_bold(Token::Accent)),
+        Span::styled(
+            text::elide(&what, words),
+            theme::fg(if lit {
+                Token::Accent
+            } else {
+                Token::TextSecondary
+            }),
+        ),
+    ]);
+    let said = Rect {
+        width: room,
+        ..rect
+    };
+    frame.render_widget(Paragraph::new(line), said);
+    hits.push((said, WorkspaceHit::HintAction(Action::Activate)));
+    let at = Rect {
+        x: rect.right().saturating_sub(keys_width + TRAILING_PAD),
+        width: keys_width,
+        ..rect
+    };
+    for (rect, action) in keys.render(frame, at) {
+        hits.push((rect, WorkspaceHit::HintAction(action)));
+    }
+}
+
+/// The harness a resumed agent runs, listing `agent_options`, when the one
+/// it ran with is gone. Not built on the management modal's dialog
 /// helpers (those are shaped for static text, not a selectable,
 /// hit-testable list) — this is self-contained, styled by hand to match
 /// the same palette.
@@ -131,40 +240,19 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
     area: Rect,
     anchor: Rect,
     picker: &AgentPicker,
-    back_hovered: bool,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let chosen = match &picker.launch {
-        AgentLaunch::New(place) => Some(place.directory.as_path()),
-        AgentLaunch::Resume(_) => None,
-    };
-    let (width, height) = match picker.rows {
-        Some(rows) => (NEW_AGENT_POPUP_WIDTH, new_agent_popup_height(rows)),
-        None => {
-            let content_width = picker
-                .options
-                .iter()
-                .map(|option| option.display_name.chars().count() as u16)
-                .max()
-                .unwrap_or(16)
-                .max(NO_AGENT_SET_UP.len() as u16);
-            // Empty, it says so and offers the way out on a row of its own.
-            (content_width + 6, picker.options.len().max(2) as u16 + 2)
-        }
-    };
-    let popup = popup_beside(area, anchor, width, height);
-    let mut inner = new_agent_card(frame, popup, hits);
-    if let Some(directory) = chosen {
-        render_new_agent_steps(
-            frame,
-            Rect::new(inner.x, inner.y, inner.width, 1),
-            Some(directory),
-            back_hovered,
-            hits,
-        );
-        inner.y += 1;
-        inner.height = inner.height.saturating_sub(1);
-    }
+    let content_width = picker
+        .options
+        .iter()
+        .map(|option| option.display_name.chars().count() as u16)
+        .max()
+        .unwrap_or(16)
+        .max(NO_AGENT_SET_UP.len() as u16);
+    // Empty, it says so and offers the way out on a row of its own.
+    let height = picker.options.len().max(2) as u16 + 2;
+    let popup = popup_beside(area, anchor, content_width + 6, height);
+    let inner = new_agent_card(frame, popup, hits);
 
     if picker.options.is_empty() {
         frame.render_widget(
@@ -652,11 +740,14 @@ pub(in crate::ui::orchestrator) fn render_status_catalog(
 /// the one Enter takes wears the bar the harness step's row does.
 fn render_root_picker(
     frame: &mut ratatui::Frame<'_>,
-    picker: &RootPicker,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
+    let picker = &step.picker;
     render_query_row(frame, picker, rows);
+    popup_rule(frame, rows);
     if picker.match_count() == 0 {
         if let Some(rect) = rows.next(1) {
             let spans = vec![
@@ -667,40 +758,84 @@ fn render_root_picker(
         }
         return;
     }
-    // As many directories as the popup has rows — one held back for the
-    // tail that says how many more there are.
-    let visible = usize::from(rows.remaining()).saturating_sub(1).max(1);
+    let visible = usize::from(step.rows);
     let start = picker.window_start(visible);
     let needle = picker.input().to_lowercase();
     for (index, candidate) in picker.matches().enumerate().skip(start).take(visible) {
         let Some(rect) = rows.next(1) else { return };
         hits.push((rect, WorkspaceHit::PickDirectory(index)));
-        // The row the keyboard is on wears the bar the harness step's row
-        // does: one popup, one way of saying which row Enter takes.
+        let mark = directory_mark(model, step.space, candidate);
+        // The row the keyboard is on wears the bar a menu's row does: the
+        // one Enter takes.
         if picker.selection() == Some(index) {
             render_agent_picker_row(frame, rect, &candidate.name, true);
+            let width = text::columns(&mark.text) as u16;
+            let at = Rect {
+                x: rect.right().saturating_sub(width + TRAILING_PAD),
+                width,
+                ..rect
+            };
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    mark.text,
+                    Style::default()
+                        .bg(theme::color(Token::Accent))
+                        .fg(theme::color(Token::SurfaceBackground)),
+                )),
+                at,
+            );
             continue;
         }
         // A name the query is the head of says so, in the hue of the query
         // itself; a match found further in says nothing, rather than
         // colouring letters that had nothing to do with it.
         let (matched, rest) = split_at_head(&candidate.name, &needle);
-        let spans = vec![
+        let left = vec![
             picker_lead(),
             Span::styled(matched, theme::fg(Token::Accent)),
             Span::styled(rest, theme::fg(Token::TextInactive)),
         ];
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        let right = vec![Span::styled(mark.text, theme::fg(mark.hue))];
+        frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
     }
-    let hidden = picker.match_count().saturating_sub(start + visible);
-    if hidden > 0
-        && let Some(rect) = rows.next(1)
-    {
-        let spans = vec![
-            picker_lead(),
-            Span::styled(format!("+{hidden} more"), theme::fg(Token::TextFaint)),
-        ];
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+}
+
+/// What a row of the listing says about its directory, against its end.
+struct DirectoryMark {
+    text: String,
+    hue: Token,
+}
+
+/// A project the space's agents already work in says so, with the branch
+/// its checkout is on when it was read — the directory a second agent in
+/// the space most likely wants. Any other repository says it is one;
+/// a plain directory says nothing.
+fn directory_mark(
+    model: &WorkspaceModel,
+    space: SpaceId,
+    candidate: &crate::ui::root_picker::Candidate,
+) -> DirectoryMark {
+    let in_space = model
+        .projects_of(space)
+        .iter()
+        .any(|project| uze_platform::path::same_path(project, &candidate.path));
+    if in_space {
+        let text = match model.branch_of(&candidate.path) {
+            Some(branch) => format!("space {} {branch}", theme::glyph(Symbol::HintSeparator)),
+            None => "space".to_owned(),
+        };
+        return DirectoryMark {
+            text,
+            hue: Token::StateSuccess,
+        };
+    }
+    DirectoryMark {
+        text: if candidate.repository == Some(true) {
+            "git".to_owned()
+        } else {
+            String::new()
+        },
+        hue: Token::TextFaint,
     }
 }
 
@@ -749,6 +884,9 @@ pub(super) const HEADER_GAP: u16 = 1;
 /// with that path already typed into it asked to be deleted before it could
 /// be used. The accent down its leading column says this is the row the
 /// keyboard is in.
+/// What the line typed into says while nothing is.
+const FILTER_PLACEHOLDER: &str = "filter directories";
+
 pub(super) fn render_query_row(
     frame: &mut ratatui::Frame<'_>,
     picker: &RootPicker,
@@ -756,38 +894,54 @@ pub(super) fn render_query_row(
 ) {
     let Some(rect) = rows.next(1) else { return };
     let needle = picker.input();
-    let mut spans = vec![
-        picker_lead(),
-        Span::styled(
-            format!("{needle}{}", theme::glyph(Symbol::CursorText)),
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    // Where the typing starts from, and only until there is typing: the
-    // line says everything else itself (see `RootPicker`). A path pinned
-    // to the right of the line all the way through said where the prompt
-    // was in a second place, which is the half that went stale the
-    // moment the two could disagree.
-    if needle.is_empty() {
-        let used: u16 = spans.iter().map(|span| span.width() as u16).sum();
-        let room = rect.width.saturating_sub(used + TRAILING_PAD + 1);
-        spans.push(Span::styled(
-            text::elide_head(
-                &crate::ui::display_project_path(picker.base()),
-                room as usize,
-            ),
+    // Where the typing starts from, ahead of it: a path typed out from `~`
+    // or the root leaves it behind, and says the whole of itself.
+    let absolute = needle.starts_with('~') || needle.starts_with(std::path::is_separator);
+    let count = match picker.selection() {
+        Some(index) => format!("{}/{}", index + 1, picker.match_count()),
+        None => picker.match_count().to_string(),
+    };
+    let mut left = vec![picker_lead()];
+    if !absolute {
+        let origin = crate::ui::display_project_path(picker.origin());
+        let separator = std::path::MAIN_SEPARATOR;
+        let origin = if origin.ends_with(separator) {
+            origin
+        } else {
+            format!("{origin}{separator}")
+        };
+        // What is typed is kept whole and the origin gives way, from its
+        // head, down to a third of the line.
+        let placeholder = if needle.is_empty() {
+            text::columns(FILTER_PLACEHOLDER)
+        } else {
+            0
+        };
+        let kept = PICKER_LEAD + text::columns(needle) + 1 + placeholder + count.len() + 2;
+        let room = usize::from(rect.width)
+            .saturating_sub(kept)
+            .max(usize::from(rect.width) / 3);
+        left.push(Span::styled(
+            text::elide_head(&origin, room),
             theme::fg(Token::TextDim),
         ));
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-    // The rail that says this is the row the keyboard is in.
-    frame.render_widget(
-        Paragraph::new(theme::glyph(Symbol::BarThin))
-            .style(Style::default().fg(theme::color(Token::Accent))),
-        Rect::new(rect.x, rect.y, 1, 1),
-    );
+    left.push(Span::styled(
+        needle.to_owned(),
+        theme::fg_bold(Token::TextBright),
+    ));
+    left.push(Span::styled(
+        theme::glyph(Symbol::CursorText),
+        theme::fg(Token::Accent),
+    ));
+    if needle.is_empty() {
+        left.push(Span::styled(
+            FILTER_PLACEHOLDER,
+            theme::fg(Token::TextFaint),
+        ));
+    }
+    let right = vec![Span::styled(count, theme::fg(Token::TextFaint))];
+    frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
 
 pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState {
@@ -961,7 +1115,6 @@ mod tests {
                 options: names.iter().map(|name| option(name)).collect(),
                 selected: 0,
                 anchor: Rect::new(2, 1, 3, 1),
-                rows: None,
                 launch: crate::ui::orchestrator::AgentLaunch::Resume(
                     crate::ui::orchestrator::ResumeTarget {
                         primary: "/repo".into(),
@@ -980,7 +1133,6 @@ mod tests {
                         Rect::new(0, 0, 60, 20),
                         picker.anchor,
                         &picker,
-                        false,
                         &mut hits,
                     );
                 })

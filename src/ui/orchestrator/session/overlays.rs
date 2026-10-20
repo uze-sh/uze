@@ -57,6 +57,14 @@ impl Attach<'_> {
     /// The new agent's directory step: type to narrow, walk into the
     /// highlighted directory, take it to the harness step.
     pub(super) fn directory_step_action(&mut self, action: Action) {
+        // The harness field: on to the next one set up, or back.
+        if let (Action::FocusNext | Action::FocusPrevious, Some(step)) =
+            (action, self.model.directory_step.as_mut())
+        {
+            step.cycle_harness(if action == Action::FocusNext { 1 } else { -1 });
+            self.model.dirty = true;
+            return;
+        }
         let picker = self
             .model
             .directory_step
@@ -277,7 +285,6 @@ impl Attach<'_> {
                     self.start_agent(option, picker.launch);
                 }
             }
-            Action::EraseBack => self.back_to_directories(),
             _ => self.model.agent_picker = None,
         }
         self.model.dirty = true;

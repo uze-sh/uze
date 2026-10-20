@@ -497,7 +497,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::AgentPicker, "up", Action::SelectPrevious),
         bind(Scope::AgentPicker, "enter", Action::Activate),
         bind(Scope::AgentPicker, "esc", Action::Dismiss),
-        bind(Scope::AgentPicker, "backspace", Action::EraseBack),
         bind(Scope::ContextMenu, "down", Action::SelectNext),
         bind(Scope::ContextMenu, "up", Action::SelectPrevious),
         bind(Scope::ContextMenu, "enter", Action::Activate),
@@ -506,13 +505,13 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::ContextMenu, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "down", Action::SelectNext),
         bind(Scope::RootPicker, "up", Action::SelectPrevious),
-        // Tab walks into the highlighted directory, so a root several
-        // levels down is reached by narrowing rather than by typing.
-        bind(Scope::RootPicker, "tab", Action::Expand),
-        // The kind chips under the directory: two choices side by side, so
-        // the keys that walk sideways walk them.
-        bind(Scope::RootPicker, "left", Action::FocusPrevious),
-        bind(Scope::RootPicker, "right", Action::FocusNext),
+        // Right walks into the highlighted directory, so one several levels
+        // down is reached by narrowing rather than by typing.
+        bind(Scope::RootPicker, "right", Action::Expand),
+        // The harness the new agent runs, a field beside the directories:
+        // tab moves it on, shift+tab back.
+        bind(Scope::RootPicker, "tab", Action::FocusNext),
+        bind(Scope::RootPicker, "shift+tab", Action::FocusPrevious),
         bind(Scope::RootPicker, "enter", Action::Activate),
         bind(Scope::RootPicker, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "backspace", Action::EraseBack),

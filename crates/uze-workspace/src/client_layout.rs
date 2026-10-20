@@ -86,6 +86,9 @@ pub struct WorkspaceLayout {
     /// to another space. The client prunes the ids no space has, so a fold
     /// never outlives its space.
     pub collapsed_spaces: BTreeSet<u64>,
+    /// The harness the last agent was started with, by integration id: the
+    /// one a new agent offers first.
+    pub last_harness: Option<String>,
 }
 
 impl Default for WorkspaceLayout {
@@ -97,6 +100,7 @@ impl Default for WorkspaceLayout {
             timeline_collapsed: true,
             timeline_rows: None,
             collapsed_spaces: BTreeSet::new(),
+            last_harness: None,
         }
     }
 }
@@ -186,6 +190,7 @@ mod tests {
                 timeline_collapsed: false,
                 timeline_rows: Some(6),
                 collapsed_spaces: BTreeSet::from([3]),
+                last_harness: Some("claude-code".to_owned()),
             },
             management: ManagementLayout {
                 route: Some("plugins".to_owned()),

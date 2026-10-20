@@ -276,13 +276,12 @@ impl Attach<'_> {
         // Either way the launch carries the task's identity.
         self.offer_agents(
             anchor,
-            None,
-            AgentLaunch::Resume(ResumeTarget {
+            ResumeTarget {
                 primary: task.project.clone(),
                 task: task.id.clone(),
                 replacing: None,
                 harness: Some(task.harness.clone()),
-            }),
+            },
         );
     }
 

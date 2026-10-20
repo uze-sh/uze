@@ -14,9 +14,10 @@ impl Attach<'_> {
             .unwrap_or_default()
     }
 
-    /// Opens the new agent's first step beside `anchor`: the directory it
-    /// runs in, for the space in front, prefilled with where that space is
-    /// working (see [`WorkspaceModel::directory_to_offer`]).
+    /// Opens the new agent's popup beside `anchor`, for the space in front:
+    /// the directories, prefilled with where that space is working (see
+    /// [`WorkspaceModel::directory_to_offer`]), and the harness the last
+    /// agent was started with.
     pub(super) fn offer_directories(&mut self, anchor: Rect) {
         let Some(space) = self
             .model
@@ -33,17 +34,32 @@ impl Attach<'_> {
             .map_or_else(|| "~".to_owned(), |parent| parent.display().to_string());
         let picker = RootPicker::opened_in(&beside, offered.as_deref());
         let rows = new_agent_popup_rows(picker.match_count());
+        let harnesses = agent_options(self.home);
+        let harness = self
+            .model
+            .last_harness
+            .as_deref()
+            .and_then(|last| {
+                harnesses
+                    .iter()
+                    .position(|option| option.integration == last)
+            })
+            .unwrap_or(0);
         self.model.directory_step = Some(DirectoryStep {
             picker,
             space,
             anchor,
             rows,
+            harnesses,
+            harness,
         });
         self.model.dirty = true;
     }
 
-    /// Takes the directory the first step is on to the harness step, in the
-    /// same popup. Nothing chosen yet walks into the row instead.
+    /// Starts the agent where the popup is: in the directory it is on, with
+    /// the harness in its field. Nothing chosen in the listing yet walks
+    /// into the row instead, and with no harness set up it leads to setting
+    /// one up.
     pub(super) fn confirm_directory(&mut self) {
         let Some(step) = self.model.directory_step.as_mut() else {
             return;
@@ -55,63 +71,38 @@ impl Attach<'_> {
         };
         let Some(DirectoryStep {
             space,
-            anchor,
-            rows,
+            mut harnesses,
+            harness,
             ..
         }) = self.model.directory_step.take()
         else {
             return;
         };
-        self.offer_agents(
-            anchor,
-            Some(rows),
-            AgentLaunch::New(NewPlace { space, directory }),
-        );
-    }
-
-    /// Takes a new agent's harness step back to its directory step, on the
-    /// directory chosen, in the same place and size. A harness asked for a
-    /// resume has no directory step to go back to, and stays.
-    pub(super) fn back_to_directories(&mut self) {
-        let Some(picker) = self.model.agent_picker.as_ref() else {
-            return;
-        };
-        let (AgentLaunch::New(place), Some(rows)) = (&picker.launch, picker.rows) else {
-            return;
-        };
-        let directory = place.directory.clone();
-        let (space, anchor) = (place.space, picker.anchor);
-        let beside = directory
-            .parent()
-            .map_or_else(|| "~".to_owned(), |parent| parent.display().to_string());
-        self.model.agent_picker = None;
-        self.model.directory_step = Some(DirectoryStep {
-            picker: RootPicker::opened_in(&beside, Some(&directory)),
-            space,
-            anchor,
-            rows,
-        });
         self.model.dirty = true;
+        if harness >= harnesses.len() {
+            self.open_manage_at(Route::Harnesses);
+            return;
+        }
+        let option = harnesses.swap_remove(harness);
+        self.start_agent(option, AgentLaunch::New(NewPlace { space, directory }));
     }
 
-    /// Asks which harness runs the agent — unless exactly one is set up,
-    /// where the picker would be a single row to confirm, and the agent
+    /// Asks which harness a resumed agent runs — unless exactly one is set
+    /// up, where the picker would be a single row to confirm, and the agent
     /// starts at once. None set up still opens it: its one row is the way
     /// to setting one up.
     ///
-    /// A resumed agent that names the harness it ran with is launched with
-    /// it at once while that harness is still set up: its conversation is
-    /// that harness's, and asking would only offer the chance to lose it.
-    pub(super) fn offer_agents(&mut self, anchor: Rect, rows: Option<u16>, launch: AgentLaunch) {
+    /// An agent that names the harness it ran with is launched with it at
+    /// once while that harness is still set up: its conversation is that
+    /// harness's, and asking would only offer the chance to lose it.
+    pub(super) fn offer_agents(&mut self, anchor: Rect, resume: ResumeTarget) {
         let mut options = agent_options(self.home);
-        let previous = match &launch {
-            AgentLaunch::Resume(resume) => resume.harness.as_deref().and_then(|harness| {
-                options
-                    .iter()
-                    .position(|option| option.integration == harness)
-            }),
-            AgentLaunch::New(_) => None,
-        };
+        let previous = resume.harness.as_deref().and_then(|harness| {
+            options
+                .iter()
+                .position(|option| option.integration == harness)
+        });
+        let launch = AgentLaunch::Resume(resume);
         if let Some(previous) = previous {
             self.start_agent(options.remove(previous), launch);
         } else if options.len() == 1 {
@@ -121,7 +112,6 @@ impl Attach<'_> {
                 options,
                 selected: 0,
                 anchor,
-                rows,
                 launch,
             });
         }
@@ -132,6 +122,11 @@ impl Attach<'_> {
 
     pub(super) fn start_agent(&mut self, option: AgentOption, launch: AgentLaunch) {
         let label = next_agent_label(&self.model);
+        // The one the next agent offers first, kept for the next run too.
+        if self.model.last_harness.as_deref() != Some(option.integration.as_str()) {
+            self.model.last_harness = Some(option.integration.clone());
+            self.model.remember_sidebar();
+        }
         // Said before the tab opens, because it is a fact about the agent
         // being started rather than about the placement it is started into.
         if let Some(gap) = &option.continuity_gap {

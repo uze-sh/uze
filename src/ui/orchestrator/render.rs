@@ -224,18 +224,10 @@ pub(super) fn render(
         render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);
     }
     if let Some(step) = &model.directory_step {
-        render_directory_step(frame, frame.area(), step, hits);
+        render_directory_step(frame, frame.area(), model, step, hits);
     }
     if let Some(picker) = &model.agent_picker {
-        let back_hovered = model.hovered == Some(WorkspaceHit::NewAgentBack);
-        render_agent_picker(
-            frame,
-            frame.area(),
-            picker.anchor,
-            picker,
-            back_hovered,
-            hits,
-        );
+        render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
     }
     if let Some(anchor) = model.status_catalog {
         render_status_catalog(frame, frame.area(), anchor, model.tick);

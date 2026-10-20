@@ -21,25 +21,21 @@ pub(super) struct AgentOption {
     pub(super) continuity_gap: Option<String>,
 }
 
-/// Open state of the "+ new agent" popup's harness step
-/// (`WorkspaceHit::NewAgentMenu`) — built fresh each time it opens from
+/// Open state of the harness picker a resume asks with when the harness its
+/// agent ran with is gone — built fresh each time it opens from
 /// `agent_options`, never persisted.
 pub(super) struct AgentPicker {
     pub(super) options: Vec<AgentOption>,
     pub(super) selected: usize,
-    /// The "new" button's own rect — the popup anchors just
-    /// under it.
+    /// The rect of what asked for it — the popup anchors just under it.
     pub(super) anchor: Rect,
-    /// The rows the popup keeps when the directory step opened it, so
-    /// nothing moves between the two steps; `None` measures itself.
-    pub(super) rows: Option<u16>,
     pub(super) launch: AgentLaunch,
 }
 
 /// What a harness is being chosen for.
 #[derive(Clone)]
 pub(super) enum AgentLaunch {
-    /// A new agent, where the directory step put it.
+    /// A new agent, where the new agent's popup put it.
     New(NewPlace),
     /// A preserved task to continue: placement answers with its slot, or
     /// gives it one again on its own branch, and the agent starts there.
@@ -55,15 +51,37 @@ pub(super) struct NewPlace {
     pub(super) directory: PathBuf,
 }
 
-/// Open state of the "+ new agent" popup's first step: the directory the
-/// agent runs in, chosen for the space whose `new` was pressed.
+/// Open state of the "+ new agent" popup (`WorkspaceHit::NewAgentMenu`):
+/// the directory the agent runs in, chosen from a listing, and the harness
+/// it runs, a field offering the one used last — one step, since the
+/// harness is rarely the thing that changes.
 pub(super) struct DirectoryStep {
     pub(super) picker: RootPicker,
     pub(super) space: SpaceId,
-    /// The "new" button's own rect, which both steps anchor beside.
+    /// The "new" button's own rect, which the popup anchors beside.
     pub(super) anchor: Rect,
-    /// The popup's rows, fixed when it opens and kept by the harness step.
+    /// The listing's rows, fixed when the popup opens so it never resizes
+    /// under the typing.
     pub(super) rows: u16,
+    /// The harnesses set up here; empty, Enter leads to setting one up.
+    pub(super) harnesses: Vec<AgentOption>,
+    /// Index into `harnesses` of the one the agent will run.
+    pub(super) harness: usize,
+}
+
+impl DirectoryStep {
+    /// The harness the agent will run, when one is set up.
+    pub(super) fn chosen_harness(&self) -> Option<&AgentOption> {
+        self.harnesses.get(self.harness)
+    }
+
+    /// Moves the harness on by `step`, round the ones set up.
+    pub(super) fn cycle_harness(&mut self, step: isize) {
+        let count = self.harnesses.len();
+        if count > 0 {
+            self.harness = (self.harness as isize + step).rem_euclid(count as isize) as usize;
+        }
+    }
 }
 
 /// A task to put back in a checkout, named by its repository and id.

@@ -41,9 +41,11 @@ uze workspace
 | **Tab** | A session inside it: an agent (`Alt+N`) or a shell (`Ctrl+T`) |
 | **Pane** | The live terminal of the selected tab |
 
-A new agent asks first for the directory it works in, then for its harness,
-in one popup beside the space's `new`. The directory starts on the project of
-the agent in front, so another agent there is one `Enter` away. A space can
+A new agent asks for the directory it works in, in a popup beside the space's
+`new`, with its harness in a field that starts on the one you used last
+(`Tab` changes it). The directory starts on the project of the agent in front,
+so another agent there is one `Enter` away. Rows mark the projects the space
+already works in, with their branch, and the other Git repositories. A space can
 hold agents of `front`, `back` and `landing` at once, and each agent's row
 names its project.
 

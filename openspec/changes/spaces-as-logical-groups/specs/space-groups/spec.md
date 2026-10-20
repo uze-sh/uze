@@ -25,68 +25,61 @@ shell's directory SHALL NOT count, wherever it moved.
 - **WHEN** a shell of a space with no agent `cd`s into `back`
 - **THEN** the space works in no project: it has no caption, and resuming work of `back` does not land in it
 
-### Requirement: A new agent chooses its directory before its harness
-Starting a new agent SHALL first ask for the directory it runs in, then for
-its harness. The directory SHALL be chosen from the directories that exist,
-narrowed as a segment is typed, as the new-space prompt did. Cancelling
-either step SHALL start nothing.
+### Requirement: A new agent is one question with its harness in a field
+Starting a new agent SHALL ask for the directory it runs in, chosen from
+the directories that exist and narrowed as a segment is typed, with its
+harness in a field beside them, prefilled with the harness the last agent
+was started with and moved with `Tab` and `Shift+Tab`. Enter SHALL start
+the agent in the directory chosen with the harness in the field. With no
+harness set up, Enter SHALL lead to setting one up. Dismissing SHALL start
+nothing.
+
+#### Scenario: The common case is one key
+- **WHEN** the operator starts a new agent, the last one ran Claude Code, and confirms the directory offered
+- **THEN** the agent starts there with Claude Code, and nothing else is asked
+
+#### Scenario: Another harness
+- **WHEN** the operator presses `Tab` before confirming
+- **THEN** the field moves to the next harness set up, and the agent starts with it
 
 #### Scenario: Another project in the same space
 - **WHEN** the operator starts a new agent and picks a directory of another project
 - **THEN** the agent is placed by that project's worktree policy and opens in the space the operator is in
 
-#### Scenario: Cancelling the directory step
-- **WHEN** the operator dismisses the directory step
+#### Scenario: Dismissed
+- **WHEN** the operator dismisses the popup
 - **THEN** no agent is placed and no tab opens
 
 ### Requirement: A new agent is chosen beside the `new` it was asked from
-Both steps of a new agent SHALL be drawn in one popover anchored beside the
-`new` of the space it was asked from, floating over the pane: first the
-directories, then, in the same popover and at the same place, the
-harnesses. Nothing in the sidebar SHALL move while it is open. Dismissing
-either step SHALL close it.
+The popup SHALL be anchored beside the `new` of the space it was asked
+from, floating over the pane, and nothing in the sidebar SHALL move while
+it is open. Its listing SHALL keep the height it opened with, up to nine
+rows, scrolling inside it. Its foot SHALL say what Enter does: where the
+agent starts and with which harness.
 
-#### Scenario: The steps open beside `new`
+#### Scenario: The popup opens beside `new`
 - **WHEN** the operator presses `new` on a space
-- **THEN** the directory step opens beside that `new`, over the pane, and every row of the sidebar stays where it was
+- **THEN** the popup opens beside that `new`, over the pane, and every row of the sidebar stays where it was
 
-#### Scenario: The harness step takes the same place
-- **WHEN** the operator confirms a directory
-- **THEN** the harnesses are drawn in the same popover, at the same place
+#### Scenario: The foot says what Enter does
+- **WHEN** the popup is on `~/uze` with Claude Code in the field
+- **THEN** its foot reads `new in ~/uze with Claude Code`
 
-#### Scenario: Dismissed
-- **WHEN** the operator presses Esc in either step
-- **THEN** the popover closes and no agent is placed
+### Requirement: The directory listing says what it knows
+A row of the listing SHALL say, against its end, when its directory is a
+project the space's agents work in, with the branch its checkout is on
+when known, and otherwise when it is a Git repository.
 
-### Requirement: The new-agent popup names its steps
-The popup's first row SHALL name its two steps, directory then harness,
-with the step it is on lit. On the harness step the directory chosen SHALL
-stand in for the first step's name, and a click on it, or `Backspace`,
-SHALL go back to the directory step on that directory.
+#### Scenario: A project of the space
+- **WHEN** the space's agents work in `uze`, checked out on `main`
+- **THEN** the `uze` row reads `space · main`
 
-#### Scenario: The steps are named
-- **WHEN** the directory step is open
-- **THEN** its first row reads `directory › harness`, `directory` lit
+#### Scenario: A repository elsewhere
+- **WHEN** `scribble` is a Git repository no agent of the space works in
+- **THEN** its row reads `git`
 
-#### Scenario: Going back
-- **WHEN** the operator chose `engine` and, on the harness step, clicks `engine`
-- **THEN** the directory step is open again, on `engine`
-
-### Requirement: The new-agent popover keeps its size
-The popover SHALL be as tall as the directory step's listing up to ten
-rows and SHALL keep its size through both steps, however many directories
-or harnesses there are. What does not fit SHALL scroll inside it.
-
-#### Scenario: A directory with many entries
-- **WHEN** the directory step lists forty directories
-- **THEN** the popover is ten rows tall and scrolls inside them
-
-#### Scenario: From one step to the other
-- **WHEN** the operator confirms a directory and three harnesses are offered
-- **THEN** the harness step keeps the size the directory step had
-
-### Requirement: The directory step offers where the space is working
-The directory step SHALL be prefilled with the project of the agent whose
+### Requirement: The new agent's popup offers where the space is working
+The popup SHALL be prefilled with the project of the agent whose
 context is in front; with a shell of the space in front, with the project
 of the space's most recently started agent; and otherwise with the
 operator's home directory. Confirming the prefill SHALL cost one key.
@@ -97,11 +90,11 @@ operator's home directory. Confirming the prefill SHALL cost one key.
 
 #### Scenario: A shell of the space in front
 - **WHEN** a shell of the space is in front, wherever it stands, and the space's last agent was started in `landing`
-- **THEN** the directory step is prefilled with `landing`
+- **THEN** the popup is prefilled with `landing`
 
 #### Scenario: A space with nothing but its first shell
 - **WHEN** the operator starts the first agent of a space whose only tab is a shell in their home directory
-- **THEN** the directory step is prefilled with the home directory
+- **THEN** the popup is prefilled with the home directory
 
 ### Requirement: An agent opens in the space it was started from
 A new agent SHALL open in the space whose `new` was pressed, whatever

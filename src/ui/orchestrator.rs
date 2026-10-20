@@ -554,6 +554,7 @@ pub(crate) fn attach_workspace(
         timeline_collapsed: layout.workspace.timeline_collapsed,
         timeline_rows: layout.workspace.timeline_rows,
         collapsed_spaces: layout.workspace.collapsed_spaces.clone(),
+        last_harness: layout.workspace.last_harness.clone(),
         prompt_recorder: Some(prompt_recorder),
         layout_recorder: Some(layout_recorder),
         management_layout: layout.management.clone(),
@@ -861,9 +862,6 @@ pub(super) enum WorkspaceHit {
     /// title, its border — which a click on keeps open and answers
     /// nothing.
     NewAgentBody,
-    /// The directory chosen for a new agent, on its harness step: goes back
-    /// to choosing it.
-    NewAgentBack,
     /// A toast's offer to read a machine fact an agent proposed.
     ReviewProposal,
     /// One of the answers to that question.
@@ -1779,6 +1777,9 @@ struct WorkspaceModel {
     /// operator has to make again on every launch is not remembered at
     /// all.
     collapsed_spaces: BTreeSet<u64>,
+    /// The harness the last agent was started with: the one the new
+    /// agent's popup offers first, kept in the layout for the next run.
+    last_harness: Option<String>,
     /// The project each directory an agent stood in belongs to, resolved
     /// once: what [`WorkspaceModel::space_projects`] is read from.
     projects: BTreeMap<PathBuf, PathBuf>,
@@ -2541,6 +2542,7 @@ impl WorkspaceModel {
                 timeline_collapsed: self.timeline_collapsed,
                 timeline_rows: self.timeline_rows,
                 collapsed_spaces: self.collapsed_spaces.clone(),
+                last_harness: self.last_harness.clone(),
             },
             first_steps: uze_application::FirstStepsLayout {
                 collapsed: self.first_steps_collapsed,

@@ -203,6 +203,9 @@ impl Attach<'_> {
                         }
                         self.confirm_directory();
                     }
+                    // The harness field's arrows and the foot's hints are
+                    // their keys, in the popup's own scope.
+                    Some(WorkspaceHit::HintAction(action)) => self.directory_step_action(action),
                     Some(WorkspaceHit::NewAgentBody) => {}
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
@@ -231,7 +234,6 @@ impl Attach<'_> {
                         self.model.agent_picker = None;
                         self.open_manage_at(Route::Harnesses);
                     }
-                    Some(WorkspaceHit::NewAgentBack) => self.back_to_directories(),
                     Some(WorkspaceHit::NewAgentBody) => {}
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
@@ -854,9 +856,15 @@ impl Attach<'_> {
         match mouse {
             _ if self.model.directory_step.is_some() => {
                 // The highlight follows the pointer, the same way the
-                // agent picker and the sidebar context menu already do.
-                if let Some(WorkspaceHit::PickDirectory(index)) =
-                    hit_at(&self.model, mouse.column, mouse.row)
+                // agent picker and the sidebar context menu already do, and
+                // the popup's controls light under it.
+                let hit = hit_at(&self.model, mouse.column, mouse.row);
+                let control = hit.filter(|hit| matches!(hit, WorkspaceHit::HintAction(_)));
+                if self.model.hovered != control {
+                    self.model.hovered = control;
+                    self.model.dirty = true;
+                }
+                if let Some(WorkspaceHit::PickDirectory(index)) = hit
                     && let Some(picker) = self
                         .model
                         .directory_step
@@ -878,13 +886,6 @@ impl Attach<'_> {
                     && picker.selected != index
                 {
                     picker.selected = index;
-                    self.model.dirty = true;
-                }
-                // The way back to the directory lights under the pointer,
-                // as every other control does.
-                let back = hit.filter(|hit| *hit == WorkspaceHit::NewAgentBack);
-                if self.model.hovered != back {
-                    self.model.hovered = back;
                     self.model.dirty = true;
                 }
             }
@@ -1429,7 +1430,6 @@ impl Attach<'_> {
             | WorkspaceHit::InterruptAnswer(_)
             | WorkspaceHit::InterruptBody
             | WorkspaceHit::NewAgentBody
-            | WorkspaceHit::NewAgentBack
             | WorkspaceHit::OverviewAnswer(_)
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}
@@ -1511,7 +1511,7 @@ impl Attach<'_> {
                 // over from (see `WorkspaceModel::landing_space`), and that
                 // row is closed once it is open.
                 if let Some(resume) = resume {
-                    self.offer_agents(hit_rect, None, AgentLaunch::Resume(resume));
+                    self.offer_agents(hit_rect, resume);
                 }
             }
             WorkspaceHit::OpenStatusCatalog(anchor) => {

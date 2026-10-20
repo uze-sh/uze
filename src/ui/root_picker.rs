@@ -25,7 +25,16 @@ use std::path::{Path, PathBuf};
 pub(super) struct Candidate {
     pub(super) name: String,
     pub(super) path: PathBuf,
+    /// Whether it is a Git repository, once asked: only for the rows a
+    /// listing leads with, since asking stats a file and a listing of a
+    /// large directory on a slow mount would stall typing.
+    pub(super) repository: Option<bool>,
 }
+
+/// How many of the matches a listing leads with are asked whether they are
+/// a repository — more than the popup shows, fewer than a large directory
+/// holds.
+const REPOSITORIES_ASKED: usize = 32;
 
 /// Open state of the new agent's directory prompt; `None` on the model when
 /// closed. Holds its own listing so a keystroke only re-reads the
@@ -105,8 +114,14 @@ impl RootPicker {
         &self.input
     }
 
+    /// Where what is typed starts from.
+    pub(super) fn origin(&self) -> &Path {
+        &self.origin
+    }
+
     /// The directory being listed, which is also what `Enter` takes while
     /// nothing has been chosen in it.
+    #[cfg(test)]
     pub(super) fn base(&self) -> &Path {
         &self.base
     }
@@ -301,6 +316,12 @@ impl RootPicker {
             }
         }
         leading.append(&mut inner);
+        for index in leading.iter().take(REPOSITORIES_ASKED) {
+            let candidate = &mut self.listing[*index];
+            if candidate.repository.is_none() {
+                candidate.repository = Some(candidate.path.join(".git").exists());
+            }
+        }
         self.matched = leading;
         self.selected = 0;
         // Typing is choosing: the best match leads the list, and it is the
@@ -343,6 +364,7 @@ fn read_directories(directory: &Path) -> Vec<Candidate> {
         .map(|entry| Candidate {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry.path(),
+            repository: None,
         })
         .collect();
     candidates.sort_by_key(|candidate| candidate.name.to_lowercase());
