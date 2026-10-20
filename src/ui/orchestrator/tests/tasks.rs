@@ -427,7 +427,7 @@ fn an_evaluation_is_released_under_the_key_it_reserved() {
 fn a_space_works_where_its_agents_stand() {
     let scratch = uze_testkit::temp::scratch("orchestrator-space-works-in");
     let project = scratch.join("demo");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let model = agent_session_in(&project.to_string_lossy());
     let space = model.session.as_ref().unwrap().workspace.spaces[0].id;
 
@@ -446,7 +446,7 @@ fn a_space_works_where_its_agents_stand() {
 fn neither_a_shell_nor_an_agent_above_the_project_makes_the_space_work_in_it() {
     let scratch = uze_testkit::temp::scratch("orchestrator-space-above");
     let project = scratch.join("home").join("demo");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
 
     let shells = model_of(session(&project));
     assert_eq!(

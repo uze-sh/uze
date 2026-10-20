@@ -62,7 +62,7 @@ impl Fixture {
             project_root: base.join("project"),
             marketplace_root: base.join("market"),
         };
-        fs::create_dir_all(fixture.project_root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&fixture.project_root);
         write_marketplace(&fixture.marketplace_root, "test-market", "flow");
         fixture
     }
@@ -514,7 +514,7 @@ fn a_plugin_from_a_git_marketplace_is_pinned_to_a_commit_and_a_digest() {
 
     let base = uze_testkit::temp::scratch("git-market-pin-base");
     let (home, project) = (base.join("home"), base.join("project"));
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     uze_core::state::marketplace_add(
         &UzeHome::at(&home),
         "git-market",
@@ -554,7 +554,7 @@ fn reproduction_reads_the_locked_commit_after_the_marketplace_moved() {
 
     let base = uze_testkit::temp::scratch("git-market-moved-base");
     let (home, project) = (base.join("home"), base.join("project"));
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     uze_core::state::marketplace_add(
         &UzeHome::at(&home),
         "git-market",
@@ -598,7 +598,7 @@ fn reproduction_refuses_bytes_that_are_not_the_bytes_the_lock_pinned() {
 
     let base = uze_testkit::temp::scratch("git-market-tampered-base");
     let (home, project) = (base.join("home"), base.join("project"));
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     uze_core::state::marketplace_add(
         &UzeHome::at(&home),
         "git-market",
@@ -654,7 +654,7 @@ impl MovedMarket {
         let locked_commit = write_git_marketplace(&market, "# first\n");
         let base = uze_testkit::temp::scratch(&format!("{label}-base"));
         let (home, project) = (base.join("home"), base.join("project"));
-        fs::create_dir_all(project.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&project);
         uze_core::state::marketplace_add(
             &UzeHome::at(&home),
             "git-market",

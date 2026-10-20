@@ -427,7 +427,7 @@ fn find_folds_accents_and_ranks_a_name_over_a_body() {
 #[test]
 fn show_follows_links_both_ways_however_they_are_spelled() {
     let (home, project) = world("app-memory-links");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let claude_dir = project.parent().unwrap().join("claude-memory");
     std::fs::create_dir_all(&claude_dir).unwrap();
     let stemmed = claude_dir.join("feedback_reply_in_ptbr.md");
@@ -512,7 +512,7 @@ fn show_follows_links_both_ways_however_they_are_spelled() {
 #[test]
 fn a_link_two_facts_answer_loosely_is_left_unresolved() {
     let (home, project) = world("app-memory-links-ambiguous");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     remember_body(
         &home,
         &project,
@@ -548,7 +548,7 @@ fn a_link_two_facts_answer_loosely_is_left_unresolved() {
 /// `target/`.
 fn citing_world(label: &str) -> (UzeHome, PathBuf) {
     let (home, project) = world(label);
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     std::fs::create_dir_all(project.join("crates/a/src")).unwrap();
     std::fs::create_dir_all(project.join("target/debug")).unwrap();
     std::fs::write(project.join("crates/a/src/kept.rs"), "").unwrap();
@@ -700,7 +700,7 @@ fn citations_are_judged_in_rank_order_up_to_the_cap() {
 #[test]
 fn a_new_name_saying_what_another_fact_says_is_written_and_named() {
     let (home, project) = world("app-memory-similar");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let app = app(&home, Vec::new());
     let write = |name: &str, description: &str| {
         app.memory()
@@ -740,7 +740,7 @@ fn a_new_name_saying_what_another_fact_says_is_written_and_named() {
 #[test]
 fn a_near_duplicate_is_only_a_fact_the_same_write_could_have_updated() {
     let (home, project) = world("app-memory-similar-scope");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let mut claude_kept = kept("answer-in-portuguese", "claude-code");
     claude_kept.description = "Answer the operator in Brazilian Portuguese".into();
     let claude: Box<dyn IntegrationPort> = Box::new(Harness {
@@ -823,7 +823,7 @@ fn a_linked_fact_citing_what_the_checkout_lacks_carries_its_mark() {
 #[test]
 fn a_proposal_and_an_applied_fact_are_never_offered_for_each_other() {
     let (home, project) = world("app-memory-similar-proposal");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let app = app(&home, Vec::new());
     let description = "Reply to the operator in Brazilian Portuguese always";
     let agent = MemoryCaller::Agent(uze_workspace::conversation::Claim {

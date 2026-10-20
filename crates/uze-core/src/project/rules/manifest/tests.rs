@@ -5,7 +5,7 @@ const FOLDER: &str = ".agents/rules/acme@corp";
 
 fn checkout(label: &str, manifest: Option<&str>) -> PathBuf {
     let root = uze_testkit::temp::scratch(label);
-    fs::create_dir_all(root.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&root);
     if let Some(text) = manifest {
         fs::create_dir_all(root.join(".agents")).unwrap();
         fs::write(root.join(MANIFEST_FILE), text).unwrap();

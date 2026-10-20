@@ -33,7 +33,7 @@ fn status_reports_healthy_with_zero_issues() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
@@ -49,7 +49,7 @@ fn status_names_a_region_an_earlier_release_left_as_owing_install() {
     let root = temp("status-retired-region");
     let application = app(&root, true);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     left_by_an_earlier_release(&project);
 
     let status = application.health().status(&project).unwrap();
@@ -68,7 +68,7 @@ fn the_space_overview_agrees_with_status() {
     let installed = application.plugins().list().unwrap().remove(0);
     let (name, market) = installed.id.split_once('@').expect("a qualified id");
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
     fs::write(
@@ -277,7 +277,7 @@ fn context_inspect_never_writes_anything_in_a_populated_project() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     left_by_an_earlier_release(&project);
 
@@ -301,7 +301,7 @@ fn context_plan_never_writes_anything() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     left_by_an_earlier_release(&project);
 
@@ -324,7 +324,7 @@ fn a_project_with_only_claude_md_is_vendor_locked() {
     let root = temp("claude-only");
     let application = app(&root, true);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("CLAUDE.md"), "# My Claude-only instructions\n").unwrap();
 
@@ -347,7 +347,7 @@ fn agents_md_alone_is_portable_and_claude_reads_it_with_no_bridge() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
@@ -366,7 +366,7 @@ fn an_absent_bridge_harness_shows_not_detected_not_a_gap() {
     let application = app(&root, false); // Claude Code absent
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
 
@@ -387,7 +387,7 @@ fn scenario_a_manual_claude_md_survives_untouched() {
     let root = temp("scenario-a");
     let application = app(&root, true);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(
         project.join("CLAUDE.md"),
@@ -416,7 +416,7 @@ fn scenario_c_unrecognized_vendor_file_survives_untouched() {
     let root = temp("scenario-c");
     let application = app(&root, true);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(
         project.join("VENDOR-NOTES.md"),
@@ -436,7 +436,7 @@ fn scenario_d_manual_agents_md_with_no_packages_is_left_alone() {
     let root = temp("scenario-d");
     let application = app(&root, false);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     fs::write(project.join("AGENTS.md"), "My own project conventions.\n").unwrap();
 
     let before = fs::read(project.join("AGENTS.md")).unwrap();
@@ -464,7 +464,7 @@ fn scenario_e_a_declared_plugins_agents_md_never_reaches_the_project() {
     let application = app(&root, false);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(
         project.join("AGENTS.md"),
@@ -487,7 +487,7 @@ fn scenario_f_manual_claude_md_gets_no_bridge() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(
         project.join("CLAUDE.md"),
@@ -512,7 +512,7 @@ fn all_recognized_files_together_are_fully_portable() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
     fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
     fs::write(project.join("CLAUDE.md"), "## My Claude workflow notes\n").unwrap();
@@ -547,7 +547,7 @@ fn context_operations_never_alter_the_installed_package_set() {
     let application = app(&root, true);
     install(&application, fixture_a());
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     declare_fixtures(&project);
 
     let before = application.plugins().list().unwrap();

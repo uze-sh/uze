@@ -366,7 +366,7 @@ fn overview_install_intent_reaches_install_project_environment() {
     let home = base.join("home");
     let project = base.join("project");
     let market = base.join("market");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     std::fs::create_dir_all(market.join("flow/skills/uze-test")).unwrap();
     std::fs::write(
         market.join("marketplace.json"),

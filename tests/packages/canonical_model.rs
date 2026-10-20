@@ -177,7 +177,7 @@ fn status_context_inspect_and_context_plan_produce_valid_json() {
         )
         .unwrap();
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
 
     let status = application.health().status(&project).unwrap();
     let status_json = serde_json::to_value(&status).unwrap();
@@ -201,7 +201,7 @@ fn installing_and_reconciling_never_touch_the_operators_agents_md() {
     let root = temp("agents-md-untouched");
     let application = app(&root);
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     uze_testkit::project::declare(&project, &["uze-instructions-fixture-a@local"]);
     let agents_md = project.join("AGENTS.md");
     fs::write(&agents_md, "# Mine\n\nWrite tests first.\n").unwrap();

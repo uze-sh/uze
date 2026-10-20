@@ -419,7 +419,7 @@ fn every_directory_is_offered_because_the_space_asks_nothing_of_the_tree() {
 fn a_subdirectory_of_a_repository_is_a_space_where_it_stands() {
     let root = TempDir::new("root-picker-subdirectory");
     let repository = root.join("project");
-    std::fs::create_dir_all(repository.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&repository);
     std::fs::create_dir_all(repository.join("docs")).unwrap();
     let mut picker = RootPicker::opened_in(&repository.display().to_string(), None);
 

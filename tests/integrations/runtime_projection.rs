@@ -22,7 +22,7 @@ use uze_testkit::temp::TestEnvironment;
 /// A project carrying portable context, which is the only condition that
 /// makes an integration project at all.
 fn project_at(root: &Path) -> PathBuf {
-    fs::create_dir_all(root.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(root);
     fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
     fs::write(root.join(".agents/skills/demo/SKILL.md"), "canary\n").unwrap();
     fs::write(root.join("AGENTS.md"), "project instructions\n").unwrap();

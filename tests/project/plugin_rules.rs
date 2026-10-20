@@ -73,7 +73,7 @@ impl World {
 
     fn project(&self, name: &str) -> PathBuf {
         let root = self.base.join(name);
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         root
     }
 

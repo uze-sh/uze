@@ -1957,7 +1957,7 @@ fn a_project_install_one_harness_refuses_fails_and_names_it() {
         &[(name.clone(), package)],
     );
     let project = home.join("project");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     std::fs::write(
         project.join("agents.yaml"),
         format!(

@@ -354,7 +354,8 @@ impl RootPicker {
         for index in leading.iter().take(REPOSITORIES_ASKED) {
             let candidate = &mut self.listing[*index];
             if candidate.repository.is_none() {
-                candidate.repository = Some(candidate.path.join(".git").exists());
+                let marker = candidate.path.join(".git");
+                candidate.repository = Some(marker.is_file() || marker.join("HEAD").is_file());
             }
         }
         self.matched = leading;

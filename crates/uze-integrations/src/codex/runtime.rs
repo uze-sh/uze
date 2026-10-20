@@ -199,7 +199,7 @@ mod tests {
 
     fn project_with_agents(root: &std::path::Path) -> std::path::PathBuf {
         let project = root.join("project");
-        fs::create_dir_all(project.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&project);
         fs::create_dir_all(project.join(".agents/agents/checks")).unwrap();
         fs::write(
             project.join(".agents/agents/reviewer.md"),
@@ -257,7 +257,7 @@ mod tests {
     fn a_project_without_agents_is_left_alone() {
         let root = uze_testkit::temp::scratch("codex-no-project-agents");
         let project = root.join("project");
-        fs::create_dir_all(project.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&project);
         fs::create_dir_all(project.join(".agents/skills/demo")).unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let contribution = runtime_contribution(

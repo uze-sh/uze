@@ -142,7 +142,7 @@ mod workspace_root_tests {
         let repository = uze_testkit::temp::scratch("workspace-repository");
         let nested = repository.join("crates").join("inner");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::create_dir_all(repository.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&repository);
 
         assert_eq!(
             anchor_root_or_self(&nested),
@@ -152,6 +152,20 @@ mod workspace_root_tests {
             anchor_root_or_self(&nested),
             anchor_root_or_self(&repository)
         );
+    }
+
+    /// A `.git` directory with no `HEAD` is no repository to Git, and none
+    /// here: a stray one left in a home directory made every directory
+    /// under home resolve to home.
+    #[test]
+    fn a_stray_git_directory_above_does_not_claim_a_directory() {
+        let home = uze_testkit::temp::scratch("workspace-stray-git");
+        let audit = home.join("audit");
+        std::fs::create_dir_all(&audit).unwrap();
+        std::fs::create_dir_all(home.join(".git")).unwrap();
+        std::fs::write(home.join(".git/config.worktree"), "").unwrap();
+
+        assert_eq!(anchor_root_or_self(&audit), audit.canonical().unwrap());
     }
 
     #[test]

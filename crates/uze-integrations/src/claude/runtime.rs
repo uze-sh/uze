@@ -244,7 +244,7 @@ mod runtime_projection_tests {
         // the first `.git` it finds walking up, so the test's outcome can
         // never depend on what else happens to live above the shared temp
         // dir (e.g. a stray `AGENTS.md` in `/tmp` from unrelated tooling).
-        std::fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {
             cwd: &root,
@@ -500,7 +500,7 @@ mod runtime_projection_tests {
         // A `.git` boundary pins the resolved project root to `project`
         // itself, so nothing above the shared temp directory can change
         // what this test resolves.
-        std::fs::create_dir_all(project.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&project);
         std::fs::write(project.join("AGENTS.md"), "canary\n").unwrap();
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {

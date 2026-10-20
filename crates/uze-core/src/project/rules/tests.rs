@@ -9,7 +9,7 @@ fn rule(text: &str) -> std::result::Result<Rule, NotARule> {
 
 fn checkout(label: &str, rules: &[(&str, &str)]) -> PathBuf {
     let root = uze_testkit::temp::scratch(label);
-    fs::create_dir_all(root.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&root);
     if !rules.is_empty() {
         fs::create_dir_all(root.join(RULES_DIR)).unwrap();
     }
@@ -306,7 +306,7 @@ fn a_control_character_is_outside_the_dialect() {
 fn staged(case: &uze_testkit::fixtures::RulesManifestCase) -> PathBuf {
     let scratch = uze_testkit::temp::scratch(&format!("rules-manifest-{}", case.name));
     let root = scratch.canonical().unwrap();
-    fs::create_dir_all(root.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&root);
     case.stage(&root);
     root
 }

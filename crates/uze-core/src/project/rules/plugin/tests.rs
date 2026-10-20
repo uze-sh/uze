@@ -13,7 +13,7 @@ fn rule(name: &str, text: &str) -> ShippedRule {
 
 fn checkout(label: &str) -> PathBuf {
     let root = uze_testkit::temp::scratch(label);
-    fs::create_dir_all(root.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&root);
     root
 }
 

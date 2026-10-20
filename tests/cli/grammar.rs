@@ -552,7 +552,7 @@ fn a_package_install_outside_a_project_reports_the_machine_scope() {
 #[test]
 fn install_m_without_a_package_is_refused_and_touches_no_project_file() {
     let home = temporary_home("install-m-no-package");
-    std::fs::create_dir_all(home.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&home);
 
     let output = uze(&home).args(["install", "-m"]).output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -574,7 +574,7 @@ fn install_m_without_a_package_is_refused_and_touches_no_project_file() {
 fn install_with_a_project_directory_converges_that_project() {
     let home = temporary_home("install-project-path");
     let project = home.join("project");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
 
     for (directory, argument) in [(&home, "project"), (&project, ".")] {
         let output = uze(directory).args(["install", argument]).output().unwrap();
@@ -623,7 +623,7 @@ fn a_removed_spelling_names_its_replacement_on_any_argv_it_prefixes() {
 #[test]
 fn status_m_inside_a_project_does_not_claim_there_is_none() {
     let home = temporary_home("status-m-in-project");
-    std::fs::create_dir_all(home.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&home);
 
     let output = uze(&home).args(["status", "-m"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

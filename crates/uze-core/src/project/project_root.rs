@@ -90,8 +90,14 @@ pub(crate) fn find_upward<T>(
     Ok((start, answer))
 }
 
+/// Whether `directory` is the top of a Git repository: its `.git` is the
+/// file a linked worktree has, or a directory holding a `HEAD`. A `.git`
+/// directory without one is no repository to Git either — a stray one left
+/// in a home directory otherwise made every directory under home part of
+/// a repository rooted there.
 pub(crate) fn is_repository_root(directory: &Path) -> bool {
-    directory.join(GIT_MARKER).exists()
+    let marker = directory.join(GIT_MARKER);
+    marker.is_file() || marker.join("HEAD").is_file()
 }
 
 #[cfg(test)]
@@ -133,7 +139,7 @@ mod tests {
         // cloned.
         let outer = uze_testkit::temp::scratch("git-boundary");
         let repo = outer.join("repo");
-        fs::create_dir_all(repo.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&repo);
         fs::write(outer.join(AGENTS_MD_FILE_NAME), "# not this one\n").unwrap();
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
@@ -150,7 +156,7 @@ mod tests {
         let root = uze_testkit::temp::scratch("agents-in-repo");
         let docs = root.join("docs");
         fs::create_dir_all(&docs).unwrap();
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         fs::write(docs.join(AGENTS_MD_FILE_NAME), "# not this one\n").unwrap();
         let resolved = resolve_project_root(&docs).unwrap();
         assert_eq!(resolved, Some(root.canonical().unwrap()));
@@ -180,7 +186,7 @@ mod tests {
         // directories, which the two tests above settle.
         let root = uze_testkit::temp::scratch("agents-vs-git");
         fs::create_dir_all(&root).unwrap();
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         fs::write(root.join(AGENTS_MD_FILE_NAME), "# hi\n").unwrap();
         let sub = root.join("sub");
         fs::create_dir_all(&sub).unwrap();
@@ -210,7 +216,7 @@ mod tests {
         );
 
         // Inside a repository the same file is the clone's, and adopted.
-        fs::create_dir_all(outer.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&outer);
         assert_eq!(
             resolve_project_root_trusting(&sub, foreign).unwrap(),
             Some(outer.join("shared").canonical().unwrap())
@@ -222,7 +228,7 @@ mod tests {
     fn a_repository_never_inherits_a_manifest_from_above_it() {
         let outer = uze_testkit::temp::scratch("git-boundary-manifest");
         let repo = outer.join("repo");
-        fs::create_dir_all(repo.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&repo);
         fs::write(outer.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();

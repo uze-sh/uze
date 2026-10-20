@@ -216,7 +216,7 @@ fn the_local_marketplace_is_the_project_itself() -> Result<()> {
     let root = scratch("authoring-local");
     // A project: its own repository is the marketplace's repository.
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     let (root, plugins) =
         scaffold_local_marketplace("tools", Some("Project tools"), &project, "plugins")?;
     assert!(root.join("marketplace.json").is_file());
@@ -248,7 +248,7 @@ fn the_local_marketplace_is_the_project_itself() -> Result<()> {
     // The renameable plugins directory: same manifest rule, other folder.
     let other = scratch("authoring-local-rename");
     let project_two = other.join("project");
-    fs::create_dir_all(project_two.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project_two);
     let (_, plugins) = scaffold_local_marketplace("tools", None, &project_two, "tools-plugins")?;
     assert_eq!(plugins, project_two.join("tools-plugins"));
     fs::remove_dir_all(other).expect("teardown");

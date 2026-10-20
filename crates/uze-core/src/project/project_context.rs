@@ -162,7 +162,7 @@ mod tests {
         // was absent, so a project delivering only Skills delivered
         // nothing and the UI reported the harness as "not supported".
         let root = uze_testkit::temp::scratch("agents-dir-only");
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         fs::create_dir_all(root.join(".agents/skills")).unwrap();
         let context = resolve(&root);
         assert!(context.agents_md.is_none());
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn a_git_repository_without_portable_context_has_none() {
         let root = uze_testkit::temp::scratch("bare-git");
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         let context = resolve(&root);
         assert_eq!(context.root, root.canonical().unwrap());
         assert!(!context.has_any());
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn a_subdirectory_of_a_repository_resolves_to_the_repository() {
         let root = uze_testkit::temp::scratch("repo-subdir");
-        fs::create_dir_all(root.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&root);
         fs::write(root.join(AGENTS_MD_FILE_NAME), "x\n").unwrap();
         fs::create_dir_all(root.join(".agents/skills")).unwrap();
         let nested = root.join("crates/deep/src");
@@ -225,10 +225,10 @@ mod tests {
         // otherwise the same vendored tree carries different instructions
         // depending on where it happens to be nested.
         let outer = uze_testkit::temp::scratch("nested-repo");
-        fs::create_dir_all(outer.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&outer);
         fs::write(outer.join(AGENTS_MD_FILE_NAME), "# outer\n").unwrap();
         let inner = outer.join("vendor");
-        fs::create_dir_all(inner.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&inner);
         let context = resolve(&inner);
         assert_eq!(context.root, inner.canonical().unwrap());
         assert!(context.agents_md.is_none());

@@ -444,7 +444,7 @@ mod tests {
         let root = uze_testkit::temp::scratch("retired-regions-where");
         let primary = root.join("repo");
         let slot = primary.join(".worktrees").join("ab12cd");
-        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        uze_testkit::git::mark_repository(&primary);
         std::fs::create_dir_all(&slot).unwrap();
         std::fs::write(slot.join(".git"), "gitdir: ../../.git/worktrees/ab12cd\n").unwrap();
         assert!(applies_at(&primary));

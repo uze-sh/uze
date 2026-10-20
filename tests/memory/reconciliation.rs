@@ -84,7 +84,7 @@ fn app(root: &Path, claude_present: bool) -> UzeApplication {
 /// A main working tree: `.git` is a directory.
 fn primary(root: &Path) -> PathBuf {
     let project = root.join("project");
-    fs::create_dir_all(project.join(".git")).unwrap();
+    uze_testkit::git::mark_repository(&project);
     project
 }
 

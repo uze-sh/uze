@@ -692,6 +692,9 @@ fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
 fn the_listing_marks_the_repositories() {
     let root = uze_testkit::temp::TempDir::new("popup-marks-root");
     std::fs::create_dir_all(root.join("engine/.git")).unwrap();
+    std::fs::write(root.join("engine/.git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    // A `.git` with no `HEAD` is no repository, to Git or to the listing.
+    std::fs::create_dir_all(root.join("stray/.git")).unwrap();
     std::fs::create_dir_all(root.join("notes")).unwrap();
     let mut model = agent_session_in("/repo");
     directory_step_over(&mut model, root.path(), &bare_home("popup-marks"));
@@ -709,6 +712,7 @@ fn the_listing_marks_the_repositories() {
     };
     assert!(row("engine").contains(" git "), "{rows:#?}");
     assert!(!row("notes").contains("git"), "{rows:#?}");
+    assert!(!row("stray").contains(" git"), "{rows:#?}");
 }
 
 /// The step opens with nothing typed: the directory it lists is the
