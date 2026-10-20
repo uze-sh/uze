@@ -107,3 +107,33 @@
 - decided:  `note_space_projects` stores the agent in front's directory alongside the space projects, on every session update; `focused_cwd` and the strip read it.
 - rejected: Storing the identities in the model.
 - blast:    `WorkspaceModel::agent_in_front`.
+
+## D12 — A space's caption stays under the minimized space in front
+
+- status:   pending
+- task:     2.7
+- commit:
+- trigger:  The spec captioned every space with its project, while the sidebar draws a caption only under the minimized space in front, a choice the operator made before this change: a path under every name is a second column to read past.
+- decided:  The spec now says what the sidebar does: the caption of the minimized space in front names its project or how many, and rows name their project in a space of several.
+- rejected: Drawing a caption under every open space, which reverses that choice.
+- blast:    The spec only.
+
+## D13 — An overview answer carries the project it was read for
+
+- status:   pending
+- task:     2.6
+- commit:
+- trigger:  D7 kept overviews keyed by space; one space now holds the overviews of several projects, each counting its reads from its own start, so an answer could land in another project's overview.
+- decided:  Every overview resolution (status, worktrees, fact, save, removal) carries its project, and is taken only by the overview of that space and that project.
+- rejected: One read counter shared across overviews, which would hide the mismatch rather than name it.
+- blast:    The resolution types in `space_overview.rs`, `worktree_removal.rs` and `reads.rs`.
+
+## D14 — A tab asked in another space does not move the client
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  `CreateTab` naming a space moved the asking client into it, so an agent placed after the operator moved on pulled them back.
+- decided:  The tab is put in front in its own space; the client is moved only when that is the space it is looking at.
+- rejected: Leaving the jump, which takes the keyboard away mid-typing.
+- blast:    `CreateTab` handling in `runtime/server.rs`.
