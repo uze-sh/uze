@@ -101,10 +101,12 @@ on "cancel" must not save first.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.
 - A choice that rarely changes is a field prefilled with the last answer
-  (`harness ‹ Claude Code ›`, moved with `Tab`), never a step of its own:
+  (`harness ‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
-- A popover's foot names its keys and nothing else (`enter new · tab
-  harness`), with `esc close` alone against its end. What Enter acts on is already on screen, in the
+- A popover's foot names its keys and nothing else (`enter new · ←→
+  harness`), with `esc close` alone against its end.
+- `Tab` in a line typed into completes, as it does in a shell; it never
+  takes another job there. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.
 - A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end

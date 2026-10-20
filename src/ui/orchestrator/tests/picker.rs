@@ -595,11 +595,11 @@ fn the_popup_floats_beside_new_and_moves_nothing() {
 }
 
 /// The harness is a field beside the directories, not a step after them:
-/// it offers the one the last agent was started with, and `Tab` and
-/// `Shift+Tab` move it round the ones set up — as a click on either of its
-/// arrows does.
+/// it offers the one the last agent was started with, and `←` and `→`
+/// move it round the ones set up — as a click on either of its arrows
+/// does. `Tab` stays what it is in a line typed into: completion.
 #[test]
-fn the_harness_field_offers_the_last_one_and_tab_moves_it() {
+fn the_harness_field_offers_the_last_one_and_the_arrows_move_it() {
     let home = UzeHome::at(uze_testkit::temp::scratch("popup-harness-field"));
     set_up_every_harness(&home);
     let options = super::agent_options(&home);
@@ -626,6 +626,14 @@ fn the_harness_field_offers_the_last_one_and_tab_moves_it() {
     );
 
     let keymap = uze_keys::active();
+    assert_eq!(
+        keymap
+            .chord_for(uze_keys::Action::Expand, &[uze_keys::Scope::RootPicker])
+            .map(|chord| chord.to_string())
+            .as_deref(),
+        Some("tab"),
+        "tab completes the directory"
+    );
     let next = keymap
         .chord_for(uze_keys::Action::FocusNext, &[uze_keys::Scope::RootPicker])
         .expect("the harness moves from the keyboard");

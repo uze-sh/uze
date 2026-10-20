@@ -29,7 +29,8 @@ shell's directory SHALL NOT count, wherever it moved.
 Starting a new agent SHALL ask for the directory it runs in, chosen from
 the directories that exist and narrowed as a segment is typed, with its
 harness in a field beside them, prefilled with the harness the last agent
-was started with and moved with `Tab` and `Shift+Tab`. Enter SHALL start
+was started with and moved with `←` and `→`; `Tab` SHALL complete the
+highlighted directory. Enter SHALL start
 the agent in the directory chosen with the harness in the field. With no
 harness set up, Enter SHALL lead to setting one up. Dismissing SHALL start
 nothing.
@@ -39,7 +40,7 @@ nothing.
 - **THEN** the agent starts there with Claude Code, and nothing else is asked
 
 #### Scenario: Another harness
-- **WHEN** the operator presses `Tab` before confirming
+- **WHEN** the operator presses `→` before confirming
 - **THEN** the field moves to the next harness set up, and the agent starts with it
 
 #### Scenario: Another project in the same space
@@ -63,7 +64,7 @@ that does what the key does.
 
 #### Scenario: The foot names the keys
 - **WHEN** the popup is open with a harness set up
-- **THEN** its foot reads `enter new · tab harness`, with `esc close` against its end, and a click on `new` starts the agent
+- **THEN** its foot reads `enter new · ←→ harness`, with `esc close` against its end, and a click on `new` starts the agent
 
 ### Requirement: The directory listing says what it knows
 A row of the listing SHALL say, against its end, when its directory is a

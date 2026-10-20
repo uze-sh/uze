@@ -184,7 +184,7 @@ fn render_new_agent_foot(
     };
     let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
         .named(Action::Activate, enter)
-        .named(Action::FocusNext, "harness")
+        .run(Action::FocusPrevious, Action::FocusNext, "harness")
         .hovered(hovered);
     let close = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
         .named(Action::Dismiss, "close")

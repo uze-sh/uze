@@ -505,13 +505,13 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::ContextMenu, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "down", Action::SelectNext),
         bind(Scope::RootPicker, "up", Action::SelectPrevious),
-        // Right walks into the highlighted directory, so one several levels
-        // down is reached by narrowing rather than by typing.
-        bind(Scope::RootPicker, "right", Action::Expand),
-        // The harness the new agent runs, a field beside the directories:
-        // tab moves it on, shift+tab back.
-        bind(Scope::RootPicker, "tab", Action::FocusNext),
-        bind(Scope::RootPicker, "shift+tab", Action::FocusPrevious),
+        // Tab completes the highlighted directory, the way a shell does, so
+        // one several levels down is reached by narrowing.
+        bind(Scope::RootPicker, "tab", Action::Expand),
+        // The harness the new agent runs, a field between two arrows: the
+        // keys that walk sideways walk it.
+        bind(Scope::RootPicker, "left", Action::FocusPrevious),
+        bind(Scope::RootPicker, "right", Action::FocusNext),
         bind(Scope::RootPicker, "enter", Action::Activate),
         bind(Scope::RootPicker, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "backspace", Action::EraseBack),
