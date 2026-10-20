@@ -31,11 +31,9 @@ scenes:
       - click: "new"
         say: open the new-agent picker
         in: sidebar
-        expect: new agent
-      - click: " new agent "
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
         say: place a Claude agent
-        row_offset: 1
-        offset: 3
         expect: Claude Code v
         expect_timeout: 45
         pause: 2.0
@@ -89,11 +87,9 @@ scenes:
       - click: "new"
         say: place another agent
         in: sidebar
-        expect: new agent
-      - click: " new agent "
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
         say: another Claude agent
-        row_offset: 1
-        offset: 3
         expect: Claude Code v
         expect_timeout: 45
         pause: 2.0

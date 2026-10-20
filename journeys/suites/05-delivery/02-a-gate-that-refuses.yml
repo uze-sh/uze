@@ -33,6 +33,16 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
+      - click: "new"
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent
+        expect: Claude Code v
+        expect_timeout: 45
+        pause: 1.5
+      # A space works in no directory of its own: the project's commands
+      # are asked about once an agent works in it.
       - click: "Review"
         say: |
           the project's gate is a command from the repository, and nothing
@@ -43,16 +53,6 @@ scenes:
         occurrence: last
         expect: commands approved
         expect_timeout: 20
-      - click: "new"
-        in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: place an agent
-        row_offset: 1
-        offset: 3
-        expect: Claude Code v
-        expect_timeout: 45
-        pause: 1.5
       - shell: |
           set -e
           slot=$(ls -d {project}/.worktrees/*/ | head -1)

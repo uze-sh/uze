@@ -46,11 +46,10 @@ scenes:
       - click: "new"
         say: open the new-agent picker from the space's row
         in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: pick the first harness it offers
-        row_offset: 1
-        offset: 3
+        # Whichever harness the first run set up first is the one offered.
+        expect: 'harness '
+      - type: "{project}"
+        say: start it with the first harness it offers
         # The tab, not the header's `agent 1: preparing`: the tab opens
         # once the checkout exists, and the checks below read it.
         expect: 'agent 1(?!: preparing)'

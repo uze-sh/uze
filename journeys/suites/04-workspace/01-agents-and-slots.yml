@@ -40,13 +40,14 @@ scenes:
   - scene: the first agent gets a checkout, a branch and a task of its own
     when:
       - click: "new"
-        say: open the new-agent picker from the space's row
+        say: open the new-agent popup from the space's row
         in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: pick Claude Code
-        row_offset: 1
-        offset: 3
+        expect: 'harness .*Claude Code'
+      # A space with no agent offers no directory in particular: the
+      # project is typed, and Enter starts the agent there with the
+      # harness in the field, the first one set up on a fresh machine.
+      - type: "{project}"
+        say: choose the project, with Claude Code
         # UZE's own drawing, not the harness's banner. A gate says the
         # gesture landed; waiting on a *stand-in's* first line of stdout
         # makes the gate depend on something the journey does not drive,
@@ -79,13 +80,14 @@ scenes:
   - scene: a second agent, on a different harness, gets a second checkout
     when:
       - click: "new"
-        say: open the picker again
+        say: open the popup again
         in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: pick Codex
-        row_offset: 2
-        offset: 3
+        expect: 'harness .*Claude Code'
+      - key: "Right"
+        say: move the harness on from the one used last
+        expect: 'harness .*Codex'
+      - type: "{project}"
+        say: choose the project, with Codex
         # The tab, not the header's `agent 2: preparing`: the tab opens
         # once the checkout exists, and the checks below read it.
         expect: 'agent 2(?!: preparing)'
@@ -134,11 +136,12 @@ scenes:
     when:
       - click: "new"
         in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: pick OpenCode
-        row_offset: 3
-        offset: 3
+        expect: 'harness .*Codex'
+      - key: "Right"
+        say: move the harness on to OpenCode
+        expect: 'harness .*OpenCode'
+      - type: "{project}"
+        say: choose the project, with OpenCode
         # The tab, not the header's `agent 3: preparing`: the tab opens
         # once the checkout exists, and the checks below read it.
         expect: 'agent 3(?!: preparing)'
@@ -185,11 +188,12 @@ scenes:
     when:
       - click: "new"
         in: sidebar
-        expect: new agent
-      - click: " new agent "
-        say: pick Codex again
-        row_offset: 2
-        offset: 3
+        expect: 'harness .*OpenCode'
+      - key: "Left"
+        say: move the harness back to Codex
+        expect: 'harness .*Codex'
+      - type: "{project}"
+        say: choose the project, with Codex again
         # How many agents the tree holds, not the label: closing an agent
         # frees its *number* as well as its slot, so the one placed here is
         # `agent 3` again — a string the screen was showing a moment ago,

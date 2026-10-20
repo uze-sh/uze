@@ -1,18 +1,16 @@
-journey: a directory picked inside an agent's checkout opens the project, not the checkout
+journey: a directory picked inside an agent's checkout places the agent in its project, not in the checkout
 tags: [gate, tui, workspace]
 proves: web/content/docs/workspace/index.mdx
 about: |
-  A space is a project. An agent's checkout under `.worktrees/<id>` belongs
-  to the repository it was cut from, so picking it as a new space's root
-  answers with that repository. Answered literally, it once put a
-  `.worktrees/<id>` space in the sidebar beside the space whose agent was
-  working there.
+  A new agent is placed in the directory chosen for it. An agent's checkout
+  under `.worktrees/<id>` belongs to the repository it was cut from, so
+  choosing it places the new agent in that repository, by its worktree
+  policy, rather than in another agent's checkout.
 
-  UZE opens somewhere else, so the pick has a space to create rather than
-  one to land on: a second space appearing is what proves the gesture
-  landed, and its root is read off what UZE records, never off the sidebar.
-  The checkout is laid down by hand — the claim is about the pick, and
-  placing agents is proven elsewhere.
+  UZE opens in the home directory, so the project is reached by typing it.
+  Where the agent landed is read off what UZE records and the process
+  table, never off the sidebar. The checkout is laid down by hand: the
+  claim is about the choice, and placing agents is proven elsewhere.
 
 world:
   project: demo-app
@@ -41,42 +39,30 @@ scenes:
         count: 1
         about: the checkout exists to be picked
 
-  - scene: picking the checkout as a new space's root opens the project
+  - scene: choosing the checkout for a new agent places it in the project
     when:
-      - click: "+ space"
-        say: open the new-space prompt
+      - click: "new"
+        say: open the new-agent popup
         in: sidebar
-        expect: '▏'  # the prompt's own cursor, which nothing else draws
+        expect: 'harness .*Claude Code'
       - type: "{project}/.worktrees/t0pick"
         say: name the agent's checkout itself
-        clear: all
         submit: false
         pause: 0.5
       - key: "Enter"
-        say: pick it
-        expect: demo-app
-        expect_timeout: 20
-        pause: 2.0
+        say: start the agent there
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists, and the checks below read it.
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
     then:
-      - cmd:
-          run: |
-            {python} -c "
-            import json
-            spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
-            print('%d space(s)' % len(spaces))
-            print('\n'.join(space['root'] for space in spaces))
-            "
-          stdout_contains: "2 space(s)"
-        about: the pick opened a space beside the one uze started in
-      - cmd:
-          run: |
-            {python} -c "
-            import json, pathlib
-            spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
-            roots = [pathlib.Path(space['root']).as_posix() for space in spaces]
-            inside = [root for root in roots if '/.worktrees/' in root + '/']
-            project = [root for root in roots if root == '{project}']
-            print('rooted at the project' if project and not inside else 'inside: %s' % inside)
-            "
-          stdout_contains: "rooted at the project"
-        about: rooted at the repository the checkout was cut from, and never at the checkout
+      - tasks: { count: 1, states: [running] }
+        about: the agent is recorded under the project the checkout was cut from
+      - dir: "{project}/.worktrees/*"
+        count: 2
+        about: the agent took a checkout of its own beside the one picked
+      - process: { matching: claude, cwd: "/.worktrees/", alive: true }
+        about: the agent runs in a checkout of the project
+      - git: { in: "{project}/.worktrees/t0pick", dirty: false }
+        about: the checkout picked was left as it was

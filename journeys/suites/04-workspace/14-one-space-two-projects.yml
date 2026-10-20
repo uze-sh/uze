@@ -1,0 +1,100 @@
+journey: one space holds agents of two projects, and keeps them across a restart
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/index.mdx
+about: |
+  A space is a named group of agents bound to no directory. A new agent
+  chooses its own, so one space can hold an agent of the project uze opened
+  on beside an agent of another repository, and neither opens a space of
+  its own. A restart brings the group back as it was.
+
+  Every check reads the machine: the agents' processes and where they run,
+  and the workspace the terminal runtime records. Screen text is only the
+  gate that a gesture landed.
+
+world:
+  project: demo-app
+  manifest: |
+    workspace:
+      worktree: always
+      target: main
+      slots: 2
+
+scenes:
+  - scene: another repository beside the project
+    when:
+      - shell: |
+          set -e
+          mkdir -p {world}/projects/back
+          cd {world}/projects/back
+          git init --quiet --initial-branch main
+          git config user.email agent@uze.test
+          git config user.name uze
+          printf 'fn main() {}\n' > main.rs
+          git add -A
+          git commit -qm 'feat: the back end'
+        say: a second project, a sibling of the one uze opens on
+    then:
+      - dir: "{world}/projects/back/.git"
+        count: 1
+        about: the second repository exists
+
+  - scene: two agents of two projects stand in one space
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: an agent in the project uze opened on
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - click: "new"
+        say: open the popup again, in the same space
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{world}/projects/back"
+        say: an agent in the other repository
+        expect: 'agent 2(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+    then:
+      - process: { matching: claude, cwd: "/demo-app/.worktrees/", alive: true }
+        about: the first agent runs in a checkout of the project
+      - process: { matching: claude, cwd: "/projects/back", alive: true }
+        about: the second runs in the other repository
+      - cmd:
+          run: |
+            {python} -c "
+            import json
+            spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
+            print('%d space(s)' % len(spaces))
+            "
+          stdout_contains: "1 space(s)"
+        about: neither agent opened a space of its own
+
+  - scene: a restart brings both agents back into the one space
+    when:
+      - kill: "{uze}"
+        say: kill everything holding this workspace, the way a reboot does it
+      - open: ["{uze}", "workspace"]
+        say: open the workspace again, which restores what it held
+        expect: 'agent 2'
+        expect_timeout: 25
+        pause: 3.0
+    then:
+      - cmd:
+          run: |
+            {python} -c "
+            import json, pathlib
+            spaces = json.load(open('{uze_home}/state/terminal/workspace.json'))['spaces']
+            cwds = [pathlib.Path(tab['cwd']).as_posix() for space in spaces for tab in space['tabs']]
+            both = any('/demo-app/.worktrees/' in cwd for cwd in cwds) and any('/projects/back' in cwd for cwd in cwds)
+            print('%d space(s)' % len(spaces), 'both projects' if both else cwds)
+            "
+          stdout_contains: "1 space(s) both projects"
+        about: the one space still holds an agent of each project

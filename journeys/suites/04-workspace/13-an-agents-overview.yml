@@ -1,0 +1,85 @@
+journey: an agent's overview opens without a shell, and edits agents.yaml in place
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/space.mdx
+about: |
+  The overview is a surface of the client, not a program in a pane: opening
+  it over an agent starts nothing on the machine. Its Settings section is a
+  form over the `workspace:` section of `agents.yaml`, and a change made
+  there is written to the file as soon as it is made, with the comments the
+  file already had kept where they were.
+
+  Every check reads the machine: the shells the world is running, and the
+  file on disk. Screen text is only the gate that a gesture landed.
+
+world:
+  project: demo-app
+  manifest: |
+    # The team's settings, kept by hand.
+    workspace:
+      worktree: always # every agent in a checkout of its own
+      target: main
+      slots: 2
+
+scenes:
+  - scene: an agent works in the project
+    when:
+      - open: ["{uze}", "workspace"]
+        say: uze opens on the project
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: start an agent in the project, with Claude Code
+        # The tab, not the header's `agent 1: preparing`: the tab opens
+        # once the checkout exists.
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+    then:
+      - process: { matching: claude, cwd: "/.worktrees/", alive: true }
+        about: the agent is running in its own checkout
+      - capture: { name: shells, processes: { matching: "{shell}" } }
+        about: the shells the world holds before the overview opens
+
+  - scene: the overview opens over the agent and starts nothing
+    when:
+      - key: "M-o"
+        say: open the agent's overview
+        expect: Settings
+        expect_timeout: 10
+        pause: 1.0
+    then:
+      - process: { matching: "{shell}", same_as: shells }
+        about: opening the overview started no shell, nor anything else in a pane
+
+  - scene: a setting changed in the overview is written to agents.yaml, comments kept
+    when:
+      - key: "2"
+        say: show the Settings section
+        expect: Slots
+        pause: 0.5
+      - key: "Down"
+        say: move onto Slots
+        expect: Slots
+        pause: 0.3
+      - key: "+"
+        say: one more slot
+        # Written as soon as it is made: the key says so once the file
+        # holds it.
+        expect: saved
+        expect_timeout: 20
+        pause: 1.0
+    then:
+      - file: "{project}/agents.yaml"
+        contains: "slots: 3"
+        about: the change is in the file on disk
+      - file: "{project}/agents.yaml"
+        contains: "# The team's settings, kept by hand."
+        about: the comment above the section is kept
+      - file: "{project}/agents.yaml"
+        contains: "# every agent in a checkout of its own"
+        about: and the comment beside a key it did not touch

@@ -56,11 +56,9 @@ scenes:
       - click: "new"
         say: the product works — place an agent
         in: sidebar
-        expect: new agent
-      - click: " new agent "
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
         say: pick Claude Code
-        row_offset: 1
-        offset: 3
         # The tab, not the header's `agent 1: preparing`: the tab opens
         # once the checkout exists, and the checks below read it.
         expect: 'agent 1(?!: preparing)'
@@ -79,7 +77,7 @@ scenes:
             print('schema %d' % document['schema_version'])
             print('kind ' + str(any('kind' in space for space in document['spaces'])))
             "
-          stdout_contains: "schema 2"
+          stdout_contains: "schema 3"
         about: and the document on that name is now this build's own shape
       - cmd:
           run: |

@@ -38,11 +38,9 @@ scenes:
       - click: "new"
         say: open the new-agent picker
         in: sidebar
-        expect: new agent
-      - click: " new agent "
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
         say: pick Claude Code
-        row_offset: 1
-        offset: 3
         # UZE's own drawing, not the stand-in's banner: a gate on a
         # harness's first line of stdout is what timed this scene out on a
         # loaded runner. That the agent's process started is a `then:`.
@@ -109,11 +107,12 @@ scenes:
       - click: "new"
         say: open the picker again
         in: sidebar
-        expect: new agent
-      - click: " new agent "
+        expect: 'harness .*Claude Code'
+      - key: "Right"
+        say: move the harness to Codex
+        expect: 'harness .*Codex'
+      - type: "{project}"
         say: pick Codex
-        row_offset: 2
-        offset: 3
         # An item on the tree, not the label: the closed agent freed its
         # number, so this one is `agent 1` again — a string the screen was
         # showing a moment ago. The tree it left had no items at all, so the
