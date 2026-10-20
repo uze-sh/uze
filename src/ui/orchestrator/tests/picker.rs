@@ -1,57 +1,87 @@
-//! Starting agents and spaces: the agent picker, the new-space prompt and
-//! the directories it offers.
+//! Starting agents: the new agent's directory and harness steps, the
+//! popup both are drawn in, and the space a new agent opens in.
 
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    AgentView, RootPicker, WorkStateView, WorkspaceModel,
+    AgentView, DirectoryStep, PlacementResolution, RootPicker, WorkStateView, WorkspaceModel,
     render::{self, compute_layout},
 };
 use crate::ui::theme::{self, Token};
 use crossterm::event::MouseEventKind;
+use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::{Terminal, backend::TestBackend};
 use std::path::Path;
 use uze_core::UzeHome;
-use uze_terminal::ClientRequest;
+use uze_terminal::{ClientEvent, ClientRequest};
 
-/// The picker offers both kinds until the root's profile answers, and
-/// The prompt asks one question — where — and any directory can
-/// answer it. It used to ask for a kind as well, before the agent
-/// existed and before anyone knew what it was for.
+/// The directory step open over `directory`, for the space in front,
+/// anchored where a `new` would be.
+fn directory_step_over(model: &mut WorkspaceModel, directory: &Path) {
+    let picker = RootPicker::opened_in(&directory.display().to_string(), None);
+    let rows = render::new_agent_popup_rows(picker.match_count());
+    let space = model.session.as_ref().unwrap().selected_space().id;
+    model.directory_step = Some(DirectoryStep {
+        picker,
+        space,
+        anchor: Rect::new(20, 1, 3, 1),
+        rows,
+    });
+}
+
+/// The whole frame, as text and as cells.
+fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    let mut hits = Vec::new();
+    terminal
+        .draw(|frame| {
+            render::render(
+                frame,
+                model,
+                &identities_fixture(),
+                &mut hits,
+                &mut render::FrameMetrics::default(),
+            )
+        })
+        .unwrap();
+    model.hits = hits;
+    let buffer = terminal.backend().buffer().clone();
+    (buffer_rows(&buffer), buffer)
+}
+
+/// Enter on the directory step, as the keyboard sends it.
+fn confirm_the_directory(driven: &mut Driven<'_>) {
+    let enter = uze_keys::active()
+        .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::RootPicker])
+        .expect("the directory step is answered from the keyboard");
+    driven.press_key(key_event(enter));
+}
+
+/// The step asks one question — where — and any directory answers it.
 #[test]
-fn the_picker_asks_only_where() {
+fn the_directory_step_offers_any_directory() {
     let plain = uze_testkit::temp::TempDir::new("picker-one-question");
     std::fs::create_dir_all(plain.join("notes")).unwrap();
     let mut model = agent_session_in("/repo");
-    model.root_picker = Some(RootPicker::opened_in(
-        &plain.path().display().to_string(),
-        None,
-    ));
+    directory_step_over(&mut model, plain.path());
 
-    let Sidebar { rows, .. } = sidebar(&model, &identities_fixture());
-    assert!(
-        !rows.iter().any(|row| row.contains("worktree")),
-        "no kind to choose: {rows:#?}"
-    );
+    let (rows, _) = drawn(&mut model);
+    assert!(rows.iter().any(|row| row.contains("notes")), "{rows:#?}");
     assert_eq!(
-        model.root_picker.as_ref().map(RootPicker::match_count),
+        model
+            .directory_step
+            .as_ref()
+            .map(|step| step.picker.match_count()),
         Some(1),
-        "and a plain directory is offered like any other: {rows:#?}"
+        "a plain directory is offered like any other: {rows:#?}"
     );
 }
 
-/// A session whose one space is rooted at `root` — a real directory,
-/// so the picker and the client compare the same canonical path.
-fn session_rooted_at(root: &Path) -> WorkspaceModel {
-    model_of(session(root))
-}
-
-/// Creating a space is reachable from the keyboard, and the chord opens
-/// exactly what the pointer's `new` opens: the picker, listing where
-/// the selected space's neighbours are and standing on the space.
+/// A space is created by its name alone: the chord opens one, its shell
+/// at home, and puts it up for its name as soon as the session shows it.
 #[test]
-fn the_new_space_chord_opens_the_picker_the_pointer_opens() {
+fn the_new_space_chord_opens_a_space_and_asks_its_name() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-new-space-chord"));
     let mut driven = driven(agent_session_in("/repo"), &home);
     let chord = uze_keys::active()
@@ -60,38 +90,47 @@ fn the_new_space_chord_opens_the_picker_the_pointer_opens() {
 
     driven.press_key(key_event(chord));
 
-    let picker = driven
-        .attach
-        .model
-        .root_picker
-        .as_ref()
-        .expect("the picker opened");
-    // Where a project beside this one would be. Whether the space's
-    // own root is then marked is a question about real directories,
-    // and `root_picker`'s own tests answer it over a temp tree — this
-    // session's `/repo` is a name, not a directory.
-    assert_eq!(
-        picker.base(),
-        Path::new("/"),
-        "listing where a project beside this one would be"
+    let sent = driven.sent();
+    assert!(
+        sent.iter().any(|request| matches!(
+            request,
+            ClientRequest::CreateSpace { label: None, cwd, .. }
+                if Some(cwd.as_path()) == uze_platform::home::user_home().as_deref()
+        )),
+        "a space is asked for, its shell at home: {sent:?}"
+    );
+
+    let mut session = driven.attach.model.session.clone().unwrap();
+    let created = session
+        .create_space(None, "/home/someone".into(), 80, 24)
+        .space;
+    driven.attach.model.apply(
+        ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
     );
     assert!(
-        picker.input().is_empty(),
-        "with nothing typed for the operator"
+        matches!(
+            &driven.attach.model.renaming,
+            Some((super::RenameTarget::Space(space), buffer)) if *space == created && buffer.text().is_empty()
+        ),
+        "the new space is put up for its name, nothing typed for the operator"
     );
 }
 
-/// AltGr types into the picker: a Windows console reports it as
+/// AltGr types into the directory step: a Windows console reports it as
 /// Ctrl+Alt, and `/` is AltGr+Q on ABNT2, so a path typed there lost
 /// every separator.
 #[test]
-fn altgr_types_its_character_into_the_picker() {
+fn altgr_types_its_character_into_the_directory_step() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-altgr"));
     let mut driven = driven(agent_session_in("/repo"), &home);
     let chord = uze_keys::active()
-        .chord_for(uze_keys::Action::NewSpace, &[uze_keys::Scope::Workspace])
-        .expect("space creation is reachable from the keyboard");
+        .chord_for(
+            uze_keys::Action::NewAgent,
+            &[uze_keys::Scope::Global, uze_keys::Scope::Workspace],
+        )
+        .expect("a new agent is reachable from the keyboard");
     driven.press_key(key_event(chord));
 
     let alt_graph = KeyModifiers::CONTROL | KeyModifiers::ALT;
@@ -99,19 +138,20 @@ fn altgr_types_its_character_into_the_picker() {
     driven.press_key(KeyEvent::new(KeyCode::Char('/'), alt_graph));
     driven.press_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
 
-    let picker = driven
+    let step = driven
         .attach
         .model
-        .root_picker
+        .directory_step
         .as_ref()
-        .expect("the picker is still open");
-    assert_eq!(picker.input(), "g/e");
+        .expect("the step is still open");
+    assert_eq!(step.picker.input(), "g/e");
 }
 
-/// The key opens the same menu the space header's button does, in the
-/// same place — under the button, not wherever a keyboard gesture lands.
+/// The key opens the same step the space header's button does, in the
+/// same place — beside the button — listing where the agent in front's
+/// project sits, so another agent there is one Enter away.
 #[test]
-fn the_new_agent_key_opens_the_picker_under_its_button() {
+fn the_new_agent_key_opens_the_directory_step_beside_its_button() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-by-key"));
     let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
     driven.frame();
@@ -121,17 +161,23 @@ fn the_new_agent_key_opens_the_picker_under_its_button() {
             uze_keys::Action::NewAgent,
             &[uze_keys::Scope::Global, uze_keys::Scope::Workspace],
         )
-        .expect("the picker is reachable from the keyboard");
+        .expect("the step is reachable from the keyboard");
 
     driven.press_key(key_event(chord));
 
-    let picker = driven
+    let step = driven
         .attach
         .model
-        .agent_picker
+        .directory_step
         .as_ref()
-        .expect("the key opened the picker");
-    assert_eq!(picker.anchor, sparkle, "anchored under the ✦ button");
+        .expect("the key opened the directory step");
+    assert_eq!(step.anchor, sparkle, "anchored beside the `new` button");
+    assert_eq!(
+        step.picker.base(),
+        Path::new("/"),
+        "listing where the agent's project, `/repo`, sits"
+    );
+    assert!(step.picker.input().is_empty(), "with nothing typed");
 }
 
 /// Resuming from recent asks the same question as a new agent, and it
@@ -218,6 +264,7 @@ fn with_no_harness_set_up_the_agent_picker_leads_to_integrations() {
     driven.frame();
     let sparkle = driven.hit(|hit| *hit == WorkspaceHit::NewAgentMenu);
     driven.press(sparkle.x, sparkle.y);
+    confirm_the_directory(&mut driven);
     let picker = driven
         .attach
         .model
@@ -239,9 +286,9 @@ fn with_no_harness_set_up_the_agent_picker_leads_to_integrations() {
     assert_eq!(manage_route(&driven), crate::ui::model::Route::Harnesses);
 }
 
-/// With one harness set up the picker would be a single row to
-/// confirm, so asking for an agent starts it: the placement is asked
-/// for at once and no picker opens.
+/// With one harness set up the harness step would be a single row to
+/// confirm, so choosing the directory starts the agent: the placement is
+/// asked for at once and no harness is asked for.
 #[test]
 fn with_one_harness_set_up_a_new_agent_starts_without_a_picker() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-picker-single"));
@@ -255,6 +302,7 @@ fn with_one_harness_set_up_a_new_agent_starts_without_a_picker() {
     let sparkle = driven.hit(|hit| *hit == WorkspaceHit::NewAgentMenu);
 
     driven.press(sparkle.x, sparkle.y);
+    confirm_the_directory(&mut driven);
 
     assert!(
         driven.attach.model.agent_picker.is_none(),
@@ -316,39 +364,37 @@ fn the_new_agent_control_wears_the_current_agents_hue_on_hover() {
     );
 }
 
-/// The `new` prompt is a chooser, not a text field: the sidebar
-/// itself lists the directories the typed segment still matches, and
+/// The step lists the directories the typed segment still matches, and
 /// clicking one is the same choice Enter makes.
 #[test]
-fn the_new_space_prompt_lists_the_directories_it_matches() {
-    let root = uze_testkit::temp::TempDir::new("sidebar-root-picker");
+fn the_directory_step_lists_the_directories_it_matches() {
+    let root = uze_testkit::temp::TempDir::new("popup-directory-step");
     for directory in ["engine", "extensions", "docs"] {
         std::fs::create_dir_all(root.join(directory)).unwrap();
     }
     let mut model = agent_session_in("/repo");
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
-    ));
+    directory_step_over(&mut model, root.path());
 
-    let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
+    let (rows, _) = drawn(&mut model);
     assert!(
         rows.iter().any(|row| row.contains("engine"))
             && rows.iter().any(|row| row.contains("docs")),
         "the listing is on screen: {rows:?}"
     );
     assert!(
-        hits.iter()
-            .any(|(_, hit)| matches!(hit, WorkspaceHit::PickSpaceRoot(_))),
+        model
+            .hits
+            .iter()
+            .any(|(_, hit)| matches!(hit, WorkspaceHit::PickDirectory(_))),
         "every offered directory is clickable"
     );
 
-    if let Some(picker) = model.root_picker.as_mut() {
+    if let Some(step) = model.directory_step.as_mut() {
         for character in "ex".chars() {
-            picker.typed(character);
+            step.picker.typed(character);
         }
     }
-    let rows = sidebar(&model, &identities_fixture()).rows;
+    let (rows, _) = drawn(&mut model);
     assert!(
         rows.iter().any(|row| row.contains("extensions")),
         "what matches stays: {rows:?}"
@@ -359,268 +405,250 @@ fn the_new_space_prompt_lists_the_directories_it_matches() {
     );
 }
 
-/// The picker is a small table: what is being typed and the
-/// directories it matches, all in one column.
-/// A name the query is the head of says so in the query's own hue; one
-/// matched further in is left alone.
+/// What is being typed and the directories it matches stand in one
+/// column, and a name the query is the head of says so in the accent;
+/// one matched further in is left alone.
 #[test]
-fn the_picker_lines_its_rows_up_in_columns() {
-    let root = uze_testkit::temp::TempDir::new("sidebar-picker-grid");
+fn the_directory_step_lines_its_rows_up_in_one_column() {
+    let root = uze_testkit::temp::TempDir::new("popup-picker-grid");
     for directory in ["craude", "cortex", "scribble"] {
         std::fs::create_dir_all(root.join(directory)).unwrap();
     }
     let mut model = agent_session_in("/repo");
-    let mut picker = RootPicker::opened_in(&root.path().display().to_string(), None);
-    for character in "cr".chars() {
-        picker.typed(character);
+    directory_step_over(&mut model, root.path());
+    if let Some(step) = model.directory_step.as_mut() {
+        for character in "cr".chars() {
+            step.picker.typed(character);
+        }
     }
-    model.root_picker = Some(picker);
 
-    let Sidebar { rows, buffer, .. } = sidebar(&model, &identities_fixture());
+    let (rows, buffer) = drawn(&mut model);
     let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
     let prompt = rows
         .iter()
-        .position(|row| row.contains(&cursor))
+        .position(|row| row.contains(&format!("cr{cursor}")))
         .expect("the prompt is drawn");
     let column = |row: &str, text: &str| row[..row.find(text).unwrap()].chars().count();
-    // What is typed and the directories it matches, all in one column.
     let values = column(&rows[prompt], "cr");
-    for offset in 1..=2 {
-        let row = &rows[prompt + offset];
-        let name = row.trim_start();
-        assert_eq!(
-            column(row, name.split(' ').next().unwrap()),
-            values,
-            "every row answers in one column: {rows:?}"
-        );
-    }
-
-    // "craude" is what "cr" is the head of; "scribble" matched further in.
-    let head = |row: usize, at: u16| buffer[(values as u16 + at, row as u16)].fg;
-    assert_eq!(head(prompt + 1, 0), theme::color(Token::Accent), "{rows:?}");
+    assert_eq!(column(&rows[prompt + 1], "craude"), values, "{rows:?}");
+    assert_eq!(column(&rows[prompt + 2], "scribble"), values, "{rows:?}");
+    let head = |row: usize| buffer[(values as u16, row as u16)].fg;
+    assert_eq!(head(prompt + 1), theme::color(Token::Accent), "{rows:?}");
     assert_eq!(
-        head(prompt + 2, 0),
+        head(prompt + 2),
         theme::color(Token::TextInactive),
         "{rows:?}"
     );
 }
 
-/// A listing taller than the column is reached with the wheel too: it
+/// A listing taller than the popup is reached with the wheel too: it
 /// walks the directories the way the arrow keys do, and the window
 /// follows the one selected.
 #[test]
-fn the_wheel_walks_the_directories_the_picker_offers() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("picker-wheel"));
-    let root = uze_testkit::temp::TempDir::new("sidebar-picker-wheel");
+fn the_wheel_walks_the_directories_the_step_offers() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-wheel"));
+    let root = uze_testkit::temp::TempDir::new("popup-picker-wheel");
     for index in 0..40 {
         std::fs::create_dir_all(root.join(format!("directory-{index:02}"))).unwrap();
     }
     let mut model = agent_session_in("/repo");
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
-    ));
+    directory_step_over(&mut model, root.path());
     let mut driven = driven(model, &home);
     driven.frame();
-    let last_row = |driven: &Driven<'_>| {
-        let rows = sidebar(&driven.attach.model, &identities_fixture()).rows;
-        rows.iter()
-            .rev()
-            .find(|row| row.contains("directory-"))
-            .cloned()
-            .expect("the listing is drawn")
-    };
-    let before = last_row(&driven);
-
-    for _ in 0..25 {
-        driven.mouse(1, 6, MouseEventKind::ScrollDown);
-    }
-
-    let picker = driven
+    let row = driven
         .attach
         .model
-        .root_picker
-        .as_ref()
-        .expect("still open");
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| matches!(hit, WorkspaceHit::PickDirectory(_)).then_some(*rect))
+        .expect("the listing is drawn");
+
+    for _ in 0..25 {
+        driven.frame();
+        driven.mouse(row.x, row.y, MouseEventKind::ScrollDown);
+    }
+    let selection = |driven: &Driven<'_>| {
+        driven
+            .attach
+            .model
+            .directory_step
+            .as_ref()
+            .expect("still open")
+            .picker
+            .selection()
+    };
     assert_eq!(
-        picker.selection(),
+        selection(&driven),
         Some(24),
         "the first turn takes the row in front, and the rest walk it"
     );
-    assert_ne!(last_row(&driven), before, "and the window follows it");
 
     for _ in 0..40 {
-        driven.mouse(1, 6, MouseEventKind::ScrollUp);
+        driven.frame();
+        driven.mouse(row.x, row.y, MouseEventKind::ScrollUp);
     }
-    let picker = driven
-        .attach
-        .model
-        .root_picker
-        .as_ref()
-        .expect("still open");
-    assert_eq!(picker.selection(), Some(0), "and stops at the top");
+    assert_eq!(selection(&driven), Some(0), "and stops at the top");
 }
 
-/// The picker asks the one question a space has — where — standing
-/// where the spaces it would join stand, with the directories directly
-/// under it and no blank row wedged between them.
+/// Both steps float beside the `new` they were asked from, over the
+/// pane, at one place and one size, and the sidebar under them does not
+/// move: a popup, never rows pushed into the column.
 #[test]
-fn the_prompt_stands_where_the_spaces_it_would_join_stand() {
-    let root = uze_testkit::temp::TempDir::new("sidebar-root-place");
+fn both_steps_float_beside_new_at_one_place_and_size() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-one-place"));
+    set_up_every_harness(&home);
+    let root = uze_testkit::temp::TempDir::new("popup-one-place-root");
     for directory in ["engine", "extensions"] {
         std::fs::create_dir_all(root.join(directory)).unwrap();
     }
     let mut model = agent_session_in("/repo");
-    let rows = sidebar(&model, &identities_fixture()).rows;
-    let spaces_row = rows
-        .iter()
-        .position(|row| row.contains("repo"))
-        .expect("the first space's header is drawn");
-
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
-    ));
-    let Sidebar { rows, buffer, .. } = sidebar(&model, &identities_fixture());
-    let prompt = rows
-        .iter()
-        .position(|row| row.contains(&theme::glyph(crate::ui::theme::Symbol::CursorText)))
-        .expect("the prompt is drawn");
-
+    let before = sidebar(&model, &identities_fixture()).rows;
+    directory_step_over(&mut model, root.path());
     assert_eq!(
-        prompt, spaces_row,
-        "the prompt stands where the spaces do: {rows:?}"
+        sidebar(&model, &identities_fixture()).rows,
+        before,
+        "nothing in the sidebar moves"
     );
-    assert!(
-        rows[prompt + 1].contains("engine"),
-        "and the listing starts under it: {rows:?}"
-    );
-    // The panel on the darker of the two surfaces, and the row the
-    // keyboard answers to — what is typed — lifted onto the lighter one.
-    let surface = |row: usize| buffer[(2, row as u16)].bg;
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let card = |driven: &Driven<'_>, wanted: fn(&WorkspaceHit) -> bool| {
+        let rows: Vec<Rect> = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .filter(|(_, hit)| wanted(hit))
+            .map(|(rect, _)| *rect)
+            .collect();
+        (rows[0].x, rows[0].y)
+    };
+    let directories = card(&driven, |hit| matches!(hit, WorkspaceHit::PickDirectory(_)));
+
+    confirm_the_directory(&mut driven);
+    driven.frame();
+    let harnesses = card(&driven, |hit| matches!(hit, WorkspaceHit::PickAgent(_)));
     assert_eq!(
-        surface(prompt),
-        theme::color(Token::SurfaceRaised),
-        "what is typed is lifted: {rows:?}"
+        harnesses.0, directories.0,
+        "the harnesses stand where the directories stood"
     );
-    // Nothing is chosen in the listing yet, so no row of it is lifted.
-    for row in [prompt + 1, prompt + 2] {
-        assert_eq!(
-            surface(row),
-            theme::color(Token::SurfaceRaisedSubtle),
-            "the listing is the panel: {rows:?}"
-        );
-    }
+    let picker = driven.attach.model.agent_picker.as_ref().expect("asked");
+    assert_eq!(
+        picker.rows,
+        Some(render::new_agent_popup_rows(2)),
+        "and keep the popup's size"
+    );
 }
 
-/// The prompt opens with nothing in it: the directory it is rooted at
-/// is the row's own context, not text waiting to be deleted.
+/// The step opens with nothing typed: the directory it lists is the
+/// row's own context, not text waiting to be deleted.
 #[test]
-fn the_prompt_opens_empty_over_the_directory_it_is_rooted_at() {
+fn the_directory_step_opens_empty_over_the_directory_it_lists() {
     let mut model = agent_session_in("/repo");
-    model.root_picker = Some(RootPicker::opened_in("~", None));
+    let home = uze_platform::home::user_home().expect("a home directory");
+    directory_step_over(&mut model, &home);
 
-    let rows = sidebar(&model, &identities_fixture()).rows;
+    let (rows, _) = drawn(&mut model);
     let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
     let prompt = rows
         .iter()
-        .find(|row| row.contains(&cursor))
+        .find(|row| row.contains(&format!("{cursor} ")) || row.contains(&cursor))
         .expect("the prompt row is drawn");
-    // The rail leading the row, stripped exactly once: it is the same
-    // glyph the caret is drawn with (both are `bar.thin`, told apart
-    // by hue), so trimming every leading one would take the caret
-    // this asserts on with it.
-    let rail = theme::glyph(crate::ui::theme::Symbol::BarThin);
-    let typed = prompt
-        .trim_start()
-        .strip_prefix(rail.as_str())
-        .unwrap_or(prompt)
-        .trim_start();
-    assert!(
-        typed.starts_with(&cursor),
-        "nothing is typed for the operator: {prompt}"
-    );
-    assert!(
-        prompt.contains('~'),
-        "and the row says where it is: {prompt}"
-    );
+    assert!(prompt.contains('~'), "the row says where it is: {prompt}");
 }
 
-/// Two trees in one column — directories and spaces — would leave no
-/// telling which one is being chosen from, so the picker takes the
-/// column while it is open and gives it straight back when it closes.
-#[test]
-fn the_open_prompt_has_the_sidebar_to_itself() {
-    let root = uze_testkit::temp::TempDir::new("sidebar-root-alone");
-    std::fs::create_dir_all(root.join("engine")).unwrap();
-    let mut model = agent_session_in("/repo");
-
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
-    ));
-    let rows = sidebar(&model, &identities_fixture()).rows;
-    assert!(
-        rows.iter().any(|row| row.contains("engine")),
-        "the directories are what is on offer: {rows:?}"
-    );
-    assert!(
-        !rows.iter().any(|row| row.contains("Agent")),
-        "the agents step aside: {rows:?}"
-    );
-
-    model.root_picker = None;
-    let rows = sidebar(&model, &identities_fixture()).rows;
-    assert!(
-        rows.iter().any(|row| row.contains("Agent")),
-        "and come back when it closes: {rows:?}"
-    );
-}
-
-/// A root several levels deep is longer than the sidebar is wide, so
+/// A directory several levels deep is longer than the popup is wide, so
 /// its head gives way — and the moment something is typed the line is
-/// only that. The root stood pinned to the right of the line all the
-/// way through, saying where the prompt was in a second place; the
-/// two could disagree, and the one that went stale was the pinned
-/// half.
+/// only that.
 #[test]
-fn a_long_root_gives_way_and_then_gives_the_line_over_to_what_is_typed() {
-    let root = uze_testkit::temp::TempDir::new("sidebar-root-elide");
-    std::fs::create_dir_all(root.join("a-very-long-directory-name/inner")).unwrap();
+fn a_long_directory_gives_way_to_what_is_typed() {
+    let root = uze_testkit::temp::TempDir::new("popup-root-elide");
+    let deep = root.join("a-very-long-directory-name-that-will-not-fit-the-popup");
+    std::fs::create_dir_all(deep.join("inner")).unwrap();
     let mut model = agent_session_in("/repo");
     let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
-    let prompt_row = |model: &WorkspaceModel| {
-        sidebar(model, &identities_fixture())
-            .rows
+    directory_step_over(&mut model, &deep);
+    let prompt_row = |model: &mut WorkspaceModel| {
+        drawn(model)
+            .0
             .into_iter()
             .find(|row| row.contains(&cursor))
             .expect("the prompt row is drawn")
     };
 
-    let mut picker = RootPicker::opened_in(
-        &root
-            .join("a-very-long-directory-name")
-            .display()
-            .to_string(),
-        None,
-    );
-    model.root_picker = Some(picker);
-    let prompt = prompt_row(&model);
+    let prompt = prompt_row(&mut model);
     assert!(
         prompt.contains('\u{2026}'),
-        "where the typing starts from, head first to give way: {prompt}"
+        "head first to give way: {prompt}"
     );
 
-    picker = model.root_picker.take().expect("the prompt is open");
-    for character in "inn".chars() {
-        picker.typed(character);
+    if let Some(step) = model.directory_step.as_mut() {
+        for character in "inn".chars() {
+            step.picker.typed(character);
+        }
     }
-    model.root_picker = Some(picker);
-    let prompt = prompt_row(&model);
-    assert!(prompt.contains("inn\u{258f}"), "{prompt}");
+    let prompt = prompt_row(&mut model);
+    assert!(prompt.contains(&format!("inn{cursor}")), "{prompt}");
     assert!(
         !prompt.contains('\u{2026}'),
-        "and the root is not repeated beside what was typed: {prompt}"
+        "nothing repeated beside it: {prompt}"
+    );
+}
+
+/// A click on a directory is Enter on it: the popup moves to the
+/// harnesses, for that directory.
+#[test]
+fn clicking_a_directory_is_choosing_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-click-directory"));
+    let root = uze_testkit::temp::TempDir::new("popup-click-directory-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path());
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = driven.hit(|hit| matches!(hit, WorkspaceHit::PickDirectory(0)));
+
+    driven.press(row.x, row.y);
+
+    assert!(
+        driven.attach.model.directory_step.is_none(),
+        "the step answered"
+    );
+    let picker = driven
+        .attach
+        .model
+        .agent_picker
+        .as_ref()
+        .expect("the harnesses are asked for");
+    assert!(
+        matches!(
+            &picker.launch,
+            super::AgentLaunch::New(place) if place.directory == root.join("engine")
+        ),
+        "for the directory clicked"
+    );
+}
+
+/// Esc closes the popup, whichever step it is on, and nothing is placed.
+#[test]
+fn esc_closes_the_new_agent_popup_and_places_nothing() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("popup-esc"));
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, Path::new("/"));
+    let mut driven = driven(model, &home);
+    let esc = uze_keys::active()
+        .chord_for(uze_keys::Action::Dismiss, &[uze_keys::Scope::RootPicker])
+        .expect("the step is dismissed from the keyboard");
+
+    driven.press_key(key_event(esc));
+
+    assert!(
+        driven.attach.model.directory_step.is_none(),
+        "the popup closed"
+    );
+    assert!(driven.attach.model.agent_picker.is_none());
+    assert!(
+        !driven.attach.model.placement_pending,
+        "and nothing is placed"
     );
 }
 
@@ -672,62 +700,45 @@ fn a_picker_row_over_the_tree_answers_its_own_click() {
     );
 }
 
-/// A directory another space already holds is opened all the same:
-/// one repository is routinely worth two spaces (one per branch, one
-/// per thing being tried), and the prompt is an explicit request for
-/// one — not a lookup of what is already open.
+/// A new agent opens in the space its `new` was pressed in, whatever
+/// project it runs in and whichever space is in front by the time its
+/// checkout is ready.
 #[test]
-fn a_directory_a_space_already_holds_is_opened_again() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-again"));
-    let root = uze_testkit::temp::TempDir::new("orchestrator-space-root");
-    std::fs::create_dir_all(root.join("inner")).unwrap();
-    let mut model = session_rooted_at(root.path());
-    // The directory being listed is what an untouched prompt lands on
-    // (see `RootPicker`) — here, the space's own root.
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
+fn a_new_agent_opens_in_the_space_it_was_asked_from() {
+    let repository = uze_testkit::git::Repository::new("orchestrator-new-in-origin");
+    let root = repository.root().to_path_buf();
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-new-in-origin-home",
     ));
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let placement = app
+        .workspace()
+        .place_new_agent(&root, None, "claude-code", &[])
+        .expect("the agent is placed");
+    let model = three_spaces();
+    let origin = model.session.as_ref().unwrap().workspace.spaces[0].id;
     let mut driven = driven(model, &home);
 
-    driven.frame();
-    let enter = uze_keys::active()
-        .chord_for(uze_keys::Action::Activate, &[uze_keys::Scope::RootPicker])
-        .expect("the prompt is answered from the keyboard");
-    driven.press_key(key_event(enter));
+    driven.placements_answered(PlacementResolution {
+        label: "agent 2".to_owned(),
+        command: vec!["claude".to_owned()],
+        placement: Ok(placement),
+        replacing: None,
+        space: Some(origin),
+    });
 
     let sent = driven.sent();
     assert!(
         sent.iter().any(|request| matches!(
             request,
-            ClientRequest::CreateSpace { seat, .. } if seat.root == root.path()
+            ClientRequest::CreateTab { space, .. } if *space == Some(origin)
         )),
-        "the pick is asked for, not looked up: {sent:?}"
+        "the tab opens in the space it was asked from, not the one in front: {sent:?}"
     );
-}
-
-#[test]
-fn a_directory_no_space_holds_is_opened_as_one() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-space-new"));
-    let root = uze_testkit::temp::TempDir::new("orchestrator-space-new-root");
-    std::fs::create_dir_all(root.join("inner")).unwrap();
-    let mut model = session_rooted_at(root.path());
-    model.root_picker = Some(RootPicker::opened_in(
-        &root.path().display().to_string(),
-        None,
-    ));
-    let mut driven = driven(model, &home);
-
-    driven.frame();
-    let row = driven.hit(|hit| matches!(hit, WorkspaceHit::PickSpaceRoot(_)));
-    driven.press(row.x, row.y);
-
-    let sent = driven.sent();
     assert!(
-        sent.iter().any(|request| matches!(
-            request,
-            ClientRequest::CreateSpace { seat, .. } if seat.root == root.join("inner")
-        )),
-        "{sent:?}"
+        !sent
+            .iter()
+            .any(|request| matches!(request, ClientRequest::CreateSpace { .. })),
+        "and no space is opened for its project: {sent:?}"
     );
 }

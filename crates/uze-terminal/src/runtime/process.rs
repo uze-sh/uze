@@ -89,8 +89,8 @@ pub(super) fn server_command(
 ) -> std::process::Command {
     let mut command = std::process::Command::new(executable);
     command
-        .args(["terminal", "serve", "--root"])
-        .arg(&seat.root)
+        .args(["terminal", "serve", "--project"])
+        .arg(&seat.project)
         // Told at the start and not only on attach: the server relaunches
         // every persisted program before it binds, and a program asking
         // for its colours then would otherwise hear the built-in default.

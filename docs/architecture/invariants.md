@@ -853,15 +853,17 @@ typed. The history is a navigation aid, never a record of a session.
 > `src/ui/orchestrator/tests/prompt_buffer.rs::history_recall_discards_the_reconstruction`
 > `src/ui/orchestrator/tests/prompt_buffer.rs::a_control_or_alt_chord_discards_the_reconstruction`
 
-### Prompt text is owner-only, workspace-scoped, and deletable
+### Prompt text is owner-only, kept per project, read and deleted per agent
 
-Each workspace keeps its own append-only file; one workspace can never evict
-another's entries, the file and its directory are `0600`/`0700`, and
-`prompt_history::clear` deletes a workspace's history outright.
+Each project keeps its own append-only file; one project can never evict
+another's entries, the file and its directory are `0600`/`0700`, an agent
+lists only the prompts it was given, and `prompt_history::clear_agent`
+forgets one agent's prompts and keeps every other's.
 
 > `crates/uze-workspace/src/prompt_history.rs::tests::history_is_owner_only`
 > `crates/uze-workspace/src/prompt_history.rs::tests::each_workspace_keeps_its_own_history`
-> `crates/uze-workspace/src/prompt_history.rs::tests::clear_removes_only_the_named_workspace_and_tolerates_absence`
+> `crates/uze-workspace/src/prompt_history.rs::tests::each_agent_lists_only_its_own_prompts`
+> `crates/uze-workspace/src/prompt_history.rs::tests::clearing_an_agent_keeps_the_others_and_tolerates_absence`
 
 ---
 
@@ -1998,16 +2000,19 @@ never become no policy in silence.
 
 ## Terminal runtime (`add-terminal-runtime`)
 
-### One server per user; a space has a root
+### One server per user; a space is a group bound to no directory
 
 The terminal server is one per `UZE_HOME`, and every client attaches to it
-whatever directory it was started in. A space is born from a root: starting
-`uze` in a directory somebody chose selects the space rooted at its
-workspace root, opening one when no space has that root. Behaviour derives
-from the root; there is no global space.
+whatever directory it was started in. A space is its id, its label and its
+tabs, and no directory identifies it: the id survives a restart and is
+never given to another space. Starting `uze` in a project selects the space
+working there — an agent's first, else any tab's — opening one when none
+is.
 
 > `tests/acceptance/engine.rs::two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space`
 > `crates/uze-terminal/src/runtime/tests.rs::a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands`
+> `crates/uze-terminal/src/state/tests.rs::a_launch_finds_the_space_working_in_its_project`
+> `crates/uze-terminal/src/state/tests.rs::a_restored_space_keeps_its_id_and_a_closed_ones_is_not_reused`
 
 ### One pane that stops reading never holds up the others
 
@@ -2021,18 +2026,15 @@ baseline, so two threads never store an older picture over a newer one.
 
 ### Where a client lands and what that may create are two questions
 
-An attach says one of three things: take the session as it stands, land on
-the space at this seat *if there is one*, or open a space at this seat. Only
-the third creates. This is what makes closing a space stick — a seat that
+An attach says one of two things: take the session as it stands, or open
+the space working at this seat. Only the second creates. This is what makes closing a space stick — a seat that
 always created meant the directory a client started in was a standing
 request, so a space closed on purpose came back when the runtime went away
 mid-run, and again on the next launch from that directory. A close that does
 not stay closed is indistinguishable from a close that did not work.
 
 The home directory is the seat nobody chose: a shell starts there, so
-starting `uze` there lands on the home space when one is open and adds
-nothing when none is. A home space someone creates deliberately is still
-theirs, and still what the next launch from home lands on.
+starting `uze` there lands where the session already is and adds nothing.
 
 > `crates/uze-terminal/src/runtime/tests.rs::only_asking_to_open_a_space_may_create_one`
 > `src/ui/orchestrator/tests/context_menu.rs::starting_at_home_lands_in_the_workspace_rather_than_adding_to_it`
@@ -2049,7 +2051,7 @@ client's selection never moves it.
 ### A launch inside a pane opens a space, never a client
 
 Every pane carries `UZE_PANE`; a `uze` that finds it asks the running server
-for a space at its workspace root and exits, so a client is never opened
+for the space working in its project and exits, so a client is never opened
 inside a client.
 
 > `tests/acceptance/engine.rs::two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space`
@@ -2569,14 +2571,16 @@ rebasing and pushing it is theirs to ask for.
 ### Preserved work answers for the machine, and resumes into its own project
 
 Work is bound to a project and never to a space: an agent's record carries
-a base, a branch, a checkout and a target, and nothing about a space. So
-the space it was left in can be closed and another opened on the same
-directory under another name, and the work still lands in it.
+a base, a branch, a checkout and a target, and nothing about a space. A
+space is a group bound to no directory, working in the projects its agents
+stand in; resumed work lands in a space working in its project, else the
+one in front, and never opens a space of its own.
 
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::work_is_found_in_a_project_this_session_never_opened`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::two_projects_sharing_a_branch_name_stay_distinguishable`
-> `src/ui/orchestrator/tests/tasks.rs::a_space_is_matched_by_its_root_whatever_it_is_called`
-> `src/ui/orchestrator/tests/tasks.rs::a_space_rooted_above_the_project_does_not_match_it`
+> `src/ui/orchestrator/tests/tasks.rs::a_space_works_where_its_agents_stand`
+> `src/ui/orchestrator/tests/tasks.rs::neither_a_shell_nor_an_agent_above_the_project_makes_the_space_work_in_it`
+> `src/ui/orchestrator/tests/tasks.rs::resuming_a_preserved_task_that_kept_its_checkout_opens_a_stamped_tab`
 
 ### Recent lists agents, and offers only what moves each one on
 

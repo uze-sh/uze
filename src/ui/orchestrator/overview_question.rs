@@ -18,9 +18,10 @@ pub(super) struct OverviewQuestion {
 /// What is about to be taken away.
 pub(super) enum Asked {
     RemoveWorktree(WorktreeRemoval),
-    /// The prompts asked in the space rooted at `root`.
+    /// The prompts one agent was given.
     ClearPrompts {
-        root: PathBuf,
+        of: PromptsOf,
+        label: String,
     },
 }
 
@@ -68,8 +69,8 @@ impl Attach<'_> {
         }
         match question.asked {
             Asked::RemoveWorktree(removal) => self.remove_worktree(removal),
-            Asked::ClearPrompts { root } => {
-                spawn_clear_prompt_history(self.home, root, self.channels.prompts.sender.clone());
+            Asked::ClearPrompts { of, .. } => {
+                spawn_clear_prompt_history(self.home, of, self.channels.prompts.sender.clone());
             }
         }
     }
@@ -126,11 +127,11 @@ pub(super) fn render_overview_question(
              every commit on it.",
             "Remove",
         ),
-        Asked::ClearPrompts { root } => (
-            "Clear this space's prompts?",
-            root.display().to_string(),
-            "Every prompt asked in this space is forgotten. Agents and their work are not \
-             touched.",
+        Asked::ClearPrompts { label, .. } => (
+            "Clear this agent's prompts?",
+            label.clone(),
+            "Every prompt this agent was given is forgotten. Other agents' prompts, and the \
+             agent and its work, are not touched.",
             "Clear",
         ),
     };

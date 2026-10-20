@@ -12,6 +12,9 @@ pub(super) struct PersistedWorkspace {
     #[serde(default = "first_workspace_schema")]
     pub(super) schema_version: u32,
     pub(super) spaces: Vec<SpaceSeed>,
+    /// The id the next space is given: kept so a closed space's id is
+    /// never handed to another one after a restart.
+    pub(super) next_space_id: u64,
 }
 
 /// A document with no version is the one written before this field
@@ -22,7 +25,7 @@ pub(super) fn first_workspace_schema() -> u32 {
 }
 
 /// What this build writes, and the only version it restores.
-pub(super) const WORKSPACE_SCHEMA_VERSION: u32 = 2;
+pub(super) const WORKSPACE_SCHEMA_VERSION: u32 = 3;
 
 impl uze_document::Shaped for PersistedWorkspace {
     const SHAPE: u32 = WORKSPACE_SCHEMA_VERSION;
@@ -38,25 +41,53 @@ impl uze_document::Shaped for PersistedWorkspace {
     /// what set the document aside was the version guard having no way to
     /// say "that difference does not matter". Dropping it explicitly is how
     /// the next reader learns what the difference *was*.
+    ///
+    /// Shape 2 identified a space by its root, and `spaces-as-logical-groups`
+    /// made a space a group of agents bound to no directory. The root goes,
+    /// every tab keeps the directory it stood in, and each space is given
+    /// the id it had in order, as a restore of shape 2 minted them.
     fn ladder() -> uze_document::Ladder {
-        &[uze_document::Step {
-            from: 1,
-            to: 2,
-            climb: |mut document| {
-                if let Some(spaces) = document
-                    .get_mut("spaces")
-                    .and_then(serde_json::Value::as_array_mut)
-                {
-                    for space in spaces {
-                        if let Some(space) = space.as_object_mut() {
-                            space.remove("kind");
-                        }
+        &[
+            uze_document::Step {
+                from: 1,
+                to: 2,
+                climb: |mut document| {
+                    for space in spaces_of(&mut document) {
+                        space.remove("kind");
                     }
-                }
-                Ok(document)
+                    Ok(document)
+                },
             },
-        }]
+            uze_document::Step {
+                from: 2,
+                to: 3,
+                climb: |mut document| {
+                    let mut count = 0;
+                    for (index, space) in spaces_of(&mut document).enumerate() {
+                        space.remove("root");
+                        space.insert("id".to_owned(), serde_json::json!(index + 1));
+                        count = index + 1;
+                    }
+                    if let Some(document) = document.as_object_mut() {
+                        document.insert("next_space_id".to_owned(), serde_json::json!(count + 1));
+                    }
+                    Ok(document)
+                },
+            },
+        ]
     }
+}
+
+/// Every space object of a persisted workspace document, of any shape.
+fn spaces_of(
+    document: &mut serde_json::Value,
+) -> impl Iterator<Item = &mut serde_json::Map<String, serde_json::Value>> {
+    document
+        .get_mut("spaces")
+        .and_then(serde_json::Value::as_array_mut)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_object_mut)
 }
 
 /// What reading the persisted workspace produced, and whether this build

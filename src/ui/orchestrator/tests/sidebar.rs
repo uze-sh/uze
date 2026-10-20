@@ -6,7 +6,7 @@ use super::support::*;
 use super::{
     ScrollDirection, WorkspaceModel,
     render::{FrameMetrics, render_sidebar},
-    scroll_tree, space_cwd, toggle_space_collapsed,
+    scroll_tree, toggle_space_collapsed,
 };
 use crate::ui::theme::{self, Token};
 use crossterm::event::{MouseButton, MouseEventKind};
@@ -25,14 +25,7 @@ fn only_the_active_spaces_agent_carries_the_selected_dot() {
     let mut session = session("/tmp");
     session.workspace.spaces[0].tabs[0].label = "Agent".into();
     session.workspace.spaces[0].tabs[0].pane.process = "agent".into();
-    session.create_space(
-        Some("second".into()),
-        uze_terminal::SpaceSeat {
-            root: "/tmp/second".into(),
-        },
-        80,
-        24,
-    );
+    session.create_space(Some("second".into()), "/tmp/second".into(), 80, 24);
     session.workspace.spaces[1].tabs[0].label = "Agent".into();
     session.workspace.spaces[1].tabs[0].pane.process = "agent".into();
     let model = model_of(session);
@@ -127,9 +120,7 @@ fn the_space_tree_scrolls_to_what_the_column_cannot_show() {
     for index in 1..8 {
         session.create_space(
             Some(format!("space {index}")),
-            uze_terminal::SpaceSeat {
-                root: format!("/tmp/{index}").into(),
-            },
+            format!("/tmp/{index}").into(),
             80,
             24,
         );
@@ -240,7 +231,7 @@ fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
         matches!(
             request,
             ClientRequest::CreateTab { agent: None, command: None, cwd: Some(cwd), .. }
-                if cwd == Path::new("/repo")
+                if Some(cwd.as_path()) == uze_platform::home::user_home().as_deref()
         )
     });
     assert!(
@@ -250,7 +241,7 @@ fn a_space_row_lands_on_its_own_shell_and_otherwise_opens_one() {
 }
 
 /// The selected space alone carries "new", at its header's right
-/// edge, and it opens the agent picker under itself: the new agent
+/// edge, and it opens the new agent's popup beside itself: the new agent
 /// lands in the space in front, so no other header offers one.
 #[test]
 fn only_the_selected_space_header_offers_a_new_agent() {
@@ -275,13 +266,14 @@ fn only_the_selected_space_header_offers_a_new_agent() {
 
     driven.press(new.x, new.y);
 
-    let picker = driven
+    let step = driven
         .attach
         .model
-        .agent_picker
+        .directory_step
         .as_ref()
-        .expect("the picker opened");
-    assert_eq!(picker.anchor, new, "anchored under the control clicked");
+        .expect("the popup opened on its directory step");
+    assert_eq!(step.anchor, new, "anchored beside the control clicked");
+    assert_eq!(step.space, SpaceId(3), "for the space whose `new` it was");
 }
 
 /// One lifted block in a transparent column: the space in front stands
@@ -352,10 +344,7 @@ fn the_spaces_own_row_wears_the_agents_trace_when_it_is_the_one_in_front() {
 #[test]
 fn a_minimized_space_in_front_is_lit_down_both_of_its_rows() {
     let mut model = agents_in_the_root_session();
-    let root = model.session.as_ref().expect("session").workspace.spaces[0]
-        .root
-        .clone();
-    model.collapsed_space_roots.insert(root);
+    model.collapsed_spaces.insert(1);
     let Sidebar {
         rows, hits, buffer, ..
     } = sidebar(&model, &identities_in_the_root());
@@ -624,49 +613,76 @@ fn the_gutter_marks_the_selected_space_and_no_other() {
     );
 }
 
-/// A space is where its own shell is: a `cd` there moves what the space
-/// names and what its agents are placed from. With no shell of its own
-/// — every tab an agent — it is the root it was opened at.
+/// A minimized space's caption says where its agents work: their project
+/// while they work in one, how many while they work in several, and
+/// nothing at all for a space of shells, wherever those stand.
 #[test]
-fn a_cd_in_a_spaces_own_shell_moves_the_space() {
+fn a_minimized_spaces_caption_names_where_its_agents_work() {
+    let caption = |model: &WorkspaceModel| {
+        let space = model.session.as_ref().unwrap().workspace.selected_space;
+        let Sidebar { rows, hits, .. } = sidebar(model, &identities_fixture());
+        let header = space_header(&hits, space).y as usize;
+        rows[header + 1].clone()
+    };
     let mut session = session("/repo");
     let space = session.workspace.selected_space;
-    let shell = session.workspace.spaces[0].tabs[0].pane.id;
     let agent = session.add_tab(space, "agent 1".into(), None, 80, 24, "/repo".into());
-    session.update_pane_status(agent, "/repo".into(), "claude".into());
-    assert_eq!(
-        space_cwd(&session.workspace.spaces[0], &identities_in_the_root()),
-        PathBuf::from("/repo")
-    );
-
-    session.update_pane_status(shell, "/repo/services/api".into(), "bash".into());
-    let moved = PathBuf::from("/repo/services/api");
-    assert_eq!(
-        space_cwd(&session.workspace.spaces[0], &identities_in_the_root()),
-        moved,
-        "the space followed its own shell"
-    );
-
-    let mut model = model_of(session.clone());
-    toggle_space_collapsed(&mut model, space);
-    let Sidebar { rows, hits, .. } = sidebar(&model, &identities_in_the_root());
-    let header = space_header(&hits, space).y as usize;
+    session.update_pane_status(agent, "/repo".into(), "agent".into());
+    let mut one = model_of(session.clone());
+    toggle_space_collapsed(&mut one, space);
     assert!(
-        rows[header + 1].contains("api"),
-        "the caption names where it is now: {rows:?}"
+        caption(&one).contains("repo"),
+        "one project: {}",
+        caption(&one)
     );
 
-    // Nothing of its own left to follow: the root it was opened at.
-    session.update_pane_status(shell, "/repo/services/api".into(), "claude".into());
-    assert_eq!(
-        space_cwd(&session.workspace.spaces[0], &identities_in_the_root()),
-        PathBuf::from("/repo"),
-        "every tab an agent, so the space is its root again"
+    let other = session.add_tab(space, "agent 2".into(), None, 80, 24, "/web".into());
+    session.update_pane_status(other, "/web".into(), "agent".into());
+    let mut two = model_of(session);
+    toggle_space_collapsed(&mut two, space);
+    assert!(
+        caption(&two).contains("2 projects"),
+        "two: {}",
+        caption(&two)
+    );
+
+    let mut shells = model_of(super::support::session("/repo/services/api"));
+    toggle_space_collapsed(&mut shells, SpaceId(1));
+    assert!(
+        !caption(&shells).contains("api"),
+        "a shell names no project"
     );
 }
 
-/// A space's root and each of its agents' directories are read as soon
-/// as the sidebar names them — once each, answered or still asked.
+/// In a space whose agents work in several projects, each agent's row
+/// names its own; in a space of one project, none does.
+#[test]
+fn an_agents_row_names_its_project_only_in_a_space_of_several() {
+    let mut session = session("/repo");
+    let space = session.workspace.selected_space;
+    let agent = session.add_tab(space, "agent 1".into(), None, 80, 24, "/repo".into());
+    session.update_pane_status(agent, "/repo".into(), "agent".into());
+    let rows = sidebar(&model_of(session.clone()), &identities_fixture()).rows;
+    assert!(
+        !rows.iter().any(|row| row.contains("agent · repo")),
+        "{rows:?}"
+    );
+
+    let other = session.add_tab(space, "agent 2".into(), None, 80, 24, "/web".into());
+    session.update_pane_status(other, "/web".into(), "agent".into());
+    let rows = sidebar(&model_of(session), &identities_fixture()).rows;
+    assert!(
+        rows.iter().any(|row| row.contains("agent · repo")),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row.contains("agent · web")),
+        "{rows:?}"
+    );
+}
+
+/// The projects agents work in and each agent's directory are read as
+/// soon as the sidebar names them — once each, answered or still asked.
 #[test]
 fn every_directory_the_sidebar_names_is_read_once() {
     let mut model = three_spaces();
@@ -719,12 +735,12 @@ fn a_read_asked_for_while_one_is_in_flight_is_asked_again() {
     );
 }
 
-/// The refresh clock reads every space's header, once per repository,
-/// not only the selected pane's.
+/// The refresh clock reads every project agents work in, once each, not
+/// only the selected pane's.
 #[test]
-fn every_space_header_is_read_on_the_clock() {
+fn every_project_agents_work_in_is_read_on_the_clock() {
     let model = three_spaces();
-    let mut directories = model.space_directories(&identities_fixture());
+    let mut directories = model.working_projects();
     directories.sort();
     assert_eq!(
         directories,
@@ -863,7 +879,7 @@ fn a_folded_space_measures_its_header_alone() {
     let session = model.session.as_mut().unwrap();
     for index in 4..12 {
         let root = PathBuf::from(format!("/{index}"));
-        session.create_space(None, uze_terminal::SpaceSeat { root: root.clone() }, 80, 24);
+        session.create_space(None, root.clone(), 80, 24);
         let pane = session.selected_tab().pane.id;
         session.update_pane_status(pane, root, "agent".into());
     }
@@ -882,16 +898,12 @@ fn a_folded_space_measures_its_header_alone() {
 /// closing uze used to open it again on the next run: the fold lived
 /// with what this client had *resolved*, which dies with the process,
 /// instead of with what the operator *chose*, which is the layout both
-/// surfaces share. It travels by root, because the identifier the
-/// server minted for a space is minted again the next time it restores
-/// the workspace.
+/// surfaces share. It travels by the space's id, which the server keeps
+/// across a restart and never gives to another space.
 #[test]
 fn a_minimized_space_is_still_minimized_on_the_next_run() {
     let mut folded = three_spaces();
     let one = SpaceId(1);
-    let root = folded.session.as_ref().unwrap().workspace.spaces[0]
-        .root
-        .clone();
 
     let (recorder, recorded) = std::sync::mpsc::channel();
     folded.layout_recorder = Some(recorder);
@@ -900,14 +912,14 @@ fn a_minimized_space_is_still_minimized_on_the_next_run() {
 
     let kept = recorded.try_recv().expect("the fold is recorded").workspace;
     assert!(
-        kept.collapsed_space_roots.contains(&root),
-        "the fold is kept, by the root the space is over: {kept:?}"
+        kept.collapsed_spaces.contains(&one.0),
+        "the fold is kept, by the space's id: {kept:?}"
     );
 
     // The next run: the same workspace, drawn by a model that knows
     // nothing but the layout the last one left behind.
     let mut next = three_spaces();
-    next.collapsed_space_roots = kept.collapsed_space_roots.clone();
+    next.collapsed_spaces = kept.collapsed_spaces.clone();
     assert_eq!(
         sidebar(&next, &identities_fixture()).rows,
         sidebar(&folded, &identities_fixture()).rows,
@@ -927,7 +939,7 @@ fn a_minimized_space_is_still_minimized_on_the_next_run() {
             .try_recv()
             .expect("opening it again is recorded")
             .workspace
-            .collapsed_space_roots
+            .collapsed_spaces
             .is_empty(),
         "and opening it again is kept too"
     );

@@ -54,49 +54,41 @@ impl Attach<'_> {
         Flow::Continue
     }
 
-    /// The "+ new space" prompt: type to narrow, walk into the highlighted
-    /// directory, open a space at it.
-    pub(super) fn root_picker_action(&mut self, action: Action, viewport: &Viewport) {
-        let Viewport { columns, rows, .. } = *viewport;
+    /// The new agent's directory step: type to narrow, walk into the
+    /// highlighted directory, take it to the harness step.
+    pub(super) fn directory_step_action(&mut self, action: Action) {
+        let picker = self
+            .model
+            .directory_step
+            .as_mut()
+            .map(|step| &mut step.picker);
         match action {
             Action::SelectPrevious => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+                if let Some(picker) = picker {
                     picker.move_selection(-1);
                 }
             }
             Action::SelectNext => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+                if let Some(picker) = picker {
                     picker.move_selection(1);
                 }
             }
-            // Walking into the highlighted directory is how a root several
+            // Walking into the highlighted directory is how one several
             // levels down is reached — one level at a time, instead of
             // typing the path.
             Action::Expand => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+                if let Some(picker) = picker {
                     picker.descend();
                 }
             }
-            // Creates the space where the prompt is, and where it cannot
-            // — nothing is chosen in the listing yet — walks into the
-            // row instead. Enter used to do nothing at all there, which
-            // is a dead key on the row a person presses it on most.
-            Action::Activate => {
-                match self.model.root_picker.as_ref().and_then(RootPicker::chosen) {
-                    Some(root) => {
-                        self.model.root_picker = None;
-                        self.open_space_at(root, columns, rows);
-                    }
-                    None => {
-                        if let Some(picker) = self.model.root_picker.as_mut() {
-                            picker.descend();
-                        }
-                    }
-                }
-            }
-            Action::Dismiss => self.model.root_picker = None,
+            // Takes the directory the prompt is on, and where it cannot —
+            // nothing is chosen in the listing yet — walks into the row
+            // instead: a dead Enter on the row a person presses it on most
+            // is the one thing this must not be.
+            Action::Activate => self.confirm_directory(),
+            Action::Dismiss => self.model.directory_step = None,
             Action::EraseBack => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+                if let Some(picker) = picker {
                     picker.backspace();
                 }
             }
@@ -171,11 +163,11 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// The overview's Agent section: walk the space's prompts, copy the one
+    /// The overview's Agent section: walk the agent's prompts, copy the one
     /// chosen, or clear them.
     pub(in crate::ui::orchestrator) fn drawer_action(&mut self, action: Action) {
         let listed = self.drawer_prompt_count();
-        let space_has_prompts = self.space_has_prompts();
+        let has_prompts = self.agent_has_prompts();
         let chosen = self.chosen_prompt();
         let Some(agent) = self.agent_panel() else {
             return;
@@ -193,9 +185,17 @@ impl Attach<'_> {
             }
             // Asked first, as the overview's question: the history is not
             // given back.
-            Action::ClearPromptHistory if space_has_prompts => {
-                let root = agent.space_root.clone();
-                self.ask_overview_question(Asked::ClearPrompts { root });
+            Action::ClearPromptHistory if has_prompts => {
+                let Some(of) = agent.prompts.clone() else {
+                    return;
+                };
+                let tab = agent.tab;
+                let label = self
+                    .model
+                    .tab(tab)
+                    .map(|tab| tab.label.clone())
+                    .unwrap_or_default();
+                self.ask_overview_question(Asked::ClearPrompts { of, label });
             }
             _ => {}
         }
@@ -210,12 +210,12 @@ impl Attach<'_> {
             .and_then(|overview| overview.agent.as_mut())
     }
 
-    /// The Agent section, with the space's prompts it lists, newest first,
-    /// once the history read for its space has arrived.
+    /// The Agent section, with the agent's prompts it lists, newest first,
+    /// once the history read for that agent has arrived.
     fn listed_prompts(&self) -> Option<(&AgentSupportDropdown, &[uze_application::PromptEntry])> {
         let agent = self.model.space_overview.as_ref()?.agent.as_ref()?;
         let history = self.model.remembered.drawer_prompts.as_ref()?;
-        (history.root == agent.space_root).then_some((agent, history.entries.as_slice()))
+        (agent.prompts.as_ref() == Some(&history.of)).then_some((agent, history.entries.as_slice()))
     }
 
     /// The prompt the keys are on, as it was asked.
@@ -232,7 +232,7 @@ impl Attach<'_> {
             .map_or(0, |(_, prompts)| prompts.len())
     }
 
-    pub(in crate::ui::orchestrator) fn space_has_prompts(&self) -> bool {
+    pub(in crate::ui::orchestrator) fn agent_has_prompts(&self) -> bool {
         self.drawer_prompt_count() > 0
     }
 
@@ -274,7 +274,7 @@ impl Attach<'_> {
                     && picker.selected < picker.options.len()
                 {
                     let option = picker.options.swap_remove(picker.selected);
-                    self.start_agent(option, picker.resume);
+                    self.start_agent(option, picker.launch);
                 }
             }
             _ => self.model.agent_picker = None,

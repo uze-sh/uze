@@ -48,7 +48,7 @@ fn chip_colors(model: &WorkspaceModel, rect: Rect) -> (Color, Color) {
 #[test]
 fn an_open_surface_is_drawn_where_the_pane_is() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
 
     let layout = full_frame(&mut model);
@@ -104,7 +104,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
         },
     ] {
         let (mut model, first, _second) = two_agents_with_shells();
-        model.session.as_mut().expect("session").select_tab(first);
+        select_tab(&mut model, first);
         open(&mut model);
         let layout = full_frame(&mut model);
         let over: Vec<_> = model
@@ -121,7 +121,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
 #[test]
 fn the_strip_lights_one_thing_the_one_in_the_pane() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let raised = crate::ui::theme::color(Token::SurfaceRaised);
     let lit = crate::ui::theme::color(Token::TextBright);
     let ink = crate::ui::theme::color(Token::SurfaceBackground);
@@ -157,7 +157,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
     use uze_extensions::code::CodeView;
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-chords"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let mut driven = driven(model, &home);
     let showing = |driven: &Driven<'_>| {
         let model = &driven.attach.model;
@@ -208,7 +208,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
 fn a_lit_surface_button_closes_it_in_one_click() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-lit-button"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Diff);
     let mut driven = driven(model, &home);
     driven.frame();
@@ -229,7 +229,7 @@ fn a_lit_surface_button_closes_it_in_one_click() {
 fn the_spec_button_opens_and_closes_the_spec_surface() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-button"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let mut driven = driven(model, &home);
     driven.frame();
     let order: Vec<WorkspaceHit> = driven
@@ -281,7 +281,7 @@ fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-extension-off"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_architect(&mut model);
     model.follow_extension_switch(switched_off(&[uze_extensions::architect::CATALOG.id]));
     assert!(model.architect.is_none(), "the open surface closed");
@@ -336,7 +336,7 @@ fn every_extension_switched_off_takes_the_whole_button_group() {
         "orchestrator-extensions-all-off",
     ));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[
         uze_extensions::code::CATALOG.id,
         uze_extensions::architect::CATALOG.id,
@@ -393,7 +393,7 @@ fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
 #[test]
 fn an_extension_switched_back_on_opens_again() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[uze_extensions::spec::CATALOG.id]));
     open_spec(&mut model);
     assert!(model.spec.is_none());
@@ -410,7 +410,7 @@ fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-seals"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_spec(&mut model);
     let mut driven = driven(model, &home);
     driven.frame();
@@ -434,7 +434,7 @@ fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
 #[test]
 fn a_surface_button_goes_out_without_a_press_flash() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     model.close_code();
     model.pressed = Some((WorkspaceHit::OpenFiles, std::time::Instant::now()));
@@ -458,7 +458,7 @@ fn a_surface_button_goes_out_without_a_press_flash() {
 fn two_quick_clicks_on_a_surface_button_open_and_close_it() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-quick-clicks"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let mut driven = driven(model, &home);
     driven.frame();
     let button = driven
@@ -483,7 +483,7 @@ fn two_quick_clicks_on_a_surface_button_open_and_close_it() {
 fn choosing_a_tab_puts_the_open_surface_away() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-tab"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     let mut driven = driven(model, &home);
     driven.frame();
@@ -538,7 +538,7 @@ fn a_command_waits_for_its_new_shell_and_is_typed_unrun() {
 #[test]
 fn another_tab_in_front_puts_the_open_surface_away() {
     let (mut model, first, second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_architect(&mut model);
 
     let mut session = model.session.clone().expect("session");
@@ -696,7 +696,7 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
 #[test]
 fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     let button = |model: &WorkspaceModel, wanted: WorkspaceHit| {
         model
@@ -750,7 +750,7 @@ fn clicking_a_surface_footer_hint_is_pressing_its_key() {
 
     let with_code_open = || {
         let (mut model, first, _second) = two_agents_with_shells();
-        model.session.as_mut().expect("session").select_tab(first);
+        select_tab(&mut model, first);
         let mut view = code::CodeView::opening(
             PathBuf::from("/repo"),
             "/repo".to_owned(),

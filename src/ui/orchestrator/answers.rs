@@ -27,11 +27,10 @@ impl WorkspaceModel {
     }
 
     /// The working directory the badge and the timeline are about: the
-    /// focused pane of the selected tab.
+    /// agent's in front, never where a shell beside it moved to, and none
+    /// with a shell of the space in front.
     pub(super) fn focused_cwd(&self) -> Option<PathBuf> {
-        let session = self.session.as_ref()?;
-        let tab = session.selected_tab();
-        Some(tab.pane.cwd.clone())
+        self.agent_directory_in_front().map(Path::to_path_buf)
     }
 
     /// Asks for whatever the badge is missing, on a thread of its own.

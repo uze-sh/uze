@@ -223,6 +223,9 @@ pub(super) fn render(
     if let Some(index) = &model.action_index {
         render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);
     }
+    if let Some(step) = &model.directory_step {
+        render_directory_step(frame, frame.area(), step, hits);
+    }
     if let Some(picker) = &model.agent_picker {
         render_agent_picker(frame, frame.area(), picker.anchor, picker, hits);
     }

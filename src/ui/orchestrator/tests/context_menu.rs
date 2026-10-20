@@ -78,7 +78,7 @@ fn isolate_is_offered_only_where_a_slot_could_be_cut() {
     // The agent is selected first: the strip shows one agent's context
     // at a time, so the chip a menu opens on is the selected agent's.
     let menu_on = |mut model: WorkspaceModel, wanted: TabId| {
-        model.session.as_mut().expect("session").select_tab(wanted);
+        select_tab(&mut model, wanted);
         let mut driven = driven(model, &home);
         driven.frame();
         let row = driven
@@ -212,7 +212,7 @@ fn a_lone_space_offers_delete_and_is_replaced_by_home() {
     };
     assert_eq!(closed, space);
     assert_eq!(
-        Some(replacement.root.as_path()),
+        Some(replacement.as_path()),
         uze_platform::home::user_home().as_deref(),
         "the workspace lands at home"
     );
@@ -228,13 +228,13 @@ fn starting_at_home_lands_in_the_workspace_rather_than_adding_to_it() {
     use uze_terminal::{Seating, SpaceSeat};
 
     let home = uze_platform::home::user_home().expect("a home directory");
-    let seat = |root: &Path| SpaceSeat {
-        root: root.to_path_buf(),
+    let seat = |project: &Path| SpaceSeat {
+        project: project.to_path_buf(),
     };
 
     assert_eq!(
         crate::ui::orchestrator::seating_at(seat(&home)),
-        Seating::At(seat(&home)),
+        Seating::WhereItLeftOff,
         "the home directory is where a shell starts, not a space to open"
     );
     let project = home.join("some-project");

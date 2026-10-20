@@ -268,15 +268,13 @@ pub(super) fn space_own_tab(space: &Space, identities: &[AgentIdentity]) -> Opti
         .map(|tab| tab.id)
 }
 
-/// Where a space currently is: the directory its own shell stands in, and
-/// the root it was opened at while it has none. A shell is a person's way
-/// of moving around, so a `cd` in it moves the space — what its agents are
-/// placed from and what its caption names — rather
-/// than leaving the space pinned to the directory it was created in.
-pub(in crate::ui) fn space_cwd(space: &Space, identities: &[AgentIdentity]) -> PathBuf {
+/// Where a new shell of the space opens: where its own shell stands, so
+/// a second one opens beside the first, and the home directory when it
+/// has none — a space has no directory of its own.
+pub(in crate::ui) fn space_shell_cwd(space: &Space, identities: &[AgentIdentity]) -> PathBuf {
     space_own_tab(space, identities)
         .and_then(|own| space.tabs.iter().find(|tab| tab.id == own))
-        .map_or_else(|| space.root.clone(), |tab| tab.pane.cwd.clone())
+        .map_or_else(home_directory, |tab| tab.pane.cwd.clone())
 }
 
 /// The label a new agent tab opens with. Agent labels are deliberately
@@ -446,13 +444,11 @@ pub(super) fn hit_at(model: &WorkspaceModel, column: u16, row: u16) -> Option<Wo
         .map(|(_, hit)| *hit)
 }
 
-/// Where the workspace lands when its last space is closed: the person's
-/// home. Somewhere to start rather than a repository to branch agents
-/// from, which is an agent's own question wherever it lands.
-pub(super) fn home_seat() -> uze_terminal::SpaceSeat {
-    uze_terminal::SpaceSeat {
-        root: uze_platform::home::user_home().unwrap_or_else(std::env::temp_dir),
-    }
+/// Where a shell of no agent starts when nothing says otherwise: the
+/// person's home. Somewhere to start rather than a repository to branch
+/// agents from, which is an agent's own question wherever it lands.
+pub(super) fn home_directory() -> PathBuf {
+    uze_platform::home::user_home().unwrap_or_else(std::env::temp_dir)
 }
 
 /// Confirms one [`ContextMenu`] row against its `target` — sent from both
@@ -473,7 +469,7 @@ pub(super) fn dispatch_menu_action<W: io::Write>(
                     stream,
                     &ClientRequest::CloseSpace {
                         space,
-                        replacement: home_seat(),
+                        replacement: home_directory(),
                         columns: model.last_size.0,
                         rows: model.last_size.1,
                     },
@@ -500,11 +496,12 @@ pub(super) fn open_shell_in<W: io::Write>(
     let _ = send_request(
         stream,
         &ClientRequest::CreateTab {
+            space: Some(space.id),
             label: next_shell_label(model, identities),
             agent: None,
             columns,
             rows,
-            cwd: Some(space_cwd(space, identities)),
+            cwd: Some(space_shell_cwd(space, identities)),
             command: None,
             env: Vec::new(),
         },
@@ -527,28 +524,26 @@ pub(super) fn close_tab_keeping_a_shell<W: io::Write>(
     tab: TabId,
 ) {
     if tab_needs_replacement_shell(model, identities, tab) {
-        // Select the target first: the new shell opens in the selected
-        // space, and a background agent closed from the sidebar is replaced
-        // in its own space, not in the one in front.
-        let _ = send_request(stream, &ClientRequest::SelectTab { tab });
         let (columns, rows) = model.last_size;
         let _ = send_request(
             stream,
             &ClientRequest::CreateTab {
+                // Its own space: a background agent closed from the sidebar
+                // is replaced there, not in the space in front.
+                space: tab_space(model, tab).map(|space| space.id),
                 label: next_shell_label_for_tab(model, tab),
                 // It stands in for the tab rather than beside it: that tab
                 // is on its way out.
                 agent: None,
                 columns,
                 rows,
-                // Where the *space* is, never where the closing tab stands.
-                // An agent stands in its own checkout, and opening the
-                // space's own shell there left a live pane inside a slot on
-                // its way back to the pool — which is what kept the slot
-                // from ever being handed on. A space with a shell of its
-                // own is never replaced, so this answers that shell's own
-                // directory in the one case it is not an agent's.
-                cwd: tab_space(model, tab).map(|space| space_cwd(space, identities)),
+                // Never where the closing tab stands. An agent stands in its
+                // own checkout, and opening the space's own shell there
+                // left a live pane inside a slot on its way back to the
+                // pool — which is what kept the slot from ever being
+                // handed on. A space with a shell of its own is never
+                // replaced, so this is a space with none: home.
+                cwd: Some(home_directory()),
                 command: None,
                 env: Vec::new(),
             },
@@ -728,9 +723,9 @@ pub(super) fn sync_slot_occupancy(
         return;
     }
     model.occupancy_stale = false;
-    let Some(session) = model.session.as_ref() else {
+    if model.session.is_none() {
         return;
-    };
+    }
     let live: Vec<(PaneId, PathBuf)> = model
         .tabs()
         .map(|tab| (tab.pane.id, tab.pane.cwd.clone()))
@@ -743,12 +738,10 @@ pub(super) fn sync_slot_occupancy(
         .filter_map(launched_agent_id)
         .map(str::to_owned)
         .collect();
-    let space_roots: Vec<PathBuf> = session
-        .workspace
-        .spaces
-        .iter()
-        .map(|space| space.root.clone())
-        .collect();
+    // Every project an agent has stood in this session: an agent that
+    // just left took its tab with it, and its project is still the one
+    // to sweep. Never a shell's directory, which names no project.
+    let agent_projects: BTreeSet<PathBuf> = model.projects.values().cloned().collect();
     for (pane, cwd) in &live {
         // The directory the pane was given, not `/proc`'s note about what
         // became of it: a pane first seen *after* its checkout was
@@ -831,12 +824,12 @@ pub(super) fn sync_slot_occupancy(
         OccupancyPass::Full
     };
     // A repository is named by any path inside it: the checkout a pane just
-    // left, or every space's own root — for the sweep, and for an agent
-    // in the root, which is keyed by the root it works in.
+    // left, or every project an agent worked in — for the sweep, and for
+    // an agent in a project's own tree, which is keyed by that project.
     let mut look_in: Vec<PathBuf> = vanished;
     look_in.extend(retrying);
     if sweeping || agent_left {
-        look_in.extend(space_roots);
+        look_in.extend(agent_projects);
     }
     model.occupancy_pending = true;
     spawn_occupancy_reconcile(
@@ -943,11 +936,8 @@ pub(super) fn tab_cwd(model: &WorkspaceModel, tab: TabId) -> Option<PathBuf> {
 /// Minimizes one space to its header, or opens it again — and keeps it
 /// that way for the next run, the way the timeline's own fold is kept.
 pub(super) fn toggle_space_collapsed(model: &mut WorkspaceModel, space: SpaceId) {
-    let Some(root) = model.space_root(space) else {
-        return;
-    };
-    if !model.collapsed_space_roots.remove(&root) {
-        model.collapsed_space_roots.insert(root);
+    if !model.collapsed_spaces.remove(&space.0) {
+        model.collapsed_spaces.insert(space.0);
     }
     model.remember_sidebar();
     model.dirty = true;

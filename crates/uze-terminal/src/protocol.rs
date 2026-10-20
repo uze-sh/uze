@@ -11,7 +11,7 @@ use crate::{PaneId, Session, SpaceId, TabId};
 /// [`crate::attach`] replaces a server of another build before connecting;
 /// this is what a client that connects without it — a `uze` nested in a
 /// pane, a test — still meets.
-pub const PROTOCOL_VERSION: u16 = 21;
+pub const PROTOCOL_VERSION: u16 = 22;
 
 /// The colours a client draws a pane's default and indexed cells in. Plain
 /// `(r, g, b)` triples: this runtime holds no opinion about appearance, it
@@ -143,13 +143,11 @@ fn parse_rrggbb(colour: &str) -> Option<(u8, u8, u8)> {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Seating {
     /// Whatever the server already has selected: an attach with nothing to
-    /// say about where to land, such as one after the runtime went away.
+    /// say about where to land, such as one after the runtime went away or
+    /// one started from the home directory, which is no project.
     WhereItLeftOff,
-    /// The space at this seat when one is open there, and otherwise
-    /// nothing at all — the workspace is left exactly as it stands.
-    At(crate::SpaceSeat),
-    /// The space at this seat, opened when none is there. A request, not
-    /// an observation.
+    /// The space working at this seat, opened when none is there. A
+    /// request, not an observation.
     Open(crate::SpaceSeat),
 }
 
@@ -214,6 +212,10 @@ pub enum ClientRequest {
         rows: u16,
     },
     CreateTab {
+        /// The space the tab opens in: the one an agent was asked for
+        /// from, which the operator may have left by the time its checkout
+        /// is ready. `None` is the space this client is looking at.
+        space: Option<SpaceId>,
         label: String,
         /// The agent tab this one is opened alongside — a shell the person
         /// asked for while that agent was in front of them, which is shown
@@ -222,8 +224,8 @@ pub enum ClientRequest {
         agent: Option<TabId>,
         columns: u16,
         rows: u16,
-        /// Optional directory for the pane's first process. A missing value
-        /// keeps the workspace-root behavior used by ordinary shell tabs.
+        /// The directory for the pane's first process; `None` is the home
+        /// directory, since a space has no directory of its own.
         cwd: Option<std::path::PathBuf>,
         /// Command to run in the new pane's PTY, as `argv` — `None` (or
         /// `Some(&[])`) keeps the default `$SHELL`. Lets a client open a
@@ -265,9 +267,10 @@ pub enum ClientRequest {
         before: Option<SpaceId>,
     },
     CreateSpace {
-        /// `None` derives the label from the root.
+        /// `None`, or a blank one, is the unnamed label, numbered.
         label: Option<String>,
-        seat: crate::SpaceSeat,
+        /// Where the space's first shell stands.
+        cwd: std::path::PathBuf,
         columns: u16,
         rows: u16,
     },
@@ -276,10 +279,10 @@ pub enum ClientRequest {
     },
     CloseSpace {
         space: SpaceId,
-        /// The space opened in its place when `space` is the workspace's
-        /// last: the client decides where a workspace with nothing left
-        /// lands, as it decides every other space's root and kind.
-        replacement: crate::SpaceSeat,
+        /// Where the shell of the space opened in its place stands, when
+        /// `space` is the workspace's last: the client decides where a
+        /// workspace with nothing left lands.
+        replacement: std::path::PathBuf,
         /// The size the replacement's first pane is drawn at.
         columns: u16,
         rows: u16,
@@ -549,7 +552,7 @@ mod tests {
             columns: 80,
             rows: 24,
             seating: Seating::Open(crate::SpaceSeat {
-                root: std::path::PathBuf::from("/tmp/w"),
+                project: std::path::PathBuf::from("/tmp/w"),
             }),
             key: "k".into(),
         };
@@ -578,18 +581,14 @@ mod tests {
         let requests = [
             ClientRequest::CreateSpace {
                 label: Some("frontend".into()),
-                seat: crate::SpaceSeat {
-                    root: std::path::PathBuf::from("/tmp/frontend"),
-                },
+                cwd: std::path::PathBuf::from("/tmp/frontend"),
                 columns: 80,
                 rows: 24,
             },
             ClientRequest::SelectSpace { space: SpaceId(1) },
             ClientRequest::CloseSpace {
                 space: SpaceId(1),
-                replacement: crate::SpaceSeat {
-                    root: std::path::PathBuf::from("/home/someone"),
-                },
+                replacement: std::path::PathBuf::from("/home/someone"),
                 columns: 80,
                 rows: 24,
             },

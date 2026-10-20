@@ -84,7 +84,7 @@ impl Engine {
 
         let server = env
             .command(uze_bin())
-            .args(["terminal", "serve", "--root"])
+            .args(["terminal", "serve", "--project"])
             .arg(&project)
             .env("AGENT_SCRIPTS", &scripts)
             // A pane with no command runs this: a shell nothing on the
@@ -188,6 +188,7 @@ impl Engine {
         send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
+                space: None,
                 label,
                 agent: None,
                 columns: 80,
@@ -331,7 +332,7 @@ impl Engine {
         self.server = self
             .env
             .command(uze_bin())
-            .args(["terminal", "serve", "--root"])
+            .args(["terminal", "serve", "--project"])
             .arg(&project)
             .env("AGENT_SCRIPTS", &self.scripts)
             .stdin(Stdio::null())
@@ -378,7 +379,7 @@ fn connect(project: &Path) -> (Stream, Stream) {
             // A project directory, which is a directory somebody chose:
             // the client asks for a space there.
             seating: uze_terminal::Seating::Open(uze_terminal::SpaceSeat {
-                root: project.to_path_buf(),
+                project: project.to_path_buf(),
             }),
             key: uze_terminal::server_key(),
         },
@@ -940,9 +941,11 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
     let project = engine.project().to_path_buf();
     let first_space = engine.session.as_ref().unwrap().workspace.selected_space;
     assert_eq!(
-        engine.session.as_ref().unwrap().selected_space().root,
+        engine.session.as_ref().unwrap().selected_space().tabs[0]
+            .pane
+            .cwd,
         uze_platform::path::canonical(&project).unwrap_or(project.clone()),
-        "the launch directory is the first space's root"
+        "the first space's shell stands in the launch directory"
     );
 
     // A second client attaches for another directory: it gets a space of
@@ -960,7 +963,7 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
     };
     assert_ne!(second_view.workspace.selected_space, first_space);
     assert_eq!(
-        second_view.selected_space().root,
+        second_view.selected_space().tabs[0].pane.cwd,
         uze_platform::path::canonical(&other).unwrap_or(other.clone())
     );
     assert_eq!(second_view.workspace.spaces.len(), 2);
@@ -1000,7 +1003,7 @@ fn two_clients_keep_their_own_focus_and_a_nested_launch_opens_a_space() {
     let nested = engine.env.root().join("nested-project");
     fs::create_dir_all(&nested).unwrap();
     let label = open_space(uze_terminal::SpaceSeat {
-        root: nested.clone(),
+        project: nested.clone(),
     })
     .expect("the running server opens a space");
     assert_eq!(label, "nested-project");
@@ -1057,6 +1060,7 @@ fn a_harness_typed_into_a_pane_goes_through_its_launcher() {
     send_request(
         &mut engine.stream,
         &ClientRequest::CreateTab {
+            space: None,
             label: "shell".into(),
             agent: None,
             columns: 80,

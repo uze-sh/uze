@@ -25,24 +25,27 @@ use uze_terminal::{
     RenderCell, Session, SpaceId, Tab, TabId, TerminalColor,
 };
 
-/// A fresh one-space session over `root`, at the size every test
-/// frame is drawn at.
+/// A fresh one-space session whose shell stands in `root`, at the size
+/// every test frame is drawn at.
 pub(super) fn session(root: impl AsRef<Path>) -> Session {
     Session::new(
         uze_terminal::SpaceSeat {
-            root: root.as_ref().to_path_buf(),
+            project: root.as_ref().to_path_buf(),
         },
         80,
         24,
     )
 }
 
-/// A model attached to `session` and nothing else.
+/// A model attached to `session` and nothing else, having read it as a
+/// session update does.
 pub(super) fn model_of(session: Session) -> WorkspaceModel {
-    WorkspaceModel {
+    let mut model = WorkspaceModel {
         session: Some(session),
         ..WorkspaceModel::default()
-    }
+    };
+    model.note_space_projects(&identities_fixture());
+    model
 }
 
 pub(super) fn identities_fixture() -> Vec<AgentIdentity> {
@@ -855,12 +858,7 @@ pub(super) fn three_spaces() -> WorkspaceModel {
     session.update_pane_status(pane, "/one".into(), "agent".into());
     for name in ["two", "three"] {
         let root = PathBuf::from(format!("/{name}"));
-        session.create_space(
-            Some(name.into()),
-            uze_terminal::SpaceSeat { root: root.clone() },
-            80,
-            24,
-        );
+        session.create_space(Some(name.into()), root.clone(), 80, 24);
         let pane = session.selected_tab().pane.id;
         session.update_pane_status(pane, root, "agent".into());
     }
@@ -926,4 +924,11 @@ pub(super) fn toast_close(driven: &Driven<'_>) -> Rect {
         .find(|(_, hit)| matches!(hit, WorkspaceHit::DismissToast(_)))
         .map(|(rect, _)| *rect)
         .expect("the toast registered a target")
+}
+
+/// Selects `tab` and reads the session again, as an update from the
+/// server would have the client do.
+pub(super) fn select_tab(model: &mut WorkspaceModel, tab: TabId) {
+    model.session.as_mut().expect("session").select_tab(tab);
+    model.note_space_projects(&identities_fixture());
 }

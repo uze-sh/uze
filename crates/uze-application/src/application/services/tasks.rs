@@ -176,10 +176,15 @@ impl Workspace<'_> {
             .map(|found| found.as_ref())
     }
 
-    /// Recent prompts submitted into the agent tabs of `root`'s workspace.
+    /// Recent prompts `agent` was given in `root`'s workspace.
     #[tracing::instrument(name = "workspace.prompt_history", skip_all, fields(root = %root.display(), limit))]
-    pub fn prompt_history(&self, root: &Path, limit: usize) -> Vec<prompt_history::PromptEntry> {
-        prompt_history::list_for_workspace(&self.0.home, root, limit)
+    pub fn prompt_history(
+        &self,
+        root: &Path,
+        agent: &str,
+        limit: usize,
+    ) -> Vec<prompt_history::PromptEntry> {
+        prompt_history::list_for_agent(&self.0.home, root, agent, limit)
     }
 
     /// Records one prompt submitted into an agent tab of `root`'s
@@ -206,10 +211,10 @@ impl Workspace<'_> {
         prompt_history::record(&self.0.home, root, origin, prompt)
     }
 
-    /// Forgets every prompt recorded for `root`'s workspace.
+    /// Forgets every prompt `agent` was given in `root`'s workspace.
     #[tracing::instrument(name = "workspace.clear_prompt_history", skip_all, fields(root = %root.display()), err)]
-    pub fn clear_prompt_history(&self, root: &Path) -> Result<()> {
-        prompt_history::clear(&self.0.home, root)
+    pub fn clear_prompt_history(&self, root: &Path, agent: &str) -> Result<()> {
+        prompt_history::clear_agent(&self.0.home, root, agent)
     }
 
     /// What the TUI was last left looking like, in both of its modes.

@@ -1035,7 +1035,7 @@ mod task_service_tests {
                         tab_id: 1,
                         tab_label: "claude".to_owned(),
                         agent_binary: "claude-code".to_owned(),
-                        agent: None,
+                        agent: Some("a1".to_owned()),
                     },
                     secret,
                 )
@@ -1053,7 +1053,7 @@ mod task_service_tests {
         );
         assert!(
             app.workspace()
-                .prompt_history(&root, 10)
+                .prompt_history(&root, "a1", 10)
                 .iter()
                 .any(|entry| entry.preview.contains("hunter2")),
             "while the record it wrote still holds its preview"

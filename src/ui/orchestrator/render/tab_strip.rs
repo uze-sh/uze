@@ -97,11 +97,15 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // the strip never draws a divider with nothing on one side of it.
     let mut trailing_right = inner.right();
     let mut surfaces_left: Option<u16> = None;
-    // The space's own door, at the strip's edge and apart from the
+    // Everything at this end is about a project, and a project is what an
+    // agent works in: a shell of the space belongs to none, wherever it
+    // stands, so with one in front the end of the strip is empty.
+    let agent_context = model.agent_directory_in_front().is_some();
+    // The agent's own door, at the strip's edge and apart from the
     // surfaces: those are about the checkout in front, this is about the
-    // space as a whole — its settings, plugins, context, memory and the
-    // agent in front — so it stands wherever in the space the operator is.
-    {
+    // agent as a whole — its prompts, and its project's settings, plugins,
+    // memory and worktrees.
+    if agent_context {
         // A quiet "more" rather than a labelled button: it is always there
         // and rarely the errand, so it does not compete with the surfaces
         // for the eye. At rest it stands on the surfaces' own ground, so it
@@ -150,7 +154,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // strip of controls, and bold made each of them claim the row on its
     // own. The pair of glyphs at the tab side's end is the other way
     // round, and says why in its own place.
-    {
+    if agent_context {
         // The one standing in the pane wears the strip's one highlight —
         // the pane shows one thing, so the strip lights one thing, and
         // while a surface is up that is its button, not the tab it
@@ -234,9 +238,11 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         .remembered
         .git_badge
         .as_ref()
-        .and_then(|badge| badge.summary);
+        .and_then(|badge| badge.summary)
+        .filter(|_| agent_context);
     let upstream = model
         .focused_cwd()
+        .filter(|_| agent_context)
         .and_then(|cwd| upstream_sync(model, &cwd));
     // No hairline against the surfaces: their group stands on a ground of
     // its own, and a rule beside a filled edge says it again. The counts'

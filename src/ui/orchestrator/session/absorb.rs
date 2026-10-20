@@ -382,13 +382,15 @@ impl Attach<'_> {
             // from the disk rather than from a quirk of how one kernel
             // renames what it lost.
             self.model.occupancy_stale = true;
-            // Every space's header, not only the selected pane's: a push
-            // or a pull made from a terminal leaves nothing behind for any
-            // other trigger to notice, and a folded space's `↑1` stayed up
-            // until one of its agents happened to go quiet.
-            let directories: Vec<PathBuf> = selected_pane_cwd(&self.model)
+            // Every project agents work in, not only the selected pane's: a
+            // push or a pull made from a terminal leaves nothing behind for
+            // any other trigger to notice, and a folded space's `↑1` stayed
+            // up until one of its agents happened to go quiet.
+            let directories: Vec<PathBuf> = self
+                .model
+                .focused_cwd()
                 .into_iter()
-                .chain(self.model.space_directories(&self.identities))
+                .chain(self.model.working_projects())
                 .collect();
             for cwd in &directories {
                 self.model
@@ -422,7 +424,7 @@ impl Attach<'_> {
             self.model.remembered.checkout_watch_pending = true;
             spawn_checkout_watch(
                 self.home,
-                self.model.watched_checkouts(&self.identities),
+                self.model.watched_checkouts(),
                 self.channels.checkout_stamps.sender.clone(),
             );
         }
@@ -435,7 +437,7 @@ impl Attach<'_> {
             self.model.remembered.last_target_sync = Some(Instant::now());
             spawn_target_sync(
                 self.home,
-                self.model.space_directories(&self.identities),
+                self.model.working_projects(),
                 self.channels.target_syncs.sender.clone(),
             );
         }

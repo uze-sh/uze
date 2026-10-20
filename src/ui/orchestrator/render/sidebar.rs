@@ -140,19 +140,12 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         // rule between them: one names an action this surface takes, the
         // other opens another surface, and side by side without it they read
         // as one pair of controls.
-        // Muted while the prompt it opens is open: the word is where that
-        // prompt came from, and in the accent beside it, it reads as a
-        // second way in rather than as the one already taken. Otherwise the
-        // accent is held back until the pointer asks for it, so the header's
-        // one coloured word does not outshout the column under it.
+        // The accent is held back until the pointer asks for it, so the
+        // header's one coloured word does not outshout the column under it.
         let new = "+ space";
-        let new_hue = if model.root_picker.is_some() {
-            Token::TextMuted
-        } else {
-            match chip_state(model, WorkspaceHit::NewSpace) {
-                ChipState::Hovered | ChipState::Pressed => Token::Accent,
-                ChipState::Resting => Token::AccentMuted,
-            }
+        let new_hue = match chip_state(model, WorkspaceHit::NewSpace) {
+            ChipState::Hovered | ChipState::Pressed => Token::Accent,
+            ChipState::Resting => Token::AccentMuted,
         };
         let new_width = Span::raw(new).width() as u16;
         let divider = theme::glyph(Symbol::TreeColumnDivider);
@@ -251,14 +244,6 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // whichever one is expanded.
     let rearranging = model.dragging_space.is_some_and(|dragging| dragging.armed);
     let mut gap_above = rows.slot(1).visible();
-    // While the root picker is open it owns the column: the listing it
-    // draws is a tree of directories, and side by side with the tree of
-    // spaces neither would read as the one being chosen from. It stands
-    // where the spaces it would join stand. Closing it brings them back.
-    if let Some(picker) = &model.root_picker {
-        render_root_picker(frame, picker, &mut rows, hits);
-        return;
-    }
 
     // The timeline keeps the foot of the column whatever the spaces above
     // come to: a section trailing the last space would sink out of sight
@@ -375,18 +360,13 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         if let Some(header_rect) = header.visible() {
             render_space_header(frame, header_rect, session, space, model, identities, hits);
         }
-        // Where a space's work is, under its name. Minimized, only while
-        // it is the one in front: the name is what a person reads down a
-        // column of spaces, and a path under every one of them is a
-        // second column of text to read past to reach the first. Asked
-        // for by selecting it, which is when the answer is worth a row.
-        //
-        // Open with nothing in it, always — there it is not detail under
-        // a name, it is the whole of what the block has to show, and
-        // without it the space is a header over nothing.
+        // Where a space's work is, under its name — minimized, and only
+        // while it is the one in front: the name is what a person reads
+        // down a column of spaces, and a path under every one of them is a
+        // second column of text to read past to reach the first. Asked for
+        // by selecting it, which is when the answer is worth a row.
         let folded = model.space_folded(space);
-        let empty = agent_tabs_of(space, identities).is_empty();
-        if (folded && is_active_space) || (!folded && empty) {
+        if folded && is_active_space {
             render_space_caption(frame, &mut rows, hits, model, session, space, identities);
         }
         if folded {
@@ -728,6 +708,16 @@ pub(super) struct SidebarAgent<'a> {
     pub(super) tick: usize,
 }
 
+/// The project `tab`'s agent works in, when its space's agents work in
+/// more than one.
+fn project_named_on_row(model: &WorkspaceModel, tab: &Tab) -> Option<String> {
+    tab_space(model, tab.id).filter(|space| model.projects_of(space.id).len() > 1)?;
+    model
+        .projects
+        .get(&named_checkout(&tab.pane.cwd))
+        .map(|project| project_name(project))
+}
+
 /// What only the tree's two-row item says about an agent: its task's mark
 /// and the caption row beneath the label.
 pub(super) struct TreeCaption {
@@ -768,13 +758,18 @@ impl TreeCaption {
         // apart, and it cost a click to see. A row is only drawn for a
         // recognized harness (`agent_tabs_of`), so the pane's own process
         // is a fallback for a race, not a second answer.
+        //
+        // In a space whose agents work in several projects, the project
+        // too: there it is what tells two agents apart, and a space of one
+        // project says it once, under its name.
         let detail = if lost {
             "checkout removed".to_owned()
         } else {
-            agent
-                .harness
-                .unwrap_or(tab.pane.process.as_str())
-                .to_owned()
+            let harness = agent.harness.unwrap_or(tab.pane.process.as_str());
+            match project_named_on_row(model, tab) {
+                Some(project) => format!("{harness} · {project}"),
+                None => harness.to_owned(),
+            }
         };
         let detail_color = if lost {
             theme::color(Token::StateWarning)
@@ -883,24 +878,20 @@ pub(super) fn rename_spans(buffer: &RenameBuffer) -> Vec<Span<'static>> {
     ]
 }
 
-/// The row under a minimized or empty space's header: the directory the
-/// space's work is in. Lit along with its header, and selecting the space
-/// like any caption.
+/// The row under a minimized space's header: where the space's agents
+/// work — their project while they work in one, how many while they work
+/// in several. Lit along with its header, and selecting the space like any
+/// caption. A space with no agent works nowhere and has none.
 ///
-/// Minimized, it is drawn only for the space in front. A name is what a
-/// person reads down a column of spaces, and the path under every one of
-/// them was a second column of text to read past to reach the first —
-/// tiring exactly when the column is long, which is when the names
-/// matter most. Selecting a space is how it is asked for, and the row it
-/// costs is a row the space in front can afford.
+/// Drawn only for the space in front. A name is what a person reads down a
+/// column of spaces, and the path under every one of them was a second
+/// column of text to read past to reach the first — tiring exactly when
+/// the column is long, which is when the names matter most. Selecting a
+/// space is how it is asked for, and the row it costs is a row the space
+/// in front can afford.
 ///
-/// The directory rather than the branch its root is on. A space is a
-/// place, and the fold is what asks about it: opened, its agents answer
-/// for themselves and say their own branches; minimized, they are gone
-/// from the column and the one thing left to say is *where* — which a
-/// branch name does not say, and which was the question the header's own
-/// `⇄` existed to answer, a control per space for a fact the row could
-/// simply carry.
+/// Opened, the space needs none: its agents answer for themselves, and in
+/// a space of several projects each row names its own.
 pub(super) fn render_space_caption(
     frame: &mut ratatui::Frame<'_>,
     rows: &mut Rows,
@@ -910,11 +901,15 @@ pub(super) fn render_space_caption(
     space: &Space,
     identities: &[AgentIdentity],
 ) {
+    let caption = match model.projects_of(space.id) {
+        [] => return,
+        [project] => crate::ui::display_project_path(project),
+        several => format!("{} projects", several.len()),
+    };
     let Some(rect) = rows.slot(1).visible() else {
         return;
     };
     let selected = space.id == session.workspace.selected_space;
-    let caption = crate::ui::display_project_path(&space_cwd(space, identities));
     // Pinned to the right edge, the one trailing column every row in the
     // sidebar keeps: the column the header's own name leads stays the
     // space's, and what it is about reads as a caption to it rather than

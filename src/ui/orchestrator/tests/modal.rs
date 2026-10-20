@@ -3,7 +3,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    RootPicker, WorkStateView, WorkspaceModel,
+    WorkStateView, WorkspaceModel,
     render::{self},
 };
 use crate::ui::theme::{self, Token};
@@ -121,7 +121,7 @@ fn the_header_control_opens_the_modal_and_a_click_beside_it_closes_it() {
         "a click beside the modal closes it"
     );
     assert!(
-        driven.attach.model.root_picker.is_none(),
+        driven.attach.model.directory_step.is_none(),
         "and reaches nothing underneath"
     );
 }
@@ -162,7 +162,7 @@ fn keys_inside_the_modal_are_the_modals() {
     assert!(
         driven.attach.model.action_index.is_none()
             && driven.attach.model.agent_picker.is_none()
-            && driven.attach.model.root_picker.is_none(),
+            && driven.attach.model.directory_step.is_none(),
         "nothing of the workspace answered"
     );
 
@@ -304,14 +304,6 @@ fn the_way_to_grow_the_column_goes_quiet_while_its_prompt_is_open() {
         hue_of_new(&mut model),
         theme::color(Token::Accent),
         "the pointer restores the accent"
-    );
-
-    model.root_picker = Some(RootPicker::opened_in("~", None));
-
-    assert_eq!(
-        hue_of_new(&mut model),
-        theme::color(Token::TextMuted),
-        "spent while the prompt it opened is open"
     );
 }
 

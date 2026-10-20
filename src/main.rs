@@ -389,7 +389,7 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         return Err(terminal_error(refused));
     }
     if let Command::Terminal {
-        action: TerminalAction::Serve { root, palette },
+        action: TerminalAction::Serve { project, palette },
     } = command
     {
         let palette = match palette {
@@ -411,7 +411,7 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         if let Ok(executable) = std::env::current_exe() {
             uze_terminal::host_panes_with(executable);
         }
-        return uze_terminal::serve(uze_terminal::SpaceSeat { root }, palette)
+        return uze_terminal::serve(uze_terminal::SpaceSeat { project }, palette)
             .map_err(terminal_error);
     }
     // Ahead of the application: a check running detached from the command
@@ -726,12 +726,20 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
     // inside a client is never what that means. Open a space for this
     // directory in the uze already running, and leave.
     if std::env::var_os("UZE_PANE").is_some() {
-        let root = uze_application::space_root(&cwd()?);
-        let label = uze_terminal::open_space(uze_terminal::SpaceSeat { root: root.clone() })
-            .map_err(terminal_error)?;
+        let project = uze_application::space_root(&cwd()?);
+        // Home is where a shell starts, not a project somebody chose: a
+        // launch there opens nothing, here as on a first launch.
+        if uze_platform::home::user_home().is_some_and(|home| home == project) {
+            println!("Already running. Start it in a project to open that project's space.");
+            return Ok(());
+        }
+        let label = uze_terminal::open_space(uze_terminal::SpaceSeat {
+            project: project.clone(),
+        })
+        .map_err(terminal_error)?;
         println!(
-            "opened space `{label}` at {} in the running uze",
-            root.display()
+            "opened space `{label}` for {} in the running uze",
+            project.display()
         );
         return Ok(());
     }

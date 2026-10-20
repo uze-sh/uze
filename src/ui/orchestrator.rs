@@ -271,9 +271,9 @@ const TOAST_TTL: Duration = Duration::from_secs(6);
 /// scrolling has stopped being a transient message.
 const MAX_TOASTS: usize = 4;
 
-/// An agent's tab, and the project whose space it belongs in.
-struct PendingAgentTab {
-    project: PathBuf,
+/// An agent's tab, and the space it opens in.
+struct AgentTab {
+    space: SpaceId,
     label: String,
     command: Vec<String>,
     cwd: PathBuf,
@@ -363,30 +363,26 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
 
 /// What starting `uze` in a directory asks of the workspace.
 ///
-/// A directory somebody chose is a request: `cd` into a project, start
-/// uze, and the project is there. The home directory is not a choice — it
-/// is where a shell starts when nobody said otherwise — so starting there
-/// lands on the home space when one is open and adds nothing when none
-/// is. Without the distinction, a home space closed on purpose came back
-/// on the next launch, which is indistinguishable from closing it not
-/// having worked.
-///
-/// Compared the way `uze_terminal::space_label` compares it, so the rule
-/// applies to exactly the space that would have been called *home*.
+/// A project somebody chose is a request: `cd` into it, start uze, and the
+/// space working there is in front, opened when none is. The home
+/// directory is not a choice — it is where a shell starts when nobody said
+/// otherwise — so starting there lands where the session already is and
+/// adds nothing. Without the distinction, every launch from home would
+/// open another space.
 ///
 /// This never leaves the workspace empty: a server with nothing persisted
 /// bootstraps a space at the seat it was started with, before any client
 /// attaches.
 fn seating_at(seat: uze_terminal::SpaceSeat) -> uze_terminal::Seating {
     let home = uze_platform::home::user_home();
-    if home.is_some_and(|home| home == seat.root) {
-        return uze_terminal::Seating::At(seat);
+    if home.is_some_and(|home| home == seat.project) {
+        return uze_terminal::Seating::WhereItLeftOff;
     }
     uze_terminal::Seating::Open(seat)
 }
 
-/// Whether this attach asks the server for a space rooted at the launch
-/// directory.
+/// Whether this attach asks the server for the space working in the
+/// launch directory's project.
 ///
 /// Only the process's first attach does. An attach after the runtime went
 /// away is a fresh attach of the *same* run, and asking again there would
@@ -458,11 +454,10 @@ pub(crate) fn attach_workspace(
 
     // One server per user; what the launch directory decides is which
     // space this client lands in, and only on the run's first attach (see
-    // `Landing`). Resolving the workspace root *before* attaching is what
-    // makes a repository and a subdirectory of it the same space rather
-    // than two.
+    // `Landing`). Resolving the project *before* attaching is what makes a
+    // repository and a subdirectory of it land in the same space.
     let seat = uze_terminal::SpaceSeat {
-        root: uze_application::space_root(&launch.root),
+        project: uze_application::space_root(&launch.project),
     };
     let Attached {
         mut stream,
@@ -559,7 +554,7 @@ pub(crate) fn attach_workspace(
         disabled_extensions: super::extension_switch::disabled(),
         timeline_collapsed: layout.workspace.timeline_collapsed,
         timeline_rows: layout.workspace.timeline_rows,
-        collapsed_space_roots: layout.workspace.collapsed_space_roots.clone(),
+        collapsed_spaces: layout.workspace.collapsed_spaces.clone(),
         prompt_recorder: Some(prompt_recorder),
         layout_recorder: Some(layout_recorder),
         management_layout: layout.management.clone(),
@@ -825,9 +820,10 @@ pub(super) enum WorkspaceHit {
     SelectTab(TabId),
     CloseTab(TabId),
     NewTab,
-    /// Opens the agent picker (`WorkspaceModel::agent_picker`) — the
-    /// "new" on the selected space's header in the sidebar, creating a
-    /// new agent tab inside that space.
+    /// Opens the new agent's directory step
+    /// (`WorkspaceModel::directory_step`) — the "new" on the selected
+    /// space's header in the sidebar, creating a new agent tab inside that
+    /// space.
     NewAgentMenu,
     /// One row of the open agent picker, by index into its `options`.
     PickAgent(usize),
@@ -868,14 +864,13 @@ pub(super) enum WorkspaceHit {
     ProposalAnswer(ProposalChoice),
     /// That question itself, which a click on answers nothing.
     ProposalBody,
-    /// The sidebar's "+ space" control — opens the root picker
-    /// ([`WorkspaceModel::root_picker`]), since a space is born from a
-    /// directory and that directory is chosen, not typed blind.
+    /// The sidebar's "+ space" control — opens a space and the prompt
+    /// that names it.
     NewSpace,
-    /// One row of the open root picker, by index into its current matches
-    /// — same pattern [`WorkspaceHit::PickAgent`] uses for the agent
-    /// picker.
-    PickSpaceRoot(usize),
+    /// One row of the new agent's directory step, by index into its
+    /// current matches — same pattern [`WorkspaceHit::PickAgent`] uses for
+    /// the harness step.
+    PickDirectory(usize),
     /// The tab strip's count of what the focused checkout's upstream has
     /// that it lacks: pulls the target, by fast-forward only. Drawn only
     /// on the target, where the count is.
@@ -1260,14 +1255,16 @@ fn selected_agent_context(
     Some((identity.integration.to_owned(), tab.pane.cwd.clone()))
 }
 
-/// The overview's Agent section for the space in front: its prompts, and
-/// the agent in front of it when there is one — the same agent
-/// [`selected_agent_context`] resolves — whose support it reads.
-fn space_prompts_panel(
+/// The overview's Agent section for the agent whose context is in front:
+/// the prompts it was given, and the support of its harness — the same
+/// agent [`selected_agent_context`] resolves. `None` with no agent in
+/// front, where there is no overview to open.
+fn agent_panel_in_front(
     model: &WorkspaceModel,
     identities: &[AgentIdentity],
 ) -> Option<AgentSupportDropdown> {
-    let space = model.session.as_ref()?.selected_space();
+    let tab = model.tab(context_agent(model, identities)?)?;
+    let directory = named_checkout(&tab.pane.cwd);
     let key = selected_agent_context(model, identities);
     let support = key.as_ref().and_then(|key| {
         model
@@ -1277,10 +1274,17 @@ fn space_prompts_panel(
             .filter(|resolution| resolution.key == *key)
             .and_then(|resolution| resolution.support.clone())
     });
+    let prompts = launched_agent_id(tab)
+        .zip(model.projects.get(&directory))
+        .map(|(agent, project)| PromptsOf {
+            project: project.clone(),
+            agent: agent.to_owned(),
+        });
     Some(AgentSupportDropdown {
         support,
-        space_root: space.root.clone(),
-        path: crate::ui::display_project_path(key.as_ref().map_or(&space.root, |key| &key.1)),
+        tab: tab.id,
+        prompts,
+        path: crate::ui::display_project_path(&directory),
         key,
         selected: 0,
     })
@@ -1523,7 +1527,7 @@ struct Remembered {
     drawer_prompts: Option<PromptHistoryResolution>,
     /// The space root a prompt history read is out for, so opening the
     /// overview again before it answers does not queue another.
-    prompt_history_pending: Option<PathBuf>,
+    prompt_history_pending: Option<PromptsOf>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.
@@ -1760,7 +1764,7 @@ struct WorkspaceModel {
     /// What the sidebar's foot says about releases, as of `release_revision`.
     release: Option<crate::self_update::Notice>,
     release_revision: u64,
-    /// The spaces minimized to their header row, by root, flipped by the
+    /// The spaces minimized to their header row, by id, flipped by the
     /// fold in front of the name. A view of the column, not of the work:
     /// the space's agents keep running and the chords still reach them.
     /// A preference rather than a resolution, so it is kept in the shared
@@ -1768,7 +1772,16 @@ struct WorkspaceModel {
     /// timeline's fold are the same kind of thing, and a fold the
     /// operator has to make again on every launch is not remembered at
     /// all.
-    collapsed_space_roots: BTreeSet<PathBuf>,
+    collapsed_spaces: BTreeSet<u64>,
+    /// The project each directory an agent stood in belongs to, resolved
+    /// once: what [`WorkspaceModel::space_projects`] is read from.
+    projects: BTreeMap<PathBuf, PathBuf>,
+    /// The projects each space's agents work in, read again whenever the
+    /// session moves rather than while a frame is drawn.
+    space_projects: BTreeMap<SpaceId, Vec<PathBuf>>,
+    /// The directory of the agent whose context is in front, read again
+    /// with the session: what everything about a project is drawn for.
+    agent_in_front: Option<PathBuf>,
     /// Whether the sidebar's first-steps section is folded to its header.
     first_steps_collapsed: bool,
     /// Whether the sidebar's spec section is open. Folded until asked,
@@ -1793,10 +1806,14 @@ struct WorkspaceModel {
     /// pane, and any click elsewhere cancels it (same "click outside
     /// discards" rule the management modal's dialogs use).
     renaming: Option<(RenameTarget, RenameBuffer)>,
-    /// Open state of the sidebar's "+ space" prompt — the directory the next
-    /// space is born from, chosen from a live listing that narrows as it is
-    /// typed. Same "click outside discards" rule as `renaming`.
-    root_picker: Option<RootPicker>,
+    /// Open state of the new agent's first step — the directory it runs
+    /// in, chosen from a live listing that narrows as it is typed. Same
+    /// "click outside discards" rule as `renaming`.
+    directory_step: Option<DirectoryStep>,
+    /// The spaces there were when "+ space" asked for one, until the
+    /// session shows the space it created: that one is then put up for
+    /// its name.
+    naming_new_space: Option<BTreeSet<SpaceId>>,
     last_click: Option<(std::time::Instant, WorkspaceHit)>,
     /// Open state of the "+ new agent" popup; `None` when closed. Same
     /// "click outside discards" rule as `renaming`.
@@ -1847,6 +1864,10 @@ struct WorkspaceModel {
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.
     space_overview: Option<SpaceOverviewView>,
+    /// The selection moved to another agent while the overview was up: it
+    /// is opened again on that agent, which reads what reaches it and the
+    /// prompts it was given — work the client, not the model, asks for.
+    overview_follows: bool,
     /// Each space's overview as it was left when put away — its section,
     /// the rows it was on, edits not yet saved — so opening it again
     /// returns to it rather than starting over.
@@ -1951,12 +1972,6 @@ struct WorkspaceModel {
     unsettled_turns: BTreeMap<PaneId, Instant>,
     /// When the bell last rang, for [`CHIME_COOLDOWN`].
     chimed_at: Option<Instant>,
-    /// An agent's tab waiting for the space it belongs in to exist.
-    ///
-    /// `CreateSpace` answers on the session's own clock, and a `CreateTab`
-    /// sent before that lands in whichever space is selected — which is
-    /// the bug this whole path exists to fix, reintroduced by racing it.
-    pending_agent_tab: Option<PendingAgentTab>,
     /// The sidebar's recent mode, and what it remembers while closed.
     recent: Recent,
     /// Everything that can be done here, each with the key that reaches
@@ -2290,7 +2305,7 @@ impl WorkspaceModel {
     /// pane is, and only the pane is covered.
     fn chrome_answers(&self) -> bool {
         self.renaming.is_none()
-            && self.root_picker.is_none()
+            && self.directory_step.is_none()
             && self.agent_picker.is_none()
             && self.status_catalog.is_none()
             && !self.recent.has_keys()
@@ -2303,42 +2318,6 @@ impl WorkspaceModel {
             && self.release_notes.is_none()
             && self.manage.is_none()
             && !self.commit_detail_open()
-    }
-
-    /// The open space rooted at `project`, by canonical root.
-    ///
-    /// Prefers the selected space when several are rooted there — which
-    /// the first round of `add-space-kinds` allowed on purpose — because
-    /// the one the operator is looking at is the one they meant.
-    fn space_rooted_at(&self, project: &Path) -> Option<SpaceId> {
-        let canonical = |root: &Path| root.canonical().unwrap_or_else(|_| root.to_path_buf());
-        let wanted = canonical(project);
-        let session = self.session.as_ref()?;
-        let matching: Vec<&Space> = session
-            .workspace
-            .spaces
-            .iter()
-            .filter(|space| canonical(&space.root) == wanted)
-            .collect();
-        matching
-            .iter()
-            .find(|space| space.id == session.workspace.selected_space)
-            .or_else(|| matching.first())
-            .map(|space| space.id)
-    }
-
-    /// Every space's label and root, as `space_rooted_at` sees them. For
-    /// the journal alone: a lookup that answered `None` is only readable
-    /// afterwards beside what it was looking through.
-    fn space_roots(&self) -> Vec<(String, PathBuf)> {
-        self.session.as_ref().map_or_else(Vec::new, |session| {
-            session
-                .workspace
-                .spaces
-                .iter()
-                .map(|space| (space.label.clone(), space.root.clone()))
-                .collect()
-        })
     }
 
     /// Takes hold of the foot of the sidebar by the section header at
@@ -2458,19 +2437,48 @@ impl WorkspaceModel {
             .as_ref()
             .map(|session| session.selected_tab().id)
     }
-    /// Whether a space is minimized to its header row. Asked by root,
-    /// which is what the fold is kept by (see `collapsed_space_roots`).
+    /// Whether a space is minimized to its header row.
     pub(super) fn space_folded(&self, space: &Space) -> bool {
-        self.collapsed_space_roots.contains(&space.root)
+        self.collapsed_spaces.contains(&space.id.0)
     }
 
-    /// The root a space is over — the name its fold is kept under.
-    fn space_root(&self, space: SpaceId) -> Option<PathBuf> {
-        self.session
-            .iter()
-            .flat_map(|session| &session.workspace.spaces)
-            .find(|candidate| candidate.id == space)
-            .map(|space| space.root.clone())
+    /// Puts the space "+ space" asked for up for its name, once the
+    /// session shows it: the one space that was not there when it was
+    /// asked for. The buffer starts empty, so a name left blank keeps the
+    /// label the server gave it.
+    fn name_the_new_space(&mut self) {
+        let Some(known) = &self.naming_new_space else {
+            return;
+        };
+        let Some(created) = self.session.as_ref().and_then(|session| {
+            session
+                .workspace
+                .spaces
+                .iter()
+                .map(|space| space.id)
+                .find(|space| !known.contains(space))
+        }) else {
+            return;
+        };
+        self.naming_new_space = None;
+        self.renaming = Some((
+            RenameTarget::Space(created),
+            RenameBuffer::new(String::new()),
+        ));
+    }
+
+    /// Lets go of the folds of spaces the session no longer has, so the
+    /// layout keeps nothing a closed space left behind.
+    fn forget_folds_of_closed_spaces(&mut self) {
+        let Some(session) = &self.session else {
+            return;
+        };
+        let before = self.collapsed_spaces.len();
+        self.collapsed_spaces
+            .retain(|space| session.space(SpaceId(*space)).is_some());
+        if self.collapsed_spaces.len() != before {
+            self.remember_sidebar();
+        }
     }
 
     /// Every tab of every space, in the order the session lists them.
@@ -2521,7 +2529,7 @@ impl WorkspaceModel {
             workspace: uze_application::WorkspaceLayout {
                 timeline_collapsed: self.timeline_collapsed,
                 timeline_rows: self.timeline_rows,
-                collapsed_space_roots: self.collapsed_space_roots.clone(),
+                collapsed_spaces: self.collapsed_spaces.clone(),
             },
             first_steps: uze_application::FirstStepsLayout {
                 collapsed: self.first_steps_collapsed,

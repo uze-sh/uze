@@ -2,12 +2,62 @@
 
 use super::*;
 
-/// A small popup listing `agent_options`, opened by the selected space
-/// header's "✦ new" — a dropdown anchored just below it, creating the
-/// picked agent as a new tab in that space. Not built on
-/// the management modal's dialog helpers (those are shaped for static
-/// text, not a selectable, hit-testable list) — this is self-contained,
-/// styled by hand to match the same palette.
+/// The rows the new agent's popup keeps through both of its steps: the
+/// directory step's listing and the line typed into, up to
+/// [`NEW_AGENT_POPUP_MAX_ROWS`], and never so few that the harnesses would
+/// not fit.
+pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u16 {
+    let rows = u16::try_from(directories + 1).unwrap_or(u16::MAX);
+    rows.clamp(NEW_AGENT_POPUP_MIN_ROWS, NEW_AGENT_POPUP_MAX_ROWS)
+}
+
+const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
+const NEW_AGENT_POPUP_MAX_ROWS: u16 = 10;
+/// Wide enough for a directory's name beside the path it is typed from.
+const NEW_AGENT_POPUP_WIDTH: u16 = 40;
+
+/// Where a popup of `width` by `height` floats beside `anchor`: under it,
+/// pushed back inside `area` at its edges.
+fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect::new(
+        anchor.x.min((area.x + area.width).saturating_sub(width)),
+        (anchor.y + anchor.height).min((area.y + area.height).saturating_sub(height)),
+        width,
+        height,
+    )
+}
+
+/// The card both steps of a new agent are drawn in, cleared over whatever
+/// is beneath. A card, not a floating surface: the popup is anchored to the
+/// control that opened it and measures itself — its height budgets its two
+/// border rows and nothing else, and each row leads with its own inset.
+fn new_agent_card(frame: &mut ratatui::Frame<'_>, popup: Rect) -> Rect {
+    frame.render_widget(Clear, popup);
+    Surface::card().title(" new agent ").render(frame, popup)
+}
+
+/// The new agent's first step: the directory it runs in, floating beside
+/// the `new` it was asked from, over the pane, so nothing in the sidebar
+/// moves while it is open.
+pub(in crate::ui::orchestrator) fn render_directory_step(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    step: &DirectoryStep,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, step.rows + 2);
+    let inner = new_agent_card(frame, popup);
+    render_root_picker(frame, &step.picker, &mut Rows::over(inner), hits);
+}
+
+/// The new agent's harness step, listing `agent_options` — in the popup
+/// the directory step opened, at its place and size, or measuring itself
+/// when a resume asked for it. Not built on the management modal's dialog
+/// helpers (those are shaped for static text, not a selectable,
+/// hit-testable list) — this is self-contained, styled by hand to match
+/// the same palette.
 pub(in crate::ui::orchestrator) fn render_agent_picker(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -15,31 +65,22 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
     picker: &AgentPicker,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let content_width = picker
-        .options
-        .iter()
-        .map(|option| option.display_name.chars().count() as u16)
-        .max()
-        .unwrap_or(16)
-        .max(NO_AGENT_SET_UP.len() as u16);
-    // Empty, it says so and offers the way out on a row of its own.
-    let rows = picker.options.len().max(2) as u16;
-    let width = (content_width + 6).min(area.width);
-    let height = (rows + 2).min(area.height);
-    let popup = Rect::new(
-        anchor.x.min((area.x + area.width).saturating_sub(width)),
-        (anchor.y + anchor.height).min((area.y + area.height).saturating_sub(height)),
-        width,
-        height,
-    );
-    frame.render_widget(Clear, popup);
-    // A card, not a floating surface: this menu is anchored to the control
-    // that opened it and measures itself — `height` budgets its two border
-    // rows and nothing else, and each row leads with its own inset (below).
-    // Given the floating inset on top of that, the last option fell
-    // outside the box, and with one harness installed there was nothing
-    // left to draw at all.
-    let inner = Surface::card().title(" new agent ").render(frame, popup);
+    let (width, rows) = match picker.rows {
+        Some(rows) => (NEW_AGENT_POPUP_WIDTH, rows),
+        None => {
+            let content_width = picker
+                .options
+                .iter()
+                .map(|option| option.display_name.chars().count() as u16)
+                .max()
+                .unwrap_or(16)
+                .max(NO_AGENT_SET_UP.len() as u16);
+            // Empty, it says so and offers the way out on a row of its own.
+            (content_width + 6, picker.options.len().max(2) as u16)
+        }
+    };
+    let popup = popup_beside(area, anchor, width, rows + 2);
+    let inner = new_agent_card(frame, popup);
 
     if picker.options.is_empty() {
         frame.render_widget(
@@ -522,18 +563,14 @@ pub(in crate::ui::orchestrator) fn render_status_catalog(
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The "+ space" prompt and the directories it currently matches, drawn as
-/// rows of the sidebar itself rather than a floating popup: the prompt is
-/// choosing where the next space in this very list goes. It stands where
-/// the first space's header stands, with the listing directly under it the
-/// way a space's tabs sit under theirs.
+/// The directory step's prompt and the directories it currently matches,
+/// one row each in `rows`.
 ///
-/// The kinds and the directories they would be created in share the darker
-/// of the column's two surfaces — they are the panel — and what is being
-/// typed stands on the lighter one, as does whichever directory it has
-/// landed on: the two rows that answer to the keyboard are the two that are
-/// lifted.
-pub(super) fn render_root_picker(
+/// The directories share the darker of the popup's two surfaces, and what
+/// is being typed stands on the lighter one, as does whichever directory
+/// it has landed on: the two rows that answer to the keyboard are the two
+/// that are lifted.
+fn render_root_picker(
     frame: &mut ratatui::Frame<'_>,
     picker: &RootPicker,
     rows: &mut Rows,
@@ -555,9 +592,8 @@ pub(super) fn render_root_picker(
         }
         return;
     }
-    // The picker has the column to itself, so it offers as many
-    // directories as the column has rows — one held back for the tail that
-    // says how many more there are.
+    // As many directories as the popup has rows — one held back for the
+    // tail that says how many more there are.
     let visible = usize::from(rows.remaining()).saturating_sub(1).max(1);
     let start = picker.window_start(visible);
     let needle = picker.input().to_lowercase();
@@ -588,7 +624,7 @@ pub(super) fn render_root_picker(
             }),
         );
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-        hits.push((rect, WorkspaceHit::PickSpaceRoot(index)));
+        hits.push((rect, WorkspaceHit::PickDirectory(index)));
     }
     let hidden = picker.match_count().saturating_sub(start + visible);
     if hidden > 0
@@ -686,8 +722,7 @@ pub(super) fn render_query_row(
     }
     row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRaised));
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
-    // The rail the selected space wears, so the row being typed into
-    // reads as the space it is about to become.
+    // The rail that says this is the row the keyboard is in.
     frame.render_widget(
         Paragraph::new(theme::glyph(Symbol::BarThin)).style(
             Style::default()
@@ -869,7 +904,15 @@ mod tests {
                 options: names.iter().map(|name| option(name)).collect(),
                 selected: 0,
                 anchor: Rect::new(2, 1, 3, 1),
-                resume: None,
+                rows: None,
+                launch: crate::ui::orchestrator::AgentLaunch::Resume(
+                    crate::ui::orchestrator::ResumeTarget {
+                        primary: "/repo".into(),
+                        task: "t1".into(),
+                        replacing: None,
+                        harness: None,
+                    },
+                ),
             };
             let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
             let mut hits = Vec::new();

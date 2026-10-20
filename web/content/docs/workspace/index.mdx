@@ -37,15 +37,23 @@ uze workspace
 
 | | What it is |
 | --- | --- |
-| **Space** | A directory you work in, usually a project. `Alt+S` adds one |
+| **Space** | A named group of agents, which can work in several projects. `Alt+S` adds one |
 | **Tab** | A session inside it: an agent (`Alt+N`) or a shell (`Ctrl+T`) |
 | **Pane** | The live terminal of the selected tab |
 
-A shell you open while an agent is selected belongs to that agent: it starts in
-the agent's checkout and closes with it.
+A new agent asks first for the directory it works in, then for its harness,
+in one popup beside the space's `new`. The directory starts on the project of
+the agent in front, so another agent there is one `Enter` away. A space can
+hold agents of `front`, `back` and `landing` at once, and each agent's row
+names its project.
 
-`Alt+O` opens the [space](/docs/workspace/space) itself: what its agents were
-asked, its `agents.yaml` settings, its plugins, its memory and its worktrees.
+A shell you open while an agent is selected belongs to that agent: it starts in
+the agent's checkout and closes with it. A shell of the space belongs to no
+project, wherever it goes.
+
+`Alt+O` opens the [overview](/docs/workspace/space) of the agent in front: what
+it was asked, and its project's `agents.yaml` settings, plugins, memory and
+worktrees.
 
 The right end of the tab strip counts the selected checkout's changes
 (`+12 -3`; click it to open [Code](/docs/workspace/code)). For an agent in your

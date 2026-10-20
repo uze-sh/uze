@@ -1,37 +1,48 @@
 ## Purpose
 
-Gives each space in the workspace a screen of its own, scoped to the
-selected project, that says what state the project is in, lets the
+Gives the agent in front a screen of its own, scoped to that agent and the
+project it works in, that says what state the project is in, lets the
 operator act where an action already exists, and lets them configure the
 project's workspace.
 
 ## ADDED Requirements
 
-### Requirement: The space button opens the overview
-A `space` button at the right end of the tab strip, apart from the
-surfaces' buttons, SHALL be drawn in every context of the space, an agent's
-or the space's own, and SHALL show the space's overview where the pane is,
-over the tab in front, or put it away when it is shown. A chord SHALL do the
-same. Selecting a space's row SHALL keep landing on the space's own shell,
-creating one for a space of agents alone.
+### Requirement: The agent button opens the overview
+A button at the right end of the tab strip, apart from the surfaces'
+buttons, SHALL be drawn only in an agent's context, the agent or a shell
+opened beside it, and SHALL show that agent's overview where the pane is,
+or put it away when it is shown. A chord SHALL do the same. The
+overview's header SHALL read `Agent`, the agent's label and its directory.
+Selecting a space's row SHALL keep landing on the space's own shell,
+creating one in the home directory for a space of agents alone.
 
 #### Scenario: From an agent's tab
-- **WHEN** an agent's tab is in front and the operator clicks the space button
-- **THEN** the space's overview is drawn where the pane was, and the strip keeps the agent's tabs
+- **WHEN** an agent's tab is in front and the operator clicks the agent button
+- **THEN** the agent's overview is drawn where the pane was, headed `Agent`, its label and its directory, and the strip keeps the agent's tabs
 
 #### Scenario: A space row
 - **WHEN** the operator clicks a space's row
-- **THEN** the space's own shell is in front, and no overview is shown
+- **THEN** the space's own shell is in front, and neither the button nor an overview is shown
 
-### Requirement: The overview is put away only by choosing something else
-The overview SHALL be put away when the operator selects a tab or an agent,
-another space, or presses the space button or Esc with nothing open inside
-it; and when the selection the server reports moves off the tab it stands
-in front of, however that came about.
+#### Scenario: A space of agents alone
+- **WHEN** the operator clicks the row of a space that holds no shell of its own
+- **THEN** a shell of the space is opened in the home directory and put in front
 
-#### Scenario: Back to a tab
-- **WHEN** the overview is shown and the operator selects one of the space's tabs
-- **THEN** the overview is put away and that tab's pane is drawn
+### Requirement: The overview is put away only by leaving the agent
+The overview SHALL be put away when the operator leaves the agent's
+context: selecting a space's row, a shell of the space or another space,
+or pressing the agent button or Esc with nothing open inside it; and when
+the selection the server reports leaves that context, however that came
+about. Selecting another agent, or a shell opened beside one, SHALL keep
+the overview shown and turn it to that agent.
+
+#### Scenario: Back to the space's shell
+- **WHEN** the overview is shown and the operator selects the space's row
+- **THEN** the overview is put away and the space's shell is drawn
+
+#### Scenario: Another agent
+- **WHEN** the overview is shown and the operator selects another agent
+- **THEN** the overview stays shown and reads that agent
 
 #### Scenario: A confirming broadcast
 - **WHEN** the overview is shown and the server reports the same tab in front
@@ -39,7 +50,7 @@ in front of, however that came about.
 
 ### Requirement: The overview is a screen, never a tab
 The overview SHALL be drawn by the client and SHALL own no process. It
-SHALL not appear in the space's tab list, be closed like a tab, or be
+SHALL not appear in a space's tab list, be closed like a tab, or be
 restored by the terminal runtime. The space's own shell SHALL keep running
 as before.
 
@@ -62,16 +73,16 @@ selected row of a section in full.
 - **WHEN** the operator selects a plugin in the Plugins section
 - **THEN** the drawer shows that plugin's installation, commit, freshness and its place in the lock
 
-### Requirement: The Worktrees section shows the space's worktrees as cards
+### Requirement: The Worktrees section shows the project's worktrees as cards
 The Worktrees section SHALL show one card per checkout UZE made for the
-space's agents and subagents, in a grid as wide as the room and only whole
+agents and subagents of the agent's project, in a grid as wide as the room and only whole
 cards: its branch, state, owner and working tab, size on disk, commits
 ahead, uncommitted work, path and age. Its tab SHALL warn on uncommitted
 work no agent attends. It SHALL be measured off the frame only while in
 front or refreshed.
 
 #### Scenario: A card per worktree
-- **WHEN** the space has three slots of UZE's and a checkout a person made
+- **WHEN** the agent's project has three slots of UZE's and a checkout a person made
 - **THEN** three cards are drawn, each with its branch and size, and the cause line sums them
 
 #### Scenario: Scrolling the cards
@@ -83,7 +94,7 @@ front or refreshed.
 - **THEN** it is dropped and the section keeps drawing what it holds
 
 #### Scenario: No worktrees
-- **WHEN** every agent of the space works in its own checkout
+- **WHEN** every agent of the project works in its project's own checkout
 - **THEN** the section says there are no worktrees
 
 ### Requirement: Only a free worktree can be removed from the overview
@@ -112,14 +123,26 @@ work or that any process stands in.
 
 ### Requirement: The Agent section reads the agent in front
 The Agent section SHALL list the prompts the agent in front was given,
-newest first, or its whole space's, as the operator chooses, and SHALL say
-what reaches that agent here: the project's instructions and `.agents`, and
-what its harness supports. Activating a prompt SHALL copy it whole. With no
-agent in front it SHALL say so. It replaces the agent drawer.
+newest first, and no other agent's, and SHALL say what reaches that agent
+here: the project's instructions and `.agents`, and what its harness
+supports. Activating a prompt SHALL copy it whole. Clearing the prompts
+SHALL forget that agent's alone. It replaces the agent drawer.
 
 #### Scenario: Copying a prompt
 - **WHEN** the operator moves onto a prompt in the Agent section and activates it
 - **THEN** the whole prompt is on the clipboard, however it was folded on screen
+
+#### Scenario: Another agent of the same project
+- **WHEN** two agents of one project were each given prompts and the overview is opened on one of them
+- **THEN** only that agent's prompts are listed, with no column saying where each was asked
+
+#### Scenario: Clearing an agent's prompts
+- **WHEN** the operator clears the prompts in one agent's overview and confirms
+- **THEN** that agent's prompts are forgotten, and another agent of the project still lists its own
+
+#### Scenario: Switching agents switches the overview
+- **WHEN** the overview is open and the operator selects an agent of another project
+- **THEN** the overview reads that agent: its prompts, and its project's plugins, memory, settings and worktrees
 
 ### Requirement: The overview reports readiness from the status read model
 The overview SHALL report the project's state from the read model `uze
@@ -136,7 +159,7 @@ spelling for this machine under Settings.
 - **THEN** the Settings section marks those lines and its Review opens the approval dialog for that project
 
 ### Requirement: The overview's foot lists what to check
-The overview's foot SHALL count everything in the space there is to check,
+The overview's foot SHALL count everything in the agent's project there is to check,
 the instructions file and each harness's context and agent-context delivery
 included. A click on the count SHALL list it in a dialog, worst first, as
 the management's health status does; a click elsewhere or Esc SHALL close it.
@@ -145,17 +168,17 @@ the management's health status does; a click elsewhere or Esc SHALL close it.
 - **WHEN** `uze status` reports a harness that will not read the project's context
 - **THEN** the foot counts it, and the list a click on the count opens names the harness and why
 
-### Requirement: A space that is not a project says so
-When a space's root no longer exists, or is not inside a project, the
-overview SHALL say which and show no section.
+### Requirement: An agent outside a project says so
+When the agent's directory no longer exists, or is not inside a project, the
+overview SHALL say which and show the Agent section alone.
 
-#### Scenario: A root that is gone
-- **WHEN** a space's root was deleted
-- **THEN** the overview says the directory no longer exists and draws no section bar
+#### Scenario: A directory that is gone
+- **WHEN** the agent's directory was deleted
+- **THEN** the overview says the directory no longer exists and draws only the Agent section
 
 #### Scenario: A directory that is not a project
-- **WHEN** a space's root is a plain directory with no project in or above it
-- **THEN** the overview says it is not a project and draws no section bar
+- **WHEN** the agent runs in a plain directory with no project in or above it
+- **THEN** the overview says it is not a project and draws only the Agent section
 
 ### Requirement: The Memory section lists the project's facts
 The Memory section SHALL list the facts kept for the project, each with its
@@ -212,14 +235,13 @@ each problem shown at its key until it is changed or discarded.
 - **WHEN** `agents.yaml` uses a YAML anchor
 - **THEN** the Settings section is read-only and says why
 
-### Requirement: The overview counts the space's agents by state
-The overview SHALL show how many of the space's agents are running, ready
-to deliver, and preserved. It SHALL NOT list them one by one, which the
-sidebar does.
+### Requirement: The overview says nothing of other agents
+The overview SHALL NOT count, list or describe agents other than the one
+it was opened on: what the space holds is the sidebar's to show.
 
-#### Scenario: Counting
-- **WHEN** a space has two running agents and one preserved
-- **THEN** the overview shows two running, none ready, one preserved
+#### Scenario: A space of several agents
+- **WHEN** the overview is opened on one agent of a space holding three
+- **THEN** its header names that agent alone, with no count of agents by state
 
 ### Requirement: Every action is reachable from the keyboard
 The overview SHALL switch sections, move between rows, open the drawer,
@@ -232,8 +254,8 @@ declared in a scope of its own.
 
 ### Requirement: The overview never waits on a read
 Every read and validation behind the overview SHALL run off the frame and
-answer through a channel, one at a time per space, and an answer for a
-space no longer shown SHALL be dropped. Status SHALL be read again only
+answer through a channel, one at a time per agent, and an answer for an
+agent no longer shown SHALL be dropped. Status SHALL be read again only
 when the overview opens, when asked, after a written change, or when the project's
 manifest, lock or instructions change.
 
@@ -241,6 +263,6 @@ manifest, lock or instructions change.
 - **WHEN** a read behind the overview takes seconds to answer
 - **THEN** the overview draws what it has, marks the section as loading, and the client keeps answering input
 
-#### Scenario: Walking the spaces
-- **WHEN** the operator walks past several spaces quickly
-- **THEN** a status read is made only for the space the walk stops on
+#### Scenario: Walking the agents
+- **WHEN** the operator walks past several agents quickly
+- **THEN** a status read is made only for the agent the walk stops on

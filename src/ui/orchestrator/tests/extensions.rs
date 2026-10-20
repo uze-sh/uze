@@ -47,7 +47,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     let space =
         crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.code_tree_width);
 
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     answer_listing(&mut model, "/repo/.worktrees/a");
     // Walked away from the row the tree opened on, which is the part
@@ -63,7 +63,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     assert!(model.code.is_none());
 
     // Another agent's checkout is a different place, not this one.
-    model.session.as_mut().expect("session").select_tab(second);
+    select_tab(&mut model, second);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     answer_listing(&mut model, "/repo/.worktrees/b");
     assert_ne!(
@@ -73,7 +73,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     );
     model.close_code();
 
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     assert_eq!(
         model.code.as_ref().expect("open").place(),
@@ -109,7 +109,7 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
         height: 40,
     };
 
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_architect(&mut model);
     answer_artifacts(&mut model);
     // Moved off the diagram the surface opens on, which is the part
@@ -125,7 +125,7 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
     assert!(model.architect.is_none());
 
     // Another agent's checkout is a different place, not this one.
-    model.session.as_mut().expect("session").select_tab(second);
+    select_tab(&mut model, second);
     open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_ne!(
@@ -135,7 +135,7 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
     );
     model.close_architect();
 
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_eq!(
@@ -160,7 +160,7 @@ fn every_directory_a_resumed_tree_needs_is_asked_for_at_once() {
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     model.remembered.code_places.insert(
         root.clone(),
         code::CodePlace::at(&root, &root.join("src/ui/widget/row.rs"), false),
@@ -200,7 +200,7 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
 
     let measured = code::Measure {
@@ -249,7 +249,7 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-content-groove"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let mut view = code::CodeView::opening(
         PathBuf::from("/repo"),
         "/repo".to_owned(),
@@ -304,7 +304,7 @@ fn the_code_halves_take_the_bars_leading_slot() {
 
     let root = PathBuf::from("/repo");
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     let mut view = code::CodeView::opening(
         root.clone(),
@@ -374,7 +374,7 @@ fn a_sidebar_section_answers_while_a_surface_is_open() {
         "orchestrator-spec-section-under-surface",
     ));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let cwd = model.focused_cwd().expect("a tab in front");
     model.remembered.spec_summary = Some(SpecSummaryState {
         cwd,
@@ -409,7 +409,7 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     use uze_extensions::spec::{ChangeSummary, Progress, Summary};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-section"));
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     model.timeline_collapsed = false;
     let cwd = model.focused_cwd().expect("a tab in front");
     model.remembered.spec_summary = Some(SpecSummaryState {
@@ -520,14 +520,14 @@ fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
             subjects: Vec::new(),
         },
     };
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_spec(&mut model);
     let asked_for = model.spec_root.clone().expect("a root");
     model.close_spec();
     assert!(!model.absorb_spec(answer(asked_for.clone())));
     assert!(model.spec.is_none(), "nothing reopened");
 
-    model.session.as_mut().expect("session").select_tab(second);
+    select_tab(&mut model, second);
     open_spec(&mut model);
     if model.spec_root.as_ref() != Some(&asked_for) {
         assert!(
@@ -584,7 +584,7 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
         height: 40,
     };
 
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_spec(&mut model);
     answer(&mut model);
     for command in [Command::Expand, Command::SelectNext, Command::SelectNext] {
@@ -612,7 +612,7 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::ContentMode::Contents);
     let view = model.code.as_mut().expect("the surface is open");
     view.absorb_measure(code::Measure {
@@ -668,7 +668,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
 
     let root = PathBuf::from("/repo");
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     let mut view = code::CodeView::opening(
         root.clone(),

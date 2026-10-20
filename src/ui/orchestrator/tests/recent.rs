@@ -375,15 +375,26 @@ fn the_selected_row_says_its_reason_its_project_and_its_checkout() {
     );
 }
 
+/// Work of a project no space works in resumes in the space in front,
+/// and the row names it: no space is opened for it.
 #[test]
-fn a_project_with_no_space_open_says_resuming_opens_one() {
+fn a_project_no_space_works_in_names_the_space_in_front() {
     let mut model = showing(
         vec![preserved(OTHER, "t1", "elsewhere", WorkStateView::Shelved)],
         Vec::new(),
     );
     model.recent.selected = Some("t1".to_owned());
+    let in_front = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .label
+        .clone();
     let lines = drawn(&model);
-    assert!(lines[row_of(&lines, "elsewhere") + 1].contains("other · new space"));
+    let row = &lines[row_of(&lines, "elsewhere") + 1];
+    assert!(row.contains(&format!("other · {in_front}")), "{row}");
+    assert!(!row.contains("new space"), "{row}");
 }
 
 #[test]

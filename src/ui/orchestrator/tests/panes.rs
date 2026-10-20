@@ -197,11 +197,11 @@ fn closing_a_spaces_last_own_shell_is_replaced_and_no_other_close_is() {
     );
 }
 
-/// The shell that stands in for a closed agent is the *space's*, so it
-/// opens where the space is — never in the agent's own checkout, which
-/// is the slot on its way back to the pool.
+/// The shell that stands in for a closed agent is the *space's*, and a
+/// space has no directory of its own, so it opens at home — never in the
+/// agent's own checkout, which is the slot on its way back to the pool.
 #[test]
-fn the_shell_replacing_an_agent_opens_where_the_space_is() {
+fn the_shell_replacing_an_agent_opens_at_home() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-replacement-cwd"));
     let mut session = session("/repo");
     let space = session.workspace.selected_space;
@@ -237,8 +237,8 @@ fn the_shell_replacing_an_agent_opens_where_the_space_is() {
     });
     assert_eq!(
         opened,
-        Some(Some("/repo".into())),
-        "the space's root, not the checkout that is going: {sent:?}"
+        Some(uze_platform::home::user_home()),
+        "home, not the checkout that is going: {sent:?}"
     );
 }
 

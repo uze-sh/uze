@@ -45,7 +45,7 @@ impl Attach<'_> {
             || model.release_notes.is_some()
             || model.action_index.is_some()
             || model.renaming.is_some()
-            || model.root_picker.is_some()
+            || model.directory_step.is_some()
             || model.agent_picker.is_some()
             || model.context_menu.is_some()
             || model.commit_detail_open()
@@ -276,7 +276,8 @@ impl Attach<'_> {
         // Either way the launch carries the task's identity.
         self.offer_agents(
             anchor,
-            Some(ResumeTarget {
+            None,
+            AgentLaunch::Resume(ResumeTarget {
                 primary: task.project.clone(),
                 task: task.id.clone(),
                 replacing: None,

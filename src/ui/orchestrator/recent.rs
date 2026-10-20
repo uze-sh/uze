@@ -469,8 +469,8 @@ pub(super) fn recent_offered(model: &WorkspaceModel) -> Vec<Action> {
 }
 
 /// The project directories recent reads checkouts from: every project
-/// holding listed work, and every open space's, where a subagent its
-/// agent left unjoined may be waiting.
+/// holding listed work, and every one an open space's agents work in,
+/// where a subagent its agent left unjoined may be waiting.
 pub(super) fn projects_to_read(model: &WorkspaceModel) -> Vec<PathBuf> {
     let mut projects: Vec<PathBuf> = Vec::new();
     let present = model
@@ -478,13 +478,8 @@ pub(super) fn projects_to_read(model: &WorkspaceModel) -> Vec<PathBuf> {
         .into_iter()
         .filter(|task| task.project_present)
         .map(|task| task.project.clone());
-    let spaces = model.session.iter().flat_map(|session| {
-        session
-            .workspace
-            .spaces
-            .iter()
-            .map(|space| uze_application::slot_key(&space.root))
-            .filter(|root| !model.recent.reads.contains_key(root) && !model.recent.covers(root))
+    let spaces = model.working_projects().into_iter().filter(|project| {
+        !model.recent.reads.contains_key(project) && !model.recent.covers(project)
     });
     for project in present.chain(spaces) {
         if !projects.contains(&project) {
@@ -494,16 +489,15 @@ pub(super) fn projects_to_read(model: &WorkspaceModel) -> Vec<PathBuf> {
     projects
 }
 
-/// Whether a space rooted at `project` is open: resuming into one that is
-/// not opens it.
-pub(super) fn space_open_on(model: &WorkspaceModel, project: &Path) -> bool {
-    model.session.as_ref().is_some_and(|session| {
-        session
-            .workspace
-            .spaces
-            .iter()
-            .any(|space| uze_application::slot_key(&space.root) == project)
-    })
+/// The label of the space work of `project` resumes in (see
+/// [`WorkspaceModel::landing_space`]).
+pub(super) fn space_resumed_in(model: &WorkspaceModel, project: &Path) -> Option<String> {
+    let space = model.landing_space(None, None, project)?;
+    model
+        .session
+        .as_ref()?
+        .space(space)
+        .map(|space| space.label.clone())
 }
 
 /// A project's name as a row says it: the directory's own name.

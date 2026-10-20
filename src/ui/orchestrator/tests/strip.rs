@@ -21,7 +21,7 @@ use uze_terminal::{ClientRequest, SpaceId, TabId};
 #[test]
 fn the_strip_shows_the_selected_agent_and_only_its_own_shells() {
     let (mut model, first, second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     let (rows, _) = tab_strip(&model);
     let strip = rows.join(" ");
@@ -36,18 +36,18 @@ fn the_strip_shows_the_selected_agent_and_only_its_own_shells() {
         "not the space's own bootstrap shell either: {strip}"
     );
 
-    model.session.as_mut().expect("session").select_tab(second);
+    select_tab(&mut model, second);
     let (rows, _) = tab_strip(&model);
     let strip = rows.join(" ");
     assert!(strip.contains("Agent two shell"), "{strip}");
     assert!(!strip.contains("Agent one"), "{strip}");
 }
 
-/// The space button stands in every context of the space: the agent
-/// leading the strip, a shell it opened, and the space's own shells.
-/// It is about the space, which every one of them is in.
+/// The agent button stands in an agent's context — the agent leading the
+/// strip and a shell it opened — and never over a shell of the space,
+/// which works in no project.
 #[test]
-fn the_space_button_stands_in_every_context() {
+fn the_agent_button_stands_only_in_an_agents_context() {
     let (mut model, first, _second) = two_agents_with_shells();
     let button_is_drawn = |model: &WorkspaceModel| {
         tab_strip(model)
@@ -71,10 +71,15 @@ fn the_space_button_stands_in_every_context() {
             .id;
         (shell, bootstrap)
     };
-    for tab in [first, shell, bootstrap] {
-        model.session.as_mut().expect("session").select_tab(tab);
-        assert!(button_is_drawn(&model), "no space button over {tab:?}");
+    for tab in [first, shell] {
+        select_tab(&mut model, tab);
+        assert!(button_is_drawn(&model), "no agent button over {tab:?}");
     }
+    select_tab(&mut model, bootstrap);
+    assert!(
+        !button_is_drawn(&model),
+        "a shell of the space has no overview"
+    );
 }
 
 /// A tab number means "that chip", so it is counted along the strip —
@@ -88,7 +93,7 @@ fn the_space_button_stands_in_every_context() {
 #[test]
 fn a_tab_number_counts_along_the_strip_and_not_past_it() {
     let (mut model, first, second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(second);
+    select_tab(&mut model, second);
     let identities = identities_fixture();
     let session = model.session.as_ref().expect("session");
     let space = session.selected_space();
@@ -127,7 +132,7 @@ fn a_shell_keeps_the_strip_on_the_agent_it_belongs_with() {
         .find(|tab| tab.agent == Some(first))
         .expect("the agent's own shell")
         .id;
-    model.session.as_mut().expect("session").select_tab(shell);
+    select_tab(&mut model, shell);
 
     let (rows, _) = tab_strip(&model);
     let strip = rows.join(" ");
@@ -141,7 +146,7 @@ fn a_shell_keeps_the_strip_on_the_agent_it_belongs_with() {
 fn the_spaces_own_shell_is_a_context_of_its_own() {
     let (mut model, _, _) = two_agents_with_shells();
     let own = first_tab(&model).id;
-    model.session.as_mut().expect("session").select_tab(own);
+    select_tab(&mut model, own);
 
     let (rows, _) = tab_strip(&model);
     let strip = rows.join(" ");
@@ -154,12 +159,12 @@ fn the_spaces_own_shell_is_a_context_of_its_own() {
 #[test]
 fn a_shells_number_counts_only_its_own_group() {
     let (mut model, first, _) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     assert_eq!(next_shell_label(&model, &identities_fixture()), "shell 2");
 
     let own = first_tab(&model).id;
-    model.session.as_mut().expect("session").select_tab(own);
+    select_tab(&mut model, own);
     assert_eq!(
         next_shell_label(&model, &identities_fixture()),
         "shell 2",
@@ -224,7 +229,7 @@ fn a_spaces_row_lands_on_a_shell_of_its_own() {
 #[test]
 fn the_agent_chip_carries_no_close_button() {
     let (mut model, first, _) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
 
     let (_, hits) = tab_strip(&model);
     assert!(
@@ -248,7 +253,7 @@ fn the_agent_chip_carries_no_close_button() {
 #[test]
 fn tab_drag_group_classifies_by_the_region_a_rect_landed_in() {
     let (mut model, first, _second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let space = model.session.as_ref().unwrap().workspace.selected_space;
     let layout = full_frame(&mut model);
 
@@ -291,7 +296,7 @@ fn tab_drag_group_classifies_by_the_region_a_rect_landed_in() {
 #[test]
 fn tab_drag_group_members_are_sorted_along_the_groups_axis_and_scoped_to_it() {
     let (mut model, first, second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let space = model.session.as_ref().unwrap().workspace.selected_space;
     let layout = full_frame(&mut model);
 
@@ -410,7 +415,7 @@ fn dragging_the_first_agent_onto_the_seconds_own_label_row_reorders_it() {
 #[test]
 fn sidebar_indicator_marks_the_pending_drop_row_only_once_armed() {
     let (mut model, first, second) = two_agents_with_shells();
-    model.session.as_mut().expect("session").select_tab(first);
+    select_tab(&mut model, first);
     let space = model.session.as_ref().unwrap().workspace.selected_space;
     model.dragging_tab = Some(DraggingTab {
         tab: first,

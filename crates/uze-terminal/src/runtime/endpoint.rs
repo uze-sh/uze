@@ -31,7 +31,7 @@ pub enum Replaced {
 /// `palette` until a client says otherwise. The caller then sends `Attach`
 /// naming the seat it wants a space for.
 pub fn attach(seat: &SpaceSeat, palette: &Palette) -> Result<Attached, RuntimeError> {
-    let _span = tracing::info_span!("terminal.attach", root = %seat.root.display()).entered();
+    let _span = tracing::info_span!("terminal.attach", project = %seat.project.display()).entered();
     let socket = socket_path()?;
     let replaced = match make_way(&socket)? {
         Way::Serving(stream) => {
@@ -366,7 +366,8 @@ pub fn socket_path() -> Result<PathBuf, RuntimeError> {
 /// request a process inside a pane is served (ADR-056), and answered with
 /// the label alone. An error when no server is running.
 pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
-    let _span = tracing::info_span!("terminal.open_space", root = %seat.root.display()).entered();
+    let _span =
+        tracing::info_span!("terminal.open_space", project = %seat.project.display()).entered();
     let mut stream = transport::connect(&socket_path()?)
         .map_err(|_| RuntimeError::Protocol("no running uze to open a space in".into()))?;
     stream.set_read_timeout(Some(OPENS_A_SPACE_WITHIN))?;
@@ -533,7 +534,7 @@ pub(super) fn path_with_first(
 /// is persisted yet, and is otherwise ignored; `palette` is what a pane's
 /// program is told its colours are until a client attaches and says.
 pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
-    let _span = tracing::info_span!("terminal.serve", root = %seat.root.display()).entered();
+    let _span = tracing::info_span!("terminal.serve", project = %seat.project.display()).entered();
     let socket = socket_path()?;
     // The workspace is claimed before the endpoint is: `Server::new` takes
     // the lock that makes this the one server restoring these spaces, so by

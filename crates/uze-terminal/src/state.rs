@@ -26,8 +26,8 @@ pub struct Session {
 
 /// The one server per user — an infrastructure detail, not something a
 /// person organizes their work by. `spaces` is where that organizing
-/// happens: a person creates as many as they like, freely renamed, each
-/// born with a root directory that says what its agents work on.
+/// happens: a person creates as many as they like, freely renamed, each a
+/// group of agents bound to no directory.
 ///
 /// `selected_space`, like every `Space::selected_tab`, is the server's
 /// default; what each attached client actually looks at is the client's
@@ -38,36 +38,40 @@ pub struct Workspace {
     pub selected_space: SpaceId,
 }
 
+/// A group of agents and shells, bound to no directory: where it works is
+/// where its tabs stand, and nothing else records it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Space {
     pub id: SpaceId,
     pub label: String,
-    /// Where this space's work lives, chosen when it was created: an agent
-    /// created here starts from it, and a shell opens in it.
-    pub root: PathBuf,
     pub tabs: Vec<Tab>,
     pub selected_tab: TabId,
 }
 
-/// The label a space gets from its root when nobody names it: the root's
-/// last component, or `home` for the home directory itself.
-pub fn space_label(root: &Path) -> String {
+/// The label a space opened for a directory gets: its last component, or
+/// `home` for the home directory itself.
+fn directory_label(directory: &Path) -> String {
     let home = uze_platform::home::user_home();
-    if home.as_deref().is_some_and(|home| home == root) {
+    if home.as_deref().is_some_and(|home| home == directory) {
         return "home".to_owned();
     }
-    root.file_name()
+    directory
+        .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "root".to_owned())
 }
 
-/// Where a space sits — what a request names for a space the server may
-/// have to open on the client's behalf. A root and nothing else: a space
-/// has no kind to be told apart by, so one directory names one space.
+/// The label a space nobody named gets.
+const UNNAMED_SPACE: &str = "space";
+
+/// Where a launch stands — what a request names for a space the server may
+/// have to open on the client's behalf: the project the launch directory
+/// belongs to. A space is *at* a seat when one of its launched tabs stands
+/// in that project; none is, and the seat is where a new one starts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpaceSeat {
-    pub root: PathBuf,
+    pub project: PathBuf,
 }
 
 /// What [`Session::remove_space`] leaves the caller to do: stop `panes`,
@@ -124,6 +128,16 @@ pub struct Pane {
     /// does can tell a program that bypassed it.
     #[serde(default)]
     pub through_launcher: bool,
+}
+
+impl Tab {
+    /// Whether a client launched a program here: the tab's first process
+    /// started with an environment of the client's beyond the pane's own.
+    /// A space works where such tabs stand; a shell, wherever it moved,
+    /// says nothing about it.
+    pub fn launched(&self) -> bool {
+        !self.env.is_empty()
+    }
 }
 
 impl Pane {
@@ -183,8 +197,10 @@ pub(crate) const PLACEHOLDER_PANE_SIZE: (u16, u16) = (80, 24);
 /// change, so a crash or a reboot leaves no more than one change unsaved.
 #[derive(Deserialize, Serialize)]
 pub(crate) struct SpaceSeed {
+    /// Kept across a restart, so what a client keeps about a space (whether
+    /// it is folded) still names it afterwards.
+    pub(crate) id: SpaceId,
     pub(crate) label: String,
-    pub(crate) root: PathBuf,
     pub(crate) tabs: Vec<TabSeed>,
 }
 
@@ -201,9 +217,11 @@ pub(crate) struct TabSeed {
 }
 
 impl Session {
+    /// A workspace holding one space for `seat`, its shell standing in the
+    /// seat's project.
     pub fn new(seat: SpaceSeat, columns: u16, rows: u16) -> Self {
         let mut session = Self::empty();
-        session.add_space(space_label(&seat.root), seat, columns, rows);
+        session.add_space(directory_label(&seat.project), seat.project, columns, rows);
         session
     }
 
@@ -219,14 +237,23 @@ impl Session {
         }
     }
 
-    /// Rebuilds the shape `seeds` describe, minting ids the way ordinary
-    /// use does, and pairs every pane with the launch it is to be spawned
-    /// with. A seed space with no tabs is dropped — a space always has
+    /// Rebuilds the shape `seeds` describe, keeping each space's id and
+    /// minting tab and pane ids the way ordinary use does, and pairs every
+    /// pane with the launch it is to be spawned with. `next_space_id` is
+    /// the persisted counter, so a closed space's id is never handed out
+    /// again. A seed space with no tabs is dropped — a space always has
     /// somewhere to focus — and `None` is a workspace with nothing left
     /// standing.
-    pub(crate) fn restore(seeds: Vec<SpaceSeed>) -> Option<(Self, Vec<(PaneId, Launch)>)> {
+    pub(crate) fn restore(
+        seeds: Vec<SpaceSeed>,
+        next_space_id: u64,
+    ) -> Option<(Self, Vec<(PaneId, Launch)>)> {
         let (columns, rows) = PLACEHOLDER_PANE_SIZE;
         let mut session = Self::empty();
+        session.next_space_id = seeds
+            .iter()
+            .map(|seed| seed.id.0 + 1)
+            .fold(next_space_id.max(1), u64::max);
         let mut launches = Vec::new();
         for seed in seeds.into_iter().filter(|seed| !seed.tabs.is_empty()) {
             // Tab ids are minted in order, so the tab a seed names by
@@ -243,8 +270,7 @@ impl Session {
                 launches.push((minted.pane.id, tab.launch));
                 tabs.push(minted);
             }
-            let seat = SpaceSeat { root: seed.root };
-            session.push_space(seed.label, seat, tabs);
+            session.insert_space(seed.id, seed.label, tabs);
         }
         session.workspace.selected_space = session.workspace.spaces.first()?.id;
         Some((session, launches))
@@ -267,63 +293,73 @@ impl Session {
             .expect("space selected tab is always present")
     }
 
-    /// The space open at `seat`, its root compared as the filesystem sees
-    /// it. One root names one space: a directory reached by two spellings
-    /// is the same place, and there is nothing else for a space to be.
+    /// The space working at `seat`: one with a launched tab standing in the
+    /// seat's project, its root or below it, compared as the filesystem
+    /// sees them; failing that, one with any tab there, such as the shell a
+    /// launch opened a space with. A tab standing *above* the project never
+    /// counts — a space whose shell is in `$HOME` is not working in every
+    /// project under it.
     pub(crate) fn space_for(&self, seat: &SpaceSeat) -> Option<SpaceId> {
-        let canonical = |root: &Path| {
-            uze_platform::path::canonical(root).unwrap_or_else(|_| root.to_path_buf())
+        let canonical = |path: &Path| {
+            uze_platform::path::canonical(path).unwrap_or_else(|_| path.to_path_buf())
         };
-        let wanted = canonical(&seat.root);
-        self.workspace
-            .spaces
-            .iter()
-            .find(|space| uze_platform::path::same_path(&canonical(&space.root), &wanted))
-            .map(|space| space.id)
+        let project = canonical(&seat.project);
+        let standing_in = |tab: &&Tab| canonical(&tab.pane.cwd).starts_with(&project);
+        let with = |counts: fn(&Tab) -> bool| {
+            self.workspace
+                .spaces
+                .iter()
+                .find(|space| {
+                    space
+                        .tabs
+                        .iter()
+                        .filter(|tab| counts(tab))
+                        .any(|tab| standing_in(&tab))
+                })
+                .map(|space| space.id)
+        };
+        with(Tab::launched).or_else(|| with(|_| true))
     }
 
     pub fn space(&self, space: SpaceId) -> Option<&Space> {
         self.workspace.spaces.iter().find(|s| s.id == space)
     }
 
-    /// Goes to the space at `seat`: the one already open there when there
-    /// is one, a new one named after its directory otherwise.
+    /// Goes to the space working at `seat`: the one already there when
+    /// there is one, a new one named after its project otherwise, its
+    /// shell standing in it.
     ///
-    /// This is "take me to this directory" — what `uze` run inside a pane
-    /// asks — and landing on the space that already has it is the whole
-    /// answer. Asking for a *new* space over a directory is a different
-    /// question, and [`Session::create_space`] answers it by creating one
-    /// whatever is already open there.
+    /// This is "take me to this project" — what `uze` run inside a pane
+    /// asks — and landing on the space already working there is the whole
+    /// answer. Asking for a *new* space is a different question, and
+    /// [`Session::create_space`] answers it.
     pub(crate) fn open_space(&mut self, seat: SpaceSeat, columns: u16, rows: u16) -> OpenedSpace {
         if let Some(space) = self.space_for(&seat) {
             return OpenedSpace::Existing(space);
         }
-        let label = space_label(&seat.root);
-        OpenedSpace::Created(self.add_space(label, seat, columns, rows))
+        let label = self.unrepeated_label(directory_label(&seat.project));
+        OpenedSpace::Created(self.add_space(label, seat.project, columns, rows))
     }
 
-    /// Opens a new space at `seat`, whatever is already open there.
-    ///
-    /// Two spaces over one directory is a normal way to work — one per
-    /// branch, one per thing being tried — and the "+ new" prompt is an
-    /// explicit request for one, not a lookup. What the duplicate needs
-    /// is to be tellable apart, so a label already on screen is numbered
-    /// rather than repeated.
+    /// Opens a new space, its first shell in `cwd`. A space is named by the
+    /// operator; one left unnamed is `space`, numbered while that label is
+    /// already on screen so two stay tellable apart.
     pub fn create_space(
         &mut self,
         label: Option<String>,
-        seat: SpaceSeat,
+        cwd: PathBuf,
         columns: u16,
         rows: u16,
     ) -> NewSpace {
-        let label = label.unwrap_or_else(|| self.unrepeated_label(&seat.root));
-        self.add_space(label, seat, columns, rows)
+        let label = label
+            .map(|label| label.trim().to_owned())
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| self.unrepeated_label(UNNAMED_SPACE.to_owned()));
+        self.add_space(label, cwd, columns, rows)
     }
 
-    /// `space_label`'s answer for `root`, numbered from 2 while a space on
-    /// screen already carries it.
-    fn unrepeated_label(&self, root: &Path) -> String {
-        let base = space_label(root);
+    /// `base`, numbered from 2 while a space on screen already carries it.
+    fn unrepeated_label(&self, base: String) -> String {
         let taken = |name: &str| {
             self.workspace
                 .spaces
@@ -339,29 +375,26 @@ impl Session {
             .expect("an unused ordinal always exists")
     }
 
-    /// A selected space at `seat` holding one shell tab.
-    fn add_space(&mut self, label: String, seat: SpaceSeat, columns: u16, rows: u16) -> NewSpace {
-        let tab = self.mint_tab("shell".to_owned(), None, seat.root.clone(), columns, rows);
+    /// A selected space holding one shell tab standing in `cwd`.
+    fn add_space(&mut self, label: String, cwd: PathBuf, columns: u16, rows: u16) -> NewSpace {
+        let tab = self.mint_tab("shell".to_owned(), None, cwd, columns, rows);
         let pane = tab.pane.id;
-        let space = self.push_space(label, seat, vec![tab]);
-        NewSpace { space, pane }
-    }
-
-    /// Adds a space holding `tabs`, the first of them selected, and selects
-    /// it.
-    fn push_space(&mut self, label: String, seat: SpaceSeat, tabs: Vec<Tab>) -> SpaceId {
         let id = SpaceId(self.next_space_id);
         self.next_space_id += 1;
-        let SpaceSeat { root } = seat;
+        self.insert_space(id, label, vec![tab]);
+        NewSpace { space: id, pane }
+    }
+
+    /// Adds space `id` holding `tabs`, the first of them selected, and
+    /// selects it.
+    fn insert_space(&mut self, id: SpaceId, label: String, tabs: Vec<Tab>) {
         self.workspace.spaces.push(Space {
             id,
             label,
-            root,
             selected_tab: tabs[0].id,
             tabs,
         });
         self.workspace.selected_space = id;
-        id
     }
 
     /// A tab with a fresh id, holding a pane with a fresh id that has not
@@ -396,13 +429,14 @@ impl Session {
 
     /// Removes `space` and returns every pane across every tab it owned, so
     /// the caller can stop them all. Removing the workspace's last space
-    /// opens `replacement` in its place — a workspace always has somewhere
-    /// to focus, the same invariant [`Session::remove_tab`] holds for tabs —
-    /// and reports that space's first pane for the caller to spawn.
+    /// opens an unnamed one in its place, its shell in `replacement` — a
+    /// workspace always has somewhere to focus, the same invariant
+    /// [`Session::remove_tab`] holds for tabs — and reports that space's
+    /// first pane for the caller to spawn.
     pub(crate) fn remove_space(
         &mut self,
         space: SpaceId,
-        replacement: SpaceSeat,
+        replacement: PathBuf,
         columns: u16,
         rows: u16,
     ) -> Option<RemovedSpace> {

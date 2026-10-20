@@ -452,8 +452,10 @@ pub(crate) enum WorkspaceAction {
 pub(crate) enum TerminalAction {
     /// Local server entry point; started only by the workspace runtime
     Serve {
+        /// The project the first space's shell stands in, when nothing is
+        /// persisted
         #[arg(long)]
-        root: PathBuf,
+        project: PathBuf,
         /// The colours a pane's program is told until a client attaches,
         /// as the client starting this server draws them
         #[arg(long)]

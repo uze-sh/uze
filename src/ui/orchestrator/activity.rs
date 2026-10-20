@@ -43,9 +43,9 @@ impl WorkspaceModel {
         self.dirty = true;
 
         if let (Some(prompt), Some(recorder)) = (prompt, self.prompt_recorder.as_ref())
-            && let Some(root) = self.space_root_of_pane(pane)
+            && let Some(project) = self.project_of_pane(pane)
         {
-            let _ = recorder.send((root, origin, prompt.to_owned()));
+            let _ = recorder.send((project, origin, prompt.to_owned()));
         }
     }
 

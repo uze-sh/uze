@@ -49,8 +49,13 @@ impl Attach<'_> {
     /// rename buffer, and — with nothing open — the focused pane.
     pub(super) fn paste(&mut self, text: String) -> Flow {
         match text {
-            _ if self.model.root_picker.is_some() => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+            _ if self.model.directory_step.is_some() => {
+                if let Some(picker) = self
+                    .model
+                    .directory_step
+                    .as_mut()
+                    .map(|step| &mut step.picker)
+                {
                     picker.pasted(text.trim_end_matches(['\r', '\n']));
                 }
                 self.model.dirty = true;

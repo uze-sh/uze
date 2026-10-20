@@ -3,7 +3,9 @@
 
 use super::WorkspaceHit;
 use super::support::*;
-use super::{AgentSupportDropdown, SupportResolution, WorkspaceModel, space_prompts_panel};
+use super::{
+    AgentSupportDropdown, PromptsOf, SupportResolution, WorkspaceModel, agent_panel_in_front,
+};
 use crate::ui::theme::{self};
 use crossterm::event::{MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
@@ -12,21 +14,36 @@ use uze_core::UzeHome;
 use uze_terminal::ClientEvent;
 
 fn drawer_over(model: &WorkspaceModel) -> AgentSupportDropdown {
-    space_prompts_panel(model, &identities_fixture()).expect("a space is in front")
+    agent_panel_in_front(model, &identities_fixture()).expect("an agent is in front")
 }
 
-/// The Agent section reads the agent in front when there is one —
-/// what its support is read for — and the space's prompts either way.
+/// The prompts of the agent `a1` in `/repo`, the way the history keeps them.
+fn prompts_of_a1() -> PromptsOf {
+    PromptsOf {
+        project: PathBuf::from("/repo"),
+        agent: "a1".to_owned(),
+    }
+}
+
+/// The Agent section is the agent in front's — what its support is read
+/// for and whose prompts it lists — and a shell of the space has none.
 #[test]
-fn the_agent_section_reads_the_agent_in_front_or_the_space_alone() {
-    let model = agent_session_in("/repo/.worktrees/a");
+fn the_agent_section_is_the_agent_in_fronts() {
+    let mut model = agent_session_in("/repo/.worktrees/a");
+    stamp_first_tab(&mut model, "a1");
     let panel = drawer_over(&model);
     assert!(panel.key.is_some(), "the agent in front is read");
+    assert_eq!(
+        panel.prompts,
+        Some(prompts_of_a1()),
+        "its own prompts, in its project"
+    );
 
     let shells = model_of(session("/repo"));
-    let panel = drawer_over(&shells);
-    assert_eq!(panel.key, None, "a shell has no support to read");
-    assert_eq!(panel.space_root, PathBuf::from("/repo"));
+    assert!(
+        agent_panel_in_front(&shells, &identities_fixture()).is_none(),
+        "a shell of the space has no overview"
+    );
 }
 
 fn support_fixture() -> crate::ui::agent_support::AgentSupport {
@@ -84,7 +101,7 @@ fn the_agent_section_keeps_its_own_agents_support() {
         let space = model.session.as_ref().expect("session").selected_space();
         (space.id, space.selected_tab)
     };
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.agent = Some(agent);
     overview.answer = Some(Ok(project_space(
@@ -118,7 +135,9 @@ fn opening_the_overview_again_waits_for_the_reads_already_out() {
     let home = UzeHome::at(uze_testkit::temp::scratch(
         "orchestrator-overview-reads-once",
     ));
-    let mut driven = driven(agent_session_in("/repo/.worktrees/a"), &home);
+    let mut model = agent_session_in("/repo/.worktrees/a");
+    stamp_first_tab(&mut model, "a1");
+    let mut driven = driven(model, &home);
     driven.attach.toggle_space_overview();
     let pending = |driven: &Driven<'_>| {
         let remembered = &driven.attach.model.remembered;
@@ -129,7 +148,7 @@ fn opening_the_overview_again_waits_for_the_reads_already_out() {
     };
     let (support, prompts) = pending(&driven);
     assert!(support.is_some(), "what reaches the agent was not read");
-    assert_eq!(prompts, Some(PathBuf::from("/repo")));
+    assert_eq!(prompts, Some(prompts_of_a1()));
     driven.attach.toggle_space_overview();
     driven.attach.toggle_space_overview();
     assert_eq!(pending(&driven), (support, prompts));
@@ -154,12 +173,12 @@ fn enter_on_a_prompt_copies_it_whole() {
     let mut model = agent_session_in("/repo");
     let mut agent = drawer_over(&model);
     agent.support = Some(support_fixture());
-    let root = agent.space_root.clone();
+    agent.prompts = Some(prompts_of_a1());
     let (space, behind) = {
         let space = model.session.as_ref().expect("session").selected_space();
         (space.id, space.selected_tab)
     };
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.agent = Some(agent);
     overview.answer = Some(Ok(project_space(
@@ -175,7 +194,7 @@ fn enter_on_a_prompt_copies_it_whole() {
     };
     let long = "rebase onto main ".repeat(6);
     model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
-        root,
+        of: prompts_of_a1(),
         entries: vec![
             uze_application::PromptEntry::new(&origin, "fix the pipeline").unwrap(),
             uze_application::PromptEntry::new(&origin, &long).unwrap(),
@@ -201,33 +220,24 @@ fn enter_on_a_prompt_copies_it_whole() {
     );
 }
 
-/// The overview stands in front of one tab and leaves the moment the
-/// operator chooses another: a tab chord, an agent, or the server
-/// moving the selection on. What it survives is a broadcast that
-/// leaves the tab behind it in front.
+/// The overview is the agent's: it follows the operator to another agent,
+/// and leaves the moment they leave every agent's context — the space's
+/// own shell, by the pointer or by the server moving the selection on.
+/// A section chord stays its own.
 #[test]
-fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-leaves"));
+fn the_overview_follows_the_agent_and_leaves_with_its_context() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-follows"));
     let mut base = session("/repo");
     let space = base.selected_space().id;
     let shell = base.selected_tab().id;
-    let agent_pane = base.add_tab(
-        space,
-        "agent 1".into(),
-        None,
-        80,
-        24,
-        PathBuf::from("/repo"),
-    );
-    base.update_pane_status(agent_pane, PathBuf::from("/repo"), "agent".into());
-    let agent = base
-        .selected_space()
-        .tabs
-        .iter()
-        .find(|tab| tab.pane.id == agent_pane)
-        .expect("the agent's tab")
-        .id;
-    base.select_tab(shell);
+    let agent_in = |base: &mut uze_terminal::Session, cwd: &str| {
+        let pane = base.add_tab(space, "agent".into(), None, 80, 24, cwd.into());
+        base.update_pane_status(pane, cwd.into(), "agent".into());
+        base.selected_tab().id
+    };
+    let first = agent_in(&mut base, "/repo");
+    let second = agent_in(&mut base, "/web");
+    base.select_tab(first);
     let open_overview = |driven: &mut Driven<'_>| {
         driven.frame();
         let button = driven
@@ -236,43 +246,49 @@ fn the_overview_leaves_for_whatever_agent_is_chosen_next() {
             .hits
             .iter()
             .find_map(|(rect, hit)| (*hit == WorkspaceHit::OpenOverview).then_some(*rect))
-            .expect("the space button is on the strip");
+            .expect("the agent button is on the strip");
         driven.press(button.x + 1, button.y);
-        let session = driven.attach.model.session.clone().expect("session");
-        driven.attach.model.apply(
-            ClientEvent::SessionUpdated { session },
-            &identities_fixture(),
-        );
         assert!(
             driven.attach.model.space_overview.is_some(),
-            "the space button did not open the overview, or a broadcast put it away"
+            "the agent button did not open the overview"
         );
     };
+    let moved_to = |driven: &mut Driven<'_>, tab| {
+        let mut moved = driven.attach.model.session.clone().expect("session");
+        moved.select_tab(tab);
+        driven
+            .events_sender
+            .as_ref()
+            .expect("the reader is connected")
+            .send(ClientEvent::SessionUpdated { session: moved })
+            .unwrap();
+        driven.pump();
+    };
 
-    // A tab chord chooses a tab of the strip, and the overview leaves.
+    // The server moving the selection onto another agent turns it there.
     let mut driven = driven_again(&home, &base);
     open_overview(&mut driven);
-    driven.press_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Char('1'),
-        crossterm::event::KeyModifiers::ALT,
-    ));
-    assert!(
-        driven.attach.model.space_overview.is_none(),
-        "alt+1 was taken by the overview"
+    moved_to(&mut driven, second);
+    let overview = driven
+        .attach
+        .model
+        .space_overview
+        .as_ref()
+        .expect("the overview follows the agent");
+    assert_eq!(overview.agent.as_ref().map(|agent| agent.tab), Some(second));
+    assert_eq!(
+        overview.root,
+        PathBuf::from("/web"),
+        "and reads its project"
     );
 
-    // The server moving the selection onto an agent.
+    // Onto the space's own shell, it leaves.
     let mut driven = driven_again(&home, &base);
     open_overview(&mut driven);
-    let mut moved = driven.attach.model.session.clone().expect("session");
-    moved.select_tab(agent);
-    driven.attach.model.apply(
-        ClientEvent::SessionUpdated { session: moved },
-        &identities_fixture(),
-    );
+    moved_to(&mut driven, shell);
     assert!(
         driven.attach.model.space_overview.is_none(),
-        "the overview stayed over an agent it was not opened in front of"
+        "the overview stayed over a shell of the space"
     );
 
     // A section chord stays the overview's.
@@ -305,7 +321,7 @@ fn a_long_memory_section_scrolls_with_a_scrollbar_and_the_wheel() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let facts: Vec<Entry> = (0..40)
         .map(|index| Entry {
             name: format!("fact-{index:02}"),
@@ -408,7 +424,7 @@ fn the_memory_search_narrows_the_facts_and_reads_the_one_selected() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let fact = |name: &str, description: &str, origin: &str| Entry {
         name: name.to_owned(),
         description: description.to_owned(),
@@ -495,7 +511,7 @@ fn machine_facts_are_listed_beside_the_projects() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let fact = |name: &str, scope| Entry {
         name: name.to_owned(),
         description: String::new(),
@@ -545,7 +561,7 @@ fn memory_facts_are_listed_newest_first() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let fact = |name: &str, scope, updated: Option<&str>| Entry {
         name: name.to_owned(),
         description: String::new(),
@@ -591,7 +607,7 @@ fn a_fact_body_is_drawn_as_markdown() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.section = crate::ui::orchestrator::space_overview::Section::Memory;
     overview.answer = Some(Ok(project_space(
@@ -636,7 +652,7 @@ fn memory_overview(names: &[&str]) -> WorkspaceModel {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let facts = names
         .iter()
         .map(|name| Entry {
@@ -899,7 +915,8 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let declared = |key: DeclarationKey| match key {
         DeclarationKey::Worktree => Some(DeclaredValue::Text("always".to_owned())),
         DeclarationKey::Artifacts => Some(DeclaredValue::List(vec!["docs".to_owned()])),
@@ -1015,7 +1032,8 @@ fn the_workspace_form_edits_from_the_keyboard_and_a_click() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let declared = |key: DeclarationKey| match key {
         DeclarationKey::Worktree => Some(DeclaredValue::Text("always".to_owned())),
         DeclarationKey::Artifacts => Some(DeclaredValue::List(vec!["docs".to_owned()])),
@@ -1143,7 +1161,8 @@ fn settings_over<'a>(home: &'a UzeHome, repository: &uze_testkit::git::Repositor
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
     overview.answer = Some(Ok(project_space(Default::default(), Ok(undeclared(false)))));
@@ -1336,7 +1355,8 @@ fn a_number_steps_with_its_minus_and_plus() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let view = DeclarationView {
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
@@ -1434,7 +1454,8 @@ fn a_link_is_picked_from_what_the_repository_ignores() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let choices = uze_application::DeclarationChoices {
         links: vec![
             ".env".to_owned(),
@@ -1523,7 +1544,8 @@ fn an_action_is_written_over_several_lines() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    let root = first_tab(&model).pane.cwd.clone();
+    model.open_space_overview(space, behind, root, true);
     let view = DeclarationView {
         manifest: PathBuf::from("/repo/agents.yaml"),
         exists: true,
@@ -1601,7 +1623,7 @@ fn a_space_s_overview_is_found_as_it_was_left() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("open");
     overview.section = crate::ui::orchestrator::space_overview::Section::Settings;
     overview.rows[1] = 3;
@@ -1613,7 +1635,7 @@ fn a_space_s_overview_is_found_as_it_was_left() {
 
     model.put_away_space_overview();
     assert!(model.space_overview.is_none());
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
 
     let overview = model.space_overview.as_ref().expect("open again");
     assert_eq!(
@@ -1637,7 +1659,7 @@ fn the_overview_drawer_resizes_and_carries_the_scroll_handle() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let facts: Vec<Entry> = (0..60)
         .map(|index| Entry {
             name: format!("fact-{index:02}"),
@@ -1962,13 +1984,13 @@ fn a_click_on_nothing_closes_an_open_combobox() {
 #[test]
 fn the_selected_prompt_slides_and_the_others_hold_still() {
     let mut model = agent_session_in("/repo");
-    let agent = drawer_over(&model);
-    let root = agent.space_root.clone();
+    let mut agent = drawer_over(&model);
+    agent.prompts = Some(prompts_of_a1());
     let (space, behind) = {
         let space = model.session.as_ref().expect("session").selected_space();
         (space.id, space.selected_tab)
     };
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.agent = Some(agent);
     overview.answer = Some(Ok(project_space(
@@ -1984,7 +2006,7 @@ fn the_selected_prompt_slides_and_the_others_hold_still() {
     };
     let long = format!("start {} end", "of a long prompt ".repeat(12));
     model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
-        root,
+        of: prompts_of_a1(),
         entries: vec![
             uze_application::PromptEntry::new(&origin, &long).unwrap(),
             uze_application::PromptEntry::new(&origin, &format!("other {long}")).unwrap(),
@@ -2083,7 +2105,7 @@ fn worktrees_over(view: Option<uze_application::CheckoutsView>) -> WorkspaceMode
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.section = Section::Worktrees;
     overview.answer = Some(Ok(project_space(
@@ -2704,7 +2726,7 @@ fn an_empty_section_is_said_in_the_middle_of_its_room() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("open");
     overview.section = Section::Plugins;
     overview.answer = Some(Ok(project_space(
@@ -2768,7 +2790,7 @@ fn the_plugins_are_a_compact_table_and_the_drawer_folds_as_it_narrows() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("open");
     overview.section = Section::Plugins;
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
@@ -2828,7 +2850,7 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
     let space = session.selected_space().id;
     let behind = session.selected_tab().id;
     let mut model = model_of(session);
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
     if let uze_application::SpaceOverview::Project(project) = &mut answer {
         project
@@ -3029,12 +3051,12 @@ fn clearing_the_prompts_is_asked_in_a_dialog() {
     let mut model = agent_session_in("/repo");
     let mut agent = drawer_over(&model);
     agent.support = Some(support_fixture());
-    let root = agent.space_root.clone();
+    agent.prompts = Some(prompts_of_a1());
     let (space, behind) = {
         let space = model.session.as_ref().expect("session").selected_space();
         (space.id, space.selected_tab)
     };
-    model.open_space_overview(space, behind, true);
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let overview = model.space_overview.as_mut().expect("the overview is open");
     overview.agent = Some(agent);
     overview.answer = Some(Ok(project_space(
@@ -3049,7 +3071,7 @@ fn clearing_the_prompts_is_asked_in_a_dialog() {
         agent: None,
     };
     model.remembered.drawer_prompts = Some(crate::ui::orchestrator::PromptHistoryResolution {
-        root,
+        of: prompts_of_a1(),
         entries: vec![uze_application::PromptEntry::new(&origin, "fix the pipeline").unwrap()],
     });
     let mut driven = driven(model, &home).on_a_roomy_terminal();
@@ -3081,7 +3103,7 @@ fn clearing_the_prompts_is_asked_in_a_dialog() {
     );
     let screen = frame_rows_at(&mut driven.attach.model, driven.area).join("\n");
     assert!(
-        screen.contains("Clear this space's prompts?"),
+        screen.contains("Clear this agent's prompts?"),
         "the dialog does not say what it clears:\n{screen}"
     );
     let cancel = answer(&driven, false);

@@ -212,24 +212,41 @@ pub fn record(
     Ok(())
 }
 
-/// Recent entries for `workspace_root`, newest first, capped to `limit`.
-/// A missing, unreadable, or partly corrupt file yields whatever is
-/// readable rather than an error — history never blocks a refresh.
-pub fn list_for_workspace(home: &UzeHome, workspace_root: &Path, limit: usize) -> Vec<PromptEntry> {
-    let mut entries = load(&path(home, workspace_root));
+/// The prompts `agent` was given in `workspace_root`, newest first, capped
+/// to `limit`. A missing, unreadable, or partly corrupt file yields
+/// whatever is readable rather than an error — history never blocks a
+/// refresh.
+pub fn list_for_agent(
+    home: &UzeHome,
+    workspace_root: &Path,
+    agent: &str,
+    limit: usize,
+) -> Vec<PromptEntry> {
+    let mut entries: Vec<PromptEntry> = load(&path(home, workspace_root))
+        .into_iter()
+        .filter(|entry| entry.agent.as_deref() == Some(agent))
+        .collect();
     entries.reverse();
     entries.truncate(limit);
     entries
 }
 
-/// Deletes `workspace_root`'s history. Succeeds when there is none.
-pub fn clear(home: &UzeHome, workspace_root: &Path) -> Result<()> {
+/// Forgets the prompts `agent` was given in `workspace_root`, keeping every
+/// other agent's. Succeeds when there are none.
+pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result<()> {
     let file = path(home, workspace_root);
-    match fs::remove_file(&file) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(UzeError::Write { path: file, source }),
+    if !file.exists() {
+        return Ok(());
     }
+    let _held = crate::file_lock::Held::acquire(
+        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        LOCK_PATIENCE,
+    )?;
+    let kept: Vec<PromptEntry> = load(&file)
+        .into_iter()
+        .filter(|entry| entry.agent.as_deref() != Some(agent))
+        .collect();
+    rewrite(&file, &kept)
 }
 
 fn path(home: &UzeHome, workspace_root: &Path) -> PathBuf {
@@ -259,12 +276,15 @@ fn append_line(file: &Path, line: &[u8]) -> Result<()> {
 }
 
 fn compact(file: &Path) -> Result<()> {
-    let entries = load(file);
-    let kept = entries
-        .iter()
-        .skip(entries.len().saturating_sub(MAX_ENTRIES));
+    let mut entries = load(file);
+    entries.drain(..entries.len().saturating_sub(MAX_ENTRIES));
+    rewrite(file, &entries)
+}
+
+/// Replaces `file` with `entries`, oldest first.
+fn rewrite(file: &Path, entries: &[PromptEntry]) -> Result<()> {
     let mut payload = Vec::new();
-    for entry in kept {
+    for entry in entries {
         payload.extend_from_slice(
             &serde_json::to_vec(entry).expect("prompt entry serialization is infallible"),
         );
@@ -347,8 +367,8 @@ mod tests {
             space_label: "space 1".into(),
             tab_id,
             tab_label: "tab 1".into(),
-            agent_binary: agent.into(),
-            agent: None,
+            agent_binary: "claude".into(),
+            agent: Some(agent.into()),
         }
     }
 
@@ -458,11 +478,11 @@ mod tests {
         record(&temp.home, a, &origin(1, "agent-a"), "prompt a").unwrap();
         record(&temp.home, b, &origin(2, "agent-b"), "prompt b").unwrap();
 
-        let listed_a = list_for_workspace(&temp.home, a, 10);
+        let listed_a = list_for_agent(&temp.home, a, "agent-a", 10);
         assert_eq!(listed_a.len(), 1);
         assert_eq!(listed_a[0].preview, "prompt a");
 
-        let listed_b = list_for_workspace(&temp.home, b, 10);
+        let listed_b = list_for_agent(&temp.home, b, "agent-b", 10);
         assert_eq!(listed_b.len(), 1);
         assert_eq!(listed_b[0].preview, "prompt b");
     }
@@ -481,7 +501,7 @@ mod tests {
             .unwrap();
         }
 
-        let listed = list_for_workspace(&temp.home, root, 3);
+        let listed = list_for_agent(&temp.home, root, "agent", 3);
         let previews: Vec<&str> = listed.iter().map(|entry| entry.preview.as_str()).collect();
         assert_eq!(previews, ["p4", "p3", "p2"]);
     }
@@ -498,7 +518,7 @@ mod tests {
         fs::write(&file, contents).unwrap();
         record(&temp.home, root, &origin(1, "agent"), "later").unwrap();
 
-        let previews: Vec<String> = list_for_workspace(&temp.home, root, 10)
+        let previews: Vec<String> = list_for_agent(&temp.home, root, "agent", 10)
             .into_iter()
             .map(|entry| entry.preview)
             .collect();
@@ -530,17 +550,37 @@ mod tests {
     }
 
     #[test]
-    fn clear_removes_only_the_named_workspace_and_tolerates_absence() {
+    fn each_agent_lists_only_its_own_prompts() {
+        let temp = TempHome::new("per-agent");
+        let root = Path::new("/tmp/ws");
+        record(&temp.home, root, &origin(1, "front"), "for front").unwrap();
+        record(&temp.home, root, &origin(2, "back"), "for back").unwrap();
+        let hand_started = PromptOrigin {
+            agent: None,
+            ..origin(3, "nobody")
+        };
+        record(&temp.home, root, &hand_started, "typed in a shell").unwrap();
+
+        let previews: Vec<String> = list_for_agent(&temp.home, root, "front", 10)
+            .into_iter()
+            .map(|entry| entry.preview)
+            .collect();
+        assert_eq!(previews, ["for front"]);
+    }
+
+    #[test]
+    fn clearing_an_agent_keeps_the_others_and_tolerates_absence() {
         let temp = TempHome::new("clear");
-        let (a, b) = (Path::new("/tmp/ws-a"), Path::new("/tmp/ws-b"));
-        record(&temp.home, a, &origin(1, "agent"), "prompt a").unwrap();
-        record(&temp.home, b, &origin(2, "agent"), "prompt b").unwrap();
+        let root = Path::new("/tmp/ws");
+        record(&temp.home, root, &origin(1, "front"), "for front").unwrap();
+        record(&temp.home, root, &origin(2, "back"), "for back").unwrap();
 
-        clear(&temp.home, a).unwrap();
-        assert!(list_for_workspace(&temp.home, a, 10).is_empty());
-        assert_eq!(list_for_workspace(&temp.home, b, 10).len(), 1);
+        clear_agent(&temp.home, root, "front").unwrap();
+        assert!(list_for_agent(&temp.home, root, "front", 10).is_empty());
+        assert_eq!(list_for_agent(&temp.home, root, "back", 10).len(), 1);
 
-        clear(&temp.home, a).unwrap();
+        clear_agent(&temp.home, root, "front").unwrap();
+        clear_agent(&temp.home, Path::new("/tmp/never-written"), "front").unwrap();
     }
 
     // Unix file modes, which Windows does not keep.

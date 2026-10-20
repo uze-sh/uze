@@ -60,14 +60,7 @@ use std::{path::Path, thread, time::Duration};
 fn a_clients_view_overlays_its_own_selection_and_heals_a_stale_one() {
     let mut session = Session::new(seat_at(Path::new("/tmp/a")), 80, 24);
     let first_space = session.workspace.selected_space;
-    session.create_space(
-        Some("b".into()),
-        crate::SpaceSeat {
-            root: "/tmp/b".into(),
-        },
-        80,
-        24,
-    );
+    session.create_space(Some("b".into()), "/tmp/b".into(), 80, 24);
     let second_space = session.workspace.selected_space;
     session.add_tab(second_space, "extra".into(), None, 80, 24, "/tmp/b".into());
     let extra_tab = session.selected_tab().id;
@@ -924,7 +917,7 @@ fn only_asking_to_open_a_space_may_create_one() {
         let landed = std::iter::from_fn(|| read_event(&mut reader).unwrap())
             .find_map(|event| match event {
                 crate::ClientEvent::Snapshot { session } => {
-                    Some(session.selected_space().root.clone())
+                    Some(first_shell(session.selected_space()))
                 }
                 _ => None,
             })
@@ -945,24 +938,96 @@ fn only_asking_to_open_a_space_may_create_one() {
 
     assert_eq!(spaces(), 1, "the bootstrap space, and nothing else");
 
-    let landed = attach(crate::Seating::At(seat_at(&elsewhere)));
-    assert_eq!(spaces(), 1, "landing somewhere unopened created a space");
-    assert_eq!(
-        landed, project,
-        "and the client lands where the session already was"
-    );
-
     let landed = attach(crate::Seating::WhereItLeftOff);
     assert_eq!(spaces(), 1, "saying nothing created a space");
     assert_eq!(landed, project);
 
-    let landed = attach(crate::Seating::At(seat_at(&project)));
-    assert_eq!(spaces(), 1, "a seat that is already open opens nothing");
+    let landed = attach(crate::Seating::Open(seat_at(&project)));
+    assert_eq!(
+        spaces(),
+        1,
+        "the space the server opened for the project, its shell there, is the one working in it"
+    );
     assert_eq!(landed, project, "and is what the client lands on");
 
     let landed = attach(crate::Seating::Open(seat_at(&elsewhere)));
     assert_eq!(spaces(), 2, "asking to open a space did not open one");
     assert_eq!(landed, elsewhere, "and the client lands in it");
+}
+
+/// A tab asked for in a named space opens there, whichever space the
+/// client is looking at: an agent opens in the space it was started from,
+/// though the operator moved on while its checkout was being made.
+#[test]
+fn a_tab_asked_for_in_a_space_opens_there() {
+    let scratch = uze_testkit::temp::socket_scratch("create-in-space");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let elsewhere = scratch.join("elsewhere");
+    let runtime_dir = scratch.join("runtime");
+    for directory in [&uze_home, &project, &elsewhere, &runtime_dir] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home)
+        .set("XDG_RUNTIME_DIR", &runtime_dir);
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    let origin = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .workspace
+        .selected_space;
+    let (client, driver) = super::transport::pair().unwrap();
+    let serving = {
+        let server = Arc::clone(&server);
+        std::thread::spawn(move || server.handle_client(client))
+    };
+    let mut writer = driver.try_clone().unwrap();
+    let mut reader = std::io::BufReader::new(driver);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Attach {
+            version: crate::PROTOCOL_VERSION,
+            columns: 80,
+            rows: 24,
+            seating: crate::Seating::Open(seat_at(&elsewhere)),
+            key: super::server_key(),
+        },
+    )
+    .unwrap();
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::CreateTab {
+            space: Some(origin),
+            label: "agent 1".into(),
+            agent: None,
+            columns: 80,
+            rows: 24,
+            cwd: Some(project.clone()),
+            command: None,
+            env: Vec::new(),
+        },
+    )
+    .unwrap();
+    let tabs = std::iter::from_fn(|| read_event(&mut reader).unwrap())
+        .find_map(|event| match event {
+            crate::ClientEvent::SessionUpdated { session } => session
+                .space(origin)
+                .filter(|space| space.tabs.len() == 2)
+                .map(|space| space.tabs.len()),
+            _ => None,
+        })
+        .expect("the tab was opened in the space it was asked for");
+    let _ = send_request(&mut writer, &crate::ClientRequest::Detach);
+    let _ = serving.join();
+    assert_eq!(tabs, 2);
 }
 
 /// A tab is opened in the space the client selected last, so selecting
@@ -1012,7 +1077,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
                 .workspace
                 .spaces
                 .iter()
-                .find(|space| space.root == project)
+                .find(|space| first_shell(space) == project)
                 .map(|space| space.id),
             _ => None,
         })
@@ -1021,6 +1086,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
     for request in [
         crate::ClientRequest::SelectSpace { space: first },
         crate::ClientRequest::CreateTab {
+            space: None,
             label: "shell 1".into(),
             agent: None,
             columns: 80,
@@ -1040,7 +1106,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
                         .workspace
                         .spaces
                         .iter()
-                        .find(|space| space.root == root)
+                        .find(|space| first_shell(space) == root)
                         .map_or(0, |space| space.tabs.len())
                 };
                 (tabs(&project) + tabs(&elsewhere) == 3).then(|| (tabs(&project), tabs(&elsewhere)))
@@ -1364,7 +1430,7 @@ fn a_spawned_pane_is_flushed_once_it_is_registered() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(None, seat_at(&project), 80, 24)
+        .create_space(None, project.clone(), 80, 24)
         .pane;
     let silent = Launch::Program {
         argv: shell_argv("sleep 30", "Start-Sleep 30"),
@@ -1472,9 +1538,9 @@ fn a_changed_palette_is_announced_to_the_panes_that_asked() {
         env: Vec::new(),
     };
     let mut session = server.session.lock().expect("session poisoned");
-    let asking = session.create_space(None, seat_at(&project), 80, 24).pane;
+    let asking = session.create_space(None, project.clone(), 80, 24).pane;
     let silent = session
-        .create_space(None, seat_at(&scratch.join("elsewhere")), 80, 24)
+        .create_space(None, scratch.join("elsewhere"), 80, 24)
         .pane;
     drop(session);
     server.spawn_pane(asking, listening(true, &heard)).unwrap();
@@ -1583,7 +1649,7 @@ fn a_pane_that_stops_reading_does_not_hold_up_the_others() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(None, seat_at(&project), 80, 24)
+        .create_space(None, project.clone(), 80, 24)
         .pane;
     // Raw, because a canonical-mode terminal discards what overflows
     // its line buffer instead of blocking the writer.
@@ -1679,26 +1745,18 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(
-            Some("other".into()),
-            crate::SpaceSeat {
-                root: other.clone(),
-            },
-            80,
-            24,
-        )
+        .create_space(Some("other".into()), other.clone(), 80, 24)
         .pane;
     server.spawn_pane(pane, Launch::Shell).unwrap();
     let launch = {
         let mut session = server.session.lock().expect("session poisoned");
         let launch = session
             .space_for(&seat_at(&project))
-            .expect("the bootstrap space is rooted at the launch directory");
-        let seat = crate::SpaceSeat {
-            root: other.clone(),
-        };
+            .expect("the bootstrap space's shell stands in the launch directory");
         assert!(
-            session.remove_space(launch, seat, 80, 24).is_some(),
+            session
+                .remove_space(launch, other.clone(), 80, 24)
+                .is_some(),
             "space closed"
         );
         launch
@@ -1778,14 +1836,7 @@ fn a_restarted_server_relaunches_the_same_spaces_tabs_and_agent_commands() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(
-            Some("frontend".into()),
-            crate::SpaceSeat {
-                root: project.clone(),
-            },
-            80,
-            24,
-        )
+        .create_space(Some("frontend".into()), project.clone(), 80, 24)
         .pane;
     first.spawn_pane(agent_pane, sleep_five()).unwrap();
     // `CreateSpace`'s real dispatch (`runtime.rs`'s `handle_client`)
@@ -1844,14 +1895,7 @@ fn a_finished_direct_agent_is_replaced_by_a_shell_in_its_pane() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(
-            Some("agent".into()),
-            crate::SpaceSeat {
-                root: project.clone(),
-            },
-            80,
-            24,
-        )
+        .create_space(Some("agent".into()), project.clone(), 80, 24)
         .pane;
     server.spawn_pane(pane, exits_at_once(Vec::new())).unwrap();
 
@@ -2013,7 +2057,8 @@ fn a_workspace_from_the_previous_release_is_carried_across_rather_than_set_aside
     {
         let session = server.session.lock().expect("session poisoned");
         assert_eq!(
-            session.workspace.spaces[0].root, kept,
+            first_shell(&session.workspace.spaces[0]),
+            kept,
             "the server opens on the workspace it was left, not on the seat"
         );
     }
@@ -2124,8 +2169,8 @@ fn a_persisted_command_that_no_longer_resolves_falls_back_to_a_plain_shell() {
     let stale = PersistedWorkspace {
         schema_version: WORKSPACE_SCHEMA_VERSION,
         spaces: vec![SpaceSeed {
+            id: SpaceId(1),
             label: "space 1".into(),
-            root: project.clone(),
             tabs: vec![TabSeed {
                 label: "shell".into(),
                 cwd: project.clone(),
@@ -2136,6 +2181,7 @@ fn a_persisted_command_that_no_longer_resolves_falls_back_to_a_plain_shell() {
                 },
             }],
         }],
+        next_space_id: 2,
     };
     std::fs::write(&path, serde_json::to_vec(&stale).unwrap()).unwrap();
 
@@ -2740,10 +2786,16 @@ fn report_variable(variable: &str, into: &Path) -> Vec<String> {
     )
 }
 
-fn seat_at(root: &Path) -> crate::SpaceSeat {
+fn seat_at(project: &Path) -> crate::SpaceSeat {
     crate::SpaceSeat {
-        root: root.to_path_buf(),
+        project: project.to_path_buf(),
     }
+}
+
+/// Where a space's first tab stands: the directory a space was opened
+/// for, since a space records none of its own.
+fn first_shell(space: &crate::Space) -> PathBuf {
+    space.tabs[0].pane.cwd.clone()
 }
 
 // Unix only: `sleep`, a program Windows does not ship.
@@ -2860,8 +2912,8 @@ fn a_launch_environment_survives_a_restart() {
     let persisted = PersistedWorkspace {
         schema_version: WORKSPACE_SCHEMA_VERSION,
         spaces: vec![SpaceSeed {
+            id: SpaceId(1),
             label: "space 1".into(),
-            root: project.clone(),
             tabs: vec![TabSeed {
                 label: "agent 1".into(),
                 cwd: project.clone(),
@@ -2872,6 +2924,7 @@ fn a_launch_environment_survives_a_restart() {
                 },
             }],
         }],
+        next_space_id: 2,
     };
     std::fs::write(&path, serde_json::to_vec(&persisted).unwrap()).unwrap();
 
@@ -2909,14 +2962,7 @@ fn a_shell_respawn_carries_no_launch_environment() {
         .session
         .lock()
         .expect("session poisoned")
-        .create_space(
-            Some("agent".into()),
-            crate::SpaceSeat {
-                root: project.clone(),
-            },
-            80,
-            24,
-        )
+        .create_space(Some("agent".into()), project.clone(), 80, 24)
         .pane;
     server
         .spawn_pane(pane, exits_at_once(stamp("agent-done")))
@@ -3476,16 +3522,59 @@ fn a_workspace_that_gave_every_space_a_kind_opens_on_this_build() {
     );
     let workspace = workspace.expect("the spaces survive the upgrade");
     assert_eq!(workspace.schema_version, WORKSPACE_SCHEMA_VERSION);
-    let roots: Vec<_> = workspace
+    let spaces: Vec<_> = workspace
         .spaces
         .iter()
-        .map(|space| space.root.display().to_string())
+        .map(|space| (space.id, space.label.as_str()))
         .collect();
-    assert_eq!(roots, ["/tmp/uze", "/tmp/home"], "every space, in order");
     assert_eq!(
-        workspace.spaces[0].tabs.len(),
-        1,
-        "and every tab the space carried"
+        spaces,
+        [(SpaceId(1), "uze"), (SpaceId(2), "home")],
+        "every space, in order, given the id it had"
+    );
+    assert_eq!(workspace.next_space_id, 3);
+    assert_eq!(
+        workspace.spaces[0].tabs[0].cwd,
+        PathBuf::from("/tmp/uze"),
+        "and every tab the space carried, where it stood"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Shape 2 identified a space by its root. A space is a group bound to
+/// no directory now: the root goes, every tab keeps where it stood, and
+/// the ids are the ones a restore of shape 2 would have minted.
+#[test]
+fn a_workspace_that_rooted_every_space_opens_on_this_build() {
+    let scratch = uze_testkit::temp::scratch("terminal-workspace-shape-2");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let path = scratch.join("workspace.json");
+    std::fs::write(
+        &path,
+        br#"{"schema_version":2,"spaces":[
+                 {"label":"web","root":"/tmp/web","tabs":[
+                   {"label":"shell","cwd":"/tmp/web/src","agent":null,"launch":"Shell"}]},
+                 {"label":"api","root":"/tmp/api","tabs":[
+                   {"label":"shell","cwd":"/tmp/api","agent":null,"launch":"Shell"}]}]}"#,
+    )
+    .unwrap();
+
+    let workspace = load_persisted_workspace_at(&path)
+        .restored
+        .expect("the spaces survive the upgrade");
+    assert_eq!(
+        workspace
+            .spaces
+            .iter()
+            .map(|space| (space.id, space.label.as_str()))
+            .collect::<Vec<_>>(),
+        [(SpaceId(1), "web"), (SpaceId(2), "api")]
+    );
+    assert_eq!(workspace.next_space_id, 3);
+    assert_eq!(
+        workspace.spaces[0].tabs[0].cwd,
+        PathBuf::from("/tmp/web/src")
     );
 
     let _ = std::fs::remove_dir_all(&scratch);

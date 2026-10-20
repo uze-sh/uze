@@ -121,10 +121,11 @@ pub(super) fn open_architect(model: &mut WorkspaceModel) {
     if !model.offers_extension(architect::CATALOG.id) {
         return;
     }
-    let Some(session) = model.session.as_ref() else {
+    // An agent's surface, never a shell of the space's: a shell works in
+    // no project, wherever it stands.
+    let Some(root) = model.focused_cwd() else {
         return;
     };
-    let root = session.selected_tab().pane.cwd.clone();
     model.close_code();
     model.close_spec();
     let place = model.remembered.architect_places.get(&root).cloned();
@@ -155,10 +156,9 @@ pub(super) fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::Spe
     if !model.offers_extension(spec::CATALOG.id) {
         return;
     }
-    let Some(session) = model.session.as_ref() else {
+    let Some(root) = model.focused_cwd() else {
         return;
     };
-    let root = session.selected_tab().pane.cwd.clone();
     model.close_code();
     model.close_architect();
     model.close_spec();
@@ -207,11 +207,9 @@ pub(super) fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
     if !model.offers_extension(code::CATALOG.id) {
         return;
     }
-    let Some(session) = model.session.as_ref() else {
+    let Some(cwd) = model.focused_cwd() else {
         return;
     };
-    let tab = session.selected_tab();
-    let cwd = tab.pane.cwd.clone();
     let display_root = crate::ui::display_project_path(&cwd);
     let place = model.remembered.code_places.get(&cwd).cloned();
     let view = code::CodeView::opening(cwd, display_root, mode);

@@ -71,28 +71,9 @@ impl Attach<'_> {
         }
     }
 
-    /// Opens a space at `root` — the one thing both ways of picking a
-    /// directory (Enter on the prompt, a click on one of its rows) do.
-    ///
-    /// A directory another space already holds is opened all the same:
-    /// the server numbers the repeated name rather than refusing (see
-    /// `Session::create_space`), because one repository is routinely
-    /// worth two spaces and the prompt is an explicit request for one.
-    pub(super) fn open_space_at(&mut self, root: PathBuf, columns: u16, rows: u16) {
-        let _ = send_request(
-            &mut self.stream,
-            &ClientRequest::CreateSpace {
-                label: None,
-                seat: uze_terminal::SpaceSeat { root },
-                columns,
-                rows,
-            },
-        );
-    }
-
-    /// Opens a shell of `space` itself, belonging to no agent, in the
-    /// directory the space stands in. Sent after the space is selected,
-    /// since the server opens a tab in the space the client is on.
+    /// Opens a shell of `space` itself, belonging to no agent: the one a
+    /// click on a space of agents alone lands on. In the home directory,
+    /// since a space has no directory of its own.
     pub(super) fn open_space_shell(&mut self, space: SpaceId, columns: u16, rows: u16) {
         let Some(space) = self
             .model
@@ -105,11 +86,12 @@ impl Attach<'_> {
         let _ = send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
+                space: Some(space.id),
                 label: "shell 1".into(),
                 agent: None,
                 columns,
                 rows,
-                cwd: Some(space_cwd(space, &self.identities)),
+                cwd: Some(home_directory()),
                 command: None,
                 env: Vec::new(),
             },
@@ -123,12 +105,7 @@ impl Attach<'_> {
     /// the chrome underneath. What is left resolves against the hit list
     /// the last frame drew (`WorkspaceModel::hits`).
     pub(super) fn press(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
-        let Viewport {
-            ref layout,
-            columns,
-            rows,
-            ..
-        } = *viewport;
+        let Viewport { ref layout, .. } = *viewport;
         self.drop_selection();
         // An open extension answers only for the places it is drawn in: the
         // sidebar and the rest of the bar are still the chrome's. Those
@@ -218,20 +195,17 @@ impl Attach<'_> {
                 self.model.renaming = None;
                 self.model.dirty = true;
             }
-            _ if self.model.root_picker.is_some() => {
+            _ if self.model.directory_step.is_some() => {
                 match hit_at(&self.model, mouse.column, mouse.row) {
-                    Some(WorkspaceHit::PickSpaceRoot(index)) => {
-                        if let Some(root) = self.model.root_picker.as_mut().and_then(|picker| {
-                            picker.select(index);
-                            picker.chosen()
-                        }) {
-                            self.model.root_picker = None;
-                            self.open_space_at(root, columns, rows);
+                    Some(WorkspaceHit::PickDirectory(index)) => {
+                        if let Some(step) = self.model.directory_step.as_mut() {
+                            step.picker.select(index);
                         }
+                        self.confirm_directory();
                     }
                     // Click outside the picker's own rows discards it —
                     // same rule `renaming` uses.
-                    _ => self.model.root_picker = None,
+                    _ => self.model.directory_step = None,
                 }
                 self.model.dirty = true;
             }
@@ -249,7 +223,7 @@ impl Attach<'_> {
                             && index < picker.options.len()
                         {
                             let option = picker.options.swap_remove(index);
-                            self.start_agent(option, picker.resume);
+                            self.start_agent(option, picker.launch);
                         }
                     }
                     Some(WorkspaceHit::SetUpAgent) => {
@@ -821,7 +795,7 @@ impl Attach<'_> {
         }
         match mouse {
             _ if self.model.renaming.is_none()
-                && self.model.root_picker.is_none()
+                && self.model.directory_step.is_none()
                 && self.model.agent_picker.is_none()
                 && self.model.context_menu.is_none() =>
             {
@@ -875,12 +849,16 @@ impl Attach<'_> {
     /// menus rather than as keyboard-only lists.
     pub(super) fn hover(&mut self, mouse: MouseEvent) -> Flow {
         match mouse {
-            _ if self.model.root_picker.is_some() => {
+            _ if self.model.directory_step.is_some() => {
                 // The highlight follows the pointer, the same way the
                 // agent picker and the sidebar context menu already do.
-                if let Some(WorkspaceHit::PickSpaceRoot(index)) =
+                if let Some(WorkspaceHit::PickDirectory(index)) =
                     hit_at(&self.model, mouse.column, mouse.row)
-                    && let Some(picker) = self.model.root_picker.as_mut()
+                    && let Some(picker) = self
+                        .model
+                        .directory_step
+                        .as_mut()
+                        .map(|step| &mut step.picker)
                     && picker.selected() != index
                 {
                     picker.select(index);
@@ -1147,12 +1125,21 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            // The picker has the column while it is open, so the wheel over
-            // it walks the directories it offers — the same move the arrow
-            // keys make, and what keeps a listing taller than the column
-            // reachable by pointer.
-            _ if self.model.root_picker.is_some() && mouse.column < layout.sidebar.right() => {
-                if let Some(picker) = self.model.root_picker.as_mut() {
+            // The wheel over the directory step walks the directories it
+            // offers — the same move the arrow keys make, and what keeps a
+            // listing taller than the popup reachable by pointer.
+            _ if self.model.directory_step.is_some()
+                && matches!(
+                    hit_at(&self.model, mouse.column, mouse.row),
+                    Some(WorkspaceHit::PickDirectory(_))
+                ) =>
+            {
+                if let Some(picker) = self
+                    .model
+                    .directory_step
+                    .as_mut()
+                    .map(|step| &mut step.picker)
+                {
                     picker.move_selection(if mouse.kind == MouseEventKind::ScrollUp {
                         -1
                     } else {
@@ -1368,6 +1355,7 @@ impl Attach<'_> {
                 let _ = send_request(
                     &mut self.stream,
                     &ClientRequest::CreateTab {
+                        space: None,
                         label: next_shell_label(&self.model, &self.identities),
                         agent: context_agent(&self.model, &self.identities),
                         columns,
@@ -1378,7 +1366,7 @@ impl Attach<'_> {
                     },
                 );
             }
-            WorkspaceHit::NewAgentMenu => self.offer_agents(hit_rect, None),
+            WorkspaceHit::NewAgentMenu => self.offer_directories(hit_rect),
             WorkspaceHit::PickAgent(_) | WorkspaceHit::SetUpAgent => {
                 // Only reachable while the picker is open, which
                 // the guarded arm above already handles; a
@@ -1441,9 +1429,9 @@ impl Attach<'_> {
                 // handles — same as `PickAgent` above for the
                 // agent picker.
             }
-            WorkspaceHit::NewSpace => self.open_root_picker(),
-            WorkspaceHit::PickSpaceRoot(_) => {
-                // Only reachable while the root picker is open,
+            WorkspaceHit::NewSpace => self.open_new_space(columns, rows),
+            WorkspaceHit::PickDirectory(_) => {
+                // Only reachable while the directory step is open,
                 // which the guarded arm above already handles —
                 // same as `PickAgent` for the agent picker.
             }
@@ -1507,15 +1495,11 @@ impl Attach<'_> {
                         replacing: Some(tab),
                         harness,
                     });
+                // The revived agent opens in the space of the row it takes
+                // over from (see `WorkspaceModel::landing_space`), and that
+                // row is closed once it is open.
                 if let Some(resume) = resume {
-                    // The revived agent is created in the *selected*
-                    // space, and the row it takes over from is closed
-                    // once it is open — a tab cannot be the last one
-                    // left in its space and still close. Selecting the
-                    // row first makes both land in the same space,
-                    // whichever space the operator was looking at.
-                    let _ = send_request(&mut self.stream, &ClientRequest::SelectTab { tab });
-                    self.offer_agents(hit_rect, Some(resume));
+                    self.offer_agents(hit_rect, None, AgentLaunch::Resume(resume));
                 }
             }
             WorkspaceHit::OpenStatusCatalog(anchor) => {

@@ -111,7 +111,7 @@ impl Server {
             writable,
         } = load_persisted_workspace_at(&persisted_state_path());
         let (session, launches) = restored
-            .and_then(|persisted| Session::restore(persisted.spaces))
+            .and_then(|persisted| Session::restore(persisted.spaces, persisted.next_space_id))
             .unwrap_or_else(|| {
                 let (columns, rows) = PLACEHOLDER_PANE_SIZE;
                 let session = Session::new(seat, columns, rows);
@@ -177,8 +177,8 @@ impl Server {
                     .spaces
                     .iter()
                     .map(|space| SpaceSeed {
+                        id: space.id,
                         label: space.label.clone(),
-                        root: space.root.clone(),
                         tabs: space
                             .tabs
                             .iter()
@@ -215,6 +215,7 @@ impl Server {
                             .collect(),
                     })
                     .collect(),
+                next_space_id: session.next_space_id,
             };
         drop(session);
         drop(panes);
@@ -316,16 +317,6 @@ impl Server {
                     // Nothing to say about where to land: the session's own
                     // selection answers.
                     Seating::WhereItLeftOff => {}
-                    // A place, not a request. A seat with no space is a
-                    // workspace this client has nothing to add to, so it
-                    // lands where the session already is.
-                    Seating::At(seat) => {
-                        selection.space = self
-                            .session
-                            .lock()
-                            .expect("session poisoned")
-                            .space_for(&seat);
-                    }
                     Seating::Open(seat) => {
                         match self.ensure_space(&seat, drawn.unwrap_or(PLACEHOLDER_PANE_SIZE)) {
                             Ok(OpenedSpace::Existing(space)) => selection.space = Some(space),
@@ -337,7 +328,7 @@ impl Server {
                                 events.reply(ClientEvent::Error {
                                     message: format!(
                                         "could not open a space at {}: {error}",
-                                        seat.root.display()
+                                        seat.project.display()
                                     ),
                                 });
                             }
@@ -431,6 +422,7 @@ impl Server {
                     rows,
                 } => self.resize_pane(pane, within_pane_bounds(columns), within_pane_bounds(rows)),
                 ClientRequest::CreateTab {
+                    space,
                     label,
                     agent,
                     columns,
@@ -454,16 +446,12 @@ impl Server {
                     };
                     let (pane, tab, space) = {
                         let mut session = self.session.lock().expect("session poisoned");
-                        let space = self
-                            .selection_of(client)
-                            .space
+                        let space = space
+                            .or(self.selection_of(client).space)
                             .filter(|space| session.space(*space).is_some())
                             .unwrap_or(session.workspace.selected_space);
                         let cwd = cwd.unwrap_or_else(|| {
-                            session
-                                .space(space)
-                                .map(|space| space.root.clone())
-                                .unwrap_or_else(|| PathBuf::from("."))
+                            uze_platform::home::user_home().unwrap_or_else(|| PathBuf::from("."))
                         });
                         let pane = session.add_tab(
                             space,
@@ -562,21 +550,19 @@ impl Server {
                 }
                 ClientRequest::CreateSpace {
                     label,
-                    seat,
+                    cwd,
                     columns,
                     rows,
                 } => {
-                    // Always a new space, even over a directory another
-                    // space already holds (see `Session::create_space`):
-                    // the prompt asked for a space, and one repository is
-                    // routinely worth two — one per branch, one per thing
-                    // being tried. `ensure_space` is the other question.
-                    let root = seat.root.clone();
+                    // Always a new space: a space is a group the operator
+                    // names, and nothing about where its shell starts makes
+                    // it the same as another. `ensure_space` is the other
+                    // question.
                     let (created, named) = {
                         let mut session = self.session.lock().expect("session poisoned");
                         let created = session.create_space(
                             label,
-                            seat,
+                            cwd,
                             within_pane_bounds(columns),
                             within_pane_bounds(rows),
                         );
@@ -590,7 +576,7 @@ impl Server {
                     // ended up with: a repeated label is numbered here, and
                     // "where did `project 2` come from" is a question only
                     // this line can answer after the fact.
-                    tracing::info!(root = %root.display(), label = %named, "a space was created");
+                    tracing::info!(label = %named, "a space was created");
                     self.spawn_new_space(client, created, &events);
                     self.broadcast_session();
                 }
@@ -714,7 +700,10 @@ impl Server {
             }
             Err(error) => {
                 return ClientEvent::Error {
-                    message: format!("could not open a space at {}: {error}", seat.root.display()),
+                    message: format!(
+                        "could not open a space at {}: {error}",
+                        seat.project.display()
+                    ),
                 };
             }
         };

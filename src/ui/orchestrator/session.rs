@@ -205,6 +205,9 @@ impl Attach<'_> {
             match events.try_recv() {
                 Ok(event) => {
                     self.model.apply(event, &self.identities);
+                    if std::mem::take(&mut self.model.overview_follows) {
+                        self.open_agent_overview();
+                    }
                     if let Some((pane, bytes)) = self.model.typed.take() {
                         let _ =
                             send_request(&mut self.stream, &ClientRequest::Input { pane, bytes });
@@ -281,17 +284,13 @@ impl Attach<'_> {
             self.model.dirty = true;
         }
         while let Ok(resolution) = self.channels.prompts.receiver.try_recv() {
-            if self.model.remembered.prompt_history_pending.as_ref() == Some(&resolution.root) {
+            if self.model.remembered.prompt_history_pending.as_ref() == Some(&resolution.of) {
                 self.model.remembered.prompt_history_pending = None;
             }
             self.model.remembered.drawer_prompts = Some(resolution);
             self.keep_drawer_selection();
             self.model.dirty = true;
         }
-        // A space this client asked for may have arrived; the tab that was
-        // waiting for it goes in now rather than into whichever space is
-        // selected.
-        self.land_pending_agent_tab();
         while let Ok(resolution) = self.channels.preserved.receiver.try_recv() {
             self.model.remembered.preserved_pending = false;
             self.model.remembered.preserved_work = resolution.work;

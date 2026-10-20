@@ -21,17 +21,49 @@ pub(super) struct AgentOption {
     pub(super) continuity_gap: Option<String>,
 }
 
-/// Open state of the "+ new agent" popup (`WorkspaceHit::NewAgentMenu`) —
-/// built fresh each time it opens from `agent_options`, never persisted.
+/// Open state of the "+ new agent" popup's harness step
+/// (`WorkspaceHit::NewAgentMenu`) — built fresh each time it opens from
+/// `agent_options`, never persisted.
 pub(super) struct AgentPicker {
     pub(super) options: Vec<AgentOption>,
     pub(super) selected: usize,
     /// The "new" button's own rect — the popup anchors just
     /// under it.
     pub(super) anchor: Rect,
+    /// The rows the popup keeps when the directory step opened it, so
+    /// nothing moves between the two steps; `None` measures itself.
+    pub(super) rows: Option<u16>,
+    pub(super) launch: AgentLaunch,
+}
+
+/// What a harness is being chosen for.
+#[derive(Clone)]
+pub(super) enum AgentLaunch {
+    /// A new agent, where the directory step put it.
+    New(NewPlace),
     /// A preserved task to continue: placement answers with its slot, or
     /// gives it one again on its own branch, and the agent starts there.
-    pub(super) resume: Option<ResumeTarget>,
+    Resume(ResumeTarget),
+}
+
+/// Where a new agent goes: the space whose `new` was pressed, which the
+/// operator may leave before its checkout is ready, and the directory
+/// chosen for it.
+#[derive(Clone)]
+pub(super) struct NewPlace {
+    pub(super) space: SpaceId,
+    pub(super) directory: PathBuf,
+}
+
+/// Open state of the "+ new agent" popup's first step: the directory the
+/// agent runs in, chosen for the space whose `new` was pressed.
+pub(super) struct DirectoryStep {
+    pub(super) picker: RootPicker,
+    pub(super) space: SpaceId,
+    /// The "new" button's own rect, which both steps anchor beside.
+    pub(super) anchor: Rect,
+    /// The popup's rows, fixed when it opens and kept by the harness step.
+    pub(super) rows: u16,
 }
 
 /// A task to put back in a checkout, named by its repository and id.
@@ -64,13 +96,24 @@ pub(super) struct AgentSupportDropdown {
     /// there, an open drawer stopped being drawn the moment the agent ran
     /// something, while it still held the keyboard.
     pub(super) support: Option<crate::ui::agent_support::AgentSupport>,
-    /// The space's root: the history is kept per space, keyed on it.
-    pub(super) space_root: PathBuf,
-    /// The agent's directory as the operator reads it, or the space's
-    /// root when no agent is in front.
+    /// The agent's tab, which names it in the overview's header.
+    pub(super) tab: TabId,
+    /// Whose prompts are listed: an agent UZE launched, in the project it
+    /// works in. `None` for a harness started by hand, which no prompt is
+    /// recorded against.
+    pub(super) prompts: Option<PromptsOf>,
+    /// The agent's directory as the operator reads it.
     pub(super) path: String,
-    /// Index into the space's prompts, newest first.
+    /// Index into the agent's prompts, newest first.
     pub(super) selected: usize,
+}
+
+/// One agent's prompts: the project whose history keeps them, and the agent
+/// they were given to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PromptsOf {
+    pub(super) project: PathBuf,
+    pub(super) agent: String,
 }
 
 /// What a right-click-opened [`ContextMenu`] targets — the space or tab

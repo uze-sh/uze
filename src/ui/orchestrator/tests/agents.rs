@@ -268,21 +268,15 @@ fn the_selected_agent_lights_its_stretch_of_the_gutter_and_nothing_else() {
     );
 }
 
+/// A space of shells works in no project, so nothing is said under its
+/// name: where its shell stands is the shell's own business.
 #[test]
-fn an_empty_space_draws_its_root_as_a_caption() {
-    let session = session("/repo");
-    let model = model_of(session);
-    let Sidebar { rows, hits, .. } = sidebar(&model, &identities_in_the_root());
+fn an_empty_space_draws_no_caption() {
+    let model = model_of(session("/repo"));
+    let Sidebar { rows, .. } = sidebar(&model, &identities_in_the_root());
     assert!(
-        rows.iter().any(|row| without_chrome(row) == "/repo"),
+        !rows.iter().any(|row| without_chrome(row) == "/repo"),
         "{rows:?}"
-    );
-    assert!(
-        hits.iter()
-            .filter(|(_, hit)| matches!(hit, WorkspaceHit::SelectSpace(_)))
-            .count()
-            >= 2,
-        "the caption selects the space like the header does"
     );
 }
 

@@ -391,10 +391,12 @@ fn row_lines(
             Span::styled(row.reason.words(), theme::fg(hue)),
         ];
         if selected {
-            let project = if gone || space_open_on(model, &row.project) {
-                project_name(&row.project)
-            } else {
-                format!("{} · new space", project_name(&row.project))
+            // The project, and the space resuming it opens in: in a
+            // workspace of groups, the one fact the operator cannot read
+            // off the project's name.
+            let project = match space_resumed_in(model, &row.project).filter(|_| !gone) {
+                Some(space) => format!("{} · {space}", project_name(&row.project)),
+                None => project_name(&row.project),
             };
             row::push_trailing(&mut reason, width, project, theme::color(Token::TextMuted));
         }

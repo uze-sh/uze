@@ -934,6 +934,9 @@ pub(super) struct PlacementResolution {
     /// once the new tab is open, and only then — a resume that failed
     /// leaves the operator the row they asked from.
     pub(super) replacing: Option<TabId>,
+    /// The space a new agent was asked for from, which it opens in
+    /// whichever space is in front when the placement lands.
+    pub(super) space: Option<SpaceId>,
 }
 
 /// What a placement is asked for: a record for a brand-new agent, where
@@ -941,9 +944,12 @@ pub(super) struct PlacementResolution {
 /// running; or the slot a preserved agent lost, its branch checked out
 /// again as it stands.
 pub(super) enum PlacementRequest {
+    /// A new agent in `from`, whose tab opens in the space whose `new`
+    /// was pressed.
     New {
         from: PathBuf,
         harness: String,
+        space: SpaceId,
     },
     /// The agent this checkout is being cut for, and what the operator
     /// answered about the changes their own tree holds.
@@ -977,10 +983,10 @@ impl PlacementRequest {
         }
     }
 
-    /// The directory the answer is resolved against — the space's own
-    /// shell's, or the project a preserved task belongs to. The one field
-    /// that decides which space the agent ends up in, so it is the one
-    /// worth having written down.
+    /// The directory the answer is resolved against — the one chosen for a
+    /// new agent, the agent's own, or the project a preserved task belongs
+    /// to. The one field that decides which project the agent works in, so
+    /// it is the one worth having written down.
     pub(super) fn from(&self) -> &Path {
         match self {
             Self::New { from, .. } | Self::Isolate { from, .. } | Self::Switch { from, .. } => from,
@@ -1004,6 +1010,10 @@ pub(super) fn spawn_agent_placement(
     sender: mpsc::Sender<PlacementResolution>,
 ) {
     let home = home.clone();
+    let space = match &request {
+        PlacementRequest::New { space, .. } => Some(*space),
+        _ => None,
+    };
     let parent = tracing::Span::current();
     thread::spawn(move || {
         // What was asked for, beside how it was answered: the modal that
@@ -1028,7 +1038,7 @@ pub(super) fn spawn_agent_placement(
                 // answers with the reason and opens nothing: the operator
                 // chose the kind, and an agent landing anywhere else is
                 // the one outcome a notice could not undo.
-                PlacementRequest::New { from, harness } => tui_application(home)
+                PlacementRequest::New { from, harness, .. } => tui_application(home)
                     .and_then(|app| {
                         // No kind travels: where an agent starts is the
                         // project's to declare, and isolating one is an
@@ -1066,6 +1076,7 @@ pub(super) fn spawn_agent_placement(
             command,
             placement,
             replacing,
+            space,
         });
     });
 }
@@ -1337,18 +1348,18 @@ pub(super) fn spawn_code_measure(root: PathBuf, sender: mpsc::Sender<MeasureReso
 
 /// A space's recorded prompts, tagged with the root they were read for.
 pub(super) struct PromptHistoryResolution {
-    pub(super) root: PathBuf,
+    pub(super) of: PromptsOf,
     pub(super) entries: Vec<uze_application::PromptEntry>,
 }
 
-/// How many of a space's prompts the drawer reads.
+/// How many of an agent's prompts the overview reads.
 pub(super) const DRAWER_PROMPT_LIMIT: usize = 100;
 
-/// Reads a space's prompt history off the render thread. One small file,
+/// Reads an agent's prompt history off the render thread. One small file,
 /// but a file all the same, and nothing the client draws waits on one.
 pub(super) fn spawn_prompt_history(
     home: &UzeHome,
-    root: PathBuf,
+    of: PromptsOf,
     sender: mpsc::Sender<PromptHistoryResolution>,
 ) {
     let home = home.clone();
@@ -1358,21 +1369,24 @@ pub(super) fn spawn_prompt_history(
         let entries = answered_or(
             || {
                 tui_application(home)
-                    .map(|app| app.workspace().prompt_history(&root, DRAWER_PROMPT_LIMIT))
+                    .map(|app| {
+                        app.workspace()
+                            .prompt_history(&of.project, &of.agent, DRAWER_PROMPT_LIMIT)
+                    })
                     .unwrap_or_default()
             },
             Vec::new(),
         );
-        let _ = sender.send(PromptHistoryResolution { root, entries });
+        let _ = sender.send(PromptHistoryResolution { of, entries });
     });
 }
 
-/// Forgets a space's prompts, and answers with the empty history that
-/// leaves, so the drawer redraws from what is on disk rather than from a
+/// Forgets an agent's prompts, and answers with the empty history that
+/// leaves, so the overview redraws from what is on disk rather than from a
 /// guess about it.
 pub(super) fn spawn_clear_prompt_history(
     home: &UzeHome,
-    root: PathBuf,
+    of: PromptsOf,
     sender: mpsc::Sender<PromptHistoryResolution>,
 ) {
     let home = home.clone();
@@ -1383,14 +1397,15 @@ pub(super) fn spawn_clear_prompt_history(
             || {
                 tui_application(home)
                     .map(|app| {
-                        let _ = app.workspace().clear_prompt_history(&root);
-                        app.workspace().prompt_history(&root, DRAWER_PROMPT_LIMIT)
+                        let _ = app.workspace().clear_prompt_history(&of.project, &of.agent);
+                        app.workspace()
+                            .prompt_history(&of.project, &of.agent, DRAWER_PROMPT_LIMIT)
                     })
                     .unwrap_or_default()
             },
             Vec::new(),
         );
-        let _ = sender.send(PromptHistoryResolution { root, entries });
+        let _ = sender.send(PromptHistoryResolution { of, entries });
     });
 }
 

@@ -14,34 +14,90 @@ impl Attach<'_> {
             .unwrap_or_default()
     }
 
-    /// Asks which harness runs the new agent — unless exactly one is set
-    /// up, where the picker would be a single row to confirm, and the agent
+    /// Opens the new agent's first step beside `anchor`: the directory it
+    /// runs in, for the space in front, prefilled with where that space is
+    /// working (see [`WorkspaceModel::directory_to_offer`]).
+    pub(super) fn offer_directories(&mut self, anchor: Rect) {
+        let Some(space) = self
+            .model
+            .session
+            .as_ref()
+            .map(|session| session.selected_space().id)
+        else {
+            return;
+        };
+        let offered = self.model.directory_to_offer();
+        let beside = offered
+            .as_deref()
+            .and_then(Path::parent)
+            .map_or_else(|| "~".to_owned(), |parent| parent.display().to_string());
+        let picker = RootPicker::opened_in(&beside, offered.as_deref());
+        let rows = new_agent_popup_rows(picker.match_count());
+        self.model.directory_step = Some(DirectoryStep {
+            picker,
+            space,
+            anchor,
+            rows,
+        });
+        self.model.dirty = true;
+    }
+
+    /// Takes the directory the first step is on to the harness step, in the
+    /// same popup. Nothing chosen yet walks into the row instead.
+    pub(super) fn confirm_directory(&mut self) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        let Some(directory) = step.picker.chosen() else {
+            step.picker.descend();
+            self.model.dirty = true;
+            return;
+        };
+        let Some(DirectoryStep {
+            space,
+            anchor,
+            rows,
+            ..
+        }) = self.model.directory_step.take()
+        else {
+            return;
+        };
+        self.offer_agents(
+            anchor,
+            Some(rows),
+            AgentLaunch::New(NewPlace { space, directory }),
+        );
+    }
+
+    /// Asks which harness runs the agent — unless exactly one is set up,
+    /// where the picker would be a single row to confirm, and the agent
     /// starts at once. None set up still opens it: its one row is the way
     /// to setting one up.
     ///
     /// A resumed agent that names the harness it ran with is launched with
     /// it at once while that harness is still set up: its conversation is
     /// that harness's, and asking would only offer the chance to lose it.
-    pub(super) fn offer_agents(&mut self, anchor: Rect, resume: Option<ResumeTarget>) {
+    pub(super) fn offer_agents(&mut self, anchor: Rect, rows: Option<u16>, launch: AgentLaunch) {
         let mut options = agent_options(self.home);
-        let previous = resume
-            .as_ref()
-            .and_then(|resume| resume.harness.as_deref())
-            .and_then(|harness| {
+        let previous = match &launch {
+            AgentLaunch::Resume(resume) => resume.harness.as_deref().and_then(|harness| {
                 options
                     .iter()
                     .position(|option| option.integration == harness)
-            });
+            }),
+            AgentLaunch::New(_) => None,
+        };
         if let Some(previous) = previous {
-            self.start_agent(options.remove(previous), resume);
+            self.start_agent(options.remove(previous), launch);
         } else if options.len() == 1 {
-            self.start_agent(options.remove(0), resume);
+            self.start_agent(options.remove(0), launch);
         } else {
             self.model.agent_picker = Some(AgentPicker {
                 options,
                 selected: 0,
                 anchor,
-                resume,
+                rows,
+                launch,
             });
         }
         // A purely local change on the picker's side, with no server round
@@ -49,7 +105,7 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    pub(super) fn start_agent(&mut self, option: AgentOption, resume: Option<ResumeTarget>) {
+    pub(super) fn start_agent(&mut self, option: AgentOption, launch: AgentLaunch) {
         let label = next_agent_label(&self.model);
         // Said before the tab opens, because it is a fact about the agent
         // being started rather than about the placement it is started into.
@@ -57,15 +113,15 @@ impl Attach<'_> {
             self.model
                 .raise_toast(ToastKind::Warned, gap, label.clone(), None);
         }
-        self.launch_agent(label, option.command, option.integration, resume);
+        self.launch_agent(label, option.command, option.integration, launch);
     }
 
-    /// Opens a tab for a new agent, once placement has recorded it.
+    /// Opens a tab for an agent, once placement has recorded it.
     ///
-    /// Every agent is placed before its tab opens — a new one as the
-    /// selected space's kind says, a resumed one into its task's slot —
-    /// because the record is what the launch's identity names. Acquiring a
-    /// slot is `git worktree add` plus the project's own link
+    /// Every agent is placed before its tab opens — a new one where the
+    /// project it was started in says, a resumed one into its task's slot
+    /// — because the record is what the launch's identity names. Acquiring
+    /// a slot is `git worktree add` plus the project's own link
     /// materialization and `setup` command: far too much to run where a
     /// keystroke is being handled, so it is asked for here and the tab
     /// opens in [`Attach::absorb_placement`] when the answer lands.
@@ -74,27 +130,25 @@ impl Attach<'_> {
         label: String,
         command: Vec<String>,
         harness: String,
-        resume: Option<ResumeTarget>,
+        launch: AgentLaunch,
     ) {
-        let replacing = resume.as_ref().and_then(|target| target.replacing);
-        let request = match resume {
-            Some(target) => PlacementRequest::Resume {
-                primary: target.primary,
-                task: target.task,
-                harness,
-            },
-            // Placed from where the space is now — its own shell's
-            // directory, which a `cd` there moves (see `space_cwd`) —
-            // rather than from the directory it was opened at.
-            None => {
-                let Some(space) = self.model.session.as_ref().map(|s| s.selected_space()) else {
-                    return;
-                };
-                PlacementRequest::New {
-                    from: space_cwd(space, &self.identities),
+        let (request, replacing) = match launch {
+            AgentLaunch::Resume(target) => (
+                PlacementRequest::Resume {
+                    primary: target.primary,
+                    task: target.task,
                     harness,
-                }
-            }
+                },
+                target.replacing,
+            ),
+            AgentLaunch::New(NewPlace { space, directory }) => (
+                PlacementRequest::New {
+                    from: directory,
+                    harness,
+                    space,
+                },
+                None,
+            ),
         };
         if self.model.placement_pending {
             return;
@@ -123,7 +177,7 @@ impl Attach<'_> {
     /// it is an agent UZE launched, it has no checkout yet, and the
     /// space it stands in is a repository with a commit to branch from.
     pub(super) fn can_isolate(&self, tab: TabId) -> bool {
-        let Some((space, found)) = self.space_and_tab(tab) else {
+        let Some((_, found)) = self.space_and_tab(tab) else {
             return false;
         };
         if launched_agent_id(found).is_none() {
@@ -141,7 +195,7 @@ impl Attach<'_> {
         self.model
             .remembered
             .branches
-            .contains_key(&evaluation_key(&space_cwd(space, &self.identities)))
+            .contains_key(&evaluation_key(&named_checkout(&found.pane.cwd)))
     }
 
     /// The space `tab` stands in, and the tab.
@@ -284,14 +338,14 @@ impl Attach<'_> {
             return;
         };
         let Some((agent, label, from_harness, from, pane)) =
-            self.space_and_tab(tab).and_then(|(space, found)| {
+            self.space_and_tab(tab).and_then(|(_, found)| {
                 Some((
                     launched_agent_id(found)?.to_owned(),
                     found.label.clone(),
                     agent_for_tab(&self.identities, found)?
                         .integration
                         .to_owned(),
-                    space_cwd(space, &self.identities),
+                    named_checkout(&found.pane.cwd),
                     found.pane.id,
                 ))
             })
@@ -352,19 +406,17 @@ impl Attach<'_> {
         let MenuTarget::Tab(tab) = target else {
             return;
         };
-        let Some((agent, label, harness, from)) =
-            self.space_and_tab(tab).and_then(|(space, found)| {
-                Some((
-                    // The identity the launch stamped: the one thing that
-                    // survives the agent moving, and what the isolation is
-                    // recorded against.
-                    launched_agent_id(found)?.to_owned(),
-                    found.label.clone(),
-                    agent_for_tab(&self.identities, found)?.launch.clone(),
-                    space_cwd(space, &self.identities),
-                ))
-            })
-        else {
+        let Some((agent, label, harness, from)) = self.space_and_tab(tab).and_then(|(_, found)| {
+            Some((
+                // The identity the launch stamped: the one thing that
+                // survives the agent moving, and what the isolation is
+                // recorded against.
+                launched_agent_id(found)?.to_owned(),
+                found.label.clone(),
+                agent_for_tab(&self.identities, found)?.launch.clone(),
+                named_checkout(&found.pane.cwd),
+            ))
+        }) else {
             return;
         };
         let command = vec![harness.to_string_lossy().into_owned()];
@@ -391,82 +443,10 @@ impl Attach<'_> {
         );
     }
 
-    /// Opens an agent's tab in a space rooted at its own project, opening
-    /// that space when none is.
-    ///
-    /// Work is bound to a *project* and never to a space: an agent's
-    /// record carries its base, its branch, its checkout and its target,
-    /// and nothing about a space. So the match is on the canonical root
-    /// alone — a space's name, its identity and when it was opened have no
-    /// say, which is what lets an operator close the space their work was
-    /// in, open another on the same directory, and find the work waiting
-    /// in it.
-    ///
-    /// A space rooted *above* the project does not match. A space's root
-    /// is what the sidebar, the Git badge and the changes overlay all
-    /// describe, so seating an isolated agent in a space that describes no
-    /// repository puts it back in the wrong place — which is the thing
-    /// this is fixing. Matching by containment instead would make one
-    /// space rooted at `$HOME` the owner of every project beneath it,
-    /// which on most machines is all of them.
-    pub(super) fn land_agent_in_its_own_space(&mut self, pending: PendingAgentTab) {
-        // Which way this went, and what it was asked about: the difference
-        // between "the agent opened where I was" and "the agent opened a
-        // space of its own" is a root comparison nothing else records, and
-        // the roots it compared are what a report of the second one needs.
-        tracing::info!(
-            project = %pending.project.display(),
-            roots = ?self.model.space_roots(),
-            landed = self.model.space_rooted_at(&pending.project).is_some(),
-            "placing an agent's tab"
-        );
-        match self.model.space_rooted_at(&pending.project) {
-            Some(space) => {
-                let _ = send_request(&mut self.stream, &ClientRequest::SelectSpace { space });
-                self.open_agent_tab(pending);
-            }
-            None => {
-                // The space has to exist before a tab can be opened in it,
-                // and `CreateSpace` answers on the session's own clock. So
-                // the tab waits for the update that names it, the way every
-                // other background answer here is waited for — rather than
-                // being sent now and landing in whichever space is selected.
-                let _ = send_request(
-                    &mut self.stream,
-                    &ClientRequest::CreateSpace {
-                        label: None,
-                        seat: uze_terminal::SpaceSeat {
-                            root: pending.project.clone(),
-                        },
-                        columns: pending.size.0,
-                        rows: pending.size.1,
-                    },
-                );
-                self.model.pending_agent_tab = Some(pending);
-            }
-        }
-    }
-
-    /// Opens the tab a space was created for, once the session says the
-    /// space is there. Does nothing until then, and gives up if the space
-    /// never appears — the placement already happened, so the work is on
-    /// disk either way.
-    pub(in crate::ui::orchestrator) fn land_pending_agent_tab(&mut self) {
-        let Some(pending) = self.model.pending_agent_tab.take() else {
-            return;
-        };
-        let Some(space) = self.model.space_rooted_at(&pending.project) else {
-            self.model.pending_agent_tab = Some(pending);
-            return;
-        };
-        let _ = send_request(&mut self.stream, &ClientRequest::SelectSpace { space });
-        self.open_agent_tab(pending);
-    }
-
     /// The one place a `CreateTab` for an agent is sent: an agent tab
     /// always carries the identity its placement recorded, and the key its
     /// placement issued.
-    pub(super) fn open_agent_tab(&mut self, pending: PendingAgentTab) {
+    pub(super) fn open_agent_tab(&mut self, pending: AgentTab) {
         let env = vec![
             (
                 uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
@@ -480,6 +460,7 @@ impl Attach<'_> {
         let _ = send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
+                space: Some(pending.space),
                 cwd: Some(pending.cwd),
                 label: pending.label,
                 agent: None,
@@ -501,6 +482,7 @@ impl Attach<'_> {
             command,
             placement,
             replacing,
+            space,
         } = resolution;
         // A resume with nowhere to go opens nothing: the task keeps its
         // branch and stays in the preserved list, and the reason is said.
@@ -560,16 +542,26 @@ impl Attach<'_> {
         // keeps in step with the layout.
         let agent = placement.placement.agent().as_str().to_owned();
         let size = self.model.last_size;
-        let pending = PendingAgentTab {
-            project: placement.project,
+        let Some(space) = self
+            .model
+            .landing_space(space, replacing, &placement.project)
+        else {
+            return;
+        };
+        tracing::info!(
+            project = %placement.project.display(),
+            space = space.0,
+            "placing an agent's tab"
+        );
+        self.open_agent_tab(AgentTab {
+            space,
             label,
             command,
             cwd: placement.cwd,
             agent,
             launch_key: placement.launch_key,
             size,
-        };
-        self.land_agent_in_its_own_space(pending);
+        });
         // The agent this one took over from stood in a directory that no
         // longer exists: nothing it is told can reach the task any more,
         // and the operator asked for that task to continue here. Sent

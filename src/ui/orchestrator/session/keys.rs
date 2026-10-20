@@ -31,7 +31,7 @@ impl Attach<'_> {
             scopes.push(Scope::Confirm);
             return scopes;
         }
-        let surface = if self.model.root_picker.is_some() {
+        let surface = if self.model.directory_step.is_some() {
             Scope::RootPicker
         } else if self.model.renaming.is_some() {
             Scope::Rename
@@ -88,7 +88,7 @@ impl Attach<'_> {
             return recent_offered(&self.model);
         }
         let in_the_pane = self.scopes().last() == Some(&Scope::Surfaces);
-        if in_the_pane && selected_pane_cwd(&self.model).is_some() {
+        if in_the_pane && self.model.focused_cwd().is_some() {
             return vec![Action::DeliverAllTasks];
         }
         Vec::new()
@@ -176,8 +176,8 @@ impl Attach<'_> {
         if let Some(index) = self.model.action_index.as_mut() {
             index.filter.push(character);
             index.selected = 0;
-        } else if let Some(picker) = self.model.root_picker.as_mut() {
-            picker.typed(character);
+        } else if let Some(step) = self.model.directory_step.as_mut() {
+            step.picker.typed(character);
         } else if let Some((_, buffer)) = self.model.renaming.as_mut() {
             buffer.insert(character);
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
@@ -245,9 +245,8 @@ impl Attach<'_> {
     /// What a first step looks like once it has actually happened.
     pub(super) fn step_landed(&self, action: Action) -> bool {
         match action {
-            // One harness set up launches without a picker, so the step
-            // has landed once either the picker or the placement exists.
-            Action::NewAgent => self.model.agent_picker.is_some() || self.model.placement_pending,
+            // The step opens the new agent's popup on its directory.
+            Action::NewAgent => self.model.directory_step.is_some(),
             Action::NextAgent => self.asked_for_a_tab,
             Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
             Action::ToggleRecent => self.model.recent.open,
@@ -315,8 +314,8 @@ impl Attach<'_> {
             self.space_issues_action(action);
             return Flow::Continue;
         }
-        if self.model.root_picker.is_some() {
-            self.root_picker_action(action, viewport);
+        if self.model.directory_step.is_some() {
+            self.directory_step_action(action);
             return Flow::Continue;
         }
         if self.model.renaming.is_some() {
@@ -363,6 +362,7 @@ impl Attach<'_> {
                 let _ = send_request(
                     &mut self.stream,
                     &ClientRequest::CreateTab {
+                        space: None,
                         label: next_shell_label(&self.model, &self.identities),
                         agent: context_agent(&self.model, &self.identities),
                         columns,
@@ -381,10 +381,10 @@ impl Attach<'_> {
             Action::NewAgent => {
                 self.model.put_away_space_overview();
                 let anchor = self.new_agent_anchor();
-                self.offer_agents(anchor, None);
+                self.offer_directories(anchor);
             }
             Action::OpenMenu => self.open_tab_menu_from_the_keyboard(),
-            Action::NewSpace => self.open_root_picker(),
+            Action::NewSpace => self.open_new_space(columns, rows),
             Action::RenameSelection => {
                 if let Some(tab) = self.model.selected_tab() {
                     begin_rename(&mut self.model, MenuTarget::Tab(tab));
@@ -422,7 +422,7 @@ impl Attach<'_> {
                 deliver_selected_tab(&mut self.model, self.home, &self.channels.deliveries.sender);
             }
             Action::DeliverAllTasks => {
-                if let Some(cwd) = selected_pane_cwd(&self.model) {
+                if let Some(cwd) = self.model.focused_cwd() {
                     spawn_delivery(
                         self.home,
                         cwd,
