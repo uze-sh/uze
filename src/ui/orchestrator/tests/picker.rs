@@ -110,6 +110,22 @@ fn the_new_space_chord_opens_a_space_and_asks_its_name() {
     );
 
     let mut session = driven.attach.model.session.clone().unwrap();
+    let in_front = session.workspace.selected_space;
+    // Another client opened a space first: it is not this one's to name.
+    let elsewhere = session
+        .create_space(None, "/elsewhere".into(), 80, 24)
+        .space;
+    session.workspace.selected_space = in_front;
+    driven.attach.model.apply(
+        ClientEvent::SessionUpdated {
+            session: session.clone(),
+        },
+        &identities_fixture(),
+    );
+    assert!(
+        driven.attach.model.renaming.is_none(),
+        "a space another client opened, {elsewhere:?}, was put up for its name"
+    );
     let created = session
         .create_space(None, "/home/someone".into(), 80, 24)
         .space;

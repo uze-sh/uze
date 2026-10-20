@@ -2450,21 +2450,21 @@ impl WorkspaceModel {
     }
 
     /// Puts the space "+ space" asked for up for its name, once the
-    /// session shows it: the one space that was not there when it was
-    /// asked for. The buffer starts empty, so a name left blank keeps the
-    /// label the server gave it.
+    /// session shows it: the server selects the space it created for the
+    /// client that asked, so it is the space in front that was not there
+    /// when it was asked for — never one another client or a launch in a
+    /// pane opened meanwhile. The buffer starts empty, so a name left blank
+    /// keeps the label the server gave it.
     fn name_the_new_space(&mut self) {
         let Some(known) = &self.naming_new_space else {
             return;
         };
-        let Some(created) = self.session.as_ref().and_then(|session| {
-            session
-                .workspace
-                .spaces
-                .iter()
-                .map(|space| space.id)
-                .find(|space| !known.contains(space))
-        }) else {
+        let Some(created) = self
+            .session
+            .as_ref()
+            .map(|session| session.workspace.selected_space)
+            .filter(|space| !known.contains(space))
+        else {
             return;
         };
         self.naming_new_space = None;
