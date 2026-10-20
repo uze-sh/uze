@@ -73,7 +73,7 @@ impl DeclarationKey {
     pub const fn default_spelled(self) -> &'static str {
         match self {
             Self::Worktree => "manual",
-            Self::Target => "the primary checkout's branch at launch",
+            Self::Target => "current branch",
             Self::Delivery => "none",
             Self::Branch => "conventional",
             Self::Link | Self::Setup | Self::Gate => "none",
@@ -86,14 +86,12 @@ impl DeclarationKey {
     /// One line on what the key decides.
     pub const fn description(self) -> &'static str {
         match self {
-            Self::Worktree => {
-                "When an agent gets a checkout of its own: when moved (manual), or at launch \
-                 (always)"
+            Self::Worktree => "When an agent gets a checkout of its own",
+            Self::Target => {
+                "The branch finished work is delivered to. Unset, it is the branch the primary \
+                 checkout is on when the agent launches"
             }
-            Self::Target => "The branch finished work is delivered to",
-            Self::Delivery => {
-                "Where finished work goes: merged into the target, pushed, or left for a person"
-            }
+            Self::Delivery => "Where finished work goes",
             Self::Branch => "The branch types an agent's work is named with",
             Self::Link => "Ignored files each checkout links from the primary one",
             Self::Setup => "What prepares a fresh checkout, run after linking",

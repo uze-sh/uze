@@ -407,6 +407,16 @@ pub(super) fn action_moment(state: ActionState) -> &'static str {
     }
 }
 
+/// An instruction a project might write for an action.
+pub(super) fn action_example(state: ActionState) -> &'static str {
+    match state {
+        ActionState::OnChange => "Commit your work.",
+        ActionState::OnPublish => "Open a pull request.",
+        ActionState::OnConflict => "Resolve the conflict and continue the rebase.",
+        ActionState::OnFail => "Fix what the checks reported.",
+    }
+}
+
 pub(super) struct SpaceOverviewResolution {
     pub(super) space: SpaceId,
     /// The project the read was for: a space holds overviews of several,
@@ -521,6 +531,39 @@ pub(super) fn key_label(key: DeclarationKey) -> &'static str {
         DeclarationKey::Slots => "Slots",
         DeclarationKey::IdleDays => "Idle days",
         DeclarationKey::Artifacts => "Artifacts",
+    }
+}
+
+/// What choosing `option` for `key` does, in a few words.
+pub(super) fn option_meaning(key: DeclarationKey, option: &str) -> &'static str {
+    match (key, option) {
+        (DeclarationKey::Worktree, "manual") => "when moved",
+        (DeclarationKey::Worktree, "always") => "at launch",
+        (DeclarationKey::Delivery, "none") => "left for you",
+        (DeclarationKey::Delivery, "merge") => "merged into the target",
+        (DeclarationKey::Delivery, "push") => "pushed as its own branch",
+        (DeclarationKey::Branch, "conventional") => "feat/…, fix/…, docs/…",
+        (DeclarationKey::Branch, "gitflow") => "feature/…, bugfix/…, hotfix/…",
+        (DeclarationKey::Branch, "flat") => "a subject, no type",
+        (DeclarationKey::Branch, "agent") => "agent/<id>, never renamed",
+        (DeclarationKey::Branch, "types") => "your own list",
+        _ => "",
+    }
+}
+
+/// The key as a project would write it, under `workspace:`.
+pub(super) fn key_example(key: DeclarationKey) -> &'static [&'static str] {
+    match key {
+        DeclarationKey::Worktree => &["worktree: always"],
+        DeclarationKey::Target => &["target: main"],
+        DeclarationKey::Delivery => &["delivery: push"],
+        DeclarationKey::Branch => &["branch:", "  - feat", "  - fix", "  - ui"],
+        DeclarationKey::Link => &["link:", "  - .env", "  - .venv"],
+        DeclarationKey::Setup => &["setup:", "  - npm ci"],
+        DeclarationKey::Gate => &["gate:", "  - npm test"],
+        DeclarationKey::Slots => &["slots: 4"],
+        DeclarationKey::IdleDays => &["idle_days: 7"],
+        DeclarationKey::Artifacts => &["artifacts:", "  - docs/architecture"],
     }
 }
 

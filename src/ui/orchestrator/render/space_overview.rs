@@ -443,9 +443,8 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 // An isolated checkout's file is its agent's work: new
                 // agents are placed by the primary's until it is delivered.
                 (
-                    "this worktree's agents.yaml · new agents follow the project's until it is delivered"
-                        .to_owned(),
-                    Token::StateInfo,
+                    "worktree copy · applies once delivered".to_owned(),
+                    Token::TextSecondary,
                 )
             } else if overview
                 .declaration()
@@ -457,7 +456,7 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 )
             } else {
                 (
-                    "how agents work in this project, saved to agents.yaml as you edit".to_owned(),
+                    "agents.yaml · saved as you edit".to_owned(),
                     Token::TextSecondary,
                 )
             }
@@ -1178,8 +1177,10 @@ impl Form {
         };
         let commands = CommandStates::of(project);
         for (group, keys) in GROUPS {
+            // Twice the air between keys, so a group reads apart from the
+            // one above it.
             if !form.lines.is_empty() {
-                form.lines.push(blank());
+                form.lines.extend([blank(), blank()]);
             }
             form.lines.push(group_heading(group, form.width));
             form.lines.push(blank());
@@ -1193,7 +1194,7 @@ impl Form {
         }
         // What an agent is asked at each moment: prose, so each is a box of
         // as many lines as the instruction runs to.
-        form.lines.push(blank());
+        form.lines.extend([blank(), blank()]);
         form.lines.push(group_heading("agent actions", form.width));
         form.lines.push(blank());
         for (position, state) in ActionState::ALL.into_iter().enumerate() {
@@ -2531,7 +2532,20 @@ impl DrawerLines {
     /// panel's fields do; past the point where that column is too thin to
     /// read, it goes beneath the label instead.
     fn pair_toned(&mut self, label: &str, label_tone: Token, value: &str, tone: Token) {
-        let label_width = usize::from(DRAWER_LABEL);
+        self.pair_within(DRAWER_LABEL, label, label_tone, value, tone);
+    }
+
+    /// [`pair_toned`](Self::pair_toned) with a label column of `label_width`.
+    fn pair_within(
+        &mut self,
+        label_width: u16,
+        label: &str,
+        label_tone: Token,
+        value: &str,
+        tone: Token,
+    ) {
+        let column = label_width;
+        let label_width = usize::from(label_width);
         let room = self.width.saturating_sub(label_width);
         if room < DRAWER_VALUE_LEAST {
             self.said(label, label_tone);
@@ -2540,7 +2554,7 @@ impl DrawerLines {
         }
         let mut folded = text::fold(value, room).into_iter();
         self.lines.push(Line::from(vec![
-            Span::styled(pad(label, DRAWER_LABEL), theme::fg(label_tone)),
+            Span::styled(pad(label, column), theme::fg(label_tone)),
             Span::styled(folded.next().unwrap_or_default(), theme::fg(tone)),
         ]));
         for rest in folded {
@@ -2549,6 +2563,18 @@ impl DrawerLines {
                 Span::styled(rest, theme::fg(tone)),
             ]));
         }
+    }
+
+    /// A path beside its label on one line, cut at its head when the
+    /// value column is too narrow: a path folded mid-name reads as two.
+    fn path(&mut self, label: &str, path: &str) {
+        let room = self.width.saturating_sub(usize::from(DRAWER_LABEL));
+        let shown = if room < DRAWER_VALUE_LEAST {
+            path.to_owned()
+        } else {
+            text::elide_head(path, room)
+        };
+        self.pair(label, shown, Token::TextCode);
     }
 
     /// `text`, folded at the drawer's width.
@@ -2721,16 +2747,14 @@ impl DrawerLines {
         entry: &MemoryEntry,
         read: Option<&(String, Option<std::result::Result<String, String>>)>,
     ) {
-        self.head("memory · read-only", &entry.name);
+        self.head("memory", &entry.name);
         self.pair("kind", entry.kind.label().to_owned(), Token::TextPrimary);
         self.pair("scope", entry.scope.label().to_owned(), Token::TextPrimary);
         self.pair("origin", entry.origin.clone(), Token::TextPrimary);
-        self.pair(
-            "updated",
-            entry.updated.clone().unwrap_or_default(),
-            Token::TextMuted,
-        );
-        self.pair("file", display_path(&entry.path), Token::TextCode);
+        if let Some(updated) = &entry.updated {
+            self.pair("updated", updated.clone(), Token::TextMuted);
+        }
+        self.path("file", &display_path(&entry.path));
         self.blank();
         self.paragraph(&entry.description, Token::TextSecondary);
         self.blank();
@@ -2753,16 +2777,17 @@ impl DrawerLines {
                 self.paragraph(reason, Token::StateDanger);
             }
             Some((name, None)) if *name == entry.name => self.said("reading…", Token::TextMuted),
-            _ => self.said("enter reads the fact", Token::TextDim),
+            _ => {}
         }
     }
 
-    /// The Settings row in front: what the key or action decides, and
-    /// what it holds. `None` when there is no such row.
+    /// The Settings row in front: what the key or action decides, what
+    /// each of its options does, and how a project writes it. `None` when
+    /// there is no such row.
     fn setting(&mut self, overview: &SpaceOverviewView) -> Option<()> {
         let row = overview.selected_workspace_row()?;
         if let WorkspaceRow::Action(state) = row {
-            self.head("agents.yaml · workspace.actions", state.key());
+            self.head("action", action_label(state));
             self.paragraph(action_moment(state), Token::TextSecondary);
             self.blank();
             let fallback = overview
@@ -2771,40 +2796,68 @@ impl DrawerLines {
             self.pair(
                 "when unset",
                 fallback
-                    .map_or("nothing is sent", |_| "UZE's own instruction")
+                    .map_or("nothing is sent", |_| "a built-in instruction")
                     .to_owned(),
                 Token::TextSecondary,
             );
-            if overview.edit.actions.contains_key(&state) {
-                self.pair("", "edited, not saved".to_owned(), Token::StateInfo);
-            }
+            self.edited(overview.edit.actions.contains_key(&state));
+            let instruction = format!("  {}: {}", state.key(), action_example(state));
+            self.example(&["actions:", &instruction]);
             return Some(());
         }
         let key = row.key()?;
         let entry = overview.entry(key)?;
-        self.head("agents.yaml · workspace", key.name());
+        self.head("setting", key_label(key));
         self.paragraph(entry.description, Token::TextSecondary);
         self.blank();
-        self.pair("default", entry.default.to_owned(), Token::TextSecondary);
-        let value = overview.value(key);
-        self.pair(
-            "value",
-            match value {
-                None => "not declared".to_owned(),
-                Some(DeclaredValue::List(items)) => counted(items.len(), "entry", "entries"),
-                Some(DeclaredValue::Commands(commands)) => plural(commands.len(), "command"),
-                Some(value) => scalar(value),
-            },
-            if value.is_some() {
-                Token::TextPrimary
-            } else {
-                Token::TextMuted
-            },
-        );
-        if overview.edit.values.contains_key(&key) {
+        let options = choices(key);
+        if !options.is_empty() {
+            let current = chosen(key, overview.value(key));
+            // As wide as the longest option, so its meaning keeps a line.
+            let column = options
+                .iter()
+                .map(|option| text::columns(option))
+                .max()
+                .map_or(DRAWER_LABEL, |widest| {
+                    u16::try_from(widest + 3).unwrap_or(u16::MAX)
+                });
+            for option in options {
+                let tone = if *option == current {
+                    Token::TextBright
+                } else {
+                    Token::TextSecondary
+                };
+                let meaning = option_meaning(key, option);
+                let meaning = if *option == entry.default {
+                    format!("{meaning} · default")
+                } else {
+                    meaning.to_owned()
+                };
+                self.pair_within(column, option, tone, &meaning, Token::TextMuted);
+            }
+        } else {
+            self.pair("default", entry.default.to_owned(), Token::TextSecondary);
+        }
+        self.edited(overview.edit.values.contains_key(&key));
+        self.example(key_example(key));
+        Some(())
+    }
+
+    /// Says an edit is still on its way to `agents.yaml`.
+    fn edited(&mut self, pending: bool) {
+        if pending {
             self.pair("", "edited, not saved".to_owned(), Token::StateInfo);
         }
-        Some(())
+    }
+
+    /// `lines` as they sit under `workspace:` in `agents.yaml`.
+    fn example(&mut self, lines: &[&str]) {
+        self.blank();
+        self.said("example", Token::TextDim);
+        self.said("workspace:", Token::TextCode);
+        for line in lines {
+            self.said(&format!("  {line}"), Token::TextCode);
+        }
     }
 }
 

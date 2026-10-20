@@ -1,45 +1,14 @@
-# This project's agent environment. UZE reads this file; it writes
-# agents.lock, which you never edit.
-
-# How `uze workspace` runs the agents it launches here.
 workspace:
-  # Every agent launched here gets a worktree of its own, which is what
-  # this repository has always done and what the instructions each agent
-  # gets at launch tell it to expect. Undeclared (`manual`), an
-  # agent would start in the operator's checkout and move to a worktree
-  # only when somebody asked.
   worktree: always
-
-  # UZE rebases an agent's branch onto the target, runs the checks and
-  # pushes it; it never opens a request. Each agent learns this from the
-  # instructions UZE gives it at launch.
   delivery: push
-
-  # What the agent is asked when UZE leaves its work in a state, and when
-  # its status in the workspace's tab strip is clicked. One line each, sent as
-  # the operator would type it. `on_change` asks about uncommitted work and is
-  # sent only on a click; the other three also follow UZE's own operations.
   actions:
     on_change: Commit your work with the git:commit skill.
     on_publish: Open a pull request for this branch with the git:pr skill.
     on_conflict: Resolve the rebase conflicts, then run git rebase --continue and the checks.
     on_fail: Fix the failing checks and commit with the git:commit skill.
-
-  # An agent names its own work as its first action
-  # (`uze agent work name <type>/<subject>`); work that reaches a commit
-  # unnamed is named from that commit's subject. Both are judged against
-  # this vocabulary — the same one this repository's own history uses.
   branch: conventional
-
-  # Where uze describes itself: the architecture as Mermaid under
-  # docs/architecture, which the architect surface draws and whose tests
-  # draw too — a diagram that stops routing is a red build — and the
-  # decisions under docs/adr. Each file says what it is by its content.
   artifacts: docs
 
-# Named by URL, never by a path: a path is one machine's, and this file is
-# everyone's. Whoever develops the marketplace reads it from their own
-# checkout with `uze market link ai <checkout>`, which touches no file here.
 marketplaces:
   ai:
     git: https://github.com/hiukky/ai

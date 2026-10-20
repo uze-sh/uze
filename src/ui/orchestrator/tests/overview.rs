@@ -788,7 +788,7 @@ fn a_long_fact_body_scrolls_to_its_last_line_in_the_drawer() {
     }
     let rows = frame_rows(&mut driven.attach.model);
     assert!(
-        rows.iter().any(|row| row.contains("memory · read-only")),
+        rows.iter().any(|row| row.contains("memory")),
         "page up did not bring the drawer back to its top:\n{}",
         rows.join("\n")
     );
@@ -996,16 +996,20 @@ fn the_workspace_form_draws_each_key_s_control_and_a_click_chooses() {
             "{expected} is not on the form:\n{screen}"
         );
     }
+    let form: String = rows
+        .iter()
+        .filter_map(|row| row.split(['│', '┃']).nth(1))
+        .collect();
     assert!(
-        !screen.contains("workspace:"),
+        !form.contains("workspace:"),
         "the form is drawn as YAML:\n{screen}"
     );
 
-    let worktree = rows
+    let form = rows
         .iter()
-        .find(|row| row.contains("Worktree") && !row.contains("Worktrees"))
+        .filter_map(|row| row.split(['│', '┃']).nth(1))
+        .find(|form| form.contains("Worktree") && !form.contains("Worktrees"))
         .expect("worktree is on the form");
-    let form = worktree.split('│').nth(1).unwrap_or_default();
     assert!(
         form.contains("always") && form.contains("manual"),
         "a pair shows both its options:\n{screen}"
@@ -3486,7 +3490,7 @@ fn a_worktrees_settings_say_they_apply_once_delivered() {
     let screen = frame_rows(&mut driven.attach.model).join("\n");
 
     assert!(
-        screen.contains("this worktree's agents.yaml"),
+        screen.contains("worktree copy · applies once delivered"),
         "the file is said to be the worktree's: {screen}"
     );
 }
