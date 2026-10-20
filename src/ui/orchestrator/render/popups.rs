@@ -914,8 +914,12 @@ pub(super) fn render_query_row(
             theme::fg(Token::TextDim),
         ));
     }
+    // What is typed is a path too, and gives way the same way, from its
+    // head: its end, where the cursor is, is what is being typed.
+    let taken: usize = left.iter().map(Span::width).sum();
+    let room = usize::from(rect.width).saturating_sub(taken + 1 + count.len() + 2);
     left.push(Span::styled(
-        needle.to_owned(),
+        text::elide_head(needle, room),
         theme::fg_bold(Token::TextBright),
     ));
     left.push(Span::styled(

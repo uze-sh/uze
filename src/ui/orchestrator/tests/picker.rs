@@ -726,6 +726,31 @@ fn a_long_name_is_cut_at_its_end_on_every_row() {
     );
 }
 
+/// A path typed out longer than the line gives way from its head, so the
+/// end being typed — and the cursor after it — stays on screen.
+#[test]
+fn a_long_path_typed_keeps_its_end_in_view() {
+    let root = uze_testkit::temp::TempDir::new("popup-long-typed-root");
+    let deep = root.join("a-folder-whose-name-runs-on-and-on/and-another-one-like-it");
+    std::fs::create_dir_all(deep.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path(), &bare_home("popup-long-typed"));
+    if let Some(step) = model.directory_step.as_mut() {
+        for character in format!("{}/eng", deep.display()).chars() {
+            step.picker.typed(character);
+        }
+    }
+
+    let (rows, _) = drawn(&mut model);
+
+    let cursor = theme::glyph(crate::ui::theme::Symbol::CursorText);
+    let prompt = prompt_row_of(&rows);
+    assert!(
+        prompt.contains(&format!("/eng{cursor}")),
+        "the end typed stays in view: {prompt}"
+    );
+}
+
 /// The listing says which directories are repositories, so the one a
 /// project lives in stands out among the rest.
 #[test]
