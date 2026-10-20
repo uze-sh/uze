@@ -19,6 +19,20 @@ pub const VARIABLE: &str = imp::VARIABLE;
 /// child given a home of its own is given it in all of them.
 pub const VARIABLES: &[&str] = imp::VARIABLES;
 
+/// Whether `path` is the home directory, however either is reached: a home
+/// behind a link (`/home` linking to `/var/home`) is still home once the
+/// path has been resolved.
+pub fn is_home(path: &Path) -> bool {
+    user_home().is_some_and(|home| same_place(&home, path))
+}
+
+/// Whether `a` and `b` are one directory once every link is followed.
+fn same_place(a: &Path, b: &Path) -> bool {
+    let resolved =
+        |path: &Path| crate::path::canonical(path).unwrap_or_else(|_| path.to_path_buf());
+    crate::path::same_path(&resolved(a), &resolved(b))
+}
+
 /// `path` as a person reads it, the way a shell prompt shows it: under the
 /// home directory it starts with `~`, in this platform's separator.
 pub fn shorten(path: &Path) -> String {
@@ -96,5 +110,22 @@ mod imp {
     /// `std::env::home_dir` answers.
     pub(super) fn user_home() -> Option<PathBuf> {
         std::env::home_dir()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Unix only: a symbolic link Windows needs a privilege to make.
+    #[cfg(unix)]
+    #[test]
+    fn a_home_behind_a_link_is_the_same_place_as_where_it_leads() {
+        let scratch = uze_testkit::temp::TempDir::new("home-behind-link");
+        let real = scratch.join("var-home");
+        std::fs::create_dir_all(&real).unwrap();
+        let linked = scratch.join("home");
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+
+        assert!(super::same_place(&linked, &real));
+        assert!(!super::same_place(&linked, &scratch.path().to_path_buf()));
     }
 }

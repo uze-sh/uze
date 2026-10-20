@@ -729,7 +729,7 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
         let project = uze_application::space_root(&cwd()?);
         // Home is where a shell starts, not a project somebody chose: a
         // launch there opens nothing, here as on a first launch.
-        if uze_platform::home::user_home().is_some_and(|home| home == project) {
+        if uze_platform::home::is_home(&project) {
             println!("Already running. Start it in a project to open that project's space.");
             return Ok(());
         }

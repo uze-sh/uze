@@ -374,8 +374,7 @@ fn describe_delivery_outcome(report: &DeliveryReport) -> String {
 /// bootstraps a space at the seat it was started with, before any client
 /// attaches.
 fn seating_at(seat: uze_terminal::SpaceSeat) -> uze_terminal::Seating {
-    let home = uze_platform::home::user_home();
-    if home.is_some_and(|home| home == seat.project) {
+    if uze_platform::home::is_home(&seat.project) {
         return uze_terminal::Seating::WhereItLeftOff;
     }
     uze_terminal::Seating::Open(seat)
