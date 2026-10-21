@@ -16,7 +16,7 @@ The runtime SHALL answer a usage request with when it started, the window it sam
 - **THEN** it is left out and the request is still answered
 
 ### Requirement: A pane may ask for usage
-A connection from inside a pane SHALL be admitted for a usage request without the runtime's key, as for opening a space, and refused every other request as before. Usage SHALL be sampled on the requesting connection's thread, holding the runtime's locks only to copy its tabs and panes. A request arriving while a window is sampling SHALL share that window's answer.
+A connection from inside a pane SHALL be admitted for a usage request without the runtime's key, as for opening a space, and refused every other request as before. Usage SHALL be sampled on the requesting connection's thread, holding the runtime's locks only to copy its tabs and panes. A request arriving while a window is sampling, or within five seconds after it, SHALL be given that window's answer.
 
 #### Scenario: Typed into a workspace shell
 - **WHEN** a person runs `uze usage` in a shell pane of the workspace
@@ -27,7 +27,7 @@ A connection from inside a pane SHALL be admitted for a usage request without th
 - **THEN** pane output still reaches attached clients
 
 #### Scenario: Requests back to back
-- **WHEN** several usage requests arrive at once
+- **WHEN** several usage requests arrive at once, or one after another within five seconds
 - **THEN** the runtime takes one sample for all of them
 
 #### Scenario: Still nothing else from a pane

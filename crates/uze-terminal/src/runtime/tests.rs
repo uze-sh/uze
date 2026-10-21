@@ -4885,6 +4885,36 @@ fn usage_requests_never_keep_the_persons_attach_out() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A request a few seconds after a sample is given that sample, so asking
+/// in a loop does not keep the server reading every process.
+#[test]
+fn a_recent_sample_answers_the_next_request() {
+    let scratch = uze_testkit::temp::socket_scratch("usage-reuse");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _socket) = listening_server(&project);
+    let earlier = crate::UsageReport {
+        started: 1,
+        window: crate::USAGE_WINDOW,
+        agents: crate::Load::default(),
+        shells: crate::Load::default(),
+        server: crate::Load::default(),
+        clients: crate::Load::default(),
+    };
+    *server.sampled.lock().unwrap() =
+        Some((Instant::now() - Duration::from_secs(3), earlier.clone()));
+
+    assert_eq!(super::usage().unwrap(), super::Usage::Running(earlier));
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// With nothing serving the workspace, there is nothing running to report,
 /// and that is an answer rather than a failure.
 #[test]

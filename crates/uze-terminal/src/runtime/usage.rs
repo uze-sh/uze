@@ -8,6 +8,11 @@ use uze_platform::{process::pane, usage};
 use super::*;
 use crate::{Load, USAGE_WINDOW, launch};
 
+/// How long a sample answers the requests after it. A person runs the
+/// command and reads it; something asking in a loop gets the same answer
+/// rather than keeping the server reading every process's environment.
+pub(super) const USAGE_REUSED_FOR: Duration = Duration::from_secs(5);
+
 /// Which total of a [`UsageReport`] a tab counts in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Kind {
@@ -223,13 +228,14 @@ fn load(count: usize, samples: &[(&Sample, &Sample)], newest_before: Option<u64>
 
 impl Server {
     /// What the runtime's processes used over the last [`USAGE_WINDOW`]. A
-    /// request that arrives while another samples waits for it and is given
-    /// the same answer, so a loop asking cannot keep the server reading the
-    /// process table.
+    /// request that arrives while another samples waits for it, and one
+    /// within [`USAGE_REUSED_FOR`] of a sample is given that sample's
+    /// answer: a loop asking cannot keep the server reading the process
+    /// table.
     pub(super) fn usage(&self, asker: Option<u32>) -> UsageReport {
         let mut sampled = self.sampled.lock().expect("usage sample poisoned");
         if let Some((at, report)) = sampled.as_ref()
-            && at.elapsed() < USAGE_WINDOW
+            && at.elapsed() < USAGE_REUSED_FOR
         {
             return report.clone();
         }
