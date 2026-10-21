@@ -165,15 +165,66 @@ pub(super) struct ContextMenu {
     /// The right-clicked row's own rect — the popup anchors just under it,
     /// same placement rule [`AgentPicker::anchor`] uses.
     pub(super) anchor: Rect,
-    /// The harnesses behind the [`Action::SwitchHarness`] entry, beside
-    /// `items`; `None` for every other entry. One entry opens them as a
-    /// submenu rather than one entry standing for each: the harnesses a
-    /// machine has are not something a keymap can name, and a group keeps
-    /// the menu the same length however many there are.
-    pub(super) groups: Vec<Option<Vec<HarnessChoice>>>,
-    /// The open group's highlighted harness, when the highlighted entry's
+    /// The submenu each of `items` opens, beside it; `None` for an entry
+    /// that acts.
+    pub(super) groups: Vec<Option<MenuGroup>>,
+    /// The open group's highlighted choice, when the highlighted entry's
     /// submenu is open.
     pub(super) submenu: Option<usize>,
+}
+
+/// What a menu entry opens instead of acting.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum MenuGroup {
+    /// The harnesses behind [`Action::SwitchHarness`]. One entry opens them
+    /// rather than one entry standing for each: the harnesses a machine has
+    /// are not something a keymap can name, and a group keeps the menu the
+    /// same length however many there are.
+    Harnesses(Vec<HarnessChoice>),
+    /// What [`Action::RenameSelection`] renames on an agent's row: the
+    /// agent, or the project it works in. One entry rather than two
+    /// renames side by side, which read as the same word twice.
+    Rename,
+}
+
+/// A choice made in an open submenu.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum SubmenuChoice {
+    Harness(HarnessChoice),
+    RenameAgent,
+    RenameProject,
+}
+
+const RENAME_CHOICES: [&str; 2] = ["Agent", "Project"];
+
+impl MenuGroup {
+    fn labels(&self) -> Vec<&str> {
+        match self {
+            Self::Harnesses(harnesses) => harnesses
+                .iter()
+                .map(|choice| choice.display_name.as_str())
+                .collect(),
+            Self::Rename => RENAME_CHOICES.to_vec(),
+        }
+    }
+
+    pub(super) fn len(&self) -> usize {
+        match self {
+            Self::Harnesses(harnesses) => harnesses.len(),
+            Self::Rename => RENAME_CHOICES.len(),
+        }
+    }
+
+    fn choice(&self, index: usize) -> Option<SubmenuChoice> {
+        match self {
+            Self::Harnesses(harnesses) => harnesses.get(index).cloned().map(SubmenuChoice::Harness),
+            Self::Rename => match index {
+                0 => Some(SubmenuChoice::RenameAgent),
+                1 => Some(SubmenuChoice::RenameProject),
+                _ => None,
+            },
+        }
+    }
 }
 
 /// A harness an agent can continue in, as a menu entry offers it.
@@ -200,38 +251,45 @@ impl ContextMenu {
         }
     }
 
-    /// Inserts the "Continue in…" entry at `index`, opening `harnesses`;
+    /// Inserts the "Continue in" entry at `index`, opening `harnesses`;
     /// nothing when there are none to continue in.
     pub(super) fn offering_switches(mut self, index: usize, harnesses: Vec<HarnessChoice>) -> Self {
         if !harnesses.is_empty() {
             self.items.insert(index, Action::SwitchHarness);
-            self.labels
-                .insert(index, format!("{}…", Action::SwitchHarness.label()));
-            self.groups.insert(index, Some(harnesses));
+            self.labels.insert(index, Action::SwitchHarness.label());
+            self.groups
+                .insert(index, Some(MenuGroup::Harnesses(harnesses)));
+        }
+        self
+    }
+
+    /// Makes the menu's rename entry open a choice of the agent or its
+    /// project, when `project_known`; it stays a plain rename otherwise.
+    pub(super) fn offering_project_rename(mut self, project_known: bool) -> Self {
+        let rename = self
+            .items
+            .iter()
+            .position(|action| *action == Action::RenameSelection);
+        if let Some(index) = rename.filter(|_| project_known) {
+            self.groups[index] = Some(MenuGroup::Rename);
         }
         self
     }
 
     /// The group entry `index` opens, if it opens one.
-    pub(super) fn group(&self, index: usize) -> Option<&[HarnessChoice]> {
-        self.groups.get(index)?.as_deref()
+    pub(super) fn group(&self, index: usize) -> Option<&MenuGroup> {
+        self.groups.get(index)?.as_ref()
     }
 
-    /// The open submenu's harnesses, as they read.
+    /// The open submenu's choices, as they read.
     pub(super) fn submenu_labels(&self) -> Option<Vec<&str>> {
         self.submenu?;
-        let group = self.group(self.selected)?;
-        Some(
-            group
-                .iter()
-                .map(|choice| choice.display_name.as_str())
-                .collect(),
-        )
+        Some(self.group(self.selected)?.labels())
     }
 
-    /// The harness highlighted in the open submenu.
-    pub(super) fn submenu_choice(&self) -> Option<HarnessChoice> {
-        self.group(self.selected)?.get(self.submenu?).cloned()
+    /// The choice highlighted in the open submenu.
+    pub(super) fn submenu_choice(&self) -> Option<SubmenuChoice> {
+        self.group(self.selected)?.choice(self.submenu?)
     }
 
     /// Opens entry `index`'s submenu on its first harness; `false` for an

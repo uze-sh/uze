@@ -1218,3 +1218,30 @@ fn the_foot_key_clicked_while_searching_clears_the_search_as_esc_does() {
         "the click closed recent where esc only leaves the search"
     );
 }
+
+/// The search finds a project by the name the operator gave it, the name
+/// the selected row says.
+#[test]
+fn the_search_finds_a_project_by_its_label() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-recent-search-label",
+    ));
+    let mut driven = driven(
+        showing(
+            vec![
+                preserved(PROJECT, "a", "parser", WorkStateView::Ready),
+                preserved(OTHER, "b", "lexer", WorkStateView::Shelved),
+            ],
+            Vec::new(),
+        ),
+        &home,
+    );
+    let application = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let labels = application.project_labels();
+    labels.set(Path::new(OTHER), "compiler core").unwrap();
+    driven.attach.model.remembered.project_labels = labels.all().unwrap();
+
+    driven.attach.model.recent.filter = "compiler".to_owned();
+
+    assert_eq!(names(&driven.attach.model), ["lexer"]);
+}

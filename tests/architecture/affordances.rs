@@ -142,7 +142,9 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::RenameSelection,
-        Control("double-clicking the label, or the row's actions"),
+        Control(
+            "double-clicking the label or the row's project, or the row's actions, where an agent's opens Agent and Project",
+        ),
     );
     put(Action::NextSpace, Control("clicking a space header"));
     put(Action::PreviousSpace, Control("clicking a space header"));

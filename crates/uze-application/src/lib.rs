@@ -90,6 +90,7 @@ pub use uze_workspace::{
     conversation::Claim,
     declaration::{ActionState, DeclarationKey, DeclarationProblem, DeclaredValue, Edit},
     notifications::{Chime, WrittenChime},
+    project_labels::{ProjectLabels, directory_name},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };

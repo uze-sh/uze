@@ -28,7 +28,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |
-| actions on a thing | `menu` |
+| actions on a thing | `menu::render` over `menu::Entry` (`opens` draws the submenu arrow) |
 | summary figures | `stat::cards` |
 | a list line | `row::RowState::of`, `row::fill`, `push_trailing(_marquee)`, `marquee`, `title_row` |
 | text that fits | `text::elide`, `elide_head`, `clip`, `fold`, `columns` |

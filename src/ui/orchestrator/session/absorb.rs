@@ -609,6 +609,48 @@ impl Attach<'_> {
         }
     }
 
+    /// The operator's names for projects, asked once a session and again
+    /// after each one written, so the model only ever holds what the file
+    /// says; and what writing one answered.
+    pub(super) fn absorb_project_labels(&mut self) {
+        if self.model.remembered.project_labels_asked == 0 {
+            self.ask_project_labels();
+        }
+        while let Ok(read) = self.channels.project_labels.receiver.try_recv() {
+            if read.asked != self.model.remembered.project_labels_asked {
+                continue;
+            }
+            match read.labels {
+                Ok(labels) => self.model.remembered.project_labels = labels,
+                Err(reason) if !self.model.remembered.project_labels_reported => {
+                    self.model.remembered.project_labels_reported = true;
+                    self.model
+                        .raise_toast(ToastKind::Warned, "project names unread", reason, None);
+                }
+                Err(_) => {}
+            }
+            self.model.dirty = true;
+        }
+        while let Ok(resolution) = self.channels.project_label_writes.receiver.try_recv() {
+            match resolution.outcome {
+                Ok(()) => self.ask_project_labels(),
+                Err(reason) => {
+                    self.model
+                        .raise_toast(ToastKind::Warned, "project not renamed", reason, None);
+                }
+            }
+        }
+    }
+
+    fn ask_project_labels(&mut self) {
+        self.model.remembered.project_labels_asked += 1;
+        spawn_project_labels(
+            self.home,
+            self.model.remembered.project_labels_asked,
+            self.channels.project_labels.sender.clone(),
+        );
+    }
+
     pub(super) fn absorb_retired_regions(&mut self) {
         while let Ok(notice) = self.channels.retired_regions.receiver.try_recv() {
             if !self
@@ -658,8 +700,12 @@ impl Attach<'_> {
     /// A project's commands waiting for the operator, read where it
     /// opens, and what approving them answered.
     pub(super) fn absorb_command_approvals(&mut self) {
-        while let Ok(awaiting) = self.channels.commands_awaiting.receiver.try_recv() {
-            self.model.commands_await(awaiting, false);
+        while let Ok(read) = self.channels.commands_awaiting.receiver.try_recv() {
+            self.model
+                .remembered
+                .project_roots
+                .insert(read.awaiting.project.clone(), read.root);
+            self.model.commands_await(read.awaiting, false);
         }
         while let Ok(resolution) = self.channels.proposals.receiver.try_recv() {
             self.model.absorb_proposals(resolution);

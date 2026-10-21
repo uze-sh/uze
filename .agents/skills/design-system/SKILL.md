@@ -96,6 +96,11 @@ on "cancel" must not save first.
 - A popover opens anchored to its trigger, whatever opened it (click,
   shortcut, resume).
 - A context menu opens at the cursor.
+- A menu entry that opens a further menu ends in an arrow against the
+  menu's right edge (`Symbol::Submenu`, `menu::Entry { opens: true }`) and
+  carries no ellipsis: `Rename ›`, `Continue in ›`. An ellipsis marks only
+  an entry that asks before acting (`Discard…`). Two entries for one verb
+  side by side (`Rename`, `Rename project`) become one that opens both.
 - Dropdowns float over content and never push it down.
 - A modal keeps its height while you filter inside it.
 - A popover's rows stand on its own ground: no raised band under the line
@@ -111,7 +116,8 @@ on "cancel" must not save first.
 - A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end
   (`space · main`, `git`), never in a column of its own.
-- An agent's caption row leads with its project, in every space, in the
+- An agent's caption row leads with its project, by the operator's label
+  for it when there is one, in every space, in the
   column's quiet hue, and ends with its harness in the
   trailing column. Only the harness takes the row's lit caption token
   (`caption_color`), never a fixed colour and never the whole line.

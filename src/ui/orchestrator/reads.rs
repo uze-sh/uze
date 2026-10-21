@@ -227,10 +227,17 @@ pub(super) fn spawn_unspelled_gates(
 /// Asks, for each directory first seen, whether its project's commands
 /// wait for the operator's approval. Off the frame: reading the policy
 /// asks Git whether the files it links are ignored.
+/// A project's commands waiting for approval, with the root its project
+/// resolves to.
+pub(super) struct AwaitingRead {
+    pub(super) awaiting: uze_application::CommandsAwaitingApproval,
+    pub(super) root: PathBuf,
+}
+
 pub(super) fn spawn_commands_awaiting(
     home: &UzeHome,
     directories: Vec<PathBuf>,
-    sender: mpsc::Sender<uze_application::CommandsAwaitingApproval>,
+    sender: mpsc::Sender<AwaitingRead>,
 ) {
     if directories.is_empty() {
         return;
@@ -244,7 +251,8 @@ pub(super) fn spawn_commands_awaiting(
         };
         for directory in directories {
             if let Some(awaiting) = app.workspace().commands_awaiting_approval(&directory) {
-                let _ = sender.send(awaiting);
+                let root = agents::project_of_directory(&awaiting.project);
+                let _ = sender.send(AwaitingRead { awaiting, root });
             }
         }
     });
@@ -417,6 +425,8 @@ pub(super) struct DeliveryResolution {
 /// What a sweep of the machine's preserved work answered.
 pub(super) struct PreservedResolution {
     pub(super) work: Vec<uze_application::PreservedWork>,
+    /// The root each work's project resolves to, for naming it.
+    pub(super) roots: Vec<(PathBuf, PathBuf)>,
 }
 
 /// Re-reads every project's preserved work, off the UI thread.
@@ -438,7 +448,16 @@ pub(super) fn spawn_preserved_sweep(home: &UzeHome, sender: mpsc::Sender<Preserv
             },
             Vec::new(),
         );
-        let _ = sender.send(PreservedResolution { work });
+        let roots = work
+            .iter()
+            .map(|work| {
+                (
+                    work.project.clone(),
+                    agents::project_of_directory(&work.project),
+                )
+            })
+            .collect();
+        let _ = sender.send(PreservedResolution { work, roots });
     });
 }
 
@@ -778,6 +797,66 @@ pub(super) fn spawn_agent_label(
             Err("naming the agent failed".to_owned()),
         );
         let _ = sender.send(LabelResolution { label, outcome });
+    });
+}
+
+/// What reading the operator's names for projects answered.
+pub(super) struct ProjectLabelsRead {
+    /// Which read this answers (see `Remembered::project_labels_asked`).
+    pub(super) asked: u64,
+    pub(super) labels: std::result::Result<uze_application::ProjectLabels, String>,
+}
+
+/// Reads the operator's names for projects, off the UI thread with the
+/// rest of `config.toml`'s readers.
+pub(super) fn spawn_project_labels(
+    home: &UzeHome,
+    asked: u64,
+    sender: mpsc::Sender<ProjectLabelsRead>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.project_labels").entered();
+        let labels = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.project_labels().all())
+                    .map_err(|error| error.to_string())
+            },
+            Err("reading project names failed".to_owned()),
+        );
+        let _ = sender.send(ProjectLabelsRead { asked, labels });
+    });
+}
+
+/// What writing a project's name answered.
+pub(super) struct ProjectLabelResolution {
+    pub(super) outcome: std::result::Result<(), String>,
+}
+
+/// Writes the name the operator typed over a project, off the UI thread:
+/// it waits on `config.toml`'s lock behind any other writer.
+pub(super) fn spawn_project_label(
+    home: &UzeHome,
+    root: PathBuf,
+    label: String,
+    sender: mpsc::Sender<ProjectLabelResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.label_project").entered();
+        let outcome = answered_or(
+            || {
+                tui_application(home)
+                    .and_then(|app| app.project_labels().set(&root, &label))
+                    .map(drop)
+                    .map_err(|error| error.to_string())
+            },
+            Err("naming the project failed".to_owned()),
+        );
+        let _ = sender.send(ProjectLabelResolution { outcome });
     });
 }
 

@@ -7,7 +7,7 @@
 //! target ([`landing`]), what a project declares about all of that
 //! ([`declaration`]), and the workspace client's own state under `UzeHome`
 //! ([`client_layout`], [`prompt_history`], [`notifications`],
-//! [`extensions`]).
+//! [`project_labels`], [`extensions`]).
 //!
 //! It depends on `uze-core` and `uze-core` never depends on it: the package
 //! manager is usable without the workspace because nothing in it can name
@@ -27,6 +27,7 @@ mod file_lock;
 mod git;
 pub mod landing;
 pub mod notifications;
+pub mod project_labels;
 pub mod prompt_history;
 pub mod task;
 pub mod worktree;

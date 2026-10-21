@@ -294,6 +294,7 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.preserved.receiver.try_recv() {
             self.model.remembered.preserved_pending = false;
             self.model.remembered.preserved_work = resolution.work;
+            self.model.remembered.project_roots.extend(resolution.roots);
             // A project only this answer names is read while recent is
             // open, so its rows gain their facts without reopening it.
             if self.model.recent.open {
@@ -343,6 +344,7 @@ impl Attach<'_> {
         self.absorb_unspelled_gates();
         self.absorb_command_approvals();
         self.absorb_launchers();
+        self.absorb_project_labels();
         self.schedule_surface_reads();
         if self.model.expire_pane_activity(Instant::now()) {
             self.model.dirty = true;

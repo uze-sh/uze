@@ -824,6 +824,9 @@ pub(super) enum WorkspaceHit {
     /// The sidebar header's name, the way in and out of recent.
     ToggleRecent,
     SelectTab(TabId),
+    /// The project an agent's row names. Drawn after that row's
+    /// `SelectTab`, so every gesture but a double click lands on the row.
+    ProjectName(TabId),
     CloseTab(TabId),
     NewTab,
     /// Opens the new agent's directory step
@@ -1481,7 +1484,7 @@ struct Channels {
     unspelled_gates: Answers<UnspelledGates>,
     /// A project's commands that wait for the operator's approval, read
     /// where it opens.
-    commands_awaiting: Answers<uze_application::CommandsAwaitingApproval>,
+    commands_awaiting: Answers<AwaitingRead>,
     /// Recording an approval, and the setup it lets run.
     approvals: Answers<ApprovalResolution>,
     /// The machine facts agents proposed, read on the evaluation clock.
@@ -1490,6 +1493,11 @@ struct Channels {
     proposal_answers: Answers<ProposalAnswerResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
+    /// The operator's names for projects, read when the client opens and
+    /// again after one is written.
+    project_labels: Answers<ProjectLabelsRead>,
+    /// Writing one, which may wait on `config.toml`'s lock.
+    project_label_writes: Answers<ProjectLabelResolution>,
     /// A space's overview, and what its drawer and its edits ask.
     space_overviews: Answers<SpaceOverviewResolution>,
     /// The worktrees its Worktrees section shows, measured.
@@ -1672,6 +1680,17 @@ struct Remembered {
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
     launchers_asked: bool,
+    /// The operator's names for projects, by root; how many times they
+    /// were asked for, so only the latest answer is kept; and whether they
+    /// were found unreadable, which is said once.
+    project_labels: uze_application::ProjectLabels,
+    project_labels_asked: u64,
+    project_labels_reported: bool,
+    /// The root of each project path a read handed over (recent's work,
+    /// a project's commands), resolved in that read: the domain spells a
+    /// project as its record does, and a label is kept under the root
+    /// every surface resolves alike.
+    project_roots: BTreeMap<PathBuf, PathBuf>,
     /// Panes already told their harness bypassed the shim, so it is said
     /// once rather than on every status tick.
     bypass_reported: BTreeSet<uze_terminal::PaneId>,
@@ -2374,6 +2393,14 @@ impl WorkspaceModel {
             fold,
         });
         true
+    }
+
+    /// Whether `at` lies on the project `tab`'s row names, which the row's
+    /// own hit covers for every gesture but a double click.
+    fn on_project_name(&self, tab: TabId, at: Position) -> bool {
+        self.hits
+            .iter()
+            .any(|(rect, hit)| *hit == WorkspaceHit::ProjectName(tab) && rect.contains(at))
     }
 
     fn hit_at(&self, column: u16, row: u16) -> Option<WorkspaceHit> {

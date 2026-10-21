@@ -705,6 +705,8 @@ pub(super) struct SidebarAgent<'a> {
     pub(super) in_active_space: bool,
     pub(super) status: AgentTabStatus,
     pub(super) renaming: Option<&'a RenameBuffer>,
+    /// The name being typed over the project the row names.
+    pub(super) renaming_project: Option<&'a RenameBuffer>,
     pub(super) drop_target: bool,
     pub(super) harness: Option<&'a str>,
     pub(super) tick: usize,
@@ -717,7 +719,7 @@ fn project_named_on_row(model: &WorkspaceModel, tab: &Tab) -> Option<String> {
     model
         .projects
         .get(&named_checkout(&tab.pane.cwd))
-        .map(|project| project_name(project))
+        .map(|project| model.project_named(project))
 }
 
 /// What only the tree's two-row item says about an agent: its task's mark
@@ -823,6 +825,11 @@ impl<'a> SidebarAgent<'a> {
             .as_ref()
             .filter(|(target, _)| *target == RenameTarget::Tab(tab.id))
             .map(|(_, buffer)| buffer);
+        let renaming_project = model
+            .renaming
+            .as_ref()
+            .filter(|(target, _)| *target == RenameTarget::Project(tab.id))
+            .map(|(_, buffer)| buffer);
         // A tab-reorder drag in this exact space, resolved to drop right
         // before (or, on the last row, at the end after) this one.
         let drop_target = model.dragging_tab.is_some_and(|dragging| {
@@ -838,6 +845,7 @@ impl<'a> SidebarAgent<'a> {
             is_current,
             status: model.agent_tab_status(tab.pane.id, is_current),
             renaming,
+            renaming_project,
             drop_target,
             harness: agent_identity_for_tab(identities, tab),
             in_active_space: is_active_space,
@@ -1129,7 +1137,11 @@ pub(super) fn draw_tree(
             // column every caption in the sidebar ends in, and is the only
             // part lit with the row; the project, when the row names one,
             // leads in the column's quiet hue.
-            if caption.harness {
+            let mut project_rect = None;
+            if let Some(buffer) = agent.renaming_project {
+                // The harness yields its column to the name being typed.
+                spans.extend(rename_spans(buffer));
+            } else if caption.harness {
                 let harness = if caption.show_harness {
                     text::columns(&caption.detail) as u16 + 1
                 } else {
@@ -1140,10 +1152,15 @@ pub(super) fn draw_tree(
                         + harness
                         + TRAILING_PAD;
                     let room = detail_rect.width.saturating_sub(taken).max(1);
-                    spans.push(Span::styled(
-                        text::elide(project, room as usize),
-                        theme::fg(Token::TextDim),
+                    let lead: u16 = spans.iter().map(|span| span.width() as u16).sum();
+                    let shown = text::elide(project, room as usize);
+                    project_rect = Some(Rect::new(
+                        detail_rect.x + lead,
+                        detail_rect.y,
+                        text::columns(&shown) as u16,
+                        1,
                     ));
+                    spans.push(Span::styled(shown, theme::fg(Token::TextDim)));
                 }
                 if caption.show_harness {
                     row::push_trailing(
@@ -1193,6 +1210,11 @@ pub(super) fn draw_tree(
             // item — clicking the caption line must select the tab too, not
             // just the label text above it.
             hits.push((detail_rect, WorkspaceHit::SelectTab(tab.id)));
+            // After the row's own hit, so every gesture finds the row
+            // first: only a double click asks for this one.
+            if let Some(project_rect) = project_rect {
+                hits.push((project_rect, WorkspaceHit::ProjectName(tab.id)));
+            }
         }
     }
 }

@@ -50,7 +50,7 @@ fn identities() -> Vec<AgentIdentity> {
 }
 
 /// What the menu's group entry reads as.
-const CONTINUE_IN: &str = "Continue in…";
+const CONTINUE_IN: &str = "Continue in";
 
 /// The harnesses the open menu's group entry offers, as they read.
 fn offered(driven: &support::Driven<'_>) -> Vec<String> {
@@ -65,8 +65,10 @@ fn offered(driven: &support::Driven<'_>) -> Vec<String> {
         .iter()
         .position(|label| label == CONTINUE_IN)
         .expect("the menu offers continuing elsewhere");
-    menu.group(index)
-        .unwrap()
+    let Some(MenuGroup::Harnesses(harnesses)) = menu.group(index) else {
+        panic!("continuing elsewhere opens the harnesses");
+    };
+    harnesses
         .iter()
         .map(|choice| choice.display_name.clone())
         .collect()

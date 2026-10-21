@@ -42,6 +42,8 @@ mod perf;
 #[cfg(test)]
 mod picker;
 #[cfg(test)]
+mod project_labels;
+#[cfg(test)]
 mod prompt_buffer;
 #[cfg(test)]
 mod recent;

@@ -14,6 +14,8 @@ use uze_application::{CommandsAwaitingApproval, PolicyStep};
 /// keyboard is on.
 pub(super) struct ApprovalDialog {
     pub(super) awaiting: CommandsAwaitingApproval,
+    /// The project as every surface names it, read when the dialog opens.
+    pub(super) project: String,
     pub(super) on_approve: bool,
 }
 
@@ -57,7 +59,7 @@ impl WorkspaceModel {
         self.raise_toast(
             ToastKind::Warned,
             title,
-            format!("{}: {steps}", project_name(&project)),
+            format!("{}: {steps}", self.project_named(&project)),
             Some(("Review".to_owned(), WorkspaceHit::ReviewCommands)),
         );
     }
@@ -68,6 +70,7 @@ impl WorkspaceModel {
             return;
         };
         self.approval = Some(ApprovalDialog {
+            project: self.project_named(&awaiting.project),
             awaiting,
             on_approve: false,
         });
@@ -80,6 +83,7 @@ impl WorkspaceModel {
             return;
         };
         self.approval = Some(ApprovalDialog {
+            project: self.project_named(&awaiting.project),
             awaiting,
             on_approve: false,
         });
@@ -107,7 +111,7 @@ impl WorkspaceModel {
     /// What approving said, as an outcome.
     pub(super) fn absorb_approval(&mut self, resolution: ApprovalResolution) {
         self.clear_busy_notice();
-        let project = project_name(&resolution.project);
+        let project = self.project_named(&resolution.project);
         match resolution.outcome {
             Ok(warnings) => match warnings.first() {
                 None => self.raise_toast(ToastKind::Done, "commands approved", project, None),
@@ -183,13 +187,6 @@ fn steps_named(awaiting: &CommandsAwaitingApproval) -> &'static str {
     }
 }
 
-fn project_name(project: &Path) -> String {
-    project.file_name().map_or_else(
-        || project.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
 /// The question, drawn over everything but the toasts: the project, what
 /// approving means, and every line exactly as it would run, controls
 /// written out.
@@ -225,7 +222,7 @@ pub(super) fn render_approval(
         &Dialog {
             tone: Tone::Caution,
             title: "Run this project's commands?",
-            subject: Some(Line::from(project_name(&awaiting.project))),
+            subject: Some(Line::from(open.project.clone())),
             body,
             confirm: Some("Approve"),
             focus: Some(if open.on_approve { 1 } else { CANCEL }),

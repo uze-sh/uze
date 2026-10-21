@@ -21,7 +21,7 @@
 
 use std::{collections::BTreeMap, fs, time::Duration};
 
-use toml_edit::{DocumentMut, Item, Table, Value};
+use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
 use crate::{
     error::{Result, UzeError},
@@ -70,14 +70,102 @@ pub fn set_bool(home: &UzeHome, section: &str, key: &str, setting: bool) -> Resu
     set_value(home, section, key, setting.into())
 }
 
+/// The string `key` holds in each table of `section`, by the table's name:
+/// `[section."name"] key = "…"`. A table without the key, or holding
+/// anything else in it, is left out.
+pub fn strings_by_table(
+    home: &UzeHome,
+    section: &str,
+    key: &str,
+) -> Result<BTreeMap<String, String>> {
+    let document = read(home)?;
+    Ok(document
+        .get(section)
+        .and_then(Item::as_table_like)
+        .map(|tables| {
+            tables
+                .iter()
+                .filter_map(|(name, table)| {
+                    let value = table.as_table_like()?.get(key)?.as_str()?;
+                    Some((name.to_owned(), value.to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Sets `key` in `[section."table"]`. A `section` this creates is only
+/// the tables' parent, so the file gains `[section."table"]` and no bare
+/// `[section]` header above it.
+pub fn set_in_table(
+    home: &UzeHome,
+    section: &str,
+    table: &str,
+    key: &str,
+    setting: &str,
+) -> Result<()> {
+    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
+    let mut document = read(home)?;
+    let parent = table_like_mut(document.as_table_mut(), section, true)
+        .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
+    let target = table_like_mut(parent, table, false)
+        .ok_or_else(|| malformed(home, format!("`{section}.{table}` is not a table")))?;
+    replace_keeping_decor(target, key, setting.into());
+    write(home, &document)
+}
+
+/// Takes `key` out of `[section."table"]`, and the table and the section
+/// with it when that leaves them empty, so a removal leaves no trace. Whether
+/// there was anything to take: when there was not, the file is not written.
+pub fn remove_in_table(home: &UzeHome, section: &str, table: &str, key: &str) -> Result<bool> {
+    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
+    let mut document = read(home)?;
+    let Some(parent) = document.get_mut(section).and_then(Item::as_table_like_mut) else {
+        return Ok(false);
+    };
+    let Some(target) = parent.get_mut(table).and_then(Item::as_table_like_mut) else {
+        return Ok(false);
+    };
+    if target.remove(key).is_none() {
+        return Ok(false);
+    }
+    if target.is_empty() {
+        parent.remove(table);
+    }
+    if parent.is_empty() {
+        document.remove(section);
+    }
+    write(home, &document)?;
+    Ok(true)
+}
+
 fn set_value(home: &UzeHome, section: &str, key: &str, setting: Value) -> Result<()> {
     let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
     let mut document = read(home)?;
-    let table = document
-        .entry(section)
-        .or_insert_with(|| Item::Table(Table::new()))
-        .as_table_like_mut()
+    let table = table_like_mut(document.as_table_mut(), section, false)
         .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
+    replace_keeping_decor(table, key, setting);
+    write(home, &document)
+}
+
+/// The table `name` in `parent`, made when missing; `None` when `name`
+/// holds something that is not a table.
+fn table_like_mut<'a>(
+    parent: &'a mut dyn TableLike,
+    name: &str,
+    implicit: bool,
+) -> Option<&'a mut dyn TableLike> {
+    parent
+        .entry(name)
+        .or_insert_with(|| {
+            let mut table = Table::new();
+            table.set_implicit(implicit);
+            Item::Table(table)
+        })
+        .as_table_like_mut()
+}
+
+fn replace_keeping_decor(table: &mut dyn TableLike, key: &str, setting: Value) {
     match table.get_mut(key).and_then(Item::as_value_mut) {
         Some(existing) => {
             let decor = existing.decor().clone();
@@ -88,7 +176,6 @@ fn set_value(home: &UzeHome, section: &str, key: &str, setting: Value) -> Result
             table.insert(key, Item::Value(setting));
         }
     }
-    write(home, &document)
 }
 
 fn read(home: &UzeHome) -> Result<DocumentMut> {
@@ -248,6 +335,94 @@ mod tests {
         assert_eq!(
             fs::read_to_string(home.config_path()).unwrap(),
             "[appearance\ntheme = "
+        );
+    }
+
+    #[test]
+    fn a_table_of_a_section_is_written_under_its_own_header() {
+        let home = home("config-nested-write");
+
+        set_in_table(&home, "projects", "/work/uze", "label", "uze core").expect("written");
+
+        assert_eq!(
+            fs::read_to_string(home.config_path()).unwrap(),
+            "[projects.\"/work/uze\"]\nlabel = \"uze core\"\n"
+        );
+        assert_eq!(
+            strings_by_table(&home, "projects", "label").expect("readable"),
+            BTreeMap::from([("/work/uze".to_owned(), "uze core".to_owned())])
+        );
+    }
+
+    #[test]
+    fn tables_without_the_key_are_left_out() {
+        let home = home("config-nested-read");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[projects.a]\nlabel = \"A\"\n[projects.b]\nother = 1\n[projects.c]\nlabel = 3\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            strings_by_table(&home, "projects", "label").expect("readable"),
+            BTreeMap::from([("a".to_owned(), "A".to_owned())])
+        );
+    }
+
+    #[test]
+    fn removing_the_last_key_leaves_no_trace() {
+        let home = home("config-nested-remove");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        let mine = "# mine\n[appearance]\ntheme = \"dawn\"\n";
+        fs::write(home.config_path(), mine).unwrap();
+        set_in_table(&home, "projects", "/work/uze", "label", "uze core").expect("written");
+
+        assert!(remove_in_table(&home, "projects", "/work/uze", "label").expect("removed"));
+
+        assert_eq!(fs::read_to_string(home.config_path()).unwrap(), mine);
+    }
+
+    #[test]
+    fn removing_what_is_not_there_writes_nothing() {
+        let home = home("config-nested-absent");
+
+        assert!(!remove_in_table(&home, "projects", "/work/uze", "label").expect("read"));
+
+        assert!(!home.config_path().exists());
+    }
+
+    #[test]
+    fn a_nested_write_keeps_the_rest_of_its_table() {
+        let home = home("config-nested-keep");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[projects.\"/work/uze\"]\nlabel = \"old\" # mine\nfuture = true\n",
+        )
+        .unwrap();
+
+        set_in_table(&home, "projects", "/work/uze", "label", "new").expect("written");
+        assert!(remove_in_table(&home, "projects", "/work/uze", "label").expect("removed"));
+
+        assert_eq!(
+            fs::read_to_string(home.config_path()).unwrap(),
+            "[projects.\"/work/uze\"]\nfuture = true\n"
+        );
+    }
+
+    #[test]
+    fn a_nested_write_refuses_a_file_that_does_not_parse() {
+        let home = home("config-nested-malformed");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(home.config_path(), "[projects\n").unwrap();
+
+        assert!(strings_by_table(&home, "projects", "label").is_err());
+        assert!(set_in_table(&home, "projects", "/x", "label", "x").is_err());
+        assert!(remove_in_table(&home, "projects", "/x", "label").is_err());
+        assert_eq!(
+            fs::read_to_string(home.config_path()).unwrap(),
+            "[projects\n"
         );
     }
 }
