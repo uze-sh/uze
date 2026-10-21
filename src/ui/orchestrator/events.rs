@@ -28,7 +28,7 @@ impl WorkspaceModel {
                 self.occupancy_stale = true;
             }
             ClientEvent::SessionUpdated { session } => {
-                self.note_finished_shells(&session, identities);
+                self.note_finished_shells(&session, identities, Instant::now());
                 self.session = Some(session);
                 self.note_typing_target();
                 self.note_launcher_bypass();

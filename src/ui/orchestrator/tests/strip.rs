@@ -12,7 +12,7 @@ use super::{
 };
 use crate::ui::theme::{self, Symbol, Token};
 use ratatui::{Terminal, backend::TestBackend};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uze_core::UzeHome;
 use uze_terminal::{ClientRequest, SpaceId, TabId};
 
@@ -869,6 +869,7 @@ fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
 
     shell_runs(&mut model, shell, "cargo");
     shell_runs(&mut model, shell, "zsh");
+    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell),
         (
@@ -883,7 +884,7 @@ fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
         .map(|tab| tab.id)
         .unwrap();
     select_tab(&mut model, tab);
-    model.expire_agent_activity(std::time::Instant::now());
+    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell).0,
         theme::glyph(Symbol::StatusSelected),
@@ -942,5 +943,41 @@ fn an_agents_own_tab_never_takes_a_shells_check() {
     assert!(
         !model.shell_finished_out_of_sight(pane),
         "a command in a launched agent's tab"
+    );
+}
+
+/// The prompt a sequence passes through between two of its commands is
+/// not the program finishing: the check waits for the prompt to hold
+/// across more than one of the runtime's probes.
+#[test]
+fn a_prompt_between_two_commands_is_not_a_finish() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    shell_runs(&mut model, shell, "make");
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_agent_activity(Instant::now());
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusIdle),
+        "not yet a finish"
+    );
+    shell_runs(&mut model, shell, "run");
+    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusRunning)
+    );
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    assert!(
+        !model.shell_finished_out_of_sight(model.pane_for_tab(first).unwrap()),
+        "the agent's own pane is untouched"
+    );
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusCompleted),
+        "the sequence ended"
     );
 }

@@ -165,6 +165,20 @@ impl WorkspaceModel {
                 self.remembered.completed_panes.insert(*pane);
             }
         }
+        // A shell that finished out of sight is what the user would
+        // otherwise miss; one that finished on screen was seen finishing.
+        let mut settled = false;
+        let completed = &mut self.remembered.completed_panes;
+        self.settling_shells.retain(|pane, since| {
+            if now.duration_since(*since) < SHELL_SETTLE {
+                return true;
+            }
+            if *pane != focused {
+                completed.insert(*pane);
+            }
+            settled = true;
+            false
+        });
         self.recently_quiet.extend(expired.iter().copied());
         // A closed echo window, and a pane holding neither a deadline nor
         // recent repaints, have nothing left to say about themselves —
@@ -178,7 +192,7 @@ impl WorkspaceModel {
         // is free to be handed to a future pane — leaving its check behind
         // would eventually surface on something unrelated.
         self.forget_closed_agent_panes();
-        !expired.is_empty() || acknowledged
+        !expired.is_empty() || acknowledged || settled
     }
 
     /// Whether the bell rings now, under `chime`, for the turns that have
@@ -230,6 +244,7 @@ impl WorkspaceModel {
             && self.remembered.completed_panes.is_empty()
             && self.input_echo_until.is_empty()
             && self.unsettled_turns.is_empty()
+            && self.settling_shells.is_empty()
         {
             return;
         }
@@ -247,6 +262,7 @@ impl WorkspaceModel {
         // A closed tab's turn has nobody left to tell, and its id is free
         // for a new pane to inherit the ring.
         self.unsettled_turns.retain(|pane, _| live.contains(pane));
+        self.settling_shells.retain(|pane, _| live.contains(pane));
     }
 
     /// The one place the four sidebar states are decided. Working outranks
@@ -266,14 +282,19 @@ impl WorkspaceModel {
         }
     }
 
-    /// Marks the shells whose program returned to the prompt between the
-    /// session in hand and `next`, out of sight: a build that ended in a
-    /// tab the user is not on is exactly what they would otherwise miss.
-    pub(super) fn note_finished_shells(&mut self, next: &Session, identities: &[AgentIdentity]) {
+    /// Notes the shells whose program returned to the prompt between the
+    /// session in hand and `next`, and forgets those that are running
+    /// again: a finish is only one once it has settled (see
+    /// [`SHELL_SETTLE`]).
+    pub(super) fn note_finished_shells(
+        &mut self,
+        next: &Session,
+        identities: &[AgentIdentity],
+        now: Instant,
+    ) {
         let Some(previous) = self.session.as_ref() else {
             return;
         };
-        let focused = next.selected_tab().pane.id;
         let was_running: BTreeSet<PaneId> = previous
             .workspace
             .spaces
@@ -282,18 +303,18 @@ impl WorkspaceModel {
             .filter(|tab| !tab.pane.runs_a_shell() && !is_agent_tab(identities, tab))
             .map(|tab| tab.pane.id)
             .collect();
-        let finished = next
+        for tab in next
             .workspace
             .spaces
             .iter()
             .flat_map(|space| space.tabs.iter())
-            .filter(|tab| {
-                tab.pane.id != focused
-                    && tab.pane.runs_a_shell()
-                    && was_running.contains(&tab.pane.id)
-            })
-            .map(|tab| tab.pane.id);
-        self.remembered.completed_panes.extend(finished);
+        {
+            if !tab.pane.runs_a_shell() {
+                self.settling_shells.remove(&tab.pane.id);
+            } else if was_running.contains(&tab.pane.id) {
+                self.settling_shells.insert(tab.pane.id, now);
+            }
+        }
     }
 
     pub(super) fn shell_finished_out_of_sight(&self, pane: PaneId) -> bool {
