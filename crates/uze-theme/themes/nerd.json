@@ -76,6 +76,10 @@
       "glyph": "",
       "width": 1
     },
+    "status.running": {
+      "glyph": "",
+      "width": 1
+    },
     "arrow.up": {
       "glyph": "󰁝",
       "width": 1

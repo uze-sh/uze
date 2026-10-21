@@ -207,6 +207,11 @@ vocabulary! {
         StatusSelected = "status.selected",
         /// A quiet tab the user is not on.
         StatusIdle = "status.idle",
+        /// A shell with a program in its foreground rather than at its
+        /// prompt. Still, unlike [`StatusWorking`](Self::StatusWorking):
+        /// all a shell can be known to do is run something, not produce
+        /// output, and an editor left open runs for hours.
+        StatusRunning = "status.running",
 
         // ── a checkout's history ───────────────────────────────────────
         /// The commit `HEAD` is on.

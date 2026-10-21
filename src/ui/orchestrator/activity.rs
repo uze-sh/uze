@@ -39,7 +39,7 @@ impl WorkspaceModel {
             .entry(pane)
             .or_default()
             .working_until = Some(Instant::now() + AGENT_QUIET_AFTER);
-        self.remembered.completed_agent_panes.remove(&pane);
+        self.remembered.completed_panes.remove(&pane);
         self.dirty = true;
 
         if let (Some(prompt), Some(recorder)) = (prompt, self.prompt_recorder.as_ref())
@@ -76,7 +76,7 @@ impl WorkspaceModel {
         let activity = self.remembered.agent_activity.entry(pane).or_default();
         if activity.note_repaint(now) {
             activity.working_until = Some(now + AGENT_QUIET_AFTER);
-            self.remembered.completed_agent_panes.remove(&pane);
+            self.remembered.completed_panes.remove(&pane);
         }
     }
 
@@ -162,7 +162,7 @@ impl WorkspaceModel {
         for pane in &expired {
             self.unsettled_turns.insert(*pane, now);
             if *pane != focused {
-                self.remembered.completed_agent_panes.insert(*pane);
+                self.remembered.completed_panes.insert(*pane);
             }
         }
         self.recently_quiet.extend(expired.iter().copied());
@@ -173,7 +173,7 @@ impl WorkspaceModel {
         self.remembered
             .agent_activity
             .retain(|_, activity| activity.is_working() || !activity.repaints.is_empty());
-        let acknowledged = self.remembered.completed_agent_panes.remove(&focused);
+        let acknowledged = self.remembered.completed_panes.remove(&focused);
         // A pane whose tab is gone can never be looked at again, and its id
         // is free to be handed to a future pane — leaving its check behind
         // would eventually surface on something unrelated.
@@ -196,7 +196,7 @@ impl WorkspaceModel {
             return false;
         }
         let activity = &self.remembered.agent_activity;
-        let completed = &self.remembered.completed_agent_panes;
+        let completed = &self.remembered.completed_panes;
         let mut due = false;
         self.unsettled_turns.retain(|pane, ended| {
             if activity.get(pane).is_some_and(AgentActivity::is_working) {
@@ -227,7 +227,7 @@ impl WorkspaceModel {
         // per-pane state held there is nothing to reconcile, and walking
         // the tab tree to build a live-pane set would be pure overhead.
         if self.remembered.agent_activity.is_empty()
-            && self.remembered.completed_agent_panes.is_empty()
+            && self.remembered.completed_panes.is_empty()
             && self.input_echo_until.is_empty()
             && self.unsettled_turns.is_empty()
         {
@@ -241,7 +241,7 @@ impl WorkspaceModel {
             .agent_activity
             .retain(|pane, _| live.contains(pane));
         self.remembered
-            .completed_agent_panes
+            .completed_panes
             .retain(|pane| live.contains(pane));
         self.input_echo_until.retain(|pane, _| live.contains(pane));
         // A closed tab's turn has nobody left to tell, and its id is free
@@ -257,7 +257,7 @@ impl WorkspaceModel {
     pub(super) fn agent_tab_status(&self, pane: PaneId, selected: bool) -> AgentTabStatus {
         if self.agent_is_working(pane) {
             AgentTabStatus::Working
-        } else if self.remembered.completed_agent_panes.contains(&pane) {
+        } else if self.remembered.completed_panes.contains(&pane) {
             AgentTabStatus::Completed
         } else if selected {
             AgentTabStatus::Selected
@@ -266,9 +266,45 @@ impl WorkspaceModel {
         }
     }
 
+    /// Marks the shells whose program returned to the prompt between the
+    /// session in hand and `next`, out of sight: a build that ended in a
+    /// tab the user is not on is exactly what they would otherwise miss.
+    pub(super) fn note_finished_shells(&mut self, next: &Session, identities: &[AgentIdentity]) {
+        let Some(previous) = self.session.as_ref() else {
+            return;
+        };
+        let focused = next.selected_tab().pane.id;
+        let was_running: BTreeSet<PaneId> = previous
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| space.tabs.iter())
+            .filter(|tab| {
+                !tab.pane.runs_a_shell() && agent_identity_for_tab(identities, tab).is_none()
+            })
+            .map(|tab| tab.pane.id)
+            .collect();
+        let finished = next
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| space.tabs.iter())
+            .filter(|tab| {
+                tab.pane.id != focused
+                    && tab.pane.runs_a_shell()
+                    && was_running.contains(&tab.pane.id)
+            })
+            .map(|tab| tab.pane.id);
+        self.remembered.completed_panes.extend(finished);
+    }
+
+    pub(super) fn shell_finished_out_of_sight(&self, pane: PaneId) -> bool {
+        self.remembered.completed_panes.contains(&pane)
+    }
+
     pub(super) fn acknowledge_completed_agent_tab(&mut self, tab: TabId) {
         if let Some(pane) = self.pane_for_tab(tab)
-            && self.remembered.completed_agent_panes.remove(&pane)
+            && self.remembered.completed_panes.remove(&pane)
         {
             self.dirty = true;
         }

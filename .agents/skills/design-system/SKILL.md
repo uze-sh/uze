@@ -252,6 +252,12 @@ operator rather than assume.
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
   (a small star pulsing, in the default theme); the CLI's is
   `progress::spinner`. Never hand-pick frames.
+- The animated star is the agents' alone. A shell running a program wears
+  `Symbol::StatusRunning` (`▸`, still) in `state.success`, selected or
+  not: the runtime knows a shell runs something, not that it is producing
+  output, so nothing about it pulses. When that program ends in a tab the
+  operator is not on, the tab wears `Symbol::StatusCompleted` in
+  `state.success` until it is on screen, as an agent's finished turn does.
 
 **Drawers.**
 - A drawer's title is the name the list shows (`Linked files`), never

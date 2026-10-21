@@ -101,6 +101,7 @@
     "status.completed": "✓",
     "status.selected": "●",
     "status.idle": "○",
+    "status.running": "▸",
     "sync.behind": "↓",
     "sync.ahead": "↑",
     "commit.head": "◉",

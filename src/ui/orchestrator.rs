@@ -1515,11 +1515,11 @@ struct Remembered {
     /// merely having an agent process open — or reattaching to one — is
     /// deliberately not activity.
     agent_activity: BTreeMap<PaneId, AgentActivity>,
-    /// Agent panes that stopped working while the user was looking
-    /// somewhere else. The sidebar keeps their check visible until the tab
-    /// is actually on screen, making completion discoverable without
-    /// leaving a stale busy spinner.
-    completed_agent_panes: BTreeSet<PaneId>,
+    /// Panes that finished while the user was looking somewhere else: an
+    /// agent that stopped working, or a shell whose program returned to
+    /// the prompt. Their tab keeps a check until it is actually on screen,
+    /// making completion discoverable without leaving a stale busy mark.
+    completed_panes: BTreeSet<PaneId>,
     /// The most recently resolved agent support answer, tagged with the
     /// `(harness, cwd)` it answers — never assumed to apply to a different
     /// selection.

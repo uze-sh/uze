@@ -72,7 +72,7 @@ fn memory_carries_what_the_client_resolved_across_attaches() {
         .remembered
         .branches
         .insert(PathBuf::from("/repo"), "agent/ai".to_owned());
-    model.remembered.completed_agent_panes.insert(PaneId(1));
+    model.remembered.completed_panes.insert(PaneId(1));
     model.error = Some("stale".to_owned());
     model
         .hits
@@ -92,7 +92,7 @@ fn memory_carries_what_the_client_resolved_across_attaches() {
             .map(String::as_str),
         Some("agent/ai")
     );
-    assert!(model.remembered.completed_agent_panes.contains(&PaneId(1)));
+    assert!(model.remembered.completed_panes.contains(&PaneId(1)));
     assert!(model.session.is_none());
     assert!(model.error.is_none());
     assert!(model.hits.is_empty());

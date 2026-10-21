@@ -808,7 +808,7 @@ fn a_folded_space_says_through_its_header_what_its_agents_did() {
     let mut model = three_spaces();
     let three = model.session.as_ref().unwrap().workspace.selected_space;
     let pane = model.session.as_ref().unwrap().selected_tab().pane.id;
-    model.remembered.completed_agent_panes.insert(pane);
+    model.remembered.completed_panes.insert(pane);
     let completed = theme::glyph(crate::ui::theme::Symbol::StatusCompleted);
     let header_row = |model: &WorkspaceModel| {
         let Sidebar {

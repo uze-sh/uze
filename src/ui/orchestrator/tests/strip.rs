@@ -10,7 +10,7 @@ use super::{
     space_context_agent, space_own_tab, strip_label, strip_tabs, tab_drag_group,
     tab_drag_group_members,
 };
-use crate::ui::theme::{self, Token};
+use crate::ui::theme::{self, Symbol, Token};
 use ratatui::{Terminal, backend::TestBackend};
 use std::time::Duration;
 use uze_core::UzeHome;
@@ -790,4 +790,124 @@ fn a_tab_s_close_mark_turns_to_danger_under_the_pointer() {
     assert_eq!(colour_at(&mut model), theme::color(Token::TextDim));
     model.hovered = Some(hit);
     assert_eq!(colour_at(&mut model), theme::color(Token::StateDanger));
+}
+
+/// The marker on the strip's chip for the shell labelled `label`: its
+/// glyph and its colour.
+fn shell_marker(model: &WorkspaceModel, label: &str) -> (String, ratatui::style::Color) {
+    let mut terminal = Terminal::new(TestBackend::new(80, 3)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_tab_strip(
+                frame,
+                frame.area(),
+                model,
+                &identities_fixture(),
+                LeadingSlot::AgentTabs,
+                &mut Vec::new(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let row: Vec<&str> = (0..buffer.area.width)
+        .map(|column| buffer[(column, 0)].symbol())
+        .collect();
+    let at = row
+        .windows(label.chars().count())
+        .position(|cells| cells.concat() == label)
+        .expect("the shell is on the strip");
+    let cell = &buffer[(at as u16 - 2, 0)];
+    (cell.symbol().to_owned(), cell.fg)
+}
+
+/// Moves the shell labelled `label` to `process`, the way the runtime's
+/// status probe reports it.
+fn shell_runs(model: &mut WorkspaceModel, label: &str, process: &str) {
+    let mut session = model.session.clone().unwrap();
+    session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.label == label)
+        .unwrap()
+        .pane
+        .process = process.into();
+    model.apply(
+        uze_terminal::ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
+    );
+}
+
+/// A shell running a program trades its dot for the running mark in a
+/// success hue, and takes the dot back at its prompt.
+#[test]
+fn a_shell_running_a_program_wears_the_running_mark() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusIdle)
+    );
+    shell_runs(&mut model, shell, "cargo");
+    assert_eq!(
+        shell_marker(&model, shell),
+        (
+            theme::glyph(Symbol::StatusRunning).to_owned(),
+            theme::color(Token::StateSuccess)
+        )
+    );
+}
+
+/// A program that ends in a shell the user is not looking at leaves a
+/// check on its tab until the tab is on screen.
+#[test]
+fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    shell_runs(&mut model, shell, "cargo");
+    shell_runs(&mut model, shell, "zsh");
+    assert_eq!(
+        shell_marker(&model, shell),
+        (
+            theme::glyph(Symbol::StatusCompleted).to_owned(),
+            theme::color(Token::StateSuccess)
+        )
+    );
+
+    let tab = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.id)
+        .unwrap();
+    select_tab(&mut model, tab);
+    model.expire_agent_activity(std::time::Instant::now());
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusSelected),
+        "looked at, the check is spent"
+    );
+}
+
+/// A program that ends in the shell on screen was seen ending: no check.
+#[test]
+fn a_shell_whose_program_ended_in_view_leaves_no_check() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+    let tab = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.id)
+        .unwrap();
+    select_tab(&mut model, tab);
+
+    shell_runs(&mut model, shell, "cargo");
+    shell_runs(&mut model, shell, "zsh");
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusSelected)
+    );
 }

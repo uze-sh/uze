@@ -184,7 +184,7 @@ fn output_resuming_after_a_quiet_stretch_returns_the_pane_to_working() {
 #[test]
 fn the_redraw_that_selecting_an_agent_provokes_is_not_a_turn_starting() {
     let mut model = agent_session();
-    model.remembered.completed_agent_panes.insert(PaneId(1));
+    model.remembered.completed_panes.insert(PaneId(1));
     assert_eq!(
         model.agent_tab_status(PaneId(1), false),
         AgentTabStatus::Completed
@@ -621,7 +621,7 @@ fn a_closed_tab_leaves_no_status_behind_for_the_next_pane() {
     }
     model.expire_agent_activity(Instant::now());
     assert!(model.remembered.agent_activity.is_empty());
-    assert!(model.remembered.completed_agent_panes.is_empty());
+    assert!(model.remembered.completed_panes.is_empty());
     assert!(model.input_echo_until.is_empty());
 }
 
