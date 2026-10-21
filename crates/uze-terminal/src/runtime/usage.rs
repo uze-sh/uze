@@ -112,8 +112,12 @@ impl Sample {
             before
                 .processes
                 .iter()
+                // Only where a parent is accounted the children it waited
+                // for: elsewhere it never gained their time.
                 .filter(|(pid, then)| {
-                    !lives_on(pid, then) && before.parents.get(pid) == Some(&parent)
+                    then.cpu.children.is_some()
+                        && !lives_on(pid, then)
+                        && before.parents.get(pid) == Some(&parent)
                 })
                 .map(|(_, then)| total(then))
                 .sum()
@@ -461,6 +465,28 @@ mod tests {
         assert!(asked.panes[&PaneId(1)].processes.is_empty());
         let _ = asker.kill();
         let _ = asker.wait();
+    }
+
+    /// Where the platform accounts no child to its parent (Windows outside
+    /// a job), an ended child's time never reached its parent, and nothing
+    /// is taken back off it.
+    #[test]
+    fn nothing_is_taken_back_where_children_are_not_accounted() {
+        let unaccounted = |mut reading: usage::Reading| {
+            reading.cpu.children = None;
+            reading
+        };
+        let mut before = sample(&[
+            (10, unaccounted(reading(100, 1_000, 0, 0))),
+            (11, unaccounted(reading(101, 50, 0, 0))),
+        ]);
+        before.parents.insert(11, 10);
+        let after = sample(&[(10, unaccounted(reading(100, 1_020, 0, 0)))]);
+
+        assert_eq!(
+            after.spent_since(&before, before.newest()),
+            Duration::from_millis(20)
+        );
     }
 
     /// Where a Job Object keeps a total, it is the whole answer: it counts
