@@ -1686,6 +1686,12 @@ struct Remembered {
     project_labels: uze_application::ProjectLabels,
     project_labels_asked: u64,
     project_labels_reported: bool,
+    /// Whether a name is being written, and those confirmed meanwhile, the
+    /// latest per root: writes go one at a time, so the last name confirmed
+    /// is the last one written rather than whichever thread took the
+    /// file's lock last.
+    project_label_writing: bool,
+    project_labels_queued: VecDeque<(PathBuf, String)>,
     /// The root of each project path a read handed over (recent's work,
     /// a project's commands), resolved in that read: the domain spells a
     /// project as its record does, and a label is kept under the root

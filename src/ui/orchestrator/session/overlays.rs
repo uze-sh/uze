@@ -130,12 +130,7 @@ impl Attach<'_> {
         match action {
             Action::Activate => match self.model.renaming.take() {
                 Some((RenameTarget::Project { root, .. }, buffer)) => {
-                    spawn_project_label(
-                        self.home,
-                        root,
-                        buffer.text().to_owned(),
-                        self.channels.project_label_writes.sender.clone(),
-                    );
+                    self.write_project_label(root, buffer.text().to_owned());
                 }
                 Some((RenameTarget::Tab(tab), buffer)) => {
                     let label = buffer.text().trim();

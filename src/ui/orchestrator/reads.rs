@@ -830,8 +830,11 @@ pub(super) fn spawn_project_labels(
     });
 }
 
-/// What writing a project's name answered.
+/// What writing a project's name answered, and the name it was asked to
+/// write under which root.
 pub(super) struct ProjectLabelResolution {
+    pub(super) root: PathBuf,
+    pub(super) label: String,
     pub(super) outcome: std::result::Result<(), String>,
 }
 
@@ -856,7 +859,11 @@ pub(super) fn spawn_project_label(
             },
             Err("naming the project failed".to_owned()),
         );
-        let _ = sender.send(ProjectLabelResolution { outcome });
+        let _ = sender.send(ProjectLabelResolution {
+            root,
+            label,
+            outcome,
+        });
     });
 }
 

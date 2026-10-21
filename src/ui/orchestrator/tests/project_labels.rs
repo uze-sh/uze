@@ -433,3 +433,34 @@ fn the_name_lands_on_the_project_the_edit_began_on() {
         Some("uze core")
     );
 }
+
+#[test]
+fn a_second_name_waits_for_the_first_and_is_the_one_kept() {
+    let (home, model, tab, root) = agent_in_a_project("labels-in-order");
+    let mut driven = driven(model, &home);
+    driven.frame();
+    for name in [" first", " second"] {
+        let project = project_on_row(&driven, tab);
+        double_click(&mut driven, project);
+        typed(&mut driven, name);
+        chord(&mut driven, "enter");
+        driven.frame();
+    }
+
+    let channels = driven.attach.channels;
+    let first = channels
+        .project_label_writes
+        .receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the first write answered");
+    assert_eq!(
+        application(&home).project_labels().all().unwrap().of(&root),
+        Some("uze first"),
+        "the second is not written while the first is out"
+    );
+    channels.project_label_writes.sender.send(first).unwrap();
+    driven.pump();
+    written_and_read_back(&mut driven);
+
+    assert_eq!(driven.attach.model.project_named(&root), "uze second");
+}

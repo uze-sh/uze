@@ -632,14 +632,44 @@ impl Attach<'_> {
             self.model.dirty = true;
         }
         while let Ok(resolution) = self.channels.project_label_writes.receiver.try_recv() {
+            self.model.remembered.project_label_writing = false;
             match resolution.outcome {
                 Ok(()) => self.ask_project_labels(),
                 Err(reason) => {
-                    self.model
-                        .raise_toast(ToastKind::Warned, "project not renamed", reason, None);
+                    let project = self.model.project_named(&resolution.root);
+                    self.model.raise_toast(
+                        ToastKind::Warned,
+                        "project not renamed",
+                        format!("{project} as {}: {reason}", resolution.label.trim()),
+                        None,
+                    );
                 }
             }
+            if let Some((root, label)) = self.model.remembered.project_labels_queued.pop_front() {
+                self.write_project_label(root, label);
+            }
         }
+    }
+
+    /// Writes the name confirmed over a project, or holds it until the
+    /// write already out answers.
+    pub(super) fn write_project_label(&mut self, root: PathBuf, label: String) {
+        let remembered = &mut self.model.remembered;
+        if remembered.project_label_writing {
+            let queued = &mut remembered.project_labels_queued;
+            match queued.iter_mut().find(|(waiting, _)| *waiting == root) {
+                Some(waiting) => waiting.1 = label,
+                None => queued.push_back((root, label)),
+            }
+            return;
+        }
+        remembered.project_label_writing = true;
+        spawn_project_label(
+            self.home,
+            root,
+            label,
+            self.channels.project_label_writes.sender.clone(),
+        );
     }
 
     fn ask_project_labels(&mut self) {
