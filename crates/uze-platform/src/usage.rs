@@ -647,9 +647,18 @@ mod tests {
     }
 
     #[test]
-    fn the_machine_has_at_least_one_core() {
-        let machine = machine();
-        assert!(machine.cores >= 1);
-        assert!(!machine.system.is_empty());
+    fn the_machine_is_named_for_the_system_it_runs() {
+        assert!(machine().system.starts_with(std::env::consts::OS));
+    }
+
+    // Linux, macOS and Windows say how much memory there is; another Unix
+    // is not asked.
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[test]
+    fn the_machines_memory_holds_this_process() {
+        let total = machine().memory.expect("the platform says its memory");
+        let own = of(std::process::id()).expect("this process reads").memory;
+
+        assert!(own.bytes > 0 && own.bytes < total, "{own:?} of {total}");
     }
 }
