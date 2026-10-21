@@ -47,8 +47,12 @@
 //!
 //! A release is installed in the background only once it has been the
 //! latest for [`SETTLE`]: a release found to be bad and pulled within that
-//! window never reaches a machine that was only waiting. `uze upgrade` is a
-//! person asking, and does not wait.
+//! window never reaches a machine that was only waiting. The window is
+//! counted from when the release was published, and one that saw it out
+//! before a newer one replaced it is still installed while that one waits:
+//! counting from when a machine first heard, and forgetting the release a
+//! newer one replaced, left a machine that ran nothing for a day a release
+//! behind. `uze upgrade` is a person asking, and does not wait.
 
 use std::{
     env, fs,
@@ -302,9 +306,23 @@ struct Ledger {
     checked_at: u64,
     #[serde(default)]
     latest: Option<String>,
-    /// When `latest` was first answered with the release it names now.
+    /// When `latest` was published, or first answered while the release
+    /// page will not say.
     #[serde(default)]
     latest_since: u64,
+    /// Whether `latest_since` is when `latest` was published. A release
+    /// first answered undated is dated again at every check until it is.
+    #[serde(default)]
+    latest_dated: bool,
+    /// The release an undated `latest` replaced, judged once `latest` is
+    /// dated.
+    #[serde(default)]
+    replaced: Option<Replaced>,
+    /// The newest release that stayed the latest for [`SETTLE`] before a
+    /// newer one replaced it: still worth installing while its successor
+    /// settles, so a machine that missed the window does not skip it.
+    #[serde(default)]
+    settled: Option<String>,
     /// The last release the updater put in place.
     #[serde(default)]
     installed: Option<String>,
@@ -317,10 +335,20 @@ struct Ledger {
     told: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct Replaced {
+    version: String,
+    since: u64,
+}
+
 /// Where releases come from. A trait so a pass can be exercised end to end
 /// without a network.
 trait Releases {
     fn latest(&self) -> Option<String>;
+    /// How long ago `version` was published, in seconds, by the release
+    /// host's own clock: an age rather than a date, so a machine whose
+    /// clock is wrong when it asks does not shorten the wait.
+    fn age(&self, version: &str) -> Option<u64>;
     fn changelog(&self, version: &str) -> Option<String>;
     fn install(&self, version: &str, target: &Path, scratch: &Path) -> Result<(), String>;
 }
@@ -339,34 +367,21 @@ fn pass(
     let _span = tracing::info_span!("self_update.pass", running = RUNNING).entered();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
     if ask || now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs() {
+        // Kept when the question went unanswered, and stamped all the same:
+        // offline is a state that lasts, and asking again on every launch
+        // changes nothing about it.
         let latest = releases.latest().or(ledger.latest.clone());
-        let since = if latest == ledger.latest {
-            ledger.latest_since
-        } else {
-            now
-        };
-        // Stamped even when the question went unanswered: offline is a
-        // state that lasts, and asking again on every launch changes
-        // nothing about it.
-        amend_ledger(home, |stored| {
-            stored.checked_at = now;
-            stored.latest = latest.clone();
-            stored.latest_since = since;
-        });
-        ledger.checked_at = now;
-        ledger.latest = latest;
-        ledger.latest_since = since;
+        ledger = observe(home, latest, releases, now);
     }
-    let settled = now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs();
 
     let mut receipt = read_json::<Receipt>(&receipt_path(home))
         .filter(|receipt| this.is_some_and(|this| is_same_file(this, &receipt.binary)));
-    if let (Some(owned), Some(latest), Policy::Install) = (&mut receipt, &ledger.latest, policy)
-        && settled
-        && newer(latest, &owned.version)
+    if let (Some(owned), Some(target), Policy::Install) =
+        (&mut receipt, settled(&ledger, now), policy)
+        && newer(&target, &owned.version)
     {
-        match install_over(home, owned, latest, releases) {
-            Ok(()) => ledger.installed = Some(latest.clone()),
+        match install_over(home, owned, &target, releases) {
+            Ok(()) => ledger.installed = Some(target),
             Err(error) => tracing::warn!(%error, "the release could not be installed"),
         }
     }
@@ -375,6 +390,70 @@ fn pass(
         receipt.as_ref().map(|receipt| receipt.version.as_str()),
         &ledger,
     )
+}
+
+/// Records `latest` as the answer given at `now`, and returns the ledger
+/// as it then stands. A release's wait is counted from when it was
+/// published rather than from when this machine first heard of it, so a
+/// machine that was off does not start the day over; and the release a
+/// newer one replaces is remembered as settled when it had been the latest
+/// for [`SETTLE`] by the time its successor was published.
+///
+/// A release the host will not date is taken in all the same, as published
+/// when first answered: the wait it gets is never shorter than the real
+/// one, and a release replaced in a hurry is never judged settled on a
+/// guess. It is dated again at every check, and the release it replaced
+/// is judged then.
+fn observe(home: &UzeHome, latest: Option<String>, releases: &dyn Releases, now: u64) -> Ledger {
+    let stored = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
+    let to_date = latest
+        .as_ref()
+        .filter(|version| stored.latest.as_ref() != Some(*version) || !stored.latest_dated);
+    let age = to_date.map(|version| releases.age(version));
+    if let (Some(version), Some(None)) = (to_date, age) {
+        tracing::warn!(%version, "the release page did not say when this release was published");
+    }
+    let mut observed = None;
+    amend_ledger(home, |ledger| {
+        ledger.checked_at = now;
+        let (Some(version), Some(age)) = (latest, age) else {
+            observed = Some(ledger.clone());
+            return;
+        };
+        if ledger.latest.as_ref() != Some(&version) {
+            // An undated `since` is when this machine first heard, never
+            // before the real date: judging by it can only be stricter.
+            ledger.replaced = ledger.latest.take().map(|previous| Replaced {
+                version: previous,
+                since: ledger.latest_since,
+            });
+            ledger.latest = Some(version);
+            ledger.latest_since = now;
+            ledger.latest_dated = false;
+        }
+        if let Some(age) = age {
+            ledger.latest_since = now.saturating_sub(age);
+            ledger.latest_dated = true;
+            if let Some(previous) = ledger.replaced.take()
+                && ledger.latest_since.saturating_sub(previous.since) >= SETTLE.as_secs()
+            {
+                ledger.settled = Some(previous.version);
+            }
+        }
+        observed = Some(ledger.clone());
+    });
+    observed.unwrap_or_default()
+}
+
+/// The newest release the background pass may install at `now`: the
+/// latest once it has been out for [`SETTLE`], otherwise the last one that
+/// was.
+fn settled(ledger: &Ledger, now: u64) -> Option<String> {
+    if now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs() {
+        ledger.latest.clone()
+    } else {
+        ledger.settled.clone()
+    }
 }
 
 /// Replaces the installer's file with `latest` and moves the receipt and
@@ -513,13 +592,7 @@ fn upgrade_with(
     let latest = releases
         .latest()
         .ok_or_else(|| format!("cannot reach {RELEASES} to ask for the latest release"))?;
-    amend_ledger(home, |stored| {
-        if stored.latest.as_deref() != Some(latest.as_str()) {
-            stored.latest_since = now;
-        }
-        stored.checked_at = now;
-        stored.latest = Some(latest.clone());
-    });
+    observe(home, Some(latest.clone()), releases, now);
     let receipt = read_json::<Receipt>(&receipt_path(home));
     let Some(mut owned) = receipt
         .clone()
@@ -598,6 +671,24 @@ impl Releases for Published {
         tag_version(&String::from_utf8_lossy(&output.stdout))
     }
 
+    /// Read off the release's checksums, which are uploaded with the rest
+    /// of its assets: the host's `Date` less the file's `Last-Modified`,
+    /// from the same origin as everything else here and without the API's
+    /// rate limit.
+    fn age(&self, version: &str) -> Option<u64> {
+        let version = release_version(version)?;
+        let output = uze_platform::tools::curl()
+            .args(["-fsSL", "--max-time", "15", "-D", "-", "-o"])
+            .arg(uze_platform::fs::NULL_DEVICE)
+            .arg(format!("{}/download/v{version}/{SUMS}", self.base))
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        output.status.success().then_some(())?;
+        served_age(&String::from_utf8_lossy(&output.stdout))
+    }
+
     fn changelog(&self, version: &str) -> Option<String> {
         let version = release_version(version)?;
         let output = uze_platform::tools::curl()
@@ -632,6 +723,59 @@ impl Releases for Published {
         let _ = fs::remove_dir_all(&scratch);
         result
     }
+}
+
+/// How old the file at the end of a redirect chain is, from the headers
+/// `curl -D` wrote for every response in it: the last response's `Date`
+/// less its `Last-Modified`, both the host's clock.
+fn served_age(headers: &str) -> Option<u64> {
+    let (mut date, mut modified) = (None, None);
+    for line in headers.lines() {
+        if line.starts_with("HTTP/") {
+            (date, modified) = (None, None);
+        } else if let Some((name, value)) = line.split_once(':') {
+            match name.trim().to_ascii_lowercase().as_str() {
+                "date" => date = http_date(value),
+                "last-modified" => modified = http_date(value),
+                _ => {}
+            }
+        }
+    }
+    Some(date?.saturating_sub(modified?))
+}
+
+/// Seconds since the epoch of an HTTP date in the one form a server sends
+/// today, `Sun, 06 Nov 1994 08:49:37 GMT`.
+fn http_date(text: &str) -> Option<u64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let mut words = text.split_whitespace().skip(1);
+    let day: u64 = words.next()?.parse().ok()?;
+    let month = words.next()?;
+    let month = MONTHS.iter().position(|name| *name == month)? as u64 + 1;
+    let year: u64 = words.next()?.parse().ok()?;
+    let clock: Vec<u64> = words
+        .next()?
+        .split(':')
+        .map(|part| part.parse().ok())
+        .collect::<Option<_>>()?;
+    let [hours, minutes, seconds] = clock[..] else {
+        return None;
+    };
+    let in_range = (1970..=9999).contains(&year)
+        && (1..=31).contains(&day)
+        && hours < 24
+        && minutes < 60
+        && seconds <= 60;
+    (words.next()? == "GMT" && in_range).then_some(())?;
+    // Days from the civil date, March-based so the leap day ends the year.
+    let year = if month <= 2 { year - 1 } else { year };
+    let (era, of_era) = (year / 400, year % 400);
+    let of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
+    let days = (era * 146_097 + of_cycle).checked_sub(719_468)?;
+    Some(days * 86_400 + hours * 3_600 + minutes * 60 + seconds)
 }
 
 /// The checksums a release publishes, and the signature over them.
@@ -1098,6 +1242,11 @@ mod tests {
             Path::new("unused"),
         );
         assert!(refused.is_err());
+        let undated = Published {
+            base: RELEASES.to_owned(),
+        }
+        .age("1.0.0-../../escape");
+        assert_eq!(undated, None);
     }
 
     #[test]
@@ -1170,6 +1319,9 @@ mod tests {
             checked_at: 0,
             latest: latest.map(str::to_owned),
             latest_since: 0,
+            latest_dated: true,
+            replaced: None,
+            settled: None,
             installed: installed.map(str::to_owned),
             acknowledged: seen.map(str::to_owned),
             told: None,
@@ -1225,6 +1377,7 @@ mod tests {
 
     struct Fake {
         latest: Option<&'static str>,
+        age: Option<u64>,
         changelogs: RefCell<Vec<String>>,
         installs: RefCell<Vec<(String, PathBuf)>>,
         fails: bool,
@@ -1233,6 +1386,9 @@ mod tests {
     impl Releases for Fake {
         fn latest(&self) -> Option<String> {
             self.latest.map(str::to_owned)
+        }
+        fn age(&self, _: &str) -> Option<u64> {
+            self.age
         }
         fn changelog(&self, version: &str) -> Option<String> {
             self.changelogs.borrow_mut().push(version.to_owned());
@@ -1255,6 +1411,7 @@ mod tests {
     fn fake(latest: Option<&'static str>) -> Fake {
         Fake {
             latest,
+            age: Some(0),
             changelogs: RefCell::default(),
             installs: RefCell::default(),
             fails: false,
@@ -1357,7 +1514,11 @@ mod tests {
             "nor a day less a second later"
         );
 
-        let newer_still = fake(Some("999.0.1"));
+        // Published two seconds before the first had seen out its day.
+        let newer_still = Fake {
+            age: Some(2),
+            ..fake(Some("999.0.1"))
+        };
         pass(
             &home,
             Policy::Install,
@@ -1383,6 +1544,219 @@ mod tests {
             newer_still.installs.borrow().as_slice(),
             [("999.0.1".to_owned(), binary.clone())]
         );
+    }
+
+    const HOUR: u64 = 60 * 60;
+
+    /// One background pass at `now`, the host answering that `latest` was
+    /// published `age` seconds ago (or not saying): what it installed.
+    fn check(
+        home: &UzeHome,
+        binary: &Path,
+        latest: &'static str,
+        age: Option<u64>,
+        now: u64,
+    ) -> Vec<String> {
+        let releases = Fake {
+            age,
+            ..fake(Some(latest))
+        };
+        pass(home, Policy::Install, Some(binary), &releases, now, true);
+        let installs = releases.installs.borrow();
+        installs
+            .iter()
+            .map(|(version, _)| version.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_wait_counts_from_publication_not_from_first_sight() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+
+        assert_eq!(
+            check(&home, &binary, "999.0.0", Some(SETTLE.as_secs()), SETTLED),
+            ["999.0.0"],
+            "a machine that was off while the release settled does not wait another day"
+        );
+    }
+
+    /// The weekend of beta.16, .17 and .18: .17 was the latest for well
+    /// over a day, but this machine heard of it early in its wait and ran
+    /// nothing again until .18 was out.
+    #[test]
+    fn a_release_that_settled_before_it_was_replaced_is_still_installed() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let (seventeen, eighteen) = (10_000, 10_000 + 40 * HOUR);
+
+        let early = check(
+            &home,
+            &binary,
+            "999.0.17",
+            Some(2 * HOUR),
+            seventeen + 2 * HOUR,
+        );
+        assert!(early.is_empty(), "still within its wait");
+        assert_eq!(
+            check(&home, &binary, "999.0.18", Some(HOUR), eighteen + HOUR),
+            ["999.0.17"],
+            "while .18 settles, .17 is due"
+        );
+        assert_eq!(
+            check(
+                &home,
+                &binary,
+                "999.0.18",
+                None,
+                eighteen + SETTLE.as_secs()
+            ),
+            ["999.0.18"],
+            "and .18 once it has settled too"
+        );
+    }
+
+    #[test]
+    fn a_release_replaced_within_the_window_is_never_installed() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let (pulled, fixed) = (10_000, 10_000 + 2 * HOUR);
+
+        assert!(check(&home, &binary, "999.0.17", Some(HOUR), pulled + HOUR).is_empty());
+        assert!(check(&home, &binary, "999.0.18", Some(HOUR), fixed + HOUR).is_empty());
+        assert_eq!(
+            check(&home, &binary, "999.0.18", None, fixed + SETTLE.as_secs()),
+            ["999.0.18"]
+        );
+    }
+
+    #[test]
+    fn a_release_that_cannot_be_dated_is_dated_at_the_next_check() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let (seventeen, eighteen) = (10_000, 10_000 + 40 * HOUR);
+        check(
+            &home,
+            &binary,
+            "999.0.17",
+            Some(2 * HOUR),
+            seventeen + 2 * HOUR,
+        );
+
+        let undated = check(&home, &binary, "999.0.18", None, eighteen + HOUR);
+        assert!(
+            undated.is_empty(),
+            ".17 cannot be judged settled on a guess"
+        );
+        assert_eq!(
+            check(
+                &home,
+                &binary,
+                "999.0.18",
+                Some(2 * HOUR),
+                eighteen + 2 * HOUR
+            ),
+            ["999.0.17"],
+            "dated an hour later, .18 proves .17 was the latest for a day"
+        );
+    }
+
+    #[test]
+    fn a_pulled_release_is_not_installed_while_its_successor_is_undated() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let pulled = 10_000;
+        check(&home, &binary, "999.0.17", Some(HOUR), pulled + HOUR);
+        let undated = Fake {
+            age: None,
+            ..fake(Some("999.0.18"))
+        };
+
+        for (now, ask) in [(pulled + 30 * HOUR, true), (pulled + 30 * HOUR + 60, false)] {
+            pass(&home, Policy::Install, Some(&binary), &undated, now, ask);
+        }
+        assert!(
+            undated.installs.borrow().is_empty(),
+            ".17 has been out a day by its own date, but the host already answers .18"
+        );
+    }
+
+    #[test]
+    fn a_ledger_from_before_releases_were_dated_still_judges_its_release() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let seventeen_heard = 10_000;
+        let undated = Ledger {
+            latest_since: seventeen_heard,
+            latest_dated: false,
+            ..ledger(Some("999.0.17"), None, None)
+        };
+        write_json(&ledger_path(&home), &undated).unwrap();
+
+        let eighteen = seventeen_heard + 40 * HOUR;
+        assert_eq!(
+            check(&home, &binary, "999.0.18", Some(HOUR), eighteen + HOUR),
+            ["999.0.17"]
+        );
+    }
+
+    #[test]
+    fn a_release_that_is_never_dated_still_settles() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+
+        assert!(check(&home, &binary, "999.0.0", None, 10_000).is_empty());
+        assert_eq!(
+            check(&home, &binary, "999.0.0", None, SETTLED),
+            ["999.0.0"],
+            "a day after this machine first heard of it"
+        );
+    }
+
+    #[test]
+    fn a_release_is_aged_by_the_last_response_of_its_redirects() {
+        let headers = "HTTP/2 302\r\ndate: Wed, 21 Oct 2026 00:00:00 GMT\r\nlocation: https://x\r\n\r\n\
+                       HTTP/2 200\r\nLast-Modified: Tue, 20 Oct 2026 14:38:30 GMT\r\nDate: Wed, 21 Oct 2026 00:24:26 GMT\r\n\r\n";
+        assert_eq!(served_age(headers), Some(1_792_542_266 - 1_792_507_110));
+        assert_eq!(
+            served_age("HTTP/2 200\r\ndate: Wed, 21 Oct 2026 00:24:26 GMT\r\n"),
+            None,
+            "a file the host does not date has no age"
+        );
+        assert_eq!(
+            served_age(
+                "HTTP/2 302\r\nlast-modified: Tue, 20 Oct 2026 14:38:30 GMT\r\n\r\n\
+                 HTTP/2 200\r\ndate: Wed, 21 Oct 2026 00:24:26 GMT\r\n\r\n"
+            ),
+            None,
+            "a redirect's date is not the file's"
+        );
+    }
+
+    #[test]
+    fn an_http_date_is_read_in_the_form_hosts_send() {
+        assert_eq!(
+            http_date(" Wed, 21 Oct 2026 00:24:26 GMT"),
+            Some(1_792_542_266)
+        );
+        assert_eq!(
+            http_date("Tue, 29 Feb 2028 12:00:00 GMT"),
+            Some(1_835_438_400)
+        );
+        assert_eq!(http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        for malformed in [
+            "Wed, 21 Okt 2026 00:24:26 GMT",
+            "Wed, 21 Oct 2026 00:24 GMT",
+            "Wed, 21 Oct 2026 00:24:26 +0000",
+            "Wednesday, 21-Oct-26 00:24:26 GMT",
+            "Wed, 21 Oct 2026 24:00:00 GMT",
+            "Wed, 21 Oct 2026 00:60:00 GMT",
+            "Sun, 01 Jan 99999999999999999 00:00:00 GMT",
+            "Sun, 32 Jan 2026 00:00:00 GMT",
+            "",
+        ] {
+            assert_eq!(http_date(malformed), None, "{malformed:?}");
+        }
     }
 
     #[test]
