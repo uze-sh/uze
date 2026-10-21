@@ -458,17 +458,18 @@ fn a_second_name_waits_for_the_first_and_is_the_one_kept() {
         driven.frame();
     }
 
+    assert_eq!(
+        driven.attach.model.remembered.project_labels_queued,
+        [(root.clone(), "uze second".to_owned())],
+        "the second waits while the first is out"
+    );
     let channels = driven.attach.channels;
     let first = channels
         .project_label_writes
         .receiver
         .recv_timeout(Duration::from_secs(10))
         .expect("the first write answered");
-    assert_eq!(
-        application(&home).project_labels().all().unwrap().of(&root),
-        Some("uze first"),
-        "the second is not written while the first is out"
-    );
+    assert_eq!(first.label, "uze first");
     channels.project_label_writes.sender.send(first).unwrap();
     driven.pump();
     written_and_read_back(&mut driven);

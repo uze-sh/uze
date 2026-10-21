@@ -63,9 +63,10 @@ pub fn labels(home: &UzeHome) -> Result<ProjectLabels> {
 /// Names the project at `root` `label`, and answers the label in force
 /// afterwards. Only a name other than the directory's is kept: an empty
 /// one, or the directory's own, takes the label away, and taking away a
-/// label that is not there writes nothing. The label is written under the
-/// first key the file already spells the root with, and every other key
-/// naming it is taken away, so one root never holds two labels.
+/// label that is not there writes nothing. The label is written under one
+/// of the keys the file already spells the root with, the first in sorted
+/// order, and every other key naming it is taken away, so one root never
+/// holds two labels.
 pub fn set_label(home: &UzeHome, root: &Path, label: &str) -> Result<Option<String>> {
     let label = label.trim();
     let mut keys = labels(home)?.keys_of(root).into_iter();
@@ -215,6 +216,24 @@ mod tests {
 
         assert_eq!(labels(&home).unwrap().of(Path::new("/work/uze")), None);
         assert_eq!(fs::read_to_string(home.config_path()).unwrap(), "");
+    }
+
+    #[test]
+    fn naming_over_two_spellings_keeps_one_key() {
+        let home = home("labels-two-spellings-named");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[projects.'/work/uze']\nlabel = \"a\" # mine\n[projects.'/work/uze/']\nlabel = \"b\"\n",
+        )
+        .unwrap();
+
+        set_label(&home, Path::new("/work/uze"), "c").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(home.config_path()).unwrap(),
+            "[projects.'/work/uze']\nlabel = \"c\" # mine\n"
+        );
     }
 
     #[test]
