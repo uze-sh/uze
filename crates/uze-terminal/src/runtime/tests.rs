@@ -4885,16 +4885,25 @@ fn usage_requests_never_keep_the_persons_attach_out() {
     }
 
     assert_eq!(first_answer_to(&socket, &usage), "refused");
-    assert_eq!(
-        server.unattached.load(std::sync::atomic::Ordering::Acquire),
-        0,
-        "a request waiting on its sample holds no unattached place"
-    );
+    // Every place but one taken by connections that never say who they
+    // are: had the waiting requests kept theirs, the bound would be full.
+    let silent: Vec<super::Stream> = (0..super::MAX_UNATTACHED - 1)
+        .map(|_| super::transport::connect(&socket).unwrap())
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server.unattached.load(std::sync::atomic::Ordering::Acquire) < super::MAX_UNATTACHED - 1 {
+        assert!(
+            Instant::now() < deadline,
+            "the silent connections were never accepted"
+        );
+        thread::yield_now();
+    }
     assert_eq!(
         first_answer_to(&socket, &attach_with(super::server_key())),
         "attached"
     );
 
+    drop(silent);
     drop(sampling);
     for request in waiting {
         assert_eq!(request.join().unwrap(), "usage");
