@@ -125,34 +125,40 @@ impl Attach<'_> {
         );
     }
 
-    /// The inline rename buffer over a tab or a space label.
+    /// The inline rename buffer over a tab, a space label or a project.
     pub(super) fn rename_action(&mut self, action: Action) {
         match action {
-            Action::Activate => {
-                if let Some((target, buffer)) = self.model.renaming.take() {
-                    let trimmed = buffer.text().trim().to_owned();
-                    if let RenameTarget::Tab(tab) = target
-                        && !trimmed.is_empty()
-                    {
-                        self.label_agent_of(tab, &trimmed);
-                    }
-                    if !trimmed.is_empty() {
+            Action::Activate => match self.model.renaming.take() {
+                Some((RenameTarget::Project { root, .. }, buffer)) => {
+                    self.write_project_label(root, buffer.text().to_owned());
+                }
+                Some((RenameTarget::Tab(tab), buffer)) => {
+                    let label = buffer.text().trim();
+                    if !label.is_empty() {
+                        self.label_agent_of(tab, label);
                         let _ = send_request(
                             &mut self.stream,
-                            &match target {
-                                RenameTarget::Tab(tab) => ClientRequest::RenameTab {
-                                    tab,
-                                    label: trimmed,
-                                },
-                                RenameTarget::Space(space) => ClientRequest::RenameSpace {
-                                    space,
-                                    label: trimmed,
-                                },
+                            &ClientRequest::RenameTab {
+                                tab,
+                                label: label.to_owned(),
                             },
                         );
                     }
                 }
-            }
+                Some((RenameTarget::Space(space), buffer)) => {
+                    let label = buffer.text().trim();
+                    if !label.is_empty() {
+                        let _ = send_request(
+                            &mut self.stream,
+                            &ClientRequest::RenameSpace {
+                                space,
+                                label: label.to_owned(),
+                            },
+                        );
+                    }
+                }
+                None => {}
+            },
             Action::Dismiss => self.model.renaming = None,
             _ => {
                 if let Some((_, buffer)) = self.model.renaming.as_mut() {
@@ -318,7 +324,7 @@ impl Attach<'_> {
                 if let Some(menu) = self.model.context_menu.take()
                     && let Some(choice) = menu.submenu_choice()
                 {
-                    self.continue_in(menu.target, choice, false);
+                    self.choose(menu.target, choice);
                 }
             }
             (Action::Activate, None) => {

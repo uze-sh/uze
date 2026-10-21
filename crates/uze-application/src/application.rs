@@ -53,6 +53,7 @@ pub mod offers;
 mod overview;
 mod profile;
 mod project_environment;
+mod project_labels;
 mod read_models;
 mod requirements;
 mod retired_regions;

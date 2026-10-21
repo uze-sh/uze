@@ -705,6 +705,8 @@ pub(super) struct SidebarAgent<'a> {
     pub(super) in_active_space: bool,
     pub(super) status: AgentTabStatus,
     pub(super) renaming: Option<&'a RenameBuffer>,
+    /// The name being typed over the project the row names.
+    pub(super) renaming_project: Option<&'a RenameBuffer>,
     pub(super) drop_target: bool,
     pub(super) harness: Option<&'a str>,
     pub(super) tick: usize,
@@ -717,7 +719,7 @@ fn project_named_on_row(model: &WorkspaceModel, tab: &Tab) -> Option<String> {
     model
         .projects
         .get(&named_checkout(&tab.pane.cwd))
-        .map(|project| project_name(project))
+        .map(|project| model.project_named(project))
 }
 
 /// What only the tree's two-row item says about an agent: its task's mark
@@ -823,6 +825,11 @@ impl<'a> SidebarAgent<'a> {
             .as_ref()
             .filter(|(target, _)| *target == RenameTarget::Tab(tab.id))
             .map(|(_, buffer)| buffer);
+        let renaming_project = model
+            .renaming
+            .as_ref()
+            .filter(|(target, _)| target.is_project_of(tab.id))
+            .map(|(_, buffer)| buffer);
         // A tab-reorder drag in this exact space, resolved to drop right
         // before (or, on the last row, at the end after) this one.
         let drop_target = model.dragging_tab.is_some_and(|dragging| {
@@ -838,6 +845,7 @@ impl<'a> SidebarAgent<'a> {
             is_current,
             status: model.agent_tab_status(tab.pane.id, is_current),
             renaming,
+            renaming_project,
             drop_target,
             harness: agent_identity_for_tab(identities, tab),
             in_active_space: is_active_space,
@@ -890,6 +898,31 @@ pub(super) fn rename_spans(buffer: &RenameBuffer) -> Vec<Span<'static>> {
         Span::styled(before.to_owned(), style),
         Span::styled(theme::glyph(Symbol::CursorText), style),
         Span::styled(after.to_owned(), style),
+    ]
+}
+
+/// [`rename_spans`] fitted to `room` columns, the caret always among them:
+/// what does not fit is cut from the end of the text after the caret
+/// first, then from the head of the text before it, and each cut carries
+/// its mark, so a name with more on either side says so.
+pub(super) fn rename_spans_within(buffer: &RenameBuffer, room: usize) -> Vec<Span<'static>> {
+    let style = Style::default()
+        .fg(theme::color(Token::TextBright))
+        .add_modifier(Modifier::BOLD);
+    let caret = theme::glyph(Symbol::CursorText);
+    let room = room.saturating_sub(text::columns(&caret));
+    let (before, after) = buffer.split();
+    let mark = if after.is_empty() {
+        0
+    } else {
+        text::columns(&theme::glyph(Symbol::Ellipsis))
+    };
+    let before = text::elide_head(before, room.saturating_sub(mark));
+    let after = text::elide(after, room.saturating_sub(text::columns(&before)));
+    vec![
+        Span::styled(before, style),
+        Span::styled(caret, style),
+        Span::styled(after, style),
     ]
 }
 
@@ -1129,7 +1162,14 @@ pub(super) fn draw_tree(
             // column every caption in the sidebar ends in, and is the only
             // part lit with the row; the project, when the row names one,
             // leads in the column's quiet hue.
-            if caption.harness {
+            let mut project_rect = None;
+            if let Some(buffer) = agent.renaming_project {
+                // The harness yields its column to the name being typed.
+                let taken: u16 =
+                    spans.iter().map(|span| span.width() as u16).sum::<u16>() + TRAILING_PAD;
+                let room = detail_rect.width.saturating_sub(taken);
+                spans.extend(rename_spans_within(buffer, room as usize));
+            } else if caption.harness {
                 let harness = if caption.show_harness {
                     text::columns(&caption.detail) as u16 + 1
                 } else {
@@ -1140,10 +1180,15 @@ pub(super) fn draw_tree(
                         + harness
                         + TRAILING_PAD;
                     let room = detail_rect.width.saturating_sub(taken).max(1);
-                    spans.push(Span::styled(
-                        text::elide(project, room as usize),
-                        theme::fg(Token::TextDim),
+                    let lead: u16 = spans.iter().map(|span| span.width() as u16).sum();
+                    let shown = text::elide(project, room as usize);
+                    project_rect = Some(Rect::new(
+                        detail_rect.x + lead,
+                        detail_rect.y,
+                        text::columns(&shown) as u16,
+                        1,
                     ));
+                    spans.push(Span::styled(shown, theme::fg(Token::TextDim)));
                 }
                 if caption.show_harness {
                     row::push_trailing(
@@ -1193,6 +1238,11 @@ pub(super) fn draw_tree(
             // item — clicking the caption line must select the tab too, not
             // just the label text above it.
             hits.push((detail_rect, WorkspaceHit::SelectTab(tab.id)));
+            // After the row's own hit, so every gesture finds the row
+            // first: only a double click asks for this one.
+            if let Some(project_rect) = project_rect {
+                hits.push((project_rect, WorkspaceHit::ProjectName(tab.id)));
+            }
         }
     }
 }

@@ -313,7 +313,7 @@ impl Attach<'_> {
                     Some(WorkspaceHit::ContextSubmenuAction(index)) => {
                         menu.submenu = Some(index);
                         if let Some(choice) = menu.submenu_choice() {
-                            self.continue_in(menu.target, choice, false);
+                            self.choose(menu.target, choice);
                         }
                     }
                     _ => {}
@@ -419,7 +419,8 @@ impl Attach<'_> {
                 // "did it take my click".
                 self.model.pressed = Some((hit, now));
                 self.model.dirty = true;
-                if is_double_click && self.double_click(hit) {
+                if is_double_click && self.double_click(hit, Position::new(mouse.column, mouse.row))
+                {
                     self.model.last_click = None;
                     return Flow::Continue;
                 }
@@ -1201,11 +1202,15 @@ impl Attach<'_> {
     /// whether it meant anything of its own. Where it does not, it is a
     /// click like the first: swallowing it made a switch pressed twice in
     /// quick succession answer once, which reads as a lost click.
-    pub(super) fn double_click(&mut self, hit: WorkspaceHit) -> bool {
+    pub(super) fn double_click(&mut self, hit: WorkspaceHit, at: Position) -> bool {
         match hit {
             // The two that make something: a double click out of habit
             // is one new shell or one new space, not two.
             WorkspaceHit::NewTab | WorkspaceHit::NewSpace => {}
+            WorkspaceHit::SelectTab(tab) if self.model.on_project_name(tab, at) => {
+                begin_project_rename(&mut self.model, tab);
+                self.model.dirty = true;
+            }
             WorkspaceHit::SelectTab(tab) => {
                 begin_rename(&mut self.model, MenuTarget::Tab(tab));
                 self.model.dirty = true;
@@ -1292,7 +1297,7 @@ impl Attach<'_> {
             // Only reachable while the index is open, which the guarded
             // arm in `press` answers first.
             WorkspaceHit::ActionIndexEntry(_) | WorkspaceHit::ReleaseNotesBody => {}
-            WorkspaceHit::SelectTab(tab) => {
+            WorkspaceHit::SelectTab(tab) | WorkspaceHit::ProjectName(tab) => {
                 // Choosing a tab is choosing to see it, the one already in
                 // front included: that is how the pane is had back from a
                 // surface or the overview standing in it.

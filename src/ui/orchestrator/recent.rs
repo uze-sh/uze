@@ -249,12 +249,12 @@ impl RecentRow {
     }
 
     /// Whether `needle`, already lowercased, is in anything the row says:
-    /// its name, its branch, its project or its state.
-    fn matches(&self, needle: &str) -> bool {
+    /// its name, its branch, its project, `project` naming it, or its state.
+    fn matches(&self, needle: &str, project: String) -> bool {
         [
             Some(self.name.clone()),
             self.branch.clone(),
-            Some(project_name(&self.project)),
+            Some(project),
             Some(self.reason.words()),
         ]
         .into_iter()
@@ -406,7 +406,7 @@ pub(super) fn recent_rows(model: &WorkspaceModel) -> Vec<RecentRow> {
     every_recent_row(model)
         .into_iter()
         .filter(|row| recent.show_all || row.named)
-        .filter(|row| needle.is_empty() || row.matches(&needle))
+        .filter(|row| needle.is_empty() || row.matches(&needle, model.project_named(&row.project)))
         .collect()
 }
 
@@ -500,12 +500,20 @@ pub(super) fn space_resumed_in(model: &WorkspaceModel, project: &Path) -> Option
         .map(|space| space.label.clone())
 }
 
-/// A project's name as a row says it: the directory's own name.
-pub(super) fn project_name(project: &Path) -> String {
-    project.file_name().map_or_else(
-        || project.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
+impl WorkspaceModel {
+    /// A project's name as every surface says it: the operator's label for
+    /// its root, else its directory's own name.
+    pub(super) fn project_named(&self, project: &Path) -> String {
+        let root = self
+            .remembered
+            .project_roots
+            .get(project)
+            .map_or(project, PathBuf::as_path);
+        match self.remembered.project_labels.of(root) {
+            Some(label) => label.to_owned(),
+            None => uze_application::directory_name(project),
+        }
+    }
 }
 
 /// What reading the checkouts of `project` answered; `None` outside a

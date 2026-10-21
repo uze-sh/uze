@@ -303,8 +303,16 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
     menu: &ContextMenu,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let labels: Vec<&str> = menu.labels.iter().map(String::as_str).collect();
-    let rows = widget::menu::render(frame, area, menu.anchor, &labels, menu.selected);
+    let entries: Vec<widget::menu::Entry<'_>> = menu
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| widget::menu::Entry {
+            label,
+            opens: menu.group(index).is_some(),
+        })
+        .collect();
+    let rows = widget::menu::render(frame, area, menu.anchor, &entries, menu.selected);
     // The open group, beside the row that opened it: anchored one row up
     // so its first entry sits level with that row.
     let opened = rows.get(menu.selected).copied();
@@ -315,7 +323,11 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
         (opened, menu.submenu_labels(), menu.submenu)
     {
         let anchor = Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1);
-        let rows = widget::menu::render(frame, area, anchor, &labels, highlighted);
+        let entries: Vec<widget::menu::Entry<'_>> = labels
+            .into_iter()
+            .map(widget::menu::Entry::action)
+            .collect();
+        let rows = widget::menu::render(frame, area, anchor, &entries, highlighted);
         for (index, row) in rows.into_iter().enumerate() {
             hits.push((row, WorkspaceHit::ContextSubmenuAction(index)));
         }

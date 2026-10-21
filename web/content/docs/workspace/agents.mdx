@@ -74,11 +74,30 @@ edit to `agents.yaml` reaches the next agent you launch.
 The agents themselves carry the part no harness does for them with the
 `uze:worktree` skill.
 
+## Naming a project
+
+Each agent's row names the project it works in, by its directory. To call a
+project something else, double-click that name, or right-click the agent and
+pick **Rename** › **Project**, then type the new name and press `Enter`. Every
+agent of the project reads it, in their own checkouts too. **Rename** ›
+**Agent** renames the agent itself.
+
+The name stays on this machine, in `~/.uze/config.toml`, and never reaches
+the project:
+
+```toml
+[projects."/home/you/work/app"]
+label = "billing api"
+```
+
+Leave the name empty, or give it the directory's own, and the directory's
+name is back.
+
 ## Continuing in another harness
 
 When a harness stops being able to work, for example because it hit its
 usage limit, right-click the agent (or press `Alt+.`) and pick
-**Continue in…** → **Codex**, or any other harness set up on this machine. The same agent carries on in the
+**Continue in** › **Codex**, or any other harness set up on this machine. The same agent carries on in the
 same directory, on the same branch, under the same name. If the agent is in
 the middle of a turn, uze asks before interrupting it.
 

@@ -144,6 +144,13 @@ impl WorkspaceModel {
         })
     }
 
+    /// The project the agent in `tab` works in, as the session last
+    /// placed it.
+    pub(super) fn project_of_tab(&self, tab: TabId) -> Option<PathBuf> {
+        let tab = self.tab(tab)?;
+        self.projects.get(&named_checkout(&tab.pane.cwd)).cloned()
+    }
+
     /// The project the agent in `pane` works in, as the session last
     /// placed it.
     pub(super) fn project_of_pane(&self, pane: PaneId) -> Option<PathBuf> {
@@ -379,7 +386,7 @@ pub(in crate::ui) enum StatusAnswer {
 /// is its own. A directory that is gone — a checkout removed from under
 /// its agent — is read by its spelling alone, since walking up from it
 /// would answer whatever happens to sit above.
-fn project_of_directory(directory: &Path) -> PathBuf {
+pub(super) fn project_of_directory(directory: &Path) -> PathBuf {
     if !directory.exists() {
         return uze_application::slot_key(directory);
     }

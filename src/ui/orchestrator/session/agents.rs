@@ -317,6 +317,15 @@ impl Attach<'_> {
         // person reaches for when this harness stopped working.
         ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
             .offering_switches(1, self.switch_choices(tab))
+            .offering_project_rename(self.renames_project(tab))
+    }
+
+    /// Whether `tab`'s rename offers the project too: an agent's tab whose
+    /// project is known. A shell names no project.
+    fn renames_project(&self, tab: TabId) -> bool {
+        self.space_and_tab(tab)
+            .is_some_and(|(_, found)| launched_agent_id(found).is_some())
+            && self.model.project_of_tab(tab).is_some()
     }
 
     /// The harnesses `tab`'s agent could continue in: every one set up for
@@ -342,6 +351,22 @@ impl Attach<'_> {
                 continuity_gap: identity.continuity_gap.clone(),
             })
             .collect()
+    }
+
+    /// What a choice made in an open submenu does.
+    pub(in crate::ui::orchestrator) fn choose(
+        &mut self,
+        target: MenuTarget,
+        choice: SubmenuChoice,
+    ) {
+        match (choice, target) {
+            (SubmenuChoice::Harness(harness), _) => self.continue_in(target, harness, false),
+            (SubmenuChoice::RenameAgent, _) => begin_rename(&mut self.model, target),
+            (SubmenuChoice::RenameProject, MenuTarget::Tab(tab)) => {
+                begin_project_rename(&mut self.model, tab);
+            }
+            (SubmenuChoice::RenameProject, _) => {}
+        }
     }
 
     /// Relaunches `target`'s agent on `choice`'s harness, in the place it

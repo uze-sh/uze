@@ -286,6 +286,10 @@ vocabulary! {
         ChevronExpanded = "chevron.expanded",
         /// Opens a field's list of choices.
         Dropdown = "dropdown",
+        /// A menu entry that opens a further menu beside it, rather than
+        /// acting. Not `chevron.right`, which points at the item under
+        /// discussion.
+        Submenu = "submenu",
         /// The prompt caret before an input.
         Prompt = "prompt",
         /// Opens a menu.

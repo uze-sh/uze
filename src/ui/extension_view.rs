@@ -314,7 +314,11 @@ pub(crate) fn render_row_menu(
     // Under the name rather than at the row's edge, where the accent bar
     // and the indent are: the menu belongs to the file, not to the column.
     let anchor = at.unwrap_or(Rect::new(row.x.saturating_add(2), row.y, 1, 1));
-    let entries: Vec<&str> = menu.entries.iter().map(String::as_str).collect();
+    let entries: Vec<widget::menu::Entry<'_>> = menu
+        .entries
+        .iter()
+        .map(|entry| widget::menu::Entry::action(entry))
+        .collect();
     let rows = widget::menu::render(frame, area, anchor, &entries, menu.highlighted);
     for (index, rect) in rows.into_iter().enumerate().rev() {
         hits.insert(0, (rect, ViewHit::MenuEntry(index)));

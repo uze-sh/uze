@@ -633,6 +633,20 @@ pub(super) fn begin_rename(model: &mut WorkspaceModel, target: MenuTarget) {
     model.renaming = Some((rename_target, RenameBuffer::new(label)));
 }
 
+/// Opens the inline editor over the project the agent in `tab` works in,
+/// seeded with the name its row shows. Nothing while that project is not
+/// yet known.
+pub(super) fn begin_project_rename(model: &mut WorkspaceModel, tab: TabId) {
+    let Some(project) = model.project_of_tab(tab) else {
+        return;
+    };
+    let label = model.project_named(&project);
+    model.renaming = Some((
+        RenameTarget::Project { tab, root: project },
+        RenameBuffer::new(label),
+    ));
+}
+
 /// Delivers the selected tab's task, the way the project's completion says.
 /// Nothing to deliver is said, never silently ignored.
 pub(super) fn deliver_selected_tab(

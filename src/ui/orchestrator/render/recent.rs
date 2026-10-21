@@ -395,8 +395,8 @@ fn row_lines(
             // workspace of groups, the one fact the operator cannot read
             // off the project's name.
             let project = match space_resumed_in(model, &row.project).filter(|_| !gone) {
-                Some(space) => format!("{} · {space}", project_name(&row.project)),
-                None => project_name(&row.project),
+                Some(space) => format!("{} · {space}", model.project_named(&row.project)),
+                None => model.project_named(&row.project),
             };
             row::push_trailing(&mut reason, width, project, theme::color(Token::TextMuted));
         }

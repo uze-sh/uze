@@ -2,15 +2,30 @@
 
 use super::*;
 
-/// What [`WorkspaceModel::renaming`] is currently editing — a tab or a
-/// space header both use the exact same inline-edit interaction (double-
-/// click to enter, Enter/Esc/typing and the caret keys to edit, click-away to
-/// discard), so one buffer serves both; this just says which request to
-/// send on commit.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// What [`WorkspaceModel::renaming`] is currently editing — a tab, a
+/// space header and the project an agent's row names all use the exact
+/// same inline-edit interaction (double-click to enter, Enter/Esc/typing
+/// and the caret keys to edit, click-away to discard), so one buffer serves
+/// them all; this just says which request to send on commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum RenameTarget {
     Tab(TabId),
     Space(SpaceId),
+    /// The project of the agent in `tab`, edited on that row alone, and
+    /// the root it resolved to when the edit began: the name lands there
+    /// even if the agent's directory is placed again before it is
+    /// confirmed.
+    Project {
+        tab: TabId,
+        root: PathBuf,
+    },
+}
+
+impl RenameTarget {
+    /// Whether this edit is drawn over the project on `tab`'s row.
+    pub(super) fn is_project_of(&self, tab: TabId) -> bool {
+        matches!(self, Self::Project { tab: editing, .. } if *editing == tab)
+    }
 }
 
 /// The label being typed over a tab or a space, and where in it typing

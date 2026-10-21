@@ -63,6 +63,17 @@ impl UzeApplication {
     }
 }
 
+/// The names the operator gives projects.
+pub struct ProjectLabels<'a>(pub(super) &'a UzeApplication);
+
+impl UzeApplication {
+    /// The operator's own name for each project, in place of its
+    /// directory's. Kept on this machine, never in the project.
+    pub fn project_labels(&self) -> ProjectLabels<'_> {
+        ProjectLabels(self)
+    }
+}
+
 /// Which of the workspace's built-in extensions are switched on.
 pub struct Extensions<'a>(pub(super) &'a UzeApplication);
 
