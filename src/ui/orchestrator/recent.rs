@@ -565,21 +565,7 @@ pub(super) fn describe_join(resolution: &JoinResolution) -> (ToastKind, String, 
     }
 }
 
-/// `812 KB`, `1.4 GB`: the unit that keeps the number short.
-pub(super) fn bytes_to_say(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 || value >= 100.0 {
-        format!("{value:.0} {}", UNITS[unit])
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
+pub(super) use crate::size::bytes_to_say;
 
 /// `4m`, `3h`, `2d`, `5w`: how long ago a row last changed.
 pub(super) fn age_to_say(changed: Option<SystemTime>) -> String {

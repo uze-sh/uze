@@ -2,6 +2,7 @@
 //! workspace runs and the disk uze holds.
 
 use crate::*;
+use uze::size::bytes_to_say;
 
 /// What uze uses on this machine. The server samples
 /// its processes while the disk is walked, so the second the sample takes
@@ -298,23 +299,6 @@ fn uptime_to_say(started: u64) -> String {
         .map(|seconds| format!(" · since {:02}:{:02}", seconds / 3600, seconds % 3600 / 60))
         .unwrap_or_default();
     format!("up {long}{since}")
-}
-
-/// `812 KB`, `1.4 GB`: the unit that keeps the number short, as the
-/// workspace's own surfaces say a size.
-fn bytes_to_say(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 || value >= 100.0 {
-        format!("{value:.0} {}", UNITS[unit])
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
 }
 
 #[cfg(test)]
