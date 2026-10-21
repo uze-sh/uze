@@ -637,12 +637,12 @@ impl Attach<'_> {
                 Ok(()) => self.ask_project_labels(),
                 Err(reason) => {
                     let project = self.model.project_named(&resolution.root);
-                    self.model.raise_toast(
-                        ToastKind::Warned,
-                        "project not renamed",
-                        format!("{project} as {}: {reason}", resolution.label.trim()),
-                        None,
-                    );
+                    let detail = match resolution.label.trim() {
+                        "" => format!("{project}: {reason}"),
+                        label => format!("{project} as {label}: {reason}"),
+                    };
+                    self.model
+                        .raise_toast(ToastKind::Warned, "project not renamed", detail, None);
                 }
             }
             if let Some((root, label)) = self.model.remembered.project_labels_queued.pop_front() {

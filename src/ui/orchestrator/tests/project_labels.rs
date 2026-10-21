@@ -627,3 +627,25 @@ fn a_long_name_cut_on_both_sides_of_the_caret_marks_both_cuts() {
         "the text after the caret says it goes on: {row:?}"
     );
 }
+
+#[test]
+fn a_clear_that_cannot_be_kept_says_so_without_an_empty_name() {
+    let (home, model, _, root) = agent_in_a_project("labels-clear-unwritable");
+    let mut driven = driven(model, &home);
+    driven
+        .attach
+        .channels
+        .project_label_writes
+        .sender
+        .send(ProjectLabelResolution {
+            root,
+            label: "  ".to_owned(),
+            outcome: Err("config.toml does not parse".to_owned()),
+        })
+        .unwrap();
+    driven.pump();
+
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(said.contains("uze: config.toml does not parse"), "{said}");
+    assert!(!said.contains(" as "), "{said}");
+}
