@@ -53,10 +53,10 @@ the pane runtimes are copied.
 - A process alive at the first reading that ends inside the window
   lands its whole lifetime in the parent that waited for it; what it had
   spent by the first reading is taken back off that parent.
-- A process only in the second reading counts in full when its start
-  stamp is newer than every stamp of the first reading, which is how a
-  process started inside the window looks; otherwise it was missed, and
-  is left out rather than counted as a lifetime in one second.
+- A process only in the second reading counts in full when it started
+  after the first was taken (a sample keeps that instant in start-stamp
+  units); otherwise it was missed, and is left out rather than counted as
+  a lifetime in one second.
 - Windows: the job's `JobObjectBasicAccountingInformation` totals count
   every process the job ever held, so a pane's CPU is their delta.
 - A request arriving while another samples waits for it, and one within
@@ -69,6 +69,11 @@ the pane runtimes are copied.
   stands in: the report is the same wherever it is asked from.
 
 The share is of the whole machine (cores × window), 0 to 100%.
+
+All of this is `uze_platform::usage::Sample`: a set of processes at one
+instant, which says what it spent since an earlier sample by the
+platform's own account. The runtime only decides which set each pane's
+processes are and adds the results.
 
 ### D3. A pane may read usage; the answer names nothing
 
