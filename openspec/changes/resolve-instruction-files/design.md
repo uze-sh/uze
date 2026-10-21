@@ -17,7 +17,10 @@ everything only it used (bridge plan/reconcile, `BridgePlan`,
 `BridgeStatus`, `ContextMechanism::Bridge`, `ResourceDelivery::Bridged`,
 `HarnessContextDelivery` `BRIDGE`/`PROJECTED`) are deleted.
 
-Shadowing is judged at the project root. A file does not shadow when it is
+Shadowing is judged on every directory from the launch directory up to
+the root: Claude 2.1.305 turns its `AGENTS.md` fallback off for the whole
+walk when any of them holds a `CLAUDE.md` (measured with `web/CLAUDE.md`).
+A file does not shadow when it is
 empty, imports `@AGENTS.md` or `@./AGENTS.md`, resolves (symlink) to the
 project's own `AGENTS.md`, or holds only an earlier build's
 `instruction-bridge` region. The shim drops the `@AGENTS.md` projection and
@@ -58,7 +61,7 @@ no runtime import; `CLAUDE.local.md` shadowing; and a launch inside a slot
 
 ## Risks / Trade-offs
 
-- [Shadowing judged at the root only] → a `CLAUDE.md` above the root or a
+- [Shadowing judged on the walk only] → a `CLAUDE.md` above the root or a
   user `instructionFiles: "claude-md"` also disables the reader and UZE
   cannot see either; stated in the Claude README, as in #154. Probe 1.1
   covers the nested-slot case.

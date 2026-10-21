@@ -29,9 +29,9 @@ never bridged.
 
 ### Requirement: A file the harness prefers is reported as shadowing the context
 The system SHALL report the project context as shadowed for a harness when
-a file that harness reads in place of `AGENTS.md` sits at the project root
-with content of its own and no import of `AGENTS.md`, naming that file. A
-shadowed context SHALL be a portability gap in `uze status`, `uze doctor`,
+a file that harness reads in place of `AGENTS.md` sits in any directory
+from the launch directory up to the root with no import of `AGENTS.md`,
+naming that file. A shadowed context SHALL be a portability gap in `uze status`, `uze doctor`,
 the workspace and `uze agent context inspect`, SHALL point the person at
 `/uze:init`, and SHALL never cause UZE to write into the shadowing file.
 
@@ -39,6 +39,10 @@ the workspace and `uze agent context inspect`, SHALL point the person at
 - **WHEN** the project root holds a `CLAUDE.md` with content and no import of `AGENTS.md`
 - **THEN** Claude's context is reported as read from `CLAUDE.md` instead, with `/uze:init` as the remedy
 - **AND** the file is left untouched
+
+#### Scenario: A CLAUDE.md in a subdirectory on the walk
+- **WHEN** Claude Code is launched in `web/` and `web/CLAUDE.md` does not import `AGENTS.md`
+- **THEN** Claude's context is reported as shadowed by `web/CLAUDE.md`, the root `AGENTS.md` included
 
 ### Requirement: A preferred file that adds nothing of its own does not shadow
 An empty file, a file importing `AGENTS.md` (`@AGENTS.md` or
