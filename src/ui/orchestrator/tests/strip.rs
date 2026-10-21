@@ -911,3 +911,36 @@ fn a_shell_whose_program_ended_in_view_leaves_no_check() {
         theme::glyph(Symbol::StatusSelected)
     );
 }
+
+/// An agent's own tab is never a shell that finished, whether its harness
+/// exited to the prompt or a command ran in the shell that replaced it:
+/// the sidebar's check is for an agent's turn, and nothing else.
+#[test]
+fn an_agents_own_tab_never_takes_a_shells_check() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, second);
+    let pane = model.pane_for_tab(first).unwrap();
+
+    shell_runs(&mut model, "Agent one", "zsh");
+    assert!(
+        !model.shell_finished_out_of_sight(pane),
+        "the harness exited"
+    );
+
+    let session = model.session.as_mut().unwrap();
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == first)
+        .unwrap();
+    tab.env.push((
+        uze_terminal::launch::AGENT_IDENTITY_VARIABLE.into(),
+        "a".into(),
+    ));
+    shell_runs(&mut model, "Agent one", "cargo");
+    shell_runs(&mut model, "Agent one", "zsh");
+    assert!(
+        !model.shell_finished_out_of_sight(pane),
+        "a command in a launched agent's tab"
+    );
+}

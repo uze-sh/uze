@@ -279,9 +279,7 @@ impl WorkspaceModel {
             .spaces
             .iter()
             .flat_map(|space| space.tabs.iter())
-            .filter(|tab| {
-                !tab.pane.runs_a_shell() && agent_identity_for_tab(identities, tab).is_none()
-            })
+            .filter(|tab| !tab.pane.runs_a_shell() && !is_agent_tab(identities, tab))
             .map(|tab| tab.pane.id)
             .collect();
         let finished = next
