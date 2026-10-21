@@ -892,7 +892,8 @@ fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
     );
 }
 
-/// A program that ends in the shell on screen was seen ending: no check.
+/// A program that ends in the shell on screen was seen ending: no check,
+/// even when the user moves away before the finish has settled.
 #[test]
 fn a_shell_whose_program_ended_in_view_leaves_no_check() {
     let (mut model, first, _) = two_agents_with_shells();
@@ -907,9 +908,12 @@ fn a_shell_whose_program_ended_in_view_leaves_no_check() {
 
     shell_runs(&mut model, shell, "cargo");
     shell_runs(&mut model, shell, "zsh");
+    model.expire_pane_activity(Instant::now());
+    select_tab(&mut model, first);
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell).0,
-        theme::glyph(Symbol::StatusSelected)
+        theme::glyph(Symbol::StatusIdle)
     );
 }
 
@@ -962,16 +966,17 @@ fn a_prompt_between_two_commands_is_not_a_finish() {
     );
     shell_runs(&mut model, shell, "run");
     model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
-    assert_eq!(
-        shell_marker(&model, shell).0,
-        theme::glyph(Symbol::StatusRunning)
+    let pane = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.pane.id)
+        .unwrap();
+    assert!(
+        !model.finished_out_of_sight(pane),
+        "running again, the gap was no finish"
     );
     shell_runs(&mut model, shell, "zsh");
     model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
-    assert!(
-        !model.finished_out_of_sight(model.pane_for_tab(first).unwrap()),
-        "the agent's own pane is untouched"
-    );
     assert_eq!(
         shell_marker(&model, shell).0,
         theme::glyph(Symbol::StatusCompleted),

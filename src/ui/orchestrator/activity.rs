@@ -167,16 +167,18 @@ impl WorkspaceModel {
             }
         }
         // A shell that finished out of sight is what the user would
-        // otherwise miss; one that finished on screen was seen finishing.
+        // otherwise miss; one on screen at any moment of its settling was
+        // seen finishing, wherever the user is once it has settled.
         let mut settled = false;
         let completed = &mut self.remembered.completed_panes;
         self.settling_shells.retain(|pane, since| {
+            if *pane == focused {
+                return false;
+            }
             if now.duration_since(*since) < SHELL_SETTLE {
                 return true;
             }
-            if *pane != focused {
-                completed.insert(*pane);
-            }
+            completed.insert(*pane);
             settled = true;
             false
         });
@@ -296,6 +298,7 @@ impl WorkspaceModel {
         let Some(previous) = self.session.as_ref() else {
             return;
         };
+        let focused = next.selected_tab().pane.id;
         let was_running: BTreeSet<PaneId> = previous
             .workspace
             .spaces
@@ -312,7 +315,7 @@ impl WorkspaceModel {
         {
             if !tab.pane.runs_a_shell() {
                 self.settling_shells.remove(&tab.pane.id);
-            } else if was_running.contains(&tab.pane.id) {
+            } else if was_running.contains(&tab.pane.id) && tab.pane.id != focused {
                 self.settling_shells.insert(tab.pane.id, now);
             }
         }
