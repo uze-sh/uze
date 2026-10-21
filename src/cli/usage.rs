@@ -357,10 +357,17 @@ mod usage_tests {
         );
 
         let text = progress::unpainted(&render_usage(&output));
+        let json = serde_json::to_value(&output).unwrap();
 
         assert!(text.contains("4 cores"), "{text}");
         assert!(text.contains("16.0 GB"), "{text}");
-        assert!(text.contains("up 3h 12m"), "{text}");
+        assert!(text.contains("up 3h 12m · since "), "{text}");
+        assert_eq!(json["workspace"]["state"], "running");
+        assert_eq!(json["processes"]["agents"]["cpu_share"], 0.5);
+        assert_eq!(json["processes"]["agents"]["cpu_seconds_per_second"], 2.0);
+        assert_eq!(json["processes"]["agents"]["count"], 3);
+        assert!(json["processes"]["server"].get("count").is_none(), "{json}");
+        assert_eq!(json["processes"]["total"]["processes"], 53);
         let agents = text
             .lines()
             .find(|line| line.contains("agents (3)"))
