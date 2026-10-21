@@ -1245,3 +1245,34 @@ fn the_search_finds_a_project_by_its_label() {
 
     assert_eq!(names(&driven.attach.model), ["lexer"]);
 }
+
+/// The selected row names its project by the label kept under the root
+/// the sweep resolved, though the work recorded a directory below it.
+#[test]
+fn the_selected_row_names_its_project_by_the_label_of_its_root() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-recent-label-row"));
+    let below_the_root = format!("{OTHER}/crates/core");
+    let work = preserved(&below_the_root, "t1", "elsewhere", WorkStateView::Shelved);
+    let mut driven = driven(showing(Vec::new(), Vec::new()), &home);
+    let application = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let labels = application.project_labels();
+    labels.set(Path::new(OTHER), "compiler core").unwrap();
+    driven.attach.model.remembered.project_labels = labels.all().unwrap();
+
+    driven
+        .attach
+        .channels
+        .preserved
+        .sender
+        .send(PreservedResolution {
+            work: vec![work],
+            roots: vec![(PathBuf::from(&below_the_root), PathBuf::from(OTHER))],
+        })
+        .unwrap();
+    driven.pump();
+    driven.attach.model.recent.selected = Some("t1".to_owned());
+
+    let lines = drawn(&driven.attach.model);
+    let row = &lines[row_of(&lines, "elsewhere") + 1];
+    assert!(row.contains("compiler core · "), "{row}");
+}

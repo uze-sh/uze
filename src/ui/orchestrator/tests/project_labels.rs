@@ -19,6 +19,11 @@ fn agent_in_a_project(label: &str) -> (UzeHome, WorkspaceModel, TabId, PathBuf) 
     let root = model
         .project_of_tab(tab)
         .expect("the agent's project is known");
+    assert_eq!(
+        root,
+        project.canonicalize().unwrap(),
+        "a directory outside Git is its own project"
+    );
     (home, model, tab, root)
 }
 
@@ -117,7 +122,7 @@ fn written_and_read_back(driven: &mut Driven<'_>) {
 #[test]
 fn a_row_names_its_project_by_its_label() {
     let (home, mut model, _, root) = agent_in_a_project("labels-row");
-    assert!(screen(&mut model).contains("uze"));
+    assert_eq!(model.project_named(&root), "uze");
 
     labelled(&home, &mut model, &root, "uze core");
 
@@ -403,7 +408,13 @@ fn names_that_cannot_be_read_are_said_once_and_rows_keep_their_directories() {
         .recv_timeout(Duration::from_secs(10))
         .expect("the read answered");
     assert!(read.labels.is_err());
+    let again = ProjectLabelsRead {
+        asked: read.asked,
+        labels: Err("still unreadable".to_owned()),
+    };
     channels.project_labels.sender.send(read).unwrap();
+    driven.pump();
+    channels.project_labels.sender.send(again).unwrap();
     driven.pump();
 
     let said = format!("{:?}", driven.attach.model.toast_stack());
@@ -488,4 +499,94 @@ fn the_caret_stays_on_screen_over_a_long_name() {
 
     let (_, edited) = row.split_once("is wide").unwrap();
     assert!(edited.contains(&caret), "{row:?}");
+}
+
+#[test]
+fn agents_in_checkouts_of_one_project_share_its_label() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("labels-checkouts-home"));
+    let primary = uze_testkit::temp::scratch("labels-checkouts").join("uze");
+    let checkout = primary.join(".worktrees").join("a2");
+    std::fs::create_dir_all(&checkout).unwrap();
+    let mut model = two_agent_session(primary.to_str().unwrap(), checkout.to_str().unwrap());
+    model.note_space_projects(&identities_fixture());
+    let root = model.project_of_tab(TabId(1)).unwrap();
+    assert_eq!(model.project_of_tab(TabId(2)), Some(root.clone()));
+
+    labelled(&home, &mut model, &root, "uze core");
+
+    let rows = screen(&mut model);
+    assert_eq!(rows.matches("uze core").count(), 2, "{rows}");
+}
+
+#[test]
+fn renaming_the_agent_from_the_menu_edits_the_agents_name() {
+    let (home, model, tab, _) = agent_in_a_project("labels-menu-agent");
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = name_of_row(&driven, tab);
+    driven.mouse(row.x, row.y, MouseEventKind::Down(MouseButton::Right));
+    let menu = driven.attach.model.context_menu.as_mut().unwrap();
+    menu.selected = menu
+        .items
+        .iter()
+        .position(|action| *action == Action::RenameSelection)
+        .unwrap();
+
+    in_the_menu(&mut driven, Action::FocusNext);
+    in_the_menu(&mut driven, Action::Activate);
+
+    assert_eq!(
+        driven.attach.model.renaming,
+        Some((
+            RenameTarget::Tab(tab),
+            RenameBuffer::new("Agent".to_owned())
+        ))
+    );
+}
+
+#[test]
+fn every_gesture_but_a_double_click_finds_the_row_on_the_project() {
+    let (home, model, tab, _) = agent_in_a_project("labels-shadowed");
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let project = project_on_row(&driven, tab);
+
+    assert_eq!(
+        driven.attach.model.hit_at(project.x, project.y),
+        Some(WorkspaceHit::SelectTab(tab)),
+        "a click, a right click and a drag all look the hit up here"
+    );
+}
+
+#[test]
+fn an_approval_read_names_the_project_by_the_label_of_its_root() {
+    let (home, model, _, root) = agent_in_a_project("labels-approval-root");
+    std::fs::write(
+        root.join("agents.yaml"),
+        "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
+    )
+    .unwrap();
+    let mut awaiting = application(&home)
+        .workspace()
+        .commands_awaiting_approval(&root)
+        .expect("an unapproved project waits");
+    awaiting.project = root.join("spelled-below");
+    let mut driven = driven(model, &home);
+    labelled(&home, &mut driven.attach.model, &root, "uze core");
+
+    driven
+        .attach
+        .channels
+        .commands_awaiting
+        .sender
+        .send(AwaitingRead {
+            awaiting,
+            root: root.clone(),
+        })
+        .unwrap();
+    driven.pump();
+
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(!said.contains("spelled-below"), "named by its root: {said}");
+    assert!(said.contains("uze core: gate commands"), "{said}");
 }
