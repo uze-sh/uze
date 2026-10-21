@@ -25,19 +25,14 @@ pub(super) const MAX_USAGE_ASKING: usize = 4;
 /// the session is broadcast without them (see [`Server::stop_runtimes`]).
 pub(super) const REAP_GRACE: Duration = Duration::from_secs(1);
 
-/// One connection counted against [`MAX_UNATTACHED`] until it is dropped.
-pub(super) struct Unattached<'a>(&'a std::sync::atomic::AtomicUsize);
+/// A place in a bounded count, given back when dropped: a connection yet
+/// to say who it is (see [`MAX_UNATTACHED`]), or a usage request waiting on
+/// its sample (see [`MAX_USAGE_ASKING`]).
+pub(super) struct Admission<'a>(&'a std::sync::atomic::AtomicUsize);
 
-impl<'a> Unattached<'a> {
-    pub(super) fn admit(count: &'a std::sync::atomic::AtomicUsize) -> Option<Self> {
-        Self::admit_within(count, MAX_UNATTACHED)
-    }
-
+impl<'a> Admission<'a> {
     /// One more of `count`, while there are fewer than `limit`.
-    pub(super) fn admit_within(
-        count: &'a std::sync::atomic::AtomicUsize,
-        limit: usize,
-    ) -> Option<Self> {
+    pub(super) fn within(count: &'a std::sync::atomic::AtomicUsize, limit: usize) -> Option<Self> {
         let before = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if before >= limit {
             count.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
@@ -47,7 +42,7 @@ impl<'a> Unattached<'a> {
     }
 }
 
-impl Drop for Unattached<'_> {
+impl Drop for Admission<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
@@ -261,7 +256,7 @@ impl Server {
             tracing::warn!("refused a terminal connection from another user");
             return;
         }
-        let Some(unattached) = Unattached::admit(&self.unattached) else {
+        let Some(unattached) = Admission::within(&self.unattached, MAX_UNATTACHED) else {
             tracing::warn!(
                 "too many terminal connections have yet to say who they are; refused one"
             );
@@ -312,8 +307,7 @@ impl Server {
                 // loop would keep the person's own attach out. Usage has a
                 // bound of its own instead.
                 drop(unattached);
-                let Some(_asking) = Unattached::admit_within(&self.usage_asking, MAX_USAGE_ASKING)
-                else {
+                let Some(_asking) = Admission::within(&self.usage_asking, MAX_USAGE_ASKING) else {
                     answer(&ClientEvent::Refused {
                         message: "the workspace is already reporting its usage to others; \
                                   ask again in a moment"
