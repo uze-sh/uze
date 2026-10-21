@@ -441,6 +441,7 @@ mod tests {
     /// The process asking for usage from inside a pane, and what it
     /// started, are not that pane's: the report is the same wherever it is
     /// asked from.
+    // Unix only: the asker is a POSIX shell that says its child's pid.
     #[cfg(unix)]
     #[test]
     fn the_process_asking_is_left_out_of_its_pane() {
