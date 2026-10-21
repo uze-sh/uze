@@ -164,7 +164,7 @@ impl Group {
     /// where the platform keeps such a total (a Job Object). `None` on
     /// Unix, where a process carries the time of the children it waited
     /// for instead ([`crate::usage::Reading::cpu`]).
-    pub fn cpu_time(&self) -> Option<std::time::Duration> {
+    pub(crate) fn cpu_time(&self) -> Option<std::time::Duration> {
         self.unit.cpu_time()
     }
 }
