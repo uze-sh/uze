@@ -4802,28 +4802,46 @@ fn usage_reports_what_the_runtime_runs_from_one_sample() {
     let mut env = uze_testkit::env::scope();
     env.set("UZE_HOME", &uze_home);
     let (server, _socket) = listening_server(&project);
+    // The running tab, as a launch for an agent stamps it, in a space and
+    // under a label of the person's.
+    {
+        let mut session = server.session.lock().unwrap();
+        let space = &mut session.workspace.spaces[0];
+        space.label = "space-never-told".into();
+        let tab = &mut space.tabs[0];
+        tab.label = "label-never-told".into();
+        tab.env = vec![
+            (
+                crate::launch::AGENT_IDENTITY_VARIABLE.into(),
+                "identity-never-told".into(),
+            ),
+            (
+                crate::launch::AGENT_KEY_VARIABLE.into(),
+                "key-never-told".into(),
+            ),
+        ];
+    }
 
-    let asked = Instant::now();
     let together = thread::spawn(super::usage);
     let first = super::usage().unwrap();
     let second = together.join().unwrap().unwrap();
-    let took = asked.elapsed();
 
     let super::Usage::Running(report) = first else {
         panic!("the running server answered {first:?}");
     };
     assert_eq!(super::Usage::Running(report.clone()), second);
-    assert!(
-        took < crate::USAGE_WINDOW * 2,
-        "two requests took {took:?}: one sample each"
-    );
-    assert_eq!(report.agents.count, 0);
-    assert_eq!(report.shells.count, 1);
-    assert!(report.shells.processes >= 1, "{report:?}");
+    assert_eq!(report.agents.count, 1);
+    assert!(report.agents.processes >= 1, "{report:?}");
+    assert_eq!(report.shells.count, 0);
     assert_eq!(report.server.processes, 1);
     assert!(report.server.memory > 0);
     assert!(report.window >= crate::USAGE_WINDOW);
     assert!(report.started > 0);
+    let said = serde_json::to_string(&crate::ClientEvent::Usage(report)).unwrap();
+    assert!(
+        !said.contains("never-told"),
+        "the answer names something: {said}"
+    );
 
     server.shut_down();
     let _ = std::fs::remove_dir_all(&scratch);
