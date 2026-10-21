@@ -281,6 +281,11 @@ class Bindings:
         )
         return proc.stdout + proc.stderr
 
+    def agent_name(self, label):
+        """The name this harness holds and dispatches the agent `label` by.
+        Default: the label itself."""
+        return label
+
     def dispatch(self, label, prompt):
         """The provider mode and environment that make the next headless
         turn — the one carrying `prompt` — dispatch the agent `label`

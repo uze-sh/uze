@@ -64,7 +64,11 @@ it become authoritative.
 - **Agents are a generated Markdown file**, inside the generated plugin's
   `agents/` (declared by its root `agents.json`, which 1.3.3 reads) when the
   package is delivered as a plugin, else in the global agents directory;
-  either way named with the label and carrying `name: <label>` and `description`:
+  either way named with the label and carrying `name: <label>` and `description`,
+  the label spelled with `_` where UZE writes `:` (`flow_auditor`): 1.4.4
+  tags every request of a subagent with `subagent_type=<name>` and refuses
+  to start one whose name holds a colon (a file attached before keeps its
+  colon name, only its `name:` changes; google-antigravity/antigravity-cli#1308).
   Antigravity 1.2.x reads the name from the frontmatter, lists no agent
   without one, scans no subdirectory, and silently drops an agent with a
   Claude-style `model` or string `tools`, so nothing else is carried and

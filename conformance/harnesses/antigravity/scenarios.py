@@ -229,10 +229,13 @@ def phase_tui(cfg, prov_ip):
         child.send(ch)
         time.sleep(0.15)
     child.send("\r")
-    label = AGENTS["flat"][0]
+    # Imported here: the bindings import this module.
+    from harnesses.antigravity.bindings import AntigravityBindings
+
+    label = AntigravityBindings().agent_name(AGENTS["flat"][0])
     t_agents, p_agents, _ = wait_for(["auditor", "Agents"], tries=8, stop_on_death=True)
     snap("02a_agents", t_agents)
-    # By the label UZE commits to on every harness (`contract.agent`); agy
+    # By the name UZE delivers the label under here (`contract.agent`); agy
     # names an agent by its frontmatter `name`, so a bare `auditor` here is
     # a definition delivered without it.
     listed = label in p_agents.replace(" ", "")

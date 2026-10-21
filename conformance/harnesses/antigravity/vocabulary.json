@@ -99,7 +99,7 @@
       "call": {
         "Subagents": [
           {
-            "TypeName": "flow:auditor",
+            "TypeName": "flow_auditor",
             "Role": "Lab",
             "Prompt": "lab subagent"
           }
