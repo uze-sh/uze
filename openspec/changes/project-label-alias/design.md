@@ -48,15 +48,17 @@ label = "uze core"
 The root is `project_root_of`, the resolution the sidebar already uses.
 Recent and approval resolve their path through it too, inside the reads
 that produce them (both already off the UI thread), so the model only
-ever holds roots. Lookup compares with `uze_platform::path::same_path`,
-so a key written by hand with another case, separator or trailing slash
-still matches on Windows; a hand-written Windows key needs a literal
-string (`'C:\work\app'`). A table per project, not a flat map, leaves room
+ever holds roots. Lookup compares keys by their components, then with
+`uze_platform::path::same_path`, so a key written by hand with a trailing
+separator matches everywhere, and one with another case or separator on
+Windows; a hand-written Windows key needs a literal string
+(`'C:\work\app'`). A rename writes under a key already naming the root
+and takes every other one away, so a root never holds two labels. A table per project, not a flat map, leaves room
 for a later per-project preference under the same key. The path, not the
 remote, is the identity: two clones are two projects to tell apart.
 
 **`uze_core::config` learns one level of nesting.** List every table of a
-section with a string key in it, and get, set and remove `key` in
+section with a string key in it, and set and remove `key` in
 `section."name"`, under the existing lock and comment-preserving edit. A
 new parent is an implicit table, so the file reads `[projects."/x"]` with
 no bare `[projects]`; a removal leaving the table empty removes it, and
@@ -64,18 +66,24 @@ an emptied parent too.
 
 **Read when the workspace opens, written off the UI thread.** Labels are
 read once into the model; an unreadable file leaves directory names and
-one toast. A commit is `spawn_project_label` plus an `absorb`, shaped like
-`spawn_agent_label`/`LabelResolution`, because the write may wait on the
-file lock; the model changes only when the answer says it was written.
+one toast. Each read carries the number it was asked under and only the
+latest is kept. A commit is `spawn_project_label` plus an `absorb`, shaped
+like `spawn_agent_label`/`LabelResolution`, because the write may wait on
+the file lock; the answer carries the root and name it wrote, and the
+model changes only when it says it was written, by reading every label
+again. Writes go one at a time: a name confirmed while one is out waits,
+the latest per root, so the last confirmed is the last written.
 The service returns plain types or `uze-application` re-exports: `src/`
 names neither `uze_core` nor `uze_workspace`.
 
-**`RenameTarget::Project(TabId)`.** Keyed by the row, not the root, so
-the editor appears on that row only and the target stays `Copy`; the root
-is resolved through `model.projects` at begin and at commit. Begun by a
+**`RenameTarget::Project { tab, root }`.** Keyed by the row, so the
+editor appears on that row only, and carrying the root resolved through
+`model.projects` when the edit began, so the name lands there even if the
+pane is placed again before Enter. Begun by a
 `begin_project_rename(model, tab)` beside `begin_rename`. The editor is
-drawn with `rename_spans` in the caption's place, the harness yielding
-room, the caret never elided.
+drawn with `rename_spans_within` in the caption's place, the harness
+yielding room: the text after the caret is cut at its end first, then the
+text before it at its head, each cut marked, the caret never elided.
 
 **No new hit for the caption.** A hit pushed for the project's text
 would shadow the row's `SelectTab`, which the right-click menu, drag
