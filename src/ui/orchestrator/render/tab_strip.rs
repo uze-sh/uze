@@ -458,7 +458,7 @@ fn render_agent_tabs(
         // the agents' alone. One whose program ended out of sight keeps a
         // check until it is looked at, the way an agent's turn does.
         let running = !is_agent && !tab.pane.runs_a_shell();
-        let finished = !is_agent && !running && model.shell_finished_out_of_sight(tab.pane.id);
+        let finished = !is_agent && !running && model.finished_out_of_sight(tab.pane.id);
         let marker = Span::styled(
             // The agent leading the strip wears the same mark the button
             // that creates one does, so the first chip reads as the agent

@@ -869,7 +869,7 @@ fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
 
     shell_runs(&mut model, shell, "cargo");
     shell_runs(&mut model, shell, "zsh");
-    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell),
         (
@@ -884,7 +884,7 @@ fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
         .map(|tab| tab.id)
         .unwrap();
     select_tab(&mut model, tab);
-    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell).0,
         theme::glyph(Symbol::StatusSelected),
@@ -923,10 +923,7 @@ fn an_agents_own_tab_never_takes_a_shells_check() {
     let pane = model.pane_for_tab(first).unwrap();
 
     shell_runs(&mut model, "Agent one", "zsh");
-    assert!(
-        !model.shell_finished_out_of_sight(pane),
-        "the harness exited"
-    );
+    assert!(!model.finished_out_of_sight(pane), "the harness exited");
 
     let session = model.session.as_mut().unwrap();
     let tab = session.workspace.spaces[0]
@@ -941,7 +938,7 @@ fn an_agents_own_tab_never_takes_a_shells_check() {
     shell_runs(&mut model, "Agent one", "cargo");
     shell_runs(&mut model, "Agent one", "zsh");
     assert!(
-        !model.shell_finished_out_of_sight(pane),
+        !model.finished_out_of_sight(pane),
         "a command in a launched agent's tab"
     );
 }
@@ -957,22 +954,22 @@ fn a_prompt_between_two_commands_is_not_a_finish() {
 
     shell_runs(&mut model, shell, "make");
     shell_runs(&mut model, shell, "zsh");
-    model.expire_agent_activity(Instant::now());
+    model.expire_pane_activity(Instant::now());
     assert_eq!(
         shell_marker(&model, shell).0,
         theme::glyph(Symbol::StatusIdle),
         "not yet a finish"
     );
     shell_runs(&mut model, shell, "run");
-    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
     assert_eq!(
         shell_marker(&model, shell).0,
         theme::glyph(Symbol::StatusRunning)
     );
     shell_runs(&mut model, shell, "zsh");
-    model.expire_agent_activity(Instant::now() + Duration::from_secs(3));
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
     assert!(
-        !model.shell_finished_out_of_sight(model.pane_for_tab(first).unwrap()),
+        !model.finished_out_of_sight(model.pane_for_tab(first).unwrap()),
         "the agent's own pane is untouched"
     );
     assert_eq!(

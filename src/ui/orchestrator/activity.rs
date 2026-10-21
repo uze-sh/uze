@@ -1,4 +1,4 @@
-//! Whether each agent is working: its repaints, the echo of what was typed into it, the chime when it finishes, and what its tab shows.
+//! Whether each pane is working: an agent's repaints, the echo of what was typed into it, the chime when it finishes, a shell's program finishing, and what its tab shows.
 
 use super::*;
 
@@ -145,13 +145,14 @@ impl WorkspaceModel {
             .is_some_and(|tab| agent_identity_for_tab(identities, tab).is_some())
     }
 
-    /// Advances every agent pane's phase for the current instant: a pane
-    /// quiet for [`AGENT_QUIET_AFTER`] stops working, and one that stopped
+    /// Advances every pane's phase for the current instant: an agent pane
+    /// quiet for [`AGENT_QUIET_AFTER`] stops working, a shell back at its
+    /// prompt for [`SHELL_SETTLE`] has finished, and either one that ended
     /// out of sight keeps a check until its tab is actually on screen.
     /// Clearing that check here — rather than only at the handful of call
     /// sites that switch tabs — is what makes "done" disappear exactly when
     /// the user looks at it, whichever way they got there.
-    pub(super) fn expire_agent_activity(&mut self, now: Instant) -> bool {
+    pub(super) fn expire_pane_activity(&mut self, now: Instant) -> bool {
         let focused = self.focused_pane();
         let mut expired = Vec::new();
         for (pane, activity) in &mut self.remembered.agent_activity {
@@ -191,7 +192,7 @@ impl WorkspaceModel {
         // A pane whose tab is gone can never be looked at again, and its id
         // is free to be handed to a future pane — leaving its check behind
         // would eventually surface on something unrelated.
-        self.forget_closed_agent_panes();
+        self.forget_closed_panes();
         !expired.is_empty() || acknowledged || settled
     }
 
@@ -236,7 +237,7 @@ impl WorkspaceModel {
         ring
     }
 
-    pub(super) fn forget_closed_agent_panes(&mut self) {
+    pub(super) fn forget_closed_panes(&mut self) {
         // Runs on every input tick, so it earns the early exit: with no
         // per-pane state held there is nothing to reconcile, and walking
         // the tab tree to build a live-pane set would be pure overhead.
@@ -317,11 +318,11 @@ impl WorkspaceModel {
         }
     }
 
-    pub(super) fn shell_finished_out_of_sight(&self, pane: PaneId) -> bool {
+    pub(super) fn finished_out_of_sight(&self, pane: PaneId) -> bool {
         self.remembered.completed_panes.contains(&pane)
     }
 
-    pub(super) fn acknowledge_completed_agent_tab(&mut self, tab: TabId) {
+    pub(super) fn acknowledge_completed_tab(&mut self, tab: TabId) {
         if let Some(pane) = self.pane_for_tab(tab)
             && self.remembered.completed_panes.remove(&pane)
         {

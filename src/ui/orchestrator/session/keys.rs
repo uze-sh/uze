@@ -444,7 +444,7 @@ impl Attach<'_> {
     pub(in crate::ui::orchestrator) fn land_on_tab(&mut self, tab: TabId, columns: u16, rows: u16) {
         self.model.put_away_space_overview();
         self.asked_for_a_tab = true;
-        self.model.acknowledge_completed_agent_tab(tab);
+        self.model.acknowledge_completed_tab(tab);
         let _ = send_request(&mut self.stream, &ClientRequest::SelectTab { tab });
         if let Some(pane) = self.model.pane_for_tab(tab) {
             resize_pane(&mut self.stream, &mut self.model, pane, columns, rows);
@@ -470,7 +470,7 @@ impl Attach<'_> {
         });
         if let Some((selected, own)) = landing {
             self.model
-                .acknowledge_completed_agent_tab(own.unwrap_or(selected));
+                .acknowledge_completed_tab(own.unwrap_or(selected));
         }
         let _ = match landing.and_then(|(_, own)| own) {
             Some(tab) => send_request(&mut self.stream, &ClientRequest::SelectTab { tab }),
