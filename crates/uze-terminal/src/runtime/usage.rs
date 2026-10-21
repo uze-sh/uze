@@ -444,10 +444,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_process_asking_is_left_out_of_its_pane() {
-        let mut asker = std::process::Command::new("sleep")
-            .arg("30")
+        use std::io::BufRead;
+        let mut asker = std::process::Command::new("sh")
+            .args(["-c", "sleep 30 & echo $!; wait"])
+            .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();
+        let mut said = std::io::BufReader::new(asker.stdout.take().unwrap()).lines();
+        let started: u32 = said.next().unwrap().unwrap().trim().parse().unwrap();
         let watched = |asking: Option<u32>| Watched {
             panes: vec![(PaneId(1), Some(asker.id()), None)],
             clients: Vec::new(),
@@ -457,12 +461,10 @@ mod tests {
         let counted = Reading::take(&watched(None));
         let asked = Reading::take(&watched(Some(asker.id())));
 
-        assert!(
-            counted.panes[&PaneId(1)]
-                .processes
-                .contains_key(&asker.id())
-        );
+        let counted = &counted.panes[&PaneId(1)].processes;
+        assert!(counted.contains_key(&asker.id()) && counted.contains_key(&started));
         assert!(asked.panes[&PaneId(1)].processes.is_empty());
+        uze_platform::process::terminate(started);
         let _ = asker.kill();
         let _ = asker.wait();
     }
