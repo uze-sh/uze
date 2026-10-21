@@ -119,6 +119,47 @@ fn claude_attaches_an_agent_without_treating_its_markdown_as_a_skill_plugin() {
 }
 
 #[test]
+fn antigravity_names_an_agent_without_the_colon_it_refuses() {
+    let root = uze_testkit::temp::scratch("antigravity-agent");
+    let home = UzeHome::at(root.join("uze"));
+    let antigravity = AntigravityIntegration::new(root.join("agents"), home);
+    let resource = agent(&root);
+
+    // 1.4.4 refuses to start a subagent whose name holds a colon.
+    assert_eq!(
+        antigravity.exposure_name_candidates(&resource),
+        vec!["flow_reviewer".to_owned()]
+    );
+    let definition = generated_content(antigravity.exposure_plan(&resource));
+    assert!(
+        definition.starts_with("---\nname: flow_reviewer\n"),
+        "{definition}"
+    );
+
+    // An agent attached under the colon label before 1.4.4 keeps its file,
+    // and is started by the name Antigravity accepts.
+    let mut attached = resource.clone();
+    attached.resolved_exposure_name = Some("flow:reviewer".to_owned());
+    let plan = antigravity.exposure_plan(&attached);
+    let uze_core::exposure::ExposureMechanism::Managed(
+        uze_core::integration::ManagedArtifact::GeneratedFile { path, content },
+    ) = plan.mechanism
+    else {
+        panic!("Antigravity agent is a receipt-owned file");
+    };
+    assert_eq!(
+        path,
+        root.join(".gemini/antigravity-cli/agents")
+            .join(uze_core::path::file_name_for("flow:reviewer.md"))
+    );
+    assert!(
+        content.starts_with("---\nname: flow_reviewer\n"),
+        "{content}"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn opencode_receives_only_the_fields_it_reads_and_says_what_it_left() {
     let root = uze_testkit::temp::scratch("opencode-agent");
     let home = UzeHome::at(root.join("uze"));

@@ -4,11 +4,13 @@ A plugin's `agents/` directory is delivered to four harnesses that disagree
 about almost everything an agent file is: where it lives, whether its name
 comes from the file or the frontmatter, which characters a name may carry,
 which fields make the harness drop it without a word. None of that may leak
-into the outcome. UZE commits to one label per agent everywhere —
+into the outcome. UZE commits to one label per agent —
 `<plugin>:<subdirs...>:<name>`, the name being the frontmatter `name` and
 the file stem only when there is none, the label Claude Code gives a
-plugin's agent natively — and to projecting only the portable subset of an
-agent's fields, so an agent written for one vendor still reaches the rest.
+plugin's agent natively — spelled the way a harness that refuses a
+character in it can hold it (`bindings.agent_name`), and to projecting only
+the portable subset of an agent's fields, so an agent written for one
+vendor still reaches the rest.
 
 The `flow` fixture carries one agent of each shape (`shared.markers.AGENTS`):
 
@@ -142,6 +144,7 @@ def _assert_exposure(cfg, bindings):
 
     exposed = {}
     for shape, (label, _) in AGENTS.items():
+        label = bindings.agent_name(label)
         exposed[shape] = seen.get(label, False)
         declared.presence(
             bindings,
@@ -174,6 +177,7 @@ def _assert_dispatch(cfg, bindings, exposed):
         },
     )
     for shape, (label, body) in AGENTS.items():
+        label = bindings.agent_name(label)
         name = f"agent-{shape}-dispatch-delivers-body"
         if f"agent-{shape}" not in turns:
             # Dispatching a label the harness never offered cannot tell a
@@ -207,7 +211,7 @@ def _assert_dispatch(cfg, bindings, exposed):
 def _dispatch(world, bindings, shape):
     """Dispatches `shape`'s agent in `world`; returns what the container
     printed and every request its provider recorded."""
-    label, _ = AGENTS[shape]
+    label = bindings.agent_name(AGENTS[shape][0])
     prompt = f"{AGENT_PROBE} delegate to {label}"
     mode, env = bindings.dispatch(label, prompt)
     prov_ip = start_provider(world, mode, env)

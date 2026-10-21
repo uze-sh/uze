@@ -93,8 +93,8 @@ pub(crate) use hooks::HOOKS;
 
 use crate::hooks::HookEntry;
 use crate::shared::agent::{
-    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, fields_not_carried,
-    markdown_agent, projection_route,
+    MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, fields_not_carried, markdown_agent,
+    projection_route,
 };
 use crate::shared::dialect::{AgentDialect, Shape, agent_block};
 use crate::shared::mcp::McpEntry;
@@ -490,11 +490,21 @@ impl IntegrationPort for AntigravityIntegration {
     /// candidate — never a bare alias, never collision-dependent naming
     /// (ADR-026). `agy plugin validate` accepts `:` in skill names
     /// (verified against 1.1.19). MCP stays on the default fully-qualified
-    /// policy — capability naming policies are never mixed.
+    /// policy — capability naming policies are never mixed. An agent's
+    /// label swaps `:` for `_` (`flow_auditor`): 1.4.4 tags every request
+    /// of a subagent with `subagent_type=<name>` and refuses to start one
+    /// whose name holds a colon (google-antigravity/antigravity-cli#1308).
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
         if resource.capability.kind.is_invoked_by_label() {
             let active_name = active_plugin_name(&self.uze_home, resource);
-            return qualified_exposure_name_candidates(resource, &active_name);
+            let candidates = qualified_exposure_name_candidates(resource, &active_name);
+            if resource.capability.kind == CapabilityKind::Agent {
+                return candidates
+                    .iter()
+                    .map(|label| subagent_name(label))
+                    .collect();
+            }
+            return candidates;
         }
         default_exposure_name_candidates(resource)
     }
@@ -763,13 +773,30 @@ const ANTIGRAVITY_AGENT_DIALECT: AgentDialect = AgentDialect {
     carries_unknown: true,
 };
 
+/// The name Antigravity can start a subagent by: its label with `_` where
+/// UZE writes `:`.
+fn subagent_name(label: &str) -> String {
+    label.replace(':', "_")
+}
+
 impl AntigravityIntegration {
     fn agent_exposure_plan(&self, resource: &Resource) -> ExposurePlan {
         let not_carried = AgentDocument::parse(&resource.capability.payload)
             .map(|document| fields_not_carried(&document, PORTABLE_AGENT_FIELDS))
             .unwrap_or_default();
-        let label = agent_label(&self.uze_home, resource);
-        let content = markdown_agent(&label, resource, &ANTIGRAVITY_AGENT, &self.harness_keys());
+        let label = resource
+            .resolved_exposure_name
+            .clone()
+            .or_else(|| self.exposure_name_candidates(resource).into_iter().next())
+            .unwrap_or_else(|| resource.name());
+        // A receipt written before 1.4.4 keeps its file under the colon
+        // label; only the name Antigravity starts it by has to change.
+        let content = markdown_agent(
+            &subagent_name(&label),
+            resource,
+            &ANTIGRAVITY_AGENT,
+            &self.harness_keys(),
+        );
         let route = projection_route(
             "Antigravity CLI natively discovers Markdown custom agents from its global agents directory and names each by its frontmatter `name`, and offers them to the agent a person starts on through `invoke_subagent`; UZE writes the definition there under the agent's label, receipt-owned by its content.",
             &not_carried,

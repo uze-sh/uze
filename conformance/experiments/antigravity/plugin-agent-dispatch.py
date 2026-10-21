@@ -20,15 +20,16 @@ LABEL = "lifecycle-plugin:keeper"
 BODY = "UZE_LIFECYCLE_AGENT_V1"
 CWD = "/work/plugin-agent"
 PRELUDE = f"mkdir -p {CWD} && cd {CWD} && git init -q -b main .\n"
-PROMPT = f"delegate this to {LABEL}"
 
 
 def run(cfg, prov_ip):
     bindings = bindings_for(cfg.harness)
-    mode, env = bindings.dispatch(LABEL, PROMPT)
+    name = bindings.agent_name(LABEL)
+    prompt = f"delegate this to {name}"
+    mode, env = bindings.dispatch(name, prompt)
     prov_ip = start_provider(cfg, mode, env)
     cmd = bindings.headless(
-        cfg, prov_ip, PRELUDE, PROMPT, CWD, plugins="lifecycle-plugin", delegating=True
+        cfg, prov_ip, PRELUDE, prompt, CWD, plugins="lifecycle-plugin", delegating=True
     )
     proc = subprocess.run(
         cmd, capture_output=True, text=True, errors="replace", timeout=480
@@ -40,7 +41,7 @@ def run(cfg, prov_ip):
     requests = open(path, errors="replace").read() if os.path.exists(path) else ""
     check(
         "plugin-agent-offered",
-        LABEL in requests,
+        name in requests,
         "the plugin's agent was offered to the model",
     )
     check(

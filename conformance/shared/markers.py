@@ -177,7 +177,9 @@ def summary(body):
     body = body or ""
     agent_markers = {AGENT_PROBE: AGENT_PROBE in body}
     for label, marker in AGENTS.values():
-        agent_markers[label] = label in body
+        # Also as a harness that refuses `:` in a name holds it.
+        for name in (label, label.replace(":", "_")):
+            agent_markers[name] = name in body
         agent_markers[marker] = marker in body
     return {
         "agent_markers": agent_markers,

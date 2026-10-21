@@ -181,6 +181,12 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
             )
         return None
 
+    def agent_name(self, label):
+        """agy 1.4.4 tags a subagent's requests with `subagent_type=<name>`
+        and refuses to start one whose name holds a colon, so UZE writes
+        `_` where the label has `:`."""
+        return label.replace(":", "_")
+
     def dispatch(self, label, prompt):
         """agy dispatches with `invoke_subagent`, naming the agent in a
         `Subagents[].TypeName`; the schema also requires a role, a prompt
