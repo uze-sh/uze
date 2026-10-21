@@ -417,10 +417,13 @@ pub(super) const USAGE_WITHIN: Duration = Duration::from_secs(10);
 /// Asks the running server what it runs uses. Works from inside a pane,
 /// like [`open_space`]: the answer names nothing.
 ///
-/// A server of another build hangs up on a request it cannot decode, and
-/// one that decodes it but speaks another version says so; both are
-/// [`Usage::OtherBuild`]. Nothing at this build's endpoint while the
-/// workspace is claimed is one on an endpoint an earlier build named.
+/// One that decodes it but speaks another version says so, and one that
+/// cannot decode it hangs up; a hang-up is confirmed with an attach of this
+/// version before it is called another build, since a server of this build
+/// hangs up too when its handler fails. Nothing at this build's endpoint
+/// while the workspace is claimed is waited for as an attach waits, for a
+/// socket a `/tmp` cleaner took is put back within seconds; past that, the
+/// server is on an endpoint an earlier build named.
 pub fn usage() -> Result<Usage, RuntimeError> {
     let _span = tracing::info_span!("terminal.usage").entered();
     let socket = socket_path()?;
@@ -432,11 +435,13 @@ pub fn usage() -> Result<Usage, RuntimeError> {
                 io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
             ) =>
         {
-            return Ok(if workspace_is_claimed() {
-                Usage::OtherBuild
-            } else {
-                Usage::NotRunning
-            });
+            if !workspace_is_claimed() {
+                return Ok(Usage::NotRunning);
+            }
+            match connect_waiting(&socket) {
+                Ok(stream) => stream,
+                Err(_) => return Ok(Usage::OtherBuild),
+            }
         }
         Err(error) => return Err(error.into()),
     };
@@ -450,7 +455,8 @@ pub fn usage() -> Result<Usage, RuntimeError> {
     )?;
     match read_event(&mut stream) {
         Ok(Some(ClientEvent::Usage(report))) => Ok(Usage::Running(report)),
-        Ok(None | Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
+        Ok(Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
+        Ok(None) => speaks_another_version(&socket),
         Ok(Some(ClientEvent::Refused { message })) => Err(RuntimeError::Protocol(message)),
         Ok(Some(_)) => Err(RuntimeError::Protocol(
             "the server answered something other than its usage".into(),
@@ -460,6 +466,36 @@ pub fn usage() -> Result<Usage, RuntimeError> {
             USAGE_WITHIN.as_secs()
         ))),
         Err(error) => Err(error),
+    }
+}
+
+/// What a server that hung up on a usage request is. An attach of this
+/// version is answered "incompatible" by one of another build before it
+/// asks for the key, and refused by one of this build, which offered no
+/// key; the one ends the question, the other leaves the hang-up a failure.
+fn speaks_another_version(socket: &Path) -> Result<Usage, RuntimeError> {
+    let hung_up = || {
+        RuntimeError::Protocol(format!(
+            "the uze serving the workspace hung up on its usage ({})",
+            socket.display()
+        ))
+    };
+    let mut stream = transport::connect(socket).map_err(|_| hung_up())?;
+    stream.set_read_timeout(Some(USAGE_WITHIN))?;
+    stream.set_write_timeout(Some(USAGE_WITHIN))?;
+    send_request(
+        &mut stream,
+        &ClientRequest::Attach {
+            version: PROTOCOL_VERSION,
+            columns: 0,
+            rows: 0,
+            seating: crate::Seating::WhereItLeftOff,
+            key: String::new(),
+        },
+    )?;
+    match read_event(&mut stream) {
+        Ok(None | Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
+        _ => Err(hung_up()),
     }
 }
 

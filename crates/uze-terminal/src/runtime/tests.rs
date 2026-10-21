@@ -4915,6 +4915,56 @@ fn a_recent_sample_answers_the_next_request() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A server that cannot read a usage request hangs up on it. One of
+/// another build answers an attach of this version "incompatible"; one of
+/// this build refuses it for want of the key, and its hang-up is a failure,
+/// never a reason to tell the person to stop a workspace of their own build.
+#[test]
+fn a_server_hanging_up_on_usage_is_another_build_only_when_it_says_so() {
+    for (answer_to_attach, expected) in [
+        (
+            Some(crate::ClientEvent::Error {
+                message: "incompatible terminal runtime protocol".into(),
+            }),
+            Some(super::Usage::OtherBuild),
+        ),
+        (
+            Some(crate::ClientEvent::Refused {
+                message: "this client did not offer the runtime's key".into(),
+            }),
+            None,
+        ),
+    ] {
+        let scratch = uze_testkit::temp::socket_scratch("usage-hang-up");
+        let uze_home = scratch.join("home");
+        std::fs::create_dir_all(&uze_home).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_HOME", &uze_home);
+        let socket = socket_path().unwrap();
+        let listener = bind_endpoint(&socket).unwrap();
+        let serving = thread::spawn(move || {
+            for answer in [None, answer_to_attach] {
+                let mut stream = super::transport::accept(&listener).unwrap();
+                let _ = super::framing::read_message::<_, crate::ClientRequest>(
+                    &mut std::io::BufReader::new(stream.try_clone().unwrap()),
+                );
+                if let Some(answer) = answer {
+                    write_message(&mut stream, &answer).unwrap();
+                }
+            }
+        });
+
+        let answered = super::usage();
+
+        serving.join().unwrap();
+        match expected {
+            Some(usage) => assert_eq!(answered.unwrap(), usage),
+            None => assert!(answered.is_err(), "{answered:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}
+
 /// With nothing serving the workspace, there is nothing running to report,
 /// and that is an answer rather than a failure.
 #[test]
