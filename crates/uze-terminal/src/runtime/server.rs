@@ -17,17 +17,24 @@ pub(super) enum Origin {
 /// or ask one thing and leave.
 pub(super) const MAX_UNATTACHED: usize = 32;
 
+/// How many usage requests may wait on one sample at once: a person asks
+/// one at a time, and a pane asking in a loop is turned away past this.
+pub(super) const MAX_USAGE_ASKING: usize = 4;
+
 /// How long closing a tab waits for its processes to be reaped before
 /// the session is broadcast without them (see [`Server::stop_runtimes`]).
 pub(super) const REAP_GRACE: Duration = Duration::from_secs(1);
 
-/// One connection counted against [`MAX_UNATTACHED`] until it is dropped.
-pub(super) struct Unattached<'a>(&'a std::sync::atomic::AtomicUsize);
+/// A place in a bounded count, given back when dropped: a connection yet
+/// to say who it is (see [`MAX_UNATTACHED`]), or a usage request waiting on
+/// its sample (see [`MAX_USAGE_ASKING`]).
+pub(super) struct Admission<'a>(&'a std::sync::atomic::AtomicUsize);
 
-impl<'a> Unattached<'a> {
-    pub(super) fn admit(count: &'a std::sync::atomic::AtomicUsize) -> Option<Self> {
+impl<'a> Admission<'a> {
+    /// One more of `count`, while there are fewer than `limit`.
+    pub(super) fn within(count: &'a std::sync::atomic::AtomicUsize, limit: usize) -> Option<Self> {
         let before = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        if before >= MAX_UNATTACHED {
+        if before >= limit {
             count.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
             return None;
         }
@@ -35,7 +42,7 @@ impl<'a> Unattached<'a> {
     }
 }
 
-impl Drop for Unattached<'_> {
+impl Drop for Admission<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
@@ -87,6 +94,13 @@ pub(super) struct Server {
     /// a program that connects the instant it starts is still asked about
     /// as one of this server's panes, never taken for the person.
     pub(super) registering: std::sync::RwLock<()>,
+    /// When this server took the workspace: how long it has been up.
+    pub(super) started: std::time::SystemTime,
+    /// The last usage sampled, held for the length of a sample: a request
+    /// arriving while one samples waits for it and is given its answer.
+    pub(super) sampled: Mutex<Option<(Instant, UsageReport)>>,
+    /// Usage requests waiting on a sample — see [`MAX_USAGE_ASKING`].
+    pub(super) usage_asking: std::sync::atomic::AtomicUsize,
 }
 
 impl Server {
@@ -136,6 +150,9 @@ impl Server {
             key,
             unattached: std::sync::atomic::AtomicUsize::new(0),
             registering: std::sync::RwLock::new(()),
+            started: std::time::SystemTime::now(),
+            sampled: Mutex::new(None),
+            usage_asking: std::sync::atomic::AtomicUsize::new(0),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -239,13 +256,14 @@ impl Server {
             tracing::warn!("refused a terminal connection from another user");
             return;
         }
-        let Some(unattached) = Unattached::admit(&self.unattached) else {
+        let Some(unattached) = Admission::within(&self.unattached, MAX_UNATTACHED) else {
             tracing::warn!(
                 "too many terminal connections have yet to say who they are; refused one"
             );
             return;
         };
         let origin = self.origin_of(&stream);
+        let peer = transport::peer_pid(&stream);
         let reader_stream = match stream.try_clone() {
             Ok(value) => value,
             Err(_) => return,
@@ -276,6 +294,29 @@ impl Server {
             Ok(Some(ClientRequest::OpenSpace { version, seat })) => {
                 answer(&if version == PROTOCOL_VERSION {
                     self.open_space_and_say(&seat)
+                } else {
+                    ClientEvent::Error {
+                        message: "incompatible terminal runtime protocol".into(),
+                    }
+                });
+                return;
+            }
+            Ok(Some(ClientRequest::Usage { version })) => {
+                // A sample takes a second: held against the bound on
+                // connections yet to say who they are, a pane asking in a
+                // loop would keep the person's own attach out. Usage has a
+                // bound of its own instead.
+                drop(unattached);
+                let Some(_asking) = Admission::within(&self.usage_asking, MAX_USAGE_ASKING) else {
+                    answer(&ClientEvent::Refused {
+                        message: "the workspace is already reporting its usage to others; \
+                                  ask again in a moment"
+                            .into(),
+                    });
+                    return;
+                };
+                answer(&if version == PROTOCOL_VERSION {
+                    ClientEvent::Usage(self.usage(peer))
                 } else {
                     ClientEvent::Error {
                         message: "incompatible terminal runtime protocol".into(),
@@ -344,6 +385,7 @@ impl Server {
                     id: client,
                     events: Arc::clone(&events),
                     selection,
+                    pid: peer,
                 });
                 if let Some((columns, rows)) = drawn
                     && !sized_at_creation
@@ -640,7 +682,9 @@ impl Server {
                 }
                 // First frames, and only first frames: an attached client
                 // already said who it is.
-                ClientRequest::Attach { .. } | ClientRequest::OpenSpace { .. } => {}
+                ClientRequest::Attach { .. }
+                | ClientRequest::OpenSpace { .. }
+                | ClientRequest::Usage { .. } => {}
             }
         }
         for pane in selecting {
@@ -679,14 +723,14 @@ impl Server {
     /// and a refusal would hide that.
     pub(super) fn refusal(&self, origin: Origin, request: &ClientRequest) -> Option<String> {
         let key = match request {
-            ClientRequest::OpenSpace { .. } => return None,
+            ClientRequest::OpenSpace { .. } | ClientRequest::Usage { .. } => return None,
             ClientRequest::Attach { version, .. } if *version != PROTOCOL_VERSION => return None,
             ClientRequest::Attach { key, .. } | ClientRequest::Stop { key } => key,
             _ => return None,
         };
         if origin == Origin::Pane {
             return Some(
-                "a process inside a uze pane may open a space and nothing else; \
+                "a process inside a uze pane may open a space or read usage and nothing else; \
                  attach from a terminal of your own"
                     .into(),
             );
@@ -998,7 +1042,7 @@ impl Server {
 
     /// Every pane's runtime, with the map's lock already released: see
     /// [`Server::runtime`].
-    fn runtimes(&self) -> Vec<Arc<PaneRuntime>> {
+    pub(super) fn runtimes(&self) -> Vec<Arc<PaneRuntime>> {
         self.panes
             .lock()
             .expect("panes poisoned")

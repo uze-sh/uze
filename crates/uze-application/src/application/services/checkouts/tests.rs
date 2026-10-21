@@ -3,6 +3,7 @@
 use super::*;
 use crate::UzeApplication;
 use crate::application::services::PlacementKind;
+use crate::application::services::{HomeTier, disk};
 use uze_core::UzeHome;
 use uze_core::capability::Resource;
 use uze_core::exposure::{ExposureMechanism, ExposurePlan};
@@ -185,4 +186,76 @@ fn a_free_checkout_a_process_stands_in_is_refused() {
 
     assert_eq!(refused, Err("a process is working inside it".to_owned()));
     assert!(slot.is_dir());
+}
+
+/// The disk UZE holds is the checkouts it made for agents, never one a
+/// person or a harness made, measured even when the project's declaration
+/// does not parse; and every tier of its home, which together are the
+/// total.
+#[test]
+fn the_disk_view_counts_the_checkouts_uze_made_and_its_home() {
+    let repository = Repository::new("disk-view");
+    let root = primary(&repository);
+    let app = application("disk-view-home");
+    let slot = app
+        .workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
+        .unwrap()
+        .cwd;
+    std::fs::write(slot.join("build.bin"), vec![7u8; 256 * 1024]).unwrap();
+    let by_hand = add_by_hand(&repository, &root.join(".worktrees/by-hand"), "by-hand");
+    std::fs::write(by_hand.join("big.bin"), vec![7u8; 4 * 1024 * 1024]).unwrap();
+    add_by_hand(
+        &repository,
+        &slot.join(".keeper/worktrees/own"),
+        "keeper-own",
+    );
+    std::fs::write(root.join("agents.yaml"), "workspace: [unclosed").unwrap();
+
+    let view = app.workspace().disk();
+
+    assert_eq!(view.checkouts, 1, "{view:?}");
+    assert!(view.checkout_bytes >= 256 * 1024, "{view:?}");
+    assert!(
+        view.checkout_bytes < 4 * 1024 * 1024,
+        "a checkout someone else made is not UZE's: {view:?}"
+    );
+    let nested = disk::measure(&slot, &[]).0;
+    assert!(
+        view.checkout_bytes < nested,
+        "the harness's checkout under the slot is left out: {view:?}"
+    );
+    assert_eq!(
+        view.home.iter().map(|(tier, _)| *tier).collect::<Vec<_>>(),
+        [
+            HomeTier::Packages,
+            HomeTier::Records,
+            HomeTier::Generated,
+            HomeTier::Cache,
+            HomeTier::Settings,
+        ]
+    );
+    assert!(
+        view.home
+            .iter()
+            .any(|(tier, bytes)| *tier == HomeTier::Records && *bytes > 0),
+        "the agent placed is recorded: {view:?}"
+    );
+    assert_eq!(
+        view.total(),
+        view.checkout_bytes + view.home.iter().map(|(_, bytes)| bytes).sum::<u64>()
+    );
+}
+
+#[test]
+fn the_disk_view_skips_a_project_whose_root_is_gone() {
+    let repository = Repository::new("disk-gone");
+    let root = primary(&repository);
+    let app = application("disk-gone-home");
+    app.workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
+        .unwrap();
+    std::fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!(app.workspace().disk().checkouts, 0);
 }

@@ -16,7 +16,7 @@ use uze_workspace::{
     worktree,
 };
 
-use super::{Workspace, tasks};
+use super::{Workspace, disk::measure, tasks};
 
 impl Workspace<'_> {
     /// Every worktree of the repository `cwd` belongs to, with who it
@@ -94,7 +94,7 @@ impl Workspace<'_> {
 
     /// Where each harness this installation knows keeps worktrees of its
     /// own, as data core classifies by: core never names a harness.
-    fn harness_worktree_places(&self) -> Vec<(&'static str, WorktreePlace)> {
+    pub(super) fn harness_worktree_places(&self) -> Vec<(&'static str, WorktreePlace)> {
         self.0
             .integrations
             .iter()
@@ -184,43 +184,6 @@ fn judged_against(store: &AgentStore, path: &Path, project_target: &str) -> Stri
 fn slot_holder<'a>(store: &'a AgentStore, path: &Path) -> Option<&'a task::Agent> {
     let name = path.file_name()?.to_str()?;
     store.slot_owner(&CheckoutId::adopted(name))
-}
-
-/// The bytes `root` takes on disk and the newest change inside it. Symbolic
-/// links are counted as themselves and never followed, and a checkout
-/// nested inside this one — a harness's own, kept under a slot — is left
-/// to its own row, so no byte is counted twice.
-fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
-    let mut bytes = 0;
-    let mut newest: Option<SystemTime> = None;
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            // `DirEntry::metadata` never follows a link, like
-            // `symlink_metadata`, without building the path to ask it.
-            let Ok(metadata) = entry.metadata() else {
-                continue;
-            };
-            bytes += allocated(&metadata);
-            if let Ok(modified) = metadata.modified() {
-                newest = Some(newest.map_or(modified, |seen| seen.max(modified)));
-            }
-            if metadata.is_dir() {
-                let path = entry.path();
-                if !others.contains(&path) {
-                    pending.push(path);
-                }
-            }
-        }
-    }
-    (bytes, newest)
-}
-
-fn allocated(metadata: &std::fs::Metadata) -> u64 {
-    uze_platform::fs::allocated_size(metadata)
 }
 
 /// Every worktree of one project.

@@ -141,6 +141,16 @@ pub(crate) enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Show what uze uses on this machine
+    ///
+    /// The CPU, memory and processes of everything the workspace runs, the
+    /// disk the checkouts uze made and its home hold, and how long the
+    /// workspace has been up. CPU is the machine's share, sampled over one
+    /// second.
+    Usage {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
     /// Replace the uze binary with the latest release (not plugins)
     ///
     /// Only a uze placed by the install script is replaced; any other says

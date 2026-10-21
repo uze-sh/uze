@@ -2750,3 +2750,40 @@ fn plugin_create_refuses_instructions_and_names_an_always_on_rule() {
         "the marketplace lists no new plugin"
     );
 }
+
+/// `uze usage` with no workspace running answers rather than
+/// fails: the machine, that nothing is running, and the disk, as text and
+/// as one JSON document.
+#[test]
+fn usage_with_no_workspace_running_still_reports_the_disk() {
+    let home = temporary_home("cli-usage-none");
+    let usage = |format: &str| {
+        Command::new(env!("CARGO_BIN_EXE_uze"))
+            .isolated_home(&home)
+            .env("UZE_HOME", home.join(".uze"))
+            .args(["usage", "--format", format])
+            .output()
+            .unwrap()
+    };
+
+    let text = usage("text");
+    assert!(
+        text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text.stderr)
+    );
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("not running"), "{text}");
+    assert!(text.contains("checkouts (0)"), "{text}");
+    assert!(!text.contains("processes"), "{text}");
+
+    let json = usage("json");
+    assert!(json.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(report["workspace"]["state"], "not_running");
+    assert!(report["processes"].is_null(), "{report}");
+    assert!(report["machine"]["cores"].as_u64().unwrap() >= 1);
+    assert_eq!(report["disk"]["checkouts"]["count"], 0);
+    assert!(report["disk"]["total"].is_u64());
+    let _ = std::fs::remove_dir_all(&home);
+}

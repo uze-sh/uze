@@ -322,6 +322,10 @@ Use the `src/progress.rs` helpers and never hand-format:
 - Anything that grows with the number of harnesses, skills or plugins is
   listed **vertically and aligned**, never in columns that overflow.
 - Harness names are highlighted the same way in every command.
+- A table of figures (sizes, percentages, counts) right-aligns its numbers
+  under their headings, and every block of one report shares the same
+  columns: `progress::figure_groups`. Two blocks aligned apart, numbers
+  flush left, read as lists rather than a table (`uze usage`).
 
 **Scope** is always reported (ADR 054).
 

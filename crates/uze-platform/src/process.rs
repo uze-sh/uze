@@ -268,6 +268,77 @@ mod tests {
         let _ = other.wait();
     }
 
+    /// A census finds a pane's processes as `belongs` would: a job of the
+    /// pane's shell, and one orphaned in a session of its own that only the
+    /// pane's mark still ties to it; never another pane's.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_census_finds_what_a_pane_started_and_nothing_else() {
+        use std::io::BufRead;
+        let grouped = pane::grouped(Vec::new(), None, "UZE_TEST_PANE_UNIT").unwrap();
+        let mark = grouped.mark;
+        let mut command = Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                // The orphan's parent says its pid and exits, so nothing
+                // but the mark ties it to the pane.
+                "sleep 30 & echo $!; setsid sh -c 'sleep 30 & echo $!'; wait",
+            ])
+            .env(mark.variable(), mark.value())
+            .stdout(std::process::Stdio::piped());
+        let (mut leader, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
+        let mut next_pid = || -> u32 { said.next().unwrap().unwrap().trim().parse().unwrap() };
+        let job = next_pid();
+        let orphan = next_pid();
+        let mut other = Command::new("sleep")
+            .arg("30")
+            .env(mark.variable(), "another pane's")
+            .spawn()
+            .unwrap();
+        let group = pane::Group::adopt(leader.id(), &mark).unwrap();
+
+        let found = pane::census(mark.variable()).of_pane(leader.id(), Some(&group));
+
+        assert!(found.contains(&leader.id()), "{found:?}");
+        assert!(found.contains(&job), "{found:?}");
+        assert!(found.contains(&orphan), "{found:?}");
+        assert_ne!(crate::probe::parent_of(orphan), Some(leader.id()));
+        assert!(!found.contains(&other.id()), "{found:?}");
+        assert!(!found.contains(&std::process::id()), "{found:?}");
+
+        group.end();
+        tree.end();
+        let _ = leader.wait();
+        let _ = other.kill();
+        let _ = other.wait();
+    }
+
+    /// A tree walked from this process's parent stops at this process: a
+    /// census never holds the process taking it, so the server's tree,
+    /// which is every pane, is never reached from the client that started
+    /// it.
+    #[test]
+    fn a_census_never_reaches_through_the_process_taking_it() {
+        let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" })
+            .args(if cfg!(windows) {
+                &["/C", "ping -n 30 127.0.0.1 >NUL"][..]
+            } else {
+                &["30"][..]
+            })
+            .spawn()
+            .unwrap();
+        let parent = crate::probe::parent_of(std::process::id()).unwrap();
+
+        let tree = pane::census("UZE_TEST_PANE_UNIT").tree_of(parent);
+
+        assert!(!tree.contains(&std::process::id()), "{tree:?}");
+        assert!(!tree.contains(&child.id()), "{tree:?}");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
     /// Waits for `pid`, not a child of this process, to exit: the kernel
     /// says so on a pidfd, where polling the process table would be a race.
     #[cfg(target_os = "linux")]

@@ -2214,16 +2214,17 @@ reported as that agent, persisted as one, and was relaunched as one.
 > `crates/uze-terminal/src/runtime/tests.rs::a_pane_does_not_inherit_the_servers_shim_identity`
 > `crates/uze-terminal/src/runtime/tests.rs::foreground_status_ignores_a_shim_identity_stamped_for_another_process`
 
-### The runtime serves the person, and a pane may only open a space (ADR-056)
+### The runtime serves the person, and a pane may only open a space or read usage (ADR-056)
 
 Reaching the endpoint proves only that a process runs as this user. A
 connection whose peer the kernel places inside one of the runtime's panes
-may open a space and is told its label, nothing else; attaching and
+may open a space and is told its label, or read the workspace's usage,
+which names no tab, space, agent or launch; nothing else. Attaching and
 stopping take the key each server writes for the user alone beside its
 claim. Another user is refused before anything is read, and connections
 that have not yet said who they are are bounded.
 
-> `crates/uze-terminal/src/runtime/tests.rs::a_process_inside_a_pane_may_open_a_space_and_nothing_else`
+> `crates/uze-terminal/src/runtime/tests.rs::a_process_inside_a_pane_may_open_a_space_or_read_usage_and_nothing_else`
 > `crates/uze-terminal/src/runtime/tests.rs::a_client_without_the_runtimes_key_is_refused`
 > `crates/uze-terminal/src/runtime/tests.rs::connections_that_never_say_who_they_are_are_bounded`
 > `crates/uze-platform/src/process.rs::tests::what_a_pane_started_belongs_to_it_and_the_person_does_not`

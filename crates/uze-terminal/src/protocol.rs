@@ -11,7 +11,7 @@ use crate::{PaneId, Session, SpaceId, TabId};
 /// [`crate::attach`] replaces a server of another build before connecting;
 /// this is what a client that connects without it — a `uze` nested in a
 /// pane, a test — still meets.
-pub const PROTOCOL_VERSION: u16 = 22;
+pub const PROTOCOL_VERSION: u16 = 23;
 
 /// The colours a client draws a pane's default and indexed cells in. Plain
 /// `(r, g, b)` triples: this runtime holds no opinion about appearance, it
@@ -297,13 +297,58 @@ pub enum ClientRequest {
     },
     /// Opens a space at `seat` — created when none is there — and answers
     /// with its label alone, as [`ClientEvent::SpaceOpened`]. A first
-    /// frame, and the one thing a process inside a pane may ask: a `uze`
-    /// typed into a pane opens a space and leaves, and it is shown nothing
-    /// of the workspace and given nothing to type into.
+    /// frame, and one of the two things a process inside a pane may ask
+    /// (the other is [`ClientRequest::Usage`]): a `uze` typed into a pane
+    /// opens a space and leaves, and it is shown nothing of the workspace
+    /// and given nothing to type into.
     OpenSpace {
         version: u16,
         seat: crate::SpaceSeat,
     },
+    /// What the runtime runs uses, answered as [`ClientEvent::Usage`] after
+    /// a window of [`USAGE_WINDOW`]. A first frame a process inside a pane
+    /// may send too: the workspace's own shells are where a person asks,
+    /// and the answer names nothing.
+    Usage {
+        version: u16,
+    },
+}
+
+/// How long a usage request watches the processes it reports on.
+pub const USAGE_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The answer to [`ClientRequest::Usage`]: four totals over one window.
+/// Nothing in it names a tab, a space, an agent or a launch, because a
+/// process inside a pane may ask for it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct UsageReport {
+    /// When this server started, in seconds since the Unix epoch.
+    pub started: u64,
+    /// How long the window lasted, which the CPU of each total was spent in.
+    pub window: std::time::Duration,
+    /// Every agent tab with the shells born of it.
+    pub agents: Load,
+    /// Every other tab: a shell no agent owns, a finished agent's.
+    pub shells: Load,
+    /// The server process itself.
+    pub server: Load,
+    /// The attached clients and what they started.
+    pub clients: Load,
+}
+
+/// What one total of a [`UsageReport`] covers and uses.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Load {
+    /// How many tabs, or clients, it covers.
+    pub count: u32,
+    /// The CPU time its processes spent within the window.
+    pub cpu: std::time::Duration,
+    /// Memory its processes hold, each counted by its own share.
+    pub memory: u64,
+    /// Whether some of that memory could only be read as resident size.
+    pub estimated: bool,
+    /// How many processes it has at the window's end.
+    pub processes: u32,
 }
 
 impl ClientRequest {
@@ -330,6 +375,7 @@ impl ClientRequest {
             Self::RenameSpace { .. } => "rename_space",
             Self::Stop { .. } => "stop",
             Self::OpenSpace { .. } => "open_space",
+            Self::Usage { .. } => "usage",
         }
     }
 }
@@ -403,6 +449,8 @@ pub enum ClientEvent {
     SpaceOpened {
         label: String,
     },
+    /// The answer to [`ClientRequest::Usage`].
+    Usage(UsageReport),
     /// The runtime understood the request and will not serve it: a first
     /// frame from a process inside a pane, or one without the runtime's
     /// key. Its own event rather than an [`ClientEvent::Error`] because a

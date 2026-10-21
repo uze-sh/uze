@@ -22,7 +22,7 @@ use thiserror::Error;
 use crate::{
     CellAttributes, ClientEvent, ClientRequest, Cursor, MouseMode, NewSpace, PROTOCOL_VERSION,
     Palette, PaneDamage, PaneId, PaneSnapshot, RenderCell, Scheme, Seating, SelectionGesture,
-    Session, SpaceId, SpaceSeat, TabId, TerminalColor,
+    Session, SpaceId, SpaceSeat, TabId, TerminalColor, UsageReport,
     launch::Launch,
     selection::PaneSelection,
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
@@ -39,6 +39,7 @@ mod persist;
 mod process;
 mod scheme;
 mod server;
+mod usage;
 use uze_platform::endpoint as transport;
 
 pub use endpoint::*;

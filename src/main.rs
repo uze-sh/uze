@@ -643,6 +643,7 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                 EXIT_CODE.store(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
+        Command::Usage { format } => report_usage(&app, format)?,
         Command::Setup { arguments } => run_setup_command(&app, &home, &arguments, verbose)?,
         Command::External(args) => run_shorthand(&app, args, verbose)?,
         Command::Workspace { .. } | Command::Terminal { .. } => {

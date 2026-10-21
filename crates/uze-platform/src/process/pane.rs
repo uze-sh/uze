@@ -159,4 +159,45 @@ impl Group {
     pub fn members(&self) -> Vec<u32> {
         self.unit.members()
     }
+
+    /// The CPU every process the unit has held spent, ended ones included,
+    /// where the platform keeps such a total (a Job Object). `None` on
+    /// Unix, where a process carries the time of the children it waited
+    /// for instead ([`crate::usage::Reading::cpu`]).
+    pub(crate) fn cpu_time(&self) -> Option<std::time::Duration> {
+        self.unit.cpu_time()
+    }
+}
+
+/// This user's processes as they stand, read once for every pane asked
+/// about: one pass over the process table, where asking pane by pane would
+/// read every process's environment once per pane.
+pub struct Census(imp::Census);
+
+/// The processes there are now, with what places each in a pane:
+/// `variable` is the one every [`Mark`] is made with.
+pub fn census(variable: &str) -> Census {
+    Census(imp::Census::take(variable))
+}
+
+impl Census {
+    /// The processes of the pane whose program is `leader`, as [`belongs`]
+    /// judges them: on Unix its session, its descendants and whatever
+    /// carries its mark; on Windows its Job Object.
+    pub fn of_pane(&self, leader: u32, group: Option<&Group>) -> Vec<u32> {
+        self.0.of_pane(
+            leader,
+            group.map(|group| (&group.unit, group.mark.value.as_str())),
+        )
+    }
+
+    /// `root` and every process below it.
+    pub fn tree_of(&self, root: u32) -> Vec<u32> {
+        self.0.tree_of(root)
+    }
+
+    /// The process that started `pid`, as this census read it.
+    pub fn parent_of(&self, pid: u32) -> Option<u32> {
+        self.0.parent_of(pid)
+    }
 }

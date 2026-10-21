@@ -470,6 +470,102 @@ impl Group {
         }
         Vec::new()
     }
+
+    /// The user and kernel time of every process the job has held, ended
+    /// ones included: the job keeps the account a Unix parent keeps of the
+    /// children it waited for.
+    pub(super) fn cpu_time(&self) -> Option<std::time::Duration> {
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JobObjectBasicAccountingInformation,
+        };
+        // SAFETY: plain data, written by the call below.
+        let mut account: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: valid job handle; `account` is the size passed.
+        let asked = unsafe {
+            QueryInformationJobObject(
+                self.0.0,
+                JobObjectBasicAccountingInformation,
+                (&raw mut account).cast(),
+                std::mem::size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                ptr::null_mut(),
+            )
+        };
+        let hundreds = u64::try_from(account.TotalUserTime + account.TotalKernelTime).ok()?;
+        (asked != 0).then(|| std::time::Duration::from_nanos(hundreds * 100))
+    }
+}
+
+/// Every other process on the machine with the one that started it, from
+/// one snapshot. A pane is its job, which needs no census; this is for a
+/// tree that is no pane's. This process is left out, as Unix's census
+/// leaves it: the server's own tree is every pane, and a tree walked from
+/// the client that started it must not reach them through it.
+pub(super) struct Census(Vec<(u32, u32)>);
+
+impl Census {
+    pub(super) fn take(_variable: &str) -> Self {
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+        };
+        let mut processes = Vec::new();
+        // SAFETY: a snapshot of every process, closed by `Owned`.
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return Self(processes);
+        }
+        let snapshot = Owned(snapshot);
+        // SAFETY: zeroed is valid once dwSize is set.
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        // SAFETY: `entry` is sized as the API requires and outlives each call.
+        let mut more = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
+        let own = std::process::id();
+        while more {
+            if entry.th32ProcessID != own {
+                processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            }
+            // SAFETY: as above.
+            more = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
+        }
+        Self(processes)
+    }
+
+    /// The job is the whole answer, as for [`belongs`]; a pane that has
+    /// none is its program alone.
+    pub(super) fn of_pane(&self, leader: u32, group: Option<(&Group, &str)>) -> Vec<u32> {
+        match group {
+            Some((group, _)) => group.members(),
+            None => vec![leader],
+        }
+    }
+
+    pub(super) fn parent_of(&self, pid: u32) -> Option<u32> {
+        self.0
+            .iter()
+            .find(|&&(process, _)| process == pid)
+            .map(|&(_, parent)| parent)
+    }
+
+    /// `root` and every process below it. A parent pid here may name a
+    /// process that exited and whose number was handed on, so a child
+    /// counts only when it started after its parent.
+    pub(super) fn tree_of(&self, root: u32) -> Vec<u32> {
+        let mut tree = vec![root];
+        let mut next = 0;
+        while let Some(&parent) = tree.get(next) {
+            let born = started(parent);
+            let children: Vec<u32> = self
+                .0
+                .iter()
+                .filter(|&&(pid, of)| of == parent && pid != parent && !tree.contains(&pid))
+                .map(|&(pid, _)| pid)
+                .filter(|&pid| matches!((born, started(pid)), (Some(a), Some(b)) if a <= b))
+                .collect();
+            tree.extend(children);
+            next += 1;
+        }
+        tree
+    }
 }
 
 /// The job is the whole answer here: a parent pid on Windows may name a

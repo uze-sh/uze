@@ -16,6 +16,9 @@ pub(super) struct Client {
     pub(super) id: u64,
     pub(super) events: Arc<Outbox>,
     pub(super) selection: Selection,
+    /// The client's process, as the kernel stamped it on the connection:
+    /// what its usage is read from. `None` where the platform names no peer.
+    pub(super) pid: Option<u32>,
 }
 
 /// How many events a client may have waiting on its socket before it is

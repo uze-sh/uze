@@ -21,7 +21,7 @@ fn agent_in_a_project(label: &str) -> (UzeHome, WorkspaceModel, TabId, PathBuf) 
         .expect("the agent's project is known");
     assert_eq!(
         root,
-        project.canonicalize().unwrap(),
+        uze_platform::path::canonical(&project).unwrap(),
         "a directory outside Git is its own project"
     );
     (home, model, tab, root)

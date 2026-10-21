@@ -30,5 +30,6 @@ pub mod stdio;
 pub mod target;
 pub mod terminal;
 pub mod tools;
+pub mod usage;
 #[cfg(windows)]
 pub(crate) mod win;
