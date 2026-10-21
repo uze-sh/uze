@@ -69,7 +69,7 @@ impl Context<'_> {
             .integrations
             .iter()
             .filter_map(|integration| {
-                let delivery = self.harness_context_delivery(integration.as_ref(), project_root)?;
+                let delivery = self.harness_context_delivery(integration.as_ref())?;
                 Some(HarnessContextStatus {
                     integration: integration.id().to_owned(),
                     display_name: integration.display_name().to_owned(),
@@ -153,7 +153,6 @@ impl Context<'_> {
     fn harness_context_delivery(
         &self,
         integration: &dyn IntegrationPort,
-        project_root: &Path,
     ) -> Option<HarnessContextDelivery> {
         match integration.context_delivery() {
             ContextDelivery::None => None,
@@ -161,18 +160,7 @@ impl Context<'_> {
                 Some(HarnessContextDelivery::NotDetected)
             }
             ContextDelivery::Native { .. } => Some(HarnessContextDelivery::Native),
-            ContextDelivery::Bridge { .. } => {
-                let projection = self.0.runtime_projection_at(integration, project_root);
-                Some(
-                    if ContextMechanism::for_instructions(integration, projection)
-                        == ContextMechanism::RuntimeShim
-                    {
-                        HarnessContextDelivery::Projected
-                    } else {
-                        HarnessContextDelivery::ReadsNatively
-                    },
-                )
-            }
+            ContextDelivery::Bridge { .. } => Some(HarnessContextDelivery::ReadsNatively),
         }
     }
 }

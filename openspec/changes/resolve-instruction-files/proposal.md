@@ -60,9 +60,15 @@ deleted.
 - **OpenCode V2**: V1 read `CLAUDE.md` as a native fallback; V2 is not
   measured. `instructions` in `opencode.json` is additive, so it would
   also inject a `CLAUDE.md` that only imports `AGENTS.md`.
-- **Claude Code 2.1.296** (vendor docs, not yet Lab-measured on this
-  version; #154 measured 2.1.285): reads `AGENTS.md` natively since
-  2.1.281 unless a root `CLAUDE.md` shadows it; reads no `GEMINI.md`.
+- **Claude Code 2.1.305** (measured 2026-10-20 with `--debug-file`, PR
+  #291): reads `AGENTS.md` natively (`instructionFiles` default
+  `claude-md-or-agents-md`), so #291 stopped projecting the `@AGENTS.md`
+  import. Any `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in a
+  directory from the launch directory up to the root turns the fallback
+  off for the whole walk: launched in `web/` with `web/CLAUDE.md`, the root
+  `AGENTS.md` is not read. A file reached through an import is loaded once.
+  Reads no `GEMINI.md`. Nested files below the launch directory are
+  `nested-instruction-files`.
 
 ## To measure before choosing
 

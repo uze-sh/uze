@@ -10,7 +10,7 @@
 
 - [ ] 2.1 Core: `ContextDelivery::Native { files, shadowed_by }`; Claude declares the three shadowing files, others `&[]`
 - [ ] 2.2 Delete `ContextDelivery::Bridge` and what only it used (bridge plan/reconcile, `BridgePlan`, `BridgeStatus`, `ContextMechanism::Bridge`, `ResourceDelivery::Bridged`, `HarnessContextDelivery` `BRIDGE`/`PROJECTED`)
-- [ ] 2.3 Shadow detection at the root: own content shadows; empty, `@AGENTS.md`/`@./AGENTS.md`, a symlink to the project's `AGENTS.md`, or only an earlier `instruction-bridge` region does not
+- [ ] 2.3 Shadow detection on each directory from the launch directory up to the root: own content shadows; empty, `@AGENTS.md`/`@./AGENTS.md`, a symlink to the project's `AGENTS.md`, or only an earlier `instruction-bridge` region does not
 - [ ] 2.4 `ShadowedBy { file }` as a portability gap in `status`, `doctor`, the TUI (including the "Bridged" legend in `src/ui/overlay.rs`) and `agent context inspect`; drop `bridges` from `agent context plan|reconcile --format json`
 - [ ] 2.5 Claude runtime shim: no `AGENTS.md` projection, no `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, active only with `.agents/`; update the doc in `uze-core/src/machine/harness_runtime.rs`
 - [ ] 2.6 `/uze:init` Flow B proposes the `@AGENTS.md` line for a shadowing `CLAUDE.md`, as #154 did

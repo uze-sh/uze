@@ -116,11 +116,15 @@ fn the_package_manager_alone_never_meets_the_workspace() {
     );
 }
 
+/// Claude Code reads `AGENTS.md` itself, so a shim that is set up changes
+/// nothing about how the instructions reach it: only `.agents/` is the
+/// workspace's to carry.
 #[test]
-fn project_resources_a_harness_does_not_read_are_reported_as_inside_the_workspace() {
+fn agents_md_reaches_claude_natively_with_the_shim_set_up() {
     let env = TestEnvironment::isolated();
     let _harnesses = install_fake_harnesses(&env);
     let world = PackageOnly::prepare(&env);
+    std::fs::write(world.project.join("AGENTS.md"), "# Project\n").unwrap();
     let skill = world.project.join(".agents/skills/local/SKILL.md");
     std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
     std::fs::write(
@@ -133,8 +137,12 @@ fn project_resources_a_harness_does_not_read_are_reported_as_inside_the_workspac
     let status = env.run_ok(uze_bin(), &["status"]);
     let status = String::from_utf8_lossy(&status.stdout);
     assert!(
-        status.contains("Inside the workspace") || status.contains("inside the workspace"),
-        "a resource only the workspace carries says so: {status}"
+        status.contains("reads AGENTS.md natively"),
+        "Claude Code reads AGENTS.md itself: {status}"
+    );
+    assert!(
+        !status.to_lowercase().contains("inside the workspace"),
+        "nothing projects AGENTS.md: {status}"
     );
 }
 
