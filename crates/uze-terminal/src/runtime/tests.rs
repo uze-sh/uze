@@ -4829,6 +4829,62 @@ fn usage_reports_what_the_runtime_runs_from_one_sample() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A usage request waits on its sample without holding a place among the
+/// connections yet to say who they are: a pane asking in a loop is turned
+/// away past a small bound of its own, and the person's attach still gets
+/// in.
+#[test]
+fn usage_requests_never_keep_the_persons_attach_out() {
+    let scratch = uze_testkit::temp::socket_scratch("usage-bound");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    let usage = crate::ClientRequest::Usage {
+        version: crate::PROTOCOL_VERSION,
+    };
+
+    // A sample in progress, which every request waits on.
+    let sampling = server.sampled.lock().unwrap();
+    let waiting: Vec<_> = (0..super::MAX_USAGE_ASKING)
+        .map(|_| {
+            let (socket, usage) = (socket.clone(), usage.clone());
+            thread::spawn(move || first_answer_to(&socket, &usage))
+        })
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server
+        .usage_asking
+        .load(std::sync::atomic::Ordering::Acquire)
+        < super::MAX_USAGE_ASKING
+    {
+        assert!(Instant::now() < deadline, "the requests never arrived");
+        thread::yield_now();
+    }
+
+    assert_eq!(first_answer_to(&socket, &usage), "refused");
+    assert_eq!(
+        server.unattached.load(std::sync::atomic::Ordering::Acquire),
+        0,
+        "a request waiting on its sample holds no unattached place"
+    );
+    assert_eq!(
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        "attached"
+    );
+
+    drop(sampling);
+    for request in waiting {
+        assert_eq!(request.join().unwrap(), "usage");
+    }
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// With nothing serving the workspace, there is nothing running to report,
 /// and that is an answer rather than a failure.
 #[test]

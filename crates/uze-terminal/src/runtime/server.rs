@@ -17,6 +17,10 @@ pub(super) enum Origin {
 /// or ask one thing and leave.
 pub(super) const MAX_UNATTACHED: usize = 32;
 
+/// How many usage requests may wait on one sample at once: a person asks
+/// one at a time, and a pane asking in a loop is turned away past this.
+pub(super) const MAX_USAGE_ASKING: usize = 4;
+
 /// How long closing a tab waits for its processes to be reaped before
 /// the session is broadcast without them (see [`Server::stop_runtimes`]).
 pub(super) const REAP_GRACE: Duration = Duration::from_secs(1);
@@ -26,8 +30,16 @@ pub(super) struct Unattached<'a>(&'a std::sync::atomic::AtomicUsize);
 
 impl<'a> Unattached<'a> {
     pub(super) fn admit(count: &'a std::sync::atomic::AtomicUsize) -> Option<Self> {
+        Self::admit_within(count, MAX_UNATTACHED)
+    }
+
+    /// One more of `count`, while there are fewer than `limit`.
+    pub(super) fn admit_within(
+        count: &'a std::sync::atomic::AtomicUsize,
+        limit: usize,
+    ) -> Option<Self> {
         let before = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        if before >= MAX_UNATTACHED {
+        if before >= limit {
             count.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
             return None;
         }
@@ -92,6 +104,8 @@ pub(super) struct Server {
     /// The last usage sampled, held for the length of a sample: a request
     /// arriving while one samples waits for it and is given its answer.
     pub(super) sampled: Mutex<Option<(Instant, UsageReport)>>,
+    /// Usage requests waiting on a sample — see [`MAX_USAGE_ASKING`].
+    pub(super) usage_asking: std::sync::atomic::AtomicUsize,
 }
 
 impl Server {
@@ -143,6 +157,7 @@ impl Server {
             registering: std::sync::RwLock::new(()),
             started: std::time::SystemTime::now(),
             sampled: Mutex::new(None),
+            usage_asking: std::sync::atomic::AtomicUsize::new(0),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -292,6 +307,20 @@ impl Server {
                 return;
             }
             Ok(Some(ClientRequest::Usage { version })) => {
+                // A sample takes a second: held against the bound on
+                // connections yet to say who they are, a pane asking in a
+                // loop would keep the person's own attach out. Usage has a
+                // bound of its own instead.
+                drop(unattached);
+                let Some(_asking) = Unattached::admit_within(&self.usage_asking, MAX_USAGE_ASKING)
+                else {
+                    answer(&ClientEvent::Refused {
+                        message: "the workspace is already reporting its usage to others; \
+                                  ask again in a moment"
+                            .into(),
+                    });
+                    return;
+                };
                 answer(&if version == PROTOCOL_VERSION {
                     ClientEvent::Usage(self.usage(peer))
                 } else {
