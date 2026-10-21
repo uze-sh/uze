@@ -293,7 +293,7 @@ impl Server {
             }
             Ok(Some(ClientRequest::Usage { version })) => {
                 answer(&if version == PROTOCOL_VERSION {
-                    ClientEvent::Usage(self.usage())
+                    ClientEvent::Usage(self.usage(peer))
                 } else {
                     ClientEvent::Error {
                         message: "incompatible terminal runtime protocol".into(),

@@ -142,6 +142,10 @@ fn started_after(started: Option<u64>, newest_before: Option<u64>) -> bool {
 struct Watched {
     panes: Vec<(PaneId, Option<u32>, Option<Arc<pane::Group>>)>,
     clients: Vec<u32>,
+    /// The process asking, left out with everything it started: a
+    /// `uze usage` typed into a pane, and the disk walk it runs while the
+    /// server samples, would otherwise count in that pane's row.
+    asker: Option<u32>,
 }
 
 /// Everything the runtime runs, read once.
@@ -154,13 +158,22 @@ struct Reading {
 impl Reading {
     fn take(watched: &Watched) -> Self {
         let census = pane::census(launch::PANE_UNIT_VARIABLE);
+        // The server's own tree is every pane: a request it made of itself
+        // leaves nothing out.
+        let asking: BTreeSet<u32> = watched
+            .asker
+            .filter(|&asker| asker != std::process::id())
+            .map(|asker| census.tree_of(asker).into_iter().collect())
+            .unwrap_or_default();
         let panes = watched
             .panes
             .iter()
             .map(|(pane, leader, group)| {
                 let pids = leader
                     .map(|leader| census.of_pane(leader, group.as_deref()))
-                    .unwrap_or_default();
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|pid| !asking.contains(pid));
                 let accounted = group.as_ref().and_then(|group| group.cpu_time());
                 (*pane, Sample::of(pids, accounted, &census))
             })
@@ -213,21 +226,21 @@ impl Server {
     /// request that arrives while another samples waits for it and is given
     /// the same answer, so a loop asking cannot keep the server reading the
     /// process table.
-    pub(super) fn usage(&self) -> UsageReport {
+    pub(super) fn usage(&self, asker: Option<u32>) -> UsageReport {
         let mut sampled = self.sampled.lock().expect("usage sample poisoned");
         if let Some((at, report)) = sampled.as_ref()
             && at.elapsed() < USAGE_WINDOW
         {
             return report.clone();
         }
-        let report = self.sample_usage();
+        let report = self.sample_usage(asker);
         *sampled = Some((Instant::now(), report.clone()));
         report
     }
 
     /// Two readings a window apart, with the runtime's locks held only to
     /// copy what is read: the panes' output never waits on a sample.
-    fn sample_usage(&self) -> UsageReport {
+    fn sample_usage(&self, asker: Option<u32>) -> UsageReport {
         let kinds = kinds(&self.session.lock().expect("session poisoned"));
         let watched = Watched {
             panes: self
@@ -242,6 +255,7 @@ impl Server {
                 .iter()
                 .filter_map(|client| client.pid)
                 .collect(),
+            asker,
         };
         let attached = self.clients.lock().expect("clients poisoned").len();
         let opened = Instant::now();
@@ -412,6 +426,35 @@ mod tests {
         let spent = after.spent_since(&before, before.newest());
 
         assert_eq!(spent, Duration::from_millis(400));
+    }
+
+    /// The process asking for usage from inside a pane, and what it
+    /// started, are not that pane's: the report is the same wherever it is
+    /// asked from.
+    #[cfg(unix)]
+    #[test]
+    fn the_process_asking_is_left_out_of_its_pane() {
+        let mut asker = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let watched = |asking: Option<u32>| Watched {
+            panes: vec![(PaneId(1), Some(asker.id()), None)],
+            clients: Vec::new(),
+            asker: asking,
+        };
+
+        let counted = Reading::take(&watched(None));
+        let asked = Reading::take(&watched(Some(asker.id())));
+
+        assert!(
+            counted.panes[&PaneId(1)]
+                .processes
+                .contains_key(&asker.id())
+        );
+        assert!(asked.panes[&PaneId(1)].processes.is_empty());
+        let _ = asker.kill();
+        let _ = asker.wait();
     }
 
     /// Where a Job Object keeps a total, it is the whole answer: it counts
