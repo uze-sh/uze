@@ -4,6 +4,23 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.19](https://github.com/uze-sh/uze/compare/v1.0.0-beta.18...v1.0.0-beta.19) - 2026-10-21
+
+### Fixes
+
+- **claude:** Read AGENTS.md natively instead of projecting an import ([#291](https://github.com/uze-sh/uze/pull/291)) ([0026831](https://github.com/uze-sh/uze/commit/00268317d892f593ce883aab1b0ab1bc7b5a8a50))
+- **update:** Count the settle window from the release's publication ([#292](https://github.com/uze-sh/uze/pull/292)) ([eab69c2](https://github.com/uze-sh/uze/commit/eab69c2c10535320a7c76aabaf6e02af1ce49e32))
+- **upgrade:** Flush the staged binary through a writable handle ([#294](https://github.com/uze-sh/uze/pull/294)) ([7ec624d](https://github.com/uze-sh/uze/commit/7ec624d8d78b78d969186a300f28d52ab5608861))
+
+### Chore
+
+- **openspec:** Archive three implemented changes and record ADR-058 and ADR-059 ([#290](https://github.com/uze-sh/uze/pull/290)) ([952424a](https://github.com/uze-sh/uze/commit/952424ab6ad8aece5677dfec7a34dc3376ac632f))
+
+### Style
+
+- **ui:** Explain each workspace setting in the space overview drawer ([#289](https://github.com/uze-sh/uze/pull/289)) ([60b1340](https://github.com/uze-sh/uze/commit/60b13402566ad3d04120282cdb8032a6efeb52f2))
+- **ui:** Label harness status rows by deliverer instead of mechanism ([#293](https://github.com/uze-sh/uze/pull/293)) ([db0f3cb](https://github.com/uze-sh/uze/commit/db0f3cb1098adaaa8522f48e2869fd08969a36bf))
+
 ## [1.0.0-beta.18](https://github.com/uze-sh/uze/compare/v1.0.0-beta.17...v1.0.0-beta.18) - 2026-10-20
 
 ### Features
