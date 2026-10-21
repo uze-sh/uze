@@ -828,7 +828,7 @@ impl<'a> SidebarAgent<'a> {
         let renaming_project = model
             .renaming
             .as_ref()
-            .filter(|(target, _)| *target == RenameTarget::Project(tab.id))
+            .filter(|(target, _)| target.is_project_of(tab.id))
             .map(|(_, buffer)| buffer);
         // A tab-reorder drag in this exact space, resolved to drop right
         // before (or, on the last row, at the end after) this one.

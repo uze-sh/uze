@@ -641,7 +641,10 @@ pub(super) fn begin_project_rename(model: &mut WorkspaceModel, tab: TabId) {
         return;
     };
     let label = model.project_named(&project);
-    model.renaming = Some((RenameTarget::Project(tab), RenameBuffer::new(label)));
+    model.renaming = Some((
+        RenameTarget::Project { tab, root: project },
+        RenameBuffer::new(label),
+    ));
 }
 
 /// Delivers the selected tab's task, the way the project's completion says.

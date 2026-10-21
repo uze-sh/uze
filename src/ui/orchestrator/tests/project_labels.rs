@@ -138,7 +138,7 @@ fn a_double_click_on_the_project_renames_the_project() {
     double_click(&mut driven, project);
 
     let (target, buffer) = driven.attach.model.renaming.clone().expect("an edit");
-    assert_eq!(target, RenameTarget::Project(tab));
+    assert!(target.is_project_of(tab), "{target:?}");
     assert_eq!(buffer.text(), "uze", "seeded with the name the row shows");
 }
 
@@ -157,7 +157,7 @@ fn a_double_click_on_the_name_still_renames_the_agent() {
             .model
             .renaming
             .as_ref()
-            .map(|(target, _)| *target),
+            .map(|(target, _)| target.clone()),
         Some(RenameTarget::Tab(tab))
     );
 }
@@ -181,7 +181,7 @@ fn a_right_click_on_the_project_opens_the_agents_menu() {
 
 #[test]
 fn the_agents_rename_opens_agent_and_project() {
-    let (home, model, tab, _) = agent_in_a_project("labels-menu");
+    let (home, model, tab, root) = agent_in_a_project("labels-menu");
     let mut driven = driven(model, &home);
     driven.frame();
     let project = project_on_row(&driven, tab);
@@ -213,8 +213,8 @@ fn the_agents_rename_opens_agent_and_project() {
             .model
             .renaming
             .as_ref()
-            .map(|(target, _)| *target),
-        Some(RenameTarget::Project(tab))
+            .map(|(target, _)| target.clone()),
+        Some(RenameTarget::Project { tab, root })
     );
 }
 
@@ -412,5 +412,24 @@ fn names_that_cannot_be_read_are_said_once_and_rows_keep_their_directories() {
     assert_eq!(
         std::fs::read_to_string(home.config_path()).unwrap(),
         "[projects\n"
+    );
+}
+
+#[test]
+fn the_name_lands_on_the_project_the_edit_began_on() {
+    let (home, model, tab, root) = agent_in_a_project("labels-root-at-begin");
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let project = project_on_row(&driven, tab);
+    double_click(&mut driven, project);
+    typed(&mut driven, " core");
+    driven.attach.model.projects.clear();
+
+    chord(&mut driven, "enter");
+    written_and_read_back(&mut driven);
+
+    assert_eq!(
+        application(&home).project_labels().all().unwrap().of(&root),
+        Some("uze core")
     );
 }

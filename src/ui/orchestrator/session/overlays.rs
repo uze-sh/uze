@@ -125,26 +125,17 @@ impl Attach<'_> {
         );
     }
 
-    /// Keeps the name typed over a project in the operator's config. An
-    /// empty one is sent too: it is how a label is taken away.
-    fn label_project_of(&mut self, tab: TabId, label: String) {
-        let Some(root) = self.model.project_of_tab(tab) else {
-            return;
-        };
-        spawn_project_label(
-            self.home,
-            root,
-            label,
-            self.channels.project_label_writes.sender.clone(),
-        );
-    }
-
     /// The inline rename buffer over a tab, a space label or a project.
     pub(super) fn rename_action(&mut self, action: Action) {
         match action {
             Action::Activate => match self.model.renaming.take() {
-                Some((RenameTarget::Project(tab), buffer)) => {
-                    self.label_project_of(tab, buffer.text().to_owned());
+                Some((RenameTarget::Project { root, .. }, buffer)) => {
+                    spawn_project_label(
+                        self.home,
+                        root,
+                        buffer.text().to_owned(),
+                        self.channels.project_label_writes.sender.clone(),
+                    );
                 }
                 Some((RenameTarget::Tab(tab), buffer)) => {
                     let label = buffer.text().trim();
