@@ -86,7 +86,7 @@ fn press(driven: &mut support::Driven<'_>, action: uze_keys::Action, scope: uze_
 }
 
 /// Opens the selected agent's menu from the keyboard and takes its
-/// "Continue in…" group to the first harness.
+/// "Continue in" group to the first harness.
 fn continue_from_the_keyboard(driven: &mut support::Driven<'_>) {
     driven.frame();
     press(driven, uze_keys::Action::OpenMenu, uze_keys::Scope::Pane);

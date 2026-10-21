@@ -54,10 +54,10 @@ scenes:
     when:
       - key: "M-."
         say: open the selected agent's actions
-        expect: "Continue in…"
+        expect: "Continue in"
       - key: "Down"
         say: move onto continuing elsewhere
-        expect: "Continue in…"
+        expect: "Continue in"
         pause: 0.3
       - key: "Right"
         say: open the harnesses it can continue in
@@ -168,10 +168,10 @@ scenes:
     when:
       - key: "M-."
         say: open the agent's actions again
-        expect: "Continue in…"
+        expect: "Continue in"
       - key: "Down"
         say: move onto continuing elsewhere
-        expect: "Continue in…"
+        expect: "Continue in"
         pause: 0.3
       - key: "Right"
         say: open the harnesses it can continue in
