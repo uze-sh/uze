@@ -495,9 +495,11 @@ impl Group {
     }
 }
 
-/// Every process on the machine with the one that started it, from one
-/// snapshot. A pane is its job, which needs no census; this is for a tree
-/// that is no pane's.
+/// Every other process on the machine with the one that started it, from
+/// one snapshot. A pane is its job, which needs no census; this is for a
+/// tree that is no pane's. This process is left out, as Unix's census
+/// leaves it: the server's own tree is every pane, and a tree walked from
+/// the client that started it must not reach them through it.
 pub(super) struct Census(Vec<(u32, u32)>);
 
 impl Census {
@@ -517,8 +519,11 @@ impl Census {
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         // SAFETY: `entry` is sized as the API requires and outlives each call.
         let mut more = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
+        let own = std::process::id();
         while more {
-            processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            if entry.th32ProcessID != own {
+                processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            }
             // SAFETY: as above.
             more = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
         }

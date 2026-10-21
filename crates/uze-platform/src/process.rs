@@ -315,6 +315,30 @@ mod tests {
         let _ = other.wait();
     }
 
+    /// A tree walked from this process's parent stops at this process: a
+    /// census never holds the process taking it, so the server's tree,
+    /// which is every pane, is never reached from the client that started
+    /// it.
+    #[test]
+    fn a_census_never_reaches_through_the_process_taking_it() {
+        let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" })
+            .args(if cfg!(windows) {
+                &["/C", "ping -n 30 127.0.0.1 >NUL"][..]
+            } else {
+                &["30"][..]
+            })
+            .spawn()
+            .unwrap();
+        let parent = crate::probe::parent_of(std::process::id()).unwrap();
+
+        let tree = pane::census("UZE_TEST_PANE_UNIT").tree_of(parent);
+
+        assert!(!tree.contains(&std::process::id()), "{tree:?}");
+        assert!(!tree.contains(&child.id()), "{tree:?}");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
     /// Waits for `pid`, not a child of this process, to exit: the kernel
     /// says so on a pidfd, where polling the process table would be a race.
     #[cfg(target_os = "linux")]
