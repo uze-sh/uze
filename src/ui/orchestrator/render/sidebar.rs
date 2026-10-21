@@ -902,8 +902,9 @@ pub(super) fn rename_spans(buffer: &RenameBuffer) -> Vec<Span<'static>> {
 }
 
 /// [`rename_spans`] fitted to `room` columns, the caret always among them:
-/// what does not fit is cut from the text before the caret first, at its
-/// head, then from the text after it, at its end.
+/// what does not fit is cut from the end of the text after the caret
+/// first, then from the head of the text before it, and each cut carries
+/// its mark, so a name with more on either side says so.
 pub(super) fn rename_spans_within(buffer: &RenameBuffer, room: usize) -> Vec<Span<'static>> {
     let style = Style::default()
         .fg(theme::color(Token::TextBright))
@@ -911,7 +912,12 @@ pub(super) fn rename_spans_within(buffer: &RenameBuffer, room: usize) -> Vec<Spa
     let caret = theme::glyph(Symbol::CursorText);
     let room = room.saturating_sub(text::columns(&caret));
     let (before, after) = buffer.split();
-    let before = text::elide_head(before, room);
+    let mark = if after.is_empty() {
+        0
+    } else {
+        text::columns(&theme::glyph(Symbol::Ellipsis))
+    };
+    let before = text::elide_head(before, room.saturating_sub(mark));
     let after = text::elide(after, room.saturating_sub(text::columns(&before)));
     vec![
         Span::styled(before, style),

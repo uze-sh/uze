@@ -590,3 +590,40 @@ fn an_approval_read_names_the_project_by_the_label_of_its_root() {
     assert!(!said.contains("spelled-below"), "named by its root: {said}");
     assert!(said.contains("uze core: gate commands"), "{said}");
 }
+
+#[test]
+fn a_long_name_cut_on_both_sides_of_the_caret_marks_both_cuts() {
+    let (home, mut model, tab, root) = agent_in_a_project("labels-long-middle");
+    labelled(
+        &home,
+        &mut model,
+        &root,
+        "a project name far longer than any sidebar is wide",
+    );
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let project = project_on_row(&driven, tab);
+    double_click(&mut driven, project);
+    for _ in 0.."wide".len() {
+        chord(&mut driven, "left");
+    }
+
+    let screen = screen(&mut driven.attach.model);
+    let caret = theme::glyph(Symbol::CursorText);
+    let ellipsis = theme::glyph(Symbol::Ellipsis);
+    let row = screen
+        .lines()
+        .find(|row| row.contains("is "))
+        .expect("the edit is drawn");
+    let (_, after_caret) = row.rsplit_once(&caret).expect("the caret is drawn");
+
+    assert!(row.contains(&ellipsis), "{row:?}");
+    assert!(
+        after_caret
+            .trim_end()
+            .trim_end_matches('│')
+            .trim_end()
+            .ends_with(&ellipsis),
+        "the text after the caret says it goes on: {row:?}"
+    );
+}
