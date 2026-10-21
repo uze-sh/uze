@@ -464,3 +464,28 @@ fn a_second_name_waits_for_the_first_and_is_the_one_kept() {
 
     assert_eq!(driven.attach.model.project_named(&root), "uze second");
 }
+
+#[test]
+fn the_caret_stays_on_screen_over_a_long_name() {
+    let (home, mut model, tab, root) = agent_in_a_project("labels-long");
+    labelled(
+        &home,
+        &mut model,
+        &root,
+        "a project name far longer than any sidebar is wide",
+    );
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let project = project_on_row(&driven, tab);
+    double_click(&mut driven, project);
+
+    let screen = screen(&mut driven.attach.model);
+    let caret = theme::glyph(Symbol::CursorText);
+    let row = screen
+        .lines()
+        .find(|row| row.contains("is wide"))
+        .expect("the edit is drawn, cut at its head");
+
+    let (_, edited) = row.split_once("is wide").unwrap();
+    assert!(edited.contains(&caret), "{row:?}");
+}

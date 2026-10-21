@@ -901,6 +901,25 @@ pub(super) fn rename_spans(buffer: &RenameBuffer) -> Vec<Span<'static>> {
     ]
 }
 
+/// [`rename_spans`] fitted to `room` columns, the caret always among them:
+/// what does not fit is cut from the text before the caret first, at its
+/// head, then from the text after it, at its end.
+pub(super) fn rename_spans_within(buffer: &RenameBuffer, room: usize) -> Vec<Span<'static>> {
+    let style = Style::default()
+        .fg(theme::color(Token::TextBright))
+        .add_modifier(Modifier::BOLD);
+    let caret = theme::glyph(Symbol::CursorText);
+    let room = room.saturating_sub(text::columns(&caret));
+    let (before, after) = buffer.split();
+    let before = text::elide_head(before, room);
+    let after = text::elide(after, room.saturating_sub(text::columns(&before)));
+    vec![
+        Span::styled(before, style),
+        Span::styled(caret, style),
+        Span::styled(after, style),
+    ]
+}
+
 /// The row under a minimized space's header: how many agents it holds,
 /// which is what folding it hid. Lit along with its header, and selecting
 /// the space like any caption. A space with no agent has none.
@@ -1140,7 +1159,10 @@ pub(super) fn draw_tree(
             let mut project_rect = None;
             if let Some(buffer) = agent.renaming_project {
                 // The harness yields its column to the name being typed.
-                spans.extend(rename_spans(buffer));
+                let taken: u16 =
+                    spans.iter().map(|span| span.width() as u16).sum::<u16>() + TRAILING_PAD;
+                let room = detail_rect.width.saturating_sub(taken);
+                spans.extend(rename_spans_within(buffer, room as usize));
             } else if caption.harness {
                 let harness = if caption.show_harness {
                     text::columns(&caption.detail) as u16 + 1
