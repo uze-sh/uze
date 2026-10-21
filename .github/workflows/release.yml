@@ -565,7 +565,10 @@ jobs:
           else
             if [ -z "${tagged}" ]; then
               echo "writing ${tag} at ${SHA}"
-              git -c credential.helper='!f() { echo "password=${GH_TOKEN}"; }; f' \
+              # The helper names the user itself: a libcurl that strips
+              # credentials from the effective URL (Ubuntu's CVE-2026-94266
+              # backport) leaves git without the one in the remote URL.
+              git -c credential.helper='!f() { echo "username=x-access-token"; echo "password=${GH_TOKEN}"; }; f' \
                 push "https://x-access-token@github.com/${GITHUB_REPOSITORY}.git" \
                 "refs/tags/${tag}:refs/tags/${tag}"
             else
