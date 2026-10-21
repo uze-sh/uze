@@ -20,13 +20,13 @@ pub struct ProjectLabels {
 }
 
 impl ProjectLabels {
-    /// The label of the project at `root`. A key written by hand with
-    /// another case, separator or trailing slash still matches where the
-    /// platform says it names the same path.
+    /// The label of the project at `root`. A key written by hand spelled
+    /// otherwise, with a trailing separator or by the platform's own rules
+    /// of case and separators, still matches.
     pub fn of(&self, root: &Path) -> Option<&str> {
         self.labels
             .iter()
-            .find(|(key, _)| uze_platform::path::same_path(key, root))
+            .find(|(key, _)| names_the_root(key, root))
             .map(|(_, label)| label.as_str())
     }
 
@@ -37,12 +37,19 @@ impl ProjectLabels {
             .map_or_else(|| directory_name(root), str::to_owned)
     }
 
-    fn key_of(&self, root: &Path) -> Option<&Path> {
+    /// Every key naming `root`, as the file spells it.
+    fn keys_of(&self, root: &Path) -> Vec<String> {
         self.labels
             .iter()
-            .find(|(key, _)| uze_platform::path::same_path(key, root))
-            .map(|(key, _)| key.as_path())
+            .filter(|(key, _)| names_the_root(key, root))
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect()
     }
+}
+
+fn names_the_root(key: &Path, root: &Path) -> bool {
+    let tidy = |path: &Path| path.components().collect::<PathBuf>();
+    uze_platform::path::same_path(&tidy(key), &tidy(root))
 }
 
 pub fn labels(home: &UzeHome) -> Result<ProjectLabels> {
@@ -56,18 +63,22 @@ pub fn labels(home: &UzeHome) -> Result<ProjectLabels> {
 /// Names the project at `root` `label`, and answers the label in force
 /// afterwards. Only a name other than the directory's is kept: an empty
 /// one, or the directory's own, takes the label away, and taking away a
-/// label that is not there writes nothing.
+/// label that is not there writes nothing. The label is written under the
+/// first key the file already spells the root with, and every other key
+/// naming it is taken away, so one root never holds two labels.
 pub fn set_label(home: &UzeHome, root: &Path, label: &str) -> Result<Option<String>> {
     let label = label.trim();
-    let written = labels(home)?;
-    let key = written
-        .key_of(root)
-        .map_or_else(|| root.to_string_lossy(), Path::to_string_lossy)
-        .into_owned();
-    if label.is_empty() || label == directory_name(root) {
+    let mut keys = labels(home)?.keys_of(root).into_iter();
+    let kept = (!label.is_empty() && label != directory_name(root)).then(|| {
+        keys.next()
+            .unwrap_or_else(|| root.to_string_lossy().into_owned())
+    });
+    for key in keys {
         config::remove_in_table(home, SECTION, &key, LABEL)?;
-        return Ok(None);
     }
+    let Some(key) = kept else {
+        return Ok(None);
+    };
     config::set_in_table(home, SECTION, &key, LABEL, label)?;
     Ok(Some(label.to_owned()))
 }
@@ -164,6 +175,46 @@ mod tests {
             fs::read_to_string(home.config_path()).unwrap(),
             "[projects.'/work/uze']\nlabel = \"new\" # mine\n"
         );
+    }
+
+    #[test]
+    fn a_key_written_with_a_trailing_separator_is_read() {
+        let home = home("labels-trailing");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[projects.'/work/uze/']\nlabel = \"uze core\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            labels(&home).unwrap().of(Path::new("/work/uze")),
+            Some("uze core")
+        );
+
+        set_label(&home, Path::new("/work/uze"), "renamed").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(home.config_path()).unwrap(),
+            "[projects.'/work/uze/']\nlabel = \"renamed\"\n",
+            "the key written by hand is the one renamed"
+        );
+    }
+
+    #[test]
+    fn clearing_takes_every_spelling_of_the_root_away() {
+        let home = home("labels-two-spellings");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[projects.'/work/uze']\nlabel = \"a\"\n[projects.'/work/uze/']\nlabel = \"b\"\n",
+        )
+        .unwrap();
+
+        set_label(&home, Path::new("/work/uze"), "").unwrap();
+
+        assert_eq!(labels(&home).unwrap().of(Path::new("/work/uze")), None);
+        assert_eq!(fs::read_to_string(home.config_path()).unwrap(), "");
     }
 
     #[test]
