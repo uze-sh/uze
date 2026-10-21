@@ -156,6 +156,12 @@ const CHIME_SETTLE: Duration = Duration::from_secs(10);
 /// low is no longer terminal because renewed output re-enters `Working`
 /// on its own (see [`WorkspaceModel::note_agent_output`]).
 const AGENT_QUIET_AFTER: Duration = Duration::from_secs(5);
+/// How long a shell must stay at its prompt before its program counts as
+/// finished. Longer than the runtime's once-a-second status probe: a
+/// sequence (`make && ./run`, a loop) hands the terminal back to the shell
+/// between its commands, and a probe landing in that gap must be followed
+/// by one that sees the next command before the first reads as done.
+const SHELL_SETTLE: Duration = Duration::from_secs(2);
 
 /// What a pane's repainting has to look like before it reads as an agent
 /// at work: a *beat*, not a rate.
@@ -1515,11 +1521,11 @@ struct Remembered {
     /// merely having an agent process open — or reattaching to one — is
     /// deliberately not activity.
     agent_activity: BTreeMap<PaneId, AgentActivity>,
-    /// Agent panes that stopped working while the user was looking
-    /// somewhere else. The sidebar keeps their check visible until the tab
-    /// is actually on screen, making completion discoverable without
-    /// leaving a stale busy spinner.
-    completed_agent_panes: BTreeSet<PaneId>,
+    /// Panes that finished while the user was looking somewhere else: an
+    /// agent that stopped working, or a shell whose program returned to
+    /// the prompt. Their tab keeps a check until it is actually on screen,
+    /// making completion discoverable without leaving a stale busy mark.
+    completed_panes: BTreeSet<PaneId>,
     /// The most recently resolved agent support answer, tagged with the
     /// `(harness, cwd)` it answers — never assumed to apply to a different
     /// selection.
@@ -1737,6 +1743,9 @@ struct WorkspaceModel {
     /// forwarded to it, rather than the agent working (see
     /// [`AGENT_ECHO_GRACE`] and [`AGENT_PASTE_GRACE`]).
     input_echo_until: BTreeMap<PaneId, EchoWindow>,
+    /// Shells seen back at their prompt after running a program, and
+    /// since when: a finish until [`SHELL_SETTLE`] says otherwise.
+    settling_shells: BTreeMap<PaneId, Instant>,
     hits: Vec<(Rect, WorkspaceHit)>,
     /// Whether the last frame drew a caption sliding under the pointer
     /// (see `render::FrameMetrics::marquee`). The clock turns for it the

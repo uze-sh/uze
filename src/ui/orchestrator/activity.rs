@@ -1,4 +1,4 @@
-//! Whether each agent is working: its repaints, the echo of what was typed into it, the chime when it finishes, and what its tab shows.
+//! Whether each pane is working: an agent's repaints, the echo of what was typed into it, the chime when it finishes, a shell's program finishing, and what its tab shows.
 
 use super::*;
 
@@ -39,7 +39,7 @@ impl WorkspaceModel {
             .entry(pane)
             .or_default()
             .working_until = Some(Instant::now() + AGENT_QUIET_AFTER);
-        self.remembered.completed_agent_panes.remove(&pane);
+        self.remembered.completed_panes.remove(&pane);
         self.dirty = true;
 
         if let (Some(prompt), Some(recorder)) = (prompt, self.prompt_recorder.as_ref())
@@ -76,7 +76,7 @@ impl WorkspaceModel {
         let activity = self.remembered.agent_activity.entry(pane).or_default();
         if activity.note_repaint(now) {
             activity.working_until = Some(now + AGENT_QUIET_AFTER);
-            self.remembered.completed_agent_panes.remove(&pane);
+            self.remembered.completed_panes.remove(&pane);
         }
     }
 
@@ -145,13 +145,14 @@ impl WorkspaceModel {
             .is_some_and(|tab| agent_identity_for_tab(identities, tab).is_some())
     }
 
-    /// Advances every agent pane's phase for the current instant: a pane
-    /// quiet for [`AGENT_QUIET_AFTER`] stops working, and one that stopped
+    /// Advances every pane's phase for the current instant: an agent pane
+    /// quiet for [`AGENT_QUIET_AFTER`] stops working, a shell back at its
+    /// prompt for [`SHELL_SETTLE`] has finished, and either one that ended
     /// out of sight keeps a check until its tab is actually on screen.
     /// Clearing that check here — rather than only at the handful of call
     /// sites that switch tabs — is what makes "done" disappear exactly when
     /// the user looks at it, whichever way they got there.
-    pub(super) fn expire_agent_activity(&mut self, now: Instant) -> bool {
+    pub(super) fn expire_pane_activity(&mut self, now: Instant) -> bool {
         let focused = self.focused_pane();
         let mut expired = Vec::new();
         for (pane, activity) in &mut self.remembered.agent_activity {
@@ -162,9 +163,25 @@ impl WorkspaceModel {
         for pane in &expired {
             self.unsettled_turns.insert(*pane, now);
             if *pane != focused {
-                self.remembered.completed_agent_panes.insert(*pane);
+                self.remembered.completed_panes.insert(*pane);
             }
         }
+        // A shell that finished out of sight is what the user would
+        // otherwise miss; one on screen at any moment of its settling was
+        // seen finishing, wherever the user is once it has settled.
+        let mut settled = false;
+        let completed = &mut self.remembered.completed_panes;
+        self.settling_shells.retain(|pane, since| {
+            if *pane == focused {
+                return false;
+            }
+            if now.duration_since(*since) < SHELL_SETTLE {
+                return true;
+            }
+            completed.insert(*pane);
+            settled = true;
+            false
+        });
         self.recently_quiet.extend(expired.iter().copied());
         // A closed echo window, and a pane holding neither a deadline nor
         // recent repaints, have nothing left to say about themselves —
@@ -173,12 +190,12 @@ impl WorkspaceModel {
         self.remembered
             .agent_activity
             .retain(|_, activity| activity.is_working() || !activity.repaints.is_empty());
-        let acknowledged = self.remembered.completed_agent_panes.remove(&focused);
+        let acknowledged = self.remembered.completed_panes.remove(&focused);
         // A pane whose tab is gone can never be looked at again, and its id
         // is free to be handed to a future pane — leaving its check behind
         // would eventually surface on something unrelated.
-        self.forget_closed_agent_panes();
-        !expired.is_empty() || acknowledged
+        self.forget_closed_panes();
+        !expired.is_empty() || acknowledged || settled
     }
 
     /// Whether the bell rings now, under `chime`, for the turns that have
@@ -196,7 +213,7 @@ impl WorkspaceModel {
             return false;
         }
         let activity = &self.remembered.agent_activity;
-        let completed = &self.remembered.completed_agent_panes;
+        let completed = &self.remembered.completed_panes;
         let mut due = false;
         self.unsettled_turns.retain(|pane, ended| {
             if activity.get(pane).is_some_and(AgentActivity::is_working) {
@@ -222,14 +239,15 @@ impl WorkspaceModel {
         ring
     }
 
-    pub(super) fn forget_closed_agent_panes(&mut self) {
+    pub(super) fn forget_closed_panes(&mut self) {
         // Runs on every input tick, so it earns the early exit: with no
         // per-pane state held there is nothing to reconcile, and walking
         // the tab tree to build a live-pane set would be pure overhead.
         if self.remembered.agent_activity.is_empty()
-            && self.remembered.completed_agent_panes.is_empty()
+            && self.remembered.completed_panes.is_empty()
             && self.input_echo_until.is_empty()
             && self.unsettled_turns.is_empty()
+            && self.settling_shells.is_empty()
         {
             return;
         }
@@ -241,12 +259,13 @@ impl WorkspaceModel {
             .agent_activity
             .retain(|pane, _| live.contains(pane));
         self.remembered
-            .completed_agent_panes
+            .completed_panes
             .retain(|pane| live.contains(pane));
         self.input_echo_until.retain(|pane, _| live.contains(pane));
         // A closed tab's turn has nobody left to tell, and its id is free
         // for a new pane to inherit the ring.
         self.unsettled_turns.retain(|pane, _| live.contains(pane));
+        self.settling_shells.retain(|pane, _| live.contains(pane));
     }
 
     /// The one place the four sidebar states are decided. Working outranks
@@ -257,7 +276,7 @@ impl WorkspaceModel {
     pub(super) fn agent_tab_status(&self, pane: PaneId, selected: bool) -> AgentTabStatus {
         if self.agent_is_working(pane) {
             AgentTabStatus::Working
-        } else if self.remembered.completed_agent_panes.contains(&pane) {
+        } else if self.remembered.completed_panes.contains(&pane) {
             AgentTabStatus::Completed
         } else if selected {
             AgentTabStatus::Selected
@@ -266,9 +285,49 @@ impl WorkspaceModel {
         }
     }
 
-    pub(super) fn acknowledge_completed_agent_tab(&mut self, tab: TabId) {
+    /// Notes the shells whose program returned to the prompt between the
+    /// session in hand and `next`, and forgets those that are running
+    /// again: a finish is only one once it has settled (see
+    /// [`SHELL_SETTLE`]).
+    pub(super) fn note_finished_shells(
+        &mut self,
+        next: &Session,
+        identities: &[AgentIdentity],
+        now: Instant,
+    ) {
+        let Some(previous) = self.session.as_ref() else {
+            return;
+        };
+        let focused = next.selected_tab().pane.id;
+        let was_running: BTreeSet<PaneId> = previous
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| space.tabs.iter())
+            .filter(|tab| !tab.pane.runs_a_shell() && !is_agent_tab(identities, tab))
+            .map(|tab| tab.pane.id)
+            .collect();
+        for tab in next
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| space.tabs.iter())
+        {
+            if !tab.pane.runs_a_shell() {
+                self.settling_shells.remove(&tab.pane.id);
+            } else if was_running.contains(&tab.pane.id) && tab.pane.id != focused {
+                self.settling_shells.insert(tab.pane.id, now);
+            }
+        }
+    }
+
+    pub(super) fn finished_out_of_sight(&self, pane: PaneId) -> bool {
+        self.remembered.completed_panes.contains(&pane)
+    }
+
+    pub(super) fn acknowledge_completed_tab(&mut self, tab: TabId) {
         if let Some(pane) = self.pane_for_tab(tab)
-            && self.remembered.completed_agent_panes.remove(&pane)
+            && self.remembered.completed_panes.remove(&pane)
         {
             self.dirty = true;
         }

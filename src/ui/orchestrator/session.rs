@@ -344,7 +344,7 @@ impl Attach<'_> {
         self.absorb_command_approvals();
         self.absorb_launchers();
         self.schedule_surface_reads();
-        if self.model.expire_agent_activity(Instant::now()) {
+        if self.model.expire_pane_activity(Instant::now()) {
             self.model.dirty = true;
         }
         if self.model.expire_press(Instant::now()) {

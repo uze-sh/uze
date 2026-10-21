@@ -453,19 +453,33 @@ fn render_agent_tabs(
         } else {
             theme::fg(Token::TextInactive)
         };
+        // A shell running a program says so in the success hue, selected
+        // or not: the accent already means "you are here", and the star is
+        // the agents' alone. One whose program ended out of sight keeps a
+        // check until it is looked at, the way an agent's turn does.
+        let running = !is_agent && !tab.pane.runs_a_shell();
+        let finished = !is_agent && !running && model.finished_out_of_sight(tab.pane.id);
         let marker = Span::styled(
             // The agent leading the strip wears the same mark the button
             // that creates one does, so the first chip reads as the agent
             // this context is about rather than another shell.
             format!(
                 "{} ",
-                theme::glyph(match (is_agent, selected) {
-                    (true, _) => Symbol::MarkSparkle,
-                    (false, true) => Symbol::StatusSelected,
-                    (false, false) => Symbol::StatusIdle,
+                theme::glyph(if is_agent {
+                    Symbol::MarkSparkle
+                } else if running {
+                    Symbol::StatusRunning
+                } else if finished {
+                    Symbol::StatusCompleted
+                } else if selected {
+                    Symbol::StatusSelected
+                } else {
+                    Symbol::StatusIdle
                 })
             ),
-            Style::default().fg(if is_agent && !selected {
+            Style::default().fg(if running || finished {
+                theme::color(Token::StateSuccess)
+            } else if is_agent && !selected {
                 theme::color(Token::TextInactive)
             } else {
                 marker_fg

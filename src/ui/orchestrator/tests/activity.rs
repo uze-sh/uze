@@ -50,14 +50,14 @@ fn a_submitted_agent_prompt_works_until_its_pane_goes_quiet() {
         &identities_fixture()
     ));
 
-    assert!(!model.expire_agent_activity(Instant::now() + Duration::from_secs(1)));
+    assert!(!model.expire_pane_activity(Instant::now() + Duration::from_secs(1)));
     assert_eq!(
         model.agent_tab_status(PaneId(1), false),
         AgentTabStatus::Working
     );
 
     assert!(
-        model.expire_agent_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
+        model.expire_pane_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
     );
     assert!(!workspace_has_active_agent_operation(
         &model,
@@ -158,7 +158,7 @@ fn output_resuming_after_a_quiet_stretch_returns_the_pane_to_working() {
     let mut model = agent_session();
     model.note_agent_prompt_submission(PaneId(1), &identities_fixture(), Some("hello"));
     assert!(
-        model.expire_agent_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
+        model.expire_pane_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
     );
     assert_ne!(
         model.agent_tab_status(PaneId(1), false),
@@ -184,7 +184,7 @@ fn output_resuming_after_a_quiet_stretch_returns_the_pane_to_working() {
 #[test]
 fn the_redraw_that_selecting_an_agent_provokes_is_not_a_turn_starting() {
     let mut model = agent_session();
-    model.remembered.completed_agent_panes.insert(PaneId(1));
+    model.remembered.completed_panes.insert(PaneId(1));
     assert_eq!(
         model.agent_tab_status(PaneId(1), false),
         AgentTabStatus::Completed
@@ -299,7 +299,7 @@ fn a_beat_that_stutters_stays_a_running_turn() {
     for beat in beats {
         let at = start + Duration::from_millis(beat);
         model.note_agent_output(PaneId(1), &identities_fixture(), at);
-        model.expire_agent_activity(at);
+        model.expire_pane_activity(at);
         if beat < 2000 {
             continue;
         }
@@ -386,7 +386,7 @@ fn typing_over_a_running_turn_cannot_extend_it() {
         );
     }
 
-    assert!(model.expire_agent_activity(start + (AGENT_QUIET_AFTER + Duration::from_secs(2))));
+    assert!(model.expire_pane_activity(start + (AGENT_QUIET_AFTER + Duration::from_secs(2))));
     assert_ne!(
         model.agent_tab_status(PaneId(1), false),
         AgentTabStatus::Working
@@ -401,7 +401,7 @@ fn rings_when_a_turn_ends_in(pane: PaneId, chime: uze_application::Chime) -> boo
     let start = Instant::now();
     model.note_agent_prompt_submission(pane, &identities_fixture(), Some("hello"));
     let ended = start + AGENT_QUIET_AFTER + Duration::from_secs(1);
-    assert!(model.expire_agent_activity(ended));
+    assert!(model.expire_pane_activity(ended));
     assert!(
         !model.take_ring(chime, ended),
         "a turn rings only once it has stayed ended"
@@ -435,7 +435,7 @@ fn a_pause_the_agent_resumes_from_never_rings() {
     let start = Instant::now();
     model.note_agent_prompt_submission(PaneId(2), &identities_fixture(), Some("hello"));
     let paused = start + AGENT_QUIET_AFTER + Duration::from_secs(1);
-    assert!(model.expire_agent_activity(paused));
+    assert!(model.expire_pane_activity(paused));
 
     // Back to work before the pause settled: the check went, and so
     // does the ring it would have been.
@@ -452,10 +452,10 @@ fn a_tab_looked_at_before_its_turn_settles_does_not_ring_out_of_sight() {
     let start = Instant::now();
     model.note_agent_prompt_submission(PaneId(2), &identities_fixture(), Some("hello"));
     let ended = start + AGENT_QUIET_AFTER + Duration::from_secs(1);
-    model.expire_agent_activity(ended);
+    model.expire_pane_activity(ended);
 
     select_second_agent(&mut model);
-    model.expire_agent_activity(ended + Duration::from_secs(1));
+    model.expire_pane_activity(ended + Duration::from_secs(1));
     assert!(!model.take_ring(Chime::OutOfSight, ended + CHIME_SETTLE));
 }
 
@@ -466,12 +466,12 @@ fn a_turn_whose_tab_closed_before_it_settled_does_not_ring() {
     let start = Instant::now();
     model.note_agent_prompt_submission(PaneId(2), &identities_fixture(), Some("hello"));
     let ended = start + AGENT_QUIET_AFTER + Duration::from_secs(1);
-    model.expire_agent_activity(ended);
+    model.expire_pane_activity(ended);
 
     model.session.as_mut().unwrap().workspace.spaces[0]
         .tabs
         .retain(|tab| tab.pane.id != PaneId(2));
-    model.expire_agent_activity(ended + Duration::from_secs(1));
+    model.expire_pane_activity(ended + Duration::from_secs(1));
     assert!(!model.take_ring(Chime::Always, ended + CHIME_SETTLE));
 }
 
@@ -483,7 +483,7 @@ fn turns_settling_together_ring_once() {
     model.note_agent_prompt_submission(PaneId(1), &identities_fixture(), Some("one"));
     model.note_agent_prompt_submission(PaneId(2), &identities_fixture(), Some("two"));
     let ended = start + AGENT_QUIET_AFTER + Duration::from_secs(1);
-    model.expire_agent_activity(ended);
+    model.expire_pane_activity(ended);
     let settled = ended + CHIME_SETTLE;
     assert!(model.take_ring(Chime::Always, settled));
     assert!(
@@ -512,7 +512,7 @@ fn output_during_a_turn_carries_it_past_the_quiet_window() {
 
     let later = Instant::now() + Duration::from_secs(2);
     animate(&mut model, PaneId(1), later);
-    assert!(!model.expire_agent_activity(later + Duration::from_secs(2)));
+    assert!(!model.expire_pane_activity(later + Duration::from_secs(2)));
     assert_eq!(
         model.agent_tab_status(PaneId(1), false),
         AgentTabStatus::Working
@@ -544,14 +544,14 @@ fn completed_background_agent_keeps_a_check_until_its_tab_is_opened() {
     let mut model = model_of(session);
     model.note_agent_prompt_submission(agent_pane, &identities_fixture(), Some("hello"));
     assert!(
-        model.expire_agent_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
+        model.expire_pane_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
     );
     assert_eq!(
         model.agent_tab_status(agent_pane, false),
         AgentTabStatus::Completed
     );
 
-    model.acknowledge_completed_agent_tab(agent_tab);
+    model.acknowledge_completed_tab(agent_tab);
     assert_eq!(
         model.agent_tab_status(agent_pane, false),
         AgentTabStatus::Idle
@@ -579,7 +579,7 @@ fn a_check_clears_as_soon_as_its_pane_is_the_one_on_screen() {
     let mut model = model_of(session);
     model.note_agent_prompt_submission(agent_pane, &identities_fixture(), Some("hello"));
     assert!(
-        model.expire_agent_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
+        model.expire_pane_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
     );
     assert_eq!(
         model.agent_tab_status(agent_pane, false),
@@ -590,7 +590,7 @@ fn a_check_clears_as_soon_as_its_pane_is_the_one_on_screen() {
         session.workspace.spaces[0].selected_tab = agent_tab;
     }
     assert!(
-        model.expire_agent_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
+        model.expire_pane_activity(Instant::now() + (AGENT_QUIET_AFTER + Duration::from_secs(2)))
     );
     assert_eq!(
         model.agent_tab_status(agent_pane, false),
@@ -619,9 +619,9 @@ fn a_closed_tab_leaves_no_status_behind_for_the_next_pane() {
     if let Some(session) = model.session.as_mut() {
         session.remove_tab(agent_tab);
     }
-    model.expire_agent_activity(Instant::now());
+    model.expire_pane_activity(Instant::now());
     assert!(model.remembered.agent_activity.is_empty());
-    assert!(model.remembered.completed_agent_panes.is_empty());
+    assert!(model.remembered.completed_panes.is_empty());
     assert!(model.input_echo_until.is_empty());
 }
 

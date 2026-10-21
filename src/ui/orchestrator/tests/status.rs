@@ -237,7 +237,7 @@ fn the_four_sidebar_states_are_decided_by_one_precedence() {
     );
 
     model.remembered.agent_activity.remove(&PaneId(1));
-    model.remembered.completed_agent_panes.insert(PaneId(1));
+    model.remembered.completed_panes.insert(PaneId(1));
     assert_eq!(
         model.agent_tab_status(PaneId(1), true),
         AgentTabStatus::Completed

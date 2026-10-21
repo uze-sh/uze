@@ -1334,7 +1334,7 @@ impl Attach<'_> {
                 } else {
                     tab
                 };
-                self.model.acknowledge_completed_agent_tab(tab);
+                self.model.acknowledge_completed_tab(tab);
                 let _ = send_request(
                     &mut self.stream,
                     &ClientRequest::SelectTab { tab: selected },

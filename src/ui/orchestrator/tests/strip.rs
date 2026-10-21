@@ -10,9 +10,9 @@ use super::{
     space_context_agent, space_own_tab, strip_label, strip_tabs, tab_drag_group,
     tab_drag_group_members,
 };
-use crate::ui::theme::{self, Token};
+use crate::ui::theme::{self, Symbol, Token};
 use ratatui::{Terminal, backend::TestBackend};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uze_core::UzeHome;
 use uze_terminal::{ClientRequest, SpaceId, TabId};
 
@@ -790,4 +790,196 @@ fn a_tab_s_close_mark_turns_to_danger_under_the_pointer() {
     assert_eq!(colour_at(&mut model), theme::color(Token::TextDim));
     model.hovered = Some(hit);
     assert_eq!(colour_at(&mut model), theme::color(Token::StateDanger));
+}
+
+/// The marker on the strip's chip for the shell labelled `label`: its
+/// glyph and its colour.
+fn shell_marker(model: &WorkspaceModel, label: &str) -> (String, ratatui::style::Color) {
+    let mut terminal = Terminal::new(TestBackend::new(80, 3)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_tab_strip(
+                frame,
+                frame.area(),
+                model,
+                &identities_fixture(),
+                LeadingSlot::AgentTabs,
+                &mut Vec::new(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let row: Vec<&str> = (0..buffer.area.width)
+        .map(|column| buffer[(column, 0)].symbol())
+        .collect();
+    let at = row
+        .windows(label.chars().count())
+        .position(|cells| cells.concat() == label)
+        .expect("the shell is on the strip");
+    let cell = &buffer[(at as u16 - 2, 0)];
+    (cell.symbol().to_owned(), cell.fg)
+}
+
+/// Moves the shell labelled `label` to `process`, the way the runtime's
+/// status probe reports it.
+fn shell_runs(model: &mut WorkspaceModel, label: &str, process: &str) {
+    let mut session = model.session.clone().unwrap();
+    session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.label == label)
+        .unwrap()
+        .pane
+        .process = process.into();
+    model.apply(
+        uze_terminal::ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
+    );
+}
+
+/// A shell running a program trades its dot for the running mark in a
+/// success hue, and takes the dot back at its prompt.
+#[test]
+fn a_shell_running_a_program_wears_the_running_mark() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusIdle)
+    );
+    shell_runs(&mut model, shell, "cargo");
+    assert_eq!(
+        shell_marker(&model, shell),
+        (
+            theme::glyph(Symbol::StatusRunning).to_owned(),
+            theme::color(Token::StateSuccess)
+        )
+    );
+}
+
+/// A program that ends in a shell the user is not looking at leaves a
+/// check on its tab until the tab is on screen.
+#[test]
+fn a_shell_whose_program_ended_out_of_sight_keeps_a_check_until_seen() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    shell_runs(&mut model, shell, "cargo");
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
+    assert_eq!(
+        shell_marker(&model, shell),
+        (
+            theme::glyph(Symbol::StatusCompleted).to_owned(),
+            theme::color(Token::StateSuccess)
+        )
+    );
+
+    let tab = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.id)
+        .unwrap();
+    select_tab(&mut model, tab);
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusSelected),
+        "looked at, the check is spent"
+    );
+}
+
+/// A program that ends in the shell on screen was seen ending: no check,
+/// even when the user moves away before the finish has settled.
+#[test]
+fn a_shell_whose_program_ended_in_view_leaves_no_check() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+    let tab = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.id)
+        .unwrap();
+    select_tab(&mut model, tab);
+
+    shell_runs(&mut model, shell, "cargo");
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_pane_activity(Instant::now());
+    select_tab(&mut model, first);
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusIdle)
+    );
+}
+
+/// An agent's own tab is never a shell that finished, whether its harness
+/// exited to the prompt or a command ran in the shell that replaced it:
+/// the sidebar's check is for an agent's turn, and nothing else.
+#[test]
+fn an_agents_own_tab_never_takes_a_shells_check() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, second);
+    let pane = model.pane_for_tab(first).unwrap();
+
+    shell_runs(&mut model, "Agent one", "zsh");
+    assert!(!model.finished_out_of_sight(pane), "the harness exited");
+
+    let session = model.session.as_mut().unwrap();
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == first)
+        .unwrap();
+    tab.env.push((
+        uze_terminal::launch::AGENT_IDENTITY_VARIABLE.into(),
+        "a".into(),
+    ));
+    shell_runs(&mut model, "Agent one", "cargo");
+    shell_runs(&mut model, "Agent one", "zsh");
+    assert!(
+        !model.finished_out_of_sight(pane),
+        "a command in a launched agent's tab"
+    );
+}
+
+/// The prompt a sequence passes through between two of its commands is
+/// not the program finishing: the check waits for the prompt to hold
+/// across more than one of the runtime's probes.
+#[test]
+fn a_prompt_between_two_commands_is_not_a_finish() {
+    let (mut model, first, _) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let shell = "Agent one shell";
+
+    shell_runs(&mut model, shell, "make");
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_pane_activity(Instant::now());
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusIdle),
+        "not yet a finish"
+    );
+    shell_runs(&mut model, shell, "run");
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
+    let pane = model
+        .tabs()
+        .find(|tab| tab.label == shell)
+        .map(|tab| tab.pane.id)
+        .unwrap();
+    assert!(
+        !model.finished_out_of_sight(pane),
+        "running again, the gap was no finish"
+    );
+    shell_runs(&mut model, shell, "zsh");
+    model.expire_pane_activity(Instant::now() + Duration::from_secs(3));
+    assert_eq!(
+        shell_marker(&model, shell).0,
+        theme::glyph(Symbol::StatusCompleted),
+        "the sequence ended"
+    );
 }
