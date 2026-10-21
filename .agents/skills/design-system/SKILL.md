@@ -333,6 +333,14 @@ Use the `src/progress.rs` helpers and never hand-format:
 - Every UI and CLI message is in English.
 - Write short and direct, not robotic, not literal, not poetic.
 - Name the thing, not the mechanism. User-facing status is never technical.
+- A project resource that reaches a harness says only who delivers it:
+  `Native` (the harness reads it) or `Delivered` (uze brings it, through
+  the shim or the rules engine), never the mechanism ("Inside the
+  workspace", "Rules engine") nor the brand ("Via uze"). The drawer's own
+  groups already say where it is.
+- A status shows the state, not the history that produced it: provisioning
+  reads `Verified`, never `Verified (Update)`, which reads as an update
+  waiting beside a version.
 - Use the present tense for actions ("send", "install"), lowercase labels,
   and punctuate status words the same way everywhere.
 - "uze" is lowercase, and a sentence shouldn't start with it.
