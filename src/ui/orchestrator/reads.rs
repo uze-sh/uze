@@ -224,9 +224,6 @@ pub(super) fn spawn_unspelled_gates(
     });
 }
 
-/// Asks, for each directory first seen, whether its project's commands
-/// wait for the operator's approval. Off the frame: reading the policy
-/// asks Git whether the files it links are ignored.
 /// A project's commands waiting for approval, with the root its project
 /// resolves to.
 pub(super) struct AwaitingRead {
@@ -234,6 +231,9 @@ pub(super) struct AwaitingRead {
     pub(super) root: PathBuf,
 }
 
+/// Asks, for each directory first seen, whether its project's commands
+/// wait for the operator's approval. Off the frame: reading the policy
+/// asks Git whether the files it links are ignored.
 pub(super) fn spawn_commands_awaiting(
     home: &UzeHome,
     directories: Vec<PathBuf>,
