@@ -928,7 +928,11 @@ fn replace(staged: &Path, version: &str, target: &Path) -> Result<(), String> {
     let placed = (|| {
         fs::copy(staged, &beside)?;
         make_runnable(&beside)?;
-        fs::File::open(&beside)?.sync_all()?;
+        // Windows flushes only through a handle that may write.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&beside)?
+            .sync_all()?;
         uze_platform::executable::replace_running(&beside, target)
     })();
     if placed.is_err() {
