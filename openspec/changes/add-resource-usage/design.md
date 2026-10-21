@@ -50,14 +50,23 @@ the pane runtimes are copied.
   second is carried by the build tool that waited for it. A pane's
   window CPU is the delta between readings of processes present in both,
   matched by pid and start stamp.
+- A process alive at the first reading that ends inside the window
+  lands its whole lifetime in the parent that waited for it; what it had
+  spent by the first reading is taken back off that parent.
 - A process only in the second reading counts in full when its start
   stamp is newer than every stamp of the first reading, which is how a
   process started inside the window looks; otherwise it was missed, and
   is left out rather than counted as a lifetime in one second.
 - Windows: the job's `JobObjectBasicAccountingInformation` totals count
   every process the job ever held, so a pane's CPU is their delta.
-- A request arriving while another samples waits for it and takes its
-  answer: a loop in a pane cannot keep the server scanning.
+- A request arriving while another samples waits for it, and one within
+  five seconds after a sample is given that sample's answer: a loop in a
+  pane cannot keep the server scanning.
+- A request gives back its place among the connections yet to say who
+  they are and waits under a bound of its own (four), so asking can never
+  keep the person's attach out.
+- The process asking, and what it started, are left out of the pane it
+  stands in: the report is the same wherever it is asked from.
 
 The share is of the whole machine (cores × window), 0 to 100%.
 
@@ -112,15 +121,20 @@ application for the disk, on two threads, and renders both. Neither
 
 ### D8. Another build
 
-A hang-up with no answer to `Usage` is read as a server of another
-build: the same thing every older server does with a frame it cannot
-decode. A server of this build that does not know the version in the
-frame answers "incompatible", read the same way.
+A server of another build either answers "incompatible" or, unable to
+decode the request, hangs up. A hang-up is confirmed with an attach of
+this version, which another build answers "incompatible" before it asks
+for the key and this build refuses; only the first is reported as
+another build. A missing socket while the workspace is claimed is waited
+for as an attach waits, since a `/tmp` cleaner's wipe is put back within
+seconds.
 
 ### D9. The report
 
 Head as `key_value` lines (machine, cpu, memory, workspace), then two
-tables with `aligned_rows`, numbers right-aligned, sizes in binary units:
+tables sharing their columns (`progress::figure_groups`), numbers
+right-aligned, sizes in binary multiples written as the workspace's own
+surfaces write them (KB, MB, GB):
 
 ```
 uze usage
