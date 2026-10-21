@@ -440,6 +440,7 @@ pub fn usage() -> Result<Usage, RuntimeError> {
             }
             match connect_waiting(&socket) {
                 Ok(stream) => stream,
+                Err(RuntimeError::Io(error)) => return Err(RuntimeError::Io(error)),
                 Err(_) => return Ok(Usage::OtherBuild),
             }
         }
@@ -471,8 +472,9 @@ pub fn usage() -> Result<Usage, RuntimeError> {
 
 /// What a server that hung up on a usage request is. An attach of this
 /// version is answered "incompatible" by one of another build before it
-/// asks for the key, and refused by one of this build, which offered no
-/// key; the one ends the question, the other leaves the hang-up a failure.
+/// asks for the key; anything else — a refusal for the missing key, or
+/// silence from a server turning connections away — leaves the hang-up a
+/// failure, never a reason to stop a workspace of this build.
 fn speaks_another_version(socket: &Path) -> Result<Usage, RuntimeError> {
     let hung_up = || {
         RuntimeError::Protocol(format!(
@@ -494,7 +496,7 @@ fn speaks_another_version(socket: &Path) -> Result<Usage, RuntimeError> {
         },
     )?;
     match read_event(&mut stream) {
-        Ok(None | Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
+        Ok(Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
         _ => Err(hung_up()),
     }
 }

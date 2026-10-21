@@ -4935,8 +4935,9 @@ fn a_recent_sample_answers_the_next_request() {
 
 /// A server that cannot read a usage request hangs up on it. One of
 /// another build answers an attach of this version "incompatible"; one of
-/// this build refuses it for want of the key, and its hang-up is a failure,
-/// never a reason to tell the person to stop a workspace of their own build.
+/// this build refuses it for want of the key, or turns it away in silence
+/// when it is full, and its hang-up is a failure, never a reason to tell
+/// the person to stop a workspace of their own build.
 #[test]
 fn a_server_hanging_up_on_usage_is_another_build_only_when_it_says_so() {
     for (answer_to_attach, expected) in [
@@ -4952,6 +4953,7 @@ fn a_server_hanging_up_on_usage_is_another_build_only_when_it_says_so() {
             }),
             None,
         ),
+        (None, None),
     ] {
         let scratch = uze_testkit::temp::socket_scratch("usage-hang-up");
         let uze_home = scratch.join("home");
