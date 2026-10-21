@@ -70,16 +70,17 @@ impl AgentSupport {
     }
 }
 
-/// One `ResourceDelivery` as a reader sees it. Every label names the
-/// mechanism or the specific reason there is none — never a bare
+/// One `ResourceDelivery` as a reader sees it. A delivered resource says
+/// only who delivers it, the harness itself or uze; an undelivered one says
+/// the specific reason there is none — never a bare
 /// "unavailable", which read as the harness being broken when the real
 /// answer was "this project has no AGENTS.md" or "your PATH resolves
 /// `claude` to the real binary before UZE's shim".
 fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
-        ResourceDelivery::Projected => (State::Ready, "loaded"),
-        ResourceDelivery::RulesEngine => (State::Ready, "rules engine"),
+        ResourceDelivery::Projected => (State::Ready, "delivered"),
+        ResourceDelivery::RulesEngine => (State::Ready, "delivered"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
@@ -305,7 +306,7 @@ mod tests {
             assert_eq!(name, ".agents/rules");
             status
         };
-        assert!(rules_as(ResourceDelivery::RulesEngine).ends_with("Rules engine"));
+        assert!(rules_as(ResourceDelivery::RulesEngine).ends_with("Delivered"));
         assert!(rules_as(ResourceDelivery::Native).ends_with("Native"));
         assert!(
             rules_as(ResourceDelivery::Undelivered(
@@ -323,9 +324,9 @@ mod tests {
             ResourceDelivery::Projected,
             ResourceDelivery::Projected,
         );
-        assert_eq!(support.instructions_label, "loaded");
+        assert_eq!(support.instructions_label, "delivered");
         assert!(matches!(support.instructions, State::Ready));
-        assert_eq!(support.project_skills_label, "loaded");
+        assert_eq!(support.project_skills_label, "delivered");
         assert!(matches!(support.project_skills, State::Ready));
     }
 
@@ -343,7 +344,7 @@ mod tests {
         );
         assert_eq!(support.instructions_label, "none in project");
         assert!(matches!(support.instructions, State::Neutral));
-        assert_eq!(support.project_skills_label, "loaded");
+        assert_eq!(support.project_skills_label, "delivered");
         assert!(matches!(support.project_skills, State::Ready));
     }
 

@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use uze_application::{
-    CapabilityKind, HarnessCapabilities,
+    CapabilityKind, HarnessCapabilities, ProvisionStatus,
     application::{ContextMechanism, HarnessContextSupport, HarnessHealth},
 };
 
@@ -322,12 +322,10 @@ fn render_harness_drawer(
         ]),
     ];
     if let Some(provisioning) = &harness.provisioning {
+        let (status, style) = provisioning_status(provisioning.status);
         lines.push(Line::from(vec![
             label_span("Provisioning", theme::fg(Token::TextMuted)),
-            Span::styled(
-                format!("{:?} ({:?})", provisioning.status, provisioning.action),
-                theme::fg(Token::TextTertiary),
-            ),
+            Span::styled(status, style),
         ]));
     }
     lines.push(Line::from(""));
@@ -415,11 +413,11 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::RuntimeShim => (
-            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative)),
+            format!("{} Delivered", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::RulesEngine => (
-            format!("{} Rules engine", theme::glyph(Symbol::MarkNative)),
+            format!("{} Delivered", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
         ContextMechanism::ShimMissing | ContextMechanism::RulesEngineMissing => (
@@ -428,6 +426,26 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
         ),
         ContextMechanism::Unsupported => (
             format!("{} Not supported", theme::glyph(Symbol::MarkUnsupported)),
+            theme::fg(Token::StateDanger),
+        ),
+    }
+}
+
+/// Only how the last setup ended: whether it installed or updated the
+/// harness is history, and read next to the version it reads as an update
+/// waiting to be applied.
+fn provisioning_status(status: ProvisionStatus) -> (String, Style) {
+    match status {
+        ProvisionStatus::Verified => (
+            format!("{} Verified", theme::glyph(Symbol::MarkNative)),
+            theme::fg(Token::StateSuccess),
+        ),
+        ProvisionStatus::Blocked => (
+            format!("{} Blocked", theme::glyph(Symbol::MarkAttention)),
+            theme::fg(Token::StateWarning),
+        ),
+        ProvisionStatus::Failed => (
+            format!("{} Failed", theme::glyph(Symbol::MarkUnsupported)),
             theme::fg(Token::StateDanger),
         ),
     }
@@ -559,13 +577,13 @@ mod tests {
         assert_eq!(rows[0].0, "AGENTS.md");
         assert_eq!(
             rows[0].1,
-            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative))
+            format!("{} Delivered", theme::glyph(Symbol::MarkNative))
         );
         assert_eq!(rows[0].2.fg, Some(theme::color(Token::StateSuccess)));
         assert_eq!(rows[1].0, ".agents/skills");
         assert_eq!(
             rows[1].1,
-            format!("{} Inside the workspace", theme::glyph(Symbol::MarkNative))
+            format!("{} Delivered", theme::glyph(Symbol::MarkNative))
         );
     }
 
@@ -659,7 +677,7 @@ mod tests {
         let mut support = configured_harness(true).context_support;
         for (mechanism, words) in [
             (ContextMechanism::Native, "Native"),
-            (ContextMechanism::RulesEngine, "Rules engine"),
+            (ContextMechanism::RulesEngine, "Delivered"),
             (ContextMechanism::RulesEngineMissing, "Run uze setup"),
             (ContextMechanism::Unsupported, "Not supported"),
         ] {
