@@ -186,6 +186,13 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     ),
     ("workspace revoke", PerformanceClass::Budgeted),
     (
+        "usage",
+        PerformanceClass::JustifiedSlow(
+            "samples the workspace's processes over one second and walks every checkout uze \
+             made to measure the disk it holds",
+        ),
+    ),
+    (
         "terminal serve",
         PerformanceClass::JustifiedSlow("internal persistent terminal server process"),
     ),

@@ -196,6 +196,7 @@ pub enum WorkspaceEntry {
 mod artifacts;
 mod checkouts;
 mod declaration;
+mod disk;
 mod launchers;
 mod policy_commands;
 mod retired_regions;
@@ -206,6 +207,7 @@ mod work;
 pub use artifacts::*;
 pub use checkouts::*;
 pub use declaration::*;
+pub use disk::*;
 pub use policy_commands::*;
 pub use space_overview::*;
 pub use tasks::*;

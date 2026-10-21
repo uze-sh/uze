@@ -287,6 +287,79 @@ impl Group {
     pub(super) fn members(&self) -> Vec<u32> {
         crate::probe::group_members(self.0 as u32)
     }
+
+    /// Unix keeps no total for a group; each process carries the time of
+    /// the children it waited for instead.
+    pub(super) fn cpu_time(&self) -> Option<std::time::Duration> {
+        None
+    }
+}
+
+/// This user's processes, each with what places it in a pane: its parent,
+/// its session and the pane mark it inherited.
+pub(super) struct Census(Vec<Counted>);
+
+struct Counted {
+    pid: u32,
+    parent: Option<u32>,
+    session: Option<u32>,
+    mark: Option<String>,
+}
+
+impl Census {
+    pub(super) fn take(variable: &str) -> Self {
+        Self(
+            crate::probe::user_processes()
+                .into_iter()
+                .map(|pid| Counted {
+                    pid,
+                    parent: crate::probe::parent_of(pid),
+                    session: single(pid)
+                        // SAFETY: `getsid` reads the session of a positive
+                        // pid and touches no memory of ours.
+                        .map(|pid| unsafe { libc::getsid(pid) })
+                        .and_then(|session| u32::try_from(session).ok()),
+                    mark: crate::probe::environment_value_of(pid, variable),
+                })
+                .collect(),
+        )
+    }
+
+    /// What [`belongs`] would say of each process, judged from this one
+    /// reading: the leader's session, its descendants, and whatever
+    /// carries the pane's mark having left both.
+    pub(super) fn of_pane(&self, leader: u32, group: Option<(&Group, &str)>) -> Vec<u32> {
+        let mark = group.map(|(_, mark)| mark);
+        let mut found: std::collections::BTreeSet<u32> = self
+            .0
+            .iter()
+            .filter(|process| {
+                process.session == Some(leader)
+                    || (mark.is_some() && process.mark.as_deref() == mark)
+            })
+            .map(|process| process.pid)
+            .collect();
+        found.extend(self.tree_of(leader));
+        found.into_iter().collect()
+    }
+
+    /// `root` and every process below it.
+    pub(super) fn tree_of(&self, root: u32) -> Vec<u32> {
+        let mut tree = vec![root];
+        let mut next = 0;
+        while let Some(&parent) = tree.get(next) {
+            tree.extend(
+                self.0
+                    .iter()
+                    .filter(|process| process.parent == Some(parent) && process.pid != parent)
+                    .map(|process| process.pid)
+                    .filter(|pid| !tree.contains(pid))
+                    .collect::<Vec<_>>(),
+            );
+            next += 1;
+        }
+        tree
+    }
 }
 
 /// Ends every process of this user that inherited `variable=value`: what a

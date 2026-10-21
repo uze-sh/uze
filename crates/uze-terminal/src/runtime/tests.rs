@@ -4595,6 +4595,7 @@ fn first_answer_to(socket: &Path, request: &crate::ClientRequest) -> String {
         Ok(Some(crate::ClientEvent::Refused { .. })) => "refused".to_owned(),
         Ok(Some(crate::ClientEvent::Stopped)) => "stopped".to_owned(),
         Ok(Some(crate::ClientEvent::SpaceOpened { label })) => format!("opened {label}"),
+        Ok(Some(crate::ClientEvent::Usage(_))) => "usage".to_owned(),
         Ok(Some(other)) => format!("answered {other:?}"),
         Ok(None) => "hung up".to_owned(),
         Err(error) => format!("failed {error}"),
@@ -4682,11 +4683,12 @@ const PANE_PROBE: &str = "UZE_TERMINAL_TEST_PANE_PROBE";
 /// ADR-056: a process inside a pane is classified by the kernel's account
 /// of who connected, not by anything it can say — so reading the key, as
 /// any process of this user can, gets it nothing. It may open a space,
-/// which is what a `uze` typed into a pane does, and is told nothing else.
+/// which is what a `uze` typed into a pane does, and read the workspace's
+/// usage, which names nothing; it is told nothing else.
 // Unix only: the probe waits on the pane with `sleep` after it reports.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-fn a_process_inside_a_pane_may_open_a_space_and_nothing_else() {
+fn a_process_inside_a_pane_may_open_a_space_or_read_usage_and_nothing_else() {
     let scratch = uze_testkit::temp::socket_scratch("pane-origin");
     let uze_home = scratch.join("home");
     let project = scratch.join("project");
@@ -4729,6 +4731,7 @@ fn a_process_inside_a_pane_may_open_a_space_and_nothing_else() {
         answers[2].starts_with("opened "),
         "opening a space is served: {answers:?}"
     );
+    assert_eq!(answers[3], "usage", "reading usage is served");
     assert!(!*server.stopped.lock().unwrap());
     assert!(
         server
@@ -4746,7 +4749,7 @@ fn a_process_inside_a_pane_may_open_a_space_and_nothing_else() {
 
 /// Not a test of its own: the program a pane runs for the test above.
 #[test]
-#[ignore = "run inside a pane by a_process_inside_a_pane_may_open_a_space_and_nothing_else"]
+#[ignore = "run inside a pane by a_process_inside_a_pane_may_open_a_space_or_read_usage_and_nothing_else"]
 fn probes_the_runtime_from_inside_a_pane() {
     let Some(report) = std::env::var_os(PANE_PROBE).map(PathBuf::from) else {
         return;
@@ -4768,6 +4771,12 @@ fn probes_the_runtime_from_inside_a_pane() {
                 seat: seat_at(&elsewhere),
             },
         ),
+        first_answer_to(
+            &socket,
+            &crate::ClientRequest::Usage {
+                version: crate::PROTOCOL_VERSION,
+            },
+        ),
     ];
     let partial = report.with_extension("partial");
     std::fs::write(&partial, answers.join("\n")).unwrap();
@@ -4778,6 +4787,62 @@ fn probes_the_runtime_from_inside_a_pane() {
 }
 
 use std::time::Instant;
+
+/// The workspace's usage over one window: its own shell counted as a
+/// shell, the server as itself, and requests arriving together answered
+/// by one sample.
+#[test]
+fn usage_reports_what_the_runtime_runs_from_one_sample() {
+    let scratch = uze_testkit::temp::socket_scratch("usage");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _socket) = listening_server(&project);
+
+    let asked = Instant::now();
+    let together = thread::spawn(super::usage);
+    let first = super::usage().unwrap();
+    let second = together.join().unwrap().unwrap();
+    let took = asked.elapsed();
+
+    let super::Usage::Running(report) = first else {
+        panic!("the running server answered {first:?}");
+    };
+    assert_eq!(super::Usage::Running(report.clone()), second);
+    assert!(
+        took < crate::USAGE_WINDOW * 2,
+        "two requests took {took:?}: one sample each"
+    );
+    assert_eq!(report.agents.count, 0);
+    assert_eq!(report.shells.count, 1);
+    assert!(report.shells.processes >= 1, "{report:?}");
+    assert_eq!(report.server.processes, 1);
+    assert!(report.server.memory > 0);
+    assert!(report.window >= crate::USAGE_WINDOW);
+    assert!(report.started > 0);
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// With nothing serving the workspace, there is nothing running to report,
+/// and that is an answer rather than a failure.
+#[test]
+fn usage_with_no_server_is_not_running() {
+    let scratch = uze_testkit::temp::socket_scratch("usage-none");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+
+    assert_eq!(super::usage().unwrap(), super::Usage::NotRunning);
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
 
 /// A peer that opens connections and never says who it is holds a thread
 /// for each until the handshake deadline; past a bound it is turned away

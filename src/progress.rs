@@ -377,6 +377,54 @@ pub fn aligned_groups(groups: Vec<Vec<Vec<String>>>) -> Vec<String> {
         .collect()
 }
 
+/// A table of figures, in groups that share its columns: the first column
+/// names each row and reads left to right, every other column holds a
+/// figure and is right-aligned, so units and decimals stack and a heading
+/// sits over the end of its numbers. The groups come back apart, each
+/// already aligned, for the caller to put a blank line between.
+pub fn figure_groups(groups: Vec<Vec<Vec<String>>>) -> Vec<String> {
+    let columns = groups
+        .iter()
+        .flatten()
+        .map(Vec::len)
+        .max()
+        .unwrap_or_default();
+    let widths: Vec<usize> = (0..columns)
+        .map(|column| {
+            groups
+                .iter()
+                .flatten()
+                .filter_map(|row| row.get(column))
+                .map(|cell| width(cell))
+                .max()
+                .unwrap_or_default()
+        })
+        .collect();
+    groups
+        .iter()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let mut line = String::from("  ");
+                    for (column, cell) in row.iter().enumerate() {
+                        let pad = " ".repeat(widths[column] - width(cell));
+                        if column == 0 {
+                            line.push_str(cell);
+                            line.push_str(&pad);
+                        } else {
+                            line.push_str("   ");
+                            line.push_str(&pad);
+                            line.push_str(cell);
+                        }
+                    }
+                    line.trim_end().to_owned()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect()
+}
+
 /// A block's heading: its name in bold and nothing under it. The blank
 /// line before the next block is what separates them, the way cargo and
 /// uv lay a report out.
@@ -815,6 +863,22 @@ pub fn glyph_width(symbol: Symbol) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Figures end in one column across every group of a report, under
+    /// their heading, however wide each group's own cells are.
+    #[test]
+    fn figure_groups_right_align_into_shared_columns() {
+        let cells = |row: &[&str]| row.iter().map(|cell| (*cell).to_owned()).collect();
+        let groups = figure_groups(vec![
+            vec![cells(&["", "cpu"]), cells(&["agents", "7.5%"])],
+            vec![cells(&["", "disk"]), cells(&["checkouts", "91.1 GB"])],
+        ]);
+        let lines: Vec<&str> = groups.iter().flat_map(|group| group.lines()).collect();
+
+        let ends: Vec<usize> = lines.iter().map(|line| line.len()).collect();
+        assert!(ends.windows(2).all(|pair| pair[0] == pair[1]), "{lines:#?}");
+        assert!(lines[1].starts_with("  agents "), "{lines:#?}");
+    }
 
     /// A report keeps the colour this module paints and nothing else: an
     /// erase, a cursor move, an OSC title, a C1 introducer, a bidi override

@@ -10,11 +10,11 @@ pub use application::services::{
     ActionEntry, AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
     CheckoutsView, CommandsAwaitingApproval, DeclarationApplied, DeclarationChoices,
     DeclarationEntry, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
-    DeliveryReport, Evaluation, JoinedWork, NamedTask, Placement, PlacementKind, PreservedWork,
-    ProjectArtifacts, ProjectSpace, PullReport, Reconciliation, ReleasedTask, RequestQuestion,
-    ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin, SpacePlugins, SplitWork,
-    SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView, WorkspaceEntry,
-    project_artifacts,
+    DeliveryReport, DiskView, Evaluation, HomeTier, JoinedWork, NamedTask, Placement,
+    PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation,
+    ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin,
+    SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView,
+    WorkspaceEntry, project_artifacts,
 };
 
 /// Types the read models above are made of. Presentation consumes these

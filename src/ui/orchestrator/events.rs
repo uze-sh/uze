@@ -68,7 +68,10 @@ impl WorkspaceModel {
             ClientEvent::Error { message } | ClientEvent::Refused { message } => {
                 self.error = Some(message)
             }
-            ClientEvent::Detached | ClientEvent::Stopped | ClientEvent::SpaceOpened { .. } => {}
+            ClientEvent::Detached
+            | ClientEvent::Stopped
+            | ClientEvent::SpaceOpened { .. }
+            | ClientEvent::Usage(_) => {}
         }
     }
     /// Every pane the session holds, across its spaces.

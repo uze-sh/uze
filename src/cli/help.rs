@@ -179,6 +179,7 @@ pub(crate) const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
             ("setup", "[agent...]", "Install and set up your agents"),
             ("config", "<command>", "Appearance, icons and notifications"),
             ("doctor", "", "Diagnose, and repair what is safe to"),
+            ("usage", "", "What uze uses on this machine"),
             ("upgrade", "", "Install the latest uze"),
         ],
     ),

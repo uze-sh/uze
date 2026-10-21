@@ -87,6 +87,11 @@ pub(super) struct Server {
     /// a program that connects the instant it starts is still asked about
     /// as one of this server's panes, never taken for the person.
     pub(super) registering: std::sync::RwLock<()>,
+    /// When this server took the workspace: how long it has been up.
+    pub(super) started: std::time::SystemTime,
+    /// The last usage sampled, held for the length of a sample: a request
+    /// arriving while one samples waits for it and is given its answer.
+    pub(super) sampled: Mutex<Option<(Instant, UsageReport)>>,
 }
 
 impl Server {
@@ -136,6 +141,8 @@ impl Server {
             key,
             unattached: std::sync::atomic::AtomicUsize::new(0),
             registering: std::sync::RwLock::new(()),
+            started: std::time::SystemTime::now(),
+            sampled: Mutex::new(None),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -246,6 +253,7 @@ impl Server {
             return;
         };
         let origin = self.origin_of(&stream);
+        let peer = transport::peer_pid(&stream);
         let reader_stream = match stream.try_clone() {
             Ok(value) => value,
             Err(_) => return,
@@ -276,6 +284,16 @@ impl Server {
             Ok(Some(ClientRequest::OpenSpace { version, seat })) => {
                 answer(&if version == PROTOCOL_VERSION {
                     self.open_space_and_say(&seat)
+                } else {
+                    ClientEvent::Error {
+                        message: "incompatible terminal runtime protocol".into(),
+                    }
+                });
+                return;
+            }
+            Ok(Some(ClientRequest::Usage { version })) => {
+                answer(&if version == PROTOCOL_VERSION {
+                    ClientEvent::Usage(self.usage())
                 } else {
                     ClientEvent::Error {
                         message: "incompatible terminal runtime protocol".into(),
@@ -344,6 +362,7 @@ impl Server {
                     id: client,
                     events: Arc::clone(&events),
                     selection,
+                    pid: peer,
                 });
                 if let Some((columns, rows)) = drawn
                     && !sized_at_creation
@@ -640,7 +659,9 @@ impl Server {
                 }
                 // First frames, and only first frames: an attached client
                 // already said who it is.
-                ClientRequest::Attach { .. } | ClientRequest::OpenSpace { .. } => {}
+                ClientRequest::Attach { .. }
+                | ClientRequest::OpenSpace { .. }
+                | ClientRequest::Usage { .. } => {}
             }
         }
         for pane in selecting {
@@ -679,14 +700,14 @@ impl Server {
     /// and a refusal would hide that.
     pub(super) fn refusal(&self, origin: Origin, request: &ClientRequest) -> Option<String> {
         let key = match request {
-            ClientRequest::OpenSpace { .. } => return None,
+            ClientRequest::OpenSpace { .. } | ClientRequest::Usage { .. } => return None,
             ClientRequest::Attach { version, .. } if *version != PROTOCOL_VERSION => return None,
             ClientRequest::Attach { key, .. } | ClientRequest::Stop { key } => key,
             _ => return None,
         };
         if origin == Origin::Pane {
             return Some(
-                "a process inside a uze pane may open a space and nothing else; \
+                "a process inside a uze pane may open a space or read usage and nothing else; \
                  attach from a terminal of your own"
                     .into(),
             );
@@ -998,7 +1019,7 @@ impl Server {
 
     /// Every pane's runtime, with the map's lock already released: see
     /// [`Server::runtime`].
-    fn runtimes(&self) -> Vec<Arc<PaneRuntime>> {
+    pub(super) fn runtimes(&self) -> Vec<Arc<PaneRuntime>> {
         self.panes
             .lock()
             .expect("panes poisoned")

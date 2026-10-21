@@ -362,9 +362,10 @@ pub fn socket_path() -> Result<PathBuf, RuntimeError> {
 /// Asks the running server for a space at `seat` — created when
 /// none is — and answers with its label. For a `uze` started inside one of
 /// the server's own panes: it must not open a client inside a client, so
-/// it opens a space in the one it is already in and leaves. The one
-/// request a process inside a pane is served (ADR-056), and answered with
-/// the label alone. An error when no server is running.
+/// it opens a space in the one it is already in and leaves. One of the two
+/// requests a process inside a pane is served (ADR-056; the other is
+/// [`usage`]), and answered with the label alone. An error when no server
+/// is running.
 pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
     let _span =
         tracing::info_span!("terminal.open_space", project = %seat.project.display()).entered();
@@ -396,6 +397,69 @@ pub fn open_space(seat: SpaceSeat) -> Result<String, RuntimeError> {
             "the server answered something other than a space".into(),
         )),
         None => Err(RuntimeError::Protocol("the server hung up".into())),
+    }
+}
+
+/// What [`usage`] found running.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Usage {
+    Running(crate::UsageReport),
+    /// No server, which is the ordinary state after a reboot.
+    NotRunning,
+    /// A server of another build holds the workspace and cannot answer.
+    OtherBuild,
+}
+
+/// How long a usage request may take: its window, and room for a server
+/// busy reading a large process table.
+pub(super) const USAGE_WITHIN: Duration = Duration::from_secs(10);
+
+/// Asks the running server what it runs uses. Works from inside a pane,
+/// like [`open_space`]: the answer names nothing.
+///
+/// A server of another build hangs up on a request it cannot decode, and
+/// one that decodes it but speaks another version says so; both are
+/// [`Usage::OtherBuild`]. Nothing at this build's endpoint while the
+/// workspace is claimed is one on an endpoint an earlier build named.
+pub fn usage() -> Result<Usage, RuntimeError> {
+    let _span = tracing::info_span!("terminal.usage").entered();
+    let socket = socket_path()?;
+    let mut stream = match transport::connect(&socket) {
+        Ok(stream) => stream,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            return Ok(if workspace_is_claimed() {
+                Usage::OtherBuild
+            } else {
+                Usage::NotRunning
+            });
+        }
+        Err(error) => return Err(error.into()),
+    };
+    stream.set_read_timeout(Some(USAGE_WITHIN))?;
+    stream.set_write_timeout(Some(USAGE_WITHIN))?;
+    send_request(
+        &mut stream,
+        &ClientRequest::Usage {
+            version: PROTOCOL_VERSION,
+        },
+    )?;
+    match read_event(&mut stream) {
+        Ok(Some(ClientEvent::Usage(report))) => Ok(Usage::Running(report)),
+        Ok(None | Some(ClientEvent::Error { .. })) => Ok(Usage::OtherBuild),
+        Ok(Some(ClientEvent::Refused { message })) => Err(RuntimeError::Protocol(message)),
+        Ok(Some(_)) => Err(RuntimeError::Protocol(
+            "the server answered something other than its usage".into(),
+        )),
+        Err(RuntimeError::Io(error)) if timed_out(&error) => Err(RuntimeError::Protocol(format!(
+            "the running uze did not report its usage within {}s",
+            USAGE_WITHIN.as_secs()
+        ))),
+        Err(error) => Err(error),
     }
 }
 
