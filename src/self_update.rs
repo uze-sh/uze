@@ -47,8 +47,12 @@
 //!
 //! A release is installed in the background only once it has been the
 //! latest for [`SETTLE`]: a release found to be bad and pulled within that
-//! window never reaches a machine that was only waiting. `uze upgrade` is a
-//! person asking, and does not wait.
+//! window never reaches a machine that was only waiting. The window is
+//! counted from when the release was published, and one that saw it out
+//! before a newer one replaced it is still installed while that one waits:
+//! counting from when a machine first heard, and forgetting the release a
+//! newer one replaced, left a machine that ran nothing for a day a release
+//! behind. `uze upgrade` is a person asking, and does not wait.
 
 use std::{
     env, fs,
@@ -302,9 +306,15 @@ struct Ledger {
     checked_at: u64,
     #[serde(default)]
     latest: Option<String>,
-    /// When `latest` was first answered with the release it names now.
+    /// When `latest` was published, or first answered when the release
+    /// page would not say.
     #[serde(default)]
     latest_since: u64,
+    /// The newest release that stayed the latest for [`SETTLE`] before a
+    /// newer one replaced it: still worth installing while its successor
+    /// settles, so a machine that missed the window does not skip it.
+    #[serde(default)]
+    settled: Option<String>,
     /// The last release the updater put in place.
     #[serde(default)]
     installed: Option<String>,
@@ -321,6 +331,8 @@ struct Ledger {
 /// without a network.
 trait Releases {
     fn latest(&self) -> Option<String>;
+    /// Seconds since the epoch at which `version` was published.
+    fn published_at(&self, version: &str, scratch: &Path) -> Option<u64>;
     fn changelog(&self, version: &str) -> Option<String>;
     fn install(&self, version: &str, target: &Path, scratch: &Path) -> Result<(), String>;
 }
@@ -339,34 +351,21 @@ fn pass(
     let _span = tracing::info_span!("self_update.pass", running = RUNNING).entered();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
     if ask || now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs() {
+        // Kept when the question went unanswered, and stamped all the same:
+        // offline is a state that lasts, and asking again on every launch
+        // changes nothing about it.
         let latest = releases.latest().or(ledger.latest.clone());
-        let since = if latest == ledger.latest {
-            ledger.latest_since
-        } else {
-            now
-        };
-        // Stamped even when the question went unanswered: offline is a
-        // state that lasts, and asking again on every launch changes
-        // nothing about it.
-        amend_ledger(home, |stored| {
-            stored.checked_at = now;
-            stored.latest = latest.clone();
-            stored.latest_since = since;
-        });
-        ledger.checked_at = now;
-        ledger.latest = latest;
-        ledger.latest_since = since;
+        ledger = observe(home, latest, releases, now);
     }
-    let settled = now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs();
 
     let mut receipt = read_json::<Receipt>(&receipt_path(home))
         .filter(|receipt| this.is_some_and(|this| is_same_file(this, &receipt.binary)));
-    if let (Some(owned), Some(latest), Policy::Install) = (&mut receipt, &ledger.latest, policy)
-        && settled
-        && newer(latest, &owned.version)
+    if let (Some(owned), Some(target), Policy::Install) =
+        (&mut receipt, settled(&ledger, now), policy)
+        && newer(&target, &owned.version)
     {
-        match install_over(home, owned, latest, releases) {
-            Ok(()) => ledger.installed = Some(latest.clone()),
+        match install_over(home, owned, &target, releases) {
+            Ok(()) => ledger.installed = Some(target),
             Err(error) => tracing::warn!(%error, "the release could not be installed"),
         }
     }
@@ -375,6 +374,58 @@ fn pass(
         receipt.as_ref().map(|receipt| receipt.version.as_str()),
         &ledger,
     )
+}
+
+/// Records `latest` as the answer given at `now`, and returns the ledger
+/// as it then stands. A release's wait is counted from when it was
+/// published rather than from when this machine first heard of it, so a
+/// machine that was off does not start the day over; and the release a
+/// newer one replaces is remembered as settled when it had been the latest
+/// for [`SETTLE`] by the time its successor was published.
+fn observe(home: &UzeHome, latest: Option<String>, releases: &dyn Releases, now: u64) -> Ledger {
+    let stored = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
+    // Outer `Some` when the answer names a release the ledger does not;
+    // inner when the release page said when it was published.
+    let published = match &latest {
+        Some(version) if stored.latest.as_ref() != Some(version) => Some(
+            releases
+                .published_at(version, &home.cache_dir())
+                .map(|published| published.min(now)),
+        ),
+        _ => None,
+    };
+    let mut observed = None;
+    amend_ledger(home, |ledger| {
+        ledger.checked_at = now;
+        if let Some(published) = published {
+            // Only a known publication time proves how long the previous
+            // release stayed the latest.
+            if let (Some(previous), Some(replaced_at)) = (ledger.latest.take(), published)
+                && replaced_at.saturating_sub(ledger.latest_since) >= SETTLE.as_secs()
+                && ledger
+                    .settled
+                    .as_ref()
+                    .is_none_or(|settled| newer(&previous, settled))
+            {
+                ledger.settled = Some(previous);
+            }
+            ledger.latest = latest;
+            ledger.latest_since = published.unwrap_or(now);
+        }
+        observed = Some(ledger.clone());
+    });
+    observed.unwrap_or_default()
+}
+
+/// The newest release the background pass may install at `now`: the
+/// latest once it has been out for [`SETTLE`], otherwise the last one that
+/// was.
+fn settled(ledger: &Ledger, now: u64) -> Option<String> {
+    if now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs() {
+        ledger.latest.clone()
+    } else {
+        ledger.settled.clone()
+    }
 }
 
 /// Replaces the installer's file with `latest` and moves the receipt and
@@ -513,13 +564,7 @@ fn upgrade_with(
     let latest = releases
         .latest()
         .ok_or_else(|| format!("cannot reach {RELEASES} to ask for the latest release"))?;
-    amend_ledger(home, |stored| {
-        if stored.latest.as_deref() != Some(latest.as_str()) {
-            stored.latest_since = now;
-        }
-        stored.checked_at = now;
-        stored.latest = Some(latest.clone());
-    });
+    observe(home, Some(latest.clone()), releases, now);
     let receipt = read_json::<Receipt>(&receipt_path(home));
     let Some(mut owned) = receipt
         .clone()
@@ -596,6 +641,31 @@ impl Releases for Published {
             .ok()?;
         output.status.success().then_some(())?;
         tag_version(&String::from_utf8_lossy(&output.stdout))
+    }
+
+    /// Read off the release's checksums, the asset every release publishes
+    /// last: `curl -R` dates the file it writes by the time the server says
+    /// it was uploaded, from the same origin as everything else here and
+    /// without the API's rate limit.
+    fn published_at(&self, version: &str, scratch: &Path) -> Option<u64> {
+        let version = release_version(version)?;
+        fs::create_dir_all(scratch).ok()?;
+        let dated = scratch.join(format!("published-{}", std::process::id()));
+        let fetched = uze_platform::tools::curl()
+            .args(["-fsSL", "-R", "--max-time", "15", "-o"])
+            .arg(&dated)
+            .arg(format!("{}/download/v{version}/{SUMS}", self.base))
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        let published = fetched
+            .then(|| fs::metadata(&dated).and_then(|metadata| metadata.modified()))
+            .and_then(Result::ok)
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|elapsed| elapsed.as_secs());
+        let _ = fs::remove_file(&dated);
+        published
     }
 
     fn changelog(&self, version: &str) -> Option<String> {
@@ -1098,6 +1168,11 @@ mod tests {
             Path::new("unused"),
         );
         assert!(refused.is_err());
+        let undated = Published {
+            base: RELEASES.to_owned(),
+        }
+        .published_at("1.0.0-../../escape", Path::new("unused"));
+        assert_eq!(undated, None);
     }
 
     #[test]
@@ -1170,6 +1245,7 @@ mod tests {
             checked_at: 0,
             latest: latest.map(str::to_owned),
             latest_since: 0,
+            settled: None,
             installed: installed.map(str::to_owned),
             acknowledged: seen.map(str::to_owned),
             told: None,
@@ -1225,6 +1301,7 @@ mod tests {
 
     struct Fake {
         latest: Option<&'static str>,
+        published: Option<u64>,
         changelogs: RefCell<Vec<String>>,
         installs: RefCell<Vec<(String, PathBuf)>>,
         fails: bool,
@@ -1233,6 +1310,9 @@ mod tests {
     impl Releases for Fake {
         fn latest(&self) -> Option<String> {
             self.latest.map(str::to_owned)
+        }
+        fn published_at(&self, _: &str, _: &Path) -> Option<u64> {
+            self.published
         }
         fn changelog(&self, version: &str) -> Option<String> {
             self.changelogs.borrow_mut().push(version.to_owned());
@@ -1255,6 +1335,7 @@ mod tests {
     fn fake(latest: Option<&'static str>) -> Fake {
         Fake {
             latest,
+            published: None,
             changelogs: RefCell::default(),
             installs: RefCell::default(),
             fails: false,
@@ -1383,6 +1464,136 @@ mod tests {
             newer_still.installs.borrow().as_slice(),
             [("999.0.1".to_owned(), binary.clone())]
         );
+    }
+
+    fn published(latest: &'static str, at: u64) -> Fake {
+        Fake {
+            published: Some(at),
+            ..fake(Some(latest))
+        }
+    }
+
+    fn installed(releases: &Fake) -> Vec<String> {
+        let installs = releases.installs.borrow();
+        installs
+            .iter()
+            .map(|(version, _)| version.clone())
+            .collect()
+    }
+
+    const HOUR: u64 = 60 * 60;
+
+    #[test]
+    fn the_wait_counts_from_publication_not_from_first_sight() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+        let releases = published("999.0.0", 10_000);
+
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &releases,
+            SETTLED,
+            true,
+        );
+
+        assert_eq!(
+            installed(&releases),
+            ["999.0.0"],
+            "a machine that was off while the release settled does not wait another day"
+        );
+    }
+
+    /// The weekend of beta.16, .17 and .18: .17 was the latest for well
+    /// over a day, but this machine heard of it early in its wait and ran
+    /// nothing again until .18 was out.
+    #[test]
+    fn a_release_that_settled_before_it_was_replaced_is_still_installed() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let seventeen_at = 10_000;
+        let eighteen_at = seventeen_at + 40 * HOUR;
+
+        let seventeen = published("999.0.17", seventeen_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &seventeen,
+            seventeen_at + 2 * HOUR,
+            true,
+        );
+        assert!(installed(&seventeen).is_empty(), "still within its wait");
+
+        let eighteen = published("999.0.18", eighteen_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &eighteen,
+            eighteen_at + HOUR,
+            true,
+        );
+        assert_eq!(
+            installed(&eighteen),
+            ["999.0.17"],
+            "while .18 settles, .17 is due"
+        );
+
+        let later = published("999.0.18", eighteen_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &later,
+            eighteen_at + SETTLE.as_secs(),
+            true,
+        );
+        assert_eq!(
+            installed(&later),
+            ["999.0.18"],
+            "and .18 once it has settled too"
+        );
+    }
+
+    #[test]
+    fn a_release_replaced_within_the_window_is_never_installed() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, "999.0.16");
+        let pulled_at = 10_000;
+        let fixed_at = pulled_at + 2 * HOUR;
+
+        let pulled = published("999.0.17", pulled_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &pulled,
+            pulled_at + HOUR,
+            true,
+        );
+        let fixed = published("999.0.18", fixed_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &fixed,
+            fixed_at + HOUR,
+            true,
+        );
+        assert!(installed(&pulled).is_empty() && installed(&fixed).is_empty());
+
+        let settled = published("999.0.18", fixed_at);
+        pass(
+            &home,
+            Policy::Install,
+            Some(&binary),
+            &settled,
+            fixed_at + SETTLE.as_secs(),
+            true,
+        );
+        assert_eq!(installed(&settled), ["999.0.18"]);
     }
 
     #[test]

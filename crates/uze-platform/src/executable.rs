@@ -46,7 +46,7 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 /// Whether an image's `file_name` is `program`'s, in the forms a replaced
-/// image takes here: `(deleted)` after it on Linux, `.old-<pid>` on Windows
+/// image takes here: `(deleted)` after it on Linux, `.old-<pid>-<n>` on Windows
 /// ([`replace_running`]), any case there.
 pub fn is_image_of(file_name: &str, program: &str) -> bool {
     imp::is_image_of(file_name, program)
@@ -251,6 +251,7 @@ mod imp {
     use std::{
         fs, io,
         path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
     };
 
     /// A program is typed in whatever case, and runs with its suffix.
@@ -339,9 +340,15 @@ mod imp {
         format!("{name}.old-").to_ascii_lowercase()
     }
 
+    /// A name of this replacement's own, not only of this process's: a
+    /// client that stays open replaces the same file once per release, and
+    /// the image it set aside the first time is the one it still runs, so a
+    /// second rename onto that name is refused until the client ends.
     fn set_aside_name(target: &Path) -> PathBuf {
+        static REPLACEMENTS: AtomicU64 = AtomicU64::new(0);
         let name = target.file_name().unwrap_or_default().to_string_lossy();
-        target.with_file_name(format!("{name}.old-{}", std::process::id()))
+        let replacement = REPLACEMENTS.fetch_add(1, Ordering::Relaxed);
+        target.with_file_name(format!("{name}.old-{}-{replacement}", std::process::id()))
     }
 
     const DEFAULT_EXTENSIONS: &str = ".COM;.EXE;.BAT;.CMD";
@@ -426,6 +433,37 @@ mod imp {
         running.kill().unwrap();
         running.wait().unwrap();
         assert!(!in_use(&program));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A client that stays open through two releases replaces its program
+    /// twice, while the image it set aside the first time still runs.
+    #[cfg(test)]
+    #[test]
+    fn a_running_program_is_replaced_twice_in_one_process() {
+        let root = uze_testkit::temp::scratch("replace-twice");
+        fs::create_dir_all(&root).unwrap();
+        let system = std::env::var_os("SystemRoot")
+            .map(std::path::PathBuf::from)
+            .unwrap();
+        let program = root.join("waiter.exe");
+        fs::copy(system.join("System32").join("ping.exe"), &program).unwrap();
+        let mut running = std::process::Command::new(&program)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+
+        for release in ["second", "third"] {
+            let staged = root.join(release);
+            fs::write(&staged, release).unwrap();
+            let replaced = replace_running(&staged, &program);
+            assert!(replaced.is_ok(), "{release}: {replaced:?}");
+        }
+        assert_eq!(fs::read_to_string(&program).unwrap(), "third");
+
+        running.kill().unwrap();
+        running.wait().unwrap();
         let _ = fs::remove_dir_all(root);
     }
 
