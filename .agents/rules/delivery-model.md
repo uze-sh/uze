@@ -35,8 +35,8 @@ the test behind each property.
   or an unreadable ledger blocks destructive mutation rather than
   authorizing one; removal inspects current state before detaching.
 - **The runtime PATH shim** (`src/shim.rs`, `uze_core::harness_runtime`)
-  projects `AGENTS.md` into a harness without writing into the project and
-  must never invoke itself (`tests/integrations/runtime_boundary.rs`).
+  projects what a harness does not read itself (Claude Code's `.agents/`)
+  without writing into the project and must never invoke itself (`tests/integrations/runtime_boundary.rs`).
 - **`agents.yaml` is authored, `agents.lock` is derived**: the lock holds
   only a commit per marketplace and a digest per package, so it is
   regenerated, never repaired. A marketplace is a Git repository whether

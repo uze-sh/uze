@@ -132,7 +132,7 @@ impl Context<'_> {
             display_name: integration.display_name().to_owned(),
             present,
             root: context.root.clone(),
-            instructions: instruction_delivery(integration, context, present, projection),
+            instructions: instruction_delivery(integration, context, present),
             project_skills: project_resource_delivery(
                 integration,
                 context,
@@ -187,7 +187,6 @@ fn instruction_delivery(
     integration: &dyn IntegrationPort,
     context: &project_context::ProjectContext,
     present: bool,
-    projection: RuntimeProjection,
 ) -> ResourceDelivery {
     if context.agents_md.is_none() {
         return ResourceDelivery::AbsentFromProject;
@@ -195,7 +194,7 @@ fn instruction_delivery(
     if !present {
         return ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
     }
-    delivered_by(ContextMechanism::for_instructions(integration, projection))
+    delivered_by(ContextMechanism::for_instructions(integration))
 }
 
 /// The project's rules, read where they live: the checkout root's

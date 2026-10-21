@@ -1159,7 +1159,6 @@ pub(crate) fn render_status_harness(
     let ok = |word: &str| format!("{} {}", progress::success_icon(), progress::label(word));
     let state = match delivery {
         HarnessContextDelivery::Native => ok("native"),
-        HarnessContextDelivery::Projected => ok("inside the workspace"),
         HarnessContextDelivery::NotDetected => progress::label("not installed"),
         HarnessContextDelivery::ReadsNatively => ok("reads AGENTS.md natively"),
     };
@@ -1297,7 +1296,6 @@ pub(crate) fn render_context_status(status: &ProjectContextStatus) -> String {
     for harness in &status.harnesses {
         let delivery = match &harness.delivery {
             HarnessContextDelivery::Native => progress::success_text("native"),
-            HarnessContextDelivery::Projected => progress::success_text("inside the workspace"),
             HarnessContextDelivery::NotDetected => progress::label("not installed"),
             HarnessContextDelivery::ReadsNatively => format!(
                 "{}  {}",

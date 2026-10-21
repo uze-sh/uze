@@ -55,10 +55,9 @@ fn a_destroyed_checkout_loses_its_projection_and_its_repository_keeps_one() {
     assert_ne!(
         primary_projection, checkout_projection,
         "a checkout is a project root of its own — sharing would hand one \
-         branch's instructions to another"
+         branch's Skills to another"
     );
     for projection in [&primary_projection, &checkout_projection] {
-        assert!(projection.join("CLAUDE.md").is_file());
         assert!(projection.join(".claude/skills").is_symlink());
     }
 
@@ -73,7 +72,7 @@ fn a_destroyed_checkout_loses_its_projection_and_its_repository_keeps_one() {
     );
     assert!(!checkout_projection.exists());
     assert!(
-        primary_projection.join("CLAUDE.md").is_file(),
+        primary_projection.join(".claude/skills").is_symlink(),
         "the repository the checkout was cut from is untouched"
     );
 
@@ -96,10 +95,6 @@ fn a_swept_projection_is_rebuilt_by_the_next_launch() {
     // Nothing was lost that mattered: a projection is derived, so the
     // sweep can afford to be wrong about one.
     assert_eq!(project_into(&home, &claude_home, &project), projection);
-    assert_eq!(
-        fs::read_to_string(projection.join("CLAUDE.md")).unwrap(),
-        format!("@{}\n", project.join("AGENTS.md").display())
-    );
     assert!(projection.join(".claude/skills").is_symlink());
 }
 

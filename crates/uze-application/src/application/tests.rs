@@ -2617,7 +2617,7 @@ fn a_harness_reading_the_project_itself_declares_native_context_support() {
 }
 
 #[test]
-fn a_runtime_projection_outranks_reading_the_project_itself() {
+fn a_runtime_projection_carries_the_agents_directory_and_never_agents_md() {
     let integration = DeclaringIntegration {
         context_delivery: ContextDelivery::Bridge {
             file_name: "BRIDGE.md",
@@ -2627,7 +2627,7 @@ fn a_runtime_projection_outranks_reading_the_project_itself() {
         projects_at_runtime: true,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
-    assert_eq!(support.instructions, ContextMechanism::RuntimeShim);
+    assert_eq!(support.instructions, ContextMechanism::Native);
     assert_eq!(support.project_skills, ContextMechanism::RuntimeShim);
     assert_eq!(support.project_agents, ContextMechanism::RuntimeShim);
 }

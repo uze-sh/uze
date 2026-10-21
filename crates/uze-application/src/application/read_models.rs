@@ -762,7 +762,7 @@ impl HarnessContextSupport {
     ) -> Self {
         let projection = RuntimeProjection::of(integration, runtime_shim_active);
         Self {
-            instructions: ContextMechanism::for_instructions(integration, projection),
+            instructions: ContextMechanism::for_instructions(integration),
             project_skills: ContextMechanism::for_project_resource(
                 integration,
                 AgentsDirectoryResource::Skills,
@@ -808,8 +808,8 @@ impl RuntimeProjection {
 
 /// The one precedence every context read model applies: a runtime
 /// projection where the workspace makes one, then what the harness reads
-/// itself. A harness that declares a bridge file reads `AGENTS.md` itself:
-/// no bridge is written for it any more.
+/// itself. `AGENTS.md` is never projected: every harness that declares a
+/// delivery for it, a bridge file included, reads it itself.
 impl ContextMechanism {
     /// How the project's rules reach the harness: read by the harness
     /// itself, handed over by the engine setup delivers, or not at all.
@@ -822,15 +822,10 @@ impl ContextMechanism {
         }
     }
 
-    pub(crate) fn for_instructions(
-        integration: &dyn IntegrationPort,
-        projection: RuntimeProjection,
-    ) -> Self {
-        match (integration.context_delivery(), projection) {
-            (ContextDelivery::Native { .. }, _) => Self::Native,
-            (ContextDelivery::None, _) => Self::Unsupported,
-            (ContextDelivery::Bridge { .. }, RuntimeProjection::Active) => Self::RuntimeShim,
-            (ContextDelivery::Bridge { .. }, _) => Self::Native,
+    pub(crate) fn for_instructions(integration: &dyn IntegrationPort) -> Self {
+        match integration.context_delivery() {
+            ContextDelivery::Native { .. } | ContextDelivery::Bridge { .. } => Self::Native,
+            ContextDelivery::None => Self::Unsupported,
         }
     }
 
@@ -875,9 +870,6 @@ pub enum HarnessContextDelivery {
     /// own that an earlier release bridged it into. Nothing is needed: a
     /// bridge left behind is a retired region, reported with the others.
     ReadsNatively,
-    /// UZE's runtime shim projects `AGENTS.md` into every launch from here,
-    /// so a missing bridge is not a gap.
-    Projected,
     /// This harness was not found on the machine at all; nothing here is
     /// evaluated as a gap.
     NotDetected,

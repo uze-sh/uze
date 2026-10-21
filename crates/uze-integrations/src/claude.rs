@@ -221,11 +221,8 @@ impl IntegrationPort for ClaudeIntegration {
         vec!["claude"]
     }
 
-    /// `CONTEXT DELIVERY POLICY`: this is the `EXPERIMENTAL RUNTIME
-    /// DELIVERY STRATEGY` — see `runtime::claude_runtime_projection`'s doc
-    /// comment. Building this shim path does not by itself replace the
-    /// existing project-root `CLAUDE.md` bridge; that decision waits on an
-    /// empirical interactive comparison.
+    /// The project's `.agents/` linked into an `--add-dir` target; see
+    /// `runtime::claude_runtime_projection`.
     fn runtime_contribution(
         &self,
         ctx: &RuntimeContext,
