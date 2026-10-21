@@ -343,6 +343,13 @@ impl Census {
         found.into_iter().collect()
     }
 
+    pub(super) fn parent_of(&self, pid: u32) -> Option<u32> {
+        self.0
+            .iter()
+            .find(|process| process.pid == pid)
+            .and_then(|process| process.parent)
+    }
+
     /// `root` and every process below it.
     pub(super) fn tree_of(&self, root: u32) -> Vec<u32> {
         let mut tree = vec![root];

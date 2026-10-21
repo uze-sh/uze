@@ -54,18 +54,30 @@ fn is_agent(tab: &crate::Tab) -> bool {
 #[derive(Default)]
 struct Sample {
     processes: BTreeMap<u32, usage::Reading>,
+    /// Who started each process, where the census says.
+    parents: BTreeMap<u32, u32>,
     /// The total a Job Object keeps of everything it held, ended processes
     /// included, where there is one.
     accounted: Option<Duration>,
 }
 
 impl Sample {
-    fn of(pids: impl IntoIterator<Item = u32>, accounted: Option<Duration>) -> Self {
+    fn of(
+        pids: impl IntoIterator<Item = u32>,
+        accounted: Option<Duration>,
+        census: &pane::Census,
+    ) -> Self {
+        let processes: BTreeMap<u32, usage::Reading> = pids
+            .into_iter()
+            .filter_map(|pid| Some((pid, usage::of(pid)?)))
+            .collect();
+        let parents = processes
+            .keys()
+            .filter_map(|&pid| Some((pid, census.parent_of(pid)?)))
+            .collect();
         Self {
-            processes: pids
-                .into_iter()
-                .filter_map(|pid| Some((pid, usage::of(pid)?)))
-                .collect(),
+            processes,
+            parents,
             accounted,
         }
     }
@@ -77,18 +89,36 @@ impl Sample {
     /// waited for it. One only in this reading started inside the window
     /// when its stamp is newer than every stamp `before` had, and counts in
     /// full; otherwise the first reading missed it, and its lifetime is not
-    /// one window's. One only in `before` ended, and its parent's reaped
-    /// time carries it.
+    /// one window's. One only in `before` ended, and the parent that
+    /// waited for it gains its whole lifetime as reaped time: what it had
+    /// spent by the first reading is taken back off that parent.
     fn spent_since(&self, before: &Sample, newest_before: Option<u64>) -> Duration {
         if let (Some(then), Some(now)) = (before.accounted, self.accounted) {
             return now.saturating_sub(then);
         }
         let total =
             |reading: &usage::Reading| reading.cpu.own + reading.cpu.children.unwrap_or_default();
+        let lives_on = |pid: &u32, then: &usage::Reading| {
+            self.processes
+                .get(pid)
+                .is_some_and(|now| now.started == then.started)
+        };
+        let spent_before_ending = |parent: u32| -> Duration {
+            before
+                .processes
+                .iter()
+                .filter(|(pid, then)| {
+                    !lives_on(pid, then) && before.parents.get(pid) == Some(&parent)
+                })
+                .map(|(_, then)| total(then))
+                .sum()
+        };
         self.processes
             .iter()
             .map(|(pid, now)| match before.processes.get(pid) {
-                Some(then) if then.started == now.started => total(now).saturating_sub(total(then)),
+                Some(then) if then.started == now.started => {
+                    total(now).saturating_sub(total(then) + spent_before_ending(*pid))
+                }
                 _ if started_after(now.started, newest_before) => total(now),
                 _ => Duration::ZERO,
             })
@@ -132,7 +162,7 @@ impl Reading {
                     .map(|leader| census.of_pane(leader, group.as_deref()))
                     .unwrap_or_default();
                 let accounted = group.as_ref().and_then(|group| group.cpu_time());
-                (*pane, Sample::of(pids, accounted))
+                (*pane, Sample::of(pids, accounted, &census))
             })
             .collect();
         let clients = watched
@@ -140,7 +170,7 @@ impl Reading {
             .iter()
             .flat_map(|&client| census.tree_of(client))
             .collect::<BTreeSet<_>>();
-        let mut server = Sample::of([std::process::id()], None);
+        let mut server = Sample::of([std::process::id()], None, &census);
         // The server reaps every pane's program, so its children's time is
         // the panes', counted there.
         for reading in server.processes.values_mut() {
@@ -149,7 +179,7 @@ impl Reading {
         Self {
             panes,
             server,
-            clients: Sample::of(clients, None),
+            clients: Sample::of(clients, None, &census),
         }
     }
 
@@ -337,7 +367,7 @@ mod tests {
     fn sample(processes: &[(u32, usage::Reading)]) -> Sample {
         Sample {
             processes: processes.iter().copied().collect(),
-            accounted: None,
+            ..Sample::default()
         }
     }
 
@@ -364,6 +394,24 @@ mod tests {
         let spent = after.spent_since(&before, before.newest());
 
         assert_eq!(spent, Duration::from_millis(100 + 400 + 30 + 200));
+    }
+
+    /// A child alive before the window that ends inside it, reaped by a
+    /// parent still running, lands its whole lifetime in the parent's
+    /// children time; only what it spent after the first reading is the
+    /// window's.
+    #[test]
+    fn a_child_reaped_inside_the_window_counts_only_its_time_inside_it() {
+        let mut before = sample(&[
+            (10, reading(100, 1_000, 0, 0)),
+            (11, reading(101, 30_000, 0, 0)),
+        ]);
+        before.parents.insert(11, 10);
+        let after = sample(&[(10, reading(100, 1_000, 30_400, 0))]);
+
+        let spent = after.spent_since(&before, before.newest());
+
+        assert_eq!(spent, Duration::from_millis(400));
     }
 
     /// Where a Job Object keeps a total, it is the whole answer: it counts

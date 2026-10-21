@@ -195,4 +195,9 @@ impl Census {
     pub fn tree_of(&self, root: u32) -> Vec<u32> {
         self.0.tree_of(root)
     }
+
+    /// The process that started `pid`, as this census read it.
+    pub fn parent_of(&self, pid: u32) -> Option<u32> {
+        self.0.parent_of(pid)
+    }
 }

@@ -539,6 +539,13 @@ impl Census {
         }
     }
 
+    pub(super) fn parent_of(&self, pid: u32) -> Option<u32> {
+        self.0
+            .iter()
+            .find(|&&(process, _)| process == pid)
+            .map(|&(_, parent)| parent)
+    }
+
     /// `root` and every process below it. A parent pid here may name a
     /// process that exited and whose number was handed on, so a child
     /// counts only when it started after its parent.
