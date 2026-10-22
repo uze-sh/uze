@@ -40,41 +40,41 @@ pub(super) fn section(dir: &Path) -> Section {
     Section {
         name: "agent-context",
         source: format!(
-            r#"async (ctx) => {{
-    const DIR = {dir};
-    // A child session's chain of parents is short; the bound only keeps a
-    // record that names itself from looping.
-    const ANCESTORS = 8;
-    const documentOf = (sessionID) => {{
-      const file = join(DIR, `${{sessionID}}.md`);
-      return existsSync(file) ? file : null;
-    }};
-    // A session the launch did not assign (a subagent's child session) is
-    // given the document of the nearest session above it that has one.
-    const documentFor = async (sessionID) => {{
-      let id = sessionID;
-      for (let depth = 0; id && depth <= ANCESTORS; depth++) {{
-        const file = documentOf(id);
-        if (file) return file;
-        let info;
-        try {{
-          info = await ctx.session.get({{ sessionID: id }});
-        }} catch {{
-          return null;
-        }}
-        id = (info?.data ?? info)?.parentID;
+            r#"// The context UZE composed for the conversation it launched, pushed onto the
+// system parts of every request. A subagent runs in a child session of its
+// own and is given the document of the nearest session above it that has
+// one.
+async function agentContext(ctx) {{
+  const DIR = {dir};
+  // A chain of parents is short; the bound only keeps a record that names
+  // itself from looping.
+  const ANCESTORS = 8;
+
+  async function documentFor(sessionID) {{
+    let id = sessionID;
+    for (let depth = 0; id && depth <= ANCESTORS; depth++) {{
+      const file = join(DIR, `${{id}}.md`);
+      if (existsSync(file)) return file;
+      let info;
+      try {{
+        info = await ctx.session.get({{ sessionID: id }});
+      }} catch {{
+        return null;
       }}
-      return null;
-    }};
-    await ctx.session.hook("context", async (event) => {{
-      if (!event.sessionID || !Array.isArray(event.system)) return;
-      const file = await documentFor(event.sessionID);
-      if (!file) return;
-      const text = readFileSync(file, "utf8");
-      const first = event.system[0];
-      event.system.push(typeof first === "object" && first !== null ? {{ ...first, text }} : text);
-    }});
-  }}"#
+      id = (info?.data ?? info)?.parentID;
+    }}
+    return null;
+  }}
+
+  await ctx.session.hook("context", async (event) => {{
+    if (!event.sessionID || !Array.isArray(event.system)) return;
+    const file = await documentFor(event.sessionID);
+    if (!file) return;
+    const text = readFileSync(file, "utf8");
+    const first = event.system[0];
+    event.system.push(typeof first === "object" && first !== null ? {{ ...first, text }} : text);
+  }});
+}}"#
         ),
     }
 }

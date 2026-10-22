@@ -25,252 +25,290 @@ use crate::shared::agent::MAX_PROJECT_AGENT_BYTES;
 use crate::shared::dialect::{AgentDialect, to_json};
 
 pub(super) fn section(dialect: &AgentDialect, keys: &[&str]) -> Section {
-    let json = |value: serde_json::Value| value.to_string();
-    let dialect = json(to_json(dialect));
-    let keys = json(serde_json::json!(keys));
-    let identity = json(serde_json::json!(IDENTITY_FIELDS));
+    let literal = |value: serde_json::Value| super::runtime_plugin::literal(&value, 1);
+    let dialect = literal(to_json(dialect));
+    let keys = literal(serde_json::json!(keys));
+    let identity = literal(serde_json::json!(IDENTITY_FIELDS));
+    let max_bytes = MAX_PROJECT_AGENT_BYTES;
     Section {
         name: "project-agents",
         source: format!(
-            r#"async (ctx) => {{
-    const DIALECT = {dialect};
-    const KEYS = {keys};
-    const IDENTITY = {identity};
-    const MAX_BYTES = {MAX_PROJECT_AGENT_BYTES};
-    // The actions OpenCode resolves as paths: only their `~` is expanded.
-    const PATH_ACTIONS = ["external_directory", "read", "edit"];
-    // `directory` is the checkout's own top level, a linked one's included;
-    // `canonical` would be the main checkout's.
-    const checkout = ctx.location.project?.directory ?? ctx.location.directory;
-    const root = join(checkout, ".agents", "agents");
-    const isMap = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-    const byComponents = (a, b) => {{
-      const left = a.split("/");
-      const right = b.split("/");
-      for (let i = 0; i < Math.min(left.length, right.length); i++) {{
-        if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
-      }}
-      return left.length - right.length;
-    }};
+            r#"// A project's own agents, from the `.agents/agents` of the checkout this
+// location is in, registered for this location alone and registered again
+// when the tree changes. Each file is projected with the dialect UZE applies
+// to a package agent (DIALECT), into the agent OpenCode resolves, the way
+// its own configured agents are converted. A built-in agent of the same id
+// is kept; a configured one applies over the project's.
+async function projectAgents(ctx) {{
+  const DIALECT = {dialect};
+  const KEYS = {keys};
+  const IDENTITY = {identity};
+  const MAX_BYTES = {max_bytes};
+  // The actions OpenCode resolves as paths: only their `~` is expanded.
+  const PATH_ACTIONS = ["external_directory", "read", "edit"];
+  // The checkout's own top level, a linked one's included; `canonical` would
+  // be the main checkout's.
+  const checkout = ctx.location.project?.directory ?? ctx.location.directory;
+  const root = join(checkout, ".agents", "agents");
 
-    // Every `*.md` at any depth, never through a link, in path order.
-    const directories = () => {{
-      const found = [];
-      const pending = [root];
-      while (pending.length) {{
-        const dir = pending.pop();
-        let stat;
-        try {{
-          stat = lstatSync(dir);
-        }} catch {{
-          continue;
-        }}
-        if (!stat.isDirectory()) continue;
-        found.push(dir);
-        let names = [];
-        try {{
-          names = readdirSync(dir);
-        }} catch {{}}
-        for (const name of names) pending.push(join(dir, name));
-      }}
-      return found;
-    }};
-    const files = () => {{
-      const found = [];
-      for (const dir of directories()) {{
-        let names = [];
-        try {{
-          names = readdirSync(dir);
-        }} catch {{}}
-        for (const name of names) {{
-          if (name === ".md" || !name.endsWith(".md")) continue;
-          const path = join(dir, name);
-          try {{
-            const stat = lstatSync(path);
-            if (stat.isFile() && stat.size <= MAX_BYTES) found.push(path);
-          }} catch {{}}
-        }}
-      }}
-      return found.sort(byComponents);
-    }};
+  const isMap = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+  const trimmed = (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
 
-    const split = (text) => {{
-      const rest = text.startsWith("---\n") ? text.slice(4) : text.startsWith("---\r\n") ? text.slice(5) : null;
-      if (rest === null) return null;
-      let offset = 0;
-      for (const line of rest.split(/(?<=\n)/)) {{
-        if (offset > 0 && line.endsWith("\n") && line.replace(/[\r\n]+$/, "") === "---") {{
-          const head = rest.slice(0, offset - 1);
-          return [head.endsWith("\r") ? head.slice(0, -1) : head, rest.slice(offset + line.length)];
-        }}
-        offset += line.length;
+  // Paths in the order Rust compares them, component by component.
+  function byComponents(a, b) {{
+    const left = a.split(/[\\/]/);
+    const right = b.split(/[\\/]/);
+    for (let i = 0; i < Math.min(left.length, right.length); i++) {{
+      if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+    }}
+    return left.length - right.length;
+  }}
+
+  function entries(dir) {{
+    try {{
+      return readdirSync(dir);
+    }} catch {{
+      return [];
+    }}
+  }}
+
+  function isDirectory(path) {{
+    try {{
+      return lstatSync(path).isDirectory();
+    }} catch {{
+      return false;
+    }}
+  }}
+
+  // The agents tree, never followed through a link.
+  function directories() {{
+    const found = [];
+    const pending = [root];
+    while (pending.length) {{
+      const dir = pending.pop();
+      if (!isDirectory(dir)) continue;
+      found.push(dir);
+      for (const name of entries(dir)) pending.push(join(dir, name));
+    }}
+    return found;
+  }}
+
+  // Every regular `*.md` of a readable size in the tree, in path order.
+  function files() {{
+    const found = [];
+    for (const dir of directories()) {{
+      for (const name of entries(dir)) {{
+        if (name === ".md" || !name.endsWith(".md")) continue;
+        const path = join(dir, name);
+        try {{
+          const stat = lstatSync(path);
+          if (stat.isFile() && stat.size <= MAX_BYTES) found.push(path);
+        }} catch {{}}
       }}
+    }}
+    return found.sort(byComponents);
+  }}
+
+  // The frontmatter and the body, split as UZE splits them.
+  function split(text) {{
+    const rest = text.startsWith("---\n") ? text.slice(4) : text.startsWith("---\r\n") ? text.slice(5) : null;
+    if (rest === null) return null;
+    let offset = 0;
+    for (const line of rest.split(/(?<=\n)/)) {{
+      if (offset > 0 && line.endsWith("\n") && line.replace(/[\r\n]+$/, "") === "---") {{
+        const head = rest.slice(0, offset - 1);
+        return [head.endsWith("\r") ? head.slice(0, -1) : head, rest.slice(offset + line.length)];
+      }}
+      offset += line.length;
+    }}
+    return null;
+  }}
+
+  // A definition, or null when its frontmatter is not a mapping.
+  function parse(text) {{
+    const parts = split(text);
+    if (!parts) return {{ frontmatter: {{}}, body: text }};
+    let frontmatter;
+    try {{
+      frontmatter = Bun.YAML.parse(parts[0]) ?? {{}};
+    }} catch {{
       return null;
-    }};
-    const parse = (text) => {{
-      const parts = split(text);
-      if (!parts) return {{ frontmatter: {{}}, body: text }};
-      let parsed;
+    }}
+    return isMap(frontmatter) ? {{ frontmatter, body: parts[1] }} : null;
+  }}
+
+  // This harness's block; a block that is not a mapping empties them all.
+  function block(frontmatter) {{
+    const blocks = frontmatter.harness;
+    if (!isMap(blocks)) return {{}};
+    if (Object.values(blocks).some((value) => value !== null && !isMap(value))) return {{}};
+    for (const key of KEYS) if (isMap(blocks[key])) return blocks[key];
+    return {{}};
+  }}
+
+  function conforms(known, value) {{
+    switch (known.shape) {{
+      case "text":
+        return typeof value === "string" && value.trim() !== "";
+      case "text-or-list":
+        return typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+      case "one-of":
+      case "ceiling":
+        return typeof value === "string" && known.choices.includes(value);
+      case "qualified": {{
+        const at = typeof value === "string" ? value.indexOf("/") : -1;
+        return at > 0 && at < value.length - 1;
+      }}
+      case "flag":
+        return typeof value === "boolean";
+      case "count":
+        return Number.isInteger(value) && value > 0;
+      case "hex-color":
+        return typeof value === "string" && /^#[0-9a-fA-F]{{6}}$/.test(value);
+      case "rules":
+        return (
+          Array.isArray(value) &&
+          value.every(
+            (rule) =>
+              isMap(rule) &&
+              typeof rule.action === "string" &&
+              typeof rule.resource === "string" &&
+              ["allow", "deny", "ask"].includes(rule.effect),
+          )
+        );
+      default:
+        return false;
+    }}
+  }}
+
+  // A conforming value lowered to what an authored agent may hold, or
+  // undefined when nothing of it is left to carry.
+  function narrowed(known, value) {{
+    if (known.shape === "rules") {{
+      const narrowing = value.filter((rule) => rule.effect !== "allow");
+      return narrowing.length ? narrowing : undefined;
+    }}
+    if (known.shape === "ceiling" && known.choices.indexOf(value) > known.choices.indexOf(known.ceiling)) {{
+      return known.ceiling;
+    }}
+    return value;
+  }}
+
+  // The block's fields this harness is given.
+  function carried(frontmatter) {{
+    const fields = {{}};
+    for (const [field, value] of Object.entries(block(frontmatter))) {{
+      if (IDENTITY.includes(field)) continue;
+      const known = DIALECT.known[field];
+      if (!known) {{
+        if (DIALECT.carriesUnknown) fields[field] = value;
+        continue;
+      }}
+      if (known.shape === "left-out" || !conforms(known, value)) continue;
+      const kept = narrowed(known, value);
+      if (kept !== undefined) fields[field] = kept;
+    }}
+    return fields;
+  }}
+
+  // One agent per id, the first in path order.
+  function agents() {{
+    const seen = new Set();
+    const found = [];
+    for (const path of files()) {{
+      let document;
       try {{
-        parsed = Bun.YAML.parse(parts[0]);
-      }} catch {{
-        return null;
-      }}
-      if (parsed === null || parsed === undefined) parsed = {{}};
-      if (!isMap(parsed)) return null;
-      return {{ frontmatter: parsed, body: parts[1] }};
-    }};
-    const text = (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+        document = parse(readFileSync(path, "utf8"));
+      }} catch {{}}
+      if (!document) continue;
+      const id = trimmed(document.frontmatter.name) ?? basename(path).slice(0, -3);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      found.push({{ id, document, fields: carried(document.frontmatter) }});
+    }}
+    return found;
+  }}
 
-    const block = (frontmatter) => {{
-      const blocks = frontmatter.harness;
-      if (blocks === undefined || blocks === null) return {{}};
-      if (!isMap(blocks)) return {{}};
-      if (Object.values(blocks).some((value) => value !== null && !isMap(value))) return {{}};
-      for (const key of KEYS) if (isMap(blocks[key])) return blocks[key];
-      return {{}};
-    }};
-    const conforms = (known, value) => {{
-      switch (known.shape) {{
-        case "text": return typeof value === "string" && value.trim() !== "";
-        case "text-or-list": return typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string"));
-        case "one-of":
-        case "ceiling": return typeof value === "string" && known.choices.includes(value);
-        case "qualified": {{
-          if (typeof value !== "string") return false;
-          const at = value.indexOf("/");
-          return at > 0 && at < value.length - 1;
-        }}
-        case "flag": return typeof value === "boolean";
-        case "count": return Number.isInteger(value) && value > 0;
-        case "hex-color": return typeof value === "string" && /^#[0-9a-fA-F]{{6}}$/.test(value);
-        case "rules": return Array.isArray(value) && value.every((rule) => isMap(rule)
-          && typeof rule.action === "string" && typeof rule.resource === "string"
-          && ["allow", "deny", "ask"].includes(rule.effect));
-        default: return false;
-      }}
-    }};
-    // A conforming value lowered to what an authored agent may hold, or
-    // `undefined` when nothing of it is left to carry.
-    const narrowed = (known, value) => {{
-      if (known.shape === "rules") {{
-        const narrowing = value.filter((rule) => rule.effect !== "allow");
-        return narrowing.length ? narrowing : undefined;
-      }}
-      if (known.shape === "ceiling" && known.choices.indexOf(value) > known.choices.indexOf(known.ceiling)) {{
-        return known.ceiling;
-      }}
-      return value;
-    }};
-    const carried = (frontmatter) => {{
-      const fields = {{}};
-      for (const [field, value] of Object.entries(block(frontmatter))) {{
-        if (IDENTITY.includes(field)) continue;
-        const known = DIALECT.known[field];
-        if (!known) {{
-          if (DIALECT.carriesUnknown) fields[field] = value;
-          continue;
-        }}
-        if (known.shape === "left-out" || !conforms(known, value)) continue;
-        const kept = narrowed(known, value);
-        if (kept !== undefined) fields[field] = kept;
-      }}
-      return fields;
-    }};
+  function expandHome(resource, home) {{
+    if (resource === "~" || resource === "$HOME") return home;
+    if (resource.startsWith("~/")) return join(home, resource.slice(2));
+    if (resource.startsWith("$HOME/")) return join(home, resource.slice(6));
+    return resource;
+  }}
 
-    const agents = () => {{
-      const seen = new Set();
-      const found = [];
-      for (const path of files()) {{
-        let document;
-        try {{
-          document = parse(readFileSync(path, "utf8"));
-        }} catch {{
-          continue;
-        }}
-        if (!document) continue;
-        const id = text(document.frontmatter.name) ?? basename(path).slice(0, -3);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        found.push({{ id, document }});
-      }}
-      return found;
-    }};
-    const expandHome = (resource, home) => {{
-      if (resource === "~" || resource === "$HOME") return home;
-      if (resource.startsWith("~/")) return join(home, resource.slice(2));
-      if (resource.startsWith("$HOME/")) return join(home, resource.slice(6));
-      return resource;
-    }};
-    const apply = (item, id, document, fields) => {{
-      item.name = id;
-      const description = text(document.frontmatter.description);
-      if (description !== undefined) item.description = description;
-      item.system = document.body.trim();
-      item.mode = fields.mode ?? "subagent";
-      if (fields.model !== undefined) {{
-        const at = fields.model.indexOf("/");
-        item.model = {{ providerID: fields.model.slice(0, at), id: fields.model.slice(at + 1) }};
-      }}
-      if (fields.color !== undefined) item.color = fields.color;
-      if (fields.steps !== undefined) item.steps = fields.steps;
-      if (fields.hidden !== undefined) item.hidden = fields.hidden;
-      if (fields.permissions !== undefined) {{
-        const home = homedir();
-        item.permissions.push(...fields.permissions.map((rule) => ({{
-          action: rule.action,
-          resource: PATH_ACTIONS.includes(rule.action) ? expandHome(rule.resource, home) : rule.resource,
-          effect: rule.effect,
-        }})));
-      }}
-    }};
+  function apply(item, {{ id, document, fields }}) {{
+    item.name = id;
+    const description = trimmed(document.frontmatter.description);
+    if (description !== undefined) item.description = description;
+    item.system = document.body.trim();
+    item.mode = fields.mode ?? "subagent";
+    if (fields.model !== undefined) {{
+      const at = fields.model.indexOf("/");
+      item.model = {{ providerID: fields.model.slice(0, at), id: fields.model.slice(at + 1) }};
+    }}
+    if (fields.color !== undefined) item.color = fields.color;
+    if (fields.steps !== undefined) item.steps = fields.steps;
+    if (fields.hidden !== undefined) item.hidden = fields.hidden;
+    for (const rule of fields.permissions ?? []) {{
+      const resource = PATH_ACTIONS.includes(rule.action) ? expandHome(rule.resource, homedir()) : rule.resource;
+      item.permissions.push({{ action: rule.action, resource, effect: rule.effect }});
+    }}
+  }}
 
-    const registered = new Set();
-    await ctx.agent.transform((editor) => {{
-      for (const {{ id, document }} of agents()) {{
-        if (!registered.has(id) && editor.get(id)) continue;
-        const fields = carried(document.frontmatter);
-        if (fields.disabled === true) continue;
-        registered.add(id);
-        editor.update(id, (item) => apply(item, id, document, fields));
-      }}
-    }});
+  const registered = new Set();
+  await ctx.agent.transform((editor) => {{
+    for (const agent of agents()) {{
+      if (!registered.has(agent.id) && editor.get(agent.id)) continue;
+      if (agent.fields.disabled === true) continue;
+      registered.add(agent.id);
+      editor.update(agent.id, (item) => apply(item, agent));
+    }}
+  }});
 
-    // One watch per directory, kept in step with the tree: a recursive
-    // watch on Linux reports only its own directory's entries.
-    const watchers = new Map();
-    const reload = () => {{
-      sync();
-      ctx.agent.reload().catch((error) => console.error(`uze project-agents: ${{error}}`));
-    }};
-    const sync = () => {{
-      const wanted = new Set([checkout, join(checkout, ".agents"), ...directories()]);
-      for (const [dir, watcher] of watchers) {{
-        if (!wanted.has(dir)) {{
-          watcher.close();
-          watchers.delete(dir);
-        }}
-      }}
-      for (const dir of wanted) {{
-        if (watchers.has(dir)) continue;
-        try {{
-          const shallow = dir === checkout || dir === join(checkout, ".agents");
-          watchers.set(dir, watch(dir, (event, name) => {{
-            if (!shallow || String(name).startsWith(dir === checkout ? ".agents" : "agents")) reload();
-          }}));
-        }} catch {{}}
-      }}
-    }};
+  // One watch per directory of the tree, kept in step with it, since a
+  // recursive watch on Linux reports only its own directory's entries. The
+  // checkout and `.agents` are watched only for the names that lead here.
+  const watchers = new Map();
+  const shallow = new Map([
+    [checkout, ".agents"],
+    [join(checkout, ".agents"), "agents"],
+  ]);
+  function sync() {{
+    const wanted = new Set([...shallow.keys(), ...directories()]);
+    for (const [dir, watcher] of watchers) {{
+      if (wanted.has(dir)) continue;
+      watcher.close();
+      watchers.delete(dir);
+    }}
+    for (const dir of wanted) {{
+      if (watchers.has(dir)) continue;
+      const leading = shallow.get(dir);
+      try {{
+        watchers.set(
+          dir,
+          watch(dir, (_, name) => {{
+            if (!leading || String(name).startsWith(leading)) changed();
+          }}),
+        );
+      }} catch {{}}
+    }}
+  }}
+  function changed() {{
     sync();
-    return () => {{
-      for (const watcher of watchers.values()) watcher.close();
-    }};
-  }}"#
+    ctx.agent.reload().catch((error) => report("project-agents", error));
+  }}
+  sync();
+  return () => {{
+    for (const watcher of watchers.values()) watcher.close();
+  }};
+}}"#
         ),
     }
 }
 
-#[cfg(test)]
+// Links a fixture and runs the section under Bun, as the sibling plugin
+// checks do on Unix.
+#[cfg(all(test, unix))]
 mod tests {
     use std::{fs, path::Path, process::Command};
 

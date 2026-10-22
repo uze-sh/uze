@@ -39,11 +39,28 @@ const RETIRED: &[(&str, &str)] = &[
 ];
 
 /// One part of the plugin: its name, which the plugin reports a failure
-/// under, and a JavaScript expression evaluating to `async (ctx) => ...`,
-/// which may return a cleanup.
+/// under, and the JavaScript declaring it, `async function <name>(ctx)` with
+/// the name in camel case, which may return a cleanup.
 pub(crate) struct Section {
     pub(crate) name: &'static str,
     pub(crate) source: String,
+}
+
+impl Section {
+    /// The function the section's source declares: `agent-context` is
+    /// `agentContext`.
+    fn function(&self) -> String {
+        let mut words = self.name.split('-');
+        let first = words.next().unwrap_or_default().to_owned();
+        words.fold(first, |mut function, word| {
+            let mut letters = word.chars();
+            if let Some(initial) = letters.next() {
+                function.extend(initial.to_uppercase());
+                function.push_str(letters.as_str());
+            }
+            function
+        })
+    }
 }
 
 /// Whether the plugin UZE would write is the one OpenCode loads.
@@ -60,24 +77,48 @@ pub(crate) fn path(config_root: &Path) -> PathBuf {
     config_root.join("plugins").join(FILE)
 }
 
-/// The plugin carrying `sections`, in order.
+/// The plugin carrying `sections`, set up in order.
 pub(crate) fn source(sections: &[Section]) -> String {
+    let declarations = sections
+        .iter()
+        .map(|section| {
+            debug_assert!(
+                section
+                    .source
+                    .contains(&format!("async function {}(ctx) {{", section.function())),
+                "section `{}` declares its function",
+                section.name
+            );
+            section.source.trim_end().to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let entries: String = sections
         .iter()
         .map(|section| {
             format!(
                 "  [{}, {}],\n",
                 serde_json::to_string(section.name).expect("a name serializes"),
-                section.source.trim()
+                section.function()
             )
         })
         .collect();
     format!(
         r#"{OWNED}
 // Written again by `uze setup`; an edit here does not survive it.
+//
+// OpenCode sets this plugin up once for every location it serves. Each
+// section sets itself up on its own: one that throws is reported, and costs
+// only itself.
+
 import {{ existsSync, lstatSync, readdirSync, readFileSync, watch }} from "node:fs";
 import {{ basename, join }} from "node:path";
 import {{ homedir }} from "node:os";
+
+// What a section could not do, under the section's name.
+const report = (section, ...parts) => console.error(`[uze:${{section}}]`, ...parts);
+
+{declarations}
 
 const SECTIONS = [
 {entries}];
@@ -91,7 +132,7 @@ export default {{
         const cleanup = await section(ctx);
         if (typeof cleanup === "function") cleanups.push(cleanup);
       }} catch (error) {{
-        console.error(`uze ${{name}}: ${{error}}`);
+        report(name, error);
       }}
     }}
     return () => {{
@@ -105,6 +146,75 @@ export default {{
 }};
 "#
     )
+}
+
+/// `value` written as the plugin writes a literal, at nesting `depth`: on
+/// one line when it fits, otherwise one entry per line, with keys that are
+/// identifiers left unquoted.
+pub(crate) fn literal(value: &serde_json::Value, depth: usize) -> String {
+    const WIDTH: usize = 100;
+    let inline = inline_literal(value);
+    let nested = matches!(
+        value,
+        serde_json::Value::Object(_) | serde_json::Value::Array(_)
+    );
+    if !nested || inline.len() + 2 * depth <= WIDTH {
+        return inline;
+    }
+    let pad = "  ".repeat(depth + 1);
+    let close = "  ".repeat(depth);
+    match value {
+        serde_json::Value::Object(entries) => {
+            let lines: Vec<String> = entries
+                .iter()
+                .map(|(key, entry)| {
+                    format!("{pad}{}: {},", key_literal(key), literal(entry, depth + 1))
+                })
+                .collect();
+            format!("{{\n{}\n{close}}}", lines.join("\n"))
+        }
+        serde_json::Value::Array(items) => {
+            let lines: Vec<String> = items
+                .iter()
+                .map(|item| format!("{pad}{},", literal(item, depth + 1)))
+                .collect();
+            format!("[\n{}\n{close}]", lines.join("\n"))
+        }
+        _ => inline,
+    }
+}
+
+fn inline_literal(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(entries) if entries.is_empty() => "{}".to_owned(),
+        serde_json::Value::Object(entries) => {
+            let fields: Vec<String> = entries
+                .iter()
+                .map(|(key, entry)| format!("{}: {}", key_literal(key), inline_literal(entry)))
+                .collect();
+            format!("{{ {} }}", fields.join(", "))
+        }
+        serde_json::Value::Array(items) => {
+            let items: Vec<String> = items.iter().map(inline_literal).collect();
+            format!("[{}]", items.join(", "))
+        }
+        scalar => scalar.to_string(),
+    }
+}
+
+fn key_literal(key: &str) -> String {
+    let identifier = key
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && key
+            .chars()
+            .all(|letter| letter.is_ascii_alphanumeric() || letter == '_');
+    if identifier {
+        key.to_owned()
+    } else {
+        serde_json::to_string(key).expect("a key serializes")
+    }
 }
 
 /// Where the plugin stands against `wanted`.
@@ -164,7 +274,7 @@ mod tests {
     fn sections() -> Vec<Section> {
         vec![Section {
             name: "demo",
-            source: "async (ctx) => {}".to_owned(),
+            source: "async function demo(ctx) {}".to_owned(),
         }]
     }
 
@@ -179,7 +289,7 @@ mod tests {
 
         let newer = source(&[Section {
             name: "demo",
-            source: "async (ctx) => { return () => {}; }".to_owned(),
+            source: "async function demo(ctx) {\n  return () => {};\n}".to_owned(),
         }]);
         assert_eq!(
             state(&root, &newer),
@@ -230,6 +340,8 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    // Runs the plugin under Bun, as the sibling plugin checks do on Unix.
+    #[cfg(unix)]
     #[test]
     fn a_section_that_throws_costs_only_itself() {
         let Some(bun) = crate::opencode::bun_for_tests() else {
@@ -242,11 +354,12 @@ mod tests {
             source(&[
                 Section {
                     name: "broken",
-                    source: "async (ctx) => { throw new Error(\"boom\"); }".to_owned(),
+                    source: "async function broken(ctx) {\n  throw new Error(\"boom\");\n}"
+                        .to_owned(),
                 },
                 Section {
                     name: "working",
-                    source: "async (ctx) => { ctx.reached = true; }".to_owned(),
+                    source: "async function working(ctx) {\n  ctx.reached = true;\n}".to_owned(),
                 },
             ]),
         )
@@ -275,12 +388,10 @@ console.log(JSON.stringify({ reached: ctx.reached === true, errors }));
         let reported: serde_json::Value =
             serde_json::from_slice(output.stdout.trim_ascii()).unwrap();
         assert_eq!(reported["reached"], true, "the next section still sets up");
-        assert!(
-            reported["errors"][0]
-                .as_str()
-                .unwrap()
-                .contains("uze broken: Error: boom"),
-            "{reported}"
+        assert_eq!(
+            reported["errors"],
+            serde_json::json!(["[uze:broken] Error: boom"]),
+            "reported under the section's name"
         );
         let _ = fs::remove_dir_all(root);
     }

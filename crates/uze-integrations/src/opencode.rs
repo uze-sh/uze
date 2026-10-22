@@ -719,24 +719,32 @@ impl OpenCodeIntegration {
 
     /// UZE's one plugin, as this machine's paths make it.
     fn runtime_plugin(&self) -> String {
-        runtime_plugin::source(&[
-            runtime_plugin::Section {
-                name: "hooks",
-                source: hook_projection::opencode_hooks_section(
-                    HOOKS,
-                    &hook_projection::opencode_documents_dir(&self.uze_home, HOOKS),
-                ),
-            },
-            runtime_plugin::Section {
-                name: "rules",
-                source: crate::rules::plugin::source(
-                    &RULES.engine_path(&self.uze_home),
-                    &self.uze_home.rules_sessions_dir(),
-                ),
-            },
-            agent_context::section(&self.session_context_dir()),
-            project_agents::section(&OPENCODE_AGENT_DIALECT, &self.harness_keys()),
-        ])
+        runtime_plugin::source(
+            &[
+                runtime_plugin::Section {
+                    name: "hooks",
+                    source: hook_projection::opencode_hooks_section(
+                        HOOKS,
+                        &hook_projection::opencode_documents_dir(&self.uze_home, HOOKS),
+                    ),
+                },
+                agent_context::section(&self.session_context_dir()),
+                project_agents::section(&OPENCODE_AGENT_DIALECT, &self.harness_keys()),
+            ]
+            .into_iter()
+            // The engine is POSIX `sh`: where it cannot run, the rules route is
+            // Unsupported and the plugin carries no section for it.
+            .chain(
+                crate::rules::deliverable_here().then(|| runtime_plugin::Section {
+                    name: "rules",
+                    source: crate::rules::plugin::source(
+                        &RULES.engine_path(&self.uze_home),
+                        &self.uze_home.rules_sessions_dir(),
+                    ),
+                }),
+            )
+            .collect::<Vec<_>>(),
+        )
     }
 
     fn config_root(&self) -> &Path {
@@ -1045,7 +1053,8 @@ const VERSION: &str = "2.0.29";
 /// Bun, to load a generated plugin in a test. A developer without it skips
 /// those checks; CI installs it, so there its absence fails the job rather
 /// than leaving the plugin unchecked.
-#[cfg(test)]
+// Only the Unix jobs install Bun, as for the sibling plugin checks.
+#[cfg(all(test, unix))]
 fn bun_for_tests() -> Option<&'static str> {
     let available = std::process::Command::new("bun")
         .arg("--version")

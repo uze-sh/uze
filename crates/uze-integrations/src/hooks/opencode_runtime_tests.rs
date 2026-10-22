@@ -588,10 +588,10 @@ await hooks["execute.before"](call);
 console.error(`tool ${call.tool}`);"#,
     );
     assert!(
-        reported.iter().any(
-            |line| line.starts_with("tool read (refused by a hook: hooks: ")
-                && line.contains("broken.json cannot be read")
-        ),
+        reported
+            .iter()
+            .any(|line| line.starts_with("tool read (refused by a hook: ")
+                && line.contains("broken.json cannot be read")),
         "{reported:?}"
     );
     let _ = fs::remove_dir_all(root);

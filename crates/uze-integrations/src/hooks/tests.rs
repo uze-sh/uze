@@ -846,7 +846,7 @@ fn the_opencode_hooks_are_one_runtime_over_each_packages_document() {
     // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the section
     // registers ctx.tool.hook callbacks and runs handlers in the harness's
     // own Bun.
-    assert!(section.starts_with("async (ctx) => {"));
+    assert!(section.contains("\nasync function hooks(ctx) {\n"));
     assert!(section.contains("ctx.tool.hook(\"execute.before\""));
     assert!(section.contains("ctx.tool.hook(\"execute.after\""));
     assert!(section.contains("Bun.spawn"));

@@ -43,7 +43,7 @@ fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
     );
     assert_eq!(golden_plugin(), golden_plugin());
     assert!(engine::SOURCE.starts_with(engine::HEADER));
-    assert!(golden_plugin().starts_with("async (ctx) => {"));
+    assert!(golden_plugin().contains("\nasync function rules(ctx) {\n"));
 }
 
 #[test]
@@ -71,13 +71,20 @@ fn the_opencode_section_imports_nothing_and_rides_the_two_v2_hooks() {
     );
     assert!(plugin.contains("ctx.session.hook(\"context\""));
     assert!(plugin.contains("ctx.tool.hook(\"execute.after\""));
-    assert!(plugin.contains("Bun.spawn([\"sh\", ENGINE, SESSIONS]"));
-    assert!(
-        plugin.contains(
-            "const ENGINE = \"/machine/state/runtime/attachments/opencode/rules/engine\";"
-        )
+    assert!(plugin.contains("Bun.spawn(ENGINE,"));
+    let engine = plugin
+        .split("const ENGINE = ")
+        .nth(1)
+        .and_then(|rest| rest.split(';').next())
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&engine.replace(",\n  ]", "\n  ]")).unwrap(),
+        serde_json::json!([
+            "/machine/state/runtime/attachments/opencode/rules/engine",
+            "/machine/state/runtime/rules/sessions"
+        ]),
+        "the engine is started the way this platform runs a script, with the sessions directory"
     );
-    assert!(plugin.contains("const SESSIONS = \"/machine/state/runtime/rules/sessions\";"));
 }
 
 /// Every harness's integration, over one isolated machine.
