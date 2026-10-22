@@ -252,7 +252,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `js-sys` | 0.3.105 | MIT OR Apache-2.0 |
 | `kasuari` | 0.4.12 | MIT OR Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
-| `libc` | 0.2.190 | MIT OR Apache-2.0 |
+| `libc` | 0.2.191 | MIT OR Apache-2.0 |
 | `libm` | 0.2.16 | MIT |
 | `line-clipping` | 0.3.8 | MIT OR Apache-2.0 |
 | `linked-hash-map` | 0.5.6 | MIT OR Apache-2.0 |
@@ -268,7 +268,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `mio` | 1.2.3 | MIT |
 | `miow` | 0.6.1 | MIT OR Apache-2.0 |
 | `nix` | 0.28.0 | MIT |
-| `noyalib` | 0.0.57 | MIT OR Apache-2.0 |
+| `noyalib` | 0.0.58 | MIT OR Apache-2.0 |
 | `nu-ansi-term` | 0.50.3 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -311,8 +311,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 |
 | `ryu` | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | `same-file` | 1.0.6 | Unlicense OR MIT |
-| `schemars` | 1.2.2 | MIT |
-| `schemars_derive` | 1.2.2 | MIT |
+| `schemars` | 1.2.3 | MIT |
+| `schemars_derive` | 1.2.3 | MIT |
 | `scopeguard` | 1.2.0 | MIT OR Apache-2.0 |
 | `semver` | 1.0.28 | MIT OR Apache-2.0 |
 | `serde` | 1.0.229 | MIT OR Apache-2.0 |
@@ -322,7 +322,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `serde_ignored` | 0.1.14 | MIT OR Apache-2.0 |
 | `serde_json` | 1.0.154 | MIT OR Apache-2.0 |
 | `serial2` | 0.2.38 | BSD-2-Clause OR Apache-2.0 |
-| `sha2` | 0.11.0 | MIT OR Apache-2.0 |
+| `sha2` | 0.11.1 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
 | `shared_library` | 0.1.9 | Apache-2.0 OR MIT |
 | `shell-words` | 1.1.1 | MIT OR Apache-2.0 |
@@ -350,7 +350,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `thread_local` | 1.1.10 | MIT OR Apache-2.0 |
 | `time` | 0.3.55 | MIT OR Apache-2.0 |
 | `time-core` | 0.1.9 | MIT OR Apache-2.0 |
-| `tokio` | 1.53.2 | MIT |
+| `tokio` | 1.53.3 | MIT |
 | `tokio-macros` | 2.7.2 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
 | `toml_datetime` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
