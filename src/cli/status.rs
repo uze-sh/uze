@@ -739,6 +739,13 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             unspelled.command,
             unspelled.platform,
         ));
+        if let Some(why) = &unspelled.not_portable {
+            text.push_str(&format!(
+                "  {} not portable: {why}; spell it under `posix` and `{}`\n",
+                progress::label("·"),
+                unspelled.platform,
+            ));
+        }
     }
     if let Some(awaiting) = &status.commands_awaiting_approval {
         text.push_str(&format!(

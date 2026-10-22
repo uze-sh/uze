@@ -140,6 +140,26 @@ pub fn launch(
     }
 }
 
+/// The file an exec-form script named without an extension is on
+/// `family`'s platform. On POSIX it is the name itself, which runs by its
+/// execute bit or its shebang. On Windows it is the `.exe` sibling, else the
+/// `.ps1` one: the native twins an author ships for both platforms under one
+/// name. A name with an extension, or one with no such sibling, is
+/// returned as written, for [`launch`] to place or refuse. `exists` answers
+/// whether a file at a package-relative path is there.
+pub fn resolve(script: &str, family: Family, exists: &dyn Fn(&str) -> bool) -> String {
+    let extensionless = Path::new(script).extension().is_none();
+    if family == Family::PowerShell && extensionless {
+        for extension in ["exe", "ps1"] {
+            let sibling = format!("{script}.{extension}");
+            if exists(&sibling) {
+                return sibling;
+            }
+        }
+    }
+    script.to_owned()
+}
+
 /// Whether `words` answer `--version` as a Python 3, within a short
 /// deadline. A Windows App Execution Alias passes a `PATH` lookup and then
 /// exits 9009 or opens the Store; only an answer counts.
@@ -193,6 +213,38 @@ mod tests {
     }
 
     const NO_PYTHON: &dyn Fn(&[&str]) -> bool = &|_| false;
+
+    /// One name, a native script per platform: both columns, on every host.
+    #[test]
+    fn an_extensionless_script_resolves_to_its_platforms_twin() {
+        let present = |files: &'static [&'static str]| move |path: &str| files.contains(&path);
+        let both = present(&["hooks/guard", "hooks/guard.ps1", "hooks/guard.exe"]);
+        let script_only = present(&["hooks/guard", "hooks/guard.ps1"]);
+        let posix_only = present(&["hooks/guard"]);
+        assert_eq!(resolve("hooks/guard", Family::Posix, &both), "hooks/guard");
+        assert_eq!(
+            resolve("hooks/guard", Family::PowerShell, &both),
+            "hooks/guard.exe"
+        );
+        assert_eq!(
+            resolve("hooks/guard", Family::PowerShell, &script_only),
+            "hooks/guard.ps1"
+        );
+        assert_eq!(
+            resolve("hooks/guard", Family::PowerShell, &posix_only),
+            "hooks/guard",
+            "no twin: the name as written, which the table then refuses"
+        );
+        assert_eq!(
+            resolve("hooks/guard.py", Family::PowerShell, &both),
+            "hooks/guard.py",
+            "a name with an extension is never rewritten"
+        );
+        assert!(matches!(
+            launched("C:/root/hooks/guard", false, Family::PowerShell, NO_PYTHON),
+            Launch::Unplaceable { .. }
+        ));
+    }
 
     #[test]
     fn a_python_script_on_posix_runs_in_python3_and_needs_it() {

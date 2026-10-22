@@ -6,3 +6,4 @@
 mod budget;
 mod grammar;
 mod machine;
+mod portable_shell;

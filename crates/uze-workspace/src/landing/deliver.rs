@@ -66,13 +66,13 @@ pub(super) fn deliver_locked(
     for step in gate {
         // A gate with no spelling for this platform refuses delivery: it
         // cannot be run, and work it never checked must not land.
-        let (passed, output) = match step.here() {
-            Some(line) => run_shell_bounded(&slot, line, GATE_TIMEOUT),
-            None => (
+        let (passed, output) = match step.runs_here() {
+            Ok(runs) => run_bounded(&slot, runs, GATE_TIMEOUT),
+            Err(reason) => (
                 false,
                 format!(
-                    "this gate has no {} spelling in agents.yaml",
-                    uze_core::shell::ShellCommand::platform()
+                    "this gate {} in agents.yaml",
+                    crate::checkout::not_run(&reason)
                 ),
             ),
         };

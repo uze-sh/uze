@@ -63,7 +63,11 @@ fn main() {
     let args: Vec<String> = argv_lossy();
     // Not for a pane's trampoline, which starts with every pane and has
     // nothing of an update's to tidy: the next `uze` a person runs does.
-    if args.get(1..3) != Some(&["terminal".to_owned(), "host-pane".to_owned()][..]) {
+    let trampoline = matches!(
+        args.get(1..3),
+        Some([first, second]) if (first == "terminal" && second == "host-pane") || first == "shell"
+    );
+    if !trampoline {
         uze::self_update::sweep_set_aside();
     }
 
@@ -120,7 +124,7 @@ fn is_framed(arguments: &[String]) -> bool {
     !quiet
         && !matches!(
             (words.next().map(String::as_str), words.next()),
-            (Some("agent" | "terminal"), _) | (Some("workspace"), None)
+            (Some("agent" | "terminal" | "shell"), _) | (Some("workspace"), None)
         )
 }
 
@@ -250,6 +254,18 @@ fn removed_spelling(argv: &[String]) -> Option<String> {
 }
 
 fn run(cli: Cli, leaf: &str) -> Result<()> {
+    // Ahead of everything else: one per setup step or gate, it reads no
+    // state and writes none, and its exit status is the line's.
+    if let Some(Command::Shell { command }) = &cli.command {
+        let status = match std::env::current_dir() {
+            Ok(cwd) => uze_application::portable_shell::run(command, &cwd),
+            Err(error) => {
+                eprintln!("uze shell: {error}");
+                1
+            }
+        };
+        std::process::exit(status);
+    }
     progress::configure(cli.color, cli.quiet);
     if cli.quiet {
         silence_stdout();
@@ -646,7 +662,7 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Usage { format } => report_usage(&app, format)?,
         Command::Setup { arguments } => run_setup_command(&app, &home, &arguments, verbose)?,
         Command::External(args) => run_shorthand(&app, args, verbose)?,
-        Command::Workspace { .. } | Command::Terminal { .. } => {
+        Command::Workspace { .. } | Command::Terminal { .. } | Command::Shell { .. } => {
             unreachable!("workspace commands return before application setup")
         }
         Command::Upgrade { .. } => {
@@ -665,6 +681,7 @@ fn tells_about_releases(command: &Command) -> bool {
         Command::Agent { .. }
             | Command::Workspace { .. }
             | Command::Terminal { .. }
+            | Command::Shell { .. }
             | Command::Upgrade { .. }
     )
 }
@@ -916,6 +933,42 @@ mod status_output_tests {
             path: std::path::PathBuf::from("/project/AGENTS.md"),
             exists: false,
         }
+    }
+
+    fn not_running(not_portable: Option<&str>) -> ProjectStatus {
+        let mut status = report(present(), Portability::Portable);
+        status.steps_not_spelled_here =
+            vec![uze_application::application::services::StepNotSpelledHere {
+                step: uze_application::PolicyStep::Gate,
+                command: "make 2>&1 | cat".to_owned(),
+                platform: "windows",
+                not_portable: not_portable.map(str::to_owned),
+            }];
+        status
+    }
+
+    #[test]
+    fn a_command_with_no_spelling_here_names_the_spelling_it_lacks() {
+        let text = render_status(&not_running(None));
+        assert!(
+            text.contains("gate `make 2>&1 | cat` has no `windows` spelling"),
+            "{text}"
+        );
+        assert!(
+            text.contains("every delivery from here is refused"),
+            "{text}"
+        );
+        assert!(!text.contains("not portable"), "{text}");
+    }
+
+    #[test]
+    fn a_line_that_is_not_portable_says_why_and_what_to_write() {
+        let text = render_status(&not_running(Some("`2>&1` at column 6: a program's stderr")));
+        assert!(text.contains("not portable: `2>&1` at column 6"), "{text}");
+        assert!(
+            text.contains("spell it under `posix` and `windows`"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1304,7 +1357,7 @@ mod status_output_tests {
         let project = uze_testkit::temp::scratch("status-awaiting-approval");
         std::fs::write(
             project.join("agents.yaml"),
-            "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
+            "workspace:\n  gate: make test\n",
         )
         .unwrap();
         let home = super::UzeHome::at(project.join(".uze-home"));

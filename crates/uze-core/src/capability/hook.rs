@@ -192,10 +192,13 @@ impl CommandHook {
                 )),
             };
         };
+        let script = crate::launcher::resolve(script, family, &|candidate| {
+            store_root.join(candidate).is_file()
+        });
         let executable = family == crate::shell::Family::Posix
-            && uze_platform::executable::is_marked_runnable(&store_root.join(script))
-            && store_root.join(script).is_file();
-        let path = delivered_root.join(script);
+            && uze_platform::executable::is_marked_runnable(&store_root.join(&script))
+            && store_root.join(&script).is_file();
+        let path = delivered_root.join(&script);
         match crate::launcher::launch(
             &crate::launcher::Script {
                 path: &path,
@@ -712,6 +715,107 @@ fn invalid<T>(path: &Path, reason: &str) -> Result<T> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// The scaffold's shape: one extensionless exec-form handler, a POSIX
+    /// script under the name and its PowerShell twin beside it.
+    #[test]
+    fn an_extensionless_handler_runs_its_platforms_twin() {
+        let store = uze_testkit::temp::TempDir::new("hook-twins");
+        std::fs::create_dir_all(store.path().join("scripts")).unwrap();
+        std::fs::write(store.path().join("scripts/guard"), "#!/bin/sh\n").unwrap();
+        std::fs::write(store.path().join("scripts/guard.ps1"), "exit 0\n").unwrap();
+        let handler = CommandHook {
+            args: Some(vec!["--strict".into()]),
+            ..CommandHook::line("scripts/guard")
+        };
+        let delivered = Path::new("/delivered");
+        match handler.invocation(
+            store.path(),
+            delivered,
+            crate::shell::Family::PowerShell,
+            &|_| false,
+        ) {
+            Invocation::Argv { argv, .. } => {
+                assert_eq!(argv[0], "powershell.exe");
+                assert!(
+                    argv.iter().any(|word| word.ends_with("guard.ps1")),
+                    "{argv:?}"
+                );
+                assert_eq!(argv.last().map(String::as_str), Some("--strict"));
+            }
+            other => panic!("the twin was not found: {other:?}"),
+        }
+        assert!(handler.runs_on(store.path(), crate::shell::Family::PowerShell));
+    }
+
+    /// Every `hooks.json` the repository carries, the scaffold's and the
+    /// playground's included: a handler's spellings are exactly what its
+    /// JSON says, so a plain string stays POSIX-only and never reaches the
+    /// portable shell, which needs `uze` on the hook's path.
+    #[test]
+    fn every_hook_fixture_is_spelled_as_its_json_says() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut manifests = Vec::new();
+        let mut pending = [
+            "tests/_fixtures",
+            "conformance/_fixtures",
+            "playground",
+            "crates",
+        ]
+        .map(|root| repository.join(root))
+        .to_vec();
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && entry.file_name() != "target" {
+                    pending.push(path);
+                } else if entry.file_name() == "hooks.json" {
+                    manifests.push(path);
+                }
+            }
+        }
+        assert!(manifests.len() >= 10, "found {manifests:?}");
+        for path in manifests {
+            let Ok(raw) =
+                serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap())
+            else {
+                continue;
+            };
+            let Ok(manifest) = serde_json::from_value::<HookManifest>(raw.clone()) else {
+                continue;
+            };
+            for handler in manifest
+                .hooks
+                .values()
+                .flatten()
+                .flat_map(|group| &group.hooks)
+            {
+                let written = serde_json::to_value(&handler.command).unwrap();
+                let (posix, windows) = match &written {
+                    serde_json::Value::String(line) => (Some(line.as_str()), None),
+                    spellings => (spellings["posix"].as_str(), spellings["windows"].as_str()),
+                };
+                fn nonblank(spelling: Option<&str>) -> Option<&str> {
+                    spelling.filter(|line| !line.trim().is_empty())
+                }
+                assert_eq!(
+                    handler.command.spelling(crate::shell::Family::Posix),
+                    nonblank(posix),
+                    "{}",
+                    path.display()
+                );
+                assert_eq!(
+                    handler.command.spelling(crate::shell::Family::PowerShell),
+                    nonblank(windows),
+                    "{}",
+                    path.display()
+                );
+            }
+        }
+    }
 
     /// A guard written only for the other platform's shell cannot run
     /// here, and is named; an observing group or a guard spelled for both

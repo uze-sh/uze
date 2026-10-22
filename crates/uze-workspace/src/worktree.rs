@@ -20,7 +20,7 @@
 //! UZE already placed it in.
 
 use std::path::{Path, PathBuf};
-use uze_core::shell::ShellCommand;
+use uze_core::shell::{NotRun, ShellCommand};
 
 use serde::{Deserialize, Serialize};
 
@@ -477,10 +477,10 @@ impl WorktreePolicy {
             .collect()
     }
 
-    /// The commands this platform's shell has no spelling for, each with
-    /// the step it belongs to: a setup step that is skipped here, a gate
+    /// The commands that do not run on this platform, each with the step
+    /// it belongs to and why: a setup step that is skipped here, a gate
     /// that refuses every delivery here.
-    pub fn steps_not_spelled_here(&self) -> Vec<(PolicyStep, &ShellCommand)> {
+    pub fn steps_not_spelled_here(&self) -> Vec<(PolicyStep, &ShellCommand, NotRun)> {
         let setup = self
             .setup
             .iter()
@@ -488,7 +488,12 @@ impl WorktreePolicy {
         let gate = self.gate.iter().map(|command| (PolicyStep::Gate, command));
         setup
             .chain(gate)
-            .filter(|(_, command)| command.here().is_none())
+            .filter_map(|(step, command)| {
+                command
+                    .runs_here()
+                    .err()
+                    .map(|reason| (step, command, reason))
+            })
             .collect()
     }
 }
@@ -694,7 +699,7 @@ mod tests {
         };
         assert_eq!(
             policy.steps_not_spelled_here(),
-            [(PolicyStep::Gate, &elsewhere)]
+            [(PolicyStep::Gate, &elsewhere, NotRun::Unspelled)]
         );
     }
 

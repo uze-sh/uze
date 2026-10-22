@@ -70,7 +70,10 @@ attachment; nothing is projected silently.
   Windows, the extension picks from a fixed table (`.py`, `.js`/`.mjs`/
   `.cjs`, `.ps1`, `.sh`, `.exe`), and on Windows the Python is the one that
   answers `--version` (`py -3`, `python`, `python3`), never a Store alias.
-  `interpreter`, a list of words, replaces the table for one handler. On
+  `interpreter`, a list of words, replaces the table for one handler. A
+  script named without an extension (`scripts/guard`) is its own file on
+  POSIX and, on Windows, its `.exe` sibling, else its `.ps1` one: one entry
+  for a handler shipped as a native script per platform. On
   OpenCode a JavaScript or TypeScript script runs in OpenCode's own Bun.
   The program the launcher needs joins the package's requirements,
   attributed to the hook, so `uze install`, `uze status -m` and
@@ -80,7 +83,10 @@ attachment; nothing is projected silently.
 - **Shell line**: `command` alone, one POSIX line or a `posix`/`windows`
   pair, executed as a user would type it. `${PLUGIN_ROOT}/scripts/check`
   therefore requires the script to be executable, or the line must say so
-  (`sh ${PLUGIN_ROOT}/scripts/check`).
+  (`sh ${PLUGIN_ROOT}/scripts/check`). A hook's plain line stays POSIX: a
+  project's `setup` and `gate` run a plain line in UZE's portable shell on
+  every platform, but a hook's wrapper runs with nothing of UZE's on its
+  path, so a hook that should run everywhere uses the exec form.
 
 A handler that cannot start fails and follows the declared effect's
 fail-open/fail-closed rule: a `deny` hook that cannot run denies.

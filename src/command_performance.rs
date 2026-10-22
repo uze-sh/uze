@@ -203,6 +203,12 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "shell",
+        PerformanceClass::JustifiedSlow(
+            "runs a project's setup step or gate for as long as the line does",
+        ),
+    ),
+    (
         "setup",
         PerformanceClass::JustifiedSlow(
             "provisions or updates harness executables through each harness's official installer",

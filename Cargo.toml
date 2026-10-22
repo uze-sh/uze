@@ -150,6 +150,13 @@ name = "uze-mcp-conformance-fixture"
 path = "tests/_fixtures/bin/mcp_conformance_fixture.rs"
 required-features = ["dev-servers"]
 
+# What the portable-shell suite runs instead of a real tool: it records
+# what reached it (`tests/cli/portable_shell.rs`).
+[[bin]]
+name = "uze-command-probe"
+path = "tests/_fixtures/bin/command_probe.rs"
+required-features = ["dev-servers"]
+
 [[bin]]
 name = "playground-mcp"
 path = "playground/mcp_server.rs"

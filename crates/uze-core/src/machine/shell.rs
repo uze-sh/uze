@@ -2,11 +2,16 @@
 //!
 //! A project's setup steps and gates, and a hook's handler, are text in
 //! one shell's language: `npm ci && cp .env.example .env` is POSIX and
-//! means nothing to PowerShell. So a command is either one line — POSIX, as
-//! every manifest written so far is — or a `posix`/`windows` pair, and each
-//! platform runs only the spelling written for it. A command with no
-//! spelling for this platform is never run in another shell; the caller
-//! reports it by name.
+//! means nothing to PowerShell. So a command is either one line or a
+//! `posix`/`windows` pair, and each platform runs only the spelling written
+//! for it. A command with no spelling for this platform is never run in
+//! another shell; the caller reports it by name.
+//!
+//! What a plain line is depends on who runs it. In a hook it is POSIX
+//! ([`ShellCommand::spelling`]): the hook's wrapper runs with nothing of
+//! UZE's on its path. In a project's setup and gate, which UZE runs, it is
+//! a portable line wherever the portable shell can run it
+//! ([`ShellCommand::runs`], [`crate::portable_shell`]), and POSIX otherwise.
 
 use std::fmt;
 
@@ -33,7 +38,58 @@ pub struct Spellings {
     pub windows: Option<String>,
 }
 
+/// How a project's command runs on a platform.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Runs<'a> {
+    /// A plain line, in the portable shell: the same on every platform.
+    Portable(&'a str),
+    /// In the platform's own shell, as spelled for it.
+    Native(&'a str),
+}
+
+impl<'a> Runs<'a> {
+    /// The line that runs, as written.
+    pub fn line(self) -> &'a str {
+        match self {
+            Self::Portable(line) | Self::Native(line) => line,
+        }
+    }
+}
+
+/// Why a project's command does not run on a platform.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NotRun {
+    /// No spelling was written for this platform's shell.
+    Unspelled,
+    /// A plain line the portable shell cannot run, where no POSIX shell
+    /// runs it instead.
+    NotPortable(crate::portable_shell::NotPortable),
+}
+
 impl ShellCommand {
+    /// How this command runs on `family`'s platform as a project's setup
+    /// step or gate: a plain line in the portable shell when it can be, in
+    /// `sh` where there is one when it cannot; a spelling in its own shell.
+    pub fn runs(&self, family: Family) -> Result<Runs<'_>, NotRun> {
+        match self {
+            Self::Line(line) if line.trim().is_empty() => Err(NotRun::Unspelled),
+            Self::Line(line) => match (crate::portable_shell::check(line), family) {
+                (Ok(()), _) => Ok(Runs::Portable(line)),
+                (Err(_), Family::Posix) => Ok(Runs::Native(line)),
+                (Err(reason), Family::PowerShell) => Err(NotRun::NotPortable(reason)),
+            },
+            Self::PerPlatform(_) => self
+                .spelling(family)
+                .map(Runs::Native)
+                .ok_or(NotRun::Unspelled),
+        }
+    }
+
+    /// [`Self::runs`] on this platform.
+    pub fn runs_here(&self) -> Result<Runs<'_>, NotRun> {
+        self.runs(uze_platform::shell::FAMILY)
+    }
+
     /// A command spelled for both shells.
     pub fn spelled(posix: impl Into<String>, windows: impl Into<String>) -> Self {
         Self::PerPlatform(Spellings {
@@ -201,6 +257,74 @@ mod tests {
         );
         assert_eq!(line.label(), "pnpm install");
         assert_eq!(pair.here(), pair.spelling(uze_platform::shell::FAMILY));
+    }
+
+    /// Every shape a command can take, on both families: what a project's
+    /// setup or gate runs as.
+    #[test]
+    fn a_project_command_runs_as_its_shape_and_platform_say() {
+        let portable = ShellCommand::from("pnpm install && pnpm build");
+        let posix_only = ShellCommand::from("for f in *; do :; done");
+        let empty = ShellCommand::from("  ");
+        let pair = ShellCommand::spelled("make", "make.exe");
+        let posix_half = ShellCommand::PerPlatform(Spellings {
+            posix: Some("make".into()),
+            windows: None,
+        });
+        let windows_half = ShellCommand::PerPlatform(Spellings {
+            posix: None,
+            windows: Some("make.exe".into()),
+        });
+        let cases: &[(&ShellCommand, Family, Result<Runs<'_>, &str>)] = &[
+            (
+                &portable,
+                Family::Posix,
+                Ok(Runs::Portable("pnpm install && pnpm build")),
+            ),
+            (
+                &portable,
+                Family::PowerShell,
+                Ok(Runs::Portable("pnpm install && pnpm build")),
+            ),
+            (
+                &posix_only,
+                Family::Posix,
+                Ok(Runs::Native("for f in *; do :; done")),
+            ),
+            (&posix_only, Family::PowerShell, Err("not portable")),
+            (&empty, Family::Posix, Err("unspelled")),
+            (&empty, Family::PowerShell, Err("unspelled")),
+            (&pair, Family::Posix, Ok(Runs::Native("make"))),
+            (&pair, Family::PowerShell, Ok(Runs::Native("make.exe"))),
+            (&posix_half, Family::Posix, Ok(Runs::Native("make"))),
+            (&posix_half, Family::PowerShell, Err("unspelled")),
+            (&windows_half, Family::Posix, Err("unspelled")),
+            (
+                &windows_half,
+                Family::PowerShell,
+                Ok(Runs::Native("make.exe")),
+            ),
+        ];
+        for (command, family, expected) in cases {
+            let answer = command.runs(*family).map_err(|reason| match reason {
+                NotRun::Unspelled => "unspelled",
+                NotRun::NotPortable(_) => "not portable",
+            });
+            assert_eq!(answer, *expected, "{command:?} on {family:?}");
+        }
+    }
+
+    /// A hook's plain line is POSIX whatever the portable shell could do
+    /// with it: the hook's wrapper runs with nothing of UZE's on its path.
+    #[test]
+    fn a_portable_line_is_still_posix_only_as_a_spelling() {
+        let portable = ShellCommand::from("./guard --strict");
+        assert_eq!(
+            portable.runs(Family::PowerShell),
+            Ok(Runs::Portable("./guard --strict"))
+        );
+        assert_eq!(portable.spelling(Family::Posix), Some("./guard --strict"));
+        assert_eq!(portable.spelling(Family::PowerShell), None);
     }
 
     #[test]

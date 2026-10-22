@@ -1441,10 +1441,14 @@ impl<'a> CommandStates<'a> {
     }
 
     /// The word beside a setup or gate entry, and its tone: judged on the
-    /// command itself — the spelling this platform runs is what approval
-    /// names — never on the line the form shows for it.
+    /// command itself — the line that runs here, portable or spelled for
+    /// this shell, is what approval names — never on the line the form
+    /// shows for it.
     fn state_of(&self, command: Option<&ShellCommand>, edited: bool) -> (&'static str, Token) {
-        match command.and_then(ShellCommand::here) {
+        match command
+            .and_then(|command| command.runs_here().ok())
+            .map(|runs| runs.line())
+        {
             None => ("never runs here", Token::StateDanger),
             Some(line) if self.awaiting.contains(&line) => {
                 ("waiting for approval", Token::StateWarning)
@@ -3087,6 +3091,18 @@ mod tests {
             "waiting for approval"
         );
         assert_eq!(states.state_of(None, false).0, "never runs here");
+    }
+
+    /// A plain line the portable shell runs runs on every platform, so it
+    /// is never shown as one that does not.
+    #[test]
+    fn a_portable_line_runs_here_whatever_the_platform() {
+        use uze_application::ShellCommand;
+        let states = super::CommandStates {
+            awaiting: Vec::new(),
+        };
+        let command = ShellCommand::from("cargo test --workspace");
+        assert_eq!(states.state_of(Some(&command), false).0, "approved");
     }
 
     use super::{short_commit, typed_lines};

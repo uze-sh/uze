@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use uze_core::{Result, shell::ShellCommand};
+use uze_core::{
+    Result,
+    shell::{NotRun, ShellCommand},
+};
 use uze_workspace::{
     approval::{self, Awaiting, ProjectCommands},
     checkout, declaration,
@@ -23,6 +26,10 @@ pub struct StepNotSpelledHere {
     pub command: String,
     /// The spelling it lacks: `windows` or `posix`.
     pub platform: &'static str,
+    /// Why a plain line does not run in the portable shell, when that is
+    /// why it does not run here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_portable: Option<String>,
 }
 
 impl Workspace<'_> {
@@ -41,10 +48,14 @@ impl Workspace<'_> {
         policy
             .steps_not_spelled_here()
             .into_iter()
-            .map(|(step, command)| StepNotSpelledHere {
+            .map(|(step, command, reason)| StepNotSpelledHere {
                 step,
                 command: command.to_string(),
                 platform: ShellCommand::platform(),
+                not_portable: match reason {
+                    NotRun::Unspelled => None,
+                    NotRun::NotPortable(why) => Some(why.to_string()),
+                },
             })
             .collect()
     }

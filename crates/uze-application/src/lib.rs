@@ -45,6 +45,9 @@ pub use uze_core::{
     },
 };
 
+/// The shell a project's plain setup and gate lines run in, which
+/// `uze shell -c` is.
+pub use uze_core::portable_shell;
 /// A setup or gate command as a declaration edit carries it: a line, or a
 /// spelling per platform.
 pub use uze_core::shell::ShellCommand;

@@ -3375,7 +3375,7 @@ fn commands_waiting_are_reviewed_from_the_keyboard() {
     let project = uze_testkit::temp::scratch("orchestrator-overview-review");
     std::fs::write(
         project.join("agents.yaml"),
-        "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
+        "workspace:\n  gate: make test\n",
     )
     .unwrap();
     let awaiting = uze_application::UzeApplication::new(home.clone(), Vec::new())

@@ -186,6 +186,15 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: TerminalAction,
     },
+    /// Runs a project's plain setup or gate line in the portable shell, the
+    /// same on every platform; started only by the workspace, under its
+    /// own timeout and process group.
+    #[command(hide = true)]
+    Shell {
+        /// The line, as `agents.yaml` spells it
+        #[arg(short = 'c', allow_hyphen_values = true)]
+        command: String,
+    },
     /// The agent's own surface: what an agent calls to take part in the
     /// project it works in. Only `work` needs an agent `uze workspace`
     /// launched; `context`, `market`, `plugin`, `artifacts` and `rules` answer any

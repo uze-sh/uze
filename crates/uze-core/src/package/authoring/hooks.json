@@ -8,10 +8,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": {
-              "posix": "${PLUGIN_ROOT}/scripts/guard",
-              "windows": "& \"${PLUGIN_ROOT}/scripts/guard.ps1\""
-            },
+            "command": "scripts/guard",
+            "args": [],
             "timeout": 10
           }
         ]
