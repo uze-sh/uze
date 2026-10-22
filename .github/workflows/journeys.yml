@@ -140,7 +140,7 @@ jobs:
         run: |
           echo "::notice title=Journeys ${PLATFORM} ${SHARD} already proven::passed in ${PROVEN}"
           echo "Reused: nothing this slice reads changed since ${PROVEN}" >> "${GITHUB_STEP_SUMMARY}"
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         if: steps.proof.outputs.proven == ''
         with:
           toolchain: stable
