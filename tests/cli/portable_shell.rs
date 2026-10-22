@@ -626,9 +626,19 @@ fn a_timeout_ends_the_line_and_everything_it_started() {
     assert!(output.contains("timed out"), "{output}");
     for mut connection in connections {
         let mut rest = Vec::new();
-        connection
-            .read_to_end(&mut rest)
-            .expect("the probe's connection closed: its process is gone");
+        match connection.read_to_end(&mut rest) {
+            Ok(_) => {}
+            // TerminateJobObject closes a member's TCP socket with RST,
+            // rather than the EOF Unix sends when its process group dies.
+            // The connection was accepted before the timeout, so either
+            // outcome proves the probe holding it was ended.
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ) => {}
+            Err(error) => panic!("the probe's connection did not close: {error}"),
+        }
     }
 }
 
