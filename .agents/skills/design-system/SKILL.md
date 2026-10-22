@@ -351,9 +351,12 @@ Use the `src/progress.rs` helpers and never hand-format:
 - Name the thing, not the mechanism. User-facing status is never technical.
 - A project resource that reaches a harness says only who delivers it:
   `Native` (the harness reads it) or `Delivered` (uze brings it, through
-  the shim or the rules engine), never the mechanism ("Inside the
-  workspace", "Rules engine") nor the brand ("Via uze"). The drawer's own
-  groups already say where it is.
+  the shim, the rules engine or its plugin), never the mechanism ("Inside
+  the workspace", "Rules engine", "Plugin") nor the brand ("Via uze"). The
+  drawer's own groups already say where it is. One that does not reach it
+  says why in one word a person can act on: `Run uze setup`, or `Blocked`
+  when a file of the operator's holds the path uze would use (`uze doctor`
+  names the file).
 - A status shows the state, not the history that produced it: provisioning
   reads `Verified`, never `Verified (Update)`, which reads as an update
   waiting beside a version.

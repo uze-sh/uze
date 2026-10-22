@@ -653,7 +653,7 @@ directory itself, is given nothing.
 > `crates/uze-core/src/project/rules/tests.rs::a_checkout_without_a_rules_directory_has_no_rules_and_nothing_wrong`
 > `crates/uze-integrations/src/rules/tests.rs::antigravity_is_left_to_its_own_rules`
 > `crates/uze-integrations/src/rules/tests.rs::claude_receives_exec_form_entries_beside_its_foreign_hooks`
-> `crates/uze-integrations/src/rules/tests.rs::opencode_receives_a_generated_plugin_and_no_config_entry`
+> `crates/uze-integrations/src/rules/tests.rs::opencode_receives_a_section_of_the_runtime_plugin_and_no_config_entry`
 
 ### The rules engine fails open and reads only the session's checkout
 
@@ -1290,12 +1290,17 @@ intact, so one attached hook does not reshuffle a hand-organised file.
 ### A package's hooks attach once per harness, idempotently
 
 Re-attach never duplicates; an update replaces the previous version of the
-same group instead of stacking it; the OpenCode bridge is package-scoped,
-single-sourced (the auto-discovered global plugin directory — never a
-second `plugin` config entry) and regenerates from the receipt set.
+same group instead of stacking it; OpenCode's hook document is
+package-scoped and regenerates from the receipt set, and it is read by the
+one runtime plugin, single-sourced (the auto-discovered global plugin
+directory, never a second `plugin` config entry), which runs every
+package's groups in one pass and refuses every call while a document
+cannot be read.
 
 > `tests/integrations/hooks.rs::an_update_replaces_the_previous_version_of_the_samed_group`
 > `tests/integrations/hooks.rs::opencode_bridge_is_package_scoped_and_regenerates_across_groups`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::every_packages_observers_see_the_real_call_a_later_package_denies`
+> `crates/uze-integrations/src/hooks/opencode_runtime_tests.rs::an_unreadable_document_refuses_every_call`
 
 ### The generated wrapper never silently weakens a safety hook
 

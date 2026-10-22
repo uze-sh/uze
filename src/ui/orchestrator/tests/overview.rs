@@ -71,7 +71,7 @@ fn support_fixture() -> crate::ui::agent_support::AgentSupport {
             instructions: ContextMechanism::RuntimeShim,
             project_skills: ContextMechanism::RuntimeShim,
             project_agents: ContextMechanism::RuntimeShim,
-            project_rules: ContextMechanism::RulesEngine,
+            project_rules: ContextMechanism::SetupDelivered,
         },
     };
     let context = AgentContextStatus {

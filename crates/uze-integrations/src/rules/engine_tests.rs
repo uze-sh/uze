@@ -785,7 +785,10 @@ fn the_opencode_plugin_hands_the_engines_answer_to_the_model() {
     let checkout = Checkout::with_every_trigger("rules-opencode-plugin");
     fs::write(
         checkout.scratch.join("rules.ts"),
-        plugin::source(&checkout.engine, &checkout.sessions),
+        crate::opencode::runtime_plugin::source(&[crate::opencode::runtime_plugin::Section {
+            name: "rules",
+            source: plugin::source(&checkout.engine, &checkout.sessions),
+        }]),
     )
     .unwrap();
     let root = serde_json::to_string(&checkout.root).unwrap();

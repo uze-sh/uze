@@ -172,6 +172,8 @@ OpenCode has no plugin system: UZE delivers every capability to OpenCode's own n
 | About | Fact | Measured on |
 | --- | --- | --- |
 | project agents | reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project | 2.0.18 |
+| project agents | sets a global plugin up once per location of its shared service, handing it the checkout's own top level, and offers the agents that plugin registers there to that location alone, reloading them when the plugin asks | 2.1.2 |
+| project agents | runs an external plugin's agent transform after its built-in agents and before its configured ones, which apply over an agent of the same id | 2.1.2 |
 | agents | names an agent after its file and runs it on a `provider/model` its block names | 2.0.29 |
 | skills | lists a skill's supporting files only when its directory is not a link | 2.0.18 |
 | placeholders | expands no plugin-root placeholder, so UZE resolves `${PLUGIN_ROOT}` itself | 2.0.29 |

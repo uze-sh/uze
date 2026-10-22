@@ -20,20 +20,31 @@ fn bun_available() -> bool {
     available
 }
 
-/// Loads the plugin generated for `hook` under `root` and runs `calls`
-/// against it, answering with what it reported on the console.
+/// Loads the runtime plugin's hooks section over one document carrying
+/// `hook` under `root`, and runs `calls` against it, answering with what it
+/// reported on the console.
 fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
     fs::write(
-        root.join("hooks-demo.ts"),
-        opencode_bridge(crate::opencode::HOOKS, &[hook], root, "demo"),
+        documents.join("demo.json"),
+        opencode_hook_document(crate::opencode::HOOKS, &[hook], root),
+    )
+    .unwrap();
+    fs::write(
+        root.join("uze.ts"),
+        crate::opencode::runtime_plugin::source(&[crate::opencode::runtime_plugin::Section {
+            name: "hooks",
+            source: opencode_hooks_section(crate::opencode::HOOKS, &documents),
+        }]),
     )
     .unwrap();
     fs::write(
         root.join("drive.ts"),
         format!(
-            r#"import plugin from "./hooks-demo.ts";
+            r#"import plugin from "./uze.ts";
 const hooks = {{}};
-await plugin.setup({{
+const cleanup = await plugin.setup({{
   tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }},
   permission: {{ hook: async (name, fn) => {{ hooks[`permission.${{name}}`] = fn; }} }},
   event: {{ subscribe: () => ({{ [Symbol.asyncIterator]: () => ({{ next: () => new Promise(() => {{}}) }}) }}) }},
@@ -42,6 +53,7 @@ await plugin.setup({{
 const errors = [];
 console.error = (...parts) => errors.push(parts.join(" "));
 {calls}
+cleanup();
 console.log(JSON.stringify(errors));
 "#
         ),
@@ -507,6 +519,79 @@ console.error(`shell ${shell.tool} ${check.effect}: ${check.message}`);"#,
         reported
             .iter()
             .any(|line| line == "shell shell ask: confirm this"),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Every package's groups see one call in one pass: an observer in a
+/// package after the one that denies sees the real call, never the name a
+/// refusal gives it, and the denial is applied once.
+#[test]
+fn every_packages_observers_see_the_real_call_a_later_package_denies() {
+    if !bun_available() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-packages");
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
+    let seen = root.join("seen");
+    let observer = observing(
+        &format!(
+            "echo \"$HOOK_TOOL $HOOK_TOOL_NATIVE $HOOK_COMMAND\" >> '{}'",
+            seen.display()
+        ),
+        10,
+    );
+    for package in ["aa", "zz"] {
+        fs::write(
+            documents.join(format!("{package}.json")),
+            opencode_hook_document(crate::opencode::HOOKS, &[&observer], &root),
+        )
+        .unwrap();
+    }
+    let reported = drive(
+        &root,
+        &deciding(HookEffect::Deny, "echo \"no: $HOOK_COMMAND\" >&2; exit 3"),
+        r#"const call = { id: "call-1", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](call);
+console.error(`tool ${call.tool}`);"#,
+    );
+    assert_eq!(
+        fs::read_to_string(&seen).unwrap(),
+        "shell shell ls\nshell shell ls\n",
+        "both packages' observers saw the call as it was made"
+    );
+    assert!(
+        reported.contains(&"tool shell (refused by a hook: no: ls)".to_owned()),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Without a package's document the runtime cannot tell which calls it
+/// guarded, so while one cannot be read no call runs.
+#[test]
+fn an_unreadable_document_refuses_every_call() {
+    if !bun_available() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-unreadable");
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
+    fs::write(documents.join("broken.json"), "{").unwrap();
+    let reported = drive(
+        &root,
+        &observing("true", 10),
+        r#"const call = { id: "call-1", tool: "read", input: { path: "/x" } };
+await hooks["execute.before"](call);
+console.error(`tool ${call.tool}`);"#,
+    );
+    assert!(
+        reported.iter().any(
+            |line| line.starts_with("tool read (refused by a hook: hooks: ")
+                && line.contains("broken.json cannot be read")
+        ),
         "{reported:?}"
     );
     let _ = fs::remove_dir_all(root);

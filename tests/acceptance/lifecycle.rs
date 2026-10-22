@@ -186,14 +186,14 @@ fn a_plugin_with_several_hook_groups_removes_cleanly() {
         &install_args.iter().map(String::as_str).collect::<Vec<_>>(),
     );
     let bridge = env
-        .home
-        .join(".config/opencode/plugins/hooks-hooked@test.ts");
-    assert!(bridge.is_file(), "the OpenCode hook bridge was delivered");
+        .uze_home
+        .join("runtime/attachments/opencode/hook-groups/hooked@test.json");
+    assert!(bridge.is_file(), "the OpenCode hook document was delivered");
 
     let remove = env.run_ok(uze_bin(), &["remove", "-m", "hooked", "--format", "json"]);
     let report: serde_json::Value = serde_json::from_slice(&remove.stdout).expect("json report");
     assert_eq!(report["outcome"], "REMOVED", "{report}");
-    assert!(!bridge.exists(), "the bridge went with its last group");
+    assert!(!bridge.exists(), "the document went with its last group");
     let ledger =
         std::fs::read_to_string(env.uze_home.join("state/attachments.json")).unwrap_or_default();
     assert!(

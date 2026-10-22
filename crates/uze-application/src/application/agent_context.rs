@@ -44,9 +44,9 @@ pub enum ResourceDelivery {
     /// UZE's runtime PATH shim projects it into the session at launch,
     /// without writing anything into the project.
     Projected,
-    /// The rules engine `uze setup` delivers hands it over, in every
-    /// session of the harness.
-    RulesEngine,
+    /// What `uze setup` delivered into the harness (the rules engine, a
+    /// plugin) hands it over, in every session of the harness.
+    SetupDelivered,
     /// The project carries it, but nothing currently delivers it here.
     Undelivered(UndeliveredReason),
 }
@@ -59,9 +59,12 @@ pub enum UndeliveredReason {
     /// The workspace would carry it through a shim `uze setup` has not
     /// created yet.
     ShimMissing,
-    /// The rules engine would hand it over, but `uze setup` has not
+    /// What `uze setup` delivers would hand it over, but setup has not
     /// delivered it to this harness yet.
-    RulesEngineMissing,
+    SetupMissing,
+    /// What `uze setup` delivers would hand it over, but a file UZE did not
+    /// write holds its path.
+    Blocked,
     /// No delivery strategy exists for this harness and this resource.
     Unsupported,
 }
@@ -222,13 +225,14 @@ fn delivered_by(mechanism: ContextMechanism) -> ResourceDelivery {
     match mechanism {
         ContextMechanism::Native => ResourceDelivery::Native,
         ContextMechanism::RuntimeShim => ResourceDelivery::Projected,
-        ContextMechanism::RulesEngine => ResourceDelivery::RulesEngine,
+        ContextMechanism::SetupDelivered => ResourceDelivery::SetupDelivered,
         ContextMechanism::ShimMissing => {
             ResourceDelivery::Undelivered(UndeliveredReason::ShimMissing)
         }
-        ContextMechanism::RulesEngineMissing => {
-            ResourceDelivery::Undelivered(UndeliveredReason::RulesEngineMissing)
+        ContextMechanism::SetupMissing => {
+            ResourceDelivery::Undelivered(UndeliveredReason::SetupMissing)
         }
+        ContextMechanism::Blocked => ResourceDelivery::Undelivered(UndeliveredReason::Blocked),
         ContextMechanism::Unsupported => {
             ResourceDelivery::Undelivered(UndeliveredReason::Unsupported)
         }

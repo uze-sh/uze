@@ -2,7 +2,9 @@
 
 use super::*;
 
-/// The delivered plugin's path: `<config root>/plugins/hooks-<package>.ts`.
+/// Where an earlier release delivered a package's hooks, as a plugin of its
+/// own: `<config root>/plugins/hooks-<package>.ts`. Read only to inspect,
+/// detach and replace what such a release left.
 /// `<config root>/plugins/` is OpenCode's documented global plugin directory
 /// (`~/.config/opencode/plugins/`), auto-discovered at startup — the file is
 /// therefore the single, self-contained load source: no `plugin` entry in
@@ -13,6 +15,67 @@ pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> Path
     config_root
         .join("plugins")
         .join(format!("hooks-{package_id}.ts"))
+}
+
+/// The version of the per-package hook document the runtime plugin reads;
+/// a document of another version is unreadable to it, and refuses calls.
+pub(crate) const OPENCODE_DOCUMENT_VERSION: u32 = 1;
+
+/// Where OpenCode's runtime plugin reads every package's hook groups: one
+/// document per package, generated from the Store like the other
+/// harnesses' wrapper beside it.
+pub(crate) fn opencode_documents_dir(uze_home: &UzeHome, target: HookTarget) -> PathBuf {
+    crate::shared::path::attachment_root(uze_home, target.key).join("hook-groups")
+}
+
+/// One package's hook document.
+pub(crate) fn opencode_document_path(
+    uze_home: &UzeHome,
+    target: HookTarget,
+    package_id: &str,
+) -> PathBuf {
+    opencode_documents_dir(uze_home, target).join(format!("{package_id}.json"))
+}
+
+/// The document for one package: the root its handlers run in and its
+/// groups, in manifest order. It names nothing but the hook contract.
+pub(crate) fn opencode_hook_document(
+    target: HookTarget,
+    hooks: &[&PortableHook],
+    plugin_root: &Path,
+) -> String {
+    let document = serde_json::json!({
+        "version": OPENCODE_DOCUMENT_VERSION,
+        "root": plugin_root.display().to_string(),
+        "groups": bridge_hooks(target, hooks, plugin_root),
+    });
+    let mut text = serde_json::to_string_pretty(&document).expect("a document serializes");
+    text.push('\n');
+    text
+}
+
+/// Whether `text` is a document carrying exactly these groups, in any
+/// order an earlier build wrote them in.
+pub(crate) fn document_carries_groups(
+    target: HookTarget,
+    text: &str,
+    hooks: &[&PortableHook],
+    plugin_root: &Path,
+) -> bool {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    let serde_json::Value::Array(mut carried) = document["groups"].clone() else {
+        return false;
+    };
+    let serde_json::Value::Array(mut expected) = bridge_hooks(target, hooks, plugin_root) else {
+        return false;
+    };
+    carried.sort_by_cached_key(serde_json::Value::to_string);
+    expected.sort_by_cached_key(serde_json::Value::to_string);
+    document["version"] == OPENCODE_DOCUMENT_VERSION
+        && document["root"] == plugin_root.display().to_string()
+        && carried == expected
 }
 
 /// The package's groups as data for the generated plugin: translated
@@ -134,7 +197,7 @@ pub(super) fn bridge_alias_table(target: HookTarget) -> String {
 }
 
 /// How every generated OpenCode plugin opens, whichever build wrote it.
-pub(super) const BRIDGE_HEADER: &str =
+pub(crate) const BRIDGE_HEADER: &str =
     "// Generated from hooks.json — do not edit; regenerate instead.";
 
 /// Whether `text` is a plugin some build generated for exactly these
@@ -166,11 +229,10 @@ pub(crate) fn bridge_carries_groups(
     carried == expected
 }
 
-/// The generated OpenCode plugin for one package. OpenCode has no
-/// declarative hook file, so the plugin *is* the wrapper: the same contract
-/// the `sh` wrapper implements on the other harnesses, with this package's
-/// groups as data. JavaScript valid as TypeScript (no build step), no
-/// dependencies, deterministic — and naming nothing but the hook contract.
+/// The runtime plugin's hooks section, reading every package's groups from
+/// the documents in `documents`. OpenCode has no declarative hook file, so
+/// this *is* the wrapper: the same contract the `sh` wrapper implements on
+/// the other harnesses, run once over every package's groups.
 ///
 /// Every event and effect rides OpenCode V2's own plugin API (anomalyco/
 /// opencode `v2`, measured on 2.0.24): `execute.before` for observing,
@@ -182,16 +244,10 @@ pub(crate) fn bridge_carries_groups(
 /// start and the end of its turn are bus events (`session.created`,
 /// `session.execution.succeeded`); a denied stop is answered the way the
 /// harness's own plan plugin keeps a session going, with synthetic input.
-pub(crate) fn opencode_bridge(
-    target: HookTarget,
-    hooks: &[&PortableHook],
-    plugin_root: &Path,
-    package_id: &str,
-) -> String {
-    let root = serde_json::to_string(&plugin_root.display().to_string())
+pub(crate) fn opencode_hooks_section(target: HookTarget, documents: &Path) -> String {
+    let documents = serde_json::to_string(&documents.display().to_string())
         .expect("a path serializes as a JSON string");
-    let groups = serde_json::to_string(&bridge_hooks(target, hooks, plugin_root))
-        .expect("generated groups serialize");
+    let version = OPENCODE_DOCUMENT_VERSION;
     let aliases = bridge_alias_table(target);
     let prompting = match target.runner {
         HookRunner::Bridge { prompting } => prompting,
@@ -199,34 +255,56 @@ pub(crate) fn opencode_bridge(
     };
     let prompting = serde_json::to_string(prompting).expect("tool names serialize");
     // The shell a handler line is written for on this platform, decided
-    // when the bridge is generated.
+    // when the section is generated.
     let shell = serde_json::to_string(uze_platform::shell::ARGV).expect("shell words serialize");
     let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
     let reason_limit = HANDLER_REASON_LIMIT;
     let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
     let value_limit = wrapper::HOOK_VALUE_LIMIT;
     format!(
-        r#"{BRIDGE_HEADER}
-// OpenCode V2 (opencode.ai/v2/docs/build/plugins) has no hooks.json: the
-// plugin is both the registration and the runner. Only GROUPS changes
-// between packages; everything below it is the same runtime every time.
-//
-// Handler contract: the hook context arrives as HOOK_* environment and the
-// decision leaves as an exit code — 0 allows, {deny_exit_code} denies with
-// the reason on stderr, anything else is a failure that follows the group's
-// effect (fail-closed for deny/ask/transform, fail-open for observe/allow). Each
-// handler is bounded by the deadline its author declared, and no HOOK_*
-// value is longer than {value_limit} bytes: past that the group's effect
-// decides, as on every other harness.
-//
-// The plugin is the definition object itself, with no import: OpenCode
-// 2.0.18 does not resolve `@opencode-ai/plugin` for a file in its plugin
-// directory and refuses to load one that imports it, while `Plugin.define`
-// only hands its argument back.
-
-const ROOT = {root};
-const GROUPS = {groups};
-const SHELL = {shell};
+        r#"async (ctx) => {{
+    // Handler contract: the hook context arrives as HOOK_* environment and
+    // the decision leaves as an exit code — 0 allows, {deny_exit_code} denies with
+    // the reason on stderr, anything else is a failure that follows the
+    // group's effect (fail-closed for deny/ask/transform, fail-open for
+    // observe/allow). Each handler is bounded by the deadline its author
+    // declared, and no HOOK_* value is longer than {value_limit} bytes: past
+    // that the group's effect decides, as on every other harness.
+    //
+    // Every package's groups are one document each in DOCUMENTS, read in
+    // package order and again whenever the directory changes, so every
+    // group of every package sees a call in one pass and the first denial,
+    // whichever package it comes from, stops the rest.
+    const DOCUMENTS = {documents};
+    const VERSION = {version};
+    const SHELL = {shell};
+    let GROUPS = [];
+    // Documents that cannot be read: which calls they guarded is unknown,
+    // so while one is there every call is refused.
+    let UNREADABLE = [];
+    const load = () => {{
+      const groups = [];
+      const unreadable = [];
+      let names = [];
+      try {{
+        names = readdirSync(DOCUMENTS).filter((name) => name.endsWith(".json")).sort();
+      }} catch {{}}
+      for (const name of names) {{
+        const path = join(DOCUMENTS, name);
+        try {{
+          const document = JSON.parse(readFileSync(path, "utf8"));
+          if (document?.version !== VERSION || typeof document.root !== "string" || !Array.isArray(document.groups)) {{
+            throw new Error("not a hook document");
+          }}
+          for (const group of document.groups) groups.push({{ ...group, root: document.root }});
+        }} catch {{
+          unreadable.push(path);
+        }}
+      }}
+      GROUPS = groups;
+      UNREADABLE = unreadable;
+    }};
+    load();
 // The tools that ask for permission before they act: the only calls an
 // `ask` group can put to the person.
 const PROMPTING = {prompting};
@@ -255,7 +333,7 @@ function environment(group, native, input, source) {{
   }};
   const bytes = new TextEncoder();
   if (Object.values(context).some((value) => bytes.encode(value).length > {value_limit})) return null;
-  return {{ ...process.env, PLUGIN_ROOT: ROOT, ...context }};
+  return {{ ...process.env, PLUGIN_ROOT: group.root, ...context }};
 }}
 const OVERSIZED = "hooks: the tool input is larger than the {value_limit} bytes a HOOK_* variable carries";
 
@@ -304,7 +382,7 @@ async function handler(entry, timeout, env, rewrite) {{
   let proc;
   try {{
     proc = Bun.spawn(argv, {{
-      cwd: ROOT,
+      cwd: env.PLUGIN_ROOT,
       detached: !WINDOWS,
       env: entry.bun ? {{ ...env, BUN_BE_BUN: "1" }} : env,
       stdin: "ignore",
@@ -474,12 +552,15 @@ async function follow(ctx) {{
   }}
 }}
 
-export default {{
-  id: "hooks-{package_id}",
-  async setup(ctx) {{
     await ctx.tool.hook("execute.before", async (event) => {{
       const call = {{ tool: event.tool, input: event.input }};
       CALLS.set(event.id, call);
+      if (UNREADABLE.length) {{
+        call.refused = `hooks: ${{UNREADABLE.join(", ")}} cannot be read, so no call runs until \`uze install\` writes it again`;
+        refuse(event, call.refused);
+        if (!PROMPTING.includes(call.tool)) CALLS.delete(event.id);
+        return;
+      }}
       // A rewrite is what the tool then runs, as OpenCode's own input
       // repair does it; a group that cannot rewrite closes the call.
       for (const group of rewriting("pre_tool_use", event.tool)) {{
@@ -552,9 +633,12 @@ export default {{
       }}
     }});
     follow(ctx).catch((error) => console.error("[hooks]", error));
-  }},
-}};
-"#
+    let watcher = null;
+    try {{
+      watcher = watch(DOCUMENTS, () => load());
+    }} catch {{}}
+    return () => watcher?.close();
+  }}"#
     )
 }
 

@@ -169,6 +169,8 @@ the engine and delivery's (tasks 3, 4, 5.1, 5.2, 5.5).
   a file at that path that neither carries the generated header nor equals
   a recorded earlier version is refused with `ManagedEntryConflict`.
 - **Alternative:** `rules.ts`, as the task names the template.
+- **Later:** `opencode-single-plugin` makes the rules plugin a section of
+  UZE's one runtime plugin, `uze.ts`, under the same refusal rule.
 
 ## E6: OpenCode's `context` asks with `source: "context"`, which resets nothing
 

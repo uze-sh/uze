@@ -67,6 +67,34 @@ pub(crate) struct AgentDialect {
     pub(crate) carries_unknown: bool,
 }
 
+/// The dialect as data for a projection running inside the harness, which
+/// must keep and withhold exactly what [`agent_block`] does: each known
+/// field with its shape, and whether an unknown one is carried.
+pub(crate) fn to_json(dialect: &AgentDialect) -> serde_json::Value {
+    let shape = |shape: &Shape| match shape {
+        Shape::Text => serde_json::json!({ "shape": "text" }),
+        Shape::TextOrList => serde_json::json!({ "shape": "text-or-list" }),
+        Shape::OneOf(choices) => serde_json::json!({ "shape": "one-of", "choices": choices }),
+        Shape::Qualified => serde_json::json!({ "shape": "qualified" }),
+        Shape::Flag => serde_json::json!({ "shape": "flag" }),
+        Shape::Count => serde_json::json!({ "shape": "count" }),
+        Shape::HexColor => serde_json::json!({ "shape": "hex-color" }),
+        Shape::Rules => serde_json::json!({ "shape": "rules" }),
+        Shape::Ceiling { levels, ceiling } => {
+            serde_json::json!({ "shape": "ceiling", "choices": levels, "ceiling": ceiling })
+        }
+        Shape::Withheld(_) | Shape::Refused(_) => serde_json::json!({ "shape": "left-out" }),
+    };
+    serde_json::json!({
+        "known": dialect
+            .known
+            .iter()
+            .map(|(field, known)| ((*field).to_owned(), shape(known)))
+            .collect::<serde_json::Map<_, _>>(),
+        "carriesUnknown": dialect.carries_unknown,
+    })
+}
+
 /// The fields `keys` are given for `document`, as this harness will write
 /// them, and what `plugin check` says about the rest.
 pub(crate) fn agent_block(

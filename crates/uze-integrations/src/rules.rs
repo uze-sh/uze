@@ -95,13 +95,17 @@ pub(crate) enum RulesDelivery {
         shape: EntryShape,
         tools: &'static str,
     },
-    /// A generated plugin, the harness's own runtime running the engine.
+    /// A section of the harness's runtime plugin, the harness's own runtime
+    /// running the engine. The plugin is written by setup with every other
+    /// section; this delivery writes only the engine, and its receipt holds
+    /// the section the plugin must carry.
     Plugin,
 }
 
 /// What one rules receipt says it delivered.
 struct Delivered<'a> {
-    /// The config file holding the entry, or the plugin file itself.
+    /// The config file holding the entry, or the runtime plugin carrying
+    /// the section.
     place: PathBuf,
     /// The entry's event; `None` for a plugin.
     event: Option<HookEvent>,
@@ -248,13 +252,11 @@ impl RulesTarget {
                 continue;
             };
             let delivered = Delivered::recorded(artifact).expect("a rules artifact");
-            match delivered.event {
-                Some(event) => {
-                    let entry: serde_json::Value =
-                        serde_json::from_str(delivered.expected).expect("UZE's own entry parses");
-                    merge_event_entry(&delivered.place, event, &entry, &previous(selector))?;
-                }
-                None => write_plugin(&delivered.place, delivered.expected, &previous(selector))?,
+            // A plugin section is written with the runtime plugin, by setup.
+            if let Some(event) = delivered.event {
+                let entry: serde_json::Value =
+                    serde_json::from_str(delivered.expected).expect("UZE's own entry parses");
+                merge_event_entry(&delivered.place, event, &entry, &previous(selector))?;
             }
         }
         Ok(artifacts)
@@ -326,22 +328,6 @@ fn make_runnable(path: &Path) -> Result<()> {
     })
 }
 
-/// Writes the plugin file, refusing one at that path that is neither absent
-/// nor UZE's: the operator's own plugin keeps its name.
-fn write_plugin(path: &Path, content: &str, previous: &[String]) -> Result<()> {
-    match fs::read_to_string(path) {
-        Ok(current) if current == content => return Ok(()),
-        Ok(current) if !current.starts_with(plugin::HEADER) && !previous.contains(&current) => {
-            return Err(UzeError::ManagedEntryConflict(path.to_path_buf()));
-        }
-        _ => {}
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
-    }
-    uze_core::persistence::write_atomic(path, content.as_bytes())
-}
-
 /// The delivered artifact's state: what starts the engine first, then the
 /// engine.
 pub(crate) fn inspect(artifact: &ManagedArtifact) -> AttachmentInspection {
@@ -398,18 +384,18 @@ fn inspect_entry(delivered: &Delivered, event: HookEvent) -> AttachmentInspectio
 
 fn inspect_plugin(delivered: &Delivered) -> AttachmentInspection {
     match fs::read_to_string(&delivered.place) {
-        Ok(current) if current == delivered.expected => state(
+        Ok(current) if current.contains(delivered.expected) => state(
             AttachmentState::Matched,
-            "the rules plugin matches the receipt",
+            "the runtime plugin carries the rules section of the receipt",
         ),
         Ok(_) => state(
-            AttachmentState::Drifted,
-            "the rules plugin differs from what UZE wrote",
+            AttachmentState::Missing,
+            "the runtime plugin does not carry the rules section; setup writes it",
         ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            state(AttachmentState::Missing, "the rules plugin is absent")
+            state(AttachmentState::Missing, "the runtime plugin is absent")
         }
-        Err(_) => blocked("the rules plugin is unreadable"),
+        Err(_) => blocked("the runtime plugin is unreadable"),
     }
 }
 
@@ -462,15 +448,13 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
         return Ok(inspection);
     }
     let delivered = Delivered::recorded(artifact).expect("an inspected rules artifact");
-    match delivered.event {
-        Some(event) => {
-            remove_event_entry(&delivered.place, event, delivered.expected)?;
-        }
-        None => {
-            crate::hooks::remove_bridge_file(&delivered.place)?;
-        }
+    // A plugin section goes with the runtime plugin, which setup owns; the
+    // engine it names is taken out below, and the section then answers
+    // nothing.
+    if let Some(event) = delivered.event {
+        remove_event_entry(&delivered.place, event, delivered.expected)?;
     }
-    if !still_started(&delivered) {
+    if delivered.event.is_none() || !still_started(&delivered) {
         let _ = fs::remove_file(&delivered.engine);
         if let Some(parent) = delivered.engine.parent() {
             let _ = fs::remove_dir(parent);

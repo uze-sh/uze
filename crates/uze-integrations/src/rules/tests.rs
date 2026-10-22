@@ -43,7 +43,7 @@ fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
     );
     assert_eq!(golden_plugin(), golden_plugin());
     assert!(engine::SOURCE.starts_with(engine::HEADER));
-    assert!(golden_plugin().starts_with(plugin::HEADER));
+    assert!(golden_plugin().starts_with("async (ctx) => {"));
 }
 
 #[test]
@@ -63,13 +63,12 @@ fn nothing_in_a_delivered_template_names_the_packager() {
 // only on Unix, where the engine runs; Windows renders none.
 #[cfg(unix)]
 #[test]
-fn the_opencode_plugin_imports_nothing_and_rides_the_two_v2_hooks() {
+fn the_opencode_section_imports_nothing_and_rides_the_two_v2_hooks() {
     let plugin = golden_plugin();
     assert!(
         !plugin.contains("import "),
-        "a plugin-directory file may import nothing"
+        "the section brings no import of its own into the runtime plugin"
     );
-    assert!(plugin.contains("export default {"));
     assert!(plugin.contains("ctx.session.hook(\"context\""));
     assert!(plugin.contains("ctx.tool.hook(\"execute.after\""));
     assert!(plugin.contains("Bun.spawn([\"sh\", ENGINE, SESSIONS]"));
@@ -125,7 +124,7 @@ impl Machine {
     // Read only by the attach tests, which run on Unix, where the engine does.
     #[cfg(unix)]
     fn opencode_plugin(&self) -> PathBuf {
-        self.root.join("opencode/plugins").join(plugin::FILE_NAME)
+        crate::opencode::runtime_plugin::path(&self.root.join("opencode"))
     }
 
     // Read only by the attach tests, which run on Unix, where the engine does.
@@ -278,7 +277,8 @@ fn codex_receives_shell_line_entries_in_its_user_hooks_file() {
 // nothing, which `a_powershell_platform_is_delivered_no_engine` holds.
 #[cfg(unix)]
 #[test]
-fn opencode_receives_a_generated_plugin_and_no_config_entry() {
+fn opencode_receives_a_section_of_the_runtime_plugin_and_no_config_entry() {
+    use uze_core::integration::HarnessDetection;
     let machine = Machine::new("rules-opencode-attach");
     let plugins = machine.opencode_plugin().parent().unwrap().to_path_buf();
     fs::create_dir_all(&plugins).unwrap();
@@ -287,9 +287,22 @@ fn opencode_receives_a_generated_plugin_and_no_config_entry() {
     let receipts = machine.attach(&machine.opencode);
     assert_eq!(receipts.len(), 1);
     let engine = crate::opencode::RULES.engine_path(&machine.home);
+    assert!(engine.is_file(), "attaching writes the engine");
     assert_eq!(
-        fs::read_to_string(machine.opencode_plugin()).unwrap(),
-        plugin::source(&engine, &machine.home.rules_sessions_dir())
+        machine.opencode.inspect_receipt(&receipts[0]).state,
+        AttachmentState::Missing,
+        "until setup writes the runtime plugin, nothing starts the engine"
+    );
+
+    machine
+        .opencode
+        .install(&machine.home, &HarnessDetection::default())
+        .unwrap();
+    assert!(
+        fs::read_to_string(machine.opencode_plugin())
+            .unwrap()
+            .contains(&plugin::source(&engine, &machine.home.rules_sessions_dir())),
+        "the runtime plugin carries the rules section"
     );
     assert!(
         !machine.root.join("opencode/opencode.json").exists(),
@@ -302,7 +315,7 @@ fn opencode_receives_a_generated_plugin_and_no_config_entry() {
 
     let detached = machine.opencode.detach_receipt(&receipts[0]).unwrap();
     assert_eq!(detached.state, AttachmentState::Missing);
-    assert!(!machine.opencode_plugin().exists() && !engine.exists());
+    assert!(!engine.exists(), "the engine goes with its delivery");
     assert_eq!(
         fs::read_to_string(plugins.join("mine.ts")).unwrap(),
         "export default {};\n",
@@ -315,17 +328,30 @@ fn opencode_receives_a_generated_plugin_and_no_config_entry() {
 #[cfg(unix)]
 #[test]
 fn an_operators_plugin_of_the_same_name_is_never_written_over() {
+    use uze_core::integration::HarnessDetection;
     let machine = Machine::new("rules-opencode-foreign");
-    fs::create_dir_all(machine.opencode_plugin().parent().unwrap()).unwrap();
+    let plugins = machine.opencode_plugin().parent().unwrap().to_path_buf();
+    fs::create_dir_all(&plugins).unwrap();
     fs::write(machine.opencode_plugin(), "// mine\n").unwrap();
-    let refused = machine.opencode.attach_rules_engine().unwrap_err();
-    assert!(
-        matches!(refused, UzeError::ManagedEntryConflict(_)),
-        "{refused}"
-    );
+    fs::write(plugins.join(plugin::RETIRED_FILE), "// also mine\n").unwrap();
+    let receipts = machine.attach(&machine.opencode);
+    machine
+        .opencode
+        .install(&machine.home, &HarnessDetection::default())
+        .unwrap();
     assert_eq!(
         fs::read_to_string(machine.opencode_plugin()).unwrap(),
         "// mine\n"
+    );
+    assert_eq!(
+        fs::read_to_string(plugins.join(plugin::RETIRED_FILE)).unwrap(),
+        "// also mine\n",
+        "a file of the earlier name that UZE did not write stays"
+    );
+    assert_eq!(
+        machine.opencode.inspect_receipt(&receipts[0]).state,
+        AttachmentState::Missing,
+        "the rules do not reach OpenCode while the operator's file holds the path"
     );
 }
 

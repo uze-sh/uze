@@ -15,8 +15,8 @@ The system SHALL deliver a package's portable hooks as a self-contained artifact
 
 #### Scenario: OpenCode receives the runtime as a plugin
 - **WHEN** a package with hooks is installed for OpenCode
-- **THEN** the delivered artifact is a single generated plugin whose runtime is the same contract and whose package groups are data inside it
-- **AND** the plugin runs the author's handlers with the same context and decision contract as the wrapper on the other harnesses
+- **THEN** the delivered artifact is a document of the package's groups, read by the one generated runtime plugin that carries the same contract
+- **AND** the runtime runs the author's handlers with the same context and decision contract as the wrapper on the other harnesses
 
 ### Requirement: Handlers receive the hook context as environment and answer with exit codes
 Command handlers SHALL receive the hook context as environment variables and SHALL NOT be required to parse any harness payload or emit any harness JSON. The wrapper SHALL set `HOOK_HARNESS`, `HOOK_EVENT`, `HOOK_TOOL` (the portable alias, or empty), `HOOK_TOOL_NATIVE`, `HOOK_CWD`, `HOOK_INPUT` (the tool input as JSON) and `PLUGIN_ROOT`, plus the portable fields of the matched alias. A handler's exit code SHALL be the decision: `0` allows, `3` denies with the reason read from stderr.

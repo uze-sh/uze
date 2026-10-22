@@ -1,26 +1,22 @@
-//! OpenCode's rules plugin: the V2 plugin that asks the `sh` rules engine
-//! before every model request and after every tool call, and hands what it
-//! answers to the model.
+//! OpenCode's rules section: the part of UZE's one plugin that asks the
+//! `sh` rules engine before every model request and after every tool call,
+//! and hands what it answers to the model.
 
 use std::path::Path;
 
-/// The plugin's file in OpenCode's global plugin directory: the only place
-/// OpenCode evaluates a plugin from (measured on 2.0.15, a project's
-/// `.opencode/plugins/` is never evaluated and hangs `run --standalone`).
-pub(crate) const FILE_NAME: &str = "uze-rules.ts";
-
-/// How every generated rules plugin opens, whichever build wrote it: what
-/// tells a plugin an earlier template produced from one the operator wrote.
+/// The file an earlier release wrote the rules plugin to, by itself, and the
+/// first line that proves the file there is still that plugin.
+pub(crate) const RETIRED_FILE: &str = "uze-rules.ts";
 pub(crate) const HEADER: &str = "// Generated rules plugin — do not edit; it is written again.";
 
-/// The engine is asked for at most this long; past it the plugin answers
+/// The engine is asked for at most this long; past it the section answers
 /// nothing and the request or the tool result goes on unchanged.
 const ENGINE_SECONDS: u16 = super::ENGINE_TIMEOUT_SECONDS;
 
-/// The plugin for an engine at `engine`, recording sessions under
-/// `sessions`. No imports (OpenCode 2.0.18 refuses a plugin-directory file
-/// that imports its own plugin package), a default export, and every hook
-/// failing open: an answer it cannot get or read adds nothing.
+/// The section for an engine at `engine`, recording sessions under
+/// `sessions`: a JavaScript `async (ctx) => ...` for the runtime plugin,
+/// every hook of which fails open — an answer it cannot get or read adds
+/// nothing.
 ///
 /// `context` takes the place of `SessionStart`: it runs before every model
 /// request, so the always-on rules and the index are never lost to a
@@ -31,17 +27,14 @@ pub(crate) fn source(engine: &Path, sessions: &Path) -> String {
     let sessions =
         serde_json::to_string(&sessions.display().to_string()).expect("a path serializes");
     format!(
-        r#"{HEADER}
-// Hands the agent the rules its project keeps in .agents/rules/ of the
-// checkout it is working in, by asking the rules engine: the always-on
-// rules and the index of on-demand ones before every model request, and the
-// rules whose globs match a path a tool touched after the call. Nothing it
-// cannot get or read is ever an error; the request goes on unchanged.
-
-const ENGINE = {engine};
-const SESSIONS = {sessions};
-const SECONDS = {ENGINE_SECONDS};
-
+        r#"async (ctx) => {{
+    // Hands the agent the rules its project keeps in .agents/rules/ of the
+    // checkout it is working in, by asking the rules engine: the always-on
+    // rules and the index of on-demand ones before every model request, and
+    // the rules whose globs match a path a tool touched after the call.
+    const ENGINE = {engine};
+    const SESSIONS = {sessions};
+    const SECONDS = {ENGINE_SECONDS};
 // Where the session works: the location of the instance OpenCode set this
 // plugin up for, one per directory it serves. Neither the event nor the
 // process says it: the events carry no directory, `ctx.worktree` is the
@@ -86,9 +79,6 @@ async function ask(payload) {{
   }}
 }}
 
-export default {{
-  id: "agents-rules",
-  async setup(ctx) {{
     await ctx.session.hook("context", async (event) => {{
       try {{
         if (!Array.isArray(event.system)) return;
@@ -119,8 +109,6 @@ export default {{
         result.content.push({{ type: "text", text }});
       }} catch {{}}
     }});
-  }},
-}};
-"#
+  }}"#
     )
 }

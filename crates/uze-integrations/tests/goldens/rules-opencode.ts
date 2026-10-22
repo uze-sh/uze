@@ -1,14 +1,11 @@
-// Generated rules plugin — do not edit; it is written again.
-// Hands the agent the rules its project keeps in .agents/rules/ of the
-// checkout it is working in, by asking the rules engine: the always-on
-// rules and the index of on-demand ones before every model request, and the
-// rules whose globs match a path a tool touched after the call. Nothing it
-// cannot get or read is ever an error; the request goes on unchanged.
-
-const ENGINE = "/machine/state/runtime/attachments/opencode/rules/engine";
-const SESSIONS = "/machine/state/runtime/rules/sessions";
-const SECONDS = 10;
-
+async (ctx) => {
+    // Hands the agent the rules its project keeps in .agents/rules/ of the
+    // checkout it is working in, by asking the rules engine: the always-on
+    // rules and the index of on-demand ones before every model request, and
+    // the rules whose globs match a path a tool touched after the call.
+    const ENGINE = "/machine/state/runtime/attachments/opencode/rules/engine";
+    const SESSIONS = "/machine/state/runtime/rules/sessions";
+    const SECONDS = 10;
 // Where the session works: the location of the instance OpenCode set this
 // plugin up for, one per directory it serves. Neither the event nor the
 // process says it: the events carry no directory, `ctx.worktree` is the
@@ -53,9 +50,6 @@ async function ask(payload) {
   }
 }
 
-export default {
-  id: "agents-rules",
-  async setup(ctx) {
     await ctx.session.hook("context", async (event) => {
       try {
         if (!Array.isArray(event.system)) return;
@@ -86,5 +80,4 @@ export default {
         result.content.push({ type: "text", text });
       } catch {}
     });
-  },
-};
+  }
