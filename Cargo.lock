@@ -1332,9 +1332,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.190"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libm"
@@ -1523,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "noyalib"
-version = "0.0.57"
+version = "0.0.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b8960f9f4668b69cae4ca71106c84d38ca1ea9f41a9acc20ce55473b967849"
+checksum = "3fad8f1a552070f6ba5f60f25e880f7b6daeda8fe138f589345141d31a21a3bb"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -2356,9 +2356,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
+checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
  "chrono",
  "dyn-clone",
@@ -2370,9 +2370,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
+checksum = "e1c3a92094fa7d61aa124645844facb6b554dfc797136d0f5fd1f890e2bffc69"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2482,9 +2482,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
@@ -2898,9 +2898,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.2"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -3233,7 +3233,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tokio",
  "tracing",
  "tracing-appender",
@@ -3279,7 +3279,7 @@ dependencies = [
  "noyalib",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "toml_edit",
  "tracing",
@@ -3332,7 +3332,7 @@ name = "uze-integrations"
 version = "1.0.0-beta.19"
 dependencies = [
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "toml_edit",
  "tracing",
  "uze-core",
