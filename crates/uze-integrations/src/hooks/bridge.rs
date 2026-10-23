@@ -244,8 +244,10 @@ pub(crate) fn bridge_carries_groups(
 /// rewriting and denying, and `permission.evaluate` for asking — the tool
 /// hook sees the input but has no refusal of its own (a denial there
 /// renames the call to a tool that does not exist), and the permission
-/// hook can ask but carries no input and fires only for a tool that asks,
-/// so the input is kept by call id between the two. A session's
+/// hook can ask but fires only for a tool that asks and names the call by
+/// id, with no more of its input than the shell's command line (2.1.4,
+/// `experiments/opencode/permission-evaluate`), so the input is kept by call
+/// id between the two. A session's
 /// start and the end of its turn are bus events (`session.created`,
 /// `session.execution.succeeded`); a denied stop is answered the way the
 /// harness's own plan plugin keeps a session going, with synthetic input.

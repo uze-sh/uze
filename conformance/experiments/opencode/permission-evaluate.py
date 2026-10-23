@@ -1,22 +1,15 @@
 """Does OpenCode's `permission.evaluate` carry the intercepted tool's input?
 
-The generated OpenCode plugin can observe a tool call but cannot block it:
-V2's tool hooks see the input and have no block signal, and the only
-decision point — `ctx.permission.hook("evaluate")` — carries an `action`
-and its `resources`, not the tool input. The portable `deny`/`ask` effects
-are therefore declared Unsupported on OpenCode. Whether that is permanent
-depends on one fact this experiment measures rather than assumes: **does
-`resources` carry the command line for the shell action?**
+UZE's plugin keeps each call's input from `execute.before` by call id and
+decides `deny`/`ask` in `ctx.permission.hook("evaluate")`, which names the
+call in `source.id`. This experiment records what that event carries, so a
+release that changes its shape is seen: a probe plugin (nothing to do with
+the delivered artifact) records every `permission.evaluate` event verbatim
+and every `execute.before` event, then a real turn runs one `shell` call.
+Evidence is the recorded event, not a reading of the docs.
 
-A probe plugin (nothing to do with the delivered artifact) records every
-`permission.evaluate` event verbatim and every `execute.before` event's
-tool name, then a real turn runs. Evidence is the recorded event, not a
-reading of the docs.
-
-  yes -> the deny/ask ADAPTED entries on OpenCode can retire, and the
-         generated plugin gains a permission.evaluate branch.
-  no  -> the declarations stand, with the observed event shape as their
-         reason.
+Measured on v2.1.4 (`conformance/DECISIONS.md`): one event for the call,
+`resources` holding its command line and `source.id` its call id.
 
 Run: python3 conformance/lab.py --harness opencode \
        --experiment opencode/permission-evaluate
@@ -41,7 +34,6 @@ from shared.common import check
 PROBE = r"""
 mkdir -p /work/home/.config/opencode/plugins
 cat > /work/home/.config/opencode/plugins/permission-probe.ts <<'PROBE_EOF'
-import { Plugin } from "@opencode-ai/plugin";
 const LOG = "/tmp/permission-events.jsonl";
 async function record(kind, event) {
   try {
@@ -54,7 +46,7 @@ async function record(kind, event) {
     console.error("probe failed", error);
   }
 }
-export default Plugin.define({
+export default {
   id: "permission-probe",
   async setup(ctx) {
     if (ctx.permission?.hook) {
@@ -65,23 +57,23 @@ export default Plugin.define({
       await record("permission.evaluate", { unavailable: true });
     }
     await ctx.tool.hook("execute.before", async (event) => {
-      await record("tool.execute.before", { tool: event.tool, input: event.input });
+      await record("tool.execute.before", { id: event.id, tool: event.tool, input: event.input });
     });
   },
-});
+};
 PROBE_EOF
 """
 
 
 def run(cfg, prov_ip):
-    mcp_tool = "uze-mcp-conformance-uze-conformance_uze_conformance"
+    # The shell asks for permission before it acts; an MCP tool never
+    # reaches the permission hook at all.
     common.start_provider(
         cfg,
         "toolcall",
         {
-            "TOOL_NAME": mcp_tool,
-            "TOOL_ARGS": '{"serverName":"uze-conformance","toolName":"uze_conformance",'
-            '"arguments":{"command":"echo API secrets"}}',
+            "TOOL_NAME": "shell",
+            "TOOL_ARGS": '{"command":"echo permission probe"}',
         },
     )
     time.sleep(1)
@@ -90,7 +82,9 @@ def run(cfg, prov_ip):
         prov_ip,
         PROBE + "UZE_HOME=/usr/local/.uze PATH=/usr/local/.uze/shims:$PATH "
         "exec opencode --standalone",
-        plugins="flow mcp-plugin hook-plugin",
+        # No package hooks: a group refusing the call in `execute.before`
+        # renames it, and a refused call never asks.
+        plugins="flow",
     )
     # Named so the probe's log can be read from outside while the session
     # is alive: the container dies with the TUI.
@@ -122,7 +116,7 @@ def run(cfg, prov_ip):
     time.sleep(1)
     child.send("\r")
     screenful, tail, marker = wait_for(
-        ["UZE_CONFORMANCE_PASS", "denied", "blocked by protect-env"],
+        ["Permission required", "permission probe"],
         tries=24,
         gap=2.5,
     )
@@ -142,7 +136,7 @@ def run(cfg, prov_ip):
         else "the permission hook never fired for this turn — no decision point exists here",
     )
     carries_command = any(
-        "echo API secrets" in json.dumps(entry.get("event", {}))
+        "echo permission probe" in json.dumps(entry.get("event", {}))
         for entry in evaluations
     )
     check(
