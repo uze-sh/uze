@@ -4,6 +4,21 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.20](https://github.com/uze-sh/uze/compare/v1.0.0-beta.19...v1.0.0-beta.20) - 2026-10-23
+
+### Features
+
+- **ui:** Mark running and finished shells on the tab strip ([#298](https://github.com/uze-sh/uze/pull/298)) ([4c5468c](https://github.com/uze-sh/uze/commit/4c5468c5143526f1c5c2c1ca786c0e27408c6b72))
+- **ui:** Add per-project labels kept in config.toml ([#299](https://github.com/uze-sh/uze/pull/299)) ([9ba1102](https://github.com/uze-sh/uze/commit/9ba11027cb23b66f79df9563e79a145b5ab99e23))
+- **cli:** Add uze usage to report uze's CPU, memory and disk ([#300](https://github.com/uze-sh/uze/pull/300)) ([3c284cf](https://github.com/uze-sh/uze/commit/3c284cf6f0b5ada099a3955c67f43ea6d5313317))
+
+### Dependencies
+
+- **deps:** Bump taiki-e/install-action from 2.87.28 to 2.87.29 ([#303](https://github.com/uze-sh/uze/pull/303)) ([cda92ef](https://github.com/uze-sh/uze/commit/cda92ef18dd8978a8280fc5fe29673a307788bd6))
+- **deps:** Bump actions/setup-node from 7.0.0 to 7.1.0 ([#304](https://github.com/uze-sh/uze/pull/304)) ([3e9b881](https://github.com/uze-sh/uze/commit/3e9b88156f9d6cb81bb96b373b9d020ffebe0a98))
+- **deps:** Bump dtolnay/rust-toolchain ([#305](https://github.com/uze-sh/uze/pull/305)) ([968982f](https://github.com/uze-sh/uze/commit/968982f7d0e5006cc5a7421a8b81878153dcd234))
+- **deps:** Bump the cargo-dependencies group with 5 updates ([#306](https://github.com/uze-sh/uze/pull/306)) ([ab4c85e](https://github.com/uze-sh/uze/commit/ab4c85e3bd331acbe51f6fdba90edb5c2afe0ac0))
+
 ## [1.0.0-beta.19](https://github.com/uze-sh/uze/compare/v1.0.0-beta.18...v1.0.0-beta.19) - 2026-10-21
 
 ### Fixes
@@ -11,6 +26,8 @@ pre-releases — see `docs/versioning.md`.
 - **claude:** Read AGENTS.md natively instead of projecting an import ([#291](https://github.com/uze-sh/uze/pull/291)) ([0026831](https://github.com/uze-sh/uze/commit/00268317d892f593ce883aab1b0ab1bc7b5a8a50))
 - **update:** Count the settle window from the release's publication ([#292](https://github.com/uze-sh/uze/pull/292)) ([eab69c2](https://github.com/uze-sh/uze/commit/eab69c2c10535320a7c76aabaf6e02af1ce49e32))
 - **upgrade:** Flush the staged binary through a writable handle ([#294](https://github.com/uze-sh/uze/pull/294)) ([7ec624d](https://github.com/uze-sh/uze/commit/7ec624d8d78b78d969186a300f28d52ab5608861))
+- **release:** Name the user in the tag push credential helper ([#296](https://github.com/uze-sh/uze/pull/296)) ([87852d7](https://github.com/uze-sh/uze/commit/87852d7cc6c3e291ee98a8f8fc9e28e832ff7b6b))
+- **antigravity:** Name delivered agents without the colon 1.4.4 refuses ([#297](https://github.com/uze-sh/uze/pull/297)) ([c8e9958](https://github.com/uze-sh/uze/commit/c8e9958ffc22388f3217adac08cbb5dd155437c7))
 
 ### Chore
 
