@@ -242,6 +242,14 @@ fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
     if name == "{" {
         return Some(brace_group("{"));
     }
+    if name == "cd" && simple.args.len() == 1 {
+        return Some(NotPortable {
+            column: column_of(line, "cd"),
+            construct: name,
+            reason: "the portable `cd` needs a directory, where `sh`'s goes to `$HOME`".into(),
+            divergence: Some(Divergence::UnsupportedFlag),
+        });
+    }
     if let Some(flag) = unsupported_flag(&name, &simple.args[1..]) {
         return Some(NotPortable {
             column: column_of(line, &format!("{name} ")).max(column_of(line, &flag)),
@@ -338,6 +346,10 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
     }
     if name == "test" {
         return unsupported_test_operator(arguments);
+    }
+    // The portable `cd` takes `-` for a directory's name, not `$OLDPWD`.
+    if name == "cd" && arguments.first().and_then(literal).as_deref() == Some("-") {
+        return Some("-".into());
     }
     let (_, shorts, longs) = FLAGS.iter().find(|(builtin, ..)| *builtin == name)?;
     let words = if name == "xargs" {

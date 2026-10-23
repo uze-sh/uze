@@ -39,7 +39,6 @@ const PORTABLE: &[&str] = &[
     "xargs -d , echo < list.txt",
     "git ls-files -z | xargs -0 rm",
     "git ls-files '*.orig' | xargs rm -f",
-    "cd -",
 ];
 
 #[test]
@@ -117,6 +116,8 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ),
     ("cp -a src dst", "-a", 4, Some(Divergence::UnsupportedFlag)),
     ("mv -r a b", "-r", 4, Some(Divergence::UnsupportedFlag)),
+    ("cd - && make", "-", 4, Some(Divergence::UnsupportedFlag)),
+    ("cd && make", "cd", 1, Some(Divergence::UnsupportedFlag)),
     (
         "set -euo pipefail",
         "-euo",
