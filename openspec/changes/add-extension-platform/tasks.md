@@ -192,3 +192,4 @@
 - [ ] 23.5 `uze ext test` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update`; run by `uze agent extension check`
 - [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
 - [ ] 23.7 Tests for every gallery entry (D20)
+- [ ] 23.8 Vendor a KDL v2 grammar into `crates/uze-extensions/grammars/` with its licence, map `.kdl`, and test that it compiles under `fancy-regex` and colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences; write a small one if no upstream v2 grammar compiles

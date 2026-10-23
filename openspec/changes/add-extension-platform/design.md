@@ -904,6 +904,17 @@ One set of rules, the same in every view, with no expressions:
   generated from the catalog in `uze-contract` and gives completion, hover
   and the check's diagnostics for manifests, views and tests, since no
   editor completes KDL from a schema.
+- **KDL is highlighted inside UZE.** The `code` surface's editor and
+  preview, and fenced `kdl` blocks in Markdown, colour KDL through the same
+  `shared/highlight.rs`. `two-face`'s bundle (bat's grammars) has no KDL, so
+  a KDL v2 Sublime grammar is vendored into `crates/uze-extensions/grammars/`
+  with its licence beside it, exactly as `PowerShell.sublime-syntax` is, and
+  mapped to `.kdl` (which covers `extension.kdl`, views and `.test.kdl`). A
+  test proves it compiles under `fancy-regex` (the crate keeps onig, which is
+  C, out) and colours the v2 constructs (`#true`, raw `#"…"#` and
+  multi-line strings, slashdash comments, type annotations). If no
+  upstream v2 grammar compiles under `fancy-regex`, UZE writes its own,
+  small, from the v2 grammar.
 - Every gallery entry (D20) ships its tests; they are the acceptance suite
   and the worked example of how to test.
 
