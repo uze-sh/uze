@@ -7,7 +7,7 @@ grants cover, on every platform.
 ## ADDED Requirements
 
 ### Requirement: A resident surface is fed by a packaged WebAssembly component
-A surface with `feed: resident` SHALL be fed by one WebAssembly component the
+A surface with `feed="resident"` SHALL be fed by one WebAssembly component the
 plugin ships inside the extension's directory, loaded from the Store with the
 digest that was consented to. UZE SHALL NOT compile an extension, and SHALL
 refuse a component that is not a module of the published world.

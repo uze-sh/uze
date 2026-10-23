@@ -48,18 +48,19 @@ mechanism chosen without a capability model cannot be given one afterwards
 - **The host knows extensions generically.** One contract every extension
   implements, a registry that constructs them instead of listing metadata,
   one routing path for keys, pointer hits, outcomes, async requests and
-  remembered place. `code` and `architect` move onto it first, as the proof
-  the contract is sufficient; no surface changes for the operator.
-- **A plugin can ship an extension.** `extensions/<id>/extension.yaml`
+  remembered place. The view engine is its first user; `code`,
+  `architect` and `spec` move onto it after, with no surface changing for
+  the operator.
+- **A plugin can ship an extension.** `extensions/<id>/extension.kdl`
   becomes a plugin capability. It declares the extension's surfaces, the
   data sources behind them, its actions and their suggested keys, the events
   it reacts to, its preferences, the CLI commands it adds, and the grants it
   needs. It carries no logic.
 - **Three tiers behind one manifest.** A surface declares how it is fed, and
   each tier costs more trust and more machine than the one before:
-  - *declared*: stateless programs answer JSON and the host builds the
-    surface from the catalog;
-  - *cells and media*: still stateless, a program may also answer a grid of
+  - *declared*: a stateless answer (JSON or lines) the host builds the
+    surface from, through a KDL view;
+  - *cells and media*: still stateless, an answer may also be a grid of
     themed cells with clickable regions, an image, or a sprite whose frames
     the host animates from an agent's state;
   - *resident*: a WebAssembly component that keeps state, receives input and
@@ -74,18 +75,28 @@ mechanism chosen without a capability model cannot be given one afterwards
   table, details), measure (segmented progress, gauge, pips, bar, sparkline,
   heatmap), status (badge, several marks per row, chips, an activity mark
   and elapsed time the host animates), media, cells, input (button, toggle,
-  select, text field, form, fuzzy picker) and feedback (toast, notice,
-  confirmation, notification, sound). A surface is either *bound* (manifest
-  templates over a source's data) or *composed* (a program answers a tree of
-  catalog nodes). Colour is named only as a semantic role.
-- **Programs in any language answer one contract.** A source, an action or
-  a command is an argv the host runs with JSON on stdin (its slot, size,
-  agent, and the event, pipe, store and preferences it names), JSON, lines
-  or a medium on stdout, optionally in an envelope of requests, and the
-  portable hook exit codes (0 answers, 3 refuses with a
-  reason, anything else fails), bounded in time and output. The host holds
-  all view state; programs are stateless and short-lived, so a declared
-  extension costs no resident process.
+  select, text field, form, fuzzy picker); toasts, notices, notifications and
+  sounds are requested from the host, never drawn by a node. A surface is
+  either *bound* (a KDL view over a source's data) or *composed* (the answer
+  is a tree of catalog nodes). Colour is named only as a semantic role.
+- **Views, manifests and tests in KDL v2.** Catalog nodes in PascalCase,
+  fixed binding rules with no expressions (references, `each`,
+  `when`/`unless`, `show`, templates, lookup tables with locales), UI state
+  held by the host, parsed only at check, install, enable and dev reload
+  behind UZE's own bounds, and highlighted in UZE's editor.
+- **A component first, a program when it must.** A source or an action is
+  answered by a stateless WebAssembly component (the default, confined on
+  every platform) or by an argv program (to wrap a CLI, or a quick shell
+  script), both on one contract: a JSON input (its slot, size, agent, and
+  the event, pipe, store, preferences and fields it names, also as argv or
+  `UZE_IN_*` for a shell), a JSON, lines or media answer, optionally in an
+  envelope of requests, and the portable hook exit codes, bounded in time
+  and output. The host holds all view state; nothing stays resident unless
+  the surface is resident.
+- **Live development and tests.** `uze ext dev` loads an extension from its
+  folder with hot reload, an error overlay, an inspector and fixtures;
+  `uze ext test` runs headless tests with cell snapshots; `uze ext lsp`
+  completes manifests, views and tests.
 - **A bridge to the agents, across harnesses.** A reporter UZE adds to each
   launch tells the workspace each agent's turns, tool calls and approvals as
   normalized events, which are drawn but never trusted to release a write;

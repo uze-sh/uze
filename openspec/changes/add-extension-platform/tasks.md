@@ -1,6 +1,6 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–23 into them; the first change (groups 2, 13.3, 21, 22.1–22.4 and 23.1–23.3 with fixtures, 23.8) runs no third-party code and can be unfrozen alone
+- [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–24 into them; the first change (groups 2, 13.3, 21, 22.1–22.4 and 23.1–23.3 with fixtures, 23.8) runs no third-party code and can be unfrozen alone
 - [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime and HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
@@ -195,3 +195,10 @@
 - [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
 - [ ] 23.7 Tests for every gallery entry (D20)
 - [ ] 23.8 Vendor a KDL v2 grammar into `crates/uze-extensions/grammars/` with its licence, map `.kdl`, and test that it compiles under `fancy-regex` and colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences; write a small one if no upstream v2 grammar compiles
+
+## 24. Components first (D27)
+
+- [ ] 24.1 The stateless WIT world (`answer(question) -> answer`, the D4 input and envelope), extended by the resident world of D19
+- [ ] 24.2 `wasm "…"` declarations in the manifest, run by `uze-wasm` with the D19 budgets and imports, in change 4
+- [ ] 24.3 The argv runner and `exec:` grants only in change 5, with OS confinement or its explicit "runs as you" disclosure
+- [ ] 24.4 Lead the check, the scaffold and the Skill with components, documenting the shell path as fully supported
