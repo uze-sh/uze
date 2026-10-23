@@ -813,16 +813,17 @@ mod tests {
                 }
             }
         }
-        assert!(manifests.len() >= 10, "found {manifests:?}");
-        for path in manifests {
+        let mut checked = 0;
+        for path in &manifests {
             let Ok(raw) =
-                serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap())
+                serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap())
             else {
                 continue;
             };
             let Ok(manifest) = serde_json::from_value::<HookManifest>(raw.clone()) else {
                 continue;
             };
+            checked += 1;
             for handler in manifest
                 .hooks
                 .values()
@@ -851,6 +852,10 @@ mod tests {
                 );
             }
         }
+        assert!(
+            checked >= 10,
+            "only {checked} of {manifests:?} parsed as a hook manifest"
+        );
     }
 
     /// A guard written only for the other platform's shell cannot run
