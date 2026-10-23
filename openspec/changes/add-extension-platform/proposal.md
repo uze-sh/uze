@@ -65,10 +65,11 @@ mechanism chosen without a capability model cannot be given one afterwards
   - *resident*: a WebAssembly component that keeps state, receives input and
     timers, and answers a catalog tree or cells every frame, reaching nothing
     but the host imports it was granted.
-- **Places an extension may occupy.** A full-frame view, a sidebar section, a
-  segment of the status bar, a band along the edge of an agent's pane, an
-  overlay (picker, form, dialog) under host chrome, and a notification. An
-  extension never draws over a harness's own output.
+- **Places an extension may occupy.** A full-frame view (with a host
+  attribution strip it cannot cover), a sidebar section, a row in the
+  sidebar's header, a band of fixed rows along the edge of an agent's pane,
+  an overlay (picker, form, dialog) under host chrome, and a notification.
+  An extension never draws over a harness's own output.
 - **A catalog of primitives in families.** Layout, text, data (list, tree,
   table, details), measure (segmented progress, gauge, pips, bar, sparkline,
   heatmap), status (badge, several marks per row, chips, an activity mark
@@ -78,18 +79,21 @@ mechanism chosen without a capability model cannot be given one afterwards
   templates over a source's data) or *composed* (a program answers a tree of
   catalog nodes). Colour is named only as a semantic role.
 - **Programs in any language answer one contract.** A source, an action or
-  a command is an argv the host runs with JSON on stdin, JSON (or lines) on
-  stdout and the portable hook exit codes (0 answers, 3 refuses with a
+  a command is an argv the host runs with JSON on stdin (its slot, size,
+  agent, and the event, pipe, store and preferences it names), JSON, lines
+  or a medium on stdout, optionally in an envelope of requests, and the
+  portable hook exit codes (0 answers, 3 refuses with a
   reason, anything else fails), bounded in time and output. The host holds
   all view state; programs are stateless and short-lived, so a declared
   extension costs no resident process.
-- **A bridge to the agents, across harnesses.** UZE reports each agent's
-  turns, tool calls and approval requests as normalized events from a hook
-  of its own delivered to every harness, and offers a read model of the
-  agents (harness, state, work, checkout). An extension may send an agent a
-  prompt or a skill invocation, which each integration spells in its own
-  harness's dialect, and may interrupt or restart its conversation, under
-  grants of their own; an unattended prompt needs a stronger one.
+- **A bridge to the agents, across harnesses.** A reporter UZE adds to each
+  launch tells the workspace each agent's turns, tool calls and approvals as
+  normalized events, which are drawn but never trusted to release a write;
+  a read model answers the agents (harness, state, work, checkout). An
+  extension may send one named agent a prompt or a skill invocation, which
+  its integration spells in its harness's dialect, filtered, shown as sent,
+  and refused when the pane is not ready. Unattended, it may send only text
+  its manifest fixes, under a per-project, per-agent grant.
 - **Richer reasons to refresh, and a way in from outside.** An interval with
   a floor, declared paths changing, and pipes: `uze ext pipe` and other
   extensions push data to a surface, waking it if it is closed, without
@@ -110,7 +114,8 @@ mechanism chosen without a capability model cannot be given one afterwards
   primitive joins the catalog when a gallery entry needs it.
 - **Authoring tools and a skill.** `uze agent plugin create --extension`,
   `uze agent extension check <path>` (schema, bindings, and a real dry run
-  of every source), `uze ext <extension> <command>` for declared commands,
+  of every source), `uze ext simulate` to run one declaration against
+  canned inputs without a TUI, `uze ext <extension> <command>`,
   and a dedicated `uze:extension` Skill, linked from `uze:author`.
 - Rewriting a harness's own transcript, raw terminal output from an
   extension, and native code loaded into UZE's process are **not** part of
@@ -135,17 +140,20 @@ mechanism chosen without a capability model cannot be given one afterwards
   catalog, markdown moved to shared), a new leaf crate for the extension
   manifest and wire types (no I/O, consumed by `uze-core` and
   `uze-extensions`), `uze-core` (capability parsing, grant record, sandboxed
-  execution, the resident runtime), `uze-application` (extension read model,
-  runner service, agents read model), `uze-integrations` (the reporting hook
-  per harness, the skill-invocation dialect), `src/ui` (orchestrator,
+  execution), `uze-application` (extension read model,
+  runner service), `uze-integrations` (the reporter in each launch, the
+  skill-invocation spelling), a new `uze-extension-runtime` crate (the
+  resident tier), `src/ui` (orchestrator, the agents read model,
   extension host, slots, keymap, management Extensions screen),
   `src/main.rs` (`uze ext`, `uze agent extension check`).
 - **Persisted state**: one record (consented grants per extension, per
-  digest, plus preferences) under `state/`, and one per-extension store,
-  each declared through `uze_document::Shaped` and tiered by what deleting
-  it costs.
+  digest, plus preferences) under `state/`, one store per extension and
+  project, and one bounded journal per agent, each declared through
+  `uze_document::Shaped` and tiered by what deleting it costs. Secrets go to
+  the OS keychain through `uze-platform`.
 - **Dependencies**: possibly `landlock` (Linux confinement), `schemars`
-  (JSON Schema of the manifest and wire types) and a WebAssembly runtime,
+  (JSON Schema of the manifest and wire types), a WebAssembly runtime and
+  an HTTP client for it,
   each justified per the dependency policy in design.md.
 - **Architecture tests**: layering rules updated to admit exactly the new
   leaf crate; new rules for sanitization, for extension execution going

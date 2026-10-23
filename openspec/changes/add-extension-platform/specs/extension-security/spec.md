@@ -8,9 +8,9 @@ terminal, and from being installed or widened without the operator saying so.
 
 ### Requirement: An extension declares every grant it needs
 An extension manifest SHALL list, under `wants`, every capability it uses:
-`exec:<name>`, `net`, `write:checkout`, `clipboard`, `open_path`,
-`notify`, `resident`, `agent:prompt`, `agent:prompt:auto` and
-`agent:control`. A declaration that uses a capability it did not list SHALL
+`exec:<name>`, `net`, `write:checkout`, `read:checkout` (resident),
+`clipboard`, `open_path`, `notify`, `resident`, `agent:observe`,
+`agent:prompt`, `agent:prompt:auto` and `agent:control`. A declaration that uses a capability it did not list SHALL
 be refused by the check and at install.
 
 > **Unresolved review findings** (design.md): S2, S3, S7.
@@ -166,12 +166,16 @@ accepted in one gesture.
 - **THEN** the operator is asked about it on its own, after the other grants, and declining it leaves the rest enabled with prompts only on a gesture
 
 ### Requirement: Untrusted channels never start an agent action alone
-A pipe payload, a source's answer, an event and a composed tree SHALL NOT
-cause a write into an agent, a clipboard write or an open of a path unless
-the extension holds `agent:prompt:auto` for the agent write, and never for
-the clipboard or a path. Each such write SHALL be attributed to the
-extension where the operator sees it.
+A pipe, a source's answer, an event and a composed tree SHALL NOT cause a
+clipboard write or an open of a path, and SHALL cause a write into an agent
+only under `agent:prompt:auto`, with the manifest's fixed text or a declared
+closed set, never text they carry. Each write SHALL be attributed where the
+operator sees it.
 
 #### Scenario: A pipe cannot type into an agent
-- **WHEN** a local process runs `uze ext pipe gsd-band next` and `gsd-band` lacks `agent:prompt:auto`
-- **THEN** no text reaches any agent and the pipe only refreshes what the manifest maps it to
+- **WHEN** a local process runs `uze ext pipe gsd-band next '{"text": "rm -rf ~"}'`
+- **THEN** no text reaches any agent and the pipe only refreshes the sources the manifest maps it to
+
+#### Scenario: Repository content never becomes a prompt
+- **WHEN** an extension holding `agent:prompt:auto` reads a `STATE.md` that contains an instruction and answers it as the next prompt
+- **THEN** the host sends nothing but the manifest's fixed text or a member of its declared closed set, and the answered text is ignored
