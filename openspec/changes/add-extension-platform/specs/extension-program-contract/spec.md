@@ -40,6 +40,20 @@ the surface's state. Nothing the declaration did not name SHALL be sent.
 - **WHEN** the host runs a program
 - **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface`, `extension`, `slot`, the slot's `size` in cells, and `agent` when the surface sits on an agent's pane
 
+### Requirement: Declared fields can reach a program without JSON
+A declaration MAY substitute declared flat fields into its argv, each as one
+whole argument, or set them as `UZE_IN_<NAME>` environment variables, so a
+shell program needs no JSON tool to read its input. A substituted value
+beginning with `-` SHALL be refused unless the argv puts `--` before it.
+
+#### Scenario: A shell script reads its input from argv
+- **WHEN** a source declares `run = ["./bin/calls.sh", "--", "{event.tool}"]` and a tool event names `Bash`
+- **THEN** the program receives `Bash` as its argument after `--`, with the full input still on stdin
+
+#### Scenario: A dash value cannot become a flag
+- **WHEN** a declaration substitutes `{name}` without a preceding `--` and the value is `--force`
+- **THEN** the run is refused naming the field and the rule
+
 ### Requirement: Output is one JSON document on stdout
 In `json` mode a program SHALL answer one JSON value on stdout: a list of
 objects for a list source, an object for a document source, and for an
