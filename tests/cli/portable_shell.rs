@@ -659,10 +659,11 @@ fn output_past_the_bound_is_truncated_and_said_so() {
     assert!(output.len() < 256 * 1024, "the output stayed bounded");
 }
 
-/// What the workspace runs, end to end: a portable line goes through
-/// `uze shell -c` and a line it cannot run goes to `sh`.
+/// A portable line goes through `uze shell -c`. `run_bounded` itself
+/// starts this process's own binary, the test harness here, so the line is
+/// handed to `uze` directly.
 #[test]
-fn a_project_command_runs_where_it_says() {
+fn a_portable_project_command_runs_through_uze_shell() {
     use uze_core::shell::{Runs, ShellCommand};
     let world = World::new("portable-shell-runs");
     let portable = ShellCommand::from("mkdir -p made");
@@ -675,5 +676,22 @@ fn a_project_command_runs_where_it_says() {
         Duration::from_secs(60),
     );
     assert!(passed);
+    assert!(world.path().join("made").is_dir());
+}
+
+/// A line the portable shell cannot read goes to `sh`, where there is one.
+#[test]
+fn a_line_the_portable_shell_cannot_read_runs_in_sh() {
+    use uze_core::shell::{Runs, ShellCommand};
+    if uze_platform::shell::FAMILY != uze_platform::shell::Family::Posix {
+        return;
+    }
+    let world = World::new("portable-shell-native");
+    let native = ShellCommand::from("if true; then mkdir made; fi");
+    let runs = native.runs_here().unwrap();
+    assert!(matches!(runs, Runs::Native(_)));
+    let (passed, output) =
+        uze_core::subprocess::run_bounded(world.path(), runs, Duration::from_secs(60));
+    assert!(passed, "{output}");
     assert!(world.path().join("made").is_dir());
 }
