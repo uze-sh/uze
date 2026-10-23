@@ -244,7 +244,13 @@ fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
     if name == "{" {
         return Some(brace_group("{"));
     }
-    if name == "cd" && simple.args.len() == 1 {
+    builtin_divergence(line, name, &simple.args[1..])
+}
+
+/// How `name`, given `arguments`, would run differently from `sh`. A
+/// builtin `xargs` runs is judged too: it starts in the same shell.
+fn builtin_divergence(line: &str, name: String, arguments: &[Word]) -> Option<NotPortable> {
+    if name == "cd" && arguments.is_empty() {
         return Some(NotPortable {
             column: column_of(line, "cd"),
             construct: name,
@@ -252,7 +258,7 @@ fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
             divergence: Some(Divergence::UnsupportedFlag),
         });
     }
-    if let Some(flag) = unsupported_flag(&name, &simple.args[1..]) {
+    if let Some(flag) = unsupported_flag(&name, arguments) {
         return Some(NotPortable {
             column: column_of(line, &format!("{name} ")).max(column_of(line, &flag)),
             reason: format!(
@@ -272,7 +278,7 @@ fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
         });
     }
     if name == "echo"
-        && let Some(flag) = simple.args.get(1).and_then(literal)
+        && let Some(flag) = arguments.first().and_then(literal)
         && flag.len() > 1
         && flag.starts_with('-')
         && flag[1..].chars().all(|c| matches!(c, 'n' | 'e' | 'E'))
@@ -283,6 +289,14 @@ fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
             reason: format!("the portable `echo` prints `{flag}` instead of reading it as a flag"),
             divergence: Some(Divergence::EchoFlag),
         });
+    }
+    if name == "xargs" {
+        let (_, command) = xargs_split(arguments);
+        let builtin = command
+            .first()
+            .and_then(literal)
+            .filter(|name| is_builtin(name))?;
+        return builtin_divergence(line, builtin, &command[1..]);
     }
     None
 }
@@ -355,7 +369,7 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
     }
     let (_, shorts, longs) = FLAGS.iter().find(|(builtin, ..)| *builtin == name)?;
     let words = if name == "xargs" {
-        xargs_flags(arguments)
+        xargs_split(arguments).0
     } else {
         arguments.iter().map(literal).collect()
     };
@@ -385,26 +399,25 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
     None
 }
 
-/// The words `xargs` reads as its own: its flags, up to the command it
-/// runs, whose words are that command's. `-0` reads as a number, which the
-/// shell's `xargs` takes as its null delimiter, and `-d` takes the next
-/// word as its delimiter.
-fn xargs_flags(arguments: &[Word]) -> Vec<Option<String>> {
+/// The words `xargs` reads as its own, and the command it runs, whose
+/// words are that command's. `-0` reads as a number, which the shell's
+/// `xargs` takes as its null delimiter, and `-d` takes the next word as its
+/// delimiter.
+fn xargs_split(arguments: &[Word]) -> (Vec<Option<String>>, &[Word]) {
     let mut flags = Vec::new();
-    let mut words = arguments.iter().map(literal);
-    while let Some(Some(word)) = words.next() {
+    let mut index = 0;
+    while let Some(word) = arguments.get(index).and_then(literal) {
         if !word.starts_with('-') || word == "-" {
             break;
         }
+        index += 1;
         match word.as_str() {
             "-0" => {}
-            "-d" => {
-                words.next();
-            }
+            "-d" => index += 1,
             _ => flags.push(Some(word)),
         }
     }
-    flags
+    (flags, arguments.get(index..).unwrap_or_default())
 }
 
 /// `set` implements `-e`/`+e` and `-o`/`+o` with `errexit` or `pipefail`.

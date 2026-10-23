@@ -123,6 +123,18 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ("cp -a src dst", "-a", 4, Some(Divergence::UnsupportedFlag)),
     ("mv -r a b", "-r", 4, Some(Divergence::UnsupportedFlag)),
     ("cd - && make", "-", 4, Some(Divergence::UnsupportedFlag)),
+    (
+        "git ls-files | xargs rm -v",
+        "-v",
+        25,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    (
+        "xargs echo -n < list.txt",
+        "echo -n",
+        7,
+        Some(Divergence::EchoFlag),
+    ),
     ("cd && make", "cd", 1, Some(Divergence::UnsupportedFlag)),
     (
         "set -euo pipefail",
