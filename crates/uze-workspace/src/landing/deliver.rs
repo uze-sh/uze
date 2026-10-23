@@ -13,10 +13,11 @@ pub fn deliver(
     primary: &Path,
     agent: &mut Agent,
     policy: &Policy<'_>,
+    uze: &Uze,
 ) -> Result<Delivered, DeliveryFailure> {
     let before = agent.state.clone();
     let delivered = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
-        deliver_locked(primary, agent, policy)
+        deliver_locked(primary, agent, policy, uze)
     })
     .map_err(|error| DeliveryFailure::Git(error.to_string()))
     .and_then(|delivered| delivered);
@@ -30,6 +31,7 @@ pub(super) fn deliver_locked(
     primary: &Path,
     agent: &mut Agent,
     policy: &Policy<'_>,
+    uze: &Uze,
 ) -> Result<Delivered, DeliveryFailure> {
     // Split rather than borrowed one at a time: the state and the branch
     // are disjoint fields of one record, and delivery writes both.
@@ -67,7 +69,7 @@ pub(super) fn deliver_locked(
         // A gate with no spelling for this platform refuses delivery: it
         // cannot be run, and work it never checked must not land.
         let (passed, output) = match step.runs_here() {
-            Ok(runs) => run_bounded(&slot, runs, GATE_TIMEOUT),
+            Ok(runs) => run_bounded(uze, &slot, runs, GATE_TIMEOUT),
             Err(reason) => (
                 false,
                 format!(

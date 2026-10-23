@@ -156,7 +156,14 @@ impl Workspace<'_> {
             }
         };
         let id = agent.id.clone();
-        let outcome = deliver_one(&self.0.home, primary, &consent, &id, &mut agent);
+        let outcome = deliver_one(
+            &self.0.home,
+            &self.0.uze,
+            primary,
+            &consent,
+            &id,
+            &mut agent,
+        );
         let mut report = DeliveryReport {
             task: AgentView::from_agent(
                 primary,
@@ -309,6 +316,7 @@ pub(super) enum Recorded {
 /// with the tasks document unlocked, under Git's own write lock alone.
 pub(super) fn deliver_one(
     home: &UzeHome,
+    uze: &uze_core::subprocess::Uze,
     primary: &Path,
     consent: &uze_workspace::approval::Consent<'_>,
     id: &AgentId,
@@ -322,7 +330,7 @@ pub(super) fn deliver_one(
         gate: consent.gate(),
         vocabulary: &consent.policy().branch,
     };
-    match landing::deliver(primary, agent, &policy) {
+    match landing::deliver(primary, agent, &policy, uze) {
         Ok(Delivered::Merged { .. }) => DeliveryOutcome::Merged,
         Ok(Delivered::Published { branch, request }) => {
             DeliveryOutcome::Published { branch, request }

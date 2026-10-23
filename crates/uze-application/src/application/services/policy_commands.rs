@@ -178,6 +178,7 @@ impl Workspace<'_> {
             &awaiting.project,
             slot,
             &approval::consent(&self.0.home, &awaiting.project, &policy),
+            &self.0.uze,
         ))
     }
 

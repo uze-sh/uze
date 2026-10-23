@@ -113,3 +113,49 @@ fn a_posix_only_spelling_is_missing_only_where_there_is_no_sh() {
         );
     }
 }
+
+/// A portable setup places a checkout and a portable gate delivers from
+/// it, through the workspace's own placement and delivery, each line
+/// started as `uze shell -c` from the built binary.
+#[test]
+fn a_portable_setup_places_a_checkout_and_a_portable_gate_delivers_it() {
+    use uze_application::{DeliveryOutcome, PlacementKind, UzeApplication};
+    let repository = uze_testkit::git::Repository::new("portable-place-and-deliver");
+    let root = repository.root().to_path_buf();
+    std::fs::write(
+        root.join("agents.yaml"),
+        "workspace:\n  delivery: merge\n  setup: mkdir -p set-up\n  gate: test -d set-up && mkdir gated\n",
+    )
+    .unwrap();
+    let home = uze_core::UzeHome::at(uze_testkit::temp::scratch(
+        "portable-place-and-deliver-home",
+    ));
+    let app = UzeApplication::new(home, Vec::new()).with_uze(crate::util::uze_bin().into());
+    let awaiting = app
+        .workspace()
+        .commands_awaiting_approval(&root)
+        .expect("the project declares commands to approve");
+    app.workspace().approve_commands(&awaiting).unwrap();
+
+    let placement = app
+        .workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "claude-code", &[])
+        .unwrap();
+    assert!(placement.warnings.is_empty(), "{:?}", placement.warnings);
+    let slot = placement.cwd;
+    assert!(
+        slot.join("set-up").is_dir(),
+        "the setup ran in the checkout"
+    );
+
+    std::fs::write(slot.join("work.rs"), "fn work() {}\n").unwrap();
+    repository.git_in(&slot, &["add", "--", "work.rs"]);
+    repository.git_in(&slot, &["commit", "-qm", "work"]);
+    app.workspace().evaluate_tasks(&root, &[]);
+    let id = placement.placement.agent().as_str().to_owned();
+    let report = app.workspace().deliver_task(&root, &id).unwrap();
+
+    assert_eq!(report.outcome, DeliveryOutcome::Merged, "{report:?}");
+    assert!(slot.join("gated").is_dir(), "the gate ran in the checkout");
+    assert!(root.join("work.rs").is_file());
+}

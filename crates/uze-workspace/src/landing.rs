@@ -23,7 +23,7 @@ use std::{
 
 use crate::{
     checkout::{self, REMOTE, commits_ahead, is_dirty},
-    subprocess::run_bounded,
+    subprocess::{Uze, run_bounded},
     task::{Agent, Isolation, WorkState},
     worktree::CompletionBehavior,
 };

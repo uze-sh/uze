@@ -10,6 +10,17 @@ use uze_testkit::git::Repository;
 
 const TARGET: &str = "main";
 
+/// [`super::deliver`] with the gate's portable lines started from this
+/// process. No gate here is a plain line: this process is the test binary,
+/// not `uze`.
+fn deliver(
+    primary: &Path,
+    agent: &mut Agent,
+    policy: &Policy<'_>,
+) -> Result<Delivered, DeliveryFailure> {
+    super::deliver(primary, agent, policy, &Uze::ThisProcess)
+}
+
 fn repository(label: &str) -> Repository {
     Repository::new(label)
 }

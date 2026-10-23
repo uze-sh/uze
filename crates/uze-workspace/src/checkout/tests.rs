@@ -1225,6 +1225,7 @@ fn prepared(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String>
         primary,
         slot,
         &crate::approval::consent(&home, primary, policy),
+        &crate::subprocess::Uze::ThisProcess,
     )
 }
 
@@ -1246,6 +1247,7 @@ fn an_unapproved_setup_is_not_run_and_the_checkout_says_so() {
         primary,
         &slot.path,
         &crate::approval::consent(&home, primary, &policy),
+        &crate::subprocess::Uze::ThisProcess,
     );
 
     assert!(!slot.path.join("pwned").exists(), "setup never ran");

@@ -106,6 +106,8 @@ pub struct UzeApplication {
     /// remote one question once: updating three plugins from one
     /// marketplace fetched it three times, a second apart.
     mirrors_fetched: std::sync::Mutex<Vec<PathBuf>>,
+    /// The `uze` a project's portable `setup` and `gate` lines start from.
+    uze: uze_core::subprocess::Uze,
 }
 
 impl UzeApplication {
@@ -179,11 +181,20 @@ impl UzeApplication {
             inspection_cache: inspection_cache::InspectionCache::new(&home),
             marketplace_catalogues: marketplace_catalogue::MarketplaceCatalogues::new(&home),
             mirrors_fetched: std::sync::Mutex::new(Vec::new()),
+            uze: uze_core::subprocess::Uze::ThisProcess,
             home,
             integrations,
             preference_adapters,
             runner,
         }
+    }
+
+    /// The same composition, with a project's portable lines started from
+    /// `uze` rather than this process: for a client whose own process is
+    /// not `uze`.
+    pub fn with_uze(mut self, uze: PathBuf) -> Self {
+        self.uze = uze_core::subprocess::Uze::At(uze);
+        self
     }
 
     /// The cached path for `IntegrationPort::detect()`: an in-process hit

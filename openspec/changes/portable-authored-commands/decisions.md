@@ -76,7 +76,7 @@
             the divergence this change exists to remove.
 - blast:    None: it records today's behaviour.
 
-## D5 — Prove the workspace's use of a portable line through `uze status` and leave the full place-and-deliver flow to the journey
+## D5 — Name the `uze` a portable line starts from in the composition, and prove placement and delivery through it
 
 - status:   pending
 - task:     4.4
@@ -84,26 +84,33 @@
 - trigger:  Task 4.4 asked for acceptance tests in which a portable setup
             and gate place a checkout and deliver. No CLI verb places an
             agent or delivers its work: the TUI does. An in-process
-            application test would start the test binary as `uze shell -c`,
-            because the runner starts the process's own executable.
-- decided:  `tests/acceptance/portable_commands.rs` drives the real binary
-            through `uze status`, which reads the same `runs_here` answer
-            placement and delivery act on. It covers:
-            - a portable setup and gate run everywhere;
-            - a `for` gate and a `${` setup run only where `sh` does, and
-              say why elsewhere;
-            - a `posix:`-only step never reaches the portable shell.
+            application test started the test binary as `uze shell -c`,
+            because the runner resolved the process's own executable
+            itself.
+- decided:  `run_bounded` takes a `subprocess::Uze`: `ThisProcess`, resolved
+            when the line runs (a workspace open across an upgrade runs
+            the new one), or `At(path)`. `UzeApplication` holds one,
+            `ThisProcess` in every composition, and `with_uze` names
+            another for a client whose own process is not `uze`.
+            Placement and delivery pass it down. So:
+            - `tests/acceptance/portable_commands.rs` places a checkout
+              with a portable setup and delivers it through a portable
+              gate, from the built binary, and reads `uze status` for what
+              does not run here;
+            - `tests/cli/portable_shell.rs` proves the line itself (E3–E5).
 
-            The execution itself is proven in `tests/cli/portable_shell.rs`
-            (`a_project_command_runs_where_it_says`, E3–E5). The full flow
-            through the TUI is task 8.1's journey. Application tests that
-            execute a line in-process keep a pair, with a comment saying
+            The flow through the TUI is still task 8.1's journey.
+            Application unit tests have no `uze` binary to name, so the
+            ones that execute a line keep a pair, with a comment saying
             why.
-- rejected: A test-only override of the executable `run_bounded` starts.
-            It is a seam production would carry for tests alone.
-- blast:    Until 8.1 exists, nothing runs a portable line through
-            `prepare` or `deliver` end to end in CI. Each half is tested;
-            the join is the journey's.
+- rejected: Resolving the executable inside the runner, as first written:
+            nothing outside the CLI could run a portable line, and a test
+            through the application ran the test binary. Resolving it once
+            at composition: a long-lived workspace would keep a binary an
+            upgrade replaced.
+- blast:    Every caller of placement and delivery reaches the runner
+            through the application, which owns the choice; `uze-workspace`
+            takes it as an argument and chooses nothing.
 
 ## D6 — Refuse a pattern that would match a name in either case
 

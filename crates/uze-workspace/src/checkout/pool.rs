@@ -595,7 +595,12 @@ fn isolation_directory_is_the_projects_own(
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 #[tracing::instrument(name = "checkout.materialize", level = "debug", skip_all)]
-pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<String> {
+pub fn materialize(
+    primary: &Path,
+    slot: &Path,
+    consent: &Consent<'_>,
+    uze: &crate::subprocess::Uze,
+) -> Vec<String> {
     let policy = consent.policy();
     let mut warnings = Vec::new();
     for link in &policy.link {
@@ -641,7 +646,7 @@ pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<St
                 break;
             }
         };
-        let (passed, output) = crate::subprocess::run_bounded(slot, runs, SETUP_TIMEOUT);
+        let (passed, output) = crate::subprocess::run_bounded(uze, slot, runs, SETUP_TIMEOUT);
         if !passed {
             let tail = output.lines().last().unwrap_or("").to_owned();
             warnings.push(format!("setup `{step}` failed: {tail}"));

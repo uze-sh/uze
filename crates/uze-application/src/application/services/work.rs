@@ -144,7 +144,8 @@ impl Workspace<'_> {
             }
         };
         let consent = self.consent(&caller.primary, &policy);
-        let warnings = checkout::materialize(&caller.primary, &acquired.path, &consent);
+        let warnings =
+            checkout::materialize(&caller.primary, &acquired.path, &consent, &self.0.uze);
         Ok(SplitWork {
             path: acquired.path,
             warnings,

@@ -7,7 +7,7 @@
 //! Not part of the public contract; workspace-internal process plumbing.
 
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -174,20 +174,46 @@ pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool,
     run_line_bounded(shell_invocation(command), cwd, command, timeout)
 }
 
+/// The `uze` a portable line is started from, as `uze shell -c`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Uze {
+    /// This process's own executable, or the one that replaced it, found
+    /// when the line runs: a workspace left open across an upgrade runs
+    /// the new one.
+    #[default]
+    ThisProcess,
+    /// One the composition names, for a client whose own process is not
+    /// `uze`: an embedding one, or a test.
+    At(PathBuf),
+}
+
+impl Uze {
+    fn path(&self) -> Option<PathBuf> {
+        match self {
+            Self::ThisProcess => uze_platform::executable::own_or_replacement("uze"),
+            Self::At(path) => Some(path.clone()),
+        }
+    }
+}
+
 /// [`run_shell_bounded`] for a project's command, in the shell it runs in
-/// here (see [`crate::shell::ShellCommand::runs_here`]).
-pub fn run_bounded(cwd: &Path, runs: crate::shell::Runs<'_>, timeout: Duration) -> (bool, String) {
+/// here (see [`crate::shell::ShellCommand::runs_here`]): a portable line
+/// through `uze`.
+pub fn run_bounded(
+    uze: &Uze,
+    cwd: &Path,
+    runs: crate::shell::Runs<'_>,
+    timeout: Duration,
+) -> (bool, String) {
     match runs {
         crate::shell::Runs::Native(line) => run_shell_bounded(cwd, line, timeout),
-        crate::shell::Runs::Portable(line) => {
-            match uze_platform::executable::own_or_replacement("uze") {
-                Some(uze) => run_portable_bounded(&uze, cwd, line, timeout),
-                None => (
-                    false,
-                    format!("`{line}` needs `uze` to run it, and no `uze` is on PATH"),
-                ),
-            }
-        }
+        crate::shell::Runs::Portable(line) => match uze.path() {
+            Some(uze) => run_portable_bounded(&uze, cwd, line, timeout),
+            None => (
+                false,
+                format!("`{line}` needs `uze` to run it, and no `uze` is on PATH"),
+            ),
+        },
     }
 }
 
