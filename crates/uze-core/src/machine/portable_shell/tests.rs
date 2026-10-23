@@ -455,3 +455,26 @@ fn the_share_that_depends_on_which_sh_does_not_rise() {
     );
     assert!(per_mille <= DEPENDS_ON_WHICH_SH_AT_MOST_PER_MILLE);
 }
+
+/// `sh` has no globstar: `**` is `*`, one directory deep.
+#[test]
+fn a_double_star_matches_one_directory_as_in_sh() {
+    let directory = uze_testkit::temp::TempDir::new("portable-shell");
+    std::fs::create_dir_all(directory.path().join("src/nested")).unwrap();
+    std::fs::write(directory.path().join("src/top.txt"), "").unwrap();
+    std::fs::write(directory.path().join("src/nested/deep.txt"), "").unwrap();
+    assert_eq!(
+        execute(
+            "mkdir out && cp src/**/*.txt out",
+            directory.path(),
+            HashMap::new(),
+            Streams::Silent
+        ),
+        0
+    );
+    assert!(directory.path().join("out/deep.txt").exists());
+    assert!(
+        !directory.path().join("out/top.txt").exists(),
+        "`**` reached across directories"
+    );
+}

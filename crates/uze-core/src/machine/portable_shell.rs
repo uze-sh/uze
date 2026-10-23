@@ -139,12 +139,14 @@ fn execute(
             return 1;
         }
     };
-    let state = deno_task_shell::ShellState::new(
+    let mut state = deno_task_shell::ShellState::new(
         environment,
         cwd,
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
         Default::default(),
     );
+    // On by default here and off in `sh`, where `**` is `*`.
+    state.set_shell_option(deno_task_shell::ShellOptions::GLOBSTAR, false);
     let (stdin, stdout, stderr) = match streams {
         Streams::Inherited => (
             deno_task_shell::ShellPipeReader::stdin(),
