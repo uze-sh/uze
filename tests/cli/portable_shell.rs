@@ -574,6 +574,22 @@ fn divergence_unsupported_flag_fails_where_the_tool_would_not() {
     assert_ne!(world.run("head -1 VERSION").status, Some(0));
 }
 
+/// `sh` reads each of these; the portable builtin refuses it.
+#[test]
+fn divergence_unsupported_flag_covers_operators_and_operands() {
+    let world = World::new("portable-shell-unsupported-operand");
+    std::fs::write(world.path().join("VERSION"), "1.0\n").unwrap();
+    for line in [
+        "test -f VERSION -a -f VERSION",
+        "test -r VERSION",
+        "mv -f VERSION MOVED",
+        "cd .. && cd -",
+        "cd",
+    ] {
+        assert_ne!(world.run(line).status, Some(0), "`{line}`");
+    }
+}
+
 /// Under a bounded wait: the line never ends, which is the divergence.
 #[test]
 fn divergence_stderr_into_builtin_never_ends() {
