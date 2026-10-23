@@ -54,10 +54,13 @@ pub enum Divergence {
     /// A pattern with a letter matches a name in either case, where `sh`
     /// matches the case written.
     CaselessGlob,
+    /// A pattern in an assignment or a redirect is expanded, where `sh`
+    /// reads it as written.
+    ExpandedPattern,
 }
 
 impl Divergence {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::BraceParameter,
         Self::BracketTest,
         Self::EchoFlag,
@@ -66,6 +69,7 @@ impl Divergence {
         Self::BraceGroup,
         Self::UnsupportedFlag,
         Self::CaselessGlob,
+        Self::ExpandedPattern,
     ];
 }
 
@@ -235,6 +239,7 @@ fn divergence(line: &str, list: &SequentialList) -> Option<NotPortable> {
                 .args
                 .iter()
                 .find_map(|word| caseless_glob(line, word)),
+            Node::ReadAsWritten(word) => expanded_pattern(line, word),
             _ => None,
         })
     };
@@ -493,32 +498,52 @@ fn unsupported_test_operator(arguments: &[Word]) -> Option<String> {
         .cloned()
 }
 
-/// A word the shell expands as a pattern where a part of the path with a
-/// wildcard also holds a letter, or an expansion that may hold one: the
-/// portable shell matches it whatever the case of a name, so `*.txt` takes
-/// `README.TXT` too. A part with no wildcard is a directory the system
-/// looks up as written, the same in both shells.
-fn caseless_glob(line: &str, word: &Word) -> Option<NotPortable> {
-    /// One character of the pattern: what it is, whether it is a wildcard,
-    /// and the unquoted text it was written in.
-    struct Spelled<'a> {
-        character: char,
-        wildcard: bool,
-        text: Option<&'a str>,
-    }
+/// One character of a word as the shell matches it against names.
+struct Spelled<'a> {
+    character: char,
+    /// It makes the word a pattern: an unquoted `*`, `?` or a `[` that
+    /// closes.
+    globs: bool,
+    /// It makes its part of the path a pattern: one that globs, or a quoted
+    /// wildcard, which the shell escapes as `[*]` and matches as one.
+    pattern: bool,
+    /// The unquoted text it was written in.
+    text: Option<&'a str>,
+}
+
+/// `word` as the shell matches it: braces become the alternatives they
+/// expand to before matching, collapsed to one character here, and an
+/// expansion whose text is unknown counts as a letter.
+fn spelled(word: &Word) -> Vec<Spelled<'_>> {
     fn spell<'a>(parts: &'a [WordPart], quoted: bool, into: &mut Vec<Spelled<'a>>) {
         for part in parts {
             match part {
-                WordPart::Text(text) => into.extend(text.chars().map(|character| Spelled {
-                    character,
-                    wildcard: !quoted && matches!(character, '*' | '?' | '['),
-                    text: (!quoted).then_some(text.as_str()),
+                WordPart::Text(text) => into.extend(text.chars().map(|character| {
+                    let wildcard = matches!(character, '*' | '?' | '[' | ']');
+                    Spelled {
+                        character,
+                        globs: !quoted && matches!(character, '*' | '?' | '['),
+                        pattern: wildcard && (quoted || character != ']'),
+                        text: (!quoted).then_some(text.as_str()),
+                    }
                 })),
                 WordPart::Quoted(inner) => spell(inner, true, into),
-                // What it expands to is unknown here, so it may hold a letter.
+                WordPart::Brace(alternatives) => {
+                    let inside = alternatives
+                        .iter()
+                        .flat_map(spelled)
+                        .find(|spelled| spelled.globs);
+                    into.push(Spelled {
+                        character: 'x',
+                        globs: inside.is_some(),
+                        pattern: inside.is_some(),
+                        text: inside.and_then(|spelled| spelled.text),
+                    });
+                }
                 _ => into.push(Spelled {
                     character: 'x',
-                    wildcard: false,
+                    globs: false,
+                    pattern: false,
                     text: None,
                 }),
             }
@@ -526,23 +551,73 @@ fn caseless_glob(line: &str, word: &Word) -> Option<NotPortable> {
     }
     let mut spelled = Vec::new();
     spell(word.parts(), false, &mut spelled);
-    let cased = spelled
+    // A `[` with no `]` after it is no pattern: the shell passes it
+    // through as `sh` does.
+    for index in 0..spelled.len() {
+        if spelled[index].character == '['
+            && spelled[index].globs
+            && !spelled[index + 1..]
+                .iter()
+                .skip(1)
+                .any(|later| later.character == ']')
+        {
+            spelled[index].globs = false;
+            spelled[index].pattern = false;
+        }
+    }
+    spelled
+}
+
+/// The unquoted text of `word`'s first character that makes it a pattern.
+fn globbing_text<'a>(spelled: &[Spelled<'a>]) -> Option<&'a str> {
+    spelled
+        .iter()
+        .filter(|spelled| spelled.globs)
+        .find_map(|spelled| spelled.text)
+}
+
+/// A word the shell expands as a pattern where a part of the path that is
+/// a pattern also holds a letter, or an expansion that may hold one: the
+/// portable shell matches it whatever the case of a name, so `*.txt` takes
+/// `README.TXT` too. A part that is no pattern is looked up as written,
+/// the same in both shells. Only ASCII letters fold.
+///
+/// A wildcard inside a variable's value is not seen here: the value is
+/// known only when the line runs.
+fn caseless_glob(line: &str, word: &Word) -> Option<NotPortable> {
+    let spelled = spelled(word);
+    let text = globbing_text(&spelled)?;
+    spelled
         .split(|spelled| spelled.character == '/')
-        .find(|component| {
-            component.iter().any(|spelled| spelled.wildcard)
-                && component.iter().any(|spelled| {
-                    spelled.character.is_lowercase() || spelled.character.is_uppercase()
-                })
-        })?;
-    let text = cased.iter().find(|spelled| spelled.wildcard)?.text?;
+        .any(|component| {
+            component.iter().any(|spelled| spelled.pattern)
+                && component
+                    .iter()
+                    .any(|spelled| spelled.character.is_ascii_alphabetic())
+        })
+        .then(|| NotPortable {
+            column: unquoted_column_of(line, text),
+            construct: text.to_owned(),
+            reason: format!(
+                "the portable shell matches `{text}` whatever the case of a name, where `sh` \
+                 matches the case written; name the files, or write the `posix`/`windows` pair"
+            ),
+            divergence: Some(Divergence::CaselessGlob),
+        })
+}
+
+/// A pattern in an assignment's value or a redirect's target, which the
+/// portable shell expands and `sh` reads as written.
+fn expanded_pattern(line: &str, word: &Word) -> Option<NotPortable> {
+    let text = globbing_text(&spelled(word))?;
     Some(NotPortable {
-        column: column_of(line, text),
+        column: unquoted_column_of(line, text),
         construct: text.to_owned(),
         reason: format!(
-            "the portable shell matches `{text}` whatever the case of a name, where `sh` matches \
-             the case written; name the files, or write the `posix`/`windows` pair"
+            "the portable shell expands `{text}` in an assignment or a redirect, where `sh` \
+             reads it as written; quote it"
         ),
-        divergence: Some(Divergence::CaselessGlob),
+        divergence: Some(Divergence::ExpandedPattern),
     })
 }
 
@@ -592,6 +667,9 @@ enum Node<'a> {
     List(&'a SequentialList),
     Command(&'a Command),
     Pipe(&'a PipeSequence),
+    /// An assignment's value or a redirect's target: a word `sh` does not
+    /// match against names.
+    ReadAsWritten(&'a Word),
 }
 
 /// Every list, command and pipe in `list`, including those inside a
@@ -612,7 +690,10 @@ fn walk_list<'a>(list: &'a SequentialList, nodes: &mut Vec<Node<'a>>) {
 
 fn walk_sequence<'a>(sequence: &'a Sequence, nodes: &mut Vec<Node<'a>>) {
     match sequence {
-        Sequence::ShellVar(variable) => walk_word(&variable.value, nodes),
+        Sequence::ShellVar(variable) => {
+            nodes.push(Node::ReadAsWritten(&variable.value));
+            walk_word(&variable.value, nodes);
+        }
         Sequence::Pipeline(pipeline) => walk_pipeline(&pipeline.inner, nodes),
         Sequence::BooleanList(list) => {
             walk_sequence(&list.current, nodes);
@@ -637,6 +718,7 @@ fn walk_command<'a>(command: &'a Command, nodes: &mut Vec<Node<'a>>) {
     match &command.inner {
         CommandInner::Simple(simple) => {
             for variable in &simple.env_vars {
+                nodes.push(Node::ReadAsWritten(&variable.value));
                 walk_word(&variable.value, nodes);
             }
             for argument in &simple.args {
@@ -650,6 +732,7 @@ fn walk_command<'a>(command: &'a Command, nodes: &mut Vec<Node<'a>>) {
         ..
     }) = &command.redirect
     {
+        nodes.push(Node::ReadAsWritten(target));
         walk_word(target, nodes);
     }
 }
@@ -721,6 +804,26 @@ fn background_column(line: &str) -> usize {
         index += 1;
     }
     1
+}
+
+/// The column, by character from 1, where `fragment` first appears outside
+/// quotes in `line`, where a word the shell expands is; else as
+/// [`column_of`].
+fn unquoted_column_of(line: &str, fragment: &str) -> usize {
+    let (mut single, mut double, mut escaped) = (false, false, false);
+    for (index, (byte, character)) in line.char_indices().enumerate() {
+        if !single && !double && !escaped && line[byte..].starts_with(fragment) {
+            return index + 1;
+        }
+        match character {
+            _ if escaped => escaped = false,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '\\' if !single => escaped = true,
+            _ => {}
+        }
+    }
+    column_of(line, fragment)
 }
 
 /// The column, by character from 1, where `fragment` first appears in

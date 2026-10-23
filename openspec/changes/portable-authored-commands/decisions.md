@@ -122,16 +122,27 @@
             `*.txt` takes `README.TXT`, and `rm -rf /tmp/repo-*` takes
             `/tmp/Repo-x`; `sh` matches the case written.
 - decided:  `Divergence::CaselessGlob`. A word is refused when a part of
-            its path holding a wildcard also holds a letter, or an
-            expansion that may hold one. A part with no wildcard is looked
-            up as written, so `build/*` and `$OUT/*` stay portable. E1:
-            10 of 1,224 lines, now run in `sh` as before.
+            its path that is a pattern also holds an ASCII letter (glob
+            folds no other), or an expansion that may hold one. Braces
+            count with what they expand to, and a quoted wildcard makes
+            its part a pattern, as the shell matches it. A part that is no
+            pattern is looked up as written, so `build/*` and `$OUT/*`
+            stay portable. E1: 9 of 1,224 lines, now run in `sh` as
+            before.
+
+            The same reading found that the shell also expands a pattern
+            in an assignment or a redirect, which `sh` reads as written,
+            letter or not: `Divergence::ExpandedPattern`, refused with
+            "quote it". No corpus line has one.
 - rejected: Accepting it as a known difference: it is the silent change of
             meaning D3 refuses, and it reaches `rm`. Expanding the patterns
             in UZE before the shell does: a second glob beside the shell's.
             A fork of the crate: a dependency of a different provenance for
             one flag.
-- blast:    On Windows these lines leave the portable shell and run only
+- blast:    A wildcard inside a variable's value (`ls $PATTERN`) is
+            matched without case and not refused: the value is known only
+            when the line runs.
+            On Windows these lines leave the portable shell and run only
             where `sh` exists. An upstream option for case-sensitive
             matching (bash's `nocaseglob`, off) would make this entry leave
             the list, its row in `tests/cli/portable_shell.rs` failing

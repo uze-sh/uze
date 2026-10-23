@@ -24,6 +24,10 @@ const PORTABLE: &[&str] = &[
     "rm -rf build/*",
     "ls $OUT/* src/?/",
     "ls '*.txt'",
+    "echo é*",
+    "echo a[b",
+    "F='*.md' make",
+    "echo hi > \"out-?.log\"",
     "echo ~/cache",
     "cp file.{txt,bak}",
     "echo 2>&1 | cat",
@@ -211,6 +215,30 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ),
     ("cp $NAME* dist", "*", 9, Some(Divergence::CaselessGlob)),
     ("echo [ab]", "[ab]", 6, Some(Divergence::CaselessGlob)),
+    // Braces are expanded before the pattern is matched.
+    ("ls src/{*.rs,x}", "*.rs", 9, Some(Divergence::CaselessGlob)),
+    // A quoted wildcard is matched as itself, but its part of the path is
+    // still a pattern.
+    ("ls \"Dir*\"/*", "/*", 10, Some(Divergence::CaselessGlob)),
+    (
+        "echo \"*.md\" && ls *.md",
+        "*.md",
+        19,
+        Some(Divergence::CaselessGlob),
+    ),
+    (
+        "F=*.md && echo \"$F\"",
+        "*.md",
+        3,
+        Some(Divergence::ExpandedPattern),
+    ),
+    (
+        "echo hi > out-?.log",
+        "out-?.log",
+        11,
+        Some(Divergence::ExpandedPattern),
+    ),
+    ("CI=* make", "*", 4, Some(Divergence::ExpandedPattern)),
 ];
 
 #[test]
@@ -399,7 +427,7 @@ fn corpus() -> Vec<(String, String)> {
 
 /// What E1 recorded (design.md, Evidence): the share of the corpus that runs
 /// in the portable shell may grow, and falling below it fails here.
-const PORTABLE_AT_LEAST_PER_MILLE: usize = 949;
+const PORTABLE_AT_LEAST_PER_MILLE: usize = 950;
 
 #[test]
 fn the_portable_share_of_real_commands_does_not_fall() {

@@ -598,6 +598,13 @@ fn divergence_caseless_glob_matches_either_case() {
     assert!(world.run("echo *.txt").stdout.contains("README.TXT"));
 }
 
+#[test]
+fn divergence_expanded_pattern_expands_an_assignment() {
+    let world = World::new("portable-shell-expanded-pattern");
+    std::fs::write(world.path().join("notes.txt"), "").unwrap();
+    assert_eq!(world.run("F=*.txt && echo \"$F\"").stdout, "notes.txt\n");
+}
+
 /// Under a bounded wait: the line never ends, which is the divergence.
 #[test]
 fn divergence_stderr_into_builtin_never_ends() {
