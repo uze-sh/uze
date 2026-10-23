@@ -38,7 +38,7 @@ the surface's state. Nothing the declaration did not name SHALL be sent.
 
 #### Scenario: The context names where the question comes from
 - **WHEN** the host runs a program
-- **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface` and `extension`
+- **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface`, `extension`, `slot`, the slot's `size` in cells, and `agent` when the surface sits on an agent's pane
 
 ### Requirement: Output is one JSON document on stdout
 In `json` mode a program SHALL answer one JSON value on stdout: a list of
@@ -75,6 +75,20 @@ that does not match SHALL be a failure drawn on the surface that asked.
 #### Scenario: An oversized image is refused before decoding
 - **WHEN** an `image` source answers more bytes than the image ceiling
 - **THEN** the run is a failure naming the bound, and no decoder ran on it
+
+### Requirement: Any answer may carry requests in an envelope
+A program MAY wrap its answer as `{data, store, refresh, toast, notice,
+notify, sound}`, where `data` is the answer of its mode. The host SHALL
+apply each request only under the extension's grants, attributed to it, and
+SHALL treat a bare answer as `data` alone.
+
+#### Scenario: A source patches the store and asks for a cue
+- **WHEN** a source answers `{"data": [...], "store": {"history": [3, 5]}, "sound": "done"}` and the extension holds `notify`
+- **THEN** the surface draws `data`, the store's `history` becomes `[3, 5]`, and the `done` cue is emitted once
+
+#### Scenario: A request without its grant is dropped and named
+- **WHEN** an answer requests `notify` and the extension does not hold `notify`
+- **THEN** no notification is emitted, the rest of the answer applies, and the surface's notice names the missing grant
 
 ### Requirement: Exit codes follow the portable hook contract
 Exit code `0` SHALL mean the program answered. Exit code `3` SHALL mean it

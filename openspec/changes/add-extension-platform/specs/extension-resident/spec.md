@@ -19,8 +19,8 @@ refuse a component that is not a module of the published world.
 ### Requirement: A component reaches only the imports its grants cover
 A component SHALL be given no ambient filesystem, network, environment or
 process access; it SHALL reach the machine only through host imports, each
-offered only under its grant (`fetch` under `net`, `agent-prompt` under
-`agent:prompt`, `run-program` under the grants of the program it runs). A
+under its grant (`fetch`: `net`; `read-checkout`: `read:checkout`;
+`agent-prompt`: `agent:prompt`; `run-program`: its program's grants). A
 component importing anything its grants do not cover SHALL be refused.
 
 #### Scenario: An ungranted import refuses the component
@@ -28,8 +28,20 @@ component importing anything its grants do not cover SHALL be refused.
 - **THEN** the check and enabling refuse the component, naming the import and the grant it needs
 
 #### Scenario: Confinement holds where the OS offers none
-- **WHEN** a resident extension runs on a platform without Landlock or Seatbelt
-- **THEN** its component still reaches only the imports its grants cover, and the Extensions screen reports its confinement as enforced
+- **WHEN** a resident extension that imports no `run-program` runs on a platform without Landlock or Seatbelt
+- **THEN** its component still reaches only the imports its grants cover, and the Extensions screen reports it as enforced
+
+#### Scenario: Programs it runs are reported as they are
+- **WHEN** a resident extension imports `run-program` on a platform without Landlock or Seatbelt
+- **THEN** the Extensions screen reports the component as enforced and the programs it runs as not enforced
+
+#### Scenario: A checkout read cannot leave the checkout
+- **WHEN** a component calls `read-checkout` on `docs/key` and `docs` is a link to `~/.ssh`
+- **THEN** the read is refused, since no link is followed and no path resolves outside the checkout
+
+#### Scenario: The component cannot prompt on its own
+- **WHEN** a component calls `agent-prompt` from a timer and the extension holds `agent:prompt` but not `agent:prompt:auto`
+- **THEN** the host raises its confirmation with the exact text, and nothing is written unless the operator accepts
 
 ### Requirement: A component is bounded in time, memory and frames
 Each call into a component SHALL be bounded in computation and its memory
