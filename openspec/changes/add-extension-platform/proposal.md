@@ -137,11 +137,13 @@ mechanism chosen without a capability model cannot be given one afterwards
 ## Impact
 
 - **Crates**: `uze-extensions` (generic contract, declared-extension engine,
-  catalog, markdown moved to shared), a new leaf crate for the extension
-  manifest and wire types (no I/O, consumed by `uze-core` and
-  `uze-extensions`), `uze-core` (capability parsing, grant record, sandboxed
-  execution), `uze-application` (extension read model,
-  runner service), `uze-integrations` (the reporter in each launch, the
+  catalog, markdown moved to shared), a new leaf crate `uze-contract` for
+  the extension manifest and wire types (no I/O, consumed by `uze-core` and
+  `uze-extensions`, the one UZE crate `uze-extensions` may depend on, by an
+  amendment to ADR-041), `uze-core` (the bounded KDL decoder, grant record,
+  the runner), `uze-platform` (confinement, one implementation per
+  platform), `uze-application` (extension read model, runner and view
+  compiler services), `uze-integrations` (the reporter in each launch, the
   skill-invocation spelling), a new `uze-wasm` crate (the
   resident tier), `src/ui` (orchestrator, the agents read model,
   extension host, slots, keymap, management Extensions screen),

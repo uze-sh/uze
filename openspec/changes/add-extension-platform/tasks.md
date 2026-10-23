@@ -8,6 +8,7 @@
 - [ ] 0.6 Reorder: keymap before engine actions; ADR, invariant and AGENTS.md amendments with task 1.1
 - [x] 0.7 Review the 2026-10-23 revision (D13–D20) for architecture fit, security and authoring, and record its findings beside the earlier ones (design.md, *Second review*)
 - [ ] 0.8 Resolve the second review's open items (R-A1 amendments to ADR-056 and ADR-040, R-A5 reserving `spec`, R-A8 several images per frame, R-A10 consent refused in an agent's pane, R-A12 `notify`/`sound` in `uze-platform`, R-A13 stale citations, R-S12 a per-extension memory budget, R-U7 `open` and global keys)
+- [ ] 0.10 Lay the minimal generic path of D2 in the first change (contract, slot map, one spawn/absorb pair in `orchestrator/reads.rs`, one outcome follow-up) for the view engine only, adding no per-extension field, channel or hit variant
 - [ ] 0.9 Amend ADR-059 (writes to a pane stay refuse-not-queue, now also from extensions), ADR-041 (WebAssembly as the only resident form; extension state in `UzeHome`) and the extensions rule (raw keys for the resident tier) with task 1.1
 
 ## 1. Generic host contract (no observable change)
@@ -37,7 +38,7 @@
 - [ ] 3.3 Implement the sanitizer (C0/C1 controls, ESC sequences, bidi overrides, length bounds) with tests covering OSC 52, OSC 8, CSI cursor moves and RLO
 - [ ] 3.4 Reserve the ids `list`, `enable`, `disable`, `help`, `pipe`, `simulate`, `code`, `architect`, `spec` and `uze`, and the protocol version `1`
 - [ ] 3.5 Generate the JSON Schema of the compose wire with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
-- [ ] 3.6 Layering: admit `uze-contract` into `uze-extensions` and `uze-core`, forbid I/O, `uze_*` and rendering crates inside it, and update `crate-layering.mmd`
+- [ ] 3.6 In the commit that creates `uze-contract`: amend ADR-041 and AGENTS.md so `uze-extensions` may depend on `uze-contract` only, admit exactly that edge in `layering.rs`, forbid I/O, `uze_*` and rendering crates inside it, and update `crate-layering.mmd`
 
 ## 4. Domain: discovery, check and grants
 
@@ -52,9 +53,9 @@
 ## 5. Confined execution
 
 - [ ] 5.1 Implement the program runner in `uze-core`: argv only, allowlisted environment, checkout cwd, one JSON stdin, bounded stdout/stderr, the time limit with process-group kill via `libc`, and exit codes 0/3/other mapped to answer/refusal/failure
-- [ ] 5.2 Linux: build the Landlock ruleset before fork (read checkout, extension dir and system paths; write checkout only with `write:checkout`; deny the rest of `$UZE_HOME`; TCP denied without `net`), apply it in the child, and add the `libc` seccomp filter on `socket(AF_INET|AF_INET6)`
+- [ ] 5.2 Linux, as `uze-platform`'s Linux implementation of the confinement concept: build the Landlock ruleset before fork (read checkout, extension dir and system paths; write checkout only with `write:checkout`; deny the rest of `$UZE_HOME`; TCP denied without `net`), apply it in the child, and add the `libc` seccomp filter on `socket(AF_INET|AF_INET6)`
 - [ ] 5.3 Dependency review for `landlock` (publisher and repository, no C, `cargo deny check`, `cargo tree`), falling back to raw `libc` syscalls if it fails the policy
-- [ ] 5.4 macOS: generate the `sandbox-exec` profile for the same three questions
+- [ ] 5.4 macOS, as `uze-platform`'s macOS implementation: generate the `sandbox-exec` profile for the same three questions, with "unavailable" as the implementation elsewhere
 - [ ] 5.5 Detect confinement availability, report it in `uze doctor`, and expose it in the read model
 - [ ] 5.6 Tests: a token in the parent environment is absent; writes to `~` and `$UZE_HOME` are denied; TCP connect is denied without `net`; a hang is killed with its children; an output flood is cut off; a link escaping the extension is refused
 - [ ] 5.7 Architecture rule: the runner is the only sanctioned spawn of extension programs

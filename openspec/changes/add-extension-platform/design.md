@@ -112,15 +112,19 @@ What the survey says, in the order the decisions below answer it:
 | Layer | Owns | Crate |
 |---|---|---|
 | **Declaration** | the manifest and wire types as plain serde data, the field-reference grammar, the catalog's names, the reserved ids | new leaf crate `uze-contract` (serde only: no I/O, no domain, no rendering) |
-| **Domain** | finding `extensions/*/extension.kdl` in a package, parsing it and its views with the bounded KDL decoder (D22), checking it, grants, running programs confined | `uze-core` (`capability/extension`, `machine/confine`), `uze-application` (read model, `ExtensionRunner`) |
+| **Domain** | finding `extensions/*/extension.kdl` in a package, parsing it and its views with the bounded KDL decoder (D22), checking it, grants, running programs confined | `uze-core` (`capability/extension`, the runner beside `machine/subprocess.rs`), `uze-platform` (confinement, one implementation per platform), `uze-application` (read model, `ExtensionRunner`, the view compiler service) |
 | **Presentation** | the generic `Extension` contract, the declared-extension engine (manifest + answers → `View`/`Section`, view state), the catalog's view types | `uze-extensions` |
 
 The leaf crate is what lets `uze-core` (check, install, grants) and
 `uze-extensions` (drawing) share one definition of the manifest without either
 reaching the other. That is the same move as `uze-theme` and `uze-document`.
-The layering rules are updated to admit exactly this crate into
-`uze-extensions`, and a new rule keeps the crate itself free of I/O,
-`uze_*` dependencies and rendering libraries.
+This changes a rule that holds today: `uze-extensions` depends on no UZE
+crate (ADR-041, AGENTS.md, the `extensions` rule). The amendment is narrow
+and lands in the commit that creates `uze-contract`, never after: the only
+UZE crate `uze-extensions` may depend on is `uze-contract`, a leaf with no
+I/O. In that same commit the layering suite admits exactly that edge and a
+new rule keeps `uze-contract` free of I/O, `uze_*` dependencies and
+rendering libraries; `crate-layering.mmd` gains the crate.
 
 *Alternatives:* define the manifest in `uze-extensions`. Rejected: it would
 make `uze-core` depend on presentation. Define it in `uze-core` and mirror it
@@ -258,6 +262,11 @@ deliberately without.
 ### D6. Confinement: Landlock on Linux, Seatbelt on macOS, disclosed elsewhere
 
 This is the precedent other agent CLIs set for running untrusted helpers.
+
+Confinement is a concept in `uze-platform`, with one implementation per
+platform and "unavailable" as one of them (AGENTS.md: a `cfg!` at a call site
+is a missing concept there). The runner in `uze-core` asks it for a
+confinement and never names a platform.
 
 - **Linux**: Landlock, applied in the child between fork and exec. The
   filesystem is read-only on the checkout, the extension's Store directory
@@ -761,8 +770,10 @@ no one reaches for CSS, a module or a web framework.
   including raw and multi-line strings; ids and names are matched exactly
   against the catalog and the declared sets, with S15's charset.
 - The dependency is `kdl` with `default-features = false, features =
-  ["span"]`, in `uze-core` (or behind a `uze-contract` feature only
-  `uze-core` enables), judged by the dependency policy: one maintainer (the
+  ["span"]`, in `uze-core` (`capability/extension`), never in `uze-contract`,
+  `uze-extensions` or `src/ui`. The PATH shim is the same binary, so the
+  cost there is binary size only: no KDL code runs on the shim's path.
+  Judged by the dependency policy: one maintainer (the
   spec's author), Apache-2.0, no C, MSRV below the workspace's, and a
   duplicate `winnow` until its next release.
 
@@ -1039,15 +1050,20 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    binding rules, lookups and templates, host-held UI state (D22–D24), the
    `view` and `section` slots, data from fixtures only (actions are
    recorded in the inspector, never run), `uze ext dev` with hot reload, the
-   error overlay and a minimal inspector (D25), and KDL highlighting. The
-   engine sits beside the built-ins as one more registered extension.
+   error overlay and a minimal inspector (D25), and KDL highlighting. It
+   also lays the minimal generic path of D2 (the `Extension` contract, one
+   slot map, one `spawn_extension_job`/`absorb_extension_answer` pair in
+   `orchestrator/reads.rs`, one outcome follow-up), used by the engine only:
+   no per-extension fields, channels or `ExtensionHit` variant are added for
+   it, so split 3 moves the built-ins onto that path and writes nothing new.
    Proof: the `gsd-band` board drawn from a fixture, edited live.
 2. **extension-tests-and-lsp**: `uze ext test` with recorded answers and
    cell snapshots, and `uze ext lsp` (D26). Visual extensions can be written
    and tested end to end.
 3. **generic-extension-host**: group 1, with `code`, `architect` and `spec`
-   moved onto the contract the engine already implements, plus the ADR,
-   invariant and AGENTS.md edits, with no new behaviour.
+   moved onto the path split 1 laid, the per-extension fields, channels and
+   hit variants removed, and the invariant and AGENTS.md edits for
+   `ExtensionHit`, with no new behaviour.
 4. **extension-manifest-and-runner**: the full `extension.kdl`, discovery,
    check, the bounded runner, output modes and the envelope, sources,
    actions, `every`, `paths.changed`, the store and preferences, the grants
@@ -1065,6 +1081,28 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    Proof: `pets`, `screen`, `snake`.
 8. **Growth**: pipes and CLI commands, then whatever a new gallery entry
    needs.
+
+### What each change touches
+
+| Change | New code | Existing code it changes |
+|---|---|---|
+| 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; `uze ext dev` | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
+| 2 tests and LSP | `uze ext test`, `uze ext lsp` | — |
+| 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
+| 4 manifest and runner | the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
+| 5 confinement | the argv runner; confinement in `uze-platform` | — |
+| 6 agent bridge | the journal, `uze agent report`, the `agents` source | each of the four integrations; `capability/hook.rs`; `compute_layout` for bands |
+| 7 media and resident | `uze-wasm` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
+
+Each change carries, in the same commit as the code that needs it: reads off
+the drawing thread through `orchestrator/reads.rs` (the
+`ui-orchestrator-reads` rule), what `src/` needs from the domain as an
+`uze-application` read model or service (never `uze_core::`), every new path
+named in `UzeHome` with its persistence tier, visible surfaces built from
+`src/ui/widget/` per the `design-system` skill, each new CLI leaf
+classified in `command_performance.rs`, the `.mmd` diagrams updated and
+drawn by `make artifacts`, and each new dependency judged by the
+`dependencies` rule.
 
 Ordering errors inside the current tasks: the keymap (group 8) must come
 before the engine's actions (6.4), and the ADR and invariant amendments (11.4)
