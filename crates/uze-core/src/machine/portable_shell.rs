@@ -209,7 +209,7 @@ fn divergence(line: &str, list: &SequentialList) -> Option<NotPortable> {
             .any(|node| matches!(node, Node::List(list) if list.items.iter().any(|item| item.is_async)))
             .then(|| NotPortable {
                 construct: "&".into(),
-                column: column_of(line, "&"),
+                column: background_column(line),
                 reason: "the portable shell waits for a background command before the line ends, \
                          and `sh` does not"
                     .into(),
@@ -604,6 +604,33 @@ fn unquoted_brace_parameter(line: &str) -> Option<usize> {
         }
     }
     None
+}
+
+/// Where the first `&` that sends a command to the background is, by
+/// character from 1: not part of `&&`, `|&`, `>&` or `&>`, nor quoted.
+fn background_column(line: &str) -> usize {
+    let characters = line.chars().collect::<Vec<_>>();
+    let (mut single, mut double) = (false, false);
+    let mut index = 0;
+    while let Some(&character) = characters.get(index) {
+        match character {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '\\' if !single => index += 1,
+            '&' if !single && !double => {
+                let before = index.checked_sub(1).map(|at| characters[at]);
+                let after = characters.get(index + 1).copied();
+                if after == Some('&') {
+                    index += 1;
+                } else if !matches!(before, Some('|' | '>' | '<')) && after != Some('>') {
+                    return index + 1;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    1
 }
 
 /// The column, by character from 1, where `fragment` first appears in

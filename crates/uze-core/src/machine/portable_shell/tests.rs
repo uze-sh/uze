@@ -91,6 +91,12 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ("echo -e 'a\\nb'", "echo -e", 1, Some(Divergence::EchoFlag)),
     ("watch &", "&", 7, Some(Divergence::Background)),
     (
+        "make && make watch &",
+        "&",
+        20,
+        Some(Divergence::Background),
+    ),
+    (
         "xargs -p rm -f < list.txt",
         "-p",
         7,
