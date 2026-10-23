@@ -992,6 +992,12 @@ impl OpenCodeIntegration {
             remaining.iter().any(|active| active == id)
         })?;
         if self.is_legacy_bridge(bridge_path) {
+            if !groups.is_empty() && !self.plugin_reads_documents() {
+                return Ok(AttachmentInspection {
+                    state: AttachmentState::Blocked,
+                    reason: "an earlier release's bridge still runs this package's other hook groups, and no plugin of UZE's reads them yet; run `uze setup`, then detach again".to_owned(),
+                });
+            }
             hook_projection::remove_bridge_file(bridge_path)?;
         } else if groups.is_empty() {
             // The file alone: the directory is the one the runtime plugin

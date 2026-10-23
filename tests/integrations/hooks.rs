@@ -1290,6 +1290,52 @@ fn an_opencode_bridge_an_earlier_release_wrote_is_replaced_at_the_next_attach() 
     let _ = fs::remove_dir_all(root);
 }
 
+/// Both groups attached and recorded as an earlier release left them: one
+/// bridge, `hooks-<pkg>.ts`, carrying both, and no document.
+fn legacy_receipts(
+    integration: &OpenCodeIntegration,
+    home: &UzeHome,
+    resources: &[Resource],
+    root: &Path,
+) -> Vec<AttachmentReceipt> {
+    let mut current = Vec::new();
+    for id in ["observe-first", "observe-second"] {
+        let receipt = integration
+            .attach_receipt(hook_resource(resources, id))
+            .unwrap()
+            .unwrap();
+        state::record_receipt(home, receipt.clone()).unwrap();
+        current.push(receipt);
+    }
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(opencode_document(root)).unwrap()).unwrap();
+    fs::remove_file(opencode_document(root)).unwrap();
+
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        format!(
+            "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = {};\nexport default {{}};\n",
+            document["groups"]
+        ),
+    )
+    .unwrap();
+    let legacy: Vec<AttachmentReceipt> = current
+        .into_iter()
+        .map(|receipt| AttachmentReceipt {
+            artifact: ManagedArtifact::ManagedHookFile {
+                path: bridge.clone(),
+            },
+            ..receipt
+        })
+        .collect();
+    for receipt in &legacy {
+        state::record_receipt(home, receipt.clone()).unwrap();
+    }
+    legacy
+}
+
 fn set_up(integration: &OpenCodeIntegration, home: &UzeHome) {
     integration
         .install(
@@ -1329,6 +1375,64 @@ fn an_earlier_releases_bridge_stays_until_setup_writes_the_plugin_that_replaces_
     let _ = fs::remove_dir_all(root);
 }
 
+/// Before setup, the earlier bridge is all that runs a package's groups:
+/// detaching one of several would take it out and leave the rest in a
+/// document nothing reads, so the detach waits for setup instead.
+#[test]
+fn a_group_an_earlier_release_bridged_is_detached_only_once_setup_can_run_the_rest() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-detach-before-setup");
+    let integration = opencode(&root);
+    let legacy = legacy_receipts(&integration, &home, &resources, &root);
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+
+    assert_eq!(
+        integration.detach_receipt(&legacy[0]).unwrap().state,
+        AttachmentState::Blocked
+    );
+    assert!(bridge.exists(), "the bridge still runs the other group");
+    assert!(!opencode_document(&root).exists());
+
+    set_up(&integration, &home);
+    for receipt in &legacy {
+        assert_eq!(
+            integration.detach_receipt(receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        state::forget_receipt(&home, receipt).unwrap();
+    }
+    assert!(!bridge.exists() && !opencode_document(&root).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The last group to go takes the earlier bridge an attach before setup
+/// left running beside the document.
+#[test]
+fn removing_a_package_attached_before_setup_takes_its_earlier_bridge_out() {
+    let (root, home, resources) =
+        two_observing_groups("opencode-stale-bridge-removed-before-setup");
+    let integration = opencode(&root);
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = [];\nexport default {};\n",
+    )
+    .unwrap();
+    let receipt = integration
+        .attach_receipt(hook_resource(&resources, "observe-first"))
+        .unwrap()
+        .unwrap();
+    state::record_receipt(&home, receipt.clone()).unwrap();
+    assert!(bridge.exists());
+
+    assert_eq!(
+        integration.detach_receipt(&receipt).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(!bridge.exists() && !opencode_document(&root).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Removal detaches and forgets one receipt at a time, so the first group's
 /// detach rewrites what the second still owns: the second's own detach must
 /// find it there, not at the bridge the first took out.
@@ -1336,41 +1440,9 @@ fn an_earlier_releases_bridge_stays_until_setup_writes_the_plugin_that_replaces_
 fn removing_a_package_an_earlier_release_bridged_leaves_none_of_its_hooks() {
     let (root, home, resources) = two_observing_groups("opencode-stale-bridge-removal");
     let integration = opencode(&root);
-    let mut current = Vec::new();
-    for id in ["observe-first", "observe-second"] {
-        let receipt = integration
-            .attach_receipt(hook_resource(&resources, id))
-            .unwrap()
-            .unwrap();
-        state::record_receipt(&home, receipt.clone()).unwrap();
-        current.push(receipt);
-    }
-    let document: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(opencode_document(&root)).unwrap()).unwrap();
-    fs::remove_file(opencode_document(&root)).unwrap();
-
+    let legacy = legacy_receipts(&integration, &home, &resources, &root);
     let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
-    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
-    fs::write(
-        &bridge,
-        format!(
-            "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = {};\nexport default {{}};\n",
-            document["groups"]
-        ),
-    )
-    .unwrap();
-    let legacy: Vec<AttachmentReceipt> = current
-        .into_iter()
-        .map(|receipt| AttachmentReceipt {
-            artifact: ManagedArtifact::ManagedHookFile {
-                path: bridge.clone(),
-            },
-            ..receipt
-        })
-        .collect();
-    for receipt in &legacy {
-        state::record_receipt(&home, receipt.clone()).unwrap();
-    }
+    set_up(&integration, &home);
 
     for receipt in &legacy {
         assert_eq!(
