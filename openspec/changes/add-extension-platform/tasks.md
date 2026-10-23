@@ -36,13 +36,13 @@
 - [ ] 3.2 Implement the field-reference grammar (`{field}` and `{a.b}` only) with a parser that refuses expressions, and table tests for it
 - [ ] 3.3 Implement the sanitizer (C0/C1 controls, ESC sequences, bidi overrides, length bounds) with tests covering OSC 52, OSC 8, CSI cursor moves and RLO
 - [ ] 3.4 Reserve the ids `list`, `enable`, `disable`, `help`, `pipe`, `simulate`, `code`, `architect`, `spec` and `uze`, and the protocol version `1`
-- [ ] 3.5 Generate the JSON Schema of the TOML manifest and the compose wire with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
+- [ ] 3.5 Generate the JSON Schema of the compose wire with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
 - [ ] 3.6 Layering: admit `uze-contract` into `uze-extensions` and `uze-core`, forbid I/O, `uze_*` and rendering crates inside it, and update `crate-layering.mmd`
 
 ## 4. Domain: discovery, check and grants
 
-- [ ] 4.1 Discover `extensions/*/extension.toml` through `capability::extension::discover` (A5), capping the manifest size before parsing
-- [ ] 4.2 Parse manifests with the TOML reader into the `uze-contract` types with `deny_unknown_fields`, refusing duplicate keys, with tests for oversized inputs
+- [ ] 4.1 Discover `extensions/*/extension.kdl` through `capability::extension::discover` (A5), capping the manifest size before parsing
+- [ ] 4.2 Parse manifests with the bounded KDL decoder of group 21 into the `uze-contract` types, refusing unknown and repeated nodes and properties
 - [ ] 4.3 Implement `check_extension`: schema, reserved ids, argv-only programs, relative paths resolving inside the extension (links followed), `exec:` grants covering bare names, `role` values semantic-only, and `kind: interactive` refused pointing at `feed: resident`
 - [ ] 4.4 Extend `check_plugin` to run `check_extension` on every extension it carries
 - [ ] 4.5 Add the `state/extensions.json` record (accepted grants, accepted digest, enabled), named in `UzeHome` and implementing `uze_document::Shaped` at shape 1
@@ -170,7 +170,7 @@
 
 - [ ] 21.1 Dependency review of `kdl` (`default-features = false`, `span`), placed in `uze-core` or behind a `uze-contract` feature only `uze-core` enables
 - [ ] 21.2 The bounded parse: 64 KiB cap, a KDL-aware depth pre-scan refusing above 32, a worker thread with an explicit stack and a time limit; tests with a 400-deep nest and the kdl-rs#177 input
-- [ ] 21.3 The hand-written decoder over `KdlDocument` with spans into the catalog types: unknown nodes, properties and arguments, repeated properties, type annotations and v1 spellings refused with file, line, column and a suggestion
+- [ ] 21.3 The hand-written decoder over `KdlDocument` with spans into the manifest and catalog types, PascalCase catalog nodes and lowercase directives and manifest nodes, the wrong case refused with a suggestion; unknown nodes, properties and arguments, repeated properties, type annotations and v1 spellings refused with file, line, column and a suggestion
 - [ ] 21.4 Compile a validated view into the generated tier keyed by digest; the client reads only compiled views (architecture rule: no KDL in `src/ui` or `uze-extensions`)
 - [ ] 21.5 Sanitize decoded strings after escapes, including raw and multi-line strings
 
@@ -190,5 +190,5 @@
 - [ ] 23.3 The inspector drawer: runs (rerunnable with edited input), events, state, grants, compiled tree with why a node is absent
 - [ ] 23.4 `uze ext emit <extension> <event> [--data <file>]`; size, theme and fake agents in the inspector; recording a session's events into a fixture
 - [ ] 23.5 `uze ext test` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update`; run by `uze agent extension check`
-- [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for views and tests
+- [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
 - [ ] 23.7 Tests for every gallery entry (D20)

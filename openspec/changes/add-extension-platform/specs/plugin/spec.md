@@ -2,7 +2,7 @@
 
 ### Requirement: A plugin may carry extensions
 A plugin MAY carry extensions under `extensions/<id>/`, each an
-`extension.toml` and its views. `uze agent plugin check` SHALL validate each
+`extension.kdl` and its views. `uze agent plugin check` SHALL validate each
 as `uze agent extension check` does; installing SHALL deliver them to the
 workspace client only, never to a harness; removing the plugin SHALL remove
 them and their accepted grants.

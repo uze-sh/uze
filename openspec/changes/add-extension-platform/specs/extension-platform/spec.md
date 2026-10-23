@@ -25,7 +25,7 @@ can observe.
 - **THEN** the extension is listed in the Extensions screen and can be opened in the workspace with the same binary
 
 ### Requirement: An extension is declared in one manifest that carries no logic
-A plugin SHALL declare an extension in `extensions/<id>/extension.toml`,
+A plugin SHALL declare an extension in `extensions/<id>/extension.kdl`,
 holding `protocol`, `id`, `name`, `description`, `surfaces`, `sources`,
 `actions`, `events`, `pipes`, `preferences`, `commands` and `wants`. Values in the manifest SHALL be
 literals or field references (`{field}`) into the answer of a source or the
@@ -35,7 +35,7 @@ expressions. Unknown keys SHALL be refused.
 > **Unresolved review findings** (design.md): S15.
 
 #### Scenario: An expression is refused
-- **WHEN** a manifest writes `marker = "{done > 0 ? done : '-'}"`
+- **WHEN** a manifest writes `marker "{done > 0 ? done : '-'}"`
 - **THEN** the check fails saying a template is a field reference, not an expression
 
 ### Requirement: A manifest's protocol is checked
@@ -46,26 +46,31 @@ rest of the plugin SHALL install.
 > **Unresolved review findings** (design.md): `noyalib` 0.0.x (moot for manifests since D22).
 
 #### Scenario: A newer protocol is named, not guessed
-- **WHEN** a manifest declares `protocol = 2` to a build that knows only `1`
+- **WHEN** a manifest declares `protocol 2` to a build that knows only `1`
 - **THEN** the extension is refused with a message naming both versions, and the rest of the plugin installs
 
 ### Requirement: A view is a KDL v2 file of catalog nodes
 A surface's view SHALL be a KDL v2 file in the extension's directory whose
-nodes are catalog nodes with only the properties each accepts. The check
+nodes are catalog nodes, named in PascalCase, with only the properties each
+accepts. The check
 SHALL refuse unknown nodes, unknown properties, unexpected arguments,
 repeated properties and type annotations, each with file, line, column and
 a suggestion, and SHALL say how to write a KDL v1 spelling in v2.
 
+#### Scenario: A catalog node in the wrong case is named
+- **WHEN** a view writes `stack { … }`
+- **THEN** the check fails at that line saying catalog nodes are PascalCase and suggests `Stack`
+
 #### Scenario: A brace pasted from JSX is caught
-- **WHEN** a view writes `text {id}`
-- **THEN** the check fails at that line and column saying `text` takes a string, and suggests `text "{id}"`
+- **WHEN** a view writes `Text {id}`
+- **THEN** the check fails at that line and column saying `Text` takes a string, and suggests `Text "{id}"`
 
 #### Scenario: A repeated property is refused
-- **WHEN** a view writes `button "Go" action="a" action="b"`
+- **WHEN** a view writes `Button "Go" action="a" action="b"`
 - **THEN** the check fails naming the repeated property, rather than keeping either value
 
 #### Scenario: A v1 spelling gets a v2 hint
-- **WHEN** a view writes `toggle id="x" on=true`
+- **WHEN** a view writes `Toggle id="x" on=true`
 - **THEN** the check fails saying KDL v2 writes booleans as `#true`
 
 ### Requirement: Parsing a view is bounded and outside the client
@@ -94,7 +99,7 @@ declared literal). Anything else SHALL be refused.
 - **THEN** the weight is the number 19, while `"{plans} planos"` is the string `19 planos`
 
 #### Scenario: Identity is never interpolated
-- **WHEN** a view writes `button "Go" action="{kind}"`
+- **WHEN** a view writes `Button "Go" action="{kind}"`
 - **THEN** the check fails saying `action` must be a literal naming a declared action
 
 #### Scenario: Presence is the only test
@@ -236,7 +241,7 @@ except the pixels of an image.
 
 #### Scenario: Content is a node of the catalog's families
 - **WHEN** a surface declares content, bound or composed
-- **THEN** each node is one of layout (`stack`, `row`, `split`, `tabs`, `gap`, `rule`), text (`text`, `markdown`, `code`, `log`), data (`list`, `table`, `details`, `grid`), measure (`progress`, `gauge`, `pips`, `chart`, `heatmap`), status (`badge`, `marks`, `chip`, `activity`, `elapsed`), media (`image`, `sprite`), `cells` or input (`button`, `toggle`, `select`, `field`, `form`, `picker`), and an unknown node is refused naming the families
+- **THEN** each node, spelled in PascalCase in a view and in a compose answer's `type`, is one of layout (`stack`, `row`, `split`, `tabs`, `gap`, `rule`), text (`text`, `markdown`, `code`, `log`), data (`list`, `table`, `details`, `grid`), measure (`progress`, `gauge`, `pips`, `chart`, `heatmap`), status (`badge`, `marks`, `chip`, `activity`, `elapsed`), media (`image`, `sprite`), `cells` or input (`button`, `toggle`, `select`, `field`, `form`, `picker`), and an unknown node is refused naming the families
 
 #### Scenario: Feedback is requested, never drawn by a node
 - **WHEN** a composed tree contains a node of type `confirm` or `toast`
