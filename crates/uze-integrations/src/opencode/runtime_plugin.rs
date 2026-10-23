@@ -220,10 +220,13 @@ fn key_literal(key: &str) -> String {
 /// Where the plugin stands against `wanted`.
 pub(super) fn state(config_root: &Path, wanted: &str) -> PluginState {
     let path = path(config_root);
-    match fs::read_to_string(&path) {
-        Ok(current) if current == wanted => PluginState::Installed,
-        Ok(current) if !current.starts_with(OWNED) => PluginState::Foreign(path),
-        _ => PluginState::Missing,
+    // Ownership is the first line's bytes: a file that is not text, or that
+    // cannot be read at all, is not proven UZE's and is never written over.
+    match fs::read(&path) {
+        Ok(current) if current == wanted.as_bytes() => PluginState::Installed,
+        Ok(current) if current.starts_with(OWNED.as_bytes()) => PluginState::Missing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => PluginState::Missing,
+        _ => PluginState::Foreign(path),
     }
 }
 
@@ -311,6 +314,20 @@ mod tests {
                 .unwrap()
                 .contains("is not UZE's plugin")
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_foreign_plugin_that_is_not_text_is_still_never_written_over() {
+        let root = uze_testkit::temp::scratch("opencode-runtime-plugin-bytes");
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        let operators = b"// caf\xe9, saved as Latin-1\nexport default {};\n";
+        fs::write(path(&root), operators).unwrap();
+        let wanted = source(&sections());
+
+        ensure(&root, &wanted).unwrap();
+        assert_eq!(fs::read(path(&root)).unwrap(), operators);
+        assert_eq!(state(&root, &wanted), PluginState::Foreign(path(&root)));
         let _ = fs::remove_dir_all(root);
     }
 
