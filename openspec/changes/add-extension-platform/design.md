@@ -650,7 +650,7 @@ WIT world UZE publishes:
   an extension at install; the check validates the component's imports
   against its grants, and the Skill names the toolchains (`cargo
   component`, `jco`, TinyGo) without UZE depending on any.
-- **Where it lives**: a dedicated crate, `uze-extension-runtime`, depending
+- **Where it lives**: a dedicated crate, `uze-wasm`, depending
   on `uze-contract` and `uze-platform` only, wrapped by an `Extension`
   adapter on the host side. Neither `uze-core` (the package manager, which
   the shim uses) nor `uze-application` (which does not depend on
@@ -1013,7 +1013,7 @@ harness reads.
 `docs/architecture/crate-layering.mmd` gains `uze-contract` and its
 edges (from `uze-core` and `uze-extensions`). `containers.mmd` gains the
 extension program as an external process the workspace client runs, the
-resident runtime crate (`uze-extension-runtime`) and its edges, and the
+resident runtime crate (`uze-wasm`) and its edges, and the
 reporter as an edge from each agent's pane, through its journal, to the
 workspace client. Both are validated with
 `cargo test -p uze-extensions` and `make artifacts`.
