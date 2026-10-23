@@ -27,7 +27,7 @@ can observe.
 ### Requirement: An extension is declared in one manifest that carries no logic
 A plugin SHALL declare an extension in `extensions/<id>/extension.yaml`,
 holding `protocol`, `id`, `name`, `description`, `surfaces`, `sources`,
-`actions`, `events`, `commands` and `wants`. Values in the manifest SHALL be
+`actions`, `events`, `pipes`, `preferences`, `commands` and `wants`. Values in the manifest SHALL be
 literals or field references (`{field}`) into the answer of a source or the
 current selection; the manifest SHALL NOT contain conditionals, loops or
 expressions. Unknown keys SHALL be refused.
@@ -53,20 +53,52 @@ be accepted as YAML.
 - **WHEN** `extension.yaml` is written as a JSON object
 - **THEN** it is read as the same manifest its YAML spelling would be
 
-### Requirement: A surface is a full-frame view or a sidebar section
-A surface SHALL be of kind `view` (full frame, opened like the code surface)
-or `section` (a collapsible block of the workspace sidebar). A `view` SHALL
-declare a layout of `sidebar` (a navigator beside content) or `board` (content
-over the whole frame, with the navigator folded into tabs). A surface of kind
-`interactive` SHALL be refused as not supported by this version.
+### Requirement: A surface occupies one of the host's slots
+A surface SHALL declare one slot: `view` (the full frame), `section` (a
+collapsible block of the sidebar), `status` (a segment of the status bar),
+`band` (an edge of an agent's pane, at most six rows), `overlay` (a picker,
+form or dialog opened by a gesture) or `notify`. The host SHALL own every
+slot's geometry and SHALL NOT let a surface cover a pane's own cells. An
+unknown slot or `kind: interactive` SHALL be refused, naming the slots.
 
 #### Scenario: A section joins the sidebar
 - **WHEN** an enabled extension declares a `section` surface
 - **THEN** the workspace sidebar shows it as a collapsible block titled by the extension, drawn from its source
 
-#### Scenario: Interactive is reserved
+#### Scenario: A band sits beside its agent, not over it
+- **WHEN** an extension declares a `band` at the top of agent panes and an agent's pane is 30 rows tall
+- **THEN** the band is drawn inside that pane's frame, the agent's terminal is laid out in the rows left, and the harness receives the smaller size
+
+#### Scenario: A status segment is placed by the operator
+- **WHEN** two extensions each declare a `status` surface
+- **THEN** both segments appear in the status bar in the order the operator chose, never in an order the extensions ask for
+
+#### Scenario: A surface that does not fit is folded
+- **WHEN** a `section` needs more rows than the sidebar can give
+- **THEN** it is drawn folded to its title with a mark saying it has more, and nothing of it is cropped mid-row
+
+#### Scenario: Interactive is retired
 - **WHEN** a manifest declares `kind: interactive`
-- **THEN** it is refused with a reason saying interactive extensions are not supported yet
+- **THEN** it is refused with a reason pointing at `feed: resident`
+
+### Requirement: A surface declares how it is fed
+A surface SHALL declare a `feed`: `bind` (manifest nodes filled from a
+source's data), `compose` (a source answers a catalog tree), `cells`,
+`image` or `sprite` (a source answers that medium), or `resident` (a
+WebAssembly component, under the `resident` grant). Changing a surface's feed
+SHALL NOT change its slot, actions, keys or grants other than `resident`.
+
+#### Scenario: A composed surface draws the tree it was answered
+- **WHEN** a `compose` source answers a `stack` of a segmented `progress` and a `table`
+- **THEN** the surface shows that bar and that table in the active theme, and nothing the tree did not name
+
+#### Scenario: A composed tree can only invoke declared actions
+- **WHEN** a composed `button` names the action `deploy` and the manifest declares no action `deploy`
+- **THEN** the button is drawn disabled with a notice naming the missing action, and pressing it runs nothing
+
+#### Scenario: A resident feed needs its grant
+- **WHEN** a surface declares `feed: resident` and `wants` has no `resident`
+- **THEN** the check fails naming the surface and the missing grant
 
 ### Requirement: A surface is offered only where it applies
 A surface MAY declare `applies_when` with a list of paths relative to the
@@ -89,10 +121,11 @@ when the view is opened again, the way the built-in surfaces remember theirs.
 - **THEN** the same item and mode are shown
 
 ### Requirement: The catalog is the vocabulary a surface is built from
-A surface SHALL be built only from the host's catalog of navigators, chips,
-content, section rows and chrome, each entry a meaning the host draws in the
-active theme. Colour SHALL be named only as a semantic role; no manifest or
-answer SHALL name a colour value or a glyph.
+A surface SHALL be built only from the host's catalog, in families (layout,
+text, data, measure, status, media, cells, input, feedback), each node a
+meaning the host draws in the active theme. Colour SHALL be named only as a
+semantic role; no manifest or answer SHALL name a colour value or a glyph,
+except the pixels of an image.
 
 > **Unresolved review findings** (design.md): the proposed shrink to the openspec board's catalog; M4.
 
@@ -112,25 +145,37 @@ answer SHALL name a colour value or a glyph.
 - **WHEN** a surface declares chips
 - **THEN** they are `subjects` (what is being looked at) and `modes` (how it is shown)
 
-#### Scenario: Content is one of the catalog's kinds
-- **WHEN** a surface declares content
-- **THEN** it is `message` (text and a hint), `markdown`, `code` (text with a language for highlighting), `table` (named columns over a list), `details` (key/value pairs), `progress` (done over total, with a label), `chart` (bar or sparkline over numeric fields), `log` (lines with a tone), or `stack` (a vertical sequence of the above)
+#### Scenario: Content is a node of the catalog's families
+- **WHEN** a surface declares content, bound or composed
+- **THEN** each node is one of layout (`stack`, `row`, `split`, `tabs`, `gap`, `rule`), text (`text`, `markdown`, `code`, `log`), data (`list`, `table`, `details`, `grid`), measure (`progress`, `gauge`, `pips`, `chart`, `heatmap`), status (`badge`, `marks`, `chip`, `activity`, `elapsed`), media (`image`, `sprite`), `cells`, input (`button`, `toggle`, `select`, `field`, `form`, `picker`) or feedback (`toast`, `notice`, `confirm`, `notify`, `sound`), and an unknown node is refused naming the families
 
-#### Scenario: A section row is built from marks, a name and a value
-- **WHEN** a `section` surface declares its rows
-- **THEN** each row is a step mark (done or not), a status mark (a semantic role), a name and a trailing value
+#### Scenario: A progress bar is segmented
+- **WHEN** a `progress` node carries six segments, each with a weight, a ratio and a role
+- **THEN** the bar is drawn with one segment per entry, widths proportional to the weights, each filled to its ratio in its role's colour
+
+#### Scenario: A row carries several marks
+- **WHEN** a `section` row or `list` item carries `marks: [success, warning, muted]`
+- **THEN** three marks are drawn in that order, each in its role, beside the row's name and trailing value
+
+#### Scenario: The host animates, programs do not
+- **WHEN** a node is `activity` bound to an agent that is working, or `elapsed` since a start time
+- **THEN** the host moves the mark and ticks the duration on its own clock and runs no program to do it
 
 #### Scenario: Chrome is a menu, a confirmation, a notice or a toast
 - **WHEN** a surface asks for chrome
 - **THEN** it is a menu of actions on an item, a confirmation, a notice or a toast
 
+#### Scenario: A form is drawn by the host and answered as input
+- **WHEN** an action declares a `form` with a required `text` field `title` and the operator submits it empty
+- **THEN** the host keeps the form open with the field marked, runs nothing, and on a valid submit passes `title` in the program's input
+
 ### Requirement: Actions are named, offered where they apply, and reachable by key and pointer
-An action SHALL declare an `id`, a `label`, where it applies (`on: <surface>`
-or `on: <surface>.item`), an optional suggested key, an optional
-confirmation, and what it does: run a program, or a built-in (`clipboard`,
-`open_path`, `refresh`). An action on an item SHALL appear in that item's
-menu; every action SHALL appear in the surface's footer and in the action
-index with the key the keymap resolved for it.
+An action SHALL declare an `id`, a `label`, where it applies (`on:
+<surface>` or `<surface>.item`), an optional key and confirmation, and what
+it does: a program, or a built-in (`clipboard`, `open_path`, `refresh`,
+`pipe`, `focus_agent`, an agent action). An item's action SHALL appear in
+its menu; every action SHALL appear in the footer and action index with its
+resolved key.
 
 > **Unresolved review findings** (design.md): A4.
 
@@ -142,14 +187,14 @@ index with the key the keymap resolved for it.
 - **WHEN** the operator invokes an action that declares a confirmation
 - **THEN** the program runs only after the operator accepts, and not at all if they decline
 
-### Requirement: Extensions react to lifecycle events they declared
+### Requirement: Extensions react to the events they declared
 The host SHALL deliver to an extension only the events it declared, each
-mapped to the sources it refreshes or the action it runs. The events SHALL be
-at least `checkout.changed`, `work.named`, `agent.started`, `agent.finished`,
-`install.converged`, `rebase.paused` and `theme.changed`. Events SHALL be
-coalesced so that a burst of the same event causes one refresh.
+mapped to sources to refresh or an action: `checkout.changed` (per open
+checkout), `paths.changed`, `every`, the bridge's agent events,
+`work.named`, `install.converged`, `rebase.paused`, `theme.changed`. Events
+SHALL be coalesced per extension in a window.
 
-> **Unresolved review findings** (design.md): the event list must narrow to what is observable.
+> **Unresolved review findings** (design.md): observability of events (see D17).
 
 #### Scenario: An undeclared event costs nothing
 - **WHEN** an agent finishes and an extension declared only `checkout.changed`
@@ -158,6 +203,100 @@ coalesced so that a burst of the same event causes one refresh.
 #### Scenario: A burst is coalesced
 - **WHEN** fifty files change in the checkout within a second
 - **THEN** a source mapped to `checkout.changed` runs once for that burst
+
+#### Scenario: A declared path that Git ignores still refreshes
+- **WHEN** a source is mapped to `paths.changed: [.planning]`, `.planning` is ignored by Git, and a file under it is written
+- **THEN** the source runs again within the digest's period
+
+#### Scenario: An interval has a floor and pauses when unseen
+- **WHEN** a manifest declares `every: 1s` for a source shown only in a folded section
+- **THEN** the check reports the interval raised to the 5-second floor, and the source does not run while nothing that shows it is visible
+
+### Requirement: Pipes carry data into an extension from outside
+`uze ext pipe <extension> <pipe> [payload]`, another extension's action, or a
+hook SHALL deliver a named message to an extension that declares that pipe,
+mapped to the sources it refreshes (the payload as their input) or to an
+action. A pipe SHALL wake no resident process when no surface is open, and
+its payload SHALL be data: sanitized and bounded.
+
+#### Scenario: A pipe refreshes a source with its payload
+- **WHEN** `uze ext pipe chimes play '{"cue": "done"}'` is run and `chimes` maps the pipe `play` to its `cue` source
+- **THEN** the `cue` source runs once with `{"cue": "done"}` in its input
+
+#### Scenario: An undeclared pipe is refused
+- **WHEN** a message names a pipe the extension does not declare
+- **THEN** nothing of the extension runs and the sender is told the pipe is unknown
+
+### Requirement: An extension keeps a small store of its own
+An extension SHALL have one key/value store, bounded in size and keyed by
+its identity (`plugin@marketplace/id`), that its programs receive in their
+input when the declaration names it and update through their answer. The
+store SHALL be removed with the plugin, and an answer that would exceed the
+bound SHALL be refused, leaving the store as it was.
+
+#### Scenario: A high score survives a restart
+- **WHEN** a program answers `store: {"best": 42}` and the workspace client is restarted
+- **THEN** the next run of a declaration that names the store receives `best: 42`
+
+### Requirement: Preferences are typed, declared and edited by the operator
+A manifest MAY declare preferences of type `text`, `number`, `toggle`,
+`choice` or `secret`. The operator SHALL edit them on the Extensions screen,
+and a program SHALL receive only the preferences its declaration names. A
+`secret` SHALL never be shown again once entered, logged, or sent in a pipe.
+
+#### Scenario: A secret reaches only what names it
+- **WHEN** a preference `token` is a `secret` and only the source `usage` names it
+- **THEN** `usage` receives the token in its input, every other program does not, and the Extensions screen shows it as set without its value
+
+### Requirement: Reference extensions prove the platform
+The platform SHALL ship ten reference extensions as fixture plugins, each
+recreating a plugin operators use on a harness, and SHALL be accepted only
+when each runs with no code of UZE's written for it. A catalog node SHALL be
+added only when a reference extension needs it.
+
+#### Scenario: The GSD band runs beside its agent
+- **WHEN** the `gsd-band` reference is enabled in a checkout whose `.planning/STATE.md` has a milestone in progress
+- **THEN** a band on that agent's pane shows the segmented milestone bar, one row per phase with D, P and E marks, and a button naming the next GSD step for that phase
+
+#### Scenario: The next step is sent in the agent's own dialect
+- **WHEN** the operator presses the band's next-step button on an agent running any supported harness
+- **THEN** the host shows the exact invocation and, once accepted, writes that skill's invocation as the agent's harness spells it into the agent's pane
+
+#### Scenario: The agents HUD reads the bridge, not transcripts
+- **WHEN** the `agents-hud` reference is enabled and two agents run on different harnesses
+- **THEN** its status segment shows each agent's state, activity and elapsed turn time from the `agents` source, and no program reads a transcript file
+
+#### Scenario: The flight deck watches every harness
+- **WHEN** an agent on any supported harness starts and finishes a tool call
+- **THEN** the `flightdeck` view lists the call under that agent with its tool name and duration
+
+#### Scenario: A meter refreshes on an interval
+- **WHEN** the `gpu-meter` reference is enabled with `every: 5s`
+- **THEN** its section draws a sparkline of the last answers and updates every five seconds while visible
+
+#### Scenario: Chimes answer agent events
+- **WHEN** an agent asks for an approval and the `chimes` reference maps `agent.approval.asked` to a `notify` and a `sound`
+- **THEN** one attributed notification and one cue are emitted for that request
+
+#### Scenario: Jump opens a picker and focuses an agent
+- **WHEN** the operator opens the `jump` overlay, types part of a work label and accepts
+- **THEN** the host filters the picker as they type and focuses that agent's pane
+
+#### Scenario: A plan is reviewed and answered
+- **WHEN** the `plan-review` reference shows a plan as markdown and the operator submits its form with two comments
+- **THEN** the comments are sent to the agent as one prompt after the operator sees its exact text
+
+#### Scenario: A pet follows its agent
+- **WHEN** the `pets` reference's sprite has frames for `idle`, `working` and `waiting` and the agent starts a turn
+- **THEN** the band plays the `working` frames on the host's clock, with no program running per frame
+
+#### Scenario: A live screen is an image
+- **WHEN** the `screen` reference answers an image every five seconds
+- **THEN** the section shows it as Sixel where the terminal supports it and as half blocks elsewhere
+
+#### Scenario: Snake runs resident
+- **WHEN** the `snake` reference's view is focused and the operator presses arrow keys
+- **THEN** the component receives the keys, answers a cell grid each frame within its budget, and keeps its best score in its store
 
 ### Requirement: Extensions may add CLI commands under their own name
 A command declared by an extension SHALL be reachable as

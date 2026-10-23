@@ -23,3 +23,12 @@ pointer and through the action index.
 #### Scenario: A suggested key that collides is not taken
 - **WHEN** an extension suggests `q` for an action and `q` closes the surface in the host's keymap
 - **THEN** `q` still closes the surface, the action has no default key, and it is offered in the footer by pointer and in the action index
+
+### Requirement: A focused resident surface receives raw keys, except the host's escape
+While a resident surface has focus, the host SHALL deliver keys and pointer
+gestures to its component, except the host's escape chord, which SHALL
+always return focus to the host and SHALL NOT be rebindable by an extension.
+
+#### Scenario: The escape chord always leaves
+- **WHEN** a resident game has focus and the operator presses the host's escape chord
+- **THEN** focus returns to the workspace and the component receives no key for that chord

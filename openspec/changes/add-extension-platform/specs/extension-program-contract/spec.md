@@ -41,13 +41,13 @@ the surface's state. Nothing the declaration did not name SHALL be sent.
 - **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface` and `extension`
 
 ### Requirement: Output is one JSON document on stdout
-A program SHALL answer with one JSON value on standard output: a list of
-objects for a list-shaped source, an object for a document-shaped source,
-and for an action either nothing or an object whose optional `toast` and
-`refresh` fields the host applies. Standard error SHALL be kept only as the
-reason of a refusal or failure, bounded, and never parsed as an answer.
+In `json` mode a program SHALL answer one JSON value on stdout: a list of
+objects for a list source, an object for a document source, and for an
+action nothing or an object whose `toast`, `refresh` and `store` fields the
+host applies. Stderr SHALL be only a refusal's or failure's reason, bounded,
+never parsed.
 
-> **Unresolved review findings** (design.md): an `output: lines` mode for `sh` authors.
+> **Unresolved review findings** (design.md): `output: lines` (adopted, D4).
 
 #### Scenario: A list source feeds a navigator
 - **WHEN** a list source prints `[{"name": "support-macos", "status": "in-progress"}]`
@@ -56,6 +56,25 @@ reason of a refusal or failure, bounded, and never parsed as an answer.
 #### Scenario: Output that is not JSON is a failure, drawn
 - **WHEN** a source prints `hello` and exits 0
 - **THEN** the surface shows that the source answered with something that is not JSON, naming the source, and the rest of the workspace is unaffected
+
+### Requirement: A declaration names its output mode
+A source SHALL declare its output mode: `json` (the default), `lines` (one
+item per line, tab-separated fields the declaration names), `view` (a
+catalog tree), or `cells`, `image` or `sprite`. The host SHALL check the
+answer against its mode and bound its size before decoding it, and an answer
+that does not match SHALL be a failure drawn on the surface that asked.
+
+#### Scenario: A shell author lists without jq
+- **WHEN** a source declares `output: lines` with fields `[name, status]` and prints `build\tok`
+- **THEN** the navigator shows one item named `build` with status `ok`
+
+#### Scenario: A view answer outside the catalog is refused
+- **WHEN** a `view` source answers a node of type `iframe`
+- **THEN** the surface shows that the source answered a node the catalog does not have, naming it, and draws nothing of that answer
+
+#### Scenario: An oversized image is refused before decoding
+- **WHEN** an `image` source answers more bytes than the image ceiling
+- **THEN** the run is a failure naming the bound, and no decoder ran on it
 
 ### Requirement: Exit codes follow the portable hook contract
 Exit code `0` SHALL mean the program answered. Exit code `3` SHALL mean it
