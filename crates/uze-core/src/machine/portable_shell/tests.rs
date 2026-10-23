@@ -37,6 +37,8 @@ const PORTABLE: &[&str] = &[
     "rm -rf --force -- -weird-name",
     "head --lines=3 notes.txt",
     "xargs -d , echo < list.txt",
+    "git ls-files -z | xargs -0 rm",
+    "git ls-files '*.orig' | xargs rm -f",
     "cd -",
 ];
 
@@ -89,6 +91,12 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ("echo -n done", "echo -n", 1, Some(Divergence::EchoFlag)),
     ("echo -e 'a\\nb'", "echo -e", 1, Some(Divergence::EchoFlag)),
     ("watch &", "&", 7, Some(Divergence::Background)),
+    (
+        "xargs -p rm -f < list.txt",
+        "-p",
+        7,
+        Some(Divergence::UnsupportedFlag),
+    ),
     (
         "test -x bin/setup && bin/setup",
         "-x",

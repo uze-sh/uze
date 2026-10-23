@@ -340,7 +340,12 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
         return unsupported_test_operator(arguments);
     }
     let (_, shorts, longs) = FLAGS.iter().find(|(builtin, ..)| *builtin == name)?;
-    for word in arguments.iter().map(literal) {
+    let words = if name == "xargs" {
+        xargs_flags(arguments)
+    } else {
+        arguments.iter().map(literal).collect()
+    };
+    for word in words {
         let Some(word) = word else { continue };
         if word == "--" {
             return None;
@@ -364,6 +369,28 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
         }
     }
     None
+}
+
+/// The words `xargs` reads as its own: its flags, up to the command it
+/// runs, whose words are that command's. `-0` reads as a number, which the
+/// shell's `xargs` takes as its null delimiter, and `-d` takes the next
+/// word as its delimiter.
+fn xargs_flags(arguments: &[Word]) -> Vec<Option<String>> {
+    let mut flags = Vec::new();
+    let mut words = arguments.iter().map(literal);
+    while let Some(Some(word)) = words.next() {
+        if !word.starts_with('-') || word == "-" {
+            break;
+        }
+        match word.as_str() {
+            "-0" => {}
+            "-d" => {
+                words.next();
+            }
+            _ => flags.push(Some(word)),
+        }
+    }
+    flags
 }
 
 /// `set` implements `-e`/`+e` and `-o`/`+o` with `errexit` or `pipefail`.
