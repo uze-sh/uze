@@ -209,9 +209,7 @@ impl IntegrationPort for OpenCodeIntegration {
     /// The rules section rides UZE's plugin, so an operator's file at its
     /// path refuses the delivery rather than recording one nothing runs.
     fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
-        if let runtime_plugin::PluginState::Foreign(path) =
-            runtime_plugin::state(self.config_root(), &self.runtime_plugin())
-        {
+        if let runtime_plugin::PluginState::Foreign(path) = self.plugin_state() {
             return Err(UzeError::ManagedEntryConflict(path));
         }
         RULES.attach(
@@ -238,7 +236,7 @@ impl IntegrationPort for OpenCodeIntegration {
         if resource != AgentsDirectoryResource::Agents {
             return None;
         }
-        match runtime_plugin::state(self.config_root(), &self.runtime_plugin()) {
+        match self.plugin_state() {
             runtime_plugin::PluginState::Installed => None,
             runtime_plugin::PluginState::Missing => Some(SetupShortfall::Missing),
             runtime_plugin::PluginState::Foreign(path) => Some(SetupShortfall::Blocked(path)),
@@ -767,6 +765,11 @@ impl OpenCodeIntegration {
     /// package converges on one deterministic file regardless of attach
     /// order.
     fn attach_hook_bridge(&self, resource: &Resource, bridge_path: &Path) -> Result<()> {
+        // The hooks section rides UZE's plugin: under an operator's file at
+        // its path, the groups would be recorded and never run.
+        if let runtime_plugin::PluginState::Foreign(path) = self.plugin_state() {
+            return Err(UzeError::ManagedEntryConflict(path));
+        }
         let package_root = resource.package_root.as_path();
         let package_id = resource.package_id.as_str();
         let current = serde_json::from_slice::<PortableHook>(&resource.capability.payload)
@@ -799,8 +802,12 @@ impl OpenCodeIntegration {
     /// OpenCode loads: until it is, an earlier release's bridge is what
     /// still runs a package's hooks.
     fn plugin_reads_documents(&self) -> bool {
+        self.plugin_state() == runtime_plugin::PluginState::Installed
+    }
+
+    /// Where UZE's plugin stands against the one this machine would write.
+    fn plugin_state(&self) -> runtime_plugin::PluginState {
         runtime_plugin::state(self.config_root(), &self.runtime_plugin())
-            == runtime_plugin::PluginState::Installed
     }
 
     /// Setup's half of replacing the earlier bridges: those of packages an

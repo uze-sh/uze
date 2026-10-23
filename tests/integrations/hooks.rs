@@ -1433,6 +1433,26 @@ fn removing_a_package_attached_before_setup_takes_its_earlier_bridge_out() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// The hooks section rides UZE's plugin: under an operator's file at its
+/// path, a receipt would read Matched while no group of it ever runs.
+#[test]
+fn an_operators_uze_ts_refuses_the_hooks_it_would_never_run() {
+    let (root, home, resources) = two_observing_groups("opencode-foreign-plugin-hooks");
+    let integration = opencode(&root);
+    let plugin = root.join("config/plugins/uze.ts");
+    fs::create_dir_all(plugin.parent().unwrap()).unwrap();
+    fs::write(&plugin, "// the operator's own plugin\n").unwrap();
+
+    let attached = integration.attach_receipt(hook_resource(&resources, "observe-first"));
+    assert!(
+        matches!(&attached, Err(uze_core::UzeError::ManagedEntryConflict(path)) if *path == plugin),
+        "{attached:?}"
+    );
+    assert!(!opencode_document(&root).exists());
+    assert!(state::receipts(&home, None).unwrap().is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Removal detaches and forgets one receipt at a time, so the first group's
 /// detach rewrites what the second still owns: the second's own detach must
 /// find it there, not at the bridge the first took out.
