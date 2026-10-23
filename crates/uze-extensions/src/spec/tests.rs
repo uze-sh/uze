@@ -1558,3 +1558,184 @@ fn no_checkout_offers_more_than_three_subjects() {
             <= 3
     );
 }
+
+// --- a GSD milestone ---------------------------------------------------------
+
+/// `gsd_checkout`, with `STATE.md` naming an open milestone the way GSD's
+/// state template writes it.
+fn gsd_milestone_checkout(label: &str) -> TempDir {
+    let dir = gsd_checkout(label);
+    write(
+        dir.path(),
+        ".planning/STATE.md",
+        "---\nmilestone: v1.1\nmilestone_name: Sync\nstatus: executing\nprogress:\n  \
+         percent: 60\n---\n\n# Project State\n\nPhase: 3\n",
+    );
+    dir
+}
+
+fn gsd_milestone(label: &str) -> (TempDir, SpecView) {
+    let dir = gsd_milestone_checkout(label);
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[GSD],
+        &ArtifactSource::Undeclared,
+    ));
+    (dir, state)
+}
+
+#[test]
+fn an_open_milestone_is_a_subject_of_its_own_and_where_the_surface_lands() {
+    let (_dir, state) = gsd_milestone("spec-milestone-subject");
+    let shown = view(&state, space());
+    let subjects: Vec<&str> = shown
+        .subjects
+        .iter()
+        .map(|tab| tab.label.as_str())
+        .collect();
+    assert_eq!(subjects, ["Milestone", "Changes", "Specs"]);
+    assert!(shown.subjects[0].active);
+    assert_eq!(
+        row_names(&state),
+        ["Overview", "", "2  Import", "3  Sync Engine"],
+        "the overview, then the roadmap's phases"
+    );
+    let text = text(&state, 0..1);
+    assert_eq!(text, ["v1.1 · Sync"]);
+}
+
+#[test]
+fn phase_rows_line_their_numbers_up_and_mark_what_has_no_plans() {
+    let dir = gsd_milestone_checkout("spec-milestone-rows");
+    write(
+        dir.path(),
+        ".planning/ROADMAP.md",
+        "- [x] **Phase 9: Nine**\n- [ ] **Phase 10: Ten**\n",
+    );
+    let state = opened(read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[GSD],
+        &ArtifactSource::Undeclared,
+    ));
+    assert_eq!(row_names(&state), ["Overview", "", " 9  Nine", "10  Ten"]);
+    let marks: Vec<(String, String)> = view(&state, space())
+        .navigator
+        .expect("a navigator")
+        .rows
+        .into_iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item { marker, detail, .. } => Some((marker.text, detail)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            ("executing".to_owned(), String::new()),
+            ("done".to_owned(), String::new()),
+            ("—".to_owned(), String::new()),
+        ],
+        "a phase without plans says so, and the current one takes no room from its name"
+    );
+}
+
+#[test]
+fn a_checkout_without_an_open_milestone_offers_no_milestone() {
+    let dir = gsd_checkout("spec-milestone-none");
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[GSD],
+        &ArtifactSource::Undeclared,
+    );
+    assert!(answer.milestone.is_none());
+    assert!(!answer.subjects.contains(&Subject::Milestone));
+}
+
+#[test]
+fn a_step_picked_from_a_phase_is_typed_for_the_agent() {
+    let (_dir, mut state) = gsd_milestone("spec-milestone-step");
+    handle_command(&mut state, Command::SelectNext, space());
+    handle_command(&mut state, Command::SelectNext, space());
+    assert_eq!(text(&state, 0..1), ["Phase 3 · Sync Engine"]);
+
+    handle_command(&mut state, Command::Activate, space());
+    let menu = view(&state, space())
+        .navigator
+        .and_then(|navigator| navigator.menu)
+        .expect("the steps open on the phase");
+    assert_eq!(
+        menu.entries,
+        [
+            "Discuss · gsd-discuss-phase 3",
+            "Plan · gsd-plan-phase 3",
+            "Execute · gsd-execute-phase 3",
+            "Verify · gsd-verify-work 3",
+        ]
+    );
+    assert_eq!(menu.highlighted, 2, "a plan is left, so executing is next");
+    assert_eq!(
+        handle_command(&mut state, Command::Activate, space()),
+        SpecOutcome::Prompt {
+            skill: "gsd-execute-phase".to_owned(),
+            arguments: "3".to_owned()
+        }
+    );
+}
+
+#[test]
+fn the_overview_offers_the_milestone_next_step_and_a_click_picks_it() {
+    let (_dir, mut state) = gsd_milestone("spec-milestone-click");
+    handle_mouse(&mut state, Some(ViewHit::SelectItem(0)), space());
+    assert!(
+        view(&state, space()).navigator.unwrap().menu.is_none(),
+        "a click selects, and opens nothing even on the row already selected"
+    );
+    handle_mouse(&mut state, Some(ViewHit::OpenMenu(0)), space());
+    assert_eq!(
+        handle_mouse(&mut state, Some(ViewHit::MenuEntry(0)), space()),
+        SpecOutcome::Prompt {
+            skill: "gsd-execute-phase".to_owned(),
+            arguments: "3".to_owned()
+        },
+        "the secondary button offers the row's steps"
+    );
+}
+
+#[test]
+fn any_other_command_shuts_the_steps_without_asking_anything() {
+    let (_dir, mut state) = gsd_milestone("spec-milestone-shut");
+    handle_command(&mut state, Command::Activate, space());
+    assert_eq!(
+        handle_command(&mut state, Command::Close, space()),
+        SpecOutcome::Stay
+    );
+    assert!(view(&state, space()).navigator.unwrap().menu.is_none());
+    assert_eq!(
+        handle_command(&mut state, Command::Close, space()),
+        SpecOutcome::Close
+    );
+}
+
+#[test]
+fn the_milestone_place_is_kept_by_phase_number() {
+    let (dir, mut state) = gsd_milestone("spec-milestone-place");
+    handle_command(&mut state, Command::SelectNext, space());
+    let place = state.place().expect("a place");
+    let state = opened_at(
+        read_with(
+            &DiskHost,
+            dir.path(),
+            None,
+            &[GSD],
+            &ArtifactSource::Undeclared,
+        ),
+        place,
+    );
+    assert_eq!(text(&state, 0..1), ["Phase 2 · Import"]);
+}

@@ -316,6 +316,14 @@ pub trait IntegrationPort: Send + Sync {
         ""
     }
 
+    /// What a person types before a Skill's name to call it at this
+    /// harness's prompt: a slash command unless the harness says
+    /// otherwise. Lets the workspace put a Skill in front of an agent
+    /// without knowing which harness it is talking to.
+    fn skill_sigil(&self) -> &'static str {
+        "/"
+    }
+
     /// The oldest harness version this integration's deliveries are written
     /// for. Below it nothing is worked around: `doctor` and `status` name the
     /// version needed instead. `None` declares no floor.

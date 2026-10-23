@@ -156,6 +156,9 @@ pub struct AgentIdentity {
     pub binary: &'static str,
     pub integration: &'static str,
     pub display_name: &'static str,
+    /// What is typed before a Skill's name to call it at this harness's
+    /// prompt.
+    pub skill_sigil: &'static str,
     /// The program an agent of this harness is launched by: UZE's own
     /// launcher when the operator has one for this harness, the plain
     /// binary otherwise. Naming it here rather than leaving it to `PATH`

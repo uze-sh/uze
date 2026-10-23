@@ -42,6 +42,11 @@ pub enum Subject {
     /// tool's: found by their shape, so a project with no spec tool at all
     /// still has them.
     Decisions,
+    /// Where a GSD milestone stands. No dialect's collection: it is read
+    /// from the tool's own state (`spec::milestone`), so it is offered
+    /// only where that state names an open milestone, and stays out of
+    /// [`Subject::ALL`], which lists what the tables can hold.
+    Milestone,
 }
 
 impl Subject {
@@ -58,6 +63,7 @@ impl Subject {
             Subject::Specs => "Specs",
             Subject::Archive => "Archive",
             Subject::Decisions => "Decisions",
+            Subject::Milestone => "Milestone",
         }
     }
 }

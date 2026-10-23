@@ -19,9 +19,10 @@ are found on their own; there is nothing to declare.
 | Changes | What is in flight, with how many of its tasks are done, and last the changes the tool put away |
 | Specs | The requirements that outlive the changes |
 | Decisions | The decision records (ADRs) the project keeps, each with its status |
+| Milestone | GSD's open milestone: its phases, their waves of plans, and the step to run next |
 
-There are never more than these three. Decisions appears only when the declared
-places hold one.
+Decisions appears only when the declared places hold one, and Milestone only in
+a GSD checkout with a milestone open.
 
 Changes are grouped by where they stand. **This checkout** is the change the
 agent in the selected tab is working on, found from the files its branch
@@ -72,6 +73,31 @@ its text's.
 
 A numbered record written inside a change, like `openspec/changes/<name>/adr/`,
 is listed in that change as its **decision**, after the design.
+
+## Milestone
+
+In a GSD checkout, Spec opens on the milestone `.planning/STATE.md` says is
+open, unless the agent is working on a phase of its own, which still opens
+first. **Overview** comes first: the milestone's progress, what it stopped at,
+a table of its phases, the current phase's plans, its blockers and pending
+todos, and the step GSD would run next. Then one row per phase from
+`ROADMAP.md`, numbered in one column, with how many of its plans are done, or
+`—` before it has any.
+
+A phase opens on where it stands and its next step, then its goal, its success
+criteria and a table of its plans: a row each, with its wave, the first
+sentence of what it delivered (or sets out to do) and its mark. A plan is done
+once its `SUMMARY.md` is written, the first wave still open is the current one,
+and a plan that is not `autonomous` says it stops for you.
+
+`Enter` or a right click on a phase offers its steps: discuss, plan, execute
+and verify, with the next one highlighted. On the overview it offers the next
+step and progress. Picking one types the skill into the selected agent's prompt, like
+`/gsd-plan-phase 3`, spelled the way that agent calls a skill (`$gsd-plan-phase 3`
+in Codex), and leaves it for you to send. Spec closes so you see it.
+
+When every phase is done, the next step is the milestone audit. A finished
+milestone is not shown.
 
 ## Tasks in the sidebar
 

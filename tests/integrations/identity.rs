@@ -488,3 +488,25 @@ fn cli_and_tui_never_name_a_vendor_harness() {
         violations.join("\n")
     );
 }
+
+/// What a person types before a Skill's name differs by harness, and the
+/// workspace types it into an agent on the operator's behalf: Codex calls
+/// a Skill by mention, `$name`, and the other three as a slash command.
+#[test]
+fn each_harness_says_how_a_skill_is_called_at_its_prompt() {
+    let root = temp("identity-skill-sigil");
+    let home = UzeHome::at(root.join("uze"));
+    let sigils = [
+        ClaudeIntegration::new(root.join("claude"), home.clone()).skill_sigil(),
+        CodexIntegration::new(root.join("agents"), home.clone()).skill_sigil(),
+        OpenCodeIntegration::new(
+            root.join("agents"),
+            root.join("opencode-config/opencode.json"),
+            home.clone(),
+        )
+        .skill_sigil(),
+        AntigravityIntegration::new(root.join("agents"), home).skill_sigil(),
+    ];
+    assert_eq!(sigils, ["/", "$", "/", "/"]);
+    let _ = fs::remove_dir_all(root);
+}

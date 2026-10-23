@@ -14,6 +14,7 @@ fn identity(binary: &str, configured: bool) -> AgentIdentity {
         binary,
         integration: binary,
         display_name: Box::leak(display_name(binary).into_boxed_str()),
+        skill_sigil: "/",
         launch: std::path::PathBuf::from(binary),
         continuity_gap: None,
         configured,

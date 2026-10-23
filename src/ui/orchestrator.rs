@@ -1067,6 +1067,17 @@ fn agent_options(home: &UzeHome) -> Vec<AgentOption> {
         .collect()
 }
 
+impl WorkspaceModel {
+    /// What the agent in the selected tab is asked to call a Skill with;
+    /// a slash, the commonest, where the tab runs no agent it recognizes.
+    pub(super) fn focused_agent_skill_sigil(&self, identities: &[AgentIdentity]) -> &'static str {
+        self.session
+            .as_ref()
+            .and_then(|session| agent_for_tab(identities, session.selected_tab()))
+            .map_or("/", |identity| identity.skill_sigil)
+    }
+}
+
 /// The recognized agent, if any, running in `tab`'s pane — matched against
 /// `identities` by the live foreground process name (a shim-launched
 /// process reports its invoked alias there via `UZE_SHIM_NAME`, not its raw

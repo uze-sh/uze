@@ -159,6 +159,12 @@ impl IntegrationPort for CodexIntegration {
         "Codex"
     }
 
+    /// Codex calls a Skill by mentioning it, `$name`; a leading slash is
+    /// one of its own built-in commands.
+    fn skill_sigil(&self) -> &'static str {
+        "$"
+    }
+
     fn description(&self) -> &'static str {
         "OpenAI's coding agent CLI"
     }
