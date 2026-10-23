@@ -28,7 +28,7 @@ Windows-specific command field met while importing SHALL be read as the
 - **AND** `uze agent plugin check` passes on every platform
 
 ### Requirement: The system chooses the program that runs an exec-form script on each platform
-The system SHALL choose the program that runs an exec-form script for the platform it delivers to: on POSIX a file with an execute bit runs itself; otherwise the file's extension selects an interpreter from a fixed table, and an `interpreter` list given by the author replaces the table. A script named without an extension SHALL resolve on Windows to its `.exe`, else its `.ps1`, sibling. A handler the system cannot place on a platform SHALL be treated there like a handler with no spelling for it.
+The system SHALL choose the program that runs an exec-form script for the platform it delivers to: on POSIX a file with an execute bit runs itself; otherwise the file's extension selects an interpreter from a fixed table, and an `interpreter` list given by the author replaces the table. A script named without an extension, in a handler with no `interpreter`, SHALL resolve on Windows to its `.exe`, else its `.ps1`, sibling. A handler the system cannot place on a platform SHALL be treated there like a handler with no spelling for it.
 
 #### Scenario: A Python guard written once runs on both platforms
 - **WHEN** a deny group's handler is `{"type": "command", "command": "hooks/guard.py", "args": ["--strict"]}`

@@ -192,9 +192,12 @@ impl CommandHook {
                 )),
             };
         };
-        let script = crate::launcher::resolve(script, family, &|candidate| {
-            store_root.join(candidate).is_file()
-        });
+        let script = match self.interpreter {
+            Some(_) => script.to_owned(),
+            None => crate::launcher::resolve(script, family, &|candidate| {
+                store_root.join(candidate).is_file()
+            }),
+        };
         let executable = family == crate::shell::Family::Posix
             && uze_platform::executable::is_marked_runnable(&store_root.join(&script))
             && store_root.join(&script).is_file();
@@ -746,6 +749,39 @@ mod tests {
             other => panic!("the twin was not found: {other:?}"),
         }
         assert!(handler.runs_on(store.path(), crate::shell::Family::PowerShell));
+    }
+
+    /// A launcher the author chose runs the script they named: the twin is
+    /// for the platform's own launcher.
+    #[test]
+    fn an_interpreter_runs_the_named_script_not_its_twin() {
+        let store = uze_testkit::temp::TempDir::new("hook-twins");
+        std::fs::create_dir_all(store.path().join("scripts")).unwrap();
+        std::fs::write(store.path().join("scripts/guard"), "echo bash\n").unwrap();
+        std::fs::write(store.path().join("scripts/guard.ps1"), "exit 0\n").unwrap();
+        let handler = CommandHook {
+            args: Some(Vec::new()),
+            interpreter: Some(vec!["bash".into()]),
+            ..CommandHook::line("scripts/guard")
+        };
+        match handler.invocation(
+            store.path(),
+            Path::new("/delivered"),
+            crate::shell::Family::PowerShell,
+            &|_| false,
+        ) {
+            Invocation::Argv { argv, .. } => assert_eq!(
+                argv,
+                [
+                    "bash".to_owned(),
+                    Path::new("/delivered")
+                        .join("scripts/guard")
+                        .display()
+                        .to_string()
+                ]
+            ),
+            other => panic!("{other:?}"),
+        }
     }
 
     /// Every `hooks.json` the repository carries, the scaffold's and the

@@ -73,7 +73,8 @@ attachment; nothing is projected silently.
   `interpreter`, a list of words, replaces the table for one handler. A
   script named without an extension (`scripts/guard`) is its own file on
   POSIX and, on Windows, its `.exe` sibling, else its `.ps1` one: one entry
-  for a handler shipped as a native script per platform. On
+  for a handler shipped as a native script per platform. A handler that
+  names an `interpreter` runs the file it names on every platform. On
   OpenCode a JavaScript or TypeScript script runs in OpenCode's own Bun.
   The program the launcher needs joins the package's requirements,
   attributed to the hook, so `uze install`, `uze status -m` and
