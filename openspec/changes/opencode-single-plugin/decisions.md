@@ -34,9 +34,9 @@
 - task:     3.5
 - commit:
 - trigger:  D6 had setup delete every `hooks-*.ts` carrying the bridge header, but a package's document exists only once that package is attached again: deleting first leaves its deny groups unrun until then.
-- decided:  `attach_hook_bridge` writes the package's document and then takes out that package's `plugins/hooks-<package>.ts` when it carries the header; inspection still reads such a file (`bridge_carries_groups`) for a receipt that names it, and detach removes it. Setup deletes only `uze-agent-context.ts` and `uze-rules.ts`, whose replacement it writes in the same step.
+- decided:  `attach_hook_bridge` writes the package's document and takes out that package's `plugins/hooks-<package>.ts` (when it carries the header) only once `uze.ts` is UZE's, since until then the old file is what runs the groups; setup then takes it out for every package with a document. Inspection still reads such a file (`bridge_carries_groups`) for a receipt that names it. Detaching one of its groups while others remain is Blocked until setup, the last group's detach removes it, and a receipt whose file a sibling's detach took out follows its groups into the document. Setup deletes `uze-agent-context.ts` and `uze-rules.ts` only when it writes `uze.ts`; an operator's `uze.ts` leaves them, and refuses the hooks and rules that would ride it.
 - rejected: deletion at setup (a window with no deny hooks); keeping both (a package's groups would run twice).
-- blast:    `retire_package_bridge` and the legacy branch of inspection; reverting brings back the window.
+- blast:    `retire_package_bridge`, `retire_bridges_with_documents`, `hook_place` and the legacy branches of inspection and detach; reverting brings back the window.
 
 ## D5 — The rules receipt names the runtime plugin and holds its section
 
