@@ -2558,6 +2558,7 @@ struct DeclaringIntegration {
     skills: ProjectResourceRoute,
     agents: ProjectResourceRoute,
     projects_at_runtime: bool,
+    agents_shortfall: Option<uze_core::integration::SetupShortfall>,
 }
 
 impl IntegrationPort for DeclaringIntegration {
@@ -2600,6 +2601,15 @@ impl IntegrationPort for DeclaringIntegration {
     fn runtime_projects_project_context(&self) -> bool {
         self.projects_at_runtime
     }
+
+    fn project_resource_shortfall(
+        &self,
+        resource: AgentsDirectoryResource,
+    ) -> Option<uze_core::integration::SetupShortfall> {
+        (resource == AgentsDirectoryResource::Agents)
+            .then(|| self.agents_shortfall.clone())
+            .flatten()
+    }
 }
 
 #[test]
@@ -2609,6 +2619,7 @@ fn a_harness_reading_the_project_itself_declares_native_context_support() {
         skills: ProjectResourceRoute::Native,
         agents: ProjectResourceRoute::Native,
         projects_at_runtime: false,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
@@ -2625,6 +2636,7 @@ fn a_runtime_projection_carries_the_agents_directory_and_never_agents_md() {
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
@@ -2641,6 +2653,7 @@ fn a_shadowed_shim_is_reported_for_what_only_the_projection_carries() {
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, false, true);
     // `AGENTS.md` is read by the harness itself, shim or not.
@@ -2658,6 +2671,7 @@ fn a_harness_once_bridged_reads_agents_md_itself_without_a_projection() {
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Native);
@@ -2672,6 +2686,7 @@ fn a_harness_declaring_no_delivery_is_unsupported_regardless_of_the_shim() {
         skills: ProjectResourceRoute::RuntimeProjection,
         agents: ProjectResourceRoute::Unsupported,
         projects_at_runtime: false,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.instructions, ContextMechanism::Unsupported);
@@ -2686,6 +2701,7 @@ fn each_kind_of_the_agents_directory_is_answered_apart() {
         skills: ProjectResourceRoute::Native,
         agents: ProjectResourceRoute::RuntimeProjection,
         projects_at_runtime: true,
+        agents_shortfall: None,
     };
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.project_skills, ContextMechanism::Native);
@@ -2699,6 +2715,40 @@ fn each_kind_of_the_agents_directory_is_answered_apart() {
     let support = HarnessContextSupport::declared(&integration, true, true);
     assert_eq!(support.project_skills, ContextMechanism::Native);
     assert_eq!(support.project_agents, ContextMechanism::Unsupported);
+}
+
+#[test]
+fn agents_setup_delivers_are_reported_by_what_stands_in_their_way() {
+    let delivered = DeclaringIntegration {
+        context_delivery: ContextDelivery::Native { files: &[] },
+        skills: ProjectResourceRoute::Native,
+        agents: ProjectResourceRoute::SetupDelivered,
+        projects_at_runtime: false,
+        agents_shortfall: None,
+    };
+    let support = HarnessContextSupport::declared(&delivered, true, true);
+    assert_eq!(support.project_skills, ContextMechanism::Native);
+    assert_eq!(support.project_agents, ContextMechanism::SetupDelivered);
+
+    let not_yet = DeclaringIntegration {
+        agents_shortfall: Some(uze_core::integration::SetupShortfall::Missing),
+        ..delivered
+    };
+    let support = HarnessContextSupport::declared(&not_yet, true, true);
+    assert_eq!(support.project_agents, ContextMechanism::SetupMissing);
+
+    let blocked = DeclaringIntegration {
+        agents_shortfall: Some(uze_core::integration::SetupShortfall::Blocked(
+            "plugins/uze.ts".into(),
+        )),
+        ..not_yet
+    };
+    let support = HarnessContextSupport::declared(&blocked, false, false);
+    assert_eq!(
+        support.project_agents,
+        ContextMechanism::Blocked,
+        "a delivery setup makes does not wait on the runtime shim"
+    );
 }
 
 /// A harness detected below the version its integration needs, whose every

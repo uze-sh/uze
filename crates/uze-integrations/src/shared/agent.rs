@@ -124,7 +124,7 @@ pub(crate) fn delivered_agent(path: &Path) -> Result<AgentDocument, String> {
 /// The largest project agent definition read. A definition is a prompt a
 /// model loads, so this is far past any real one; it is what keeps a file
 /// in a cloned project from answering the read with gigabytes.
-const MAX_PROJECT_AGENT_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_PROJECT_AGENT_BYTES: u64 = 1024 * 1024;
 
 /// A project agent definition's bytes, when it is a regular file of a
 /// readable size. A FIFO or a device named `*.md` would otherwise hold the

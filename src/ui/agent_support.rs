@@ -80,13 +80,14 @@ fn describe(delivery: &ResourceDelivery) -> (State, &'static str) {
     match delivery {
         ResourceDelivery::Native => (State::Ready, "native"),
         ResourceDelivery::Projected => (State::Ready, "delivered"),
-        ResourceDelivery::RulesEngine => (State::Ready, "delivered"),
+        ResourceDelivery::SetupDelivered => (State::Ready, "delivered"),
         ResourceDelivery::AbsentFromProject => (State::Neutral, "none in project"),
         ResourceDelivery::Undelivered(reason) => match reason {
             UndeliveredReason::HarnessAbsent => (State::Error, "harness not installed"),
-            UndeliveredReason::ShimMissing | UndeliveredReason::RulesEngineMissing => {
+            UndeliveredReason::ShimMissing | UndeliveredReason::SetupMissing => {
                 (State::Warning, "run uze setup")
             }
+            UndeliveredReason::Blocked => (State::Warning, "blocked"),
             UndeliveredReason::Unsupported => (State::Error, "not supported"),
         },
     }
@@ -263,7 +264,7 @@ mod tests {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,
                 project_agents: ContextMechanism::RuntimeShim,
-                project_rules: ContextMechanism::RulesEngine,
+                project_rules: ContextMechanism::SetupDelivered,
             },
         }
     }
@@ -306,15 +307,19 @@ mod tests {
             assert_eq!(name, ".agents/rules");
             status
         };
-        assert!(rules_as(ResourceDelivery::RulesEngine).ends_with("Delivered"));
+        assert!(rules_as(ResourceDelivery::SetupDelivered).ends_with("Delivered"));
         assert!(rules_as(ResourceDelivery::Native).ends_with("Native"));
         assert!(
             rules_as(ResourceDelivery::Undelivered(
-                UndeliveredReason::RulesEngineMissing
+                UndeliveredReason::SetupMissing
             ))
             .ends_with("Run uze setup")
         );
         assert!(rules_as(ResourceDelivery::AbsentFromProject).ends_with("None in project"));
+        assert!(
+            rules_as(ResourceDelivery::Undelivered(UndeliveredReason::Blocked))
+                .ends_with("Blocked")
+        );
     }
 
     #[test]

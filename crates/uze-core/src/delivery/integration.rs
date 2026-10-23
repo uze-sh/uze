@@ -575,12 +575,22 @@ pub trait IntegrationPort: Send + Sync {
     /// harnesses converged on, distinct from any UZE-managed global
     /// `~/.agents/skills` delivery, which is a `CapabilityKind::AgentSkill`
     /// route), handed to it by its runtime projection from outside the
-    /// repository, or not at all. UZE never writes into `.agents/`, so
-    /// there is no fourth answer. The kinds are asked apart because
-    /// harnesses read them apart. Default `Unsupported`: an integration
-    /// answers only from its own vendor's measured behavior.
+    /// repository, handed over by what setup delivered into the harness's
+    /// own configuration, or not at all. UZE never writes into `.agents/`.
+    /// The kinds are asked apart because harnesses read them apart. Default
+    /// `Unsupported`: an integration answers only from its own vendor's
+    /// measured behavior.
     fn project_resource_route(&self, _resource: AgentsDirectoryResource) -> ProjectResourceRoute {
         ProjectResourceRoute::Unsupported
+    }
+
+    /// Why what setup delivered for a [`ProjectResourceRoute::SetupDelivered`]
+    /// resource does not reach the harness now; `None` when it does.
+    fn project_resource_shortfall(
+        &self,
+        _resource: AgentsDirectoryResource,
+    ) -> Option<SetupShortfall> {
+        None
     }
 
     /// How a project's rules reach this harness. Default `Unsupported`: an
@@ -1005,8 +1015,21 @@ pub enum ProjectResourceRoute {
     /// The harness's runtime projection hands it over at launch, from
     /// outside the repository.
     RuntimeProjection,
+    /// What setup delivered into the harness's own configuration hands it
+    /// over, in every session, inside the workspace or outside it.
+    SetupDelivered,
     /// Neither; the integration's facts say why.
     Unsupported,
+}
+
+/// Why a [`ProjectResourceRoute::SetupDelivered`] resource does not reach
+/// the harness now.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SetupShortfall {
+    /// Setup has not delivered it yet.
+    Missing,
+    /// A file UZE did not write holds the path it would be delivered to.
+    Blocked(std::path::PathBuf),
 }
 
 /// One path of a package a harness's delivery leaves out

@@ -416,12 +416,16 @@ fn context_row(mechanism: ContextMechanism) -> (String, Style) {
             format!("{} Delivered", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
-        ContextMechanism::RulesEngine => (
+        ContextMechanism::SetupDelivered => (
             format!("{} Delivered", theme::glyph(Symbol::MarkNative)),
             theme::fg(Token::StateSuccess),
         ),
-        ContextMechanism::ShimMissing | ContextMechanism::RulesEngineMissing => (
+        ContextMechanism::ShimMissing | ContextMechanism::SetupMissing => (
             format!("{} Run uze setup", theme::glyph(Symbol::MarkAttention)),
+            theme::fg(Token::StateWarning),
+        ),
+        ContextMechanism::Blocked => (
+            format!("{} Blocked", theme::glyph(Symbol::MarkAttention)),
             theme::fg(Token::StateWarning),
         ),
         ContextMechanism::Unsupported => (
@@ -500,7 +504,7 @@ mod tests {
                 instructions: ContextMechanism::RuntimeShim,
                 project_skills: ContextMechanism::RuntimeShim,
                 project_agents: ContextMechanism::RuntimeShim,
-                project_rules: ContextMechanism::RulesEngine,
+                project_rules: ContextMechanism::SetupDelivered,
             },
         }
     }
@@ -560,7 +564,7 @@ mod tests {
             instructions,
             project_skills: agents_directory,
             project_agents: agents_directory,
-            project_rules: ContextMechanism::RulesEngine,
+            project_rules: ContextMechanism::SetupDelivered,
         }
     }
 
@@ -677,14 +681,31 @@ mod tests {
         let mut support = configured_harness(true).context_support;
         for (mechanism, words) in [
             (ContextMechanism::Native, "Native"),
-            (ContextMechanism::RulesEngine, "Delivered"),
-            (ContextMechanism::RulesEngineMissing, "Run uze setup"),
+            (ContextMechanism::SetupDelivered, "Delivered"),
+            (ContextMechanism::SetupMissing, "Run uze setup"),
+            (ContextMechanism::Blocked, "Blocked"),
             (ContextMechanism::Unsupported, "Not supported"),
         ] {
             support.project_rules = mechanism;
             let rows = context_rows(&support);
             let (label, value, _) = &rows[3];
             assert_eq!(*label, ".agents/rules");
+            assert!(value.ends_with(words), "{mechanism:?}: {value}");
+        }
+    }
+
+    #[test]
+    fn the_agents_row_says_whether_uzes_delivery_reaches_the_harness() {
+        let mut support = configured_harness(true).context_support;
+        for (mechanism, words) in [
+            (ContextMechanism::SetupDelivered, "Delivered"),
+            (ContextMechanism::SetupMissing, "Run uze setup"),
+            (ContextMechanism::Blocked, "Blocked"),
+        ] {
+            support.project_agents = mechanism;
+            let rows = context_rows(&support);
+            let (label, value, _) = &rows[2];
+            assert_eq!(*label, ".agents/agents");
             assert!(value.ends_with(words), "{mechanism:?}: {value}");
         }
     }

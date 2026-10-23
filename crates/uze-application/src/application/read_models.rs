@@ -6,7 +6,7 @@
 
 use uze_core::{
     Result,
-    integration::{ContextDelivery, IntegrationPort, ProjectResourceRoute},
+    integration::{ContextDelivery, IntegrationPort, ProjectResourceRoute, SetupShortfall},
     project_context::AgentsDirectoryResource,
     provisioning::ProvisioningResult,
 };
@@ -727,12 +727,16 @@ pub enum ContextMechanism {
     ShimMissing,
     /// No delivery strategy exists for this harness and this resource.
     Unsupported,
-    /// The rules engine `uze setup` delivers hands the project's rules over,
-    /// inside the workspace or outside it.
-    RulesEngine,
-    /// The rules engine would hand them over, but `uze setup` has not
+    /// What `uze setup` delivered into the harness's own configuration (the
+    /// rules engine, a plugin) hands it over, inside the workspace or
+    /// outside it.
+    SetupDelivered,
+    /// What `uze setup` delivers would hand it over, but setup has not
     /// delivered it to this harness yet.
-    RulesEngineMissing,
+    SetupMissing,
+    /// What `uze setup` delivers would hand it over, but a file UZE did not
+    /// write holds its path, and setup leaves that file alone.
+    Blocked,
 }
 
 /// One harness's declared context support, one mechanism per portable
@@ -817,8 +821,8 @@ impl ContextMechanism {
         match integration.rules_route().route {
             uze_core::router::CompatibilityRoute::Native => Self::Native,
             uze_core::router::CompatibilityRoute::Unsupported => Self::Unsupported,
-            _ if engine_delivered => Self::RulesEngine,
-            _ => Self::RulesEngineMissing,
+            _ if engine_delivered => Self::SetupDelivered,
+            _ => Self::SetupMissing,
         }
     }
 
@@ -841,6 +845,13 @@ impl ContextMechanism {
             }
             (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Missing) => {
                 Self::ShimMissing
+            }
+            (ProjectResourceRoute::SetupDelivered, _) => {
+                match integration.project_resource_shortfall(resource) {
+                    None => Self::SetupDelivered,
+                    Some(SetupShortfall::Missing) => Self::SetupMissing,
+                    Some(SetupShortfall::Blocked(_)) => Self::Blocked,
+                }
             }
             (ProjectResourceRoute::RuntimeProjection, RuntimeProjection::Inactive)
             | (ProjectResourceRoute::Unsupported, _) => Self::Unsupported,

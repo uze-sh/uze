@@ -2,38 +2,31 @@ use super::*;
 use std::{os::unix::fs::PermissionsExt, process::Command};
 use uze_core::hook::{CommandHandlerType, HookEvent};
 
-/// Whether Bun is here to load the generated plugin. A developer without
-/// it skips these checks; CI installs it, so there its absence is a broken
-/// job rather than a reason for the bridge to go unchecked.
-fn bun_available() -> bool {
-    let available = Command::new("bun")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !available {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "bun is not installed, and CI must run the OpenCode plugin runtime checks"
-        );
-        eprintln!("bun is not installed; the OpenCode plugin runtime check is skipped");
-    }
-    available
-}
-
-/// Loads the plugin generated for `hook` under `root` and runs `calls`
-/// against it, answering with what it reported on the console.
+/// Loads the runtime plugin's hooks section over one document carrying
+/// `hook` under `root`, and runs `calls` against it, answering with what it
+/// reported on the console.
 fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
     fs::write(
-        root.join("hooks-demo.ts"),
-        opencode_bridge(crate::opencode::HOOKS, &[hook], root, "demo"),
+        documents.join("demo.json"),
+        opencode_hook_document(crate::opencode::HOOKS, &[hook], root),
+    )
+    .unwrap();
+    fs::write(
+        root.join("uze.ts"),
+        crate::opencode::runtime_plugin::source(&[crate::opencode::runtime_plugin::Section {
+            name: "hooks",
+            source: opencode_hooks_section(crate::opencode::HOOKS, &documents),
+        }]),
     )
     .unwrap();
     fs::write(
         root.join("drive.ts"),
         format!(
-            r#"import plugin from "./hooks-demo.ts";
+            r#"import plugin from "./uze.ts";
 const hooks = {{}};
-await plugin.setup({{
+const cleanup = await plugin.setup({{
   tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }},
   permission: {{ hook: async (name, fn) => {{ hooks[`permission.${{name}}`] = fn; }} }},
   event: {{ subscribe: () => ({{ [Symbol.asyncIterator]: () => ({{ next: () => new Promise(() => {{}}) }}) }}) }},
@@ -42,6 +35,7 @@ await plugin.setup({{
 const errors = [];
 console.error = (...parts) => errors.push(parts.join(" "));
 {calls}
+cleanup();
 console.log(JSON.stringify(errors));
 "#
         ),
@@ -83,7 +77,7 @@ fn observing(command: &str, timeout: u16) -> PortableHook {
 /// the grandchild, however long it lives.
 #[test]
 fn a_handler_whose_child_holds_stderr_is_still_stopped_at_its_deadline() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-deadline");
@@ -110,7 +104,7 @@ fn a_handler_whose_child_holds_stderr_is_still_stopped_at_its_deadline() {
 
 #[test]
 fn the_reason_the_plugin_reports_is_bounded() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-bound");
@@ -135,7 +129,7 @@ fn the_reason_the_plugin_reports_is_bounded() {
 
 #[test]
 fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime");
@@ -200,7 +194,7 @@ await hooks["execute.before"]({ tool: "read", input: { path: "/x" } });"#,
 /// that is not an input refuses the call at the permission check.
 #[test]
 fn a_rewrite_replaces_the_input_the_tool_runs() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-transform");
@@ -244,7 +238,7 @@ console.error(`decision ${check.effect}: ${check.message}`);"#,
 /// runs once per call and its side effects happen once.
 #[test]
 fn a_transform_handler_runs_once_per_call() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-transform-once");
@@ -270,7 +264,7 @@ fn a_transform_handler_runs_once_per_call() {
 /// between; both receive their words intact.
 #[test]
 fn exec_form_handlers_run_from_their_words_and_javascript_in_the_harnesss_runtime() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-exec").join("with space");
@@ -335,7 +329,7 @@ fn deciding(effect: HookEffect, command: &str) -> PortableHook {
 /// seen, by the name OpenCode looks the tool up by.
 #[test]
 fn a_denial_refuses_a_tool_that_never_asks_for_permission() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-refuse");
@@ -387,7 +381,7 @@ console.error(`tool ${event.tool}`);"#,
 /// hand the context to.
 #[test]
 fn an_input_too_large_for_the_environment_closes_a_deny_group() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-oversized");
@@ -413,7 +407,7 @@ console.error(`tool ${event.tool}`);"#
 /// started from.
 #[test]
 fn a_handler_s_children_do_not_outlive_its_deadline() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-group");
@@ -450,7 +444,7 @@ fn a_handler_s_children_do_not_outlive_its_deadline() {
 /// A package root with a space in it is one word to the handler's shell.
 #[test]
 fn a_package_root_with_a_space_reaches_the_handler_as_one_word() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-space").join("with space");
@@ -480,7 +474,7 @@ console.error(`tool ${event.tool}`);"#,
 /// call is refused, never run unasked. A tool that asks still asks.
 #[test]
 fn an_ask_about_a_tool_with_no_permission_prompt_refuses_the_call() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let root = uze_testkit::temp::scratch("opencode-runtime-ask");
@@ -507,6 +501,79 @@ console.error(`shell ${shell.tool} ${check.effect}: ${check.message}`);"#,
         reported
             .iter()
             .any(|line| line == "shell shell ask: confirm this"),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Every package's groups see one call in one pass: an observer in a
+/// package after the one that denies sees the real call, never the name a
+/// refusal gives it, and the denial is applied once.
+#[test]
+fn every_packages_observers_see_the_real_call_a_later_package_denies() {
+    if crate::opencode::bun_for_tests().is_none() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-packages");
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
+    let seen = root.join("seen");
+    let observer = observing(
+        &format!(
+            "echo \"$HOOK_TOOL $HOOK_TOOL_NATIVE $HOOK_COMMAND\" >> '{}'",
+            seen.display()
+        ),
+        10,
+    );
+    for package in ["aa", "zz"] {
+        fs::write(
+            documents.join(format!("{package}.json")),
+            opencode_hook_document(crate::opencode::HOOKS, &[&observer], &root),
+        )
+        .unwrap();
+    }
+    let reported = drive(
+        &root,
+        &deciding(HookEffect::Deny, "echo \"no: $HOOK_COMMAND\" >&2; exit 3"),
+        r#"const call = { id: "call-1", tool: "shell", input: { command: "ls" } };
+await hooks["execute.before"](call);
+console.error(`tool ${call.tool}`);"#,
+    );
+    assert_eq!(
+        fs::read_to_string(&seen).unwrap(),
+        "shell shell ls\nshell shell ls\n",
+        "both packages' observers saw the call as it was made"
+    );
+    assert!(
+        reported.contains(&"tool shell (refused by a hook: no: ls)".to_owned()),
+        "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Without a package's document the runtime cannot tell which calls it
+/// guarded, so while one cannot be read no call runs.
+#[test]
+fn an_unreadable_document_refuses_every_call() {
+    if crate::opencode::bun_for_tests().is_none() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-runtime-unreadable");
+    let documents = root.join("hook-groups");
+    fs::create_dir_all(&documents).unwrap();
+    fs::write(documents.join("broken.json"), "{").unwrap();
+    let reported = drive(
+        &root,
+        &observing("true", 10),
+        r#"const call = { id: "call-1", tool: "read", input: { path: "/x" } };
+await hooks["execute.before"](call);
+console.error(`tool ${call.tool}`);"#,
+    );
+    assert!(
+        reported
+            .iter()
+            .any(|line| line.starts_with("tool read (refused by a hook: ")
+                && line.contains("broken.json cannot be read")),
         "{reported:?}"
     );
     let _ = fs::remove_dir_all(root);

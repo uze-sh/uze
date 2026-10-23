@@ -122,7 +122,7 @@ pub(super) fn model_with_data() -> TuiModel {
                     instructions: ContextMechanism::RuntimeShim,
                     project_skills: ContextMechanism::RuntimeShim,
                     project_agents: ContextMechanism::RuntimeShim,
-                    project_rules: ContextMechanism::RulesEngine,
+                    project_rules: ContextMechanism::SetupDelivered,
                 },
             },
             HarnessHealth {
@@ -145,7 +145,7 @@ pub(super) fn model_with_data() -> TuiModel {
                     instructions: ContextMechanism::RuntimeShim,
                     project_skills: ContextMechanism::RuntimeShim,
                     project_agents: ContextMechanism::RuntimeShim,
-                    project_rules: ContextMechanism::RulesEngine,
+                    project_rules: ContextMechanism::SetupDelivered,
                 },
             },
         ],

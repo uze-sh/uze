@@ -651,6 +651,39 @@ a vendor bug, and asserting it would ask UZE for a channel the harness does
 not have).
 
 
+## OpenCode 2.1.4: `permission.evaluate` names the call, and UZE keys on that
+
+**Context.** `native-first-hooks` 6.3 (moved to `prove-plugin-delivery`
+9.4) asked whether OpenCode's `permission.evaluate` carries the intercepted
+call's input, so `deny`/`ask` could stop being declared. Its experiment,
+`experiments/opencode/permission-evaluate`, had never produced a
+measurement: the probe imported `@opencode-ai/plugin`, which a plugin in the
+global directory cannot resolve, so it loaded nothing, and it scripted an
+MCP tool, which never asks. Meanwhile the hooks section of UZE's one plugin
+had delivered both effects without that answer, keeping each call's input
+from `execute.before` by call id and deciding in `permission.evaluate`
+(the hooks contract, 2.0.24 and 2.1.2).
+
+**Measured.** On 2026-10-23, against OpenCode v2.1.4, the repaired probe
+(a plain-object plugin, a scripted `shell` call, no package hooks) saw one
+`permission.evaluate` event for the call: `action: "shell"`,
+`resources: ["echo permission probe"]`, `source: {type: "tool", id:
+"call_uze_1"}`. The command line is there, and `source.id` is the id
+`execute.before` saw.
+
+**Chosen.** Keep keying on `source.id`. It is what the measurement shows
+always names the call, and it hands a group the whole input `execute.before`
+saw, where `resources` is a list of strings measured only for the shell.
+Nothing is retired, because nothing was still declared: OpenCode claims
+`deny` and `ask` and the hooks contract asserts both. The one declaration
+left, `hooks.ask-shows-reason`, is about what the prompt draws, which this
+event does not change.
+
+**Discarded.** Rewriting the section to read `resources` (a second source
+for a value it already has whole, and unmeasured for every other tool);
+retiring the experiment (it is the cheap way to re-check this event's
+shape when a release moves it).
+
 ---
 
 ## Prompts the Lab answers

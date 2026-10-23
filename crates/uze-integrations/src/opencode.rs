@@ -47,7 +47,9 @@ mod distribution;
 mod hooks;
 mod mcp;
 mod preferences;
+mod project_agents;
 mod provision;
+pub(crate) mod runtime_plugin;
 mod session;
 mod skills;
 
@@ -65,7 +67,7 @@ use crate::shared::plan::blocked;
 use mcp::attach_mcp_config;
 use provision::{provision_opencode, resolve_opencode_binary};
 use uze_core::capability::harness::Findings;
-use uze_core::integration::{HarnessFact, ProjectResourceRoute};
+use uze_core::integration::{HarnessFact, ProjectResourceRoute, SetupShortfall};
 use uze_core::project_context::AgentsDirectoryResource;
 
 /// OpenCode does not consume the external plugin envelope. It natively
@@ -204,21 +206,40 @@ impl IntegrationPort for OpenCodeIntegration {
         crate::rules::adapted_route(hooks::RULES_REASON)
     }
 
+    /// The rules section rides UZE's plugin, so an operator's file at its
+    /// path refuses the delivery rather than recording one nothing runs.
     fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        if let runtime_plugin::PluginState::Foreign(path) = self.plugin_state() {
+            return Err(UzeError::ManagedEntryConflict(path));
+        }
         RULES.attach(
             &self.uze_home,
             self.id(),
-            &self
-                .config_root()
-                .join("plugins")
-                .join(crate::rules::plugin::FILE_NAME),
+            &runtime_plugin::path(self.config_root()),
         )
     }
 
+    /// OpenCode reads `./.agents/skills` itself; `./.agents/agents` it
+    /// never reads, and UZE's plugin registers them for each project the
+    /// shared service serves.
     fn project_resource_route(&self, resource: AgentsDirectoryResource) -> ProjectResourceRoute {
         match resource {
             AgentsDirectoryResource::Skills => ProjectResourceRoute::Native,
-            AgentsDirectoryResource::Agents => ProjectResourceRoute::Unsupported,
+            AgentsDirectoryResource::Agents => ProjectResourceRoute::SetupDelivered,
+        }
+    }
+
+    fn project_resource_shortfall(
+        &self,
+        resource: AgentsDirectoryResource,
+    ) -> Option<SetupShortfall> {
+        if resource != AgentsDirectoryResource::Agents {
+            return None;
+        }
+        match self.plugin_state() {
+            runtime_plugin::PluginState::Installed => None,
+            runtime_plugin::PluginState::Missing => Some(SetupShortfall::Missing),
+            runtime_plugin::PluginState::Foreign(path) => Some(SetupShortfall::Blocked(path)),
         }
     }
 
@@ -231,7 +252,7 @@ impl IntegrationPort for OpenCodeIntegration {
             // explicit adapter, never a native hook file (OpenCode exposes
             // no declarative hook surface; ADR-033).
             adaptable: [CapabilityKind::Hook].into_iter().collect(),
-            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills carry the model half of the invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke — ADR-030 §9); V2 defines nothing for the person's half. Portable Hooks are delivered as one owned, regenerable `plugins/hooks-<package>.ts` plugin the harness auto-discovers: it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins, per-handler timeouts, fail-closed by effect — with this package's groups as data and no author TypeScript toolchain (ADR-033)."
+            evidence: "OpenCode V2 reads global Agent Skills from its own ~/.config/opencode/skills, where UZE delivers each as a directory of its own, and local MCP as a global `mcp.servers.<name>` entry in opencode.json, which UZE writes, inspects and detaches directly. Skills carry the model half of the invocation policy natively in SKILL.md frontmatter (metadata.opencode/autoinvoke — ADR-030 §9); V2 defines nothing for the person's half. Portable Hooks are delivered as one owned, regenerable document of each package's groups, read by the hooks section of UZE's one auto-discovered plugin (`plugins/uze.ts`): it is the same wrapper the other harnesses get as a shell script — handlers run sequentially against the portable HOOK_* contract, first-deny-wins across every package, per-handler timeouts, fail-closed by effect — with no author TypeScript toolchain (ADR-033)."
                 .to_owned(),
             ..HarnessCapabilities::default()
         }
@@ -283,7 +304,11 @@ impl IntegrationPort for OpenCodeIntegration {
     }
 
     fn context_channel_unavailable(&self) -> Option<String> {
-        agent_context::unavailable(self.config_root(), &self.session_context_dir())
+        runtime_plugin::shortfall(
+            self.config_root(),
+            &self.runtime_plugin(),
+            "this agent's context",
+        )
     }
 
     fn deliver_context(
@@ -389,7 +414,12 @@ impl IntegrationPort for OpenCodeIntegration {
     }
     fn install(&self, home: &UzeHome, detection: &HarnessDetection) -> Result<()> {
         fs::create_dir_all(&self.skills_dir).map_err(UzeError::write(&self.skills_dir))?;
-        agent_context::ensure_plugin(self.config_root(), &self.session_context_dir())?;
+        // The hooks section watches this directory from setup on, so a
+        // package installed while the service runs reaches it.
+        let documents = hook_projection::opencode_documents_dir(&self.uze_home, HOOKS);
+        fs::create_dir_all(&documents).map_err(UzeError::write(&documents))?;
+        runtime_plugin::ensure(self.config_root(), &self.runtime_plugin())?;
+        self.retire_bridges_with_documents(&documents)?;
         state::record(
             home,
             self.id(),
@@ -477,7 +507,7 @@ impl IntegrationPort for OpenCodeIntegration {
             return crate::rules::inspect(&receipt.artifact);
         }
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
-            return self.inspect_hook_bridge(receipt, path);
+            return self.inspect_hook_bridge(receipt, &self.hook_place(receipt, path));
         }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             return receipt.artifact.inspect_standard();
@@ -498,7 +528,7 @@ impl IntegrationPort for OpenCodeIntegration {
         }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
-                return self.detach_hook_bridge(receipt, path);
+                return self.detach_hook_bridge(receipt, &self.hook_place(receipt, path));
             }
             return crate::shared::path::detach_skill_link(receipt, |target| {
                 self.cleanup_unused_wrapper(target)
@@ -584,7 +614,7 @@ const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
 /// lost and `temperature`/`top_p` land in a request body V2 does not send —
 /// so no unknown key is carried, and V1's fields are left out with the V2
 /// field that says the same thing.
-const OPENCODE_AGENT_DIALECT: AgentDialect = AgentDialect {
+pub(super) const OPENCODE_AGENT_DIALECT: AgentDialect = AgentDialect {
     known: &[
         ("model", Shape::Qualified),
         ("color", Shape::HexColor),
@@ -675,9 +705,12 @@ impl OpenCodeIntegration {
     /// plugin directory — a single load source, with no `plugin` config
     /// entry to duplicate (verified against the real harness).
     fn hook_plan(&self, resource: &Resource) -> ExposurePlan {
-        let path =
-            hook_projection::opencode_bridge_path(self.config_root(), resource.package_id.as_str());
-        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a generated plugin module (its default export is the plugin definition, with no import the harness would have to resolve) that IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins, fail-closed by effect) with the package's groups as data. The tool hook refuses a denied call whether or not the tool asks for permission, and `permission.evaluate` puts an `ask` to the person on the tools that ask before they act. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice. A new session is `session.created` on the plugin's event stream; a resumed one announces nothing, so `startup` is the only session source (Conformance Lab, `hooks > events`).";
+        let path = hook_projection::opencode_document_path(
+            &self.uze_home,
+            HOOKS,
+            resource.package_id.as_str(),
+        );
+        let evidence = "OpenCode V2 (spec: opencode.ai/v2/docs/build/plugins) exposes no declarative hook file, so the delivered artifact is a document of the package's groups, read by the hooks section of UZE's one generated plugin, which IS the wrapper: it registers ctx.tool.hook callbacks and runs the authored handlers sequentially on the harness's embedded Bun runtime against the portable HOOK_* contract (per-handler timeouts, PLUGIN_ROOT injected, first-deny-wins across every package's groups, fail-closed by effect), reading the documents again when one changes. The tool hook refuses a denied call whether or not the tool asks for permission, and `permission.evaluate` puts an `ask` to the person on the tools that ask before they act. One load source: the harness's auto-discovered global plugin directory, with no `plugin` config entry, so the plugin can never be loaded twice; a document that cannot be read refuses every call until it is written again. A new session is `session.created` on the plugin's event stream; a resumed one announces nothing, so `startup` is the only session source (Conformance Lab, `hooks > events`).";
         hook_projection::hook_plan(resource, HOOKS, true, evidence, |_| {
             Some(ManagedArtifact::ManagedHookFile { path })
         })
@@ -688,6 +721,36 @@ impl OpenCodeIntegration {
     /// Where the plugin finds each conversation's document.
     fn session_context_dir(&self) -> PathBuf {
         self.uze_home.session_context_dir(self.id())
+    }
+
+    /// UZE's one plugin, as this machine's paths make it.
+    fn runtime_plugin(&self) -> String {
+        runtime_plugin::source(
+            &[
+                runtime_plugin::Section {
+                    name: "hooks",
+                    source: hook_projection::opencode_hooks_section(
+                        HOOKS,
+                        &hook_projection::opencode_documents_dir(&self.uze_home, HOOKS),
+                    ),
+                },
+                agent_context::section(&self.session_context_dir()),
+                project_agents::section(&OPENCODE_AGENT_DIALECT, &self.harness_keys()),
+            ]
+            .into_iter()
+            // The engine is POSIX `sh`: where it cannot run, the rules route is
+            // Unsupported and the plugin carries no section for it.
+            .chain(
+                crate::rules::deliverable_here().then(|| runtime_plugin::Section {
+                    name: "rules",
+                    source: crate::rules::plugin::source(
+                        &RULES.engine_path(&self.uze_home),
+                        &self.uze_home.rules_sessions_dir(),
+                    ),
+                }),
+            )
+            .collect::<Vec<_>>(),
+        )
     }
 
     fn config_root(&self) -> &Path {
@@ -702,6 +765,11 @@ impl OpenCodeIntegration {
     /// package converges on one deterministic file regardless of attach
     /// order.
     fn attach_hook_bridge(&self, resource: &Resource, bridge_path: &Path) -> Result<()> {
+        // The hooks section rides UZE's plugin: under an operator's file at
+        // its path, the groups would be recorded and never run.
+        if let runtime_plugin::PluginState::Foreign(path) = self.plugin_state() {
+            return Err(UzeError::ManagedEntryConflict(path));
+        }
         let package_root = resource.package_root.as_path();
         let package_id = resource.package_id.as_str();
         let current = serde_json::from_slice::<PortableHook>(&resource.capability.payload)
@@ -722,9 +790,78 @@ impl OpenCodeIntegration {
         let references: Vec<&PortableHook> = groups.iter().collect();
         uze_core::persistence::write_atomic(
             bridge_path,
-            hook_projection::opencode_bridge(HOOKS, &references, package_root, package_id)
-                .as_bytes(),
-        )
+            hook_projection::opencode_hook_document(HOOKS, &references, package_root).as_bytes(),
+        )?;
+        if self.plugin_reads_documents() {
+            self.retire_package_bridge(package_id)?;
+        }
+        Ok(())
+    }
+
+    /// Whether UZE's plugin, which reads the hook documents, is the one
+    /// OpenCode loads: until it is, an earlier release's bridge is what
+    /// still runs a package's hooks.
+    fn plugin_reads_documents(&self) -> bool {
+        self.plugin_state() == runtime_plugin::PluginState::Installed
+    }
+
+    /// Where UZE's plugin stands against the one this machine would write.
+    fn plugin_state(&self) -> runtime_plugin::PluginState {
+        runtime_plugin::state(self.config_root(), &self.runtime_plugin())
+    }
+
+    /// Setup's half of replacing the earlier bridges: those of packages an
+    /// attach moved into a document before the plugin reading it was there.
+    fn retire_bridges_with_documents(&self, documents: &Path) -> Result<()> {
+        if !self.plugin_reads_documents() {
+            return Ok(());
+        }
+        let Ok(entries) = fs::read_dir(documents) else {
+            return Ok(());
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+                && let Some(package_id) = path.file_stem().and_then(|stem| stem.to_str())
+            {
+                self.retire_package_bridge(package_id)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes out the plugin an earlier release delivered this package's
+    /// hooks as, once its document is in place: the two would run its
+    /// groups twice. A file there that is not one of those plugins is left.
+    fn retire_package_bridge(&self, package_id: &str) -> Result<()> {
+        let legacy = hook_projection::opencode_bridge_path(self.config_root(), package_id);
+        if fs::read_to_string(&legacy)
+            .is_ok_and(|text| text.starts_with(hook_projection::BRIDGE_HEADER))
+        {
+            hook_projection::remove_bridge_file(&legacy)?;
+        }
+        Ok(())
+    }
+
+    /// Where a hook receipt's groups are now. A sibling group's detach takes
+    /// the bridge an earlier release wrote out and moves the groups still
+    /// attached into the package's document, this receipt's among them.
+    fn hook_place(&self, receipt: &AttachmentReceipt, recorded: &Path) -> PathBuf {
+        if self.is_legacy_bridge(recorded) && !recorded.exists() {
+            let document =
+                hook_projection::opencode_document_path(&self.uze_home, HOOKS, &receipt.package_id);
+            if document.exists() {
+                return document;
+            }
+        }
+        recorded.to_path_buf()
+    }
+
+    /// Whether `path` is where an earlier release put a package's hooks.
+    fn is_legacy_bridge(&self, path: &Path) -> bool {
+        path.parent() == Some(self.config_root().join("plugins").as_path())
     }
 
     /// The hook group ids this integration still has receipts for on one
@@ -796,44 +933,46 @@ impl OpenCodeIntegration {
             };
         };
         let references: Vec<&PortableHook> = groups.iter().collect();
-        let expected = hook_projection::opencode_bridge(
-            HOOKS,
-            &references,
-            &package_root,
-            &receipt.package_id,
-        );
+        let legacy = self.is_legacy_bridge(bridge_path);
+        let expected = hook_projection::opencode_hook_document(HOOKS, &references, &package_root);
+        let carries = |text: &str| {
+            if legacy {
+                hook_projection::bridge_carries_groups(HOOKS, text, &references, &package_root)
+            } else {
+                hook_projection::document_carries_groups(HOOKS, text, &references, &package_root)
+            }
+        };
         match fs::read(bridge_path) {
-            Ok(bytes) if String::from_utf8_lossy(&bytes) == expected => AttachmentInspection {
-                state: AttachmentState::Matched,
-                reason: "the managed bridge file matches the Store-derived content".to_owned(),
-            },
-            Ok(bytes)
-                if hook_projection::bridge_carries_groups(
-                    HOOKS,
-
-                    &String::from_utf8_lossy(&bytes),
-                    &references,
-                    &package_root,
-                ) =>
-            {
+            Ok(bytes) if !legacy && String::from_utf8_lossy(&bytes) == expected => {
                 AttachmentInspection {
                     state: AttachmentState::Matched,
-                    reason: "the managed bridge carries the Store's groups in an earlier build's form; the next install rewrites it".to_owned(),
+                    reason: "the managed hook document matches the Store-derived content"
+                        .to_owned(),
+                }
+            }
+            Ok(bytes) if carries(&String::from_utf8_lossy(&bytes)) => {
+                AttachmentInspection {
+                    state: AttachmentState::Matched,
+                    reason: "the managed hooks carry the Store's groups in an earlier build's form; the next install rewrites them".to_owned(),
                 }
             }
             Ok(_) => AttachmentInspection {
                 state: AttachmentState::Drifted,
                 reason:
-                    "the managed bridge content differs from the Store; re-run plugin install to regenerate it"
+                    "the managed hooks differ from the Store; re-run plugin install to regenerate them"
                         .to_owned(),
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => AttachmentInspection {
                 state: AttachmentState::Missing,
-                reason: "the managed bridge file is missing".to_owned(),
+                reason: if legacy {
+                    "the managed bridge file is missing".to_owned()
+                } else {
+                    "the package's hook document is missing, so OpenCode runs none of its hooks; re-run plugin install to write it".to_owned()
+                },
             },
             Err(error) => AttachmentInspection {
                 state: AttachmentState::Blocked,
-                reason: format!("the managed bridge file cannot be read: {error}"),
+                reason: format!("the managed hooks cannot be read: {error}"),
             },
         }
     }
@@ -859,19 +998,39 @@ impl OpenCodeIntegration {
         let groups = hook_projection::groups_with_ids(&package_root, &|id| {
             remaining.iter().any(|active| active == id)
         })?;
-        if groups.is_empty() {
+        if self.is_legacy_bridge(bridge_path) {
+            if !groups.is_empty() && !self.plugin_reads_documents() {
+                return Ok(AttachmentInspection {
+                    state: AttachmentState::Blocked,
+                    reason: "an earlier release's bridge still runs this package's other hook groups, and no plugin of UZE's reads them yet; run `uze setup`, then detach again".to_owned(),
+                });
+            }
             hook_projection::remove_bridge_file(bridge_path)?;
-        } else {
+        } else if groups.is_empty() {
+            // The file alone: the directory is the one the runtime plugin
+            // watches for the next package.
+            match fs::remove_file(bridge_path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(source) => {
+                    return Err(UzeError::Write {
+                        path: bridge_path.to_path_buf(),
+                        source,
+                    });
+                }
+            }
+            // An attach before setup left the earlier bridge running these
+            // groups; with none left, nothing is to run them.
+            self.retire_package_bridge(package_id)?;
+        }
+        if !groups.is_empty() {
             let references: Vec<&PortableHook> = groups.iter().collect();
+            let document =
+                hook_projection::opencode_document_path(&self.uze_home, HOOKS, package_id);
             uze_core::persistence::write_atomic(
-                bridge_path,
-                hook_projection::opencode_bridge(
-                    HOOKS,
-                    &references,
-                    &package_root,
-                    &receipt.package_id,
-                )
-                .as_bytes(),
+                &document,
+                hook_projection::opencode_hook_document(HOOKS, &references, &package_root)
+                    .as_bytes(),
             )?;
         }
         Ok(AttachmentInspection {
@@ -888,6 +1047,21 @@ const FACTS: &[HarnessFact] = &[
         fact: "reads no `./.agents/agents`, and its extra-configuration environment reaches only the shared service a launch starts, which serves it to every project",
         measured_on: "2.0.18",
         proven_by: "experiments/opencode/project-agents.py::run",
+    },
+    HarnessFact {
+        subject: "project agents",
+        fact: "sets a global plugin up once per location of its shared service, handing it the \
+               checkout's own top level, and offers the agents that plugin registers there to \
+               that location alone, reloading them when the plugin asks",
+        measured_on: "2.1.2",
+        proven_by: "experiments/opencode/project-agents-plugin.py::run",
+    },
+    HarnessFact {
+        subject: "project agents",
+        fact: "runs an external plugin's agent transform after its built-in agents and before \
+               its configured ones, which apply over an agent of the same id",
+        measured_on: "2.1.2",
+        proven_by: "experiments/opencode/project-agents-precedence.py::run",
     },
     HarnessFact {
         subject: "agents",
@@ -946,6 +1120,26 @@ const FACTS: &[HarnessFact] = &[
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "2.0.29";
+
+/// Bun, to load a generated plugin in a test. A developer without it skips
+/// those checks; CI installs it, so there its absence fails the job rather
+/// than leaving the plugin unchecked.
+// Only the Unix jobs install Bun, as for the sibling plugin checks.
+#[cfg(all(test, unix))]
+pub(crate) fn bun_for_tests() -> Option<&'static str> {
+    let available = std::process::Command::new("bun")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !available {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "bun is not installed, and CI must run the OpenCode plugin checks"
+        );
+        eprintln!("bun is not installed; the OpenCode plugin check is skipped");
+    }
+    available.then_some("bun")
+}
 
 #[cfg(test)]
 mod lifecycle_tests {

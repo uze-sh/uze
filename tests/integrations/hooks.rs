@@ -11,7 +11,9 @@ use uze_core::{
     engine::package_resources_at,
     home::UzeHome,
     hook::HookEvent,
-    integration::{AttachmentReceipt, AttachmentState, IntegrationPort, ManagedArtifact},
+    integration::{
+        AttachmentReceipt, AttachmentState, HarnessDetection, IntegrationPort, ManagedArtifact,
+    },
     router::CompatibilityRoute,
     state,
     store::PackageId,
@@ -956,6 +958,19 @@ fn foreign_codex_hooks_survive_attach_and_detach() {
 // OpenCode: owned regenerable bridge + managed plugin entry
 // ============================================================================
 
+/// Where the runtime plugin reads the test package's hook groups.
+fn opencode_document(home_root: &std::path::Path) -> PathBuf {
+    home_root.join("uze/runtime/attachments/opencode/hook-groups/hook-demo@local.json")
+}
+
+/// A delivered hook document in one canonical spelling, so a test can look
+/// for a field without depending on how it was indented.
+fn compact(path: &std::path::Path) -> String {
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    document.to_string()
+}
+
 fn opencode(home_root: &std::path::Path) -> OpenCodeIntegration {
     OpenCodeIntegration::new(
         home_root.join("agents"),
@@ -1017,7 +1032,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
     let protect = hook_resource(&resources, "watch");
     let integration = opencode(&root);
     let config = root.join("config/opencode.json");
-    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    let bridge = opencode_document(&root);
     // A foreign plugin file already lives in the harness's global plugin
     // directory; the config itself is never touched by hook delivery.
     fs::create_dir_all(config.parent().unwrap().join("plugins")).unwrap();
@@ -1033,7 +1048,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
     let uze_core::exposure::ExposureMechanism::Managed(ManagedArtifact::ManagedHookFile { path }) =
         &plan.mechanism
     else {
-        panic!("OpenCode hook plan is an owned bridge file");
+        panic!("OpenCode hook plan is an owned hook document");
     };
     assert_eq!(*path, bridge);
 
@@ -1048,10 +1063,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
         panic!("OpenCode hook receipt is a ManagedHookFile");
     };
     assert_eq!(*path, bridge);
-    assert!(
-        bridge.is_file(),
-        "the bridge file exists in the auto-discovered directory"
-    );
+    assert!(bridge.is_file(), "the package's hook document is written");
     // The config is untouched — a single load source (the directory), never
     // a second explicit registration that could double-load the bridge.
     let document: serde_json::Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
@@ -1067,9 +1079,7 @@ fn opencode_bridge_lifecycle_preserves_foreign_plugins_in_the_directory() {
             .join("plugins/foreign.js")
             .is_file()
     );
-    let source = fs::read_to_string(&bridge).unwrap();
-    assert!(source.contains("Plugin.define"));
-    assert!(source.contains("tool.hook"));
+    let source = compact(&bridge);
     assert!(source.contains("\"effect\":\"observe\""));
     assert!(source.contains("\"matchers\":[\"shell\"]"));
 
@@ -1126,7 +1136,7 @@ fn opencode_bridge_is_package_scoped_and_regenerates_across_groups() {
     let first = hook_resource(&resources, "observe-first").clone();
     let second = hook_resource(&resources, "observe-second").clone();
     let integration = opencode(&_root);
-    let bridge = _root.join("config/plugins/hooks-hook-demo@local.ts");
+    let bridge = opencode_document(&_root);
 
     let receipt_first = integration.attach_receipt(&first).unwrap().unwrap();
     // Production records each receipt right after its attach, so the next
@@ -1142,7 +1152,7 @@ fn opencode_bridge_is_package_scoped_and_regenerates_across_groups() {
         unreachable!();
     };
     assert_eq!(*path, bridge);
-    let source = fs::read_to_string(&bridge).unwrap();
+    let source = compact(&bridge);
     assert!(source.contains("\"id\":\"observe-first\""));
     assert!(source.contains("\"id\":\"observe-second\""));
 
@@ -1216,7 +1226,7 @@ fn opencode_bridge_does_not_depend_on_the_order_its_groups_attach_in() {
             integration.inspect_receipt(receipt).reason
         );
     }
-    let source = fs::read_to_string(root.join("config/plugins/hooks-hook-demo@local.ts")).unwrap();
+    let source = compact(&opencode_document(&root));
     assert!(
         source.find("observe-first").unwrap() < source.find("observe-second").unwrap(),
         "manifest order"
@@ -1224,45 +1234,248 @@ fn opencode_bridge_does_not_depend_on_the_order_its_groups_attach_in() {
     let _ = fs::remove_dir_all(root);
 }
 
-/// The bridge is generated tier: a runtime an earlier build wrote around
-/// the same groups is still UZE's to remove. Groups that differ from the
-/// Store's are somebody's edit, and stay drift.
+/// An earlier release delivered each package's hooks as a plugin of its
+/// own. Such a file is generated tier: a runtime around the same groups is
+/// still UZE's to remove, groups that differ from the Store's are somebody's
+/// edit, and the package's next attach replaces it with its document so the
+/// two never run its groups twice.
 #[test]
-fn an_opencode_bridge_an_earlier_build_wrote_still_removes() {
+fn an_opencode_bridge_an_earlier_release_wrote_is_replaced_at_the_next_attach() {
     let (root, home, resources) = two_observing_groups("opencode-stale-bridge");
     let integration = opencode(&root);
-    let first = integration
-        .attach_receipt(hook_resource(&resources, "observe-first"))
-        .unwrap()
-        .unwrap();
-    state::record_receipt(&home, first.clone()).unwrap();
-    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
-    let current = fs::read_to_string(&bridge).unwrap();
-    let groups = current
-        .lines()
-        .find(|line| line.starts_with("const GROUPS = "))
-        .unwrap();
+    let first = hook_resource(&resources, "observe-first");
+    let current = integration.attach_receipt(first).unwrap().unwrap();
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(opencode_document(&root)).unwrap()).unwrap();
+    fs::remove_file(opencode_document(&root)).unwrap();
 
-    fs::write(&bridge, current.replace(groups, "const GROUPS = [];")).unwrap();
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    let earlier = |groups: &serde_json::Value| {
+        format!(
+            "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = {groups};\nexport default {{}};\n"
+        )
+    };
+    let legacy = AttachmentReceipt {
+        artifact: ManagedArtifact::ManagedHookFile {
+            path: bridge.clone(),
+        },
+        ..current
+    };
+    state::record_receipt(&home, legacy.clone()).unwrap();
+
+    fs::write(&bridge, earlier(&serde_json::json!([]))).unwrap();
     assert_eq!(
-        integration.inspect_receipt(&first).state,
+        integration.inspect_receipt(&legacy).state,
         AttachmentState::Drifted,
         "groups the Store does not declare are an edit"
     );
-
-    let earlier = format!(
-        "// Generated from hooks.json — do not edit; regenerate instead.\n{groups}\nexport default {{}};\n"
-    );
-    fs::write(&bridge, earlier).unwrap();
+    fs::write(&bridge, earlier(&document["groups"])).unwrap();
     assert_eq!(
-        integration.inspect_receipt(&first).state,
+        integration.inspect_receipt(&legacy).state,
         AttachmentState::Matched
     );
+
+    set_up(&integration, &home);
+    let replaced = integration.attach_receipt(first).unwrap().unwrap();
+    assert!(
+        !bridge.exists(),
+        "the earlier release's plugin is taken out"
+    );
+    assert!(opencode_document(&root).is_file());
+    let ManagedArtifact::ManagedHookFile { path } = &replaced.artifact else {
+        unreachable!();
+    };
+    assert_eq!(*path, opencode_document(&root));
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Both groups attached and recorded as an earlier release left them: one
+/// bridge, `hooks-<pkg>.ts`, carrying both, and no document.
+fn legacy_receipts(
+    integration: &OpenCodeIntegration,
+    home: &UzeHome,
+    resources: &[Resource],
+    root: &Path,
+) -> Vec<AttachmentReceipt> {
+    let mut current = Vec::new();
+    for id in ["observe-first", "observe-second"] {
+        let receipt = integration
+            .attach_receipt(hook_resource(resources, id))
+            .unwrap()
+            .unwrap();
+        state::record_receipt(home, receipt.clone()).unwrap();
+        current.push(receipt);
+    }
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(opencode_document(root)).unwrap()).unwrap();
+    fs::remove_file(opencode_document(root)).unwrap();
+
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        format!(
+            "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = {};\nexport default {{}};\n",
+            document["groups"]
+        ),
+    )
+    .unwrap();
+    let legacy: Vec<AttachmentReceipt> = current
+        .into_iter()
+        .map(|receipt| AttachmentReceipt {
+            artifact: ManagedArtifact::ManagedHookFile {
+                path: bridge.clone(),
+            },
+            ..receipt
+        })
+        .collect();
+    for receipt in &legacy {
+        state::record_receipt(home, receipt.clone()).unwrap();
+    }
+    legacy
+}
+
+fn set_up(integration: &OpenCodeIntegration, home: &UzeHome) {
+    integration
+        .install(
+            home,
+            &HarnessDetection {
+                present: true,
+                version: None,
+            },
+        )
+        .unwrap();
+}
+
+/// Until setup writes UZE's plugin, nothing reads the package's document:
+/// the earlier release's bridge is what still runs its hooks.
+#[test]
+fn an_earlier_releases_bridge_stays_until_setup_writes_the_plugin_that_replaces_it() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-before-setup");
+    let integration = opencode(&root);
+    let first = hook_resource(&resources, "observe-first");
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = [];\nexport default {};\n",
+    )
+    .unwrap();
+
+    integration.attach_receipt(first).unwrap().unwrap();
+    assert!(bridge.exists(), "no plugin reads the document yet");
+
+    set_up(&integration, &home);
+    assert!(
+        !bridge.exists(),
+        "setup takes it out once the plugin reading the document is there"
+    );
+    assert!(opencode_document(&root).is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Before setup, the earlier bridge is all that runs a package's groups:
+/// detaching one of several would take it out and leave the rest in a
+/// document nothing reads, so the detach waits for setup instead.
+#[test]
+fn a_group_an_earlier_release_bridged_is_detached_only_once_setup_can_run_the_rest() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-detach-before-setup");
+    let integration = opencode(&root);
+    let legacy = legacy_receipts(&integration, &home, &resources, &root);
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+
     assert_eq!(
-        integration.detach_receipt(&first).unwrap().state,
+        integration.detach_receipt(&legacy[0]).unwrap().state,
+        AttachmentState::Blocked
+    );
+    assert!(bridge.exists(), "the bridge still runs the other group");
+    assert!(!opencode_document(&root).exists());
+
+    set_up(&integration, &home);
+    for receipt in &legacy {
+        assert_eq!(
+            integration.detach_receipt(receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        state::forget_receipt(&home, receipt).unwrap();
+    }
+    assert!(!bridge.exists() && !opencode_document(&root).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The last group to go takes the earlier bridge an attach before setup
+/// left running beside the document.
+#[test]
+fn removing_a_package_attached_before_setup_takes_its_earlier_bridge_out() {
+    let (root, home, resources) =
+        two_observing_groups("opencode-stale-bridge-removed-before-setup");
+    let integration = opencode(&root);
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = [];\nexport default {};\n",
+    )
+    .unwrap();
+    let receipt = integration
+        .attach_receipt(hook_resource(&resources, "observe-first"))
+        .unwrap()
+        .unwrap();
+    state::record_receipt(&home, receipt.clone()).unwrap();
+    assert!(bridge.exists());
+
+    assert_eq!(
+        integration.detach_receipt(&receipt).unwrap().state,
         AttachmentState::Missing
     );
-    assert!(!bridge.exists(), "the last group removes the owned file");
+    assert!(!bridge.exists() && !opencode_document(&root).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The hooks section rides UZE's plugin: under an operator's file at its
+/// path, a receipt would read Matched while no group of it ever runs.
+#[test]
+fn an_operators_uze_ts_refuses_the_hooks_it_would_never_run() {
+    let (root, home, resources) = two_observing_groups("opencode-foreign-plugin-hooks");
+    let integration = opencode(&root);
+    let plugin = root.join("config/plugins/uze.ts");
+    fs::create_dir_all(plugin.parent().unwrap()).unwrap();
+    fs::write(&plugin, "// the operator's own plugin\n").unwrap();
+
+    let attached = integration.attach_receipt(hook_resource(&resources, "observe-first"));
+    assert!(
+        matches!(&attached, Err(uze_core::UzeError::ManagedEntryConflict(path)) if *path == plugin),
+        "{attached:?}"
+    );
+    assert!(!opencode_document(&root).exists());
+    assert!(state::receipts(&home, None).unwrap().is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Removal detaches and forgets one receipt at a time, so the first group's
+/// detach rewrites what the second still owns: the second's own detach must
+/// find it there, not at the bridge the first took out.
+#[test]
+fn removing_a_package_an_earlier_release_bridged_leaves_none_of_its_hooks() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-removal");
+    let integration = opencode(&root);
+    let legacy = legacy_receipts(&integration, &home, &resources, &root);
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    set_up(&integration, &home);
+
+    for receipt in &legacy {
+        assert_eq!(
+            integration.detach_receipt(receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        state::forget_receipt(&home, receipt).unwrap();
+    }
+    assert!(!bridge.exists());
+    assert!(
+        !opencode_document(&root).exists(),
+        "no group of a removed package is left for the plugin to run"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1284,17 +1497,17 @@ fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_bridged_as_end_of_tu
     let ManagedArtifact::ManagedHookFile { path } = &stop_receipt.artifact else {
         unreachable!();
     };
-    let bridge = fs::read_to_string(path).unwrap();
+    let bridge = compact(path);
     assert!(
-        bridge.contains("session.execution.succeeded") && bridge.contains("\"event\":\"stop\""),
-        "a Stop group runs at the end of a turn, never as a tool callback"
+        bridge.contains("\"event\":\"stop\"") && bridge.contains("\"matchers\":[]"),
+        "a Stop group is carried as the end of a turn, never as a tool callback"
     );
 
     let receipt = integration.attach_receipt(all_tools).unwrap().unwrap();
     let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact else {
         unreachable!();
     };
-    let source = fs::read_to_string(path).unwrap();
+    let source = compact(path);
     assert!(
         source.contains("\"matchers\":[]"),
         "an unmatch-all group runs for every tool"

@@ -87,6 +87,7 @@ not yet on this branch. Evidence was written under
 - decided:  `install` (run by setup and by every command that installs) writes `plugins/uze-agent-context.ts` when missing or when the file there starts with UZE's header and differs; a file without the header is the operator's and is never written over, and the channel then reports itself unavailable. The plugin names UZE's session directory in its source, not through the environment the shared server does not share.
 - rejected: a receipt in the attachments ledger (the ledger's unit is a package's capability, and a synthetic package would appear in every listing); `OPENCODE_CONFIG_CONTENT` (measured: a running service never loads it).
 - blast:    one file and one call; reverting leaves OpenCode on `FirstTurn`.
+- later:    `opencode-single-plugin` makes this plugin a section of UZE's one runtime plugin, `uze.ts`, owned the same way.
 
 ## D3 — Antigravity prints a pre-rendered payload from an installed script
 

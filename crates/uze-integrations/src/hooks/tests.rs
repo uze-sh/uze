@@ -809,59 +809,65 @@ fn drift_blocks_removal_and_an_empty_file_is_removed() {
 }
 
 #[test]
-fn the_opencode_plugin_is_the_wrapper_with_the_packages_groups_as_data() {
-    let plugin = opencode_bridge(
+fn the_opencode_hooks_are_one_runtime_over_each_packages_document() {
+    let document = opencode_hook_document(
         crate::opencode::HOOKS,
         &[&hook()],
         Path::new("/tmp/plugin root"),
-        "hook-demo",
     );
-    // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the
-    // default export is the definition registering ctx.tool.hook
-    // callbacks, with no import the harness would have to resolve.
-    assert!(!plugin.contains("import "), "{plugin}");
-    assert!(plugin.contains("export default {"));
-    assert!(plugin.contains("id: \"hooks-hook-demo\""));
-    assert!(plugin.contains("ctx.tool.hook(\"execute.before\""));
-    assert!(plugin.contains("ctx.tool.hook(\"execute.after\""));
+    let parsed: serde_json::Value = serde_json::from_str(&document).unwrap();
+    assert_eq!(parsed["version"], OPENCODE_DOCUMENT_VERSION);
+    assert_eq!(parsed["root"], "/tmp/plugin root");
+    let group = &parsed["groups"][0];
+    assert_eq!(group["event"], "pre_tool_use");
+    assert_eq!(group["matchers"], serde_json::json!(["shell", "Write"]));
+    assert_eq!(group["effect"], "deny");
     assert!(
-        plugin.contains("Bun.spawn"),
-        "the harness's embedded Bun runtime executes handlers"
+        !document.to_lowercase().contains("uze"),
+        "nothing in the package's delivered artifact names the packager"
     );
-    assert!(plugin.contains("\"event\":\"pre_tool_use\""));
-    assert!(plugin.contains("\"matchers\":[\"shell\",\"Write\"]"));
-    assert!(plugin.contains("\"effect\":\"deny\""));
+    assert_eq!(
+        document,
+        opencode_hook_document(
+            crate::opencode::HOOKS,
+            &[&hook()],
+            Path::new("/tmp/plugin root")
+        ),
+        "generation is deterministic"
+    );
+    assert!(document_carries_groups(
+        crate::opencode::HOOKS,
+        &document,
+        &[&hook()],
+        Path::new("/tmp/plugin root"),
+    ));
+
+    let section = opencode_hooks_section(crate::opencode::HOOKS, Path::new("/state/hook-groups"));
+    // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the section
+    // registers ctx.tool.hook callbacks and runs handlers in the harness's
+    // own Bun.
+    assert!(section.contains("\nasync function hooks(ctx) {\n"));
+    assert!(section.contains("ctx.tool.hook(\"execute.before\""));
+    assert!(section.contains("ctx.tool.hook(\"execute.after\""));
+    assert!(section.contains("Bun.spawn"));
+    assert!(section.contains("const DOCUMENTS = \"/state/hook-groups\";"));
     assert!(
-        plugin.contains("shell: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
+        section.contains("shell: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
         "the alias table comes from the one vocabulary"
     );
     assert!(
-        plugin.contains("code === 3"),
+        section.contains("code === 3"),
         "the decision channel is the exit code"
     );
     assert_eq!(
-        plugin.matches("ctx.tool.hook(").count(),
+        section.matches("ctx.tool.hook(").count(),
         2,
         "no stop surface is ever claimed for OpenCode: the two tool hooks are all it registers"
-    );
-    assert!(
-        !plugin.to_lowercase().contains("uze"),
-        "nothing in the delivered artifact names the packager"
-    );
-    assert_eq!(
-        plugin,
-        opencode_bridge(
-            crate::opencode::HOOKS,
-            &[&hook()],
-            Path::new("/tmp/plugin root"),
-            "hook-demo"
-        ),
-        "generation is deterministic"
     );
 }
 
 #[test]
-fn bridge_path_lives_in_the_auto_discovered_global_plugin_directory() {
+fn an_earlier_releases_bridge_lived_in_the_global_plugin_directory() {
     let root = uze_testkit::temp::scratch("hooks-path");
     let bridge = opencode_bridge_path(&root, "demo");
     assert_eq!(

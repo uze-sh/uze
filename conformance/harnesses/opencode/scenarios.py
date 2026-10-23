@@ -16,6 +16,7 @@ claude/codex there is no hardcoded host to intercept — the custom
 `baseURL` in the config is the hook, plain HTTP.
 """
 
+import importlib
 import json
 import os
 import re
@@ -323,3 +324,11 @@ def run(cfg, prov_ip):
 
     with describe("skill-files"):
         skill_files.run(cfg, prov_ip)
+    # Promoted from `experiments/opencode/hooks-cross-package`: what one
+    # plugin for every package buys, which no other harness has to prove.
+    hooks_cross_package = importlib.import_module(
+        "experiments.opencode.hooks-cross-package"
+    )
+
+    with describe("runtime-plugin"):
+        hooks_cross_package.run(cfg, prov_ip)

@@ -50,5 +50,5 @@ flowchart TD
   memoryOff[memory.harness = off] -.->|Codex launches only| viaCodex
   compose --> viaClaude[Claude: CLAUDE.md<br/>in a per-agent --add-dir]
   compose --> viaCodex[Codex: SessionStart hook<br/>on a -c layer]
-  compose --> viaOpencode[OpenCode: uze-agent-context.ts plugin<br/>reads runtime/sessions/opencode/session-id.md<br/>on every request]
+  compose --> viaOpencode[OpenCode: uze.ts plugin, agent-context section<br/>reads runtime/sessions/opencode/session-id.md<br/>on every request]
   compose --> viaAntigravity[Antigravity: PreInvocation hook<br/>in a per-agent --add-dir]
