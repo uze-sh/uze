@@ -375,7 +375,7 @@ fn corpus() -> Vec<(String, String)> {
 
 /// What E1 recorded (design.md, Evidence): the share of the corpus that runs
 /// in the portable shell may grow, and falling below it fails here.
-const PORTABLE_AT_LEAST_PER_MILLE: usize = 956;
+const PORTABLE_AT_LEAST_PER_MILLE: usize = 957;
 
 #[test]
 fn the_portable_share_of_real_commands_does_not_fall() {
