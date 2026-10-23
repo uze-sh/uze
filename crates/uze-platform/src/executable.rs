@@ -22,6 +22,22 @@ pub fn on_path(name: &str) -> Option<PathBuf> {
         .find(|candidate| is_executable(candidate))
 }
 
+/// This process's own program, to start another process of it, or `name`
+/// on `PATH` when the file this one started from is gone.
+///
+/// A binary replaced under a running process (a `make install` or a
+/// self-update while a client is up) leaves `current_exe` naming a path
+/// that no longer exists (`/proc/self/exe` reads `<path> (deleted)`), and
+/// spawning it answers "No such file or directory" from a command that
+/// never named a file. The replacement is `name` as `PATH` resolves it:
+/// the binary that took its place, and the one wanted anyway.
+pub fn own_or_replacement(name: &str) -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .filter(|current| current.exists())
+        .or_else(|| on_path(name))
+}
+
 /// `command` and `arguments` as a program that starts another directly,
 /// with no shell in between, has to name it: a harness launching an MCP
 /// server, say. Unchanged on Unix. On Windows a batch launcher (`npx` is

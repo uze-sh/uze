@@ -1188,6 +1188,49 @@ fn only_uze_platform_names_a_platform() {
     );
 }
 
+/// The portable shell is reached through `machine::portable_shell` alone:
+/// it is a pinned 0.x crate, so a version bump touches one file, and the
+/// tokio runtime it needs is the only one UZE builds, inside the
+/// `uze shell -c` child rather than in a process that draws or serves.
+#[test]
+fn the_portable_shell_is_reached_through_one_module() {
+    let root = repository_root();
+    let mut found = Vec::new();
+    for scope in ["src", "crates"] {
+        for (path, contents) in production_sources(&root.join(scope)) {
+            let relative = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative == "crates/uze-core/src/machine/portable_shell.rs" {
+                continue;
+            }
+            for line in contents.lines() {
+                let code = line.split("//").next().unwrap_or_default();
+                if [
+                    "deno_task_shell",
+                    "runtime::Builder",
+                    "tokio::main",
+                    "LocalSet",
+                ]
+                .iter()
+                .any(|name| code.contains(name))
+                {
+                    found.push(format!("  {relative}: {}", line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "\n\nthe portable shell or a tokio runtime outside machine::portable_shell:\n\n{}\n\n\
+         Reach the shell through uze_core::portable_shell (uze_application::portable_shell \
+         from src/).\n",
+        found.join("\n")
+    );
+}
+
 /// Whether the gate at `index` says why it is one: a comment beside it, or
 /// one in the comments and attributes right above it (its doc comment
 /// included), that names the platform or what only it has.

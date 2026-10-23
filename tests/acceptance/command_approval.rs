@@ -15,7 +15,7 @@ fn declaring_commands(env: &TestEnvironment) -> PathBuf {
         env.project.join("agents.yaml"),
         "workspace:\n  \
          setup:\n    posix: touch pwned\n    windows: New-Item pwned -ItemType File\n  \
-         gate:\n    posix: make test\n    windows: make test\n",
+         gate: make test\n",
     )
     .unwrap();
     env.project.clone()

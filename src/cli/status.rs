@@ -739,6 +739,25 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             unspelled.command,
             unspelled.platform,
         ));
+        if let Some(why) = &unspelled.not_portable {
+            text.push_str(&format!(
+                "  {} not portable: {why}; spell it under `posix` and `{}`\n",
+                progress::label("·"),
+                unspelled.platform,
+            ));
+        }
+    }
+    for only in &status.steps_only_in_sh {
+        let step = match only.step {
+            uze_application::PolicyStep::Setup => "setup",
+            uze_application::PolicyStep::Gate => "gate",
+        };
+        text.push_str(&format!(
+            "{} {step} `{}` runs only where `sh` does: {}; spell it under `posix` and `windows`\n",
+            progress::label("·"),
+            only.command,
+            only.not_portable,
+        ));
     }
     if let Some(awaiting) = &status.commands_awaiting_approval {
         text.push_str(&format!(

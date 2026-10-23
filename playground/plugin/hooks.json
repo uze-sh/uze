@@ -7,10 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": {
-              "posix": "${PLUGIN_ROOT}/scripts/hook log",
-              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
-            },
+            "command": "scripts/hook",
+            "args": ["log"],
             "timeout": 10
           }
         ]
@@ -24,10 +22,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": {
-              "posix": "${PLUGIN_ROOT}/scripts/hook deny",
-              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" deny"
-            },
+            "command": "scripts/hook",
+            "args": ["deny"],
             "timeout": 10
           }
         ]
@@ -41,10 +37,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": {
-              "posix": "${PLUGIN_ROOT}/scripts/hook log",
-              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
-            },
+            "command": "scripts/hook",
+            "args": ["log"],
             "timeout": 10
           }
         ]
@@ -57,10 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": {
-              "posix": "${PLUGIN_ROOT}/scripts/hook log",
-              "windows": "& \"${PLUGIN_ROOT}/scripts/hook.ps1\" log"
-            },
+            "command": "scripts/hook",
+            "args": ["log"],
             "timeout": 10
           }
         ]

@@ -620,22 +620,9 @@ pub(super) fn item_count(value: &DeclaredValue) -> usize {
 pub(super) fn items(value: &DeclaredValue) -> Vec<String> {
     match value {
         DeclaredValue::List(items) => items.clone(),
-        DeclaredValue::Commands(commands) => commands.iter().map(command_line).collect(),
+        DeclaredValue::Commands(commands) => commands.iter().map(ShellCommand::describe).collect(),
         DeclaredValue::Text(text) => vec![text.clone()],
         DeclaredValue::Number(number) => vec![number.to_string()],
-    }
-}
-
-/// A command as one line: its POSIX spelling, or both when it has two.
-pub(super) fn command_line(command: &ShellCommand) -> String {
-    match command {
-        ShellCommand::Line(line) => line.clone(),
-        ShellCommand::PerPlatform(spellings) => match (&spellings.posix, &spellings.windows) {
-            (Some(posix), Some(windows)) => format!("{posix} | windows: {windows}"),
-            (Some(posix), None) => posix.clone(),
-            (None, Some(windows)) => format!("windows: {windows}"),
-            (None, None) => String::new(),
-        },
     }
 }
 
@@ -647,7 +634,7 @@ pub(super) fn scalar(value: &DeclaredValue) -> String {
         DeclaredValue::List(items) => items.join(", "),
         DeclaredValue::Commands(commands) => commands
             .iter()
-            .map(command_line)
+            .map(ShellCommand::describe)
             .collect::<Vec<_>>()
             .join(", "),
     }
@@ -1144,7 +1131,13 @@ impl SpaceOverviewView {
             issues.push(alert(
                 Severity::High,
                 format!("`{}` never runs here", step.command),
-                format!("It has no {} spelling in agents.yaml.", step.platform),
+                match &step.not_portable {
+                    None => format!("It has no {} spelling in agents.yaml.", step.platform),
+                    Some(why) => format!(
+                        "It is not portable ({why}). Spell it under posix and {} in agents.yaml.",
+                        step.platform
+                    ),
+                },
             ));
         }
         match &project.workspace {

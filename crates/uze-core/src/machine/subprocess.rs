@@ -7,7 +7,7 @@
 //! Not part of the public contract; workspace-internal process plumbing.
 
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -171,7 +171,72 @@ pub fn shell_invocation(command: &str) -> Command {
 /// project-declared commands (a checkout's setup, a delivery's gate, a
 /// forge CLI) whose output is what the operator or the agent is told.
 pub fn run_shell_bounded(cwd: &Path, command: &str, timeout: Duration) -> (bool, String) {
-    let mut invocation = shell_invocation(command);
+    run_line_bounded(shell_invocation(command), cwd, command, timeout)
+}
+
+/// The `uze` a portable line is started from, as `uze shell -c`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Uze {
+    /// This process's own executable, or the one that replaced it, found
+    /// when the line runs: a workspace left open across an upgrade runs
+    /// the new one.
+    #[default]
+    ThisProcess,
+    /// One the composition names, for a client whose own process is not
+    /// `uze`: an embedding one, or a test.
+    At(PathBuf),
+}
+
+impl Uze {
+    fn path(&self) -> Option<PathBuf> {
+        match self {
+            Self::ThisProcess => uze_platform::executable::own_or_replacement("uze"),
+            Self::At(path) => Some(path.clone()),
+        }
+    }
+}
+
+/// [`run_shell_bounded`] for a project's command, in the shell it runs in
+/// here (see [`crate::shell::ShellCommand::runs_here`]): a portable line
+/// through `uze`.
+pub fn run_bounded(
+    uze: &Uze,
+    cwd: &Path,
+    runs: crate::shell::Runs<'_>,
+    timeout: Duration,
+) -> (bool, String) {
+    match runs {
+        crate::shell::Runs::Native(line) => run_shell_bounded(cwd, line, timeout),
+        crate::shell::Runs::Portable(line) => match uze.path() {
+            Some(uze) => run_portable_bounded(&uze, cwd, line, timeout),
+            None => (
+                false,
+                format!("`{line}` needs `uze` to run it, and no `uze` is on PATH"),
+            ),
+        },
+    }
+}
+
+/// Runs `line` in the portable shell through `uze shell -c`, started from
+/// `uze`, under the same bounds as [`run_shell_bounded`]: the shell's
+/// programs are that child's descendants, so a timeout ends them all.
+pub fn run_portable_bounded(
+    uze: &Path,
+    cwd: &Path,
+    line: &str,
+    timeout: Duration,
+) -> (bool, String) {
+    let mut invocation = Command::new(uze);
+    invocation.args(["shell", "-c", line]);
+    run_line_bounded(invocation, cwd, line, timeout)
+}
+
+fn run_line_bounded(
+    mut invocation: Command,
+    cwd: &Path,
+    command: &str,
+    timeout: Duration,
+) -> (bool, String) {
     invocation
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

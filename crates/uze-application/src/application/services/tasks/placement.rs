@@ -217,7 +217,7 @@ impl Workspace<'_> {
         // the one unbounded thing a launch runs, and every other mutation
         // would wait behind it.
         let consent = self.consent(&primary, &policy);
-        let warnings = checkout::materialize(&primary, &acquired.path, &consent);
+        let warnings = checkout::materialize(&primary, &acquired.path, &consent, &self.0.uze);
         let awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         let view = self.placed_view(&primary, task.id.as_str(), &policy);
         Ok(AgentPlacement {
@@ -331,7 +331,7 @@ impl Workspace<'_> {
         // Outside the lock, like every other unbounded step: the
         // project's `setup` runs here, and so does the copy.
         let consent = self.consent(&primary, &policy);
-        let mut warnings = checkout::materialize(&primary, &acquired.path, &consent);
+        let mut warnings = checkout::materialize(&primary, &acquired.path, &consent, &self.0.uze);
         let awaiting_approval = awaiting(&primary, &consent, &acquired.path);
         if carry == Carry::CopyOfChanges
             && let Err(reason) = checkout::carry_changes(&primary, &acquired.path)
@@ -497,7 +497,8 @@ impl Workspace<'_> {
         // nobody and nobody waits behind it.
         if let Some(acquired) = acquired_slot {
             let consent = self.consent(&primary, &policy);
-            placement.warnings = checkout::materialize(&primary, &acquired.path, &consent);
+            placement.warnings =
+                checkout::materialize(&primary, &acquired.path, &consent, &self.0.uze);
             if acquired.displaced {
                 placement
                     .warnings

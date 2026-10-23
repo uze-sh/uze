@@ -19,7 +19,7 @@ fn project_awaiting_approval(
         project.join("agents.yaml"),
         "workspace:\n  \
          setup:\n    posix: \"make\\e[2J\"\n    windows: \"make\\e[2J\"\n  \
-         gate:\n    posix: make test\n    windows: make test\n",
+         gate: make test\n",
     )
     .unwrap();
     let awaiting = uze_application::UzeApplication::new(home.clone(), Vec::new())

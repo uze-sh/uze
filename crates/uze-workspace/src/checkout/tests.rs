@@ -1225,6 +1225,7 @@ fn prepared(primary: &Path, slot: &Path, policy: &WorktreePolicy) -> Vec<String>
         primary,
         slot,
         &crate::approval::consent(&home, primary, policy),
+        &crate::subprocess::Uze::ThisProcess,
     )
 }
 
@@ -1246,6 +1247,7 @@ fn an_unapproved_setup_is_not_run_and_the_checkout_says_so() {
         primary,
         &slot.path,
         &crate::approval::consent(&home, primary, &policy),
+        &crate::subprocess::Uze::ThisProcess,
     );
 
     assert!(!slot.path.join("pwned").exists(), "setup never ran");
@@ -1949,4 +1951,26 @@ fn a_checkout_uze_did_not_make_is_never_removed_on_request() {
 
     assert_eq!(removed, Err(KeptSlot::Gone));
     assert!(by_hand.is_dir());
+}
+
+/// Why a project's command does not run here reads as one clause after
+/// its name, in a setup warning and a gate refusal alike.
+#[test]
+fn a_command_that_does_not_run_here_says_why_in_one_clause() {
+    use uze_core::shell::{NotRun, ShellCommand};
+    let platform = ShellCommand::platform();
+    assert_eq!(
+        not_run(&NotRun::Unspelled),
+        format!("has no {platform} spelling")
+    );
+    let refused = uze_core::portable_shell::check("cp a ${B}").unwrap_err();
+    let clause = not_run(&NotRun::NotPortable(refused));
+    assert!(
+        clause.starts_with("is not portable (`${` at column 6: "),
+        "{clause}"
+    );
+    assert!(
+        clause.ends_with(&format!("and has no {platform} spelling")),
+        "{clause}"
+    );
 }

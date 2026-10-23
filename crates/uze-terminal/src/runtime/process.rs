@@ -31,38 +31,16 @@ pub(super) fn relaunch_command_for_process(process: &str) -> Option<Vec<String>>
 }
 
 /// The binary to start a server with: this one, unless this one is no
-/// longer on disk.
-///
-/// `current_exe` reads `/proc/self/exe`, and a binary replaced under a
-/// running process — a `make install` while a client is up, which is the
-/// ordinary state of this repository's own development — resolves to
-/// `<path> (deleted)`. Spawning that answers `No such file or directory`,
-/// from a command that never named a file: the operator is told a path is
-/// missing and given no way to tell which.
-///
-/// The replacement is `uze` as `PATH` resolves it — the same binary the
-/// operator just installed over this one, which is the one they want
-/// serving anyway.
+/// longer on disk, when `uze` on `PATH` replaces it (see
+/// [`uze_platform::executable::own_or_replacement`]).
 pub(super) fn server_executable() -> Result<PathBuf, RuntimeError> {
-    let current = env::current_exe()?;
-    if current.exists() {
-        return Ok(current);
-    }
-    which_uze().ok_or_else(|| {
+    uze_platform::executable::own_or_replacement("uze").ok_or_else(|| {
+        let current = env::current_exe().unwrap_or_default();
         RuntimeError::Protocol(format!(
             "{} is gone (replaced while it ran) and no `uze` on PATH replaces it",
             current.display()
         ))
     })
-}
-
-/// `uze` as `PATH` resolves it, resolved here rather than left to the
-/// shell: `Command::new("uze")` would search the *server's* environment,
-/// and the server is spawned with the client's.
-pub(super) fn which_uze() -> Option<PathBuf> {
-    env::split_paths(&env::var_os("PATH")?)
-        .map(|directory| directory.join(uze_platform::executable::file_name("uze")))
-        .find(|candidate| candidate.is_file())
 }
 
 pub(super) fn start_server(

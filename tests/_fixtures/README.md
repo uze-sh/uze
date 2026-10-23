@@ -115,6 +115,18 @@ since nothing in the tree encodes JPEG: `rust.jpg` (16×8, one colour) and
 `gray.jpg` (8×8, one channel), made with `ffmpeg -f lavfi -i color=…`.
 Every other format those tests read is encoded inside the test itself.
 
+## portable-commands/
+
+- `corpus.tsv` — real one-line commands (GitHub Actions `run:` steps,
+  `package.json` scripts, devcontainer commands, justfile lines), each
+  with the repository, commit and path it came from. Read by
+  `crates/uze-core/src/machine/portable_shell/tests.rs`, whose ratchets
+  hold the share the portable shell runs and the share whose meaning
+  depends on which `sh` runs it to the values the
+  `portable-authored-commands` change recorded.
+- `collect.py` — how `corpus.tsv` was made, for a corpus regenerated
+  on purpose; the ratchets then move in the same change.
+
 ## rules/
 
 - `glob-dialect.tsv` — the project-rules glob dialect as one table of

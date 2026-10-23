@@ -60,10 +60,10 @@ impl ProjectCommands {
         let spelled = |step: PolicyStep, commands: &[ShellCommand]| {
             commands
                 .iter()
-                .filter_map(ShellCommand::here)
-                .map(move |line| ProjectCommand {
+                .filter_map(|command| command.runs_here().ok())
+                .map(move |runs| ProjectCommand {
                     step,
-                    line: line.to_owned(),
+                    line: runs.line().to_owned(),
                 })
                 .collect::<Vec<_>>()
         };
@@ -279,6 +279,27 @@ mod tests {
         let project = root.join("project");
         std::fs::create_dir_all(&project).unwrap();
         (UzeHome::at(root.join("uze")), project)
+    }
+
+    /// A plain line the portable shell runs is asked about on every
+    /// platform, by the text its author wrote; one it cannot run is asked
+    /// about only where `sh` runs it.
+    #[test]
+    fn a_portable_line_is_approved_by_its_text_on_every_platform() {
+        let policy = WorktreePolicy {
+            setup: vec![ShellCommand::from("pnpm install && pnpm build")],
+            gate: vec![ShellCommand::from("for f in *; do make; done")],
+            ..WorktreePolicy::default()
+        };
+        let lines = ProjectCommands::of(&policy)
+            .iter()
+            .map(|command| (command.step, command.line.clone()))
+            .collect::<Vec<_>>();
+        let mut expected = vec![(PolicyStep::Setup, "pnpm install && pnpm build".to_owned())];
+        if uze_platform::shell::FAMILY == uze_platform::shell::Family::Posix {
+            expected.push((PolicyStep::Gate, "for f in *; do make; done".to_owned()));
+        }
+        assert_eq!(lines, expected);
     }
 
     fn policy(setup: &[&str], gate: &[&str]) -> WorktreePolicy {

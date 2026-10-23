@@ -143,25 +143,41 @@ workspace:
   artifacts: docs
 ```
 
-A command is a line for a POSIX shell, the `sh` Linux and macOS run it in.
-For a project worked on from Windows too, spell a step for each shell instead:
-Windows runs its `windows` spelling in Windows PowerShell. A command both
-shells read the same way is still written twice, because each shell is only
-ever handed the line written for it:
+A command is one line, and it runs the same on Linux, macOS and Windows. uze
+runs it in a small shell of its own, so nothing depends on which shell the
+machine has. That shell reads what a `setup` or `gate` line usually needs:
+
+- `&&`, `||` and `;`, pipes, and `<`, `>` and `>>`
+- `NAME=value command`, `$NAME`, `$(command)`, globs and `~`
+- `cat`, `cd`, `cp`, `echo`, `exit`, `export`, `head`, `mkdir`, `mv`, `pwd`,
+  `rm`, `set`, `sleep`, `test`, `unset` and `xargs`, built in, so
+  `cp .env.example .env` works on a Windows machine with no `cp`
+
+```yaml
+workspace:
+  setup: test -f .env || cp .env.example .env
+  gate:
+    - pnpm test
+    - mkdir -p reports && pnpm lint > reports/lint.txt
+```
+
+Some lines need more than that shell reads: `if`, `for` or `while`, functions,
+`${NAME}`, `[`, or a flag its built-in commands do not have, like `head -1`.
+Such a line still runs, in `sh`, on Linux and macOS, exactly as before. It does
+not run on Windows, and `uze status` says which part kept it there. To run it
+on Windows too, write it once for each shell. Windows runs the `windows` line
+in Windows PowerShell:
 
 ```yaml
 workspace:
   setup:
-    posix: cp .env.example .env
-    windows: Copy-Item .env.example .env
-  gate:
-    - posix: pnpm test
-      windows: pnpm test
-    - posix: test -f dist/app.js
-      windows: if (-not (Test-Path dist/app.js)) { exit 1 }
+    posix: for f in *.example; do cp "$f" "${f%.example}"; done
+    windows: Get-ChildItem *.example | % { Copy-Item $_ ($_.Name -replace '\.example$') }
 ```
 
-A step with no spelling for the machine it runs on is not run there. A `setup`
+`posix:` alone also runs a line in `sh` when you want `sh` itself.
+
+A step with no line for the machine it runs on is not run there. A `setup`
 step is skipped with a warning naming it; a `gate` step refuses the delivery,
 because work nothing checked never lands. `uze status` lists every such step.
 

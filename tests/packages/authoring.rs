@@ -130,6 +130,15 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
     assert!(plugin_root.join("plugin.json").is_file());
     assert!(plugin_root.join("skills/greet/SKILL.md").is_file());
     assert!(plugin_root.join("hooks.json").is_file());
+    // One exec-form handler named once: Linux and macOS run `scripts/guard`,
+    // Windows its `.ps1` twin, and no pair spells the same thing twice.
+    let hooks: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(plugin_root.join("hooks.json")).unwrap()).unwrap();
+    let handler = &hooks["hooks"]["PreToolUse"][0]["hooks"][0];
+    assert_eq!(handler["command"], "scripts/guard", "{hooks}");
+    assert!(handler["args"].is_array(), "{hooks}");
+    assert!(plugin_root.join("scripts/guard").is_file());
+    assert!(plugin_root.join("scripts/guard.ps1").is_file());
     // The entry that makes it installable, written at scaffold time.
     assert!(
         fs::read_to_string(at.join("marketplace.json"))

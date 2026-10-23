@@ -1,0 +1,1225 @@
+kind	repository	commit	path	command
+actions	BurntSushi/ripgrep	3fce3b5bb0236da2df6d99672afb8a719642eca7	.github/workflows/ci.yml	cargo build --verbose
+actions	BurntSushi/ripgrep	3fce3b5bb0236da2df6d99672afb8a719642eca7	.github/workflows/ci.yml	cargo doc --no-deps --document-private-items --workspace
+actions	BurntSushi/ripgrep	3fce3b5bb0236da2df6d99672afb8a719642eca7	.github/workflows/ci.yml	ci/test-complete
+actions	BurntSushi/ripgrep	3fce3b5bb0236da2df6d99672afb8a719642eca7	.github/workflows/release.yml	gh release create $VERSION --draft --verify-tag --title $VERSION
+actions	alacritty/alacritty	542147067dd016fc5f49120ef0ba605a98a4e3a7	.github/workflows/release.yml	cargo build --release
+actions	alacritty/alacritty	542147067dd016fc5f49120ef0ba605a98a4e3a7	.github/workflows/release.yml	cargo test --release
+actions	alacritty/alacritty	542147067dd016fc5f49120ef0ba605a98a4e3a7	.github/workflows/release.yml	cargo test --release --target=x86_64-apple-darwin
+actions	alacritty/alacritty	542147067dd016fc5f49120ef0ba605a98a4e3a7	.github/workflows/release.yml	make dmg-universal
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm -C packages/zone.js install --frozen-lockfile
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm -C packages/zone.js jest:nodetest
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm -C packages/zone.js vitest-globals:test
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm bazel build //adev:build
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/adev-preview-build.yml	pnpm bazel build //adev:build.production --config=snapshot-build
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/benchmark-compare.yml	pnpm benchmarks run-compare "$COMPARE_SHA" "$BENCHMARK_TARGET"
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm check-tooling-setup
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm devtools:build:chrome
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm ng-dev pullapprove verify
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm test:ci
+actions	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	.github/workflows/ci.yml	pnpm ts-circular-deps:check
+actions	anthropics/claude-code	1132b8a98e93300bb3822197fb7eee12ce4fb906	.github/workflows/backfill-duplicate-comments.yml	bun run scripts/backfill-duplicate-comments.ts
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo clippy --workspace --all-targets --all-features --locked
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo clippy -p ruff_wasm -p ty_wasm --target wasm32-unknown-unknown --all-features --locked
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo doc --all --no-deps
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo fmt --all --check
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo publish --workspace --dry-run
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo run --profile profiling --package ty_completion_eval -- all --threshold 0.4 --tasks /tmp/completion-evaluation-tasks.csv
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cargo test --doc --profile profiling --all-features
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	cat target/formatter-ecosystem/stats.txt > "$GITHUB_STEP_SUMMARY"
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	npm run check
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	python crates/ruff_python_ast/generate.py
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	python crates/ruff_python_formatter/generate.py
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/publish-crates.yml	python3 scripts/publish-crates.py --cargo cargo +nightly-2026-06-12 --no-verify -- -Zpublish-timeout --config 'publish.timeout=600'
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	rustup component add rustfmt
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	rustup default "${MSRV}"
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	rustup show
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	scripts/formatter_ecosystem_checks.sh
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	test -z "$(git status --porcelain)"
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --locked --only-dev cargo nextest run --cargo-profile profiling --all-features
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --no-project --locked scripts/check-cargo-bans.py
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --only-dev cargo codspeed build -m simulation -m memory --features "codspeed,module_resolution,ty_instrumented" --profile profiling --no-default-features -p ruff_benchmark --bench module_resolution --bench ty --bench ty_constraint_set
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --only-dev cargo codspeed build -m simulation -m memory --features "codspeed,ruff_instrumented" --profile profiling --no-default-features -p ruff_benchmark --bench formatter --bench lexer --bench linter --bench parser
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --only-dev cargo codspeed build -m walltime --features "codspeed,ty_ide,ty_walltime" --profile profiling --no-default-features -p ruff_benchmark --bench ty_walltime --bench ty_script --bench ty_ide
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --only-dev cargo codspeed run
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --only-dev cargo shear --deny-warnings
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --python="${PYTHON_VERSION}" --directory=./python/py-fuzzer mypy
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --python="${PYTHON_VERSION}" --directory=./python/py-fuzzer ruff check
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --python="${PYTHON_VERSION}" --directory=./python/py-fuzzer ruff format --check
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --quiet --project=./scripts/ty_benchmark cargo run --quiet -p ty check --project=./scripts/ty_benchmark --color=always
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run --quiet --python="${PYTHON_VERSION}" --project=./python/py-fuzzer cargo run --quiet -p ty check --project=./python/py-fuzzer --color=always
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run scripts/generate_mkdocs.py
+actions	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.github/workflows/ci.yaml	uv run scripts/transform_readme.py --target mkdocs
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/bench.yml	./target/debug/uv run --script scripts/codspeed-profiles.py finish "$RUNNER_TEMP/codspeed-simulation"
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/bench.yml	./target/debug/uv run --script scripts/codspeed-profiles.py start "$RUNNER_TEMP/codspeed-walltime" walltime >> "$GITHUB_OUTPUT"
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/bench.yml	./target/debug/uv venv --cache-dir .cache
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/build-dev-binaries.yml	./target/no-debug/uv --version
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/check-generated-files.yml	cargo --locked dev generate-scenario-tests --mode check
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/check-generated-files.yml	cargo --locked dev generate-sysconfig-metadata --mode check
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/build-dev-binaries.yml	cargo build --locked --profile no-debug-nightly -Z checksum-freshness --target x86_64-apple-darwin --bin uv --bin uvx
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/bench.yml	echo "$GITHUB_WORKSPACE/target/codspeed-bin" >> "$GITHUB_PATH"
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/build-dev-binaries.yml	rustup default ${MSRV}
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/build-dev-binaries.yml	rustup toolchain install --profile minimal
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/build-release-binaries.yml	scripts/install-cargo-extensions.sh
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/check-fmt.yml	uv run --only-group=check ruff format --diff .
+actions	astral-sh/uv	a02d446bcddd8a00c98084709b6bdccbc9a8208f	.github/workflows/bench.yml	zstd -dc benchmarks-walltime.tar.zst | tar -xf -
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/example-run.yml	cargo build --example app_under_test --example integration_test --features "bevy_remote_client bevy_feathers"
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo check --target wasm32-unknown-unknown
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo check --target wasm32-unknown-unknown -Z build-std=std,panic_abort
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo check -p bevy --no-default-features --features default_no_std --target thumbv6m-none-eabi
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/dependencies.yml	cargo deny check bans
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/dependencies.yml	cargo deny check licenses
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/dependencies.yml	cargo deny check sources
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo miri test -p bevy_ecs --features bevy_utils/debug
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo run -p build-templated-pages -- update examples
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cargo run -p ci -- compile
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	cd examples/no_std/library && cargo check --no-default-features --features libm,critical-section --target x86_64-unknown-none
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/example-run.yml	git apply --ignore-whitespace tools/example-showcase/disable-audio.patch
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	taplo fmt --check --diff
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	touch ./missing-examples/missing-metadata
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci.yml	touch ./missing-features/missing-update
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci-comment-failures.yml	unzip missing-features.zip
+actions	bevyengine/bevy	84e2d2cc5adaeff7547e44f434a0d0d7a20345b8	.github/workflows/ci-comment-failures.yml	unzip msrv.zip
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/autofix.yml	cargo codegen grammar
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/autofix.yml	cargo codegen-bindings
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/autofix.yml	cargo codegen-configuration
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/benchmark.yml	cargo codspeed run -p biome_service
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/beta.yml	cargo deny check bans advisories
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/beta_js_api.yml	cargo install wasm-bindgen-cli --version 0.2.117
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/beta_js_api.yml	cargo install wasm-tools
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/beta.yml	just build-wasm-bundler
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/beta.yml	just build-wasm-node
+actions	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	.github/workflows/autofix.yml	tombi format
+actions	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	.github/workflows/release.yaml	cargo install --locked mdbook-linkcheck@0.7.7
+actions	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	.github/workflows/release.yaml	cargo install --locked mdbook@0.4.52
+actions	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	.github/workflows/ci.yaml	cargo test --all
+actions	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	.github/workflows/ci.yaml	shellcheck www/install.sh
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	cargo +nightly generate-lockfile -Z minimal-versions
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	cargo fmt --check
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	cargo install cargo-tarpaulin
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	cargo test -p clap_complete_nushell -F unstable-shell-tests
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/rust-next.yml	cargo update
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	cargo update --workspace --locked
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/post-release.yml	echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	make clippy-minimal
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	make clippy-minimal ARGS='--manifest-path Cargo.toml'
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	make test-minimal ARGS='--manifest-path Cargo.toml'
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	rustup update --no-self-update nightly && rustup default nightly
+actions	clap-rs/clap	ccc89b83875474399e9d9d70841163f6319d1a41	.github/workflows/ci.yml	sudo apt-get install -y elvish fish zsh
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/cargo_publish.generated.yml	./tools/release/03_publish_crates.ts
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	./wpt make-hosts-file | sudo tee -a /etc/hosts
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build --locked -p deno -p denort -p test_server --bin deno --bin denort --bin test_server --features=deno/panic-trace
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build --release --locked -p deno -p denort -p test_server --bin deno --bin denort --bin test_server --features=deno/panic-trace
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build --release -p bsdiff_helper
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build --release -p deno
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build --release -p test_ffi
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo build -p test_ffi
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo check --locked -p deno -p denort --no-default-features --features quickjs
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo run -p deno_core --example op2 --features v8
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	cargo test --locked --lib -p deno -p denort -p node_shim -p bsdiff_helper -p deno_lib -p denort_desktop -p deno_snapshots -p deno_bundle_runtime -p deno_cache -p deno_canvas -p deno_cron -p deno_crypto -p deno_fetch -p deno_ffi -p deno_fs -p deno_http -p deno_image -p deno_io -p deno_kv -p deno_napi -p napi_sym -p deno_net -p deno_node -p deno_node_crypto -p deno_node_sqlite -p denort_helper -p deno_signals -p deno_telemetry -p deno_url -p deno_web -p deno_webgpu -p deno_webidl -p deno_websocket -p deno_webstorage -p deno_cache_dir -p deno_cli_parser -p deno_config -p deno_crypto_provider -p deno_v8 -p deno_dotenv -p eszip -p deno_http_h1 -p deno_inspector_server -p deno_lockfile -p deno_maybe_sync -p napi_sys -p node_resolver -p deno_npm -p deno_npm_cache -p deno_npm_installer -p deno_npmrc -p deno_package_json -p deno_print -p deno_resolver -p deno_runtime -p deno_features -p deno_permissions -p deno_subprocess_windows
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	chmod +x target/debug/denort
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	chmod +x target/debug/test_server
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	chmod +x target/release/denort
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	chmod +x target/release/test_server
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	deno run --allow-write --allow-read --allow-run --allow-net ./tools/format.js --check
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	echo $GITHUB_WORKSPACE/third_party/prebuilt/mac >> $GITHUB_PATH
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	git submodule update --init --recursive --depth=1 -- ./tests/util/std
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	rustup target add wasm32-unknown-unknown
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	sudo modprobe vsock_loopback
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	target/debug/deno eval "console.log(1+2)" | grep 3
+actions	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.github/workflows/ci.generated.yml	target/release/deno run -A --config tests/config/deno.json ext/websocket/autobahn/fuzzingclient.js
+actions	devcontainers/images	d394f016bd0b329c4563d659a479c8284e4fbe56	.github/workflows/release-pr.yml	./build/prepare-release.sh
+actions	devcontainers/images	d394f016bd0b329c4563d659a479c8284e4fbe56	.github/workflows/release-pr.yml	npm i -g @devcontainers/cli
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile checkLicenses
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile checkRuleExamples
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile checkRuleFiles
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile cypress
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile lintDocsJS
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	node Makefile mocha
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm install
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm install -g npm@latest
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/docs-ci.yml	npm run build
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/docs-ci.yml	npm run lint:links
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm run lint:rule-types
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/docs-ci.yml	npm run lint:scss
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm run test:emfile
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm run test:pnpm
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npm run test:types:7.x
+actions	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	.github/workflows/ci.yml	npx tsc -p tests/lib/types/tsconfig.json
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	ESBUILD_WORKER_THREADS=0 node scripts/register-test.js
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	go test -race ./cmd/... ./internal/... ./pkg/...
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	go test ./internal/...
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	make lib-typecheck
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	make test-esprima
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	make test-old-ts
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	make test-rollup
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	node scripts/end-to-end-tests.js
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	node scripts/node-unref-tests.js
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	node scripts/plugin-tests.js
+actions	evanw/esbuild	f6058f8364fe7ab91ca57a83e02577ed74c9cae4	.github/workflows/ci.yml	node scripts/wasm-tests.js
+actions	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	.github/workflows/argos.yml	pnpm argos:build:text-snapshots
+actions	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	.github/workflows/argos.yml	pnpm argos:format:text-snapshots
+actions	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	.github/workflows/continuous-releases.yml	pnpm build:packages
+actions	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	.github/workflows/continuous-releases.yml	pnpm pkg-pr-new publish './packages/*' --template './template/*' --compact --comment=off --pnpm
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_playground.yml	CI=true yarn test
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_rust.yml	cargo build
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_rust_version.yml	compiler/scripts/open-rust-version-pr.sh
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_discord_notify.yml	echo "is_member_or_collaborator=true" >> "$GITHUB_OUTPUT"
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_playground.yml	npx playwright install --with-deps chromium
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_playground.yml	working-directory: compiler/apps/playground
+actions	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	.github/workflows/compiler_rust.yml	yarn snap --rust
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	node ./scripts/use-ts-5_0.js
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm install --frozen-lockfile --filter @sentry-internal/optional-e2e-gh-action
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm run build:ci
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm run build:tarball
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm run format:check
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm run lint:es-compatibility
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/build.yml	pnpm run test:ci:node
+actions	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	.github/workflows/canary.yml	pnpm run test:prepare
+actions	github/docs	5815d11586b0796688963a98c889680e60d72dc4	.github/workflows/article-api-docs.yml	npm run generate-article-api-docs
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo clippy --workspace --all-targets -- -D warnings
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo integration-test
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo xtask highlight-check
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo xtask indent-check
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo xtask query-check
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/build.yml	cargo xtask theme-check
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/gh-pages.yml	mdbook build book
+actions	helix-editor/helix	ba40e547426b0f9896c8bdc699a4ab11f2b37dbc	.github/workflows/release.yml	rm rust-toolchain.toml
+actions	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	.github/workflows/ci.yaml	pnpm run lint:lit --quiet
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/issues.yml	gh issue close $ISSUE --comment "As noted in the [Bug Report template](https://github.com/jestjs/jest/blob/main/.github/ISSUE_TEMPLATE/bug.yml), all bug reports requires a minimal reproduction. Please open up a new issue providing one. Read more at https://stackoverflow.com/help/minimal-reproducible-example."
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/issues.yml	gh issue close $ISSUE --comment "Please note this issue tracker is not a help forum. We recommend using [StackOverflow](https://stackoverflow.com/questions/tagged/jestjs) or our [discord channel](https://discord.gg/j6FKKQQrW9) for questions."
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/check-changelog.yml	yarn --immutable --mode=skip-build
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn build:ts
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn constraints
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn dedupe --check
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/pkg-pr-new.yml	yarn dlx pkg-pr-new publish './packages/*' --compact
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn lint:prettier:ci
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn test-leak
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn test-types --target '>=5.4 <6.0' # For documentation, see: https://tstyche.org/guides/typescript-versions
+actions	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	.github/workflows/nodejs.yml	yarn verify-pnp
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	./built/local/tsc -p ./tsc/testdata/fixtures/compiler --noEmit
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	./built/local/tsc -p ./tsc/testdata/fixtures/compiler --noEmit --singleThreaded
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	git diff --exit-code
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	git diff --staged --exit-code --stat
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/create-cherry-pick-pr.yml	git switch --detach "origin/$TARGET_BRANCH"
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	go -C ./tools mod tidy -diff
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	go work sync
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby build --race
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby check:vsce-version
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby generate
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby test:benchmarks
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby test:codegen
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby test:tools
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/ci.yml	npx hereby typescript:check-platforms
+actions	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	.github/workflows/bump-vscode-typescript.yml	npx hereby vscode-typescript:pack --forRelease --vscodeTypescriptRelease
+actions	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	.github/workflows/infra.yml	mvn package
+actions	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	.github/workflows/infra.yml	pip install -r utils/doclint/linting-code-snippets/python/requirements.txt
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/component-fixtures.yml	cp node_modules/@vscode/codicons/dist/codicon.ttf src/vs/base/browser/ui/codicons/codicon/codicon.ttf
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/copilot-setup-steps.yml	node build/azure-pipelines/common/computeBuiltInDepsCacheKey.ts > .build/builtindepshash
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/chat-perf.yml	node build/lib/preLaunch.ts
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/monaco-editor.yml	npm run bundle-webpack
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/chat-perf.yml	npm run compile
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/monaco-editor.yml	npm run gulp editor-distro
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/monaco-editor.yml	npm run gulp monacodts-check
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/monaco-editor.yml	npm run test
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/chat-perf.yml	npm run transpile-client
+actions	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	.github/workflows/component-fixtures.yml	npx rspack build --config rspack.serve-out.config.mts
+actions	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	.github/workflows/ci-check.yml	echo "No build required"
+actions	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	.github/workflows/backport.yml	node .github/scripts/compute-backport-targets.mjs
+actions	nodejs/node	14ed05f86bd6c2309f07a29edaa64c3a0ce01728	.github/workflows/comment-labeled.yml	gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$NOTABLE_CHANGE_MESSAGE"
+actions	nodejs/node	14ed05f86bd6c2309f07a29edaa64c3a0ce01728	.github/workflows/build-tarball.yml	make -C "$TAR_DIR" build-ci -j4 V=1
+actions	nodejs/node	14ed05f86bd6c2309f07a29edaa64c3a0ce01728	.github/workflows/build-tarball.yml	make -C "$TAR_DIR" test-ci -j1 V=1 TEST_CI_ARGS="-p dots --measure-flakiness 9"
+actions	nodejs/node	14ed05f86bd6c2309f07a29edaa64c3a0ce01728	.github/workflows/auto-start-ci.yml	npm install -g @node-core/utils
+actions	nodejs/node	14ed05f86bd6c2309f07a29edaa64c3a0ce01728	.github/workflows/benchmark.yml	printf '::add-mask::%s\n' "$COMMENT_TOKEN"
+actions	nushell/nushell	d1064f1ae133292327c2cd36ef31aae7c2c579bd	.github/workflows/nightly-build.yml	cd release && shasum -a 256 * > ../SHA256SUMS
+actions	nushell/nushell	d1064f1ae133292327c2cd36ef31aae7c2c579bd	.github/workflows/nightly-build.yml	nu .github/workflows/release-pkg.nu
+actions	nushell/nushell	d1064f1ae133292327c2cd36ef31aae7c2c579bd	.github/workflows/ci.yml	nu scripts/test_virtualenv.nu
+actions	nushell/nushell	d1064f1ae133292327c2cd36ef31aae7c2c579bd	.github/workflows/ci.yml	printf '%s\n' "${NU_HOME}" >> "$GITHUB_PATH"
+actions	nushell/nushell	d1064f1ae133292327c2cd36ef31aae7c2c579bd	.github/workflows/beta-test.yml	rustup update beta
+actions	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	.github/workflows/bazel.yml	python -m unittest discover -s .github/scripts -p test_select_windows_bazel_targets.py
+actions	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	.github/workflows/bazel.yml	python .github/scripts/test_run_bazel_with_buildbuddy.py
+actions	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	.github/workflows/blocking-ci.yml	python3 .github/scripts/check_ci_results.py
+actions	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	.github/workflows/bun-types.yml	bun test test/integration/bun-types/bun-types.test.ts
+actions	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	.github/workflows/audit.yml	pn audit
+actions	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	.github/workflows/cleanup-cspell.yml	name: Cleanup cspell.json
+actions	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	.github/workflows/cleanup-cspell.yml	node scripts/clean-cspell.js
+actions	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	.github/workflows/dev-package-test.yml	npm install --global pnpm
+actions	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	.github/workflows/_build.yml	yarn --immutable
+actions	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	.github/workflows/eslint-rules.yml	yarn test-coverage
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	git fetch --no-tags origin "$BASE:refs/remotes/origin/$BASE"
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/auto-close-github-discussions.yml	node ./.github/workflows/scripts/auto-close-github-discussions.mjs
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm --filter prisma7-adoption exec prisma7 --version --config prisma7.config.ts
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm check:clean-tree
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm check:error-reference
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm coverage:report
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:code
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:deps
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:examples
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:legacy-name
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:manifests
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:packages
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:rules
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm lint:vitest-timeouts
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/deploy-telemetry-backend.yml	pnpm run migrate
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/bundle-size.yml	pnpm size:build && pnpm exec size-limit
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm test:e2e
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	pnpm typecheck:examples
+actions	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	.github/workflows/ci.yml	supabase start
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo build --target x86_64-unknown-none -p ratatui --no-default-features
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo check --target thumbv6m-none-eabi -p ratatui --no-default-features --features portable-atomic
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo check --target thumbv6m-none-eabi -p ratatui-widgets --features portable-atomic
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo minimal-versions check --direct --workspace --all-features --all-targets
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo rdme install-rust-toolchain-for-intralinks
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo tree --target x86_64-unknown-none -p ratatui --no-default-features
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo tree --target x86_64-unknown-none -p ratatui-core
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask check --all-features
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask clippy
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask docs
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask format --check
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask test-docs
+actions	ratatui/ratatui	f57b06ffb72085644b35e71d296fd90b777dc073	.github/workflows/ci.yml	cargo xtask test-libs
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/append_agent_step_summary.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/audit_pre_agent_workspace.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/check_otlp_default_credentials.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/clean_git_credentials.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/collect_usage_artifact_files.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/configure_git_credentials.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/create_gh_aw_tmp_dir.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/download_docker_images.sh" ghcr.io/github/gh-aw-firewall/agent:0.28.14@sha256:f7df036c86575527b61f3f7df91c4412349a12b2a74988d929eafa2999230c98 ghcr.io/github/gh-aw-firewall/api-proxy:0.28.14@sha256:6f95e2234dd9bd6333a8ff28ccea7ecf0204acd4a09108723844dbd2bf6268c5 ghcr.io/github/gh-aw-firewall/cli-proxy:0.28.14@sha256:3a379c5e96e29499c815e9dd2a71334d01c326a9b73991c76544fda9cae35c34 ghcr.io/github/gh-aw-firewall/squid:0.28.14@sha256:2ce8df3abf3e9b76e9c0cf5863da41f1ab3f89b20ad14b988806ab89e7bf2cd5 ghcr.io/github/gh-aw-mcpg:v0.4.18@sha256:85b940556a8faa4e1fdbef124bfd75f2c4ebd855a10b88a1c3b6f3e97f6f1a53 ghcr.io/github/gh-aw-node@sha256:0daa8971fa4732b647150cb6524a6b0804b68d5d24f6f58b5dd1af23bd63fb23 ghcr.io/github/github-mcp-server:v1.11.0@sha256:fbec75de11c255213fa08d80fb166abe73d851fff631c51c0079872967720699
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/download_docker_images.sh" ghcr.io/github/gh-aw-firewall/agent:0.28.14@sha256:f7df036c86575527b61f3f7df91c4412349a12b2a74988d929eafa2999230c98 ghcr.io/github/gh-aw-firewall/api-proxy:0.28.14@sha256:6f95e2234dd9bd6333a8ff28ccea7ecf0204acd4a09108723844dbd2bf6268c5 ghcr.io/github/gh-aw-firewall/squid:0.28.14@sha256:2ce8df3abf3e9b76e9c0cf5863da41f1ab3f89b20ad14b988806ab89e7bf2cd5
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/mask_otlp_headers.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-review-issue.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/parse_guard_list.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/print_firewall_logs.sh" --rootless
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/restore_base_github_folders.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/restore_inline_skills.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-implement.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/stop_cli_proxy.sh"
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-iterate.lock.yml	bash "${RUNNER_TEMP}/gh-aw/actions/validate_multi_secret.sh" CODEX_API_KEY OPENAI_API_KEY Codex https://github.github.com/gh-aw/reference/engines/#openai-codex
+actions	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	.github/workflows/aw-command-iterate.lock.yml	npm install --ignore-scripts -g @openai/codex@0.150.1
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/release.yml	./publish.py
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\Windows Kits\10\Debuggers\arm64"
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo hack check --all-targets --rust-version --workspace --ignore-private --locked
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo lint-docs --check
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo stale-label
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo test --workspace --exclude cargo --exclude benchsuite --exclude resolver-tests
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo test -p cargo
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo test -p cargo-util-schemas -F unstable-schema
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cargo test -p resolver-tests
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	cd doc/book && mdbook build --dest-dir ../../target/doc
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	ci/fetch-smoke-test.sh
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	ci/validate-man.sh
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	ci/validate-version-bump.sh
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	echo CARGO_CONTAINER_TESTS=1 >> $GITHUB_ENV
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	gdb --version
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	objdump --version
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	rustup component add rust-docs
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	rustup component add rust-src
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	rustup component add rustfmt || echo "rustfmt not available"
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	rustup update stable
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	rustup update stable && rustup default stable
+actions	rust-lang/cargo	cf29d0e0b1f7b03c4ceda5211cc4dc493bfc542e	.github/workflows/main.yml	sudo apt update -y && sudo apt install gdb lldb -y
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	! (cargo tree -p proc-macro-srv-cli -p proc-macro-srv -p proc-macro-srv-cli -p proc-macro-api -i salsa)
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	./target/debug/rust-analyzer analysis-stats . -q
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/release.yaml	apk add --no-cache git clang lld musl-dev nodejs npm
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo build -p rust-analyzer
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo clippy --all-targets -- -D clippy::disallowed_macros -D clippy::dbg_macro -D clippy::todo -D clippy::print_stdout -D clippy::print_stderr
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo codegen --check
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/autopublish.yaml	cargo install --locked cargo-workspaces --version "0.3.6"
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo install --locked rustup-toolchain-install-master@1.11.0
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo machete
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	cargo nextest run --no-fail-fast --hide-progress-bar
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/metrics.yaml	cargo xtask metrics build
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	curl -LsSf https://github.com/crate-ci/typos/releases/download/$TYPOS_VERSION/typos-$TYPOS_VERSION-x86_64-unknown-linux-musl.tar.gz | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/release.yaml	echo "HEAD_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/release.yaml	ls -al ./dist
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	npm run format:check
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	npm run lint
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	npm run package --scripts-prepend-node-path
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	npm test
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/release.yaml	npx vsce package -o ../../dist/rust-analyzer-no-server.vsix --pre-release
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/release.yaml	rm -rf editors/code/server
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/autopublish.yaml	sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+actions	rust-lang/rust-analyzer	bcd39e699382e52b7d8c138a934533cc29be0781	.github/workflows/ci.yaml	xvfb-run npm test
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cargo docs-rs -p serde
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cargo docs-rs -p serde_derive_internals
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cargo generate-lockfile -Z minimal-versions
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cargo miri setup
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde && cargo build --features rc
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde && cargo build --no-default-features --features alloc
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde && cargo build --no-default-features --features rc,alloc
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde && cargo clippy --features rc,unstable -- -Dclippy::all -Dclippy::pedantic
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde_derive && cargo clippy -- -Dclippy::all -Dclippy::pedantic
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd serde_derive_internals && cargo clippy -- -Dclippy::all -Dclippy::pedantic
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd test_suite && cargo clippy --tests --features unstable -- -Dclippy::all -Dclippy::pedantic
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd test_suite && cargo miri test --features unstable
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd test_suite && cargo test --features unstable -- --skip ui --exact
+actions	serde-rs/serde	0db9b3b504bcb0a7fa9cf001429869519afd3e9a	.github/workflows/ci.yml	cd test_suite/no_std && cargo build
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	bat --list-themes
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	cargo audit
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	cargo install --locked --path .
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	cargo install cargo-audit --locked
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	cargo install cross --git https://github.com/cross-rs/cross --rev 588b3c99db52b5a9c5906fab96cfadcf1bde7863
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	cargo test --locked --test system_wide_config -- --ignored
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	echo "BUILD_CMD=cross" >> $GITHUB_ENV
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	tests/scripts/license-checks.sh
+actions	sharkdp/bat	a9aa73d215455a479f072da75dd39f19826acfea	.github/workflows/CICD.yml	tests/syntax-tests/test_custom_assets.sh
+actions	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	.github/workflows/containers.yml	bun ./packages/containers/script/build.ts --push
+actions	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	.github/workflows/check.yml	bun run check
+actions	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	.github/workflows/check.yml	bun run lint:changed HEAD^1
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/workflow.yml	cargo check --workspace --locked
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/workflow.yml	cargo clippy --workspace --locked -- -D warnings
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/release.yml	cargo install --version 0.3.9 cargo-wix
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/workflow.yml	cargo run --locked --features config-schema -- config-schema > .github/config-schema.json
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/release.yml	gh pr merge l10n_main --squash --repo=starship/starship
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/release.yml	gh repo sync matchai/winget-pkgs
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/release.yml	gh workflow run publish-docs.yml
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/publish-docs.yml	npx netlify-cli deploy --no-build --prod --dir=docs/.vitepress/dist
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/release.yml	pwsh ./install/windows/choco/update.ps1
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/workflow.yml	rustup toolchain install stable --profile minimal --component rustfmt --no-self-update
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/install-script.yml	shellcheck --severity=warning install/**/*.sh
+actions	starship/starship	ae8fecf316ede2258e90fb2a6001ca2a7076961c	.github/workflows/format-workflow.yml	taplo lint --schema "file://${GITHUB_WORKSPACE}/.github/config-schema.json" docs/public/presets/toml/*.toml
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/fork-checks.yml	cd code && yarn exec playwright install chromium --with-deps
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/fork-checks.yml	cd code && yarn fmt:check
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/agentic-ref-eval.yml	node agent-eval/scripts/render-results-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/agent-eval.yml	node agent-eval/scripts/resolve-conditions.ts --labels "$PR_LABELS" --inputs "$DISPATCH_INPUTS"
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/agent-eval.yml	tar -czf agent-eval-results.tgz -C agent-eval results
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/copilot-setup-steps.yml	yarn nx run-many --targets compile --no-cloud
+actions	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	.github/workflows/agent-eval.yml	yarn workspace agent-eval run compile:checkout
+actions	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	.github/workflows/braintrust-evals.yml	cd apps/studio && pnpm evals:preflight
+actions	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	.github/workflows/ai-tests.yml	working-directory: ./packages/ai-commands
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/ci.yml	cd packages/svelte && pnpm i -D @typescript/native-preview
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/autofix.yml	pnpm -F svelte build
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/ci.yml	pnpm -r check
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/ci.yml	pnpm bench
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/autofix.yml	pnpm format
+actions	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	.github/workflows/ci.yml	{ [ "`git status --porcelain=v1 documentation/docs/07-misc/.generated/`" == "" ] || (echo "The browser-support docs page is out of date — please regenerate it locally with \`cd packages/svelte && pnpm generate:browser-support\` and commit the changes"; git diff documentation/docs/07-misc/.generated/; exit 1); }
+actions	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	.github/workflows/prepare-release.yml	git fetch --tags -f
+actions	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	.github/workflows/prepare-release.yml	node ./scripts/pre-publish-optimizations.mjs
+actions	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	.github/workflows/ci.yml	pnpm run test
+actions	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	.github/workflows/release.yml	pnpm run version-packages ${INSIDERS_VERSION}
+actions	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	.github/workflows/ci.yml	rustup target add wasm32-wasip1-threads
+actions	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	.github/workflows/covector-version-or-publish.yml	gh workflow run 31554139 -r dev
+actions	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	.github/workflows/audit.yml	npm i -g --force corepack
+actions	tokio-rs/axum	86aa6153e47b7862737acdcfe3a0eb3a162b939a	.github/workflows/CI.yml	cargo +nightly update -Z minimal-versions
+actions	tokio-rs/axum	86aa6153e47b7862737acdcfe3a0eb3a162b939a	.github/workflows/CI.yml	cargo hack --no-private --exclude axum-macros check-external-types --all-features
+actions	tokio-rs/axum	86aa6153e47b7862737acdcfe3a0eb3a162b939a	.github/workflows/CI.yml	cargo hack check --each-feature --no-dev-deps --all
+actions	tokio-rs/axum	86aa6153e47b7862737acdcfe3a0eb3a162b939a	.github/workflows/CI.yml	cargo-sort --workspace --grouped --check
+actions	tokio-rs/axum	86aa6153e47b7862737acdcfe3a0eb3a162b939a	.github/workflows/CI.yml	echo "version=$(cat axum-macros/rust-toolchain)" >> $GITHUB_OUTPUT
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo build --features rt-net --bin test-mem
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo build --target x86_64-fortanix-unknown-sgx --features rt,sync
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo check --benches
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo hack check -Zbuild-std --target target-specs/i686-unknown-linux-gnu.json -p tokio --feature-powerset --skip io-uring,schedule-latency --depth 2 --keep-going
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo install cargo-fuzz
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo test
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/loom.yml	cargo test --lib --release --features full -- --nocapture $SCOPE
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/loom.yml	cargo test --lib --release --features full -- --nocapture loom_blocking
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/loom.yml	cargo test --lib --release --features full -- --nocapture loom_current_thread
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo test --no-run --lib --features full
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	cargo test --workspace --features $TOKIO_STABLE_FEATURES --target x86_64-unknown-linux-gnu --tests -- --test-threads 1 --nocapture
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	git clone https://github.com/hyperium/hyper.git
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	grep -q "$(sed '/^version = /!d' Cargo.toml | head -n1)" README.md
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	shell: bash
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	sudo apt-get install -y llvm
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=all --fair-sched=yes ./target/debug/test-mem
+actions	tokio-rs/tokio	1361479077cc8bc84866cf90484e847b4709ef6c	.github/workflows/ci.yml	valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=all --fair-sched=yes ./target/debug/test-process-signal
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	MUTE_REACT_ACT_WARNINGS=1 pnpm test --coverage
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	bun --version
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	deno --version
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	node -v
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/check-skills.yml	npm install -g @tanstack/intent
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/lint.yml	pnpm format-fix
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/lint.yml	pnpm lint-prune
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/lint.yml	pnpm manypkg fix
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	pnpm monotest-build
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	pnpm typecheck-www
+actions	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	.github/workflows/main.yml	pnpx pkg-pr-new publish './packages/*'
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	cargo binstall --no-confirm --locked cargo-nextest@0.9.133
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_test.yml	echo STORE_PATH="$(pnpm store path)" >> "$GITHUB_OUTPUT"
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	echo STORE_PATH=$(pnpm store path) >> $GITHUB_OUTPUT
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	exit 1
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	git checkout .
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	git clean -xdf && rm -rf /tmp/next-repo-*; rm -rf /tmp/next-install-* /tmp/yarn-* /tmp/ncc-cache target
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	git config --system core.longpaths true
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_test.yml	node ./.github/actions/validate-docs-links/dist/index.js
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_test.yml	node run-tests.js --timings --write-timings -g 1/1
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	node scripts/normalize-version-bump.js
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	pnpm dlx turbo@${TURBO_VERSION} run "build-native-${RUST_BUILD_PROFILE}" ${TURBO_ARGS} --summarize -- --target "${NATIVE_TARGET}"
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_and_deploy.yml	pnpm install
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	pnpm install --recursive
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	rustc --version
+actions	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	.github/workflows/build_reusable.yml	shell: bash -leuo pipefail {0}
+actions	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	.github/workflows/lsp.yml	brew install bash capnp
+actions	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	.github/workflows/release-review-gate.yml	node scripts/validate-review-gate.mjs
+actions	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	.github/workflows/lsp.yml	pnpm run copy
+actions	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	.github/workflows/ci.yml	echo "Build & Test Failed"
+actions	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	.github/workflows/ci.yml	echo "Build & Test Passed or Skipped"
+actions	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	.github/workflows/ci.yml	pnpm playwright install chromium
+actions	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	.github/workflows/ci.yml	pnpm run test-serve-bundled
+actions	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	.github/workflows/ci.yml	echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+actions	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	.github/workflows/ci.yml	pnpm -C docs run cli-table
+actions	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	.github/workflows/knip.yml	pnpm run knip
+actions	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	.github/workflows/ci.yml	pnpm run test:browser:playwright runner.test.ts
+actions	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	.github/workflows/ci.yml	pnpm run test:ci:e2e
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/test.yml	node node_modules/puppeteer/install.mjs
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/test.yml	node scripts/verify-treeshaking.js
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/release.yml	npm i -g npm@latest
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/ci.yml	pnpm build --withTypes
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/test.yml	pnpm run check
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/autofix.yml	pnpm run lint --fix
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/test.yml	pnpm run test-dts
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/test.yml	pnpm run test-unit compiler
+actions	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	.github/workflows/ci.yml	pnpx pkg-pr-new publish --compact --pnpm './packages/*' --packageManager=pnpm,npm,yarn
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_debian12.yml	apt-get install -y curl
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	bash ci/deploy.sh
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9_continuous.yml	bash ci/retry.sh gh release upload --clobber nightly wezterm-*.rpm *.sha256
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	cargo build -p strip-ansi-escapes --release
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	cargo build -p wezterm --release
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_debian12.yml	echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_debian12_continuous.yml	for f in wezterm-*.deb wezterm-*.xz ; do sha256sum $f > $f.sha256 ; done
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9_continuous.yml	for f in wezterm-*.rpm ; do sha256sum $f > $f.sha256 ; done
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	git config --global --add safe.directory /__w/wezterm/wezterm
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	mkdir -p /run/sshd
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	yum install -y curl-minimal
+actions	wezterm/wezterm	e2a98e1b8af156988ad0ac778658ac27b60a55fb	.github/workflows/gen_centos9.yml	yum install -y git
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	biome ci --formatter-enabled=false --enforce-assist=false --reporter=default --reporter=github
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	cd smoke/docs && pnpm docgen && pnpm docgen:errors
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	find smoke/docs/src/content/docs ! -name 'en' ! -name 'ko' -type d -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	pnpm build
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	pnpm run build --force
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	pnpm run lint:ci
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	pnpm test:language-tools
+actions	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.github/workflows/ci.yml	xvfb-run -a pnpm test || echo "::warning title=ts-plugin tests failed::Known flaky; not failing CI."
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/cherry_pick.yml	./script/cherry-pick "$BRANCH" "$COMMIT" "$CHANNEL"
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	./script/linux
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	./script/prettier --write
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	cargo fix --workspace --allow-dirty --allow-staged
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	cargo fmt --all
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	cargo shear --fix --check-test-targets
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/after_release.yml	curl -fX POST "https://cloud.zed.dev/releases/refresh?expect_tag=$TAG_NAME"
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/bump_zed_version.yml	echo -n preview > crates/zed/RELEASE_CHANNEL
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/bump_zed_version.yml	echo -n stable > crates/zed/RELEASE_CHANNEL
+actions	zed-industries/zed	544780422affd11699fb531c49af5cc6e82a3fd7	.github/workflows/autofix_pr.yml	gh pr checkout "$PR_NUMBER"
+devcontainer	anthropics/claude-code	1132b8a98e93300bb3822197fb7eee12ce4fb906	.devcontainer/devcontainer.json	sudo /usr/local/bin/init-firewall.sh
+devcontainer	astral-sh/ruff	dfe14506d23010aa5dbc4ff6fea702a22ba312bd	.devcontainer/devcontainer.json	.devcontainer/post-create.sh
+devcontainer	denoland/deno	7e4306fbe8587dc7d4c103deb8a95af56cca00cb	.devcontainer/devcontainer.json	git submodule update --init
+devcontainer	devcontainers/images	d394f016bd0b329c4563d659a479c8284e4fbe56	.devcontainer/devcontainer.json	sudo corepack enable && corepack prepare yarn@4.9.4 --activate && npm install -g @devcontainers/cli
+devcontainer	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	.devcontainer/devcontainer.json	.devcontainer/on-create-command.sh
+devcontainer	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	.devcontainer/devcontainer.json	.devcontainer/update-content-command.sh
+devcontainer	github/docs	5815d11586b0796688963a98c889680e60d72dc4	.devcontainer/devcontainer.json	gh cs ports visibility 4000:public -c "$CODESPACE_NAME"
+devcontainer	github/docs	5815d11586b0796688963a98c889680e60d72dc4	.devcontainer/devcontainer.json	nohup bash -c 'npm ci && npm start &'
+devcontainer	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	.devcontainer/devcontainer.json	./.devcontainer/post_create.sh
+devcontainer	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	.devcontainer/devcontainer.json	script/bootstrap
+devcontainer	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	.devcontainer/devcontainer.json	corepack install && pnpm install
+devcontainer	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	.devcontainer/devcontainer.json	sudo chown -R node:node /home/node/.local/share/pnpm && sudo corepack enable && pnpm install
+devcontainer	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	.devcontainer/devcontainer.json	pnpm install && rustup component add llvm-tools-preview
+devcontainer	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	.devcontainer/devcontainer.json	pnpm install && pnpm run build
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	CORPUS="$(pwd)/crates/biome_markdown_parser/tests/fuzz_corpus/corpus.jsonl"
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	FUZZ_CORPUS="$CORPUS" cargo test -p biome_markdown_parser --test fuzz_differential -- --ignored --nocapture
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	Os \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	RUSTDOCFLAGS='-D warnings' cargo documentation
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo binstall cargo-insta@1.48.0 wasm-opt cargo-deny
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo binstall cargo-insta@1.48.0 wasm-opt cargo-deny --force
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo binstall wasm-bindgen-cli --version 0.2.117
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo binstall wasm-bindgen-cli --version 0.2.117 --force
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo build --lib --target wasm32-unknown-unknown -p biome_wasm
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo build --lib --target wasm32-unknown-unknown -p biome_wasm --features unstable
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo format
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo install cargo-binstall
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo install cargo-binstall --force
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo lint
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p rules_check
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen -- all
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen -- analyzer
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features configuration -- configuration
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features configuration -- migrate-eslint
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features global_types -- global-types
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features schema -- bindings
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features schema -- schema
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features xtask_codegen/external_data -- css-baseline
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features xtask_codegen/external_data -- css-keywords
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_codegen --features xtask_codegen/external_data -- module-replacements
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo run -p xtask_coverage -- --suites=markdown/commonmark
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo test --doc
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo test --no-fail-fast
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	cargo test -p biome_markdown_parser --test fuzz_differential -- --ignored --nocapture
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	else
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	fi
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	g
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	git diff --exit-code --quiet
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	if [ -f "$CORPUS" ]; then
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_css_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_graphql_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_html_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_js_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_js_transform/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_json_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_markdown_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just _touch crates/biome_yaml_analyze/tests/spec_tests.rs
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just documentation
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just format
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-all
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-analyzer
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-bindings
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-configuration
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-migrate
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-rules
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-schema
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just gen-types
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just lint-rules
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	just test-doc
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	no-demangle \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	node crates/biome_markdown_parser/tests/fuzz_generate_corpus.cjs \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	o packages/@biomejs/wasm-bundler/biome_wasm_bg.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	o packages/@biomejs/wasm-nodejs/biome_wasm_bg.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	o packages/@biomejs/wasm-web/biome_wasm_bg.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	out-dir packages/@biomejs/wasm-bundler \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	out-dir packages/@biomejs/wasm-nodejs \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	out-dir packages/@biomejs/wasm-web \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	output=crates/biome_markdown_parser/tests/fuzz_corpus/corpus.jsonl
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	pnpm changeset
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	pnpm changeset --empty
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	pnpm execute:v4
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	set -euo pipefail
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	target bundler \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	target nodejs \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	target web \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	typescript
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	wasm-bindgen target/wasm32-unknown-unknown/debug/biome_wasm.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	wasm-bindgen target/wasm32-unknown-unknown/release/biome_wasm.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	wasm-opt packages/@biomejs/wasm-bundler/biome_wasm_bg.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	wasm-opt packages/@biomejs/wasm-nodejs/biome_wasm_bg.wasm \
+justfile	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	justfile	wasm-opt packages/@biomejs/wasm-web/biome_wasm_bg.wasm \
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	! grep '<sup>master</sup>' README.md
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	" char *s = %c%s%c;"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	" printf(s, 34, s, 34);"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	" return 0;"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	"int main() {"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	"int printf(const char*, ...);"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	"}";
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	$hellos | each {|el| print $"($el) from a nushell script!" }
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	./tmp/complete/bin/just --completions bash > tmp/complete/just.bash
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	./tmp/gen0 > tmp/gen1.c
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	./tmp/gen1 > tmp/gen2.c
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	EOF
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	VERSION=`sed -En 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/p' Cargo.toml | head -1`
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	alias hello := foo::bar
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo +nightly udeps --workspace
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo doc --all --open
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo install -f just
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo install cargo-limit
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo install cargo-watch
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lbuild
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lclippy --all --all-targets --all-features -- --deny warnings
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lrun
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lrun -- --man > man/just.1
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lrun -- quine
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lrun --package action-versions
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo lrun --package generate-book
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo ltest constants::tests::readme_table -- --nocapture
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo outdated -R
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo publish
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cargo update --locked --package just
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cat > tmp/complete/justfile << EOF
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cc tmp/gen0.c -o tmp/gen0
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cc tmp/gen1.c -o tmp/gen1
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cd ../..
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cd tmp/complete && PATH="`realpath bin`:$PATH" bash --init-file just.bash
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cd tmp/release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	changeling update-contributors
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	char *s =
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	console.log('Greetings from JavaScript!')
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	cp target/debug/just tmp/complete/bin
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	diff tmp/gen1.c tmp/gen2.c
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	echo "$hello from a shell script!"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	echo 'It was a quine!'
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	echo 'bar:' > tmp/complete/foo.just
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	echo >> CHANGELOG.md
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git checkout master
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git clone --depth 1 git@github.com:casey/just.git tmp/release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git diff --no-ext-diff --quiet --exit-code
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git log --pretty='format:- %s' >> CHANGELOG.md
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git pull --rebase github master
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git push origin $VERSION
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git push origin :test-release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git push origin test-release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git tag -a $VERSION -m "Release $VERSION"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git tag -d test-release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	git tag test-release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	grep '<sup>master</sup>' README.md
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	hello='Yo'
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	int main() {
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	int printf(const char*, ...);
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	just -f examples/rule124.just
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	let hellos = ["Greetings", "Yo", "Howdy"]
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	man man/just.1
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mdbook build book/en
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mdbook build book/zh
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mkdir -p man
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mkdir -p tmp
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mkdir -p tmp/complete/bin
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	mod foo
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	print "Larry Wall says Hi!\n";
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	print('Hello from python!')
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	printf(s, 34, s, 34);
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	puts "Hello from ruby!"
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	return 0;
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	rm -r tmp
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	rm -rf tmp/complete
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	rm -rf tmp/release
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	rustup install nightly
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	rustup update nightly
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	set -euxo pipefail
+justfile	casey/just	d6fee036379c531369dc37f67f8d4640f6bf1e2d	justfile	}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	$forwarded_args = @($args | Select-Object -Skip 1); if ($forwarded_args.Count -gt 0 -and $forwarded_args[0] -eq "--") { $forwarded_args = @($forwarded_args | Select-Object -Skip 1) }; cargo run -p codex-cli --bin logs_client -- @forwarded_args
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	$pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel build //codex-rs/cli:release_binaries
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel mod deps --lockfile_mode=error; if ($LASTEXITCODE -ne 0) { Write-Error "Unable to verify MODULE.bazel.lock; see the Bazel error above. If Bazel reports an out-of-date lockfile, run 'just bazel-lock-update' and commit the updated lockfile."; exit 1 }
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel mod deps --lockfile_mode=update
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel run //codex-rs/cli:codex --run_under="cd $PWD &&" -- "$@"
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel run //codex-rs/code-mode-host:codex-code-mode-host --run_under="cd $PWD &&" -- "$@"
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel test --compilation_mode=fastbuild --@rules_rust//rust/settings:extra_rustc_flag=-Cdebug-assertions=no --@rules_rust//rust/settings:extra_exec_rustc_flag=-Cdebug-assertions=no --cache_test_results=no --test_output=streamed --test_arg=--test //codex-rs:e2e-benchmarks
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel test --compilation_mode=opt --cache_test_results=no --test_output=streamed //codex-rs:e2e-benchmarks
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	bazel test --test_tag_filters=-argument-comment-lint //... --keep_going
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo bench --workspace --bench '*' {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo build -p codex-cli
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo clippy --fix --tests --allow-dirty {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo clippy --tests {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo fetch
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run --bin codex -- exec {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run --bin codex -- {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run --bin codex-code-mode-host -- {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run --bin codex-file-search -- {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex {args}
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	cargo run -p codex-config-schema --bin codex-write-config-schema
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	else \
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	exit $LASTEXITCODE
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	if (-not $pwsh) {
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	if [ "$#" -eq 0 ]; then \
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-cli --bin logs_client -- "$@"
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	just -l
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	just bench -- --test
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	rustup show active-toolchain
+justfile	openai/codex	e8bb1b664170a123af4b844a47e6c6e992b52fe2	justfile	winget install --exact --id Microsoft.PowerShell --source winget --accept-package-agreements --accept-source-agreements
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo binstall cargo-nextest cargo-watch cargo-insta typos-cli taplo-cli wasm-pack cargo-llvm-cov sccache@0.17.0 -y
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo build --release --bin=pnpr
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo check --locked --workspace --all-targets
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo clippy --locked --workspace --all-targets -- --deny warnings
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo codecov --html
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo dylint --all --fix -- --all-targets --workspace --allow-dirty --allow-staged
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo fixit --clippy --workspace --all-targets --allow-dirty --allow-staged
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo install cargo-fixit@0.1.15 --locked
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo nextest run --no-run
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo run --bin=micro-benchmark --release
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo test --workspace known_failures -- --list 2>/dev/null | rg '^known_failures::'
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	cargo test --workspace known_failures -- --list 2>nul | rg '^known_failures::'
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	env RUSTFLAGS="-D warnings" cargo dylint --all -- --all-targets --workspace
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	find "${TMPDIR:-/tmp}" -mindepth 1 -maxdepth 1 -name 'pacquet-test-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	git pull
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	just --list -u
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	just test
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	node pnpm/scripts/rustfmt.mjs --all
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	node pnpm/scripts/rustfmt.mjs --install
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	pnpm install --frozen-lockfile --prefer-offline
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	taplo format
+justfile	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	justfile	typos pnpm pnpr
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	[[ -n $CI ]] && echo 'Cannot run this pnpm script on CI' && exit 1 || ibazel run //adev:build.serve
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	bazelisk build --//devtools/projects/shell-browser/src:flag_browser=chrome //devtools/projects/shell-browser/src:prodapp
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	bazelisk build --config snapshot-build-firefox --//devtools/projects/shell-browser/src:flag_browser=firefox //devtools/projects/shell-browser/src:prodapp
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	bazelisk test -- //... -//integration/... -//adev/... -//vscode-ng-language-service/... -//devtools/... -//modules/ssr-benchmarks/...
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	bazelisk test --//devtools/projects/shell-browser/src:flag_browser=chrome -- //devtools/...
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	bazelisk test //... --build_tag_filters=tsec --test_tag_filters=tsec
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	cypress open --project ./devtools/cypress
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	ng-dev
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	node goldens/public-api/manage.js test
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	node scripts/build/build-packages-dist.mts
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	node scripts/diff-release-package.mts
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	node tools/symbol-extractor/run_all_symbols_extractor_tests.js accept
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	pnpm --filter=dev-app dev
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	pnpm --filter=dev-app dev:prod
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	pnpm --silent devtools:build:firefox --//devtools:debug
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	pnpm --silent devtools:build:firefox --jobs 4
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	pnpm --silent tslint && pnpm --silent ng-dev format changed --check
+package.json	angular/angular	3cc1edf3210a9debb0be57a4e99e53a54505db32	package.json	tsc --project scripts/tsconfig.json
+package.json	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	package.json	cargo biome-cli-dev check
+package.json	biomejs/biome	77a6ec4eb456360093f001992312a98acb521472	package.json	when we create the release PR, we need to update the lock file with the new versions
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	asar
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	lint-roller-markdown-api-history --root "./docs/api/" --schema "./docs/api-history.schema.json" --breaking-changes-file "./docs/breaking-changes.md" --check-placement --check-strings "*.md"
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node -e 'process.exit(0)'
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/gn-check.js
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/lint.js --gn
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/lint.js --gn --fix
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/lint.js --js
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/spec-runner.js
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	node ./script/start.js
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	npm run create-api-json && electron-typescript-definitions --api=electron-api.json && node spec/ts-smoke/runner.js
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	npm run lint:js-in-markdown && npm run lint:fmt-in-markdown && npm run create-typescript-definitions && npm run lint:ts-check-js-in-markdown && npm run lint:docs-fiddles && npm run lint:docs-relative-links && npm run lint:markdown && npm run lint:api-history
+package.json	electron/electron	6259feb41fb00d960cd84178ec18fb35caa5baa1	package.json	pre-flight
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	mocha
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node Makefile.js generateRelease -- maintenance
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node Makefile.js gensite
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node Makefile.js lintDocsJS
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node Makefile.js test
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node tools/check-emfile-handling.js
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node tools/test-ecosystem/index.mjs
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	node tools/update-rule-type-headers.js --check
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	npx -p typescript@5.3 -y -- tsc -p tsconfig.types-legacy.json
+package.json	eslint/eslint	0c699d52d2c4596a56e8f8aa0c8f5732558cf552	package.json	tsc -p tests/lib/types/tsconfig.json && npm run test:types --workspaces --if-present
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	prettier "**/*.{css,scss,json,md,html,yml}" --ignore-path=.eslintignore
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	rimraf --glob excalidraw-app/build excalidraw-app/dist excalidraw-app/dev-dist packages/*/dist packages/*/build examples/*/build examples/*/dist
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	vitest --coverage
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn --cwd ./excalidraw-app build:preview
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn --cwd ./excalidraw-app start
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn --cwd ./packages/fractional-indexing build:esm
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn build:common && yarn build:fractional-indexing && yarn build:laser-pointer && yarn build:math && yarn build:element && yarn build:excalidraw
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn build:packages && yarn --cwd ./examples/with-script-in-browser start
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn prettier --list-different
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn test --ui --coverage.enabled=true
+package.json	excalidraw/excalidraw	1d4dc2c0e6e476911d0760e9c3cf3694f2d43384	package.json	yarn test:app --update --watch=false
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	(pnpm --filter website clear || echo 'Failure while running docusaurus clear') && pnpm rimraf test-website && pnpm rimraf test-website-in-workspace && pnpm lerna exec --ignore docusaurus pnpm rimraf lib
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	DOCUSAURUS_BUNDLER_CPU_PROFILE=true DOCUSAURUS_RSPACK_TRACE=true pnpm --filter website start
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	cross-env DOCUSAURUS_ARGOS_BUILD=true pnpm build:website:fast --dev
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	cross-env LC_ALL=C sort --ignore-case -o project-words.txt project-words.txt
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	cross-env NETLIFY=true CONTEXT='deploy-preview' pnpm --filter website build
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	cspell "**" --no-progress --show-context --show-suggestions
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	knip --fix
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	node -p "require('./packages/docusaurus/package.json').version.split('-')[0]"
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter argos screenshot
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter argos upload-text-snapshots
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter website build:fast
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter website clear
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter website profile:bundle:samply
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --filter website serve
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm --recursive publish --tag canary --no-git-checks
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm argos:build && pnpm argos:screenshot && pnpm argos:build:text-snapshots && pnpm argos:format:text-snapshots && pnpm argos:upload:text-snapshots
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm build:packages && pnpm build:website
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm lerna run --parallel watch
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm lerna version `pnpm --silent canary:version` --exact --no-push --yes --loglevel verbose
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm lint:js && pnpm lint:style && pnpm lint:spelling && pnpm lint:syncpack && pnpm lint:catalogs && pnpm lint:deps && pnpm lint:knip && pnpm format:diff
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	pnpm serve:website:ssl:gencert && pnpm serve:website:ssl:message && pnpm serve:website:ssl:serve
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	stylelint "**/*.css"
+package.json	facebook/docusaurus	7b6826b8476167008640cfb71105b9bb6c4f99f9	package.json	syncpack fix
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	cd fixtures/dom && yarn && yarn test
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	cross-env RELEASE_CHANNEL=experimental node ./scripts/rollup/build.js react/index,react/jsx,react.react-server,react-dom/index,react-dom/client,react-dom/server,react-dom.react-server,react-dom-server.node,react-dom-server-legacy.node,scheduler,react-server-dom-webpack/,react-server-dom-unbundled/ --type=NODE_PROD,ESM_PROD,NODE_ES2015 && mv ./build/node_modules ./build/oss-experimental
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/jest/jest-cli.js --release-channel=www-classic
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/jest/jest-cli.js --release-channel=www-modern
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/release/check-release-dependencies
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/tasks/eslint.js
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/tasks/linc.js
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	node ./scripts/tasks/version-check.js
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	yarn build-for-devtools --type=NODE_DEV
+package.json	facebook/react	9ffcb463b0ab01a42e781d4dc2e00f3a1b97a188	package.json	yarn flow-typed install --skip --skipFlowRestart --ignore-deps=dev
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	node ./scripts/ci-print-build-artifact-paths.mjs
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	node ./scripts/verify-packages-versions.js && nx run-many -t build:transpile build:types build:bundle
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx affected -t test --exclude=@sentry-internal/browser-integration-tests --exclude=@sentry-internal/bun-integration-tests --exclude=@sentry-internal/deno-integration-tests --exclude=@sentry-internal/e2e-tests --exclude=@sentry-internal/integration-shims --exclude=@sentry-internal/node-integration-tests --exclude=@sentry-internal/cloudflare-integration-tests --exclude=@sentry-internal/bundler-plugin-integration-tests
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t build:bundle
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t build:tarball
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t build:transpile
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t clean
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t lint:es-compatibility
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t lint:types
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t postpublish --parallel=1
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t test --exclude=@sentry-internal/browser-integration-tests --exclude=@sentry-internal/bun-integration-tests --exclude=@sentry-internal/deno-integration-tests --exclude=@sentry-internal/e2e-tests --exclude=@sentry-internal/integration-shims --exclude=@sentry-internal/node-integration-tests --exclude=@sentry-internal/cloudflare-integration-tests --exclude=@sentry-internal/bundler-plugin-integration-tests
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	nx run-many -t test:unit --exclude=@sentry-internal/browser-integration-tests --exclude=@sentry-internal/bun-integration-tests --exclude=@sentry-internal/deno-integration-tests --exclude=@sentry-internal/e2e-tests --exclude=@sentry-internal/integration-shims --exclude=@sentry-internal/node-integration-tests --exclude=@sentry-internal/cloudflare-integration-tests --exclude=@sentry-internal/bundler-plugin-integration-tests
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	oxlint . --fix
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	pnpm dedupe
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	rimraf packages/*/node_modules dev-packages/*/node_modules && rm -rf node_modules && pnpm install
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	rimraf {packages,dev-packages}/*/*.tgz
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	run-s clean:tarballs build:tarballs
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	tsx ./scripts/get-commit-list.ts
+package.json	getsentry/sentry-javascript	67fed317ce4810d1fe3c908f16214e6e4ea93ebc	package.json	vitest run scripts/*.test.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	./src/early-access/scripts/clone-locally
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	./src/early-access/scripts/create-branch
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	./src/languages/scripts/clone-translations.sh
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env ELASTICSEARCH_URL=http://localhost:9200/ npm test -- src/search/tests/
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env ENABLED_LANGUAGES=all ELASTICSEARCH_URL=http://localhost:9200/ npm test -- src/languages/tests/
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env NODE_ENV=development ENABLED_LANGUAGES=en nodemon --inspect src/frame/server.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env NODE_ENV=production ENABLED_LANGUAGES=en tsx src/frame/server.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env ROOT=src/fixtures/fixtures TRANSLATIONS_FIXTURE_ROOT=src/fixtures/fixtures/translations npm test -- --no-file-parallelism --maxWorkers=1 src/article-api/tests/
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env ROOT=src/fixtures/fixtures npm start
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	cross-env ROOT=src/fixtures/fixtures sh -c 'npm test -- ${1:-src/fixtures/tests}' --
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	echo 'Action Dependencies:' && rg '^[\s|-]*(uses:.*)$' .github -I -N --no-heading -r '$1$2' | sort | uniq | cut -c 7-
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	playwright test --config src/fixtures/playwright.config.ts --project="Google Chrome"
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/assets/scripts/validate-asset-images.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/codeql-queries/scripts/generate-code-scanning-query-list.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/content-linter/scripts/lint-content.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/content-linter/scripts/lint-report.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/content-render/scripts/all-documents/cli.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/content-render/scripts/test-moved-content.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/content-render/scripts/update-filepaths.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/data-directory/scripts/deleted-features-pr-comment.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/data-directory/scripts/find-orphaned-tables.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/early-access/scripts/symlink-from-local-repo.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/ghes-releases/scripts/create-enterprise-issue.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/ghes-releases/scripts/release-banner.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/links/scripts/check-links-external.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/links/scripts/check-links-pr.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/tests/scripts/copy-fixture-data.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/workflows/benchmark-pages.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/workflows/delete-orphan-translation-files.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/workflows/purge-fastly-changed-content.ts
+package.json	github/docs	5815d11586b0796688963a98c889680e60d72dc4	package.json	tsx src/workflows/ready-for-docs-review.ts
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	eslint "**/src/**/*.{js,ts,html}" --ignore-pattern=.gitignore --rule '{"ha/no-unused-element-import": "warn"}'
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	gallery/script/develop_gallery
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	lit-analyzer "{.,*}/src/**/*.ts"
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	node build-scripts/dev-server.mjs --suite app-serve
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	node test/e2e/run-suites.mjs demo app gallery
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	pinst --disable
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	playwright test --config test/e2e/playwright.gallery.config.ts
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	prettier . --cache --check
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	test/e2e/app/script/develop_app
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	vitest run --config test/vitest.config.ts
+package.json	home-assistant/frontend	17199935f3e5f94a205165a544003cc4afb8ff28	package.json	vitest run --config test/vitest.config.ts --coverage
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	NODE_OPTIONS="--experimental-vm-modules --no-warnings" yarn jest packages/jest-runtime
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	echo 'Uploading sources to Crowdin' && crowdin upload sources --config ./crowdin.yaml
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	node ./scripts/remove-examples.mjs
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	node ./scripts/verifyPnP.mjs
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	prettier . "!**/*.{js,jsx,cjs,mjs,ts,tsx}" --cache
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	rimraf --glob './packages/*/build' './packages/*/dist' './packages/*/tsconfig.tsbuildinfo' './packages/*/api-extractor.json' './api-extractor.json'
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	tsc -b packages/{babel-jest,babel-plugin-jest-hoist,create-jest,diff-sequences,expect,expect-utils,jest-circus,jest-cli,jest-config,jest-console,jest-haste-map,jest-runtime,jest-snapshot,jest-source-map,jest-util,jest-validate,jest-watcher,jest-worker,pretty-format}/**/__tests__
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	tsc -p examples/expect-extend && tsc -p examples/typescript
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	tstyche
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	yarn clean-e2e && yarn build-clean && rimraf --glob './packages/*/node_modules' && rimraf './node_modules'
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	yarn jest --color --config jest.config.ci.mjs
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	yarn jest --color --config jest.config.ci.mjs e2e/__tests__/watchModeWatchman.test.ts packages/jest-haste-map
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	yarn jest --coverage
+package.json	jestjs/jest	61050e9323e742539dc2360236671110e37329e6	package.json	yarn jest e2e/__tests__/jest.config.ts.test.ts
+package.json	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	package.json	hereby build
+package.json	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	package.json	hereby check:format
+package.json	microsoft/TypeScript	98add1bbed1c814e97457587c2da407dc3f78330	package.json	node tools/scripts/link-hooks.mjs
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	node packages/playwright-core/lib/tools/cli-client/cli.js
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	node utils/build/build.js --watch --lint
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	node utils/check_deps.js
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	node utils/generate_types/ && node utils/concurrently.js "tsc -p utils/generate_types/test/tsconfig.json" "tsc -p ./tests/"
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	node utils/workspace.js --ensure-consistent
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	npm run eslint && npm run tsc && npm run doc && npm run check-deps && node utils/generate_channels.js && node utils/generate_types/ && npm run lint-tests && npm run test-types && npm run lint-packages
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright run-server --reuse-browser
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright test --config=packages/web
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright test --config=tests/electron/playwright.config.ts
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright test --config=tests/library/playwright.config.ts --project=firefox-*
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright test --config=tests/mcp/playwright.config.ts
+package.json	microsoft/playwright	6e2c003f16e01822c3ea45bc894c2542a6e98189	package.json	playwright test --config=tests/stress/playwright.config.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	artifacts-npm-credprovider --force
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	cd build/rspack && npx rspack serve --config rspack.serve-out.config.mts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon --kill npm run watch-client
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon --kill npm run watch-client-transpile
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon --kill npm run watch-copilot
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon --restart npm run watch
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon npm run watch
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon npm run watch-copilot
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon npm run watch-extensions
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	deemon npm run watch-web
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	mocha test/unit/node/index.js --delay --ui=tdd --exit
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node --max-old-space-size=8192 node_modules/tsec/bin/tsec -p src/tsconfig.tsec.json
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node .github/skills/auto-perf-optimize/scripts/workbench-css-performance.mts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/checker/layersChecker.ts && node build/checker/layersTypeCheck.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/lib/electron.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/next/build-fast.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/npm/fast-install.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/npm/mixin-telemetry-docs.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/npm/update-distro.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node build/npm/update-localization-extension.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	node test/integration/agentHost/runner.ts
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm --prefix extensions/copilot run setup
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm install -D typescript@npm:@typescript/typescript6@^6.0.2 && npm install -D @typescript/native@npm:typescript@next && (cd build && npm run typecheck)
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm install ../vscode-packages/js-component-explorer/packages/explorer ../vscode-packages/js-component-explorer/packages/cli --no-save && cd build/rspack && npm install ../../../vscode-packages/js-component-explorer/packages/webpack-plugin ../../../vscode-packages/js-component-explorer/packages/explorer --no-save && cd ../vite && npm install ../../../vscode-packages/js-component-explorer/packages/vite-plugin ../../../vscode-packages/js-component-explorer/packages/explorer --no-save
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm install @vscode/component-explorer@next @vscode/component-explorer-cli@next && cd build/rspack && npm install @vscode/component-explorer-webpack-plugin@next @vscode/component-explorer@next && cd ../vite && npm install @vscode/component-explorer-vite-plugin@next @vscode/component-explorer@next
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp compile
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp compile-extensions-build
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp compile-web
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp copy-codicons compile-extensions compile-extension-media
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp hygiene
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp watch-cli
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp watch-extensions watch-extension-media
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm run gulp watch-web
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	npm-run-all2 -lp compile-client compile-copilot
+package.json	microsoft/vscode	22fedb409d1bdba4a6201d9b9c0ec41c3e9ee727	package.json	vscode-test
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	babel-node scripts/buildColorTypes
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	code-infra publish --github-release --tag next --dry-run
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	cross-env TEST_SCOPE=browser pnpm test:unit
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	eslint . --cache --report-unused-disable-directives --max-warnings 0
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	lerna run build --concurrency 8 --ignore docs --stream --skip-nx-cache
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	lerna version --no-changelog --no-push --no-git-tag-version --no-private --force-publish=@mui/core-downloads-tracker && pnpm a11y:scorecard
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	node scripts/a11yScorecard/index.mjs --check
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	playwright test test/e2e-website --config test/e2e-website/playwright.config.ts
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm --filter docs icons
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm --filter docs typescript
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm -F ./test/bundle-size check
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm -F ./test/e2e dev
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm -F ./test/moduleAugmentation typescript:module-augmentation
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm -r exec rm -rf build
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm code-infra vale sync --vale-version $npm_package_config_valeVersion && git ls-files | grep -E "\.(md|mdx)$" | xargs pnpm code-infra vale --vale-version $npm_package_config_valeVersion --filter='.Level=="error"'
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm docs:llms:build && cross-env MUI_PUBLISH_DOCS=1 lerna run --concurrency 8 --no-private build --skip-nx-cache
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm run --parallel -r attw
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm test:node
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pnpm test:unit run --coverage
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	pretty-quick --ignore-path .lintignore --branch master
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	stylelint --reportInvalidScopeDisables --reportNeedlessDisables "docs/**/*.?(c|m)[jt]s?(x)" "docs/**/*.css" --ignore-path .lintignore
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	tsx ./docs/scripts/syncTeamMembers.ts && pnpm prettier
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	tsx ./scripts/generateProptypes.ts
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	tsx scripts/validateTypescriptDeclarations.mts
+package.json	mui/material-ui	2a8f217d7919d80d8760a7b63d6d97a70530deaf	package.json	vite build test/regressions
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	./packages/cli/bin/n8n webhook
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	BUILD_WITH_COVERAGE=true node scripts/build-n8n.mjs && node scripts/dockerize-n8n.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	find ./packages -name '*.svg' ! -name 'pipedrive.svg' -print0 | xargs -0 -P16 -L20 npx svgo
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	jscpd
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node packages/@n8n/module-cli/bin/n8n-module-sdk.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/agent-check.mjs lint
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/agent-check.mjs typecheck
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/agent-harness.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/build-n8n.mjs && node scripts/dockerize-n8n.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/check-boundaries.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/codespace-preview/preview-serve.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/codespace-preview/preview.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/dev-command-removed-notice.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/dev-up.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/instance-seeding/inspectActivity.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/instance-seeding/seedHistory.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/nathan.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/os-normalize.mjs --dir packages/cli/bin n8n
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/prepare.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/sync-agent-skill-links.mjs --check
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	node scripts/test-inventory.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	pnpm --filter @n8n/computer-use build && node packages/@n8n/computer-use/dist/cli.js serve
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	pnpm --filter=n8n-playwright dev --ui
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	pnpm --filter=n8n-playwright exec playwright show-report
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	pnpm install-workflow-scripts && node .github/scripts/quality/check-cubic-config.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run build --filter=@n8n/db && pnpm --filter=@n8n/db schema:check
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run build --filter=@n8n/db && pnpm --filter=@n8n/db schema:docs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run format && node scripts/format.mjs
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run format:check
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run lint lint:styles --concurrency=2 --cache=local:r,remote:r && pnpm boundaries:check && pnpm check:workspace-private-deps
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run lint:styles
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run test
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run test --continue --concurrency=1
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run test --continue --filter='./packages/frontend/**' --filter='./packages/modules/*/frontend'
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run test:integration --continue --concurrency=1 --filter='!./packages/frontend/**' --filter='!./packages/modules/*/frontend'
+package.json	n8n-io/n8n	58f11bf0cf5e384efa7f6818fc940ff5ed8200a9	package.json	turbo run test:unit --continue --filter='!./packages/frontend/**' --filter='!./packages/modules/*/frontend'
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run changelog | pbcopy
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run clean
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run move:node_modules
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run prerelease && npm run build:prod && ./node_modules/.bin/lerna publish --force-publish --exact -m "chore(release): publish %s release"
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run prerelease && npm run build:prod && ./node_modules/.bin/lerna publish --force-publish --npm-tag=test --no-git-tag-version --no-push -m "chore(release): publish %s release"
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run prerelease && npm run build:prod && ./node_modules/.bin/lerna publish --npm-tag=beta -m "chore(release): publish %s release"
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	npm run prerelease && npm run build:prod && ./node_modules/.bin/lerna publish --npm-tag=next --no-git-tag-version --no-push -m "chore(release): publish %s release"
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	opencollective
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	oxlint packages
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	tsc -b -v packages
+package.json	nestjs/nest	62647d3ec95e816a4556b3e04106eb4af002b4b8	package.json	tsc -b -v packages --watch
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	BUN_DEBUG_QUIET_LOGS=1 bun scripts/build.ts --profile=debug --quiet
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	BUN_DESTRUCT_VM_ON_EXIT=1 ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=malloc_context_size=100:print_suppressions=1:suppressions=$npm_config_local_prefix/test/leaksan.supp ./build/debug/bun-debug
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun ./scripts/fetch-node-test.ts
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun ./scripts/sync-webkit-source.ts
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun run clang-format
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/build.ts --profile=debug-local --build-dir=build/debug-local
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/build.ts --profile=release
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/build.ts --profile=release --build-type=MinSizeRel --build-dir=build/release-smol
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/build.ts --profile=release --ci=on --buildkite=on --build-dir=build/release-ci
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/build.ts --profile=release-local --build-dir=build/release-local --target=WebKit
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/ci-slowest-tests.ts
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/find-build.ts --status
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/find-build.ts --watch
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/pr-comments.ts
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	bun scripts/rust-mordant.ts
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	cargo check --workspace --keep-going
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	cargo clippy --workspace --no-deps --keep-going
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	node ./scripts/runner.node.ts --quiet --exec-path=$npm_execpath --node-tests
+package.json	oven-sh/bun	0de6da25f209984faae089310e02bab47adc8b0c	package.json	tsc --noEmit && cd test && bun run typecheck
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	cargo clippy --locked --workspace --all-targets -- -D warnings
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	cargo deny check
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	cspell "**/*.ts" "**/README.md" ".changeset/*.md" --no-progress
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	eslint "**/src/**/*.ts" "**/test/**/*.ts" --cache --concurrency auto
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	just check
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	just fix
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	just lint
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	just ready
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	node pnpm/scripts/run-rust-tests.mjs --profile smoke
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	node pnpm11/__utils__/scripts/src/bump.ts
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	node pnpm11/__utils__/scripts/src/copy-artifacts.ts
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	node pnpm11/deps/security/signatures/scripts/update-npm-signing-keys.mjs --update
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn --filter=@pnpm/exe run build-artifacts && pn --filter=@pnpm/exe publish --tag=next-11 --access=public --provenance && pn publish --filter=!pnpm --filter=!@pnpm/exe --access=public --provenance && pn publish --filter=pnpm --tag=next-11 --access=public --provenance
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn --filter=@pnpm/get-release-text run write-release-text
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn compile-only && pn prepare-fixtures
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn compile-only && pn update-manifests
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn lint
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn prepare-fixtures && pn test-pkgs-all-report-summary
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	pn pretest && pn lint && pn test-pkgs-all
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	shx mkdir -p coverage && lcov-result-merger 'pnpm11/**/coverage/lcov.info' 'coverage/lcov.info'
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	shx rm -rf ../pnpm_tmp
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	taplo format --check
+package.json	pnpm/pnpm	f0982d4f1124e66059b893fb18e75bf6bd3d7a4e	package.json	tsgo --build pnpm11/workspace/workspace-manifest-reader pnpm11/workspace/projects-reader && pnx node@runtime:26.12.1 pnpm11/__utils__/scripts/src/typecheck-only.ts
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	./scripts/benchmark/compare.sh
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	cross-env INSTALL_PACKAGE=1 yarn test
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	cross-env NODE_ENV=production yarn test
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	cross-env PULL_REQUEST=true yarn build:website
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	cross-env TEST_RUNTIME_BROWSER=chrome yarn test:production:browser
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	cross-env TEST_STANDALONE=1 yarn test:production
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	jest
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	knip
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	node ./scripts/build-website.js
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	node ./scripts/check-deps.js
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	node ./scripts/lint-changelog.js
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	node scripts/generate-flow-estree-type-definition.js
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	run-s --continue-on-error fix:eslint fix:prettier
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	yarn generate-builtin-plugins
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	yarn generate-flow-estree-type-definition
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	yarn lint:prettier --write
+package.json	prettier/prettier	e09a152c11ef1f77833f39106d6ef8bbc6c460cb	package.json	yarn perf --debug-benchmark
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	husky && skills add ./skills-contrib --skill '*' --agent universal claude-code -y && node scripts/sync-agent-rules.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/bump-version.ts
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/check-clean-tree.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/check-release-notes.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/check-upgrade-coverage.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/lint-vitest-timeouts.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/list-error-codes.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/rules-footprint.mjs --check
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/run-logged.mjs fixtures-check pnpm fixtures:check
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/run-logged.mjs lint pnpm lint
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/run-logged.mjs typecheck pnpm typecheck
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/sync-agent-rules.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/sync-agent-rules.mjs --check
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	node scripts/validate-package-readmes.mjs
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm --filter integration-tests test
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm --filter integration-tests test:vite-plugin
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm biome format --write .
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm fixtures:emit && git diff --exit-code -- ':(glob)**/contract.*' ':(glob)**/expected.contract.json'
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm test:packages && pnpm test:examples && pnpm test:integration && pnpm test:e2e
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	pnpm typecheck && pnpm typecheck:examples
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	turbo run build
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	turbo run build --filter='!./examples/**' --filter='!./test/**' && vitest run --coverage
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	turbo run test --continue
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	turbo run typecheck --filter='./examples/**'
+package.json	prisma/prisma	1e98c69e1b91d940bf537cbd9e9ecc68cf464a84	package.json	turbo watch build --filter='./packages/**' --continue=dependencies-successful --output-logs=new-only
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	git clean -fdX .
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node --experimental-vm-modules --no-warnings=ExperimentalWarning ./node_modules/jest/bin/jest.js
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node ./scripts/changes/publish.ts
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node ./scripts/changes/validate.ts
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node ./scripts/changes/version.ts
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node ./scripts/experimental.ts publish
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	node scripts/docs.ts
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	playwright test --config ./integration/playwright.config.ts
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	pnpm clean:integration
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	pnpm run --filter="./packages/**/*" build
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	pnpm run --recursive --parallel typegen
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	pnpm test:integration:run
+package.json	remix-run/react-router	8aebb9e1da774903428d563189506a6f40748dcb	package.json	prettier --ignore-path .prettierignore --check .
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	ast-grep test -c script/ast-grep/sgconfig.yml
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	bun run script/upgrade-opentui.ts
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	bun script/lint-changed.ts
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	bun sst shell --stage=production -- bun run --cwd packages/stats/app dev
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	bun turbo typecheck --concurrency=3
+package.json	sst/opencode	f0200df8e67b9dc08e8b5b7fc174acb25584f913	package.json	echo 'Random script'
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	./scripts/ecosystem-ci/before-test.sh react-vite/default-ts
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	./scripts/ecosystem-ci/build.sh react-vite/default-ts
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	./scripts/ecosystem-ci/build.sh svelte-kit/skeleton-ts svelte
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	NODE_OPTIONS=--max_old_space_size=4096 vitest watch
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	cd code; yarn ci-tests
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	oxfmt --check .
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	yarn --cwd=./scripts task
+package.json	storybookjs/storybook	76498d1f8c3abc4aad735a7dd7240df64a88922c	package.json	yarn task --task dev --template react-vite/default-ts --start-from=install
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	ab -t 5 -c 20 -T application/json http://localhost:5555/tables
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	cd packages/api-types && pnpm run codegen
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	node scripts/check-case-hazards.mjs
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --filter=api-types run verify-production-types
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --prefix e2e/docs run e2e:docs
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --prefix e2e/docs run e2e:docs:a11y
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --prefix e2e/docs run e2e:docs:all
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --prefix e2e/studio run e2e
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	pnpm --prefix e2e/www run e2e:www
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	tsx scripts/authorizeVercelDeploys.ts
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo --continue typecheck
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo run dev --filter=docs --parallel
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo run dev --filter=kb --parallel
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo run test --filter=kb
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo run test --filter=studio
+package.json	supabase/supabase	d4584290813a59954d7d6f098a5fb31ff433afaa	package.json	turbo run test --filter=ui
+package.json	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	package.json	cd packages/svelte && pnpm build && cd ../../ && pnpm -r check
+package.json	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	package.json	node ./benchmarking/profile-compiler.js
+package.json	sveltejs/svelte	2334f5ed0bc9628fddd9767a92f7f12c09e50cd5	package.json	pnpm -r --filter=./packages/* build
+package.json	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	package.json	node ./scripts/pack-packages.mjs
+package.json	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	package.json	node ./scripts/version-packages.mjs
+package.json	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	package.json	pnpm run --filter=nextjs-playground dev
+package.json	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	package.json	vitest --root=./integrations
+package.json	tailwindlabs/tailwindcss	8cc0551b1217d36dc565840b90920964d37cb46c	package.json	vitest bench
+package.json	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	package.json	pnpm run --filter "@tauri-apps/api-e2e" e2e
+package.json	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	package.json	pnpm run --filter "@tauri-apps/cli" build
+package.json	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	package.json	pnpm run --filter "@tauri-apps/cli" build:debug
+package.json	tauri-apps/tauri	37b3be66513ac613b521baf792b6afc94b38bc8d	package.json	pnpm run -r eslint:check
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	echo "$(git rev-parse --abbrev-ref HEAD)" | sed -E 's/refs\/heads\///' | sed -E 's/\W|_/-/g' | sed -e 's/\//-/'
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	git log -n 1 --date=format:'%Y-%m-%d-%H-%M-%S' --pretty=format:'%ad'
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	pnpm clean && pnpm install
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	pnpm clean && pnpm install && pnpm build && pnpm dev
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	pnpm typecheck-packages --watch
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	prettier "**/*" --ignore-unknown
+package.json	trpc/trpc	1c9bf51ea572fd46fa52fb725999b8d0c6950386	package.json	turbo --filter=./packages/* build
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	./scripts/check-examples.sh
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	./scripts/check-pre-compiled.sh
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	find crates/next-custom-transforms/tests/fixture -type f -name 'tsconfig.json' -print0 | xargs --null -I'{}' pnpm tsc --noEmit --project '{}'
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	git clean -d -x -e node_modules -e packages -f
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	git reset --hard HEAD
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	husky
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	jest --runInBand
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	lint-staged
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	node ./scripts/sync-react.js
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	node scripts/generate-browser-variant-aliases.mjs
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	prettier --check .
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --bundler=rspack --headless --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --headless --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --mode=dev --bundler=rspack --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --mode=dev --bundler=turbo --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --mode=dev --bundler=webpack --headless --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --mode=start --bundler=turbo --experimental --headless --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	scripts/run-jest.sh --mode=start --bundler=turbo --headless --
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsc
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsc --noEmit
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsx bench/dev-validation/benchmark.ts
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsx bench/render-pipeline/analyze-profiles.ts
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsx scripts/pack-next.ts
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	tsx scripts/patch-next.ts
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	turbo gen test
+package.json	vercel/next.js	13ae649ea60769e91b06818e7b252c7e3040f92c	package.json	turbo run build-storybook
+package.json	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	package.json	RUSTDOCFLAGS="-Z unstable-options --enable-index-page" cargo doc --workspace --no-deps --keep-going || true
+package.json	vercel/turborepo	b90e6ea31e02ab150b8ab85f5fab18b941b21e75	package.json	pnpm run build:turbo && ./target/debug/turbo
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	VITE_DEBUG_SERVE=1 vitest run -c vitest.config.e2e.ts
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	VITE_TEST_BUNDLED_DEV=1 vitest run -c vitest.config.e2e.ts
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	pnpm -r --parallel --filter='./packages/*' run dev
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	pnpm build && pnpm docs-build
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	tsc -p scripts && pnpm -r --parallel run typecheck
+package.json	vitejs/vite	6f2730eacae327cc2ce95c87509b7e7779c615e0	package.json	tsx scripts/mergeChangelog.ts
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	CI=true pnpm --filter @vitest/test-coverage run test
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	CI=true pnpm -r --no-bail --reporter-hide-prefix --stream --sequential --filter '@vitest/test-*' --filter !test-browser run test
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	CI=true pnpm -r --reporter-hide-prefix --stream --filter '@vitest/example-*' run test
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	CI=true pnpm -r --reporter-hide-prefix --stream --sequential --filter '@vitest/test-*' --filter !test-browser run test
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	ECOSYSTEM_CI=true pnpm test:ci
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	knip --cache --treat-config-hints-as-errors
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	node ./scripts/explain-types.ts
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	node scripts/override-vite7.ts
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	node scripts/release.ts
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	npm -C packages/ui run test:run
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	pnpm -C docs run preview-https
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	pnpm -C docs run preview-https-no-prefetch
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	pnpm typecheck && pnpm lint && pnpm build && pnpm test:ci
+package.json	vitest-dev/vitest	c8558f1c2e3232a119aed69ca53e6923b232094c	package.json	tsc -p tsconfig.check.json --noEmit
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/build.js
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/build.js -pf esm-browser reactivity
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/build.js compiler-sfc server-renderer -f esm-browser
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/build.js runtime-dom runtime-core reactivity shared -f esm-bundler
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/build.js vue runtime compiler reactivity shared -af cjs
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/dev.js
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	node scripts/dev.js -if esm-bundler-runtime
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	serve
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	tsc --incremental --noEmit
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	vitest --project unit*
+package.json	vuejs/core	65eae178383289b6a9f93505ab85017460f72395	package.json	vitest bench --project=unit --compare=temp/bench.json
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	astro-benchmark
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	biome check --formatter-enabled=false --write
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	biome format && prettier -w "**/*" --ignore-unknown --cache --check
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	biome lint --reporter=concise && pnpm run knip && eslint --cache --concurrency=auto
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	cd packages/astro && pnpm run test:cli
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	cd packages/astro && pnpm run test:match
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	node ./scripts/turbo-run-affected.js test --concurrency=1 --filter=create-astro --filter="@astrojs/*" --filter="!./packages/language-tools/**/*" --only
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	pnpm -r --filter=astro --filter=create-astro --filter="@astrojs/*" --no-bail exec publint
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	pnpm run test:e2e:astro && pnpm run test:e2e:alpinejs
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	turbo run build --concurrency=100% --filter="@example/*"
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	turbo run build --filter=astro --filter=create-astro --filter="@astrojs/*" --filter="astro-vscode" --filter="@benchmark/*"
+package.json	withastro/astro	8ea79a282e53b83c65f69c9013f5eeb5d97aadb1	package.json	turbo run dev --concurrency=40 --parallel --filter=astro --filter=create-astro --filter="@astrojs/*" --filter="@benchmark/*"

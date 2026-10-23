@@ -124,7 +124,7 @@ machine (`uze install -m`). The demo project also keeps a rule of its own,
 `polo (UZE_PLAYGROUND_PROJECT_RULE)`. `uze status` in the project lists both.
 
 The MCP server also has `hello`, `echo` and `add`. The hooks share one
-handler, [`scripts/hook`](plugin/scripts/hook) (and its Windows spelling).
+handler, [`scripts/hook`](plugin/scripts/hook) (and its Windows twin, `hook.ps1`, run under the same name).
 `secret` is the one a harness may only *degrade*: some cannot withhold a
 skill from the person, and the install says which.
 

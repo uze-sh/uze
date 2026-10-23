@@ -1,7 +1,7 @@
 //! The pool of slots under `.worktrees/`, and acquiring, resuming and materializing one.
 
 use super::*;
-use uze_core::shell::ShellCommand;
+use uze_core::shell::{NotRun, ShellCommand};
 
 use crate::{approval::Consent, worktree::PolicyStep};
 
@@ -595,7 +595,12 @@ fn isolation_directory_is_the_projects_own(
 pub const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 #[tracing::instrument(name = "checkout.materialize", level = "debug", skip_all)]
-pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<String> {
+pub fn materialize(
+    primary: &Path,
+    slot: &Path,
+    consent: &Consent<'_>,
+    uze: &crate::subprocess::Uze,
+) -> Vec<String> {
     let policy = consent.policy();
     let mut warnings = Vec::new();
     for link in &policy.link {
@@ -634,14 +639,14 @@ pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<St
     for step in setup {
         // Never run in a shell it was not written for: the checkout is
         // still placed, and says which step it went without.
-        let Some(line) = step.here() else {
-            warnings.push(format!(
-                "setup `{step}` has no {} spelling; not run",
-                ShellCommand::platform()
-            ));
-            break;
+        let runs = match step.runs_here() {
+            Ok(runs) => runs,
+            Err(reason) => {
+                warnings.push(format!("setup `{step}` {}; not run", not_run(&reason)));
+                break;
+            }
         };
-        let (passed, output) = crate::subprocess::run_shell_bounded(slot, line, SETUP_TIMEOUT);
+        let (passed, output) = crate::subprocess::run_bounded(uze, slot, runs, SETUP_TIMEOUT);
         if !passed {
             let tail = output.lines().last().unwrap_or("").to_owned();
             warnings.push(format!("setup `{step}` failed: {tail}"));
@@ -652,15 +657,26 @@ pub fn materialize(primary: &Path, slot: &Path, consent: &Consent<'_>) -> Vec<St
         policy
             .steps_not_spelled_here()
             .into_iter()
-            .filter(|(step, _)| *step == PolicyStep::Gate)
-            .map(|(_, gate)| {
+            .filter(|(step, ..)| *step == PolicyStep::Gate)
+            .map(|(_, gate, reason)| {
                 format!(
-                    "gate `{gate}` has no {} spelling; this work cannot be delivered from here",
-                    ShellCommand::platform()
+                    "gate `{gate}` {}; this work cannot be delivered from here",
+                    not_run(&reason)
                 )
             }),
     );
     warnings
+}
+
+/// Why a project's command does not run here, as a clause after its name.
+pub(crate) fn not_run(reason: &NotRun) -> String {
+    match reason {
+        NotRun::Unspelled => format!("has no {} spelling", ShellCommand::platform()),
+        NotRun::NotPortable(why) => format!(
+            "is not portable ({why}) and has no {} spelling",
+            ShellCommand::platform()
+        ),
+    }
 }
 
 /// Marks a slot as used now: its idle age counts from here, since nothing

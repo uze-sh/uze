@@ -2608,7 +2608,9 @@ mod task_service_tests {
         declare(
             &repository,
             &format!(
-                "  delivery: merge\n  gate: chmod 555 {}\n",
+                // `posix:`, not a plain line: a plain line runs through
+                // `uze shell -c`, and this process is the test binary.
+                "  delivery: merge\n  gate:\n    posix: chmod 555 {}\n",
                 directory.display()
             ),
         );

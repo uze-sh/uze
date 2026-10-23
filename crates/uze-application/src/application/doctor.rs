@@ -351,6 +351,7 @@ impl Health<'_> {
         let workspace = self.0.workspace();
         Ok(ProjectStatus {
             steps_not_spelled_here: workspace.steps_not_spelled_here(project_root),
+            steps_only_in_sh: workspace.steps_only_in_sh(project_root),
             commands_awaiting_approval: workspace.commands_awaiting_approval(&report.root),
             report,
         })

@@ -344,11 +344,7 @@ fn a_name_that_cannot_be_kept_is_said_and_the_row_keeps_its_name() {
 #[test]
 fn approval_names_the_project_by_its_label() {
     let (home, mut model, _, root) = agent_in_a_project("labels-approval");
-    std::fs::write(
-        root.join("agents.yaml"),
-        "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("agents.yaml"), "workspace:\n  gate: make test\n").unwrap();
     labelled(&home, &mut model, &root, "uze core");
     let awaiting = application(&home)
         .workspace()
@@ -562,11 +558,7 @@ fn every_gesture_but_a_double_click_finds_the_row_on_the_project() {
 #[test]
 fn an_approval_read_names_the_project_by_the_label_of_its_root() {
     let (home, model, _, root) = agent_in_a_project("labels-approval-root");
-    std::fs::write(
-        root.join("agents.yaml"),
-        "workspace:\n  gate:\n    posix: make test\n    windows: make test\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("agents.yaml"), "workspace:\n  gate: make test\n").unwrap();
     let mut awaiting = application(&home)
         .workspace()
         .commands_awaiting_approval(&root)

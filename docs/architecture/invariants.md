@@ -3267,6 +3267,21 @@ said at placement and in `uze status`; a gate without one refuses delivery.
 > `crates/uze-workspace/src/checkout/tests.rs::a_checkout_placed_where_its_gate_cannot_run_says_so`
 > `tests/acceptance/workspace_health.rs::status_names_a_gate_this_machine_cannot_run`
 
+### A plain project command means one thing on every platform
+
+A plain `setup` or `gate` line runs in the portable shell on Linux, macOS
+and Windows, through `uze shell -c` under the same timeout and process
+group as `sh`, and delivers to its programs what `sh` would. A line the
+portable shell cannot run, or would run differently from `sh`, keeps its
+POSIX-only meaning and is never run there. Only `machine::portable_shell`
+names the shell's crate.
+
+> `crates/uze-core/src/machine/portable_shell/tests.rs::every_refused_line_names_its_construct_and_column`
+> `crates/uze-core/src/machine/shell.rs::tests::a_project_command_runs_as_its_shape_and_platform_say`
+> `tests/cli/portable_shell.rs::every_generated_line_delivers_what_sh_would`
+> `tests/cli/portable_shell.rs::a_timeout_ends_the_line_and_everything_it_started`
+> `tests/architecture/layering.rs::the_portable_shell_is_reached_through_one_module`
+
 ### A label is held under a name every filesystem takes
 
 A delivered skill or agent is written under `file_name_for` its label

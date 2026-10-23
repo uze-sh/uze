@@ -1,4 +1,5 @@
-# hook.ps1 <log|deny>: the Windows spelling of scripts/hook.
+# hook.ps1 <log|deny>: the Windows twin of scripts/hook, which hooks.json
+# names once: Windows runs this file under that name.
 param([string]$Mode)
 $log = Join-Path $env:TEMP 'uze-playground-hooks.log'
 "$(Get-Date -Format HH:mm:ss) $env:HOOK_HARNESS $env:HOOK_EVENT $env:HOOK_COMMAND" |
