@@ -492,3 +492,12 @@ theme; `uze agent extension check` SHALL fail when a test fails.
 #### Scenario: Tests need no program by default
 - **WHEN** every test of an extension gives recorded answers
 - **THEN** `uze ext test` runs no program and passes on a machine without the extension's tools
+
+### Requirement: KDL is highlighted in UZE's own editor
+The code surface's editor and preview, and fenced `kdl` blocks in Markdown,
+SHALL highlight KDL v2 files, including manifests, views and tests, with the
+same syntax theme as every other language.
+
+#### Scenario: An extension's view is coloured while it is edited
+- **WHEN** the operator opens `extensions/gsd-band/board.kdl` in the code surface
+- **THEN** node names, strings, `#true`, raw strings and slashdash comments are coloured, as a `.rs` file would be
