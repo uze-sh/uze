@@ -1,6 +1,6 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [ ] 0.1 Decide the split into eight changes (design.md, *Proposed split*), and move groups 1–23 into them
+- [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–23 into them; the first change (groups 2, 13.3, 21, 22.1–22.4 and 23.1–23.3 with fixtures, 23.8) runs no third-party code and can be unfrozen alone
 - [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime and HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
@@ -188,6 +188,7 @@
 - [ ] 23.1 `uze ext dev <path>` and `uze workspace --dev-extension <path>`: linked, session-only, marked `dev`, same grants and confinement; consent in UZE's chrome when run from an agent's pane
 - [ ] 23.2 Hot reload per file (view, manifest, program, component) debounced 150 ms; last good draw kept with the error over it
 - [ ] 23.3 The inspector drawer: runs (rerunnable with edited input), events, state, grants, compiled tree with why a node is absent
+- [ ] 23.0 Fixtures as a source in development: `fixtures/<source>.json` feeds the view, saving it redraws, actions are recorded in the inspector with their arguments instead of running
 - [ ] 23.4 `uze ext emit <extension> <event> [--data <file>]`; size, theme and fake agents in the inspector; recording a session's events into a fixture
 - [ ] 23.5 `uze ext test` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update`; run by `uze agent extension check`
 - [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
