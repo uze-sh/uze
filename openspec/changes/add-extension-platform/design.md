@@ -839,6 +839,11 @@ One set of rules, the same in every view, with no expressions:
 
 ### D25. Live development
 
+- **Fixtures as a data source.** In development a source may be fed by
+  `fixtures/<source>.json` instead of its program (`--fixtures`, and the
+  only mode before the runner exists, split 1): the view binds to the
+  fixture, saving the fixture redraws, and an action is recorded in the
+  inspector with the arguments it would receive instead of running.
 - **Load from a folder.** `uze ext dev <path>` links an extension into the
   running workspace; `uze workspace --dev-extension <path>` opens one with
   it. A dev extension is not stored or digest-pinned, is marked `dev` in the
@@ -1023,33 +1028,41 @@ yet, and implementation waits on all blockers and criticals.**
 
 ### Proposed split (pending decision, revised 2026-10-23)
 
-This change is eight changes. Each ships the gallery entries (D20) whose
-pieces it and the changes before it contain:
+Visual engine first. The first change runs no third-party code, so none of
+the execution findings (S1–S18, R-S*) gate it and it can be unfrozen on its
+own; each later change adds one reason to trust or one capability. The
+engine implements the `Extension` contract of D2 from its first commit, so
+migrating the built-ins later moves them onto it rather than rewriting it.
 
-1. **generic-extension-host**: group 1, with `code`, `architect` **and
-   `spec`** migrated, plus the ADR, invariant and AGENTS.md edits, with no
-   new behaviour.
-2. **extension-manifest-and-runner**: `uze-contract` and its schema, the
-   KDL manifest, discovery, check, the bounded runner, output modes and the
-   envelope, the grants record and consent. Confinement is disclosed as not
-   enforced.
-3. **declared-extensions**: the bounded KDL decoder and compiled views, the
-   binding rules and host-held UI state (D22–D24), the engine (bind and
-   compose), the dev loop, `uze ext test` and the LSP (D25, D26), the
-   keymap with global keys, `applies_when`, the `view`, `section`, `status` and
-   `overlay` slots, `every`, `paths.changed`, the store and preferences, and
-   the catalog the entries need. Proof: `gpu-meter`.
-4. **extension-confinement**: Landlock, seccomp and Seatbelt, with the
+1. **extension-view-engine**: the starting catalog (the nodes `gsd-band` and
+   a plain panel need), the bounded KDL decoder and compiled views, the
+   binding rules, lookups and templates, host-held UI state (D22–D24), the
+   `view` and `section` slots, data from fixtures only (actions are
+   recorded in the inspector, never run), `uze ext dev` with hot reload, the
+   error overlay and a minimal inspector (D25), and KDL highlighting. The
+   engine sits beside the built-ins as one more registered extension.
+   Proof: the `gsd-band` board drawn from a fixture, edited live.
+2. **extension-tests-and-lsp**: `uze ext test` with recorded answers and
+   cell snapshots, and `uze ext lsp` (D26). Visual extensions can be written
+   and tested end to end.
+3. **generic-extension-host**: group 1, with `code`, `architect` and `spec`
+   moved onto the contract the engine already implements, plus the ADR,
+   invariant and AGENTS.md edits, with no new behaviour.
+4. **extension-manifest-and-runner**: the full `extension.kdl`, discovery,
+   check, the bounded runner, output modes and the envelope, sources,
+   actions, `every`, `paths.changed`, the store and preferences, the grants
+   record and consent. Third-party code runs from here on, disclosed as not
+   confined. Proof: `gpu-meter`, `jump`.
+5. **extension-confinement**: Landlock, seccomp and Seatbelt, with the
    dependency review.
-5. **agent-bridge**: the reporter per launch and its journal, the normalized
+6. **agent-bridge**: the reporter per launch and its journal, the normalized
    events with delivery modes, the `agents` and `events` sources, the `band`
-   slot, `notify`/`sound` through `uze-platform`, and the agent actions.
-   Proof: `gsd-band`, `agents-hud`, `flightdeck`, `chimes`, `jump`,
-   `plan-review`.
-6. **extension-media**: `cells` with regions, `image`, `sprite`, the
-   decoders moved to `shared/`. Proof: `pets`, `screen`.
-7. **extension-resident**: the WebAssembly tier, its crate, runtime and HTTP
-   client. Proof: `snake`.
+   and `status` slots, `notify`/`sound` through `uze-platform`, and the
+   agent actions. Proof: `gsd-band` with its next-step button, `agents-hud`,
+   `flightdeck`, `chimes`, `plan-review`.
+7. **extension-media-and-resident**: `cells` with regions, `image`,
+   `sprite`, then the WebAssembly tier, its crate, runtime and HTTP client.
+   Proof: `pets`, `screen`, `snake`.
 8. **Growth**: pipes and CLI commands, then whatever a new gallery entry
    needs.
 
