@@ -917,6 +917,7 @@ mod status_output_tests {
         ProjectStatus {
             report,
             steps_not_spelled_here: Vec::new(),
+            steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
         }
     }
@@ -969,6 +970,27 @@ mod status_output_tests {
             text.contains("spell it under `posix` and `windows`"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_line_only_sh_runs_is_a_note_that_says_why() {
+        let mut status = report(present(), Portability::Portable);
+        status.steps_only_in_sh = vec![uze_application::application::services::StepOnlyInSh {
+            step: uze_application::PolicyStep::Setup,
+            command: "head -1 VERSION".to_owned(),
+            not_portable: "`-1` at column 6: the portable `head` does not implement `-1`"
+                .to_owned(),
+        }];
+        let text = render_status(&status);
+        assert!(
+            text.contains("setup `head -1 VERSION` runs only where `sh` does: `-1` at column 6"),
+            "{text}"
+        );
+        assert!(
+            text.contains("spell it under `posix` and `windows`"),
+            "{text}"
+        );
+        assert_eq!(status_next_step(&status), None, "a note owes no step");
     }
 
     #[test]

@@ -32,6 +32,15 @@ pub struct StepNotSpelledHere {
     pub not_portable: Option<String>,
 }
 
+/// One plain project command that runs here only because `sh` does, and
+/// why the portable shell does not run it.
+#[derive(Clone, Debug, Serialize)]
+pub struct StepOnlyInSh {
+    pub step: PolicyStep,
+    pub command: String,
+    pub not_portable: String,
+}
+
 impl Workspace<'_> {
     /// The policy's commands this machine's shell has no spelling for: a
     /// setup step skipped here, a gate that refuses every delivery here.
@@ -40,9 +49,7 @@ impl Workspace<'_> {
     /// which reads only what is cached or on disk.
     #[tracing::instrument(name = "workspace.steps_not_spelled_here", skip_all, fields(project_root = %project_root.display()))]
     pub fn steps_not_spelled_here(&self, project_root: &Path) -> Vec<StepNotSpelledHere> {
-        let primary =
-            isolated_checkout(project_root).map_or(project_root, |checkout| checkout.primary);
-        let Ok(Some(policy)) = declaration::declared(primary) else {
+        let Some(policy) = primary_policy(project_root) else {
             return Vec::new();
         };
         policy
@@ -59,6 +66,31 @@ impl Workspace<'_> {
             })
             .collect()
     }
+
+    /// The policy's plain commands that run here in `sh` and would not run
+    /// where there is none, read as [`Self::steps_not_spelled_here`] reads.
+    #[tracing::instrument(name = "workspace.steps_only_in_sh", skip_all, fields(project_root = %project_root.display()))]
+    pub fn steps_only_in_sh(&self, project_root: &Path) -> Vec<StepOnlyInSh> {
+        let Some(policy) = primary_policy(project_root) else {
+            return Vec::new();
+        };
+        policy
+            .steps_only_in_sh()
+            .into_iter()
+            .map(|(step, command, reason)| StepOnlyInSh {
+                step,
+                command: command.to_string(),
+                not_portable: reason.to_string(),
+            })
+            .collect()
+    }
+}
+
+/// The policy the primary checkout declares.
+fn primary_policy(project_root: &Path) -> Option<WorktreePolicy> {
+    declaration::declared(&primary_of(project_root))
+        .ok()
+        .flatten()
 }
 
 /// A project's commands that no approval covers, as a person is shown

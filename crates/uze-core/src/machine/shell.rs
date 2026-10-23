@@ -85,6 +85,15 @@ impl ShellCommand {
         }
     }
 
+    /// Why a plain line does not run in the portable shell, if it does
+    /// not: where `sh` exists it runs there instead, and nowhere else.
+    pub fn not_portable(&self) -> Option<crate::portable_shell::NotPortable> {
+        match self {
+            Self::Line(line) if !line.trim().is_empty() => crate::portable_shell::check(line).err(),
+            _ => None,
+        }
+    }
+
     /// [`Self::runs`] on this platform.
     pub fn runs_here(&self) -> Result<Runs<'_>, NotRun> {
         self.runs(uze_platform::shell::FAMILY)

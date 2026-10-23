@@ -933,6 +933,7 @@ fn project_space(
         status: uze_application::application::ProjectStatus {
             report,
             steps_not_spelled_here: Vec::new(),
+            steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
         },
         plugins: Default::default(),

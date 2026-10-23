@@ -91,15 +91,24 @@ a command with no spelling for that platform.
 
 ### Requirement: The reason a line is not portable is reported
 
-`uze status` and the placement and delivery reports SHALL name each plain
-line the portable shell cannot read, the construct it stopped at and its
-position, and the `posix`/`windows` pair as the way to cover each platform.
+`uze status` SHALL name, on every platform, each plain line the portable
+shell cannot read, the construct it stopped at and its position, and the
+`posix`/`windows` pair as the way to cover each platform. Where `sh` runs
+the line it is a note; where nothing does, it is a command with no
+spelling, and the placement and delivery reports SHALL name it too.
 
 #### Scenario: Status explains a loop
 
 - **WHEN** `uze status` runs in a project whose setup step uses `for`
 - **THEN** it names the step as not portable because of `for` at that
   position, and names the pair as the alternative
+
+#### Scenario: Status notes a line only sh runs
+
+- **WHEN** `uze status` runs on Linux in a project whose setup step is
+  `head -1 VERSION > .version`
+- **THEN** it notes that the step runs only where `sh` does, naming `-1`
+- **AND** it asks for nothing: the step runs here
 
 ### Requirement: A portable line's processes are controlled as a whole
 

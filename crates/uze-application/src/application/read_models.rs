@@ -1085,6 +1085,8 @@ pub struct ProjectStatus {
     #[serde(flatten)]
     pub report: StatusReport,
     pub steps_not_spelled_here: Vec<super::services::StepNotSpelledHere>,
+    /// The plain commands that run here only because `sh` does.
+    pub steps_only_in_sh: Vec<super::services::StepOnlyInSh>,
     /// The commands the workspace will not run until the operator
     /// approves them (ADR-055).
     #[serde(skip_serializing_if = "Option::is_none")]

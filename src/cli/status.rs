@@ -747,6 +747,18 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             ));
         }
     }
+    for only in &status.steps_only_in_sh {
+        let step = match only.step {
+            uze_application::PolicyStep::Setup => "setup",
+            uze_application::PolicyStep::Gate => "gate",
+        };
+        text.push_str(&format!(
+            "{} {step} `{}` runs only where `sh` does: {}; spell it under `posix` and `windows`\n",
+            progress::label("·"),
+            only.command,
+            only.not_portable,
+        ));
+    }
     if let Some(awaiting) = &status.commands_awaiting_approval {
         text.push_str(&format!(
             "{} {} in agents.yaml {}: setup is skipped and delivery refused until you approve\n",
