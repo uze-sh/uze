@@ -11,6 +11,9 @@ const PORTABLE: &[&str] = &[
     "echo $HOME/x",
     "echo \"$HOME\" 'single $HOME'",
     "test -f .env || cp .env.example .env",
+    "test ! -d build && mkdir build",
+    "test \"$CI\" = true",
+    "test ! 1 -eq 2",
     "mkdir -p build && cp -r assets build",
     "rm -rf dist",
     "git log --oneline | head -n 5 > recent.txt",
@@ -86,6 +89,18 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
     ("echo -n done", "echo -n", 1, Some(Divergence::EchoFlag)),
     ("echo -e 'a\\nb'", "echo -e", 1, Some(Divergence::EchoFlag)),
     ("watch &", "&", 7, Some(Divergence::Background)),
+    (
+        "test -x bin/setup && bin/setup",
+        "-x",
+        6,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    (
+        "test -f a -a -f b",
+        "-a",
+        11,
+        Some(Divergence::UnsupportedFlag),
+    ),
     (
         "head -1 VERSION",
         "-1",

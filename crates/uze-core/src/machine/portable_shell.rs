@@ -309,7 +309,8 @@ fn stderr_into_builtin(line: &str, pipe: &PipeSequence) -> Option<NotPortable> {
 
 /// The flags each builtin implements, read from the pinned version's
 /// sources: short letters, and long names (a trailing `=` takes a value).
-/// `echo` is [`Divergence::EchoFlag`]'s; `test` reads operators, not flags;
+/// `echo` is [`Divergence::EchoFlag`]'s; `test` reads operators, which
+/// [`unsupported_test_operator`] judges;
 /// `:`, `true` and `false` ignore their words as `sh` does.
 const FLAGS: &[(&str, &str, &[&str])] = &[
     ("cat", "", &[]),
@@ -334,6 +335,9 @@ const FLAGS: &[(&str, &str, &[&str])] = &[
 fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
     if name == "set" {
         return unsupported_set_option(arguments);
+    }
+    if name == "test" {
+        return unsupported_test_operator(arguments);
     }
     let (_, shorts, longs) = FLAGS.iter().find(|(builtin, ..)| *builtin == name)?;
     for word in arguments.iter().map(literal) {
@@ -378,6 +382,37 @@ fn unsupported_set_option(arguments: &[Word]) -> Option<String> {
         }
     }
     None
+}
+
+/// `test` reads one unary (`-n -z -e -f -d -s`) or binary (`= !=` and the
+/// integer comparisons) operator, optionally negated with `!`, and nothing
+/// longer: `-a`, `-o` and every other operator are refused at run time.
+fn unsupported_test_operator(arguments: &[Word]) -> Option<String> {
+    const UNARY: &[&str] = &["-n", "-z", "-e", "-f", "-d", "-s"];
+    const BINARY: &[&str] = &["=", "!=", "-eq", "-ne", "-lt", "-le", "-gt", "-ge"];
+    let words = arguments.iter().map(literal).collect::<Vec<_>>();
+    let negated = words
+        .first()
+        .is_some_and(|word| word.as_deref() == Some("!"));
+    let operand = if negated { &words[1..] } else { &words[..] };
+    let (operator, accepted) = match operand.len() {
+        0 | 1 => return None,
+        2 => (&operand[0], UNARY),
+        3 => (&operand[1], BINARY),
+        _ => {
+            let combinator = words
+                .iter()
+                .flatten()
+                .find(|word| *word == "-a" || *word == "-o");
+            return combinator
+                .or(words.last().and_then(Option::as_ref))
+                .cloned();
+        }
+    };
+    operator
+        .as_ref()
+        .filter(|operator| !accepted.contains(&operator.as_str()))
+        .cloned()
 }
 
 fn is_stderr_to_stdout(redirect: &Redirect) -> bool {
