@@ -366,6 +366,7 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
 
 /// A receipt an earlier release recorded names its own plugin file, which
 /// starts the engine on every request: removal takes it out with the engine.
+// The engine is POSIX `sh`, delivered only where it runs.
 #[cfg(unix)]
 #[test]
 fn removing_the_rules_an_earlier_release_delivered_takes_its_plugin_out() {
