@@ -341,7 +341,14 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
     fs::create_dir_all(&plugins).unwrap();
     fs::write(machine.opencode_plugin(), "// mine\n").unwrap();
     fs::write(plugins.join(plugin::RETIRED_FILE), "// also mine\n").unwrap();
-    let receipts = machine.attach(&machine.opencode);
+    assert!(
+        matches!(
+            machine.opencode.attach_rules_engine(),
+            Err(uze_core::UzeError::ManagedEntryConflict(path)) if path == machine.opencode_plugin()
+        ),
+        "the rules do not reach OpenCode while the operator's file holds the path, \
+         so setup records no delivery that would report them delivered"
+    );
     machine
         .opencode
         .install(&machine.home, &HarnessDetection::default())
@@ -354,11 +361,6 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
         fs::read_to_string(plugins.join(plugin::RETIRED_FILE)).unwrap(),
         "// also mine\n",
         "a file of the earlier name that UZE did not write stays"
-    );
-    assert_eq!(
-        machine.opencode.inspect_receipt(&receipts[0]).state,
-        AttachmentState::Missing,
-        "the rules do not reach OpenCode while the operator's file holds the path"
     );
 }
 

@@ -206,7 +206,14 @@ impl IntegrationPort for OpenCodeIntegration {
         crate::rules::adapted_route(hooks::RULES_REASON)
     }
 
+    /// The rules section rides UZE's plugin, so an operator's file at its
+    /// path refuses the delivery rather than recording one nothing runs.
     fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+        if let runtime_plugin::PluginState::Foreign(path) =
+            runtime_plugin::state(self.config_root(), &self.runtime_plugin())
+        {
+            return Err(UzeError::ManagedEntryConflict(path));
+        }
         RULES.attach(
             &self.uze_home,
             self.id(),
