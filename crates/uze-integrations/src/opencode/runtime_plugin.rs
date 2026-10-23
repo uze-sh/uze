@@ -232,11 +232,13 @@ pub(super) fn state(config_root: &Path, wanted: &str) -> PluginState {
 
 /// Writes `wanted` when the plugin is missing or is an earlier version of
 /// UZE's, and takes out the files earlier releases wrote in its place. A
-/// file UZE did not write is left alone.
+/// file UZE did not write is left alone, and so are those earlier files,
+/// which still deliver what the plugin then cannot.
 pub(super) fn ensure(config_root: &Path, wanted: &str) -> Result<()> {
-    retire(config_root)?;
-    if state(config_root, wanted) != PluginState::Missing {
-        return Ok(());
+    match state(config_root, wanted) {
+        PluginState::Foreign(_) => return Ok(()),
+        PluginState::Installed => return retire(config_root),
+        PluginState::Missing => retire(config_root)?,
     }
     let path = path(config_root);
     if let Some(parent) = path.parent() {
@@ -328,6 +330,30 @@ mod tests {
         ensure(&root, &wanted).unwrap();
         assert_eq!(fs::read(path(&root)).unwrap(), operators);
         assert_eq!(state(&root, &wanted), PluginState::Foreign(path(&root)));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_earlier_plugins_stay_while_an_operators_file_holds_the_path() {
+        let root = uze_testkit::temp::scratch("opencode-runtime-plugin-blocked-retire");
+        let plugins = root.join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(path(&root), "// the operator's own plugin").unwrap();
+        for (name, header) in RETIRED {
+            fs::write(
+                plugins.join(name),
+                format!("{header}\nexport default {{}};\n"),
+            )
+            .unwrap();
+        }
+
+        ensure(&root, &source(&sections())).unwrap();
+        for (name, _) in RETIRED {
+            assert!(
+                plugins.join(name).exists(),
+                "`{name}` still delivers what uze.ts cannot"
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 
