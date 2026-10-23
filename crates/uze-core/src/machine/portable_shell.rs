@@ -196,31 +196,31 @@ fn divergence(line: &str, list: &SequentialList) -> Option<NotPortable> {
             divergence: Some(Divergence::BraceParameter),
         });
     }
-    let mut found = None;
-    visit_list(list, &mut |command| {
-        if found.is_none() {
-            found = command_divergence(line, command);
-        }
+    let nodes = nodes(list);
+    let command = nodes.iter().find_map(|node| match node {
+        Node::Command(command) => command_divergence(line, command),
+        _ => None,
     });
-    if found.is_some() {
-        return found;
-    }
-    if list.items.iter().any(|item| item.is_async) {
-        return Some(NotPortable {
-            construct: "&".into(),
-            column: column_of(line, "&"),
-            reason: "the portable shell waits for a background command before the line ends, \
-                     and `sh` does not"
-                .into(),
-            divergence: Some(Divergence::Background),
-        });
-    }
-    visit_pipes(list, &mut |pipe| {
-        if found.is_none() {
-            found = stderr_into_builtin(line, pipe);
-        }
-    });
-    found
+    let background = || {
+        nodes
+            .iter()
+            .any(|node| matches!(node, Node::List(list) if list.items.iter().any(|item| item.is_async)))
+            .then(|| NotPortable {
+                construct: "&".into(),
+                column: column_of(line, "&"),
+                reason: "the portable shell waits for a background command before the line ends, \
+                         and `sh` does not"
+                    .into(),
+                divergence: Some(Divergence::Background),
+            })
+    };
+    let stderr_pipe = || {
+        nodes.iter().find_map(|node| match node {
+            Node::Pipe(pipe) => stderr_into_builtin(line, pipe),
+            _ => None,
+        })
+    };
+    command.or_else(background).or_else(stderr_pipe)
 }
 
 fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
@@ -421,71 +421,89 @@ fn literal(word: &Word) -> Option<String> {
     text(word.parts(), &mut spelled).map(|()| spelled)
 }
 
-fn visit_list(list: &SequentialList, visit: &mut impl FnMut(&Command)) {
+/// A part of a parsed line a divergence is judged on.
+enum Node<'a> {
+    List(&'a SequentialList),
+    Command(&'a Command),
+    Pipe(&'a PipeSequence),
+}
+
+/// Every list, command and pipe in `list`, including those inside a
+/// subshell, a command substitution or an assignment: they all run in the
+/// same shell, so what diverges at the top diverges there too.
+fn nodes(list: &SequentialList) -> Vec<Node<'_>> {
+    let mut nodes = Vec::new();
+    walk_list(list, &mut nodes);
+    nodes
+}
+
+fn walk_list<'a>(list: &'a SequentialList, nodes: &mut Vec<Node<'a>>) {
+    nodes.push(Node::List(list));
     for item in &list.items {
-        visit_sequence(&item.sequence, visit);
+        walk_sequence(&item.sequence, nodes);
     }
 }
 
-fn visit_sequence(sequence: &Sequence, visit: &mut impl FnMut(&Command)) {
+fn walk_sequence<'a>(sequence: &'a Sequence, nodes: &mut Vec<Node<'a>>) {
     match sequence {
-        Sequence::ShellVar(_) => {}
-        Sequence::Pipeline(pipeline) => visit_pipeline(&pipeline.inner, visit),
+        Sequence::ShellVar(variable) => walk_word(&variable.value, nodes),
+        Sequence::Pipeline(pipeline) => walk_pipeline(&pipeline.inner, nodes),
         Sequence::BooleanList(list) => {
-            visit_sequence(&list.current, visit);
-            visit_sequence(&list.next, visit);
+            walk_sequence(&list.current, nodes);
+            walk_sequence(&list.next, nodes);
         }
     }
 }
 
-fn visit_pipeline(inner: &PipelineInner, visit: &mut impl FnMut(&Command)) {
+fn walk_pipeline<'a>(inner: &'a PipelineInner, nodes: &mut Vec<Node<'a>>) {
     match inner {
-        PipelineInner::Command(command) => visit_command(command, visit),
+        PipelineInner::Command(command) => walk_command(command, nodes),
         PipelineInner::PipeSequence(pipe) => {
-            visit_command(&pipe.current, visit);
-            visit_pipeline(&pipe.next, visit);
+            nodes.push(Node::Pipe(pipe));
+            walk_command(&pipe.current, nodes);
+            walk_pipeline(&pipe.next, nodes);
         }
     }
 }
 
-fn visit_command(command: &Command, visit: &mut impl FnMut(&Command)) {
-    visit(command);
-    if let CommandInner::Subshell(list) = &command.inner {
-        visit_list(list, visit);
-    }
-}
-
-fn visit_pipes(list: &SequentialList, visit: &mut impl FnMut(&PipeSequence)) {
-    for item in &list.items {
-        pipes_in_sequence(&item.sequence, visit);
-    }
-}
-
-fn pipes_in_sequence(sequence: &Sequence, visit: &mut impl FnMut(&PipeSequence)) {
-    match sequence {
-        Sequence::ShellVar(_) => {}
-        Sequence::Pipeline(pipeline) => pipes_in_pipeline(&pipeline.inner, visit),
-        Sequence::BooleanList(list) => {
-            pipes_in_sequence(&list.current, visit);
-            pipes_in_sequence(&list.next, visit);
+fn walk_command<'a>(command: &'a Command, nodes: &mut Vec<Node<'a>>) {
+    nodes.push(Node::Command(command));
+    match &command.inner {
+        CommandInner::Simple(simple) => {
+            for variable in &simple.env_vars {
+                walk_word(&variable.value, nodes);
+            }
+            for argument in &simple.args {
+                walk_word(argument, nodes);
+            }
         }
+        CommandInner::Subshell(list) => walk_list(list, nodes),
+    }
+    if let Some(Redirect {
+        io_file: IoFile::Word(target),
+        ..
+    }) = &command.redirect
+    {
+        walk_word(target, nodes);
     }
 }
 
-fn pipes_in_pipeline(inner: &PipelineInner, visit: &mut impl FnMut(&PipeSequence)) {
-    match inner {
-        PipelineInner::Command(command) => pipes_in_subshell(command, visit),
-        PipelineInner::PipeSequence(pipe) => {
-            visit(pipe);
-            pipes_in_subshell(&pipe.current, visit);
-            pipes_in_pipeline(&pipe.next, visit);
+fn walk_word<'a>(word: &'a Word, nodes: &mut Vec<Node<'a>>) {
+    walk_parts(word.parts(), nodes);
+}
+
+fn walk_parts<'a>(parts: &'a [WordPart], nodes: &mut Vec<Node<'a>>) {
+    for part in parts {
+        match part {
+            WordPart::Command(list) => walk_list(list, nodes),
+            WordPart::Quoted(inner) => walk_parts(inner, nodes),
+            WordPart::Brace(alternatives) => {
+                for alternative in alternatives {
+                    walk_word(alternative, nodes);
+                }
+            }
+            _ => {}
         }
-    }
-}
-
-fn pipes_in_subshell(command: &Command, visit: &mut impl FnMut(&PipeSequence)) {
-    if let CommandInner::Subshell(list) = &command.inner {
-        visit_pipes(list, visit);
     }
 }
 

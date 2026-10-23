@@ -122,6 +122,33 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         15,
         Some(Divergence::StderrIntoBuiltin),
     ),
+    // A command substitution, an assignment and a subshell run in the
+    // same shell, so what is refused at the top is refused inside them.
+    (
+        "VERSION=$(head -1 VERSION) && echo $VERSION",
+        "-1",
+        16,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    (
+        "A=$(cp -a x y) make",
+        "-a",
+        8,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    (
+        "test \"$(echo -n abc)\" = abc",
+        "echo -n",
+        9,
+        Some(Divergence::EchoFlag),
+    ),
+    (
+        "X=$(make 2>&1 | cat)",
+        "2>&1",
+        10,
+        Some(Divergence::StderrIntoBuiltin),
+    ),
+    ("(watch &)", "&", 8, Some(Divergence::Background)),
 ];
 
 #[test]
@@ -310,7 +337,7 @@ fn corpus() -> Vec<(String, String)> {
 
 /// What E1 recorded (design.md, Evidence): the share of the corpus that runs
 /// in the portable shell may grow, and falling below it fails here.
-const PORTABLE_AT_LEAST_PER_MILLE: usize = 958;
+const PORTABLE_AT_LEAST_PER_MILLE: usize = 956;
 
 #[test]
 fn the_portable_share_of_real_commands_does_not_fall() {
@@ -357,19 +384,22 @@ fn depends_on_which_sh(line: &str) -> bool {
         })
     }
     let Ok(list) = parse(line) else { return false };
-    let mut depends = false;
-    visit_list(&list, &mut |command| {
-        if let CommandInner::Simple(simple) = &command.inner {
-            let echo = simple.args.first().and_then(literal).as_deref() == Some("echo");
-            depends |= simple.args.iter().any(|word| word_has_brace(word.parts()))
-                || (echo
-                    && simple.args[1..]
-                        .iter()
-                        .filter_map(literal)
-                        .any(|word| word.contains('\\')));
-        }
-    });
-    depends
+    nodes(&list).iter().any(|node| {
+        let Node::Command(Command {
+            inner: CommandInner::Simple(simple),
+            ..
+        }) = node
+        else {
+            return false;
+        };
+        let echo = simple.args.first().and_then(literal).as_deref() == Some("echo");
+        simple.args.iter().any(|word| word_has_brace(word.parts()))
+            || (echo
+                && simple.args[1..]
+                    .iter()
+                    .filter_map(literal)
+                    .any(|word| word.contains('\\')))
+    })
 }
 
 /// What E2 recorded: the share of the corpus whose meaning differs between
