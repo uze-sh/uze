@@ -363,8 +363,13 @@ fn unsupported_flag(name: &str, arguments: &[Word]) -> Option<String> {
     if name == "test" {
         return unsupported_test_operator(arguments);
     }
-    // The portable `cd` takes `-` for a directory's name, not `$OLDPWD`.
-    if name == "cd" && arguments.first().and_then(literal).as_deref() == Some("-") {
+    // The portable `cd` takes `-` for a directory's name, not `$OLDPWD`,
+    // after `--` too.
+    let directory = match arguments.first().and_then(literal).as_deref() {
+        Some("--") => arguments.get(1),
+        _ => arguments.first(),
+    };
+    if name == "cd" && directory.and_then(literal).as_deref() == Some("-") {
         return Some("-".into());
     }
     let (_, shorts, longs) = FLAGS.iter().find(|(builtin, ..)| *builtin == name)?;

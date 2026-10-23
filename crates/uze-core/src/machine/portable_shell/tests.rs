@@ -135,6 +135,7 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         7,
         Some(Divergence::EchoFlag),
     ),
+    ("cd -- - && make", "-", 4, Some(Divergence::UnsupportedFlag)),
     ("cd && make", "cd", 1, Some(Divergence::UnsupportedFlag)),
     (
         "set -euo pipefail",
