@@ -414,6 +414,7 @@ impl IntegrationPort for OpenCodeIntegration {
         let documents = hook_projection::opencode_documents_dir(&self.uze_home, HOOKS);
         fs::create_dir_all(&documents).map_err(UzeError::write(&documents))?;
         runtime_plugin::ensure(self.config_root(), &self.runtime_plugin())?;
+        self.retire_bridges_with_documents(&documents)?;
         state::record(
             home,
             self.id(),
@@ -781,7 +782,40 @@ impl OpenCodeIntegration {
             bridge_path,
             hook_projection::opencode_hook_document(HOOKS, &references, package_root).as_bytes(),
         )?;
-        self.retire_package_bridge(package_id)
+        if self.plugin_reads_documents() {
+            self.retire_package_bridge(package_id)?;
+        }
+        Ok(())
+    }
+
+    /// Whether UZE's plugin, which reads the hook documents, is the one
+    /// OpenCode loads: until it is, an earlier release's bridge is what
+    /// still runs a package's hooks.
+    fn plugin_reads_documents(&self) -> bool {
+        runtime_plugin::state(self.config_root(), &self.runtime_plugin())
+            == runtime_plugin::PluginState::Installed
+    }
+
+    /// Setup's half of replacing the earlier bridges: those of packages an
+    /// attach moved into a document before the plugin reading it was there.
+    fn retire_bridges_with_documents(&self, documents: &Path) -> Result<()> {
+        if !self.plugin_reads_documents() {
+            return Ok(());
+        }
+        let Ok(entries) = fs::read_dir(documents) else {
+            return Ok(());
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "json")
+                && let Some(package_id) = path.file_stem().and_then(|stem| stem.to_str())
+            {
+                self.retire_package_bridge(package_id)?;
+            }
+        }
+        Ok(())
     }
 
     /// Takes out the plugin an earlier release delivered this package's
@@ -965,6 +999,9 @@ impl OpenCodeIntegration {
                     });
                 }
             }
+            // An attach before setup left the earlier bridge running these
+            // groups; with none left, nothing is to run them.
+            self.retire_package_bridge(package_id)?;
         }
         if !groups.is_empty() {
             let references: Vec<&PortableHook> = groups.iter().collect();

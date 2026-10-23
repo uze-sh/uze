@@ -11,7 +11,9 @@ use uze_core::{
     engine::package_resources_at,
     home::UzeHome,
     hook::HookEvent,
-    integration::{AttachmentReceipt, AttachmentState, IntegrationPort, ManagedArtifact},
+    integration::{
+        AttachmentReceipt, AttachmentState, HarnessDetection, IntegrationPort, ManagedArtifact,
+    },
     router::CompatibilityRoute,
     state,
     store::PackageId,
@@ -1274,6 +1276,7 @@ fn an_opencode_bridge_an_earlier_release_wrote_is_replaced_at_the_next_attach() 
         AttachmentState::Matched
     );
 
+    set_up(&integration, &home);
     let replaced = integration.attach_receipt(first).unwrap().unwrap();
     assert!(
         !bridge.exists(),
@@ -1284,6 +1287,45 @@ fn an_opencode_bridge_an_earlier_release_wrote_is_replaced_at_the_next_attach() 
         unreachable!();
     };
     assert_eq!(*path, opencode_document(&root));
+    let _ = fs::remove_dir_all(root);
+}
+
+fn set_up(integration: &OpenCodeIntegration, home: &UzeHome) {
+    integration
+        .install(
+            home,
+            &HarnessDetection {
+                present: true,
+                version: None,
+            },
+        )
+        .unwrap();
+}
+
+/// Until setup writes UZE's plugin, nothing reads the package's document:
+/// the earlier release's bridge is what still runs its hooks.
+#[test]
+fn an_earlier_releases_bridge_stays_until_setup_writes_the_plugin_that_replaces_it() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-before-setup");
+    let integration = opencode(&root);
+    let first = hook_resource(&resources, "observe-first");
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = [];\nexport default {};\n",
+    )
+    .unwrap();
+
+    integration.attach_receipt(first).unwrap().unwrap();
+    assert!(bridge.exists(), "no plugin reads the document yet");
+
+    set_up(&integration, &home);
+    assert!(
+        !bridge.exists(),
+        "setup takes it out once the plugin reading the document is there"
+    );
+    assert!(opencode_document(&root).is_file());
     let _ = fs::remove_dir_all(root);
 }
 
