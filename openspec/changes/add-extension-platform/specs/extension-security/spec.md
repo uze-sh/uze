@@ -68,7 +68,7 @@ A bare program name SHALL run only under its `exec:` grant.
 - **THEN** `openspec` receives the single argument `x; rm -rf ~` and no shell ever sees it
 
 #### Scenario: A path cannot escape the package
-- **WHEN** a manifest declares `run: [../../bin/tool]` or a link inside the extension points outside it
+- **WHEN** a manifest declares `run "../../bin/tool"` or a link inside the extension points outside it
 - **THEN** the check and the host refuse the program as resolving outside the extension
 
 ### Requirement: Programs run with a scrubbed environment and confined where possible

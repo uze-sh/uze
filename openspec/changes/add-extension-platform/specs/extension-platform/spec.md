@@ -137,7 +137,7 @@ action names it in `with`. A `form`'s fields SHALL reach its action as
 
 #### Scenario: A form's comments reach the action
 - **WHEN** a form repeats `field id="comment.{id}"` per section and the operator submits two comments
-- **THEN** the action declaring `with = ["form.*"]` receives both under `form`, and no other action receives them
+- **THEN** the action declaring `with "form.*"` receives both under `form`, and no other action receives them
 
 ### Requirement: A surface occupies one of the host's slots
 A surface SHALL declare one slot: `view` (the full frame), `section` (a
@@ -145,7 +145,7 @@ sidebar block), `status` (a row in the sidebar's header), `band` (1 to 6
 rows the manifest fixes, on an edge of an agent's pane), `overlay` (a
 picker, form or dialog) or `notify`. The host SHALL own every slot's
 geometry, SHALL NOT let a surface cover a pane's cells, and SHALL refuse an
-unknown slot or `kind: interactive`.
+unknown slot or `kind="interactive"`.
 
 #### Scenario: A section joins the sidebar
 - **WHEN** an enabled extension declares a `section` surface
@@ -168,8 +168,8 @@ unknown slot or `kind: interactive`.
 - **THEN** it is drawn folded to its title with a mark saying it has more, and nothing of it is cropped mid-row
 
 #### Scenario: Interactive is retired
-- **WHEN** a manifest declares `kind: interactive`
-- **THEN** it is refused with a reason pointing at `feed: resident`
+- **WHEN** a manifest declares `kind="interactive"`
+- **THEN** it is refused with a reason pointing at `feed="resident"`
 
 ### Requirement: A surface declares how it is fed
 A surface SHALL declare a `feed`: `bind` (manifest nodes filled from a
@@ -191,16 +191,16 @@ SHALL NOT change its slot, actions, keys or grants other than `resident`.
 - **THEN** the button is drawn disabled with a notice naming the missing action, and pressing it runs nothing
 
 #### Scenario: A resident feed needs its grant
-- **WHEN** a surface declares `feed: resident` and `wants` has no `resident`
+- **WHEN** a surface declares `feed="resident"` and `wants` has no `resident`
 - **THEN** the check fails naming the surface and the missing grant
 
 ### Requirement: A surface is offered only where it applies
-A surface MAY declare `applies_when` with a list of paths relative to the
+A surface MAY declare `applies-when` with a list of paths relative to the
 checkout; the surface SHALL be offered only in a checkout where at least one of
-them exists. Without `applies_when` a surface SHALL be offered everywhere.
+them exists. Without `applies-when` a surface SHALL be offered everywhere.
 
 #### Scenario: An openspec board is not offered outside an openspec project
-- **WHEN** a surface declares `applies_when: [openspec]` and the checkout has no `openspec` path
+- **WHEN** a surface declares `applies-when "openspec"` and the checkout has no `openspec` path
 - **THEN** the surface is absent from that workspace's tabs, sidebar and action index, and none of its sources run
 
 ### Requirement: The host holds every piece of view state
@@ -307,11 +307,11 @@ SHALL be coalesced per extension in a window.
 - **THEN** the source runs again within the digest's period
 
 #### Scenario: Each event reaches the program when asked
-- **WHEN** a source declares `agent.tool.finished` with `deliver: each` and three tool calls finish within the coalescing window
+- **WHEN** a source declares `agent.tool.finished` with `deliver="each"` and three tool calls finish within the coalescing window
 - **THEN** the source runs three times, in order, each with that event in `input.event`
 
 #### Scenario: An interval has a floor and pauses when unseen
-- **WHEN** a manifest declares `every: 1s` for a source shown only in a folded section
+- **WHEN** a manifest declares `every "1s"` for a source shown only in a folded section
 - **THEN** the check reports the interval raised to the 5-second floor, and the source does not run while nothing that shows it is visible
 
 ### Requirement: Pipes carry data into an extension from outside
@@ -376,10 +376,10 @@ added only when a reference extension needs it.
 
 #### Scenario: The flight deck watches every harness
 - **WHEN** an agent on a harness that reports tool calls starts and finishes one
-- **THEN** the `flightdeck` view, fed with `deliver: each`, lists the call under that agent with its tool name and duration
+- **THEN** the `flightdeck` view, fed with `deliver="each"`, lists the call under that agent with its tool name and duration
 
 #### Scenario: A meter refreshes on an interval
-- **WHEN** the `gpu-meter` reference is enabled with `every: 5s`
+- **WHEN** the `gpu-meter` reference is enabled with `every "5s"`
 - **THEN** its section draws a sparkline of the last answers and updates every five seconds while visible
 
 #### Scenario: Chimes answer agent events

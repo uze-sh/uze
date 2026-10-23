@@ -6,6 +6,25 @@ writes standard output, with no SDK and no resident process.
 
 ## ADDED Requirements
 
+### Requirement: A declaration is answered by a component or a program
+A source or action SHALL be answered by a WebAssembly component called once
+per question (`wasm`), by a program (`run`), or, in development and tests
+only, by a fixture. A component and a program SHALL receive the same input
+and answer the same output and envelope, so changing which one answers SHALL
+NOT change the view or the tests.
+
+#### Scenario: A script becomes a component without touching the view
+- **WHEN** an author replaces `run "./bin/board.sh"` with `wasm "bin/board.wasm"` and the component answers the same JSON
+- **THEN** the surface draws the same and the extension's tests pass unchanged
+
+#### Scenario: A component needs no exec grant
+- **WHEN** an extension's sources are all components that import only `read-checkout`
+- **THEN** consent asks only for `read:checkout`, and the extension is confined on every platform
+
+#### Scenario: A component wrapping a CLI is as confined as the CLI
+- **WHEN** a component imports `run-program` to run `nvidia-smi`
+- **THEN** enabling asks for `exec:nvidia-smi` apart, and the Extensions screen reports the program's confinement as the platform gives it
+
 ### Requirement: A program is an argv the host runs once per question
 A source, an action or a command declared by an extension SHALL be an argv
 array. The host SHALL run it once per question, without a shell, with the
@@ -20,7 +39,7 @@ string to be split or interpreted by a shell SHALL be refused by the check.
 - **THEN** the host runs the source's argv once, reads its answer, and no process of that extension remains afterwards
 
 #### Scenario: A shell string is refused
-- **WHEN** a manifest declares `run: "openspec list --json | jq ."`
+- **WHEN** a manifest declares `run "openspec list --json | jq ."`
 - **THEN** `uze agent extension check` fails naming the field and saying a program is an argv array
 
 ### Requirement: Input is one JSON document on stdin
@@ -33,7 +52,7 @@ the surface's state. Nothing the declaration did not name SHALL be sent.
 > **Unresolved review findings** (design.md): S8.
 
 #### Scenario: Only declared inputs reach the program
-- **WHEN** a source declares `input: [change, mode]` and the operator has selected change `support-macos` in mode `tasks`
+- **WHEN** a source declares `input "change" "mode"` and the operator has selected change `support-macos` in mode `tasks`
 - **THEN** the program's stdin carries `input: {"change": "support-macos", "mode": "tasks"}` and no other field of the selection
 
 #### Scenario: The context names where the question comes from
@@ -47,7 +66,7 @@ shell program needs no JSON tool to read its input. A substituted value
 beginning with `-` SHALL be refused unless the argv puts `--` before it.
 
 #### Scenario: A shell script reads its input from argv
-- **WHEN** a source declares `run = ["./bin/calls.sh", "--", "{event.tool}"]` and a tool event names `Bash`
+- **WHEN** a source declares `run "./bin/calls.sh" "--" "{event.tool}"` and a tool event names `Bash`
 - **THEN** the program receives `Bash` as its argument after `--`, with the full input still on stdin
 
 #### Scenario: A dash value cannot become a flag
@@ -79,7 +98,7 @@ answer against its mode and bound its size before decoding it, and an answer
 that does not match SHALL be a failure drawn on the surface that asked.
 
 #### Scenario: A shell author lists without jq
-- **WHEN** a source declares `output: lines` with fields `[name, status]` and prints `build\tok`
+- **WHEN** a source declares `output "lines"` with `fields "name" "status"` and prints `build\tok`
 - **THEN** the navigator shows one item named `build` with status `ok`
 
 #### Scenario: A view answer outside the catalog is refused

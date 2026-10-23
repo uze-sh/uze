@@ -934,10 +934,47 @@ One set of rules, the same in every view, with no expressions:
 - Every gallery entry (D20) ships its tests; they are the acceptance suite
   and the worked example of how to test.
 
+### D27. A source or action is answered by a component first, a program when it must
+
+Decided by the operator on 2026-10-23. Views are KDL whatever answers them;
+what changes is who answers "give me the data" or "do this":
+
+| Answer | Declared as | For | Confinement | Consent |
+|---|---|---|---|---|
+| a **WebAssembly component**, called once per question, keeping no state | `wasm "bin/board.wasm"` | the default: parsing checkout files, computing fields, building a compose tree | the component model's, on every platform | the plain grants (`read:checkout`, `net` …) |
+| a **program** (argv) | `run "./bin/board.sh"` | wrapping a CLI (`gh`, `kubectl`, `nvidia-smi`, `openspec`), or a quick shell script that prints JSON or lines | D6's, where the platform offers it | `exec:` grants asked apart, stating "runs programs on your system, as you"; where confinement is unavailable, an explicit "runs as you, with everything you can reach" |
+| a **fixture** | `fixtures/<source>.json` | development and tests only (D25, D26) | — | — |
+
+- Both answer the same contract: the input object of D4 and the envelope of
+  D4. A stateless component exports one function, `answer(question) ->
+  answer`, in a WIT world that the resident world (D19) extends, so a
+  source can move from a script to a component, or a component to resident,
+  without its view or tests changing.
+- A component reaches the machine only through D19's imports. One that
+  wraps a CLI imports `run-program`, which runs the program under D6 and its
+  `exec:` grant: wrapping a CLI is never more confined than the program it
+  runs, and consent says so.
+- The check, the scaffold and the Skill lead with components; the shell path
+  is documented as fully supported, for wrappers and for authors who want no
+  toolchain. Neither is deprecated.
+- Consequences for the split: the stateless component runner and `uze-wasm`
+  (with its runtime, `wasmi` recommended) arrive in change 4, confined
+  everywhere from their first commit; the argv runner arrives with OS
+  confinement in change 5, so `exec:` is never offered before confinement
+  or its explicit disclosure exists; change 7 adds only the resident
+  exports and the media.
+
+*Alternative:* programs only, components for resident surfaces. Rejected:
+it makes OS confinement, which varies by platform and is where most open
+findings sit, the gate for every extension, including the many that need no
+program at all. *Alternative:* components only. Rejected: the extensions
+that wrap a CLI would still run it, and the shell author would be turned
+away.
+
 ## Candidate ADRs
 
-- **Extension loading is declared data plus confined, stateless programs,
-  with WebAssembly components as the only resident form.** This answers
+- **Extension logic is a WebAssembly component first, a confined program
+  when it must be, and WebAssembly is the only resident form (D27).** This answers
   ADR-041's deferred question: the mechanism is chosen, and dynamic
   libraries and native resident interpreters are ruled out.
 - **Extensions may act on agents through the bridge.** Writing into an
@@ -1064,21 +1101,23 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    moved onto the path split 1 laid, the per-extension fields, channels and
    hit variants removed, and the invariant and AGENTS.md edits for
    `ExtensionHit`, with no new behaviour.
-4. **extension-manifest-and-runner**: the full `extension.kdl`, discovery,
-   check, the bounded runner, output modes and the envelope, sources,
-   actions, `every`, `paths.changed`, the store and preferences, the grants
-   record and consent. Third-party code runs from here on, disclosed as not
-   confined. Proof: `gpu-meter`, `jump`.
-5. **extension-confinement**: Landlock, seccomp and Seatbelt, with the
-   dependency review.
+4. **extension-manifest-and-components**: the full `extension.kdl`,
+   discovery, check, `uze-wasm` with the stateless component runner (D27),
+   output modes and the envelope, sources, actions, `every`,
+   `paths.changed`, the store and preferences, the grants record and
+   consent. Third-party code runs from here on, confined on every platform.
+   Proof: `jump`, and `gsd-band`'s board from a component.
+5. **extension-programs-and-confinement**: the argv runner and `exec:`
+   grants, with Landlock, seccomp and Seatbelt as `uze-platform`'s
+   confinement and the dependency review. Proof: `gpu-meter`.
 6. **agent-bridge**: the reporter per launch and its journal, the normalized
    events with delivery modes, the `agents` and `events` sources, the `band`
    and `status` slots, `notify`/`sound` through `uze-platform`, and the
    agent actions. Proof: `gsd-band` with its next-step button, `agents-hud`,
    `flightdeck`, `chimes`, `plan-review`.
 7. **extension-media-and-resident**: `cells` with regions, `image`,
-   `sprite`, then the WebAssembly tier, its crate, runtime and HTTP client.
-   Proof: `pets`, `screen`, `snake`.
+   `sprite`, then the resident exports of D19 on the runtime change 4
+   brought, and its HTTP client. Proof: `pets`, `screen`, `snake`.
 8. **Growth**: pipes and CLI commands, then whatever a new gallery entry
    needs.
 
@@ -1089,10 +1128,10 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 | 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; `uze ext dev` | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
 | 2 tests and LSP | `uze ext test`, `uze ext lsp` | — |
 | 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
-| 4 manifest and runner | the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
+| 4 manifest and components | `uze-wasm` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
 | 5 confinement | the argv runner; confinement in `uze-platform` | — |
 | 6 agent bridge | the journal, `uze agent report`, the `agents` source | each of the four integrations; `capability/hook.rs`; `compute_layout` for bands |
-| 7 media and resident | `uze-wasm` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
+| 7 media and resident | the resident exports in `uze-wasm` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
 
 Each change carries, in the same commit as the code that needs it: reads off
 the drawing thread through `orchestrator/reads.rs` (the
@@ -1121,8 +1160,8 @@ must come before or with task 1.1.
 - **What unenforced consent says**: the plan needs the exact wording for
   "this runs as you, with everything you can reach", and whether an extension
   may be enabled at all where confinement is missing.
-- **The WebAssembly runtime and the HTTP client** (D19): `wasmi` or
-  `wasmtime`, and which TLS client, judged by the dependency policy with
+- **The WebAssembly runtime and the HTTP client** (D19, D27; needed by
+  change 4): `wasmi` (recommended) or `wasmtime`, and which TLS client, judged by the dependency policy with
   their cost on build time and binary size.
 - **Unattended prompt rate** (D16): the number per agent per window.
 
