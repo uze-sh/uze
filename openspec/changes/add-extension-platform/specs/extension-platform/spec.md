@@ -25,7 +25,7 @@ can observe.
 - **THEN** the extension is listed in the Extensions screen and can be opened in the workspace with the same binary
 
 ### Requirement: An extension is declared in one manifest that carries no logic
-A plugin SHALL declare an extension in `extensions/<id>/extension.yaml`,
+A plugin SHALL declare an extension in `extensions/<id>/extension.toml`,
 holding `protocol`, `id`, `name`, `description`, `surfaces`, `sources`,
 `actions`, `events`, `pipes`, `preferences`, `commands` and `wants`. Values in the manifest SHALL be
 literals or field references (`{field}`) into the answer of a source or the
@@ -35,23 +35,104 @@ expressions. Unknown keys SHALL be refused.
 > **Unresolved review findings** (design.md): S15.
 
 #### Scenario: An expression is refused
-- **WHEN** a manifest writes `marker: "{done > 0 ? done : '-'}"`
+- **WHEN** a manifest writes `marker = "{done > 0 ? done : '-'}"`
 - **THEN** the check fails saying a template is a field reference, not an expression
 
-### Requirement: A manifest's protocol is checked and JSON is read as YAML
+### Requirement: A manifest's protocol is checked
 A manifest declaring a `protocol` this build does not know SHALL be refused
-with the version it declares and the versions this build accepts. JSON SHALL
-be accepted as YAML.
+with the version it declares and the versions this build accepts, and the
+rest of the plugin SHALL install.
 
-> **Unresolved review findings** (design.md): `noyalib` 0.0.x.
+> **Unresolved review findings** (design.md): `noyalib` 0.0.x (moot for manifests since D22).
 
 #### Scenario: A newer protocol is named, not guessed
-- **WHEN** a manifest declares `protocol: 2` to a build that knows only `1`
+- **WHEN** a manifest declares `protocol = 2` to a build that knows only `1`
 - **THEN** the extension is refused with a message naming both versions, and the rest of the plugin installs
 
-#### Scenario: A JSON manifest is read
-- **WHEN** `extension.yaml` is written as a JSON object
-- **THEN** it is read as the same manifest its YAML spelling would be
+### Requirement: A view is a KDL v2 file of catalog nodes
+A surface's view SHALL be a KDL v2 file in the extension's directory whose
+nodes are catalog nodes with only the properties each accepts. The check
+SHALL refuse unknown nodes, unknown properties, unexpected arguments,
+repeated properties and type annotations, each with file, line, column and
+a suggestion, and SHALL say how to write a KDL v1 spelling in v2.
+
+#### Scenario: A brace pasted from JSX is caught
+- **WHEN** a view writes `text {id}`
+- **THEN** the check fails at that line and column saying `text` takes a string, and suggests `text "{id}"`
+
+#### Scenario: A repeated property is refused
+- **WHEN** a view writes `button "Go" action="a" action="b"`
+- **THEN** the check fails naming the repeated property, rather than keeping either value
+
+#### Scenario: A v1 spelling gets a v2 hint
+- **WHEN** a view writes `toggle id="x" on=true`
+- **THEN** the check fails saying KDL v2 writes booleans as `#true`
+
+### Requirement: Parsing a view is bounded and outside the client
+A view SHALL be parsed only at check, install, enable and development
+reload, never by the drawing process's render path, and only after a size
+cap and a nesting-depth scan; parsing SHALL run under a time limit. The
+client SHALL draw from the compiled, validated view, never from KDL.
+
+#### Scenario: A nesting bomb is refused before parsing
+- **WHEN** a view nests 400 blocks in 2 KB
+- **THEN** the check refuses it for exceeding the nesting limit, and no parser runs on it
+
+#### Scenario: A slow document is cut off
+- **WHEN** a malformed view would take the parser longer than its time limit
+- **THEN** the view is refused naming the limit, and the workspace keeps working
+
+### Requirement: Views bind data by fixed rules, with no expressions
+A view SHALL reference data only as `{field}`, `{a.b}`, `{.}`, `{^.field}`
+and the scopes `form.`, `pref.`, `context.`, `ui.` and a source's name; repeat
+with `each` over one list field, nested at most twice; and include with
+`when`/`unless` (presence) or `show`/`show-any` (a host UI value equal to a
+declared literal). Anything else SHALL be refused.
+
+#### Scenario: A lone reference keeps its type
+- **WHEN** a `progress` segment writes `weight="{plans}"` and `plans` is the number 19
+- **THEN** the weight is the number 19, while `"{plans} planos"` is the string `19 planos`
+
+#### Scenario: Identity is never interpolated
+- **WHEN** a view writes `button "Go" action="{kind}"`
+- **THEN** the check fails saying `action` must be a literal naming a declared action
+
+#### Scenario: Presence is the only test
+- **WHEN** a node has `when="next"` and the answer's `next` is absent, null, false, empty or zero
+- **THEN** the node is not drawn
+
+#### Scenario: A template cannot use itself
+- **WHEN** template `a` uses `b` and `b` uses `a`
+- **THEN** the check fails naming the cycle
+
+### Requirement: Lookup tables map values to roles and labels
+A view MAY declare named lookup tables mapping a value to a role, a label
+or a symbol, optionally per locale, used as `{table:field}`. A value
+missing from a table SHALL draw the table's default, or the role `Default`
+with a check warning when it has none.
+
+#### Scenario: A state becomes a role without the program
+- **WHEN** a view declares `lookup "tone" { done "success"; partial "warning" }` and binds `role="{tone:state}"` to an item whose `state` is `partial`
+- **THEN** the item is drawn in the `warning` role
+
+#### Scenario: Labels follow the operator's locale
+- **WHEN** a view declares the table `t` for locales `pt` and `en` and the operator's locale is `pt`
+- **THEN** `"{t:next}"` draws the `pt` label
+
+### Requirement: UI state declared in a view is held by the host
+A `tabs`, `toggle`, `select`, `field` or list selection with an `id` SHALL
+keep its value in the host as `ui.<id>`, change what `show` and a list's
+`filter` draw without running a program, and reach an action only when the
+action names it in `with`. A `form`'s fields SHALL reach its action as
+`form.<id>`.
+
+#### Scenario: Switching tabs runs nothing
+- **WHEN** the operator switches a `tabs id="tab"` from `all` to `working`
+- **THEN** the nodes with `show="ui.tab=working"` are drawn and no program runs
+
+#### Scenario: A form's comments reach the action
+- **WHEN** a form repeats `field id="comment.{id}"` per section and the operator submits two comments
+- **THEN** the action declaring `with = ["form.*"]` receives both under `form`, and no other action receives them
 
 ### Requirement: A surface occupies one of the host's slots
 A surface SHALL declare one slot: `view` (the full frame), `section` (a
@@ -365,3 +446,44 @@ surface.
 #### Scenario: Disabling stops every program
 - **WHEN** the operator disables an extension
 - **THEN** its surfaces disappear from the workspace and none of its sources, actions, events or commands run
+
+### Requirement: An extension can be developed live from its folder
+`uze ext dev <path>` SHALL load an extension from its folder into the running
+workspace for the session, under the same grants and confinement as an
+installed one, reloading on save: a view or manifest change SHALL redraw
+from the last answers without running a program, and an error SHALL keep the
+last good draw with the error shown over it.
+
+#### Scenario: Editing a view redraws at once
+- **WHEN** an author changes a `gap` in a view of a dev extension and saves
+- **THEN** the surface redraws with the new gap from its last answers and no program runs
+
+#### Scenario: A broken save keeps the surface
+- **WHEN** an author saves a view with an unknown node
+- **THEN** the surface keeps its last good draw and shows the error with file, line and column over it
+
+#### Scenario: Dev mode grants nothing extra
+- **WHEN** a dev extension's program writes outside the checkout without `write:checkout`
+- **THEN** the write is denied exactly as for the installed extension, and the inspector shows the denial
+
+#### Scenario: A synthetic event reaches the extension
+- **WHEN** the author runs `uze ext emit deploys agent.turn.finished`
+- **THEN** the sources mapped to that event run as if an agent had finished a turn, and the inspector lists the event as synthetic
+
+### Requirement: An extension's tests run without a TUI
+`uze ext test <path>` SHALL run an extension's test files headlessly on the
+host's renderer, with recorded answers by default and real programs under
+confinement only on request, comparing cell snapshots per slot, size and
+theme; `uze agent extension check` SHALL fail when a test fails.
+
+#### Scenario: A gesture is tested end to end
+- **WHEN** a test gives a recorded answer, selects `api`, presses `r` and accepts the confirmation
+- **THEN** the test passes only if the `redeploy` action ran with `--` and `api` and the `recent` source was refreshed
+
+#### Scenario: A visual change fails its snapshot
+- **WHEN** a view's change moves a column and its snapshot was recorded before
+- **THEN** the test fails showing the cell difference, and `--update` rewrites the snapshot
+
+#### Scenario: Tests need no program by default
+- **WHEN** every test of an extension gives recorded answers
+- **THEN** `uze ext test` runs no program and passes on a machine without the extension's tools

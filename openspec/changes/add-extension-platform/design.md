@@ -30,8 +30,10 @@ See proposal.md for why. What the design has to work with:
   `with_process_group`, `wait_with_timeout` (kills the group), `read_bounded`,
   and the libc `kill_process_group`. No helper clears the environment; see
   `acquisition/git.rs` `run_as` for the pattern.
-- **YAML is read by `noyalib` 0.0.x**, in `uze-core` only. `schemars` exists
-  only as an optional dev-server dependency.
+- **YAML is read by `noyalib` 0.0.x**, in `uze-core` only, including
+  third-party agent frontmatter. `schemars` exists only as an optional
+  dev-server dependency. TOML is read by `toml`/`toml_edit`, already in the
+  tree.
 - **What UZE observes of an agent today is its pane.** Whether an agent is
   working is read off its pane's paints and its prompt submissions
   (`src/ui/orchestrator/tests/activity.rs`); no harness reports a turn, a
@@ -111,7 +113,7 @@ What the survey says, in the order the decisions below answer it:
 | Layer | Owns | Crate |
 |---|---|---|
 | **Declaration** | the manifest and wire types as plain serde data, the field-reference grammar, the catalog's names, the reserved ids | new leaf crate `uze-contract` (serde only: no I/O, no domain, no rendering) |
-| **Domain** | finding `extensions/*/extension.yaml` in a package, parsing it with the YAML reader `uze-core` already has, checking it, grants, running programs confined | `uze-core` (`capability/extension`, `machine/confine`), `uze-application` (read model, `ExtensionRunner`) |
+| **Domain** | finding `extensions/*/extension.toml` in a package, parsing it with the TOML reader the workspace already has and its views with the bounded KDL decoder (D22), checking it, grants, running programs confined | `uze-core` (`capability/extension`, `machine/confine`), `uze-application` (read model, `ExtensionRunner`) |
 | **Presentation** | the generic `Extension` contract, the declared-extension engine (manifest + answers → `View`/`Section`, view state), the catalog's view types | `uze-extensions` |
 
 The leaf crate is what lets `uze-core` (check, install, grants) and
@@ -179,7 +181,8 @@ fulfills it through a new `Host::run_program(ProgramRequest) ->
 ProgramAnswer`. That method is the grant that did not exist, stated as
 narrowly as ADR-048's: run *a declared argv of this extension*. It is never a
 free-form command. Field references (`{name}`) are resolved by the engine
-against the answer or the selection, and they only ever produce whole strings.
+against the answer or the selection, and in the manifest they only ever
+produce whole strings; views follow D23.
 
 ### D4. The program contract reuses the hook contract's shape
 
@@ -430,10 +433,8 @@ Feedback is not a node. A composed tree or a reply *requests* `toast`,
 draws all of them as chrome, attributed.
 
 Two ways to build a surface from it:
-- **bind**: the manifest names nodes and fills them with field references
-  into a source's data (`{name}`), as in the first draft. A reference is a
-  whole value; a node that repeats (`list`, `table`, `grid`, a row of
-  `status`) repeats over a list field. No logic.
+- **bind**: a view file (D22) names nodes and fills them from a source's
+  data under the binding rules of D23. No logic.
 - **compose**: a source answers a tree of catalog nodes as JSON (output mode
   `view`, D4). The logic lives in the program; the host validates the tree
   against the catalog and a node cap when the answer is absorbed, sanitizes
@@ -692,8 +693,9 @@ reels streams video at a cost the gallery does not need to prove.
 
 ### D21. The manifest is a schema with worked examples, and runs without a TUI
 
-- The manifest and wire grammar are written once, as the JSON Schema
-  generated from `uze-contract` (task 3.5), with one complete worked
+- The manifest (TOML) and the compose wire grammar are written once, as the
+  JSON Schema generated from `uze-contract` (task 3.5); views are described
+  by the catalog the LSP serves (D26), with one complete worked
   example per slot and per feed in the reference page and the Skill. What a
   reviewer had to invent (how a surface names its source, a band's edge and
   rows, a target, the `open` action, a timeout) is fixed there.
@@ -704,6 +706,192 @@ reels streams video at a cost the gallery does not need to prove.
   it runs only with `--run` where confinement is not enforced (S12).
 - A packaged script with an interpreter shebang declares the interpreter
   as `exec:<name>`; consent names it as "can run anything", per S3.
+
+### D22. Views are KDL v2, the manifest is TOML
+
+Decided by the operator on 2026-10-23, after three reviews of a KDL
+proposal (see *Third review*). Nothing an author writes evokes the web, so
+no one reaches for CSS, a module or a web framework.
+
+- **The manifest is `extensions/<id>/extension.toml`.** It is flat (lists
+  of sources, actions, events, grants), which is what TOML is good at; it is
+  read by the TOML reader the workspace already has, and the JSON Schema of
+  D21 gives completion through Taplo in every editor today, on the file
+  where grants are declared.
+- **A view is a `.kdl` file** in the extension's directory, named by its
+  surface (`view = "board.kdl"`). Its node names are exactly the catalog's
+  (D15) and its properties only those each node accepts. `compose` keeps
+  JSON (D4): KDL is never on the path of an answer.
+- **KDL v2 only.** No v1 fallback; the check recognises v1 spellings (bare
+  `true`, `null`) and says how to write them in v2. Authors are told that
+  Zellij layouts and some editors' grammars are still v1.
+- **Parsing is bounded and never in the drawing process's hot path.** The
+  `kdl` parser recurses without a depth limit (400 nested braces overflow a
+  thread's stack, uncatchably) and has an open exponential case with
+  slashdash (kdl-rs#177). So a view is parsed only by `uze-core`, at check,
+  install, enable and dev reload, after:
+  - a size cap (64 KiB per view);
+  - a KDL-aware pre-scan (strings, raw strings, comments, `/-`) refusing
+    nesting deeper than 32;
+  - parsing on a worker thread with an explicit stack size and a time
+    limit, the view refused on either.
+- **The decoder is written by hand** over `KdlDocument` with spans, not
+  through the crate's experimental serde bridge, which mis-decodes single
+  nodes and loses positions. It refuses type annotations, repeated
+  properties (KDL keeps the rightmost, so `target=self target=all` would
+  resolve silently), unknown nodes, unknown properties and unexpected
+  argument counts (which catches `text {id}` and two siblings on one line),
+  each with file, line, column and a suggestion.
+- **What the client draws from is a compiled view**: the validated tree,
+  stored in the generated tier keyed by the view's digest. `uze-extensions`
+  and `src/ui` never see KDL.
+- Every decoded string passes the sanitizer (D7) after escapes are applied,
+  including raw and multi-line strings; ids and names are matched exactly
+  against the catalog and the declared sets, with S15's charset.
+- The dependency is `kdl` with `default-features = false, features =
+  ["span"]`, in `uze-core` (or behind a `uze-contract` feature only
+  `uze-core` enables), judged by the dependency policy: one maintainer (the
+  spec's author), Apache-2.0, no C, MSRV below the workspace's, and a
+  duplicate `winnow` until its next release.
+
+*Alternatives:* YAML with JSON Schema for views (completion everywhere on
+day one, a hardened parser) — rejected for a verbose tree, fragile
+indentation and `{field}` colliding with flow maps. One format for both
+files — rejected: the manifest gains ready-made completion in TOML, the
+view gains a tree syntax in KDL.
+
+### D23. Binding rules
+
+One set of rules, the same in every view, with no expressions:
+
+- **References.** `{field}`, `{a.b}`, `{.}` (the whole current item) and
+  `{^.field}` (the enclosing item of a nested `each`). Scopes: the current
+  item, `form.`, `pref.` (never a secret), `context.`, `ui.` (D24), and a
+  source's name when a view reads more than one (`sources = ["a", "b"]`).
+- **Types.** A property that is exactly one reference keeps the JSON type
+  of what it refers to (number, bool, list); a property with text around a
+  reference is a string, interpolating scalars only. `{{` and `}}` are
+  literal braces.
+- **Where interpolation may go.** Display text only. Identity-bearing
+  properties (`id`, `action`, `target`, `slot`, `view`, `each`, `use`) are
+  literals, checked statically.
+- **Repetition.** `each="list"` names one list field: no filter, sort or
+  slice (the host's `filter` and the program cover those). `each` may sit on
+  a container or on a repeated child (`segment`). Nesting is capped at 2,
+  and expansion counts nodes against the node cap of compose (task 13.3),
+  folding with a notice when reached.
+- **Presence.** `when="field"` and `unless="field"` test presence: absent,
+  `null`, `false`, `""`, `0` and `[]` are false. No negation inside, no
+  and/or, no comparison against answer data; nesting gives "and".
+- **Host state.** `show="ui.tab=phases"` compares a host-held UI value (D24)
+  with a literal that the same view's `tabs` or `select` declares, checked
+  statically; `show-any` takes several such pairs for "or".
+- **Templates.** `template "name" { … }` and `use "name"`: no parameters,
+  resolved against the innermost item; the graph of `use` must be acyclic,
+  refused at check otherwise.
+- **Lookup tables.** `lookup "tone" { success "done"; warning "partial"; … }`
+  declares a mapping from a value to a role, a label or a symbol, used as
+  `role="{tone:state}"`. Keyed by locale, the same mechanism carries labels
+  in several languages (`lookup "t" locale="pt" { … }`, `"{t:next}"`), so
+  programs stop emitting role names and built-in sources become usable.
+- **Missing fields.** A missing field that is a whole property hides the
+  node; inside a mixed string it draws empty and is a check warning against
+  the fixtures (D26).
+- D3's and D15's "a reference is a whole value" is replaced by these
+  rules, and the manifest keeps the original, stricter form: whole-value
+  references only.
+
+### D24. UI state the host holds, and input a shell can read
+
+- **Declared state.** `id` on `tabs`, `toggle`, `select`, `field` and a
+  list's selection makes its value host state, readable in the view as
+  `ui.<id>`. `show`, `show-any` and a list's `filter="ui.<id>"` act on it
+  with no program run. The host keeps it with the view's place.
+- **Forms live in the view.** A `form` node holds its `field`s; an action
+  bound to its submit receives `form.<id>` values. A field's id may carry
+  the current item's key (`id="comment.{id}"`), so a form can repeat a field
+  per item.
+- **Actions declare what they read**: `with = ["ui.tab", "form.*"]`. Only
+  those reach the program.
+- **Input without `jq`.** A declaration may substitute declared flat fields
+  into argv (`run = ["./bin/x.sh", "--", "{event.tool}"]`, each a whole
+  argument, S8 applied) or receive them as `UZE_IN_<NAME>` environment
+  variables. The JSON object on stdin stays, for programs that want it.
+- **Two-step actions.** An action may `run` a program and then send
+  `agent.prompt` with a field of its answer (`text = "{answer.prompt}"`),
+  under D16: from a gesture, the confirmation shows the final text; never
+  unattended, since that text is not fixed.
+
+### D25. Live development
+
+- **Load from a folder.** `uze ext dev <path>` links an extension into the
+  running workspace; `uze workspace --dev-extension <path>` opens one with
+  it. A dev extension is not stored or digest-pinned, is marked `dev` in the
+  Extensions screen and in its attribution strip, and lasts only the
+  session.
+- **The same grants and confinement as installed.** There is no dev mode
+  that allows more. Consent is asked once per grant set and again when it
+  widens. An agent may run `uze ext dev` from its pane; consent appears in
+  UZE's chrome for the operator, never in the pane.
+- **Hot reload per file**, debounced by 150 ms:
+
+  | Changed | The host |
+  |---|---|
+  | a view | recompiles it (D22) and redraws from the last answers, running no program |
+  | the manifest | rechecks and re-registers slots, keys and events, keeping the view's place |
+  | a program | invalidates its answers and reruns the visible sources |
+  | a component | restarts it; the store survives |
+
+- **An error never blanks the surface.** It keeps the last good draw and
+  shows the error over it, with file, line, column and the suggestion.
+- **The inspector**, a drawer opened by a key on a dev extension:
+  - *runs*: each run's argv, stdin, stdout, stderr, exit, duration and the
+    bound hit, rerunnable with edited input;
+  - *events*: received, coalesced or dropped;
+  - *state*: `ui.*` values and the store;
+  - *grants*: what was denied and why, and whether confinement is enforced;
+  - *tree*: the compiled view and why a node is absent (`when` false, field
+    missing, `show` not matched).
+- **Making things happen.** `uze ext emit <extension> <event> [--data
+  <file>]` delivers a synthetic event; the inspector changes the slot's
+  size and the theme, injects fake agents, and records a session's real
+  events into a fixture file.
+
+### D26. Tests without a TUI
+
+- `uze ext test <path>` runs `tests/*.test.kdl` headlessly, on the host's
+  renderer with a test backend (the way UZE tests its own surfaces):
+
+  ```kdl
+  test "redeploy confirms and runs with the right service" {
+      given source="recent" answer="fixtures/recent.json"
+      size 38 8
+      theme "dark"
+      select "api"
+      press "r"
+      expect-confirm "Redeploy api?"
+      accept
+      expect-run "redeploy" args="--" "api"
+      expect-refresh "recent"
+      snapshot "board-dark.snap"
+  }
+  ```
+
+- Snapshots are cell grids per slot, size and theme; `--update` rewrites
+  them.
+- `given … answer=` uses a recorded answer, so a test runs nothing and works
+  in any CI; `--run` executes the programs under confinement, and only
+  where confinement is enforced unless the operator says otherwise (S12).
+- `uze agent extension check` runs the tests, so a plugin with a failing
+  test is not accepted by the check.
+- D21's `uze ext simulate` is one test step run from the command line.
+- **The LSP is required work**, not a later nicety: `uze ext lsp` is
+  generated from the catalog in `uze-contract` and gives completion, hover
+  and the check's diagnostics for views and tests, since no editor
+  completes KDL from a schema. Manifests get completion from the JSON
+  Schema through Taplo.
+- Every gallery entry (D20) ships its tests; they are the acceptance suite
+  and the worked example of how to test.
 
 ## Candidate ADRs
 
@@ -716,6 +904,9 @@ reels streams video at a cost the gallery does not need to prove.
   gesture rule and the unattended safeguards are the decision.
 - **The WebAssembly runtime dependency.** A large, long-lived dependency
   chosen by provenance.
+- **KDL v2 for views and TOML for manifests, with UZE's own bounded
+  decoder.** A new third-party parser on extension input, with the guards it
+  needs and an LSP to maintain.
 - **Consent to extension code is enabling, recorded per grant set.**
   Modelled on ADR-055's stored approval of a project's commands (and, like
   `uze workspace allow`, refused from inside an agent's pane), and a
@@ -731,11 +922,14 @@ reels streams video at a cost the gallery does not need to prove.
   machine and "declared" on another] → It is disclosed on every surface that
   asks for consent and in `uze doctor`. The conformance of the confinement
   itself is proven by a test that attempts each denied operation on Linux CI.
-- [`noyalib` is `0.0.x` and now parses third-party input] → Manifest size is
-  capped before parsing, the parser is configured to reject duplicate keys
-  and alias expansion is bounded, and the fuzz corpus under `check` includes
-  alias bombs. Replacing the YAML reader is out of scope but becomes more
-  pressing, and is recorded as such.
+- [Third-party manifests and views are parsed by UZE] → Manifests are TOML
+  (D22), so `noyalib` is off the extension path (it still reads agent
+  frontmatter). Views are KDL behind a size cap, a depth pre-scan and a
+  timed worker thread, parsed only at check, install, enable and dev reload,
+  never by the client (D22).
+- [The KDL ecosystem is thin: one maintainer, v1 still common, no schema
+  completion] → v2 only with a v1 hint in the check; the decoder is UZE's
+  own; the LSP is required work (D26).
 - [Short-lived processes make a slow interpreter feel slow on every refresh]
   → Answers are cached until an event names them, and a surface keeps
   drawing its last answer while a run is in flight. Per-run durations go
@@ -810,12 +1004,14 @@ pieces it and the changes before it contain:
 1. **generic-extension-host**: group 1, with `code`, `architect` **and
    `spec`** migrated, plus the ADR, invariant and AGENTS.md edits, with no
    new behaviour.
-2. **extension-manifest-and-runner**: `uze-contract` and its schema, discovery,
-   check and `uze ext simulate`, the bounded runner, output modes and the
+2. **extension-manifest-and-runner**: `uze-contract` and its schema, the
+   TOML manifest, discovery, check, the bounded runner, output modes and the
    envelope, the grants record and consent. Confinement is disclosed as not
    enforced.
-3. **declared-extensions**: the engine (bind and compose), the keymap with
-   global keys, `applies_when`, the `view`, `section`, `status` and
+3. **declared-extensions**: the bounded KDL decoder and compiled views, the
+   binding rules and host-held UI state (D22–D24), the engine (bind and
+   compose), the dev loop, `uze ext test` and the LSP (D25, D26), the
+   keymap with global keys, `applies_when`, the `view`, `section`, `status` and
    `overlay` slots, `every`, `paths.changed`, the store and preferences, and
    the catalog the entries need. Proof: `gpu-meter`.
 4. **extension-confinement**: Landlock, seccomp and Seatbelt, with the
@@ -1126,6 +1322,33 @@ Authoring:
 - **S18. Confinement can fail inside an already-sandboxed parent or a
   container.** Direction: detect it on every run, and fall back to
   "unenforced" with disclosure, never silently.
+
+### Third review: the KDL proposal (2026-10-23)
+
+Three reviews ran on a proposal to write views (and first the manifest) in
+KDL: ecosystem and alternatives, architecture and security, and an author
+writing four gallery entries in it. Where each went:
+- Parser recursion without a depth limit overflows a stack on a 1.6 KB file,
+  and kdl-rs#177 makes 132 malformed bytes take 78 s → D22 (cap, pre-scan,
+  timed worker, never in the client).
+- The serde bridge is experimental, mis-decodes a single node and loses
+  spans → D22 (hand-written decoder).
+- Repeated properties resolve silently; `text {id}` and same-line siblings
+  parse into something else → D22 (refusals with suggestions).
+- No editor completes KDL from a schema, and Helix, Zed and Zellij are v1 →
+  D22 (v2 only, v1 hint), D26 (LSP required).
+- A KDL manifest loses ready-made completion on the file that holds grants
+  → D22 (TOML manifest, JSON Schema through Taplo).
+- `noyalib` stays for agent frontmatter; only the extension path leaves it
+  → *Risks*.
+- The binding rules had to be invented by the author (types, mixed
+  interpolation, escapes, scopes, `unless`, lookups, i18n, forms, nested
+  `each`) → D23, D24.
+- `sh` programs needed `jq` to read input → D24.
+- The no-logic boundary drifted with `each`, `when`, `show`, templates →
+  D23 draws the line.
+- KDL parses about twenty times slower than JSON → D22 (views compiled once;
+  answers stay JSON).
 
 ### Product and UX
 

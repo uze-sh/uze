@@ -1,6 +1,6 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [ ] 0.1 Decide the split into eight changes (design.md, *Proposed split*), and move groups 1–20 into them
+- [ ] 0.1 Decide the split into eight changes (design.md, *Proposed split*), and move groups 1–23 into them
 - [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime and HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
@@ -36,13 +36,13 @@
 - [ ] 3.2 Implement the field-reference grammar (`{field}` and `{a.b}` only) with a parser that refuses expressions, and table tests for it
 - [ ] 3.3 Implement the sanitizer (C0/C1 controls, ESC sequences, bidi overrides, length bounds) with tests covering OSC 52, OSC 8, CSI cursor moves and RLO
 - [ ] 3.4 Reserve the ids `list`, `enable`, `disable`, `help`, `pipe`, `simulate`, `code`, `architect`, `spec` and `uze`, and the protocol version `1`
-- [ ] 3.5 Generate the manifest and wire JSON Schema with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
+- [ ] 3.5 Generate the JSON Schema of the TOML manifest and the compose wire with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
 - [ ] 3.6 Layering: admit `uze-contract` into `uze-extensions` and `uze-core`, forbid I/O, `uze_*` and rendering crates inside it, and update `crate-layering.mmd`
 
 ## 4. Domain: discovery, check and grants
 
-- [ ] 4.1 Add `CapabilityKind::Extension` and discover `extensions/*/extension.yaml` in `package_resources_at`, capping the manifest size before parsing
-- [ ] 4.2 Parse manifests with the existing YAML reader (duplicate keys refused), test alias-bomb and oversized inputs, and record the `noyalib` exposure in design risks if the parser cannot bound expansion
+- [ ] 4.1 Discover `extensions/*/extension.toml` through `capability::extension::discover` (A5), capping the manifest size before parsing
+- [ ] 4.2 Parse manifests with the TOML reader into the `uze-contract` types with `deny_unknown_fields`, refusing duplicate keys, with tests for oversized inputs
 - [ ] 4.3 Implement `check_extension`: schema, reserved ids, argv-only programs, relative paths resolving inside the extension (links followed), `exec:` grants covering bare names, `role` values semantic-only, and `kind: interactive` refused pointing at `feed: resident`
 - [ ] 4.4 Extend `check_plugin` to run `check_extension` on every extension it carries
 - [ ] 4.5 Add the `state/extensions.json` record (accepted grants, accepted digest, enabled), named in `UzeHome` and implementing `uze_document::Shaped` at shape 1
@@ -158,10 +158,37 @@
 ## 19. Authoring
 
 - [ ] 19.1 Write the manifest and wire grammar into the generated schema with one complete worked example per slot and per feed (D21)
-- [ ] 19.2 Add `uze ext simulate <path> <declaration>` with canned event, selection, store and size, printing what the host would draw; make it the core of `uze agent extension check`; `--run` required where confinement is not enforced
+- [ ] 19.2 (folded into 23.x) 19.2 Add `uze ext simulate <path> <declaration>` with canned event, selection, store and size, printing what the host would draw; make it the core of `uze agent extension check`; `--run` required where confinement is not enforced
 
 ## 20. Gallery
 
 - [ ] 20.1 Build the ten reference extensions of D20 as fixture plugins, each shipped with the change of the split that proves it
 - [ ] 20.2 One journey per reference: install → consent → open → the scenario of the platform spec it proves
 - [ ] 20.3 Run `make check` and `openspec validate add-extension-platform --strict`
+
+## 21. Views in KDL
+
+- [ ] 21.1 Dependency review of `kdl` (`default-features = false`, `span`), placed in `uze-core` or behind a `uze-contract` feature only `uze-core` enables
+- [ ] 21.2 The bounded parse: 64 KiB cap, a KDL-aware depth pre-scan refusing above 32, a worker thread with an explicit stack and a time limit; tests with a 400-deep nest and the kdl-rs#177 input
+- [ ] 21.3 The hand-written decoder over `KdlDocument` with spans into the catalog types: unknown nodes, properties and arguments, repeated properties, type annotations and v1 spellings refused with file, line, column and a suggestion
+- [ ] 21.4 Compile a validated view into the generated tier keyed by digest; the client reads only compiled views (architecture rule: no KDL in `src/ui` or `uze-extensions`)
+- [ ] 21.5 Sanitize decoded strings after escapes, including raw and multi-line strings
+
+## 22. Binding and UI state
+
+- [ ] 22.1 The reference grammar of D23 (`{field}`, `{a.b}`, `{.}`, `{^.field}`, scopes, `{{`), typed lone references, interpolation in display text only, identity properties literal
+- [ ] 22.2 `each` (one list field, nesting ≤ 2, expansion counted against the node cap), `when`/`unless` with the fixed falsy set, `show`/`show-any` checked against declared literals
+- [ ] 22.3 `template`/`use` with no parameters and an acyclic graph; `lookup` tables with defaults and locales
+- [ ] 22.4 Host-held `ui.<id>` for `tabs`, `toggle`, `select`, `field` and selection; local `show` and `filter`; `with` on actions; forms in the view delivering `form.<id>`
+- [ ] 22.5 Argv substitution of declared flat fields and `UZE_IN_<NAME>` variables, `--` required before substituted values
+- [ ] 22.6 Two-step actions: `run`, then `agent.prompt` with a field of its answer, gesture only
+
+## 23. Live development and tests
+
+- [ ] 23.1 `uze ext dev <path>` and `uze workspace --dev-extension <path>`: linked, session-only, marked `dev`, same grants and confinement; consent in UZE's chrome when run from an agent's pane
+- [ ] 23.2 Hot reload per file (view, manifest, program, component) debounced 150 ms; last good draw kept with the error over it
+- [ ] 23.3 The inspector drawer: runs (rerunnable with edited input), events, state, grants, compiled tree with why a node is absent
+- [ ] 23.4 `uze ext emit <extension> <event> [--data <file>]`; size, theme and fake agents in the inspector; recording a session's events into a fixture
+- [ ] 23.5 `uze ext test` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update`; run by `uze agent extension check`
+- [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for views and tests
+- [ ] 23.7 Tests for every gallery entry (D20)

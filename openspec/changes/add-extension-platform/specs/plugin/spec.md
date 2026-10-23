@@ -1,12 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: A plugin may carry extensions
-A plugin SHALL be able to carry extensions under `extensions/<id>/`, each with
-an `extension.yaml`. `uze agent plugin check` SHALL validate every extension
-the plugin carries with the same rules as `uze agent extension check`, and
-installing the plugin SHALL deliver its extensions to the workspace client
-only, never to a harness. Removing the plugin SHALL remove its extensions and
-their accepted grants.
+A plugin MAY carry extensions under `extensions/<id>/`, each an
+`extension.toml` and its views. `uze agent plugin check` SHALL validate each
+as `uze agent extension check` does; installing SHALL deliver them to the
+workspace client only, never to a harness; removing the plugin SHALL remove
+them and their accepted grants.
 
 > **Unresolved review findings** (design.md): A5, removal via `uze plugin remove`.
 
