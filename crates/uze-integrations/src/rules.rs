@@ -453,6 +453,14 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
     // nothing.
     if let Some(event) = delivered.event {
         remove_event_entry(&delivered.place, event, delivered.expected)?;
+    } else if delivered
+        .place
+        .file_name()
+        .is_some_and(|name| name == plugin::RETIRED_FILE)
+    {
+        // An earlier release's plugin of its own, matched above: it would
+        // go on starting the engine taken out below.
+        fs::remove_file(&delivered.place).map_err(UzeError::write(&delivered.place))?;
     }
     if delivered.event.is_none() || !still_started(&delivered) {
         let _ = fs::remove_file(&delivered.engine);

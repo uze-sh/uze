@@ -364,6 +364,49 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
     );
 }
 
+/// A receipt an earlier release recorded names its own plugin file, which
+/// starts the engine on every request: removal takes it out with the engine.
+#[cfg(unix)]
+#[test]
+fn removing_the_rules_an_earlier_release_delivered_takes_its_plugin_out() {
+    let machine = Machine::new("rules-opencode-earlier-plugin");
+    let receipts = machine.attach(&machine.opencode);
+    let earlier = machine
+        .opencode_plugin()
+        .with_file_name(plugin::RETIRED_FILE);
+    let content = format!("{}\nexport default {{}};\n", plugin::HEADER);
+    fs::create_dir_all(earlier.parent().unwrap()).unwrap();
+    fs::write(&earlier, &content).unwrap();
+    let ManagedArtifact::IntegrationOwned {
+        kind,
+        selector,
+        detail,
+    } = &receipts[0].artifact
+    else {
+        unreachable!("the engine's artifacts are integration-owned");
+    };
+    let mut detail = detail.clone();
+    detail.insert("place".to_owned(), serde_json::json!(earlier));
+    detail.insert("expected".to_owned(), serde_json::json!(content));
+    let receipt = AttachmentReceipt {
+        artifact: ManagedArtifact::IntegrationOwned {
+            kind: kind.clone(),
+            selector: selector.clone(),
+            detail,
+        },
+        ..receipts[0].clone()
+    };
+
+    assert_eq!(
+        machine.opencode.detach_receipt(&receipt).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(
+        !earlier.exists(),
+        "nothing is left to start an engine that is gone"
+    );
+}
+
 #[test]
 fn antigravity_is_left_to_its_own_rules() {
     let machine = Machine::new("rules-antigravity");
