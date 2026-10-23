@@ -501,7 +501,7 @@ impl IntegrationPort for OpenCodeIntegration {
             return crate::rules::inspect(&receipt.artifact);
         }
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
-            return self.inspect_hook_bridge(receipt, path);
+            return self.inspect_hook_bridge(receipt, &self.hook_place(receipt, path));
         }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             return receipt.artifact.inspect_standard();
@@ -522,7 +522,7 @@ impl IntegrationPort for OpenCodeIntegration {
         }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
-                return self.detach_hook_bridge(receipt, path);
+                return self.detach_hook_bridge(receipt, &self.hook_place(receipt, path));
             }
             return crate::shared::path::detach_skill_link(receipt, |target| {
                 self.cleanup_unused_wrapper(target)
@@ -795,6 +795,20 @@ impl OpenCodeIntegration {
             hook_projection::remove_bridge_file(&legacy)?;
         }
         Ok(())
+    }
+
+    /// Where a hook receipt's groups are now. A sibling group's detach takes
+    /// the bridge an earlier release wrote out and moves the groups still
+    /// attached into the package's document, this receipt's among them.
+    fn hook_place(&self, receipt: &AttachmentReceipt, recorded: &Path) -> PathBuf {
+        if self.is_legacy_bridge(recorded) && !recorded.exists() {
+            let document =
+                hook_projection::opencode_document_path(&self.uze_home, HOOKS, &receipt.package_id);
+            if document.exists() {
+                return document;
+            }
+        }
+        recorded.to_path_buf()
     }
 
     /// Whether `path` is where an earlier release put a package's hooks.

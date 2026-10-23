@@ -1287,6 +1287,64 @@ fn an_opencode_bridge_an_earlier_release_wrote_is_replaced_at_the_next_attach() 
     let _ = fs::remove_dir_all(root);
 }
 
+/// Removal detaches and forgets one receipt at a time, so the first group's
+/// detach rewrites what the second still owns: the second's own detach must
+/// find it there, not at the bridge the first took out.
+#[test]
+fn removing_a_package_an_earlier_release_bridged_leaves_none_of_its_hooks() {
+    let (root, home, resources) = two_observing_groups("opencode-stale-bridge-removal");
+    let integration = opencode(&root);
+    let mut current = Vec::new();
+    for id in ["observe-first", "observe-second"] {
+        let receipt = integration
+            .attach_receipt(hook_resource(&resources, id))
+            .unwrap()
+            .unwrap();
+        state::record_receipt(&home, receipt.clone()).unwrap();
+        current.push(receipt);
+    }
+    let document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(opencode_document(&root)).unwrap()).unwrap();
+    fs::remove_file(opencode_document(&root)).unwrap();
+
+    let bridge = root.join("config/plugins/hooks-hook-demo@local.ts");
+    fs::create_dir_all(bridge.parent().unwrap()).unwrap();
+    fs::write(
+        &bridge,
+        format!(
+            "// Generated from hooks.json — do not edit; regenerate instead.\nconst GROUPS = {};\nexport default {{}};\n",
+            document["groups"]
+        ),
+    )
+    .unwrap();
+    let legacy: Vec<AttachmentReceipt> = current
+        .into_iter()
+        .map(|receipt| AttachmentReceipt {
+            artifact: ManagedArtifact::ManagedHookFile {
+                path: bridge.clone(),
+            },
+            ..receipt
+        })
+        .collect();
+    for receipt in &legacy {
+        state::record_receipt(&home, receipt.clone()).unwrap();
+    }
+
+    for receipt in &legacy {
+        assert_eq!(
+            integration.detach_receipt(receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        state::forget_receipt(&home, receipt).unwrap();
+    }
+    assert!(!bridge.exists());
+    assert!(
+        !opencode_document(&root).exists(),
+        "no group of a removed package is left for the plugin to run"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn opencode_unmatch_all_groups_carry_no_matcher_and_stop_is_bridged_as_end_of_turn() {
     let (_root, resources) = hook_package(
