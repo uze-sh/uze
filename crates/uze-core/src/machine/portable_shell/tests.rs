@@ -116,6 +116,7 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         Some(Divergence::UnsupportedFlag),
     ),
     ("cp -a src dst", "-a", 4, Some(Divergence::UnsupportedFlag)),
+    ("mv -r a b", "-r", 4, Some(Divergence::UnsupportedFlag)),
     (
         "set -euo pipefail",
         "-euo",

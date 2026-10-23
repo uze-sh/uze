@@ -320,7 +320,7 @@ const FLAGS: &[(&str, &str, &[&str])] = &[
     ("export", "", &[]),
     ("head", "n", &["lines="]),
     ("mkdir", "p", &["parents"]),
-    ("mv", "rR", &["recursive"]),
+    ("mv", "", &[]),
     ("pwd", "LP", &[]),
     ("rm", "rRfd", &["recursive", "force", "dir"]),
     ("shopt", "su", &[]),
