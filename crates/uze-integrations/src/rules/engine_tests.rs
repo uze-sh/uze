@@ -754,23 +754,6 @@ fn the_engine_answers_the_shared_glob_table_under_every_awk_here() {
     }
 }
 
-/// Whether Bun is here to load the generated plugin. CI installs it, so
-/// there its absence is a broken job rather than a reason to skip.
-fn bun_available() -> bool {
-    let available = Command::new("bun")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !available {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "bun is not installed, and CI must run the OpenCode rules plugin check"
-        );
-        eprintln!("bun is not installed; the OpenCode rules plugin check is skipped");
-    }
-    available
-}
-
 /// The plugin, loaded by real Bun with a V2-shaped plugin context, asks
 /// the real engine and hands its answer to the model: onto the request's
 /// system parts before a request, onto the tool result after a call. The
@@ -779,7 +762,7 @@ fn bun_available() -> bool {
 /// instance's `location`, and `worktree` is an API, not a path.
 #[test]
 fn the_opencode_plugin_hands_the_engines_answer_to_the_model() {
-    if !bun_available() {
+    if crate::opencode::bun_for_tests().is_none() {
         return;
     }
     let checkout = Checkout::with_every_trigger("rules-opencode-plugin");

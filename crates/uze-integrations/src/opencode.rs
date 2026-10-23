@@ -1113,7 +1113,7 @@ const VERSION: &str = "2.0.29";
 /// than leaving the plugin unchecked.
 // Only the Unix jobs install Bun, as for the sibling plugin checks.
 #[cfg(all(test, unix))]
-fn bun_for_tests() -> Option<&'static str> {
+pub(crate) fn bun_for_tests() -> Option<&'static str> {
     let available = std::process::Command::new("bun")
         .arg("--version")
         .output()
