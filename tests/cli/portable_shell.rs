@@ -614,12 +614,27 @@ fn a_timeout_ends_the_line_and_everything_it_started() {
         )
     });
     let mut connections = Vec::new();
-    for _ in 0..2 {
-        let (connection, _) = listener.accept().unwrap();
-        connection
-            .set_read_timeout(Some(Duration::from_secs(30)))
-            .unwrap();
-        connections.push(connection);
+    listener.set_nonblocking(true).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while connections.len() < 2 {
+        match listener.accept() {
+            Ok((connection, _)) => {
+                connection.set_nonblocking(false).unwrap();
+                connection
+                    .set_read_timeout(Some(Duration::from_secs(30)))
+                    .unwrap();
+                connections.push(connection);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "only {} of 2 probes connected",
+                    connections.len()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("accepting a probe: {error}"),
+        }
     }
     let (passed, output) = gate.join().unwrap();
     assert!(!passed);
