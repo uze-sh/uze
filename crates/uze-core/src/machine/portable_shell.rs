@@ -508,13 +508,16 @@ fn walk_parts<'a>(parts: &'a [WordPart], nodes: &mut Vec<Node<'a>>) {
 }
 
 /// Where `${` first appears outside single quotes, by character from 1:
-/// inside single quotes it is literal for both shells.
+/// inside single quotes it is literal for both shells, and a `'` inside
+/// double quotes opens nothing.
 fn unquoted_brace_parameter(line: &str) -> Option<usize> {
     let mut single = false;
+    let mut double = false;
     let mut characters = line.chars().enumerate().peekable();
     while let Some((index, character)) = characters.next() {
         match character {
-            '\'' => single = !single,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
             '\\' if !single => {
                 characters.next();
             }

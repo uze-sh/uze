@@ -27,6 +27,7 @@ const PORTABLE: &[&str] = &[
     "! grep -q TODO src/main.rs",
     "echo '${literal}'",
     "echo \\${escaped}",
+    "echo \"it's\" '${literal}'",
     ": noop",
     "set -e",
     "set -o pipefail",
@@ -68,6 +69,12 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         "echo \"${HOME}/x\"",
         "${",
         7,
+        Some(Divergence::BraceParameter),
+    ),
+    (
+        "echo \"it's\" ${HOME}",
+        "${",
+        13,
         Some(Divergence::BraceParameter),
     ),
     (
