@@ -69,7 +69,7 @@ fn a_brace_parameter_keeps_its_posix_meaning_and_says_why_elsewhere() {
 }
 
 #[test]
-fn a_posix_only_spelling_never_runs_in_the_portable_shell() {
+fn a_posix_only_spelling_is_missing_only_where_there_is_no_sh() {
     let steps = not_running_here("  setup:\n    posix: head -1 VERSION > .version\n");
     if has_sh() {
         assert!(steps.is_empty(), "{steps:?}");
