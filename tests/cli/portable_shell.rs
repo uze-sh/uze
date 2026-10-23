@@ -590,6 +590,14 @@ fn divergence_unsupported_flag_covers_operators_and_operands() {
     }
 }
 
+#[test]
+fn divergence_caseless_glob_matches_either_case() {
+    let world = World::new("portable-shell-caseless-glob");
+    std::fs::write(world.path().join("notes.txt"), "").unwrap();
+    std::fs::write(world.path().join("README.TXT"), "").unwrap();
+    assert!(world.run("echo *.txt").stdout.contains("README.TXT"));
+}
+
 /// Under a bounded wait: the line never ends, which is the divergence.
 #[test]
 fn divergence_stderr_into_builtin_never_ends() {

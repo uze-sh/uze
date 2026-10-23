@@ -21,7 +21,9 @@ const PORTABLE: &[&str] = &[
     "cargo build 2> errors.log",
     "cargo build >> build.log",
     "VERSION=$(git describe --tags) && echo $VERSION",
-    "ls src/*.rs",
+    "rm -rf build/*",
+    "ls $OUT/* src/?/",
+    "ls '*.txt'",
     "echo ~/cache",
     "cp file.{txt,bak}",
     "echo 2>&1 | cat",
@@ -200,6 +202,15 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         Some(Divergence::StderrIntoBuiltin),
     ),
     ("(watch &)", "&", 8, Some(Divergence::Background)),
+    ("ls src/*.rs", "src/*.rs", 4, Some(Divergence::CaselessGlob)),
+    (
+        "rm -f \"$OUT\"/build-?.log",
+        "/build-?.log",
+        13,
+        Some(Divergence::CaselessGlob),
+    ),
+    ("cp $NAME* dist", "*", 9, Some(Divergence::CaselessGlob)),
+    ("echo [ab]", "[ab]", 6, Some(Divergence::CaselessGlob)),
 ];
 
 #[test]
@@ -388,7 +399,7 @@ fn corpus() -> Vec<(String, String)> {
 
 /// What E1 recorded (design.md, Evidence): the share of the corpus that runs
 /// in the portable shell may grow, and falling below it fails here.
-const PORTABLE_AT_LEAST_PER_MILLE: usize = 957;
+const PORTABLE_AT_LEAST_PER_MILLE: usize = 949;
 
 #[test]
 fn the_portable_share_of_real_commands_does_not_fall() {

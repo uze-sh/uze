@@ -51,10 +51,13 @@ pub enum Divergence {
     /// A builtin given a flag it does not implement, where the system tool
     /// of the same name would read it.
     UnsupportedFlag,
+    /// A pattern with a letter matches a name in either case, where `sh`
+    /// matches the case written.
+    CaselessGlob,
 }
 
 impl Divergence {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::BraceParameter,
         Self::BracketTest,
         Self::EchoFlag,
@@ -62,6 +65,7 @@ impl Divergence {
         Self::StderrIntoBuiltin,
         Self::BraceGroup,
         Self::UnsupportedFlag,
+        Self::CaselessGlob,
     ];
 }
 
@@ -222,7 +226,22 @@ fn divergence(line: &str, list: &SequentialList) -> Option<NotPortable> {
             _ => None,
         })
     };
-    command.or_else(background).or_else(stderr_pipe)
+    let glob = || {
+        nodes.iter().find_map(|node| match node {
+            Node::Command(Command {
+                inner: CommandInner::Simple(simple),
+                ..
+            }) => simple
+                .args
+                .iter()
+                .find_map(|word| caseless_glob(line, word)),
+            _ => None,
+        })
+    };
+    command
+        .or_else(background)
+        .or_else(stderr_pipe)
+        .or_else(glob)
 }
 
 fn command_divergence(line: &str, command: &Command) -> Option<NotPortable> {
@@ -472,6 +491,59 @@ fn unsupported_test_operator(arguments: &[Word]) -> Option<String> {
         .as_ref()
         .filter(|operator| !accepted.contains(&operator.as_str()))
         .cloned()
+}
+
+/// A word the shell expands as a pattern where a part of the path with a
+/// wildcard also holds a letter, or an expansion that may hold one: the
+/// portable shell matches it whatever the case of a name, so `*.txt` takes
+/// `README.TXT` too. A part with no wildcard is a directory the system
+/// looks up as written, the same in both shells.
+fn caseless_glob(line: &str, word: &Word) -> Option<NotPortable> {
+    /// One character of the pattern: what it is, whether it is a wildcard,
+    /// and the unquoted text it was written in.
+    struct Spelled<'a> {
+        character: char,
+        wildcard: bool,
+        text: Option<&'a str>,
+    }
+    fn spell<'a>(parts: &'a [WordPart], quoted: bool, into: &mut Vec<Spelled<'a>>) {
+        for part in parts {
+            match part {
+                WordPart::Text(text) => into.extend(text.chars().map(|character| Spelled {
+                    character,
+                    wildcard: !quoted && matches!(character, '*' | '?' | '['),
+                    text: (!quoted).then_some(text.as_str()),
+                })),
+                WordPart::Quoted(inner) => spell(inner, true, into),
+                // What it expands to is unknown here, so it may hold a letter.
+                _ => into.push(Spelled {
+                    character: 'x',
+                    wildcard: false,
+                    text: None,
+                }),
+            }
+        }
+    }
+    let mut spelled = Vec::new();
+    spell(word.parts(), false, &mut spelled);
+    let cased = spelled
+        .split(|spelled| spelled.character == '/')
+        .find(|component| {
+            component.iter().any(|spelled| spelled.wildcard)
+                && component.iter().any(|spelled| {
+                    spelled.character.is_lowercase() || spelled.character.is_uppercase()
+                })
+        })?;
+    let text = cased.iter().find(|spelled| spelled.wildcard)?.text?;
+    Some(NotPortable {
+        column: column_of(line, text),
+        construct: text.to_owned(),
+        reason: format!(
+            "the portable shell matches `{text}` whatever the case of a name, where `sh` matches \
+             the case written; name the files, or write the `posix`/`windows` pair"
+        ),
+        divergence: Some(Divergence::CaselessGlob),
+    })
 }
 
 fn is_stderr_to_stdout(redirect: &Redirect) -> bool {

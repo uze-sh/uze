@@ -301,13 +301,15 @@ anything waiting on a process waits on a signal it gives.
 ### Results
 
 - **E1 (2026-10-23).** Corpus of 1,224 commands from 60 repositories:
-  - 1,172 portable (95.7%); the pass mark was 80%.
-  - Refused: 29 `${NAME}`, 12 reserved words (`if`, `for`…), 6
-    unsupported builtin flags, 2 `echo` flags, 2 `{ …; }` groups, and 1
-    multiple redirect.
-  - The ratchet holds 957‰. It held 958‰ on 2026-10-21, before the
+  - 1,162 portable (94.9%); the pass mark was 80%.
+  - Refused: 29 `${NAME}`, 12 reserved words (`if`, `for`…), 10
+    patterns that would match either case (decisions D6), 6 unsupported
+    builtin flags, 2 `echo` flags, 2 `{ …; }` groups, and 1 multiple
+    redirect.
+  - The ratchet holds 949‰. It held 958‰ on 2026-10-21, before the
     walk reached inside `$(...)`: two lines ran `head -1` there, and one
-    `xargs` line was refused for its command's flag.
+    `xargs` line was refused for its command's flag. It held 957‰ until
+    the caseless patterns were refused.
 - **E2 (2026-10-21).** With builtin flags refused at parse (decisions D1),
   no portable line runs differently on Linux or macOS because of a
   builtin. The remaining dependence on which `sh` runs a line is brace

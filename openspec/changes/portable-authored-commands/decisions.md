@@ -104,3 +104,28 @@
 - blast:    Until 8.1 exists, nothing runs a portable line through
             `prepare` or `deliver` end to end in CI. Each half is tested;
             the join is the journey's.
+
+## D6 — Refuse a pattern that would match a name in either case
+
+- status:   pending
+- task:     1.4
+- commit:
+- trigger:  The portable shell matches a pattern with `case_sensitive: false`,
+            fixed in 0.33.3's `execute.rs` with no option to turn it off.
+            `*.txt` takes `README.TXT`, and `rm -rf /tmp/repo-*` takes
+            `/tmp/Repo-x`; `sh` matches the case written.
+- decided:  `Divergence::CaselessGlob`. A word is refused when a part of
+            its path holding a wildcard also holds a letter, or an
+            expansion that may hold one. A part with no wildcard is looked
+            up as written, so `build/*` and `$OUT/*` stay portable. E1:
+            10 of 1,224 lines, now run in `sh` as before.
+- rejected: Accepting it as a known difference: it is the silent change of
+            meaning D3 refuses, and it reaches `rm`. Expanding the patterns
+            in UZE before the shell does: a second glob beside the shell's.
+            A fork of the crate: a dependency of a different provenance for
+            one flag.
+- blast:    On Windows these lines leave the portable shell and run only
+            where `sh` exists. An upstream option for case-sensitive
+            matching (bash's `nocaseglob`, off) would make this entry leave
+            the list, its row in `tests/cli/portable_shell.rs` failing
+            first.
