@@ -149,7 +149,7 @@
 
 ## 18. Resident tier
 
-- [ ] 18.1 Create `uze-extension-runtime` (depending on `uze-contract` and `uze-platform` only) and publish the WIT world with every type (exports `start`, `event`, `input`, `render`, `stop`; imports `run-program`, `fetch`, `store`, `clock`, `timer`, `read-checkout`, `agent-prompt`, `notify`)
+- [ ] 18.1 Create `uze-wasm` (depending on `uze-contract` and `uze-platform` only) and publish the WIT world with every type (exports `start`, `event`, `input`, `render`, `stop`; imports `run-program`, `fetch`, `store`, `clock`, `timer`, `read-checkout`, `agent-prompt`, `notify`)
 - [ ] 18.2 Dependency review of the chosen runtime and HTTP client (0.2), then embed the runtime off the drawing thread behind an `Extension` adapter
 - [ ] 18.3 Refuse at check and enable a component whose imports its grants do not cover, or whose digest (checked on the buffer that is compiled) differs from the consented one; `read-checkout` resolves beneath the root with no link followed; `agent-prompt` raises the host confirmation without `agent:prompt:auto`; `run-program` shares the declared sources' limits; enforcement reported per import
 - [ ] 18.4 Fuel and memory bounds per call, a 30-per-second frame cap, stop on breach with the bound named

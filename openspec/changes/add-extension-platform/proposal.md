@@ -142,7 +142,7 @@ mechanism chosen without a capability model cannot be given one afterwards
   `uze-extensions`), `uze-core` (capability parsing, grant record, sandboxed
   execution), `uze-application` (extension read model,
   runner service), `uze-integrations` (the reporter in each launch, the
-  skill-invocation spelling), a new `uze-extension-runtime` crate (the
+  skill-invocation spelling), a new `uze-wasm` crate (the
   resident tier), `src/ui` (orchestrator, the agents read model,
   extension host, slots, keymap, management Extensions screen),
   `src/main.rs` (`uze ext`, `uze agent extension check`).
