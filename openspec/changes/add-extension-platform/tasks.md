@@ -1,11 +1,12 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [ ] 0.1 Decide the split into five changes (design.md, *Proposed split*), and move groups 1–12 into them
-- [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording
+- [ ] 0.1 Decide the split into eight changes (design.md, *Proposed split*), and move groups 1–18 into them
+- [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime, status bar ordering, unattended prompt limits
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
 - [ ] 0.5 Fold the majors, highs and mediums into the specs, design and tasks, or record why each is deferred
 - [ ] 0.6 Reorder: keymap before engine actions; ADR, invariant and AGENTS.md amendments with task 1.1
+- [ ] 0.7 Review the 2026-10-23 revision (D13–D20) for architecture fit, security and authoring, and record its findings beside the earlier ones
 
 ## 1. Generic host contract (no observable change)
 
@@ -21,7 +22,7 @@
 ## 2. Catalog
 
 - [ ] 2.1 Move `code::markdown` to `uze-extensions/shared/markdown` and point `code` and `release_notes.rs` at it
-- [ ] 2.2 Add `Content::Markdown`, `Content::Code { language }`, `Content::Table`, `Content::Details`, `Content::Progress`, `Content::Chart { Bar | Sparkline }`, `Content::Log` and `Content::Stack`, plus the navigator item `badge` and `RowMark::Status(Role)`, to `view.rs`
+- [ ] 2.2 Add the catalog families of D15 to `view.rs`, each node only when a gallery entry (D20) needs it: layout, text, data, measure (segmented `progress`, `gauge`, `pips`, `chart`, `heatmap`), status (`badge`, `marks`, `chip`, `activity`, `elapsed`), input and feedback
 - [ ] 2.3 Add the `uze_theme::Symbol`s the new types draw with (bar and sparkline steps, progress fill), resolved in every built-in theme
 - [ ] 2.4 Render each new type in `src/ui/extension_view.rs` from the widget vocabulary, with a TestBackend test per type in the default and a light theme
 - [ ] 2.5 Make non-numeric chart data and empty tables render as notices or empty states, never panics, each with a test
@@ -39,7 +40,7 @@
 
 - [ ] 4.1 Add `CapabilityKind::Extension` and discover `extensions/*/extension.yaml` in `package_resources_at`, capping the manifest size before parsing
 - [ ] 4.2 Parse manifests with the existing YAML reader (duplicate keys refused), test alias-bomb and oversized inputs, and record the `noyalib` exposure in design risks if the parser cannot bound expansion
-- [ ] 4.3 Implement `check_extension`: schema, reserved ids, argv-only programs, relative paths resolving inside the extension (links followed), `exec:` grants covering bare names, `role` values semantic-only, and `kind: interactive` refused with its reason
+- [ ] 4.3 Implement `check_extension`: schema, reserved ids, argv-only programs, relative paths resolving inside the extension (links followed), `exec:` grants covering bare names, `role` values semantic-only, and `kind: interactive` refused pointing at `feed: resident`
 - [ ] 4.4 Extend `check_plugin` to run `check_extension` on every extension it carries
 - [ ] 4.5 Add the `state/extensions.json` record (accepted grants, accepted digest, enabled), named in `UzeHome` and implementing `uze_document::Shaped` at shape 1
 - [ ] 4.6 Implement grant comparison by set, so that an update that widens holds the extension and one that narrows applies, and removing a plugin removes its extensions' records
@@ -104,3 +105,52 @@
 - [ ] 12.2 Run it by hand in this repository for the operator's validation
 - [ ] 12.3 After validation, write the journeys for install → consent → open → act, and for a widened update being held
 - [ ] 12.4 Run `make check` and `openspec validate add-extension-platform --strict`
+
+## 13. Slots and feeds
+
+- [ ] 13.1 Add the `status`, `band`, `overlay` and `notify` slots beside `view` and `section`, with host-owned geometry, folding instead of cropping, and a pane laid out shorter under a band
+- [ ] 13.2 Let the operator order status segments, and decide whether an unplaced segment shows (0.2)
+- [ ] 13.3 Implement `feed: bind | compose`: validate a composed tree against the catalog, sanitize it, bind its interactive nodes to declared actions only, and build it into a `View` off the render thread
+- [ ] 13.4 Add the output modes `lines` and `view` to the runner and the check
+- [ ] 13.5 Host-animated nodes: `activity`, `elapsed` and segmented `progress` driven by the host's clock, with a TestBackend test that no program runs while they move
+
+## 14. Agent bridge
+
+- [ ] 14.1 Add the reporting hook as a portable hook each integration delivers, reporting to the workspace client of the agent it runs under
+- [ ] 14.2 Normalize the reports into the `agent.*` events of the bridge spec, fall back to the paint heuristic for turns, and report per harness what is not observable in `uze doctor` and the Extensions screen
+- [ ] 14.3 Add the built-in `agents` source from the workspace read model
+- [ ] 14.4 Add the skill-invocation dialect to each integration, and `agent.prompt`, `agent.interrupt`, `agent.restart` through the pane writer and the integrations
+- [ ] 14.5 Gesture confirmation with the exact text; `agent:prompt:auto` with rate limit, bounded queue behind a running turn or typing, a mark in the pane, and the pause key
+- [ ] 14.6 Architecture rule: agent actions from an extension go only through the bridge
+
+## 15. Events and pipes
+
+- [ ] 15.1 `every` with a 5-second floor, run only while a surface showing its sources is visible
+- [ ] 15.2 `paths.changed` from a bounded periodic digest of declared paths' modification times, Git-ignored paths included
+- [ ] 15.3 `checkout.changed` per checkout an open surface is on, and coalescing per extension in a window
+- [ ] 15.4 `uze ext pipe <extension> <pipe> [payload]`, the `pipe` built-in action, and hook delivery of pipes; payloads sanitized and bounded; classified in `command_performance.rs`
+
+## 16. Store and preferences
+
+- [ ] 16.1 Add the per-extension store keyed by `plugin@marketplace/id`, bounded, in the tier the `persistence-tiers` rule assigns, removed with the plugin
+- [ ] 16.2 Add typed preferences to the manifest and the Extensions screen; secrets never redisplayed, logged or piped
+
+## 17. Cells and media
+
+- [ ] 17.1 Expose `cells` (`{ch, role}` grid with regions bound to declared actions) on the existing canvas
+- [ ] 17.2 Expose `image` through `src/ui/graphics.rs` (Sixel or half blocks) with a size ceiling checked before decoding
+- [ ] 17.3 Add `sprite`: frames per named state, played by the host from an agent's state or a source's field
+
+## 18. Resident tier
+
+- [ ] 18.1 Publish the WIT world (exports `start`, `event`, `input`, `render`, `stop`; imports `run-program`, `fetch`, `store`, `clock`, `timer`, `read-checkout`, `agent-prompt`, `notify`)
+- [ ] 18.2 Dependency review of the chosen runtime (0.2), then embed it off the drawing thread
+- [ ] 18.3 Refuse at check and enable a component whose imports its grants do not cover, or whose digest differs from the consented one
+- [ ] 18.4 Fuel and memory bounds per call, a 30-per-second frame cap, stop on breach with the bound named
+- [ ] 18.5 Raw keys and pointer to a focused resident surface, the host's escape chord excepted
+
+## 19. Gallery
+
+- [ ] 19.1 Build the ten reference extensions of D20 as fixture plugins, each shipped with the change of the split that proves it
+- [ ] 19.2 One journey per reference: install → consent → open → the scenario of the platform spec it proves
+- [ ] 19.3 Run `make check` and `openspec validate add-extension-platform --strict`

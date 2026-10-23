@@ -30,6 +30,46 @@ See proposal.md for why. What the design has to work with:
   `acquisition/git.rs` `run_as` for the pattern.
 - **YAML is read by `noyalib` 0.0.x**, in `uze-core` only. `schemars` exists
   only as an optional dev-server dependency.
+- **What UZE observes of an agent today is its pane.** Whether an agent is
+  working is read off its pane's paints and its prompt submissions
+  (`src/ui/orchestrator/tests/activity.rs`); no harness reports a turn, a
+  tool call or an approval to UZE. UZE does write into an agent's pane
+  (`src/ui/orchestrator/session/pane_input.rs`) and does deliver portable
+  hooks to every harness (archived `add-portable-hooks`).
+- **Images are already drawn.** `src/ui/graphics.rs` draws a
+  `view::Picture` as half blocks everywhere and as Sixel where the terminal
+  says it can; the `code` surface previews images through it.
+- **Cells are already a medium.** `view::Medium::Drawing` and
+  `shared/canvas.rs` paint the architect's diagrams in cells coloured by
+  `Role`, not by colour value.
+
+### Evidence (2026-10-23)
+
+A survey of each harness's extension surface and of adjacent tools, read
+from their source and docs, with the projects that use them best. Only what
+shaped a decision below is kept here.
+
+| Ecosystem | Draws in its TUI | What authors reach for | Isolation |
+|---|---|---|---|
+| Claude Code mods | panes, a band above the prompt, rewrites of transcript rows; Box/Text/Button/Markdown/Code/Input/Select, a 512×256 cell `Raster` at ~60fps, images, a real-time `Client` module with raw input | the session (prompt, commands, tools, model), fs, exec, network, a reactive state model and a cross-session store | none beyond a V8 isolate |
+| OpenCode V2 | fixed regions (sidebar, composer, footer, a panel), dialogs, pages, toasts, a layered keymap; images | server and TUI halves joined by typed RPC; an 80-type event stream | none, in process |
+| Codex | nothing: a fixed status line, syntax themes, and pets (sprites chosen by agent state, assets only) | 14 hook events; the app-server JSON-RPC protocol, on which full alternative clients are built | — |
+| Antigravity | a script status line; web "UI sidecars" in the desktop app only, behind flags | 6 hook events; an agent API for sidecar daemons | declared agent permissions |
+| Zellij | ANSI text plus host-drawn semantic components (table, list, button, input, ribbon) themed by role | ~80 subscribable events, workers, pipes that launch their target, ~270 host commands | WASM, 17 permissions asked at first use, events buffered meanwhile |
+| Raycast | a fixed catalog (List, Grid, Detail, Form, ActionPanel, MenuBarExtra) | typed preferences, intervals with a 1-minute floor, host-animated loading | review only |
+| k9s, lazygit | actions over the host's UI | argv with context variables, typed inputs, `confirm`, `dangerous` | — |
+
+What the survey says, in the order the decisions below answer it:
+1. No harness isolates plugin code; UZE's grants are the gap no one fills.
+2. Where the TUI lacks a canvas, authors leave for a local web server
+   (OpenCode's visualiser, plannotator, ensemble; every creative Codex UI).
+3. The best-loved projects watch agents (claude-hud, ccstatusline,
+   flightdeck, agents-monitor) and must scrape transcripts to do it.
+4. A rich catalog with no drawing (Raycast) and semantic components beside
+   an escape hatch (Zellij) both work; raw colour and raw ANSI are what
+   break theming.
+5. Animation belongs to the host for stateless code (Raycast `isLoading`,
+   Codex pets), and to the plugin only when it is resident.
 
 ## Goals / Non-Goals
 
@@ -38,13 +78,24 @@ See proposal.md for why. What the design has to work with:
   no observable change to either.
 - A declared extension that is data plus stateless programs, with zero
   resident processes when idle.
-- A catalog wide enough that a list-over-a-CLI tool never needs to draw.
+- A catalog wide enough that a list-over-a-CLI tool never needs to draw, and
+  tiers above it for what a catalog cannot say (D13).
 - A security model where the operator's consent, the manifest and the host's
   enforcement are the same list.
 
+- An author can build, without leaving the terminal for a web page, what
+  operators already build on the harnesses: the ten plugins of the gallery
+  (D20) run on UZE with no code of UZE's written for any one of them.
+- One extension works the same whichever harness its agents run.
+
 **Non-Goals:**
-- The long-lived interactive protocol (free drawing, editors, custom input).
-  `kind: interactive` is reserved and refused.
+- Rewriting a harness's own transcript or prompt rows (what Claude Code's
+  mods can do to `AssistantMessage` or `ToolUse`). UZE does not draw the
+  harness's output; it draws around it.
+- Raw terminal output from an extension at any tier: no ANSI, no escape
+  sequences, no colour values outside an image.
+- Native code in UZE's process: dynamic libraries and native interpreters
+  stay ruled out (ADR-041). The resident tier is WebAssembly only.
 - Remembering a view's place across runs of the client. The built-ins don't,
   and adding it is a persisted-state question of its own.
 - Distributing extensions outside plugins and marketplaces.
@@ -142,6 +193,14 @@ way `uze-git` and `acquisition::git` are sanctioned.
 Answers are remembered in `cache/extensions/<id>/`, keyed by (checkout,
 source, input digest). That is the *remembered* tier: deleting it costs one
 run.
+
+A declaration names its output mode:
+- `json` (the default): a list of objects or an object, for `bind`.
+- `lines`: one item per line, tab-separated fields named by the
+  declaration, so a `sh` author needs no `jq` (the UX finding).
+- `view`: a catalog tree, for `compose` (D15).
+- `cells`, `image`, `sprite`: the tier-two answers (D13), each bounded in
+  size before it is decoded.
 
 ### D5. Consent is enabling, and it is recorded
 
@@ -273,11 +332,233 @@ and the check loop against real answers. Folding that in would roughly double
 `uze:extension`") and the new Skill carries the rest. Its examples are the
 openspec board and the scaffolded one.
 
+### D13. Three tiers behind one manifest, chosen per surface
+
+A surface's `feed` says how it is fed, and the tier is what that feed
+costs:
+
+| Tier | `feed` | Resident | Answers | Extra grant |
+|---|---|---|---|---|
+| declared | `bind` or `compose` | no | data bound by the manifest, or a catalog tree (D15) | — |
+| cells and media | `cells`, `image`, `sprite` | no | a cell grid with regions, an image, a sprite sheet | — |
+| resident | `resident` | yes, one component per extension | catalog trees or cells, every frame it asks for | `resident` |
+
+- Tiers share the manifest, the grants record, the keymap, the slots and
+  the sanitizer. Moving a surface up a tier is changing its `feed`, not
+  rewriting the extension.
+- The first two tiers keep the contract of D4: argv, one question, one
+  answer, nothing left running. The third is D19.
+- `kind: interactive` is retired: the resident tier is what it reserved.
+
+*Alternative:* one tier, resident for all. Rejected: most extensions are a
+list over a CLI, and making each one a compiled component would trade the
+`sh` author for nothing.
+
+### D14. Slots: the places an extension may occupy
+
+| Slot | Where | Size | Notes |
+|---|---|---|---|
+| `view` | the full frame, opened like `code` | the frame | layouts `sidebar` or `board`, as before |
+| `section` | a collapsible block of the workspace sidebar | sidebar width, rows the host grants | the timeline's place |
+| `status` | a segment of the workspace's status bar | one row, a width the host grants | ordered by the operator, never by the extension |
+| `band` | along the top or bottom edge of an agent's pane, inside its frame | pane width, at most 6 rows | per pane; the pane's harness is unaware of it |
+| `overlay` | a picker, form or dialog over the frame | host-chosen | modal, under host chrome, opened only by a gesture |
+| `notify` | an OS notification, the terminal bell, a sound cue | — | rate-limited, attributed |
+
+- The host owns geometry. A slot answers with what fits the size it was
+  handed; a section or band that does not fit is folded, not cropped.
+- A `band` is how the gsd-band recreation (D20) sits beside the agent it is
+  about without the harness. It never covers the pane's cells: the pane is
+  laid out shorter.
+- No slot reaches a harness's own output. Rewriting a transcript row is a
+  non-goal.
+
+### D15. The catalog in families, bound or composed
+
+The catalog is the vocabulary of `view.rs`, grown in families. Every node is
+a meaning the host draws in the active theme; colour is a `Role`, glyphs are
+`Symbol`s, emphasis is `strong`/`muted`/`code`.
+
+| Family | Nodes |
+|---|---|
+| layout | `stack` (vertical), `row` (horizontal, weighted), `split` (two panes, a draggable edge), `tabs`, `gap`, `rule` |
+| text | `text` (spans with role and emphasis), `markdown`, `code` (language), `log` (lines with a tone) |
+| data | `list` (flat, grouped, tree), `table` (named columns, sortable), `details` (key/value), `grid` (tiles) |
+| measure | `progress` (single or segmented, each segment with a weight, a ratio and a role), `gauge`, `pips` (done of total), `chart` (bar, sparkline), `heatmap` |
+| status | `badge`, `marks` (several role-coloured marks in a row), `chip`, `activity` (a mark the host animates while a named agent or run is busy), `elapsed` (a duration the host ticks) |
+| media | `image` (bytes or a packaged file; Sixel or half blocks), `sprite` (frames per state; the host plays them) |
+| cells | `cells` (a grid of `{ch, role}` with clickable `regions`), tier 2 and above |
+| input | `button`, `toggle`, `select`, `field` (text), `form` (typed fields, validation messages from the program), `picker` (fuzzy list the host filters) |
+| feedback | `toast`, `notice`, `confirm`, `notify`, `sound` (a named cue, not audio bytes) |
+
+Two ways to build a surface from it:
+- **bind**: the manifest names nodes and fills them with field references
+  into a source's data (`{name}`), as in the first draft. No logic.
+- **compose**: a source answers a tree of catalog nodes as JSON (output mode
+  `view`, D4). The logic lives in the program; the host validates the tree
+  against the catalog, sanitizes every string, and draws it. Every
+  interactive node names a declared action and the whole-value arguments it
+  passes, so a composed tree can only invoke what the manifest declared.
+
+Animation is the host's for every stateless tier: `activity`, `elapsed`,
+`sprite` and segmented `progress` transitions are driven by the host's
+clock, so no program runs to make something move.
+
+The catalog grows by the rule `view.rs` already states, made concrete: a
+node joins when a gallery entry (D20) needs it, and leaves nothing behind
+that only one extension uses.
+
+*Alternative:* bind only. Rejected: the gsd-band board needs a per-phase
+segmented bar and a status per row whose count the manifest cannot know
+ahead, which a template cannot express without becoming an expression
+language. *Alternative:* compose only. Rejected: a list over a CLI should
+not need a program that prints UI.
+
+### D16. The agent bridge
+
+**Events.** UZE delivers a reporting hook of its own to every harness, as a
+portable hook through each integration, on the events each harness offers
+(turn start and end, tool call before and after, approval asked, session
+start). The hook reports to the workspace client of the agent it runs under
+and nothing else; the client normalizes it into `agent.turn.started`,
+`agent.turn.finished`, `agent.tool.started`, `agent.tool.finished`,
+`agent.approval.asked` and `agent.session.started`, each carrying the
+agent's id, harness, checkout and, for tools, the tool's name and a bounded
+summary. Where a harness lacks an event, the bridge says so per harness and
+the paint heuristic still gives turn start and end.
+
+**Read model.** A built-in source, `agents`, answers the agents of the
+workspace: id, harness, state, work label, checkout, branch, and usage where
+the harness reports it. It is what the claude-hud and flightdeck recreations
+read instead of scraping transcripts.
+
+**Actions.**
+- `agent.prompt`: a text, or a skill invocation (`skill` plus arguments)
+  that the agent's integration spells in its harness's dialect, written into
+  the agent's pane as if typed.
+- `agent.interrupt` and `agent.restart`: the harness's own interrupt and
+  new conversation, through the integration.
+
+Safeguards:
+- `agent:prompt` and `agent:control` are grants, consent to which says they
+  give the extension what the agent can do.
+- From a gesture, the host shows the exact text before sending and names the
+  extension.
+- **From an event or a pipe**, only under the stronger grant
+  `agent:prompt:auto`, consented to separately. Unattended prompts are
+  rate-limited per agent, never sent while the operator is typing in that
+  pane or while a turn is running (they queue, bounded), and each one is
+  marked in the pane's band or frame as sent by the extension. The operator
+  can pause every unattended prompt with one key.
+- Only agents whose checkout the surface is open on are reachable.
+
+*Alternative:* no agent actions. Rejected: the gsd-band's value is its next
+action button, and every harness that allows it (mods, OpenCode, the Codex
+app-server, Antigravity sidecars) is used for it.
+
+### D17. Reasons to refresh, and pipes
+
+- `every: <duration>` runs the sources it names on an interval, with a floor
+  of 5 seconds, and only while a surface that shows them is visible.
+- `paths.changed: [<paths>]` runs them when a declared path inside the
+  checkout changes, from a bounded periodic digest of their modification
+  times; no watcher, no new dependency. It also covers paths Git ignores.
+- `checkout.changed` is computed per checkout an open surface is on, not
+  only the focused one.
+- `agent.*` comes from the bridge (D16), not from repaints.
+- **Pipes.** `uze ext pipe <extension> <name> [payload]`, another
+  extension's action, or a hook sends a named message to an extension. The
+  manifest maps a pipe to sources it refreshes (the payload is their input)
+  or to an action. A pipe to an extension with no open surface wakes nothing
+  resident: it marks its sources stale, and the next surface to open reads
+  them. A pipe payload is data: sanitized, bounded, and never a reason to
+  write into an agent unless `agent:prompt:auto` was granted.
+- Events are coalesced per extension in a window (250 ms by default): a
+  burst runs each named source once.
+
+### D18. Store and preferences
+
+- **Store**: a per-extension key/value document, bounded (1 MiB), that
+  programs read in their input and write in their answer (`store` field);
+  the host applies the write. It is keyed by the extension's identity
+  (`plugin@marketplace/id`, S4), lives in the tier its deletion costs (the
+  `persistence-tiers` rule decides which), and is removed with the plugin.
+- **Preferences**: typed fields the manifest declares (`text`, `number`,
+  `toggle`, `choice`, `secret`), edited on the Extensions screen, passed in
+  the program's input only when the declaration names them. A `secret` is
+  never shown again after entry, never logged, and never in a pipe.
+
+### D19. The resident tier: a WebAssembly component
+
+A resident surface is fed by one component per extension, built against a
+WIT world UZE publishes:
+
+- **Exports**: `start(context)`, `event(event) -> redraw?`,
+  `input(input) -> redraw?` (keys and pointer while its surface is focused),
+  `render(slot, size) -> tree | cells`, `stop()`.
+- **Imports** are the grants. `run-program` (the D4 runner, under the same
+  grants), `fetch` (only with `net`), `store`, `clock` and `timer`,
+  `read-checkout` (read-only, inside the checkout), `agent-prompt` (only
+  with `agent:prompt`), `notify`. A component that imports what its grants
+  do not cover is refused at enable time; there is no ambient WASI
+  filesystem, network or environment.
+- **Budgets**: fuel per call, a memory ceiling, at most one render per frame
+  the host asks for and a frame rate cap (30 per second); a component that
+  exceeds a budget is stopped and its surface shows why. The component runs
+  off the drawing thread; a render that misses its frame keeps the last one.
+- **Confinement** is the component model's, on every platform, including
+  where Landlock or Seatbelt are absent; the programs it runs through
+  `run-program` keep the D6 confinement.
+- **The author compiles; UZE only loads.** A plugin ships the built
+  component (`extensions/<id>/<name>.wasm`), stored and digested like any
+  other bytes, so what was consented to is what runs. One file runs on every
+  platform and architecture. UZE never builds an extension at install; the
+  check validates the component's imports against its grants, and the Skill
+  names the toolchains (`cargo component`, `jco`, TinyGo) without UZE
+  depending on any.
+- **Runtime**: owed (see *Product decisions owed*). `wasmi` (an interpreter,
+  pure Rust, the one Zellij embeds) and `wasmtime` (a JIT, larger, faster)
+  are the candidates; the dependency policy decides between them.
+
+*Alternative:* a resident process speaking JSON over stdio. Rejected: a
+process is confined only where the OS can confine it, and it costs a
+process per extension.
+
+### D20. The gallery
+
+Ten reference extensions, each recreating a plugin operators use on a
+harness, live as fixture plugins and are the acceptance suite of the
+platform. Each names the primitives it needs; together they cover every
+family, slot and tier.
+
+| Reference | Recreates | Exercises | Tier |
+|---|---|---|---|
+| `gsd-band` | luizfbalves/claude-gsd-band | `band`, composed segmented `progress`, `marks`, `pips`, `paths.changed`, `every`, `agent.prompt` with a skill | declared |
+| `agents-hud` | claude-hud, ccstatusline | `status`, the `agents` source, `activity`, `elapsed`, `gauge` | declared |
+| `flightdeck` | claude-flightdeck, opencode-agents-monitor | `view` and `section`, agent events across harnesses, `tabs`, `table` | declared |
+| `gpu-meter` | opencode gpu-sidebar | `section`, `every`, `chart` sparkline, `exec` | declared |
+| `chimes` | peon-ping, opencode-notifier | agent events, `notify`, `sound` | declared |
+| `jump` | zellij room | `overlay` `picker`, a host action to focus an agent | declared |
+| `plan-review` | plannotator | `view`, `markdown`, `form`, `agent.prompt` with the review | declared |
+| `pets` | Codex pets, claude-code-tamagotchi | `band`, `sprite` by agent state, `store` | cells and media |
+| `screen` | opencode-mobile-use | `section`, `image` refreshed on `every` | cells and media |
+| `snake` | claude-code-mods snake | `view`, `cells` every frame, raw keys, `timer`, `store` | resident |
+
+Not recreated, and why: tdd-guard and ctx-handoff are hooks and skills,
+which plugins already deliver; prismantis rewrites a transcript (non-goal);
+reels streams video at a cost the gallery does not need to prove.
+
 ## Candidate ADRs
 
-- **Extension loading is declared data plus confined, stateless programs.**
-  This answers ADR-041's deferred question: the mechanism is chosen, and
-  dynamic libraries and resident interpreters are ruled out.
+- **Extension loading is declared data plus confined, stateless programs,
+  with WebAssembly components as the only resident form.** This answers
+  ADR-041's deferred question: the mechanism is chosen, and dynamic
+  libraries and native resident interpreters are ruled out.
+- **Extensions may act on agents through the bridge.** Writing into an
+  agent's prompt gives an extension the agent's reach; the grants, the
+  gesture rule and the unattended safeguards are the decision.
+- **The WebAssembly runtime dependency.** A large, long-lived dependency
+  chosen by provenance.
 - **Consent to extension code is enabling, recorded per grant set.** This is
   UZE's first stored grant, and a deliberate exception to trust being "not a
   permission system".
@@ -302,9 +583,28 @@ openspec board and the scaffolded one.
   drawing its last answer while a run is in flight. Per-run durations go
   into tracing spans and `uze doctor`.
 - [The catalog is the ceiling: a tool that needs something the catalog
-  lacks cannot be built] → That is the price of no drawing. The catalog
-  grows by the rule `view.rs` already states (a second consumer), and
-  `kind: interactive` remains the named escape hatch for a later change.
+  lacks cannot be built] → Composing (D15) and the cells tier lift most of
+  it without a resident process; the resident tier (D19) is the escape
+  hatch, and the gallery (D20) is the test of whether the ceiling is high
+  enough.
+- [`agent:prompt` gives an extension everything the agent can do, which is
+  more than any other grant] → Consent says so in those words; a gesture
+  always shows the exact text; unattended prompts need their own grant and
+  are rate-limited, queued behind a running turn, marked in the pane and
+  pausable with one key (D16). An extension with `agent:prompt` and `net`
+  can exfiltrate through the agent; consent states the combination.
+- [A composed tree or a cell grid can imitate host chrome] → Composed nodes
+  are drawn inside the slot's frame, which the host draws and attributes;
+  no node draws a frame title, a toast or a confirmation of its own.
+- [A reporting hook in every harness is a new thing UZE writes into each
+  harness's configuration] → It travels as a portable hook through each
+  integration's existing delivery, so it is native where hooks are, and its
+  absence on a harness is reported, not papered over.
+- [A resident component can burn CPU in the TUI process] → Fuel and memory
+  budgets, a frame cap, and stopping on breach; it runs off the drawing
+  thread.
+- [Composed views from large answers are built on the render thread] →
+  Building a tree into a `View` is a job (M4), memoized by answer.
 - [Migrating `code` and `architect` onto the generic contract touches
   roughly 60 call sites in the orchestrator] → That is done first, alone,
   behind the existing orchestrator and TestBackend tests, before any declared
@@ -316,8 +616,11 @@ openspec board and the scaffolded one.
 ## Migration Plan
 
 This is purely additive for operators. No persisted state changes shape.
-`state/extensions.json` is new at shape 1, and the answer cache is new and
-rebuildable. The built-in extensions move behind the contract in the first
+`state/extensions.json` is new at shape 1 (grants and preferences), the
+per-extension store is new at shape 1, and the answer cache is new and
+rebuildable. The reporting hook (D16) is a new portable hook each
+integration delivers; removing it reverts agent events to the paint
+heuristic. The built-in extensions move behind the contract in the first
 group of tasks, with no observable change. Rollback is reverting the change:
 a plugin's `extensions/` directory is then inert bytes in the Store that no
 harness reads.
@@ -326,8 +629,10 @@ harness reads.
 
 `docs/architecture/crate-layering.mmd` gains `uze-contract` and its
 edges (from `uze-core` and `uze-extensions`). `containers.mmd` gains the
-extension program as an external process the workspace client runs. Both are
-validated with `cargo test -p uze-extensions` and `make artifacts`.
+extension program as an external process the workspace client runs, the
+resident component as a sandbox inside it, and the reporting hook as an edge
+from each harness to the workspace client. Both are validated with
+`cargo test -p uze-extensions` and `make artifacts`.
 
 ## Unresolved review findings
 
@@ -336,21 +641,29 @@ security and product. The plan was frozen with their findings recorded here.
 Each finding names the decision above that it invalidates. **None is resolved
 yet, and implementation waits on all blockers and criticals.**
 
-### Proposed split (pending decision)
+### Proposed split (pending decision, revised 2026-10-23)
 
-This change is five changes:
+This change is eight changes, each shipping one or more gallery entries
+(D20) as its proof:
 
 1. **generic-extension-host**: group 1 only, plus the ADR, invariant and
    AGENTS.md edits, with no new behaviour.
 2. **extension-manifest-and-runner**: `uze-contract`, discovery, check, the
-   bounded runner, the grants record and consent. Confinement is disclosed as
-   not enforced.
-3. **declared-extensions**: the engine, the keymap and `applies_when`, with
-   only the catalog the openspec board needs.
+   bounded runner, output modes, the grants record and consent. Confinement
+   is disclosed as not enforced.
+3. **declared-extensions**: the engine (bind and compose), the keymap,
+   `applies_when`, the `view`, `section` and `status` slots, and the catalog
+   the first entries need. Proof: `gpu-meter`, `jump`, the openspec board.
 4. **extension-confinement**: Landlock, seccomp and Seatbelt, with the
    dependency review.
-5. **Growth**: the rest of the catalog, the remaining events, CLI commands
-   and the Skill, each when a second consumer needs it.
+5. **agent-bridge**: the reporting hook per integration, the normalized
+   events, the `agents` source, the `band` slot and the agent actions.
+   Proof: `gsd-band`, `agents-hud`, `flightdeck`, `chimes`, `plan-review`.
+6. **extension-media**: `cells`, `image`, `sprite`. Proof: `pets`, `screen`.
+7. **extension-resident**: the WebAssembly tier and its runtime. Proof:
+   `snake`.
+8. **Growth**: store, preferences, pipes, CLI commands and the Skill, each
+   when a gallery entry needs it.
 
 Ordering errors inside the current tasks: the keymap (group 8) must come
 before the engine's actions (6.4), and the ADR and invariant amendments (11.4)
@@ -369,6 +682,31 @@ must come before or with task 1.1.
 - **What unenforced consent says**: the plan needs the exact wording for
   "this runs as you, with everything you can reach", and whether an extension
   may be enabled at all where confinement is missing.
+- **The WebAssembly runtime** (D19): `wasmi` or `wasmtime`, judged by the
+  dependency policy, with the cost of each on build time and binary size.
+- **Who orders the status bar** (D14): the status bar is the operator's;
+  whether a new segment appears until placed, or stays hidden until placed.
+- **Unattended prompt limits** (D16): the rate per agent, the queue bound,
+  and whether `agent:prompt:auto` may be granted machine-wide at all or only
+  per project.
+
+### How the 2026-10-23 revision bears on the findings
+
+It resolves none of them outright. It changes these:
+- *Events* (minor): D17 replaces the badge-derived, focused-only
+  `checkout.changed` and per-frame coalescing; D16 replaces the repaint
+  heuristic for `agent.*`. The event requirement is rewritten to what each
+  source can observe.
+- *`output: lines`* (UX): adopted in D4.
+- *Enabling where confinement is missing*: the resident tier is confined on
+  every platform; programs are not, so the decision is still owed for them.
+- *`kind: interactive`*: retired in favour of the resident tier (D13).
+- *M4*: compose (D15) makes it more pressing, and the risk names the
+  direction.
+
+It opens these, to be reviewed with the rest: the agent bridge's reach
+(D16), composed and cell answers imitating chrome (D15), pipes as a way in
+for any local process (D17), and the resident tier's budgets (D19).
 
 ### Architecture blockers (invalidate D2, D8, D1/task 4.1)
 

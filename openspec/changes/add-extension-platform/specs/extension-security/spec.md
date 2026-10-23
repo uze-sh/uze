@@ -7,12 +7,11 @@ terminal, and from being installed or widened without the operator saying so.
 ## ADDED Requirements
 
 ### Requirement: An extension declares every grant it needs
-An extension manifest SHALL list, under `wants`, every capability its programs
-and surfaces use: each external program by name (`exec:<name>`), network
-access (`net`), writes to the checkout (`write:checkout`), the clipboard
-(`clipboard`), and opening a path in the code surface (`open_path`). A
-declaration that uses a capability it did not list SHALL be refused by the
-check and at install.
+An extension manifest SHALL list, under `wants`, every capability it uses:
+`exec:<name>`, `net`, `write:checkout`, `clipboard`, `open_path`,
+`notify`, `resident`, `agent:prompt`, `agent:prompt:auto` and
+`agent:control`. A declaration that uses a capability it did not list SHALL
+be refused by the check and at install.
 
 > **Unresolved review findings** (design.md): S2, S3, S7.
 
@@ -150,3 +149,29 @@ the rest of `$UZE_HOME`.
 #### Scenario: The Store is not handed over
 - **WHEN** a source runs
 - **THEN** its context names the checkout and its own extension directory and nothing else under `$UZE_HOME`
+
+### Requirement: Consent states what a grant combination can do
+The consent screen SHALL lead with the implicit rights and with what the
+grants can do together, and SHALL say that `agent:prompt` gives the
+extension what the agent can do. `agent:prompt:auto` SHALL be asked
+separately from `agent:prompt`, after it, and never as part of a list
+accepted in one gesture.
+
+#### Scenario: Prompt and network together are named
+- **WHEN** an extension wants `agent:prompt` and `net`
+- **THEN** the consent screen says the extension can have the agent act on the checkout and send what it reads over the network
+
+#### Scenario: Unattended prompting is its own question
+- **WHEN** an extension wants `agent:prompt:auto`
+- **THEN** the operator is asked about it on its own, after the other grants, and declining it leaves the rest enabled with prompts only on a gesture
+
+### Requirement: Untrusted channels never start an agent action alone
+A pipe payload, a source's answer, an event and a composed tree SHALL NOT
+cause a write into an agent, a clipboard write or an open of a path unless
+the extension holds `agent:prompt:auto` for the agent write, and never for
+the clipboard or a path. Each such write SHALL be attributed to the
+extension where the operator sees it.
+
+#### Scenario: A pipe cannot type into an agent
+- **WHEN** a local process runs `uze ext pipe gsd-band next` and `gsd-band` lacks `agent:prompt:auto`
+- **THEN** no text reaches any agent and the pipe only refreshes what the manifest maps it to
