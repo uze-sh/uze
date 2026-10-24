@@ -37,7 +37,7 @@ mod navigator;
 mod picture;
 mod prose;
 mod section;
-mod tree;
+pub(crate) mod tree;
 
 pub(crate) use footer::*;
 pub(crate) use geometry::*;
@@ -175,7 +175,8 @@ fn render_surface(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let mut rendered = render_board(frame, view, area, keys, selection, hits);
+        let hovered = held.sliding.map(|(hit, _)| hit);
+        let mut rendered = render_board(frame, view, area, keys, hovered, selection, hits);
         rendered.content_space = board_space(area);
         return rendered;
     }
@@ -227,7 +228,17 @@ fn render_surface(
             root,
         } => {
             rendered.heading = heading.clone();
-            tree::render_tree(frame, content_area, *scroll, root, hits);
+            let drawn = tree::render_tree_content(
+                frame,
+                content_area,
+                (heading, *scroll, root),
+                column_modes,
+                tree::TreeFrame::now(held.sliding.map(|(hit, _)| hit)),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee |= drawn.animates;
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
@@ -383,6 +394,7 @@ fn render_board(
     view: &View,
     area: Rect,
     keys: FooterKeys,
+    hovered: Option<ViewHit>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -402,7 +414,17 @@ fn render_board(
             root,
         } => {
             rendered.heading = heading.clone();
-            tree::render_tree(frame, board, *scroll, root, hits);
+            let drawn = tree::render_tree_content(
+                frame,
+                board,
+                ("", *scroll, root),
+                &[],
+                tree::TreeFrame::now(hovered),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee = drawn.animates;
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
