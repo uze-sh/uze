@@ -49,5 +49,5 @@
 
 - [x] 7.1 `uze agent plugin check` validates a plugin's extensions (manifest, views, references against fixtures) with the install's rules
 - [x] 7.2 `--extension <id>` on `uze agent plugin create`: manifest, view and fixture in a linked marketplace that pass the check, classified in `command_performance.rs`
-- [ ] 7.3 The `gsd-band` fixture plugin (board view and section, fixture from the blueprint) and a journey: install from a linked marketplace → open → switch tab → edit the view → see it redrawn
+- [x] 7.3 The `gsd-band` fixture plugin (board view and section, fixture from the blueprint) and a journey: install from a linked marketplace → open → switch tab → edit the view → see it redrawn
 - [ ] 7.4 `make check`, `openspec validate --all --strict`, and the operator's validation by hand
