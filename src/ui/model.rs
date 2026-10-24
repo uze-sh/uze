@@ -7,6 +7,7 @@ use std::{
 };
 
 use ratatui::layout::Rect;
+use uze_application::DeclaredExtensionSummary;
 use uze_application::{Autonomy, ManagementLayout, ModelPreference, Preferences, SandboxScope};
 use uze_extensions::registry::BuiltinExtension;
 
@@ -39,9 +40,9 @@ pub(crate) enum Route {
     /// installable from a marketplace (the embedded `uze-official` snapshot
     /// included). Browse the catalog, install, update, remove.
     Plugins,
-    /// The tool side: official uze extensions that extend the TUI/CLI
-    /// itself (see `uze_extensions::BUILTIN_EXTENSIONS`) — as opposed to
-    /// plugins, which are packages delivered *to* harnesses.
+    /// The tool side: extensions of the workspace itself, the official
+    /// ones bundled with uze and those installed plugins declare — as
+    /// opposed to plugins, which are packages delivered *to* harnesses.
     Extensions,
     Harnesses,
     Profiles,
@@ -124,7 +125,7 @@ impl Route {
         match self {
             Route::Overview => "status & health",
             Route::Plugins => "plugins & skills",
-            Route::Extensions => "official tools",
+            Route::Extensions => "workspace tools",
             Route::Harnesses => "detected agents",
             Route::Profiles => "agent preferences",
             Route::Keys => "key bindings",
@@ -520,6 +521,60 @@ pub(crate) enum Status {
 
 // --- Model --------------------------------------------------------------
 
+/// One row of the Extensions screen: an extension bundled with uze, or one
+/// an installed plugin declares. Both are switched by the same key.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ExtensionEntry<'a> {
+    Builtin(&'a BuiltinExtension),
+    Declared(&'a DeclaredExtensionSummary),
+}
+
+impl ExtensionEntry<'_> {
+    /// The key it is switched on and off by.
+    pub(crate) fn id(&self) -> String {
+        match self {
+            Self::Builtin(extension) => extension.id.to_owned(),
+            Self::Declared(summary) => super::extension_switch::declared_id(&summary.identity),
+        }
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Builtin(extension) => extension.name,
+            Self::Declared(summary) => &summary.name,
+        }
+    }
+
+    pub(crate) fn description(&self) -> &str {
+        match self {
+            Self::Builtin(extension) => extension.description,
+            Self::Declared(summary) => &summary.description,
+        }
+    }
+
+    /// Whether `needle`, already lowercased, is in anything the row says.
+    fn matches(&self, needle: &str) -> bool {
+        let said = match self {
+            Self::Builtin(extension) => vec![
+                extension.id.to_owned(),
+                extension.name.to_owned(),
+                extension.description.to_owned(),
+                extension.surface.to_owned(),
+            ],
+            Self::Declared(summary) => [
+                summary.identity.to_string(),
+                summary.name.clone(),
+                summary.description.clone(),
+            ]
+            .into_iter()
+            .chain(summary.views.iter().cloned())
+            .chain(summary.sections.iter().cloned())
+            .collect(),
+        };
+        said.iter().any(|text| text.to_lowercase().contains(needle))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RefreshData {
     pub(crate) plugins: Vec<PluginSummary>,
@@ -527,6 +582,7 @@ pub(crate) struct RefreshData {
     pub(crate) marketplace_plugins: Vec<MarketplacePluginSummary>,
     pub(crate) marketplaces: Vec<MarketplaceSummary>,
     pub(crate) profiles: Vec<ProfileSummary>,
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
     pub(crate) context_status: Option<ProjectContextStatus>,
     /// The Overview's workspace-aware read model — present from the very
     /// first refresh onward (there is always a kind, even `NoWorkspace`).
@@ -647,7 +703,12 @@ pub(crate) struct TuiModel {
     /// The official uze extensions catalog, from
     /// `uze_extensions::registry::ExtensionRegistry`.
     pub(crate) extensions: Vec<BuiltinExtension>,
-    /// The ids of those the operator switched off, as last written.
+    /// The extensions installed plugins declare, as the last refresh
+    /// found them, listed after the built-ins.
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
+    /// The ids of those the operator switched off, as last written: a
+    /// built-in by its id, a declared one by
+    /// [`extension_switch::declared_id`](super::extension_switch::declared_id).
     pub(crate) disabled_extensions: BTreeSet<String>,
 
     pub(crate) profile_panel: ProfilePanel,
@@ -893,6 +954,7 @@ impl TuiModel {
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
+            declared_extensions: Vec::new(),
             disabled_extensions: super::extension_switch::disabled(),
             profile_panel: ProfilePanel::List,
             profile_editor_selected: 0,
@@ -1123,12 +1185,25 @@ impl TuiModel {
         rows.into_iter().nth(raw_index)
     }
 
-    pub(crate) fn selected_extension(&self) -> Option<&BuiltinExtension> {
-        self.extensions.get(
-            *self
-                .extension_visible_indices()
-                .get(self.remembered.extension_screen.selected)?,
-        )
+    /// Every extension the screen lists: the built-ins, then the ones
+    /// plugins declare.
+    pub(crate) fn extension_entries(&self) -> Vec<ExtensionEntry<'_>> {
+        self.extensions
+            .iter()
+            .map(ExtensionEntry::Builtin)
+            .chain(
+                self.declared_extensions
+                    .iter()
+                    .map(ExtensionEntry::Declared),
+            )
+            .collect()
+    }
+
+    pub(crate) fn selected_extension(&self) -> Option<ExtensionEntry<'_>> {
+        let index = *self
+            .extension_visible_indices()
+            .get(self.remembered.extension_screen.selected)?;
+        self.extension_entries().get(index).copied()
     }
 
     pub(crate) fn extension_enabled(&self, id: &str) -> bool {
@@ -1139,10 +1214,10 @@ impl TuiModel {
     /// already is — an offer that is not available answers no key.
     pub(crate) fn switch_selected_extension(&self, enabled: bool) -> crate::ui::worker::Intent {
         match self.selected_extension() {
-            Some(extension) if self.extension_enabled(extension.id) != enabled => {
+            Some(extension) if self.extension_enabled(&extension.id()) != enabled => {
                 crate::ui::worker::Intent::SwitchExtension {
-                    id: extension.id.to_owned(),
-                    name: extension.name.to_owned(),
+                    id: extension.id(),
+                    name: extension.name().to_owned(),
                     enabled,
                 }
             }
@@ -1157,16 +1232,10 @@ impl TuiModel {
             .filter
             .trim()
             .to_lowercase();
-        self.extensions
+        self.extension_entries()
             .iter()
             .enumerate()
-            .filter(|(_, extension)| {
-                needle.is_empty()
-                    || extension.id.to_lowercase().contains(&needle)
-                    || extension.name.to_lowercase().contains(&needle)
-                    || extension.description.to_lowercase().contains(&needle)
-                    || extension.surface.to_lowercase().contains(&needle)
-            })
+            .filter(|(_, extension)| needle.is_empty() || extension.matches(&needle))
             .map(|(index, _)| index)
             .collect()
     }
@@ -1811,7 +1880,7 @@ impl TuiModel {
                 .selected_extension()
                 .map(|extension| {
                     uze_application::application::offers::extension_offers(
-                        self.extension_enabled(extension.id),
+                        self.extension_enabled(&extension.id()),
                     )
                 })
                 .unwrap_or_default(),
@@ -2144,6 +2213,7 @@ impl TuiModel {
         self.remembered.marketplace_plugins = data.marketplace_plugins;
         self.remembered.marketplaces = data.marketplaces;
         self.clamp_list_selection(Route::Plugins);
+        self.declared_extensions = data.declared_extensions;
         self.clamp_list_selection(Route::Extensions);
         self.remembered.profiles = data.profiles;
         // A refresh is the operator asking to see the machine as it is;
