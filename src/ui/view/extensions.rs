@@ -313,8 +313,15 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> (Ve
                 .iter()
                 .map(|title| format!("{title} · section")),
         )
+        .chain(
+            summary
+                .drawers
+                .iter()
+                .map(|title| format!("{title} · drawer")),
+        )
         .collect();
-    let usage = match (summary.views.is_empty(), summary.sections.is_empty()) {
+    let no_button = summary.views.is_empty() && summary.drawers.is_empty();
+    let usage = match (no_button, summary.sections.is_empty()) {
         (false, false) => "Its button in the workspace's tab strip, and its section in the sidebar",
         (false, true) => "Its button in the workspace's tab strip",
         (true, false) => "Its section in the workspace's sidebar",

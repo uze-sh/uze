@@ -25,6 +25,7 @@ impl WorkspaceModel {
                 self.put_away_space_overview_left_behind(identities);
                 self.forget_overviews_of_closed_spaces();
                 self.forget_folds_of_closed_spaces();
+                self.follow_drawer_space();
                 self.occupancy_stale = true;
             }
             ClientEvent::SessionUpdated { session } => {
@@ -39,6 +40,7 @@ impl WorkspaceModel {
                 self.forget_overviews_of_closed_spaces();
                 self.forget_folds_of_closed_spaces();
                 self.name_the_new_space();
+                self.follow_drawer_space();
                 self.prune_dragging_tab();
                 self.prune_dragging_space();
                 self.occupancy_stale = true;

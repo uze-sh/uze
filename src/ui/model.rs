@@ -569,6 +569,7 @@ impl ExtensionEntry<'_> {
             .into_iter()
             .chain(summary.views.iter().cloned())
             .chain(summary.sections.iter().cloned())
+            .chain(summary.drawers.iter().cloned())
             .collect(),
         };
         said.iter().any(|text| text.to_lowercase().contains(needle))

@@ -902,6 +902,36 @@ fn each_slot_answers_only_as_itself() {
     assert!(extension.trace("nowhere").is_none());
 }
 
+#[test]
+fn a_drawer_answers_a_tree_view_as_a_view_does() {
+    let mut compiled = extension(compiled_view(
+        vec![n(NodeName::Text).arg("x").item()],
+        Vec::new(),
+        Vec::new(),
+    ));
+    compiled.manifest.surfaces[1].slot = Slot::Drawer;
+    let mut extension = DeclaredExtension::new(compiled, "pt");
+    extension.set_data(SOURCE, Ok(json!({})));
+    let drawer = &extension.surfaces()[1];
+    assert_eq!(drawer.slot, SurfaceSlot::Drawer);
+    assert!(extension.section(SECTION, false).is_none());
+    let view = extension.view(SECTION, SPACE).expect("a drawer is a view");
+    assert_eq!(view.title[0].text, "GSD");
+    let Content::Tree { root, .. } = view.content else {
+        panic!("a drawer is a tree");
+    };
+    assert_eq!(texts(&root), ["x"]);
+}
+
+#[test]
+fn a_forgotten_surface_starts_over() {
+    let mut extension = hosted(tabbed(), json!({}));
+    extension.command(VIEW, Command::NextView, SPACE);
+    assert!(extension.ui(VIEW).is_some_and(|ui| !ui.is_empty()));
+    extension.forget(VIEW);
+    assert!(extension.ui(VIEW).is_none());
+}
+
 fn tabbed() -> Vec<Item> {
     vec![
         n(NodeName::Tabs)

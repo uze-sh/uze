@@ -137,6 +137,23 @@ fn path(scope: Scope, segments: &[&str]) -> DataPath {
 }
 
 #[test]
+fn a_drawer_surface_compiles() {
+    let manifest = MANIFEST.replace(
+        r#"surface "summary" slot="section""#,
+        r#"surface "summary" slot="drawer""#,
+    );
+    let dir = plugin(
+        "extension-gsd",
+        &[("gsd-band", &gsd_files(&manifest, BOARD))],
+    );
+    let compiled = compile_in(dir.path(), "gsd-band").expect("a drawer compiles");
+    assert_eq!(
+        compiled.manifest.surface("summary").unwrap().slot,
+        Slot::Drawer
+    );
+}
+
+#[test]
 fn the_gsd_band_compiles_into_both_surfaces() {
     let dir = plugin(
         "extension-gsd",

@@ -1,5 +1,6 @@
 //! What the host draws around a plugin's view: the error over its last
-//! good draw, and the inspector beside it.
+//! good draw, the inspector beside it, and a plugin's drawer docked beside
+//! the pane.
 
 use super::*;
 use crate::ui::extension_view::{SECTION_AIR, SECTION_CHROME};
@@ -39,6 +40,69 @@ pub(super) fn render_declared_overlays(
     if let Some(area) = inspector {
         render_inspector(frame, area, model, &slot.surface.title, errors, hits);
     }
+}
+
+/// The open drawer, in the column `compute_layout` docked beside the pane:
+/// a raised card, the strip naming whose it is across its top where nothing
+/// it draws can cover it, and its view under that. Answers whether anything
+/// in it moves with the clock.
+pub(super) fn render_declared_drawer(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let Some(slot) = model.open_drawer_slot() else {
+        return false;
+    };
+    let note = model.dock_notice.as_ref().map(|notice| {
+        Line::from(Span::styled(
+            format!(" {} ", notice.text),
+            theme::fg(Token::TextMuted),
+        ))
+    });
+    let (inner, handle) = widget::drawer::render_docked(frame, area, model.dragging_dock, note);
+    let content = crate::ui::extension_view::tree::render_attribution(
+        frame,
+        inner,
+        &crate::ui::extension_view::tree::attribution(
+            &slot.identity.id,
+            &slot.identity.plugin,
+            &slot.identity.marketplace,
+        ),
+    );
+    let space = uze_extensions::view::Size {
+        width: content.width,
+        height: content.height,
+    };
+    model.dock_space.set(space);
+    let view = model.surface_view(slot, space);
+    let hovered = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: hovered, hit }))
+            if hovered == slot.id =>
+        {
+            Some(hit)
+        }
+        _ => None,
+    };
+    let mut view_hits = Vec::new();
+    let animates =
+        crate::ui::extension_view::render_docked(frame, &view, content, hovered, &mut view_hits);
+    let errors = model.remembered.declared.errors_of(&slot.identity);
+    if !errors.is_empty() {
+        widget::banner::render(frame, content, &error_title(errors.len()), errors);
+    }
+    // The edge first, so it answers before the rows beside it; the card
+    // last, behind everything it holds.
+    hits.push((handle, WorkspaceHit::ResizeDock));
+    hits.extend(view_hits.into_iter().map(|(rect, hit)| {
+        (
+            rect,
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot: slot.id, hit }),
+        )
+    }));
+    hits.push((area, WorkspaceHit::DockBody));
+    animates
 }
 
 fn error_title(count: usize) -> String {

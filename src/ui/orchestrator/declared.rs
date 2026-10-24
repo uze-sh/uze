@@ -5,7 +5,8 @@
 //! one entry of [`DeclaredExtensions::slots`], keyed by the extension's
 //! identity and the surface's id, holding the engine that answers for it.
 //! A `view` slot opens full-frame from the tab strip, a `section` slot is a
-//! block of the sidebar, and every gesture on either reaches the engine
+//! block of the sidebar, a `drawer` slot is docked beside the pane from its
+//! button in the strip, and every gesture on any of them reaches the engine
 //! through the [`Extension`] contract and nothing else.
 //!
 //! What a slot draws is the engine's, from the last compile and the last
@@ -22,6 +23,9 @@ use uze_extensions::declared::{
     Absence, DataState, DeclaredExtension, NODE_CAP, RecordedAction, TraceEntry, TraceNode,
 };
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
+
+mod drawer;
+pub(super) use drawer::*;
 
 /// The host's number for a slot, handed out once and never reused, so a
 /// hit drawn on one frame cannot land on another slot after a reload.
@@ -50,6 +54,9 @@ pub(super) trait Hosted: Extension {
     fn replace(&mut self, compiled: CompiledExtension);
     fn set_data(&mut self, source: &str, data: SourceData);
     fn inspect(&self, surface: &str) -> Inspection;
+    /// Lets go of where the viewer was on `surface`. Nothing by default:
+    /// an engine that keeps no place has none to forget.
+    fn forget(&mut self, _surface: &str) {}
 }
 
 impl Hosted for DeclaredExtension {
@@ -59,6 +66,10 @@ impl Hosted for DeclaredExtension {
 
     fn set_data(&mut self, source: &str, data: SourceData) {
         DeclaredExtension::set_data(self, source, data);
+    }
+
+    fn forget(&mut self, surface: &str) {
+        DeclaredExtension::forget(self, surface);
     }
 
     fn inspect(&self, surface: &str) -> Inspection {
@@ -212,6 +223,10 @@ impl DeclaredSlot {
     pub(super) fn is_view(&self) -> bool {
         self.surface.slot == SurfaceSlot::View
     }
+
+    pub(super) fn is_drawer(&self) -> bool {
+        self.surface.slot == SurfaceSlot::Drawer
+    }
 }
 
 /// One extension an installed plugin carries, as last read.
@@ -248,6 +263,14 @@ pub(super) struct DeclaredExtensions {
     pub(super) polled_at: Option<Instant>,
     /// Where the viewer was on each surface, per checkout.
     pub(super) places: BTreeMap<(ExtensionIdentity, String, PathBuf), Opaque>,
+    /// The drawer open in each space: one at most, so the pane gives up
+    /// one column of room and never two.
+    pub(super) drawers: BTreeMap<SpaceId, SlotId>,
+    /// Where the viewer was on each drawer, per space: a drawer is about
+    /// the work in front, and each space is its own.
+    pub(super) drawer_places: BTreeMap<(ExtensionIdentity, String, SpaceId), Opaque>,
+    /// The space whose places the drawers' engines hold now.
+    pub(super) drawer_space: Option<SpaceId>,
     pub(super) engine: EngineFactory,
     /// The language every engine draws its label tables in.
     pub(super) locale: String,
@@ -266,6 +289,9 @@ impl Default for DeclaredExtensions {
             stamps_pending: false,
             polled_at: None,
             places: BTreeMap::new(),
+            drawers: BTreeMap::new(),
+            drawer_places: BTreeMap::new(),
+            drawer_space: None,
             engine: declared_engine,
             locale: uze_platform::locale::language(),
         }
@@ -335,6 +361,11 @@ impl DeclaredExtensions {
         self.slots.retain(|slot| present.contains(&slot.identity));
         self.places
             .retain(|(identity, _, _), _| present.contains(identity));
+        self.drawer_places
+            .retain(|(identity, _, _), _| present.contains(identity));
+        let slots = &self.slots;
+        self.drawers
+            .retain(|_, id| slots.iter().any(|slot| slot.id == *id));
         before != self.extensions.len() + self.slots.len()
     }
 
@@ -406,6 +437,9 @@ impl DeclaredExtensions {
                         surface.id == slot.surface.id && surface.slot == slot.surface.slot
                     }))
         });
+        let slots = &self.slots;
+        self.drawers
+            .retain(|_, id| slots.iter().any(|slot| slot.id == *id));
         for surface in surfaces {
             let existing = self
                 .slots
@@ -504,6 +538,7 @@ fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
             slot: match surface.slot {
                 uze_contract::Slot::View => SurfaceSlot::View,
                 uze_contract::Slot::Section => SurfaceSlot::Section,
+                uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
             },
             title: surface
                 .title
@@ -616,6 +651,10 @@ impl WorkspaceModel {
                 Some(slot.engine.as_mut()?.hit(&surface, hit, space))
             })
             .unwrap_or(Outcome::Stay);
+        if self.open_drawer() == Some(id) {
+            self.follow_drawer(outcome);
+            return;
+        }
         // A section is part of the sidebar: it has no "close" of its own.
         if self.declared_open == Some(id) || outcome != Outcome::Close {
             self.follow_declared(outcome);
@@ -641,12 +680,22 @@ impl WorkspaceModel {
     /// host's last word from the engine, when it said one.
     pub(super) fn declared_view(&self, space: Size) -> Option<View> {
         let slot = self.open_declared_slot()?;
+        let mut view = self.surface_view(slot, space);
+        if let Some(notice) = &self.declared_notice {
+            view.notice = Some(notice.clone());
+        }
+        Some(view)
+    }
+
+    /// What a view or drawer slot draws in `space`: its engine's answer,
+    /// or a message saying why it has none yet.
+    pub(super) fn surface_view(&self, slot: &DeclaredSlot, space: Size) -> View {
         let errors = self.remembered.declared.errors_of(&slot.identity);
         let drawn = slot
             .engine
             .as_ref()
             .and_then(|engine| engine.view(&slot.surface.id, space));
-        let mut view = drawn.unwrap_or_else(|| {
+        drawn.unwrap_or_else(|| {
             let (text, role) = if errors.is_empty() {
                 (format!("Reading {}…", slot.surface.title), Role::Muted)
             } else {
@@ -675,11 +724,7 @@ impl WorkspaceModel {
                 layout: uze_extensions::view::Layout::Sidebar,
                 trail: Vec::new(),
             }
-        });
-        if let Some(notice) = &self.declared_notice {
-            view.notice = Some(notice.clone());
-        }
-        Some(view)
+        })
     }
 
     /// The declared sections the sidebar draws, in slot order: the engine's
@@ -690,7 +735,9 @@ impl WorkspaceModel {
         declared
             .slots
             .iter()
-            .filter(|slot| !slot.is_view() && self.offers_declared(&slot.identity))
+            .filter(|slot| {
+                slot.surface.slot == SurfaceSlot::Section && self.offers_declared(&slot.identity)
+            })
             .filter_map(|slot| {
                 let errors = declared.errors_of(&slot.identity);
                 let drawn = slot

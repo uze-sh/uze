@@ -13,7 +13,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 
 | need | reach for |
 |---|---|
-| a bordered box | `Surface::floating()`, `Surface::card()`, `Surface::selectable(RowState)` |
+| a bordered box | `Surface::floating()`, `Surface::card()`, `Surface::raised()` (beside live content, `.held(bool)` lights its edge), `Surface::selectable(RowState)` |
 | a ground | `fill`, `root` |
 | a hairline | `Rule::new(Edge)`, `Rule::draggable(edge, dragging)` |
 | buttons | `Button::new(label, hue)`, `button_row(...)`, which returns rects to register |
@@ -25,6 +25,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a grid of cards | `grid::Shape::fitting(...).lay(...)` |
 | tabs | `Tab`, `tab_bar` |
 | a detail column | `drawer::render`, `drawer::foot` |
+| a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |

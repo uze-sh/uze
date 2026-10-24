@@ -453,9 +453,13 @@ pub(crate) fn attach_workspace(
     // it to, so the pane starts at its real width immediately instead of
     // assuming the sidebar's responsive default.
     let size = terminal.size()?;
+    // No drawer: which one stands open belongs to the space this client
+    // lands in, which the server has not said yet; the first frame's
+    // resize narrows the pane if one does.
     let geometry = compute_layout(
         Rect::new(0, 0, size.width, size.height),
         layout.sidebar.width,
+        None,
     );
     let (columns, rows) = (geometry.pane.width, geometry.pane.height);
 
@@ -644,6 +648,7 @@ pub(crate) fn attach_workspace(
         let geometry = compute_layout(
             Rect::new(0, 0, size.width, size.height),
             attach.model.sidebar_width,
+            attach.model.dock(),
         );
         let viewport = Viewport {
             size,
@@ -908,6 +913,14 @@ pub(super) enum WorkspaceHit {
     OpenSpec,
     /// A tab strip button for a view a plugin declared, by its slot.
     OpenDeclared(SlotId),
+    /// A tab strip button for a drawer a plugin declared, by its slot:
+    /// opens it beside the pane, or closes it.
+    ToggleDrawer(SlotId),
+    /// The docked drawer's left edge, dragged to resize it.
+    ResizeDock,
+    /// The docked drawer itself, behind what it drew: a click there lends
+    /// it the navigation keys and does nothing else.
+    DockBody,
     /// The tab strip's overview button, before the three: the space's
     /// overview, lit while it stands in the pane.
     OpenOverview,
@@ -1926,6 +1939,24 @@ struct WorkspaceModel {
     declared_root: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
+    /// The width a plugin's docked drawer was dragged to, kept for the
+    /// rest of the run. Apart from the overview's drawer width because the
+    /// inspector, which shares that one, can stand open beside it.
+    dock_width: Option<u16>,
+    /// Whether the docked drawer's edge is held by the pointer.
+    dragging_dock: bool,
+    /// Whether the docked drawer has the navigation keys: a click in it
+    /// lends them, Esc or a click anywhere else gives them back. Every
+    /// other key stays the pane's.
+    dock_focused: bool,
+    /// Esc has just given the keys back: the next Esc closes the drawer
+    /// rather than reaching the pane. Anything else in between disarms it.
+    dock_esc_armed: bool,
+    /// What the drawer's engine last asked to say, along its foot.
+    dock_notice: Option<uze_extensions::view::Span>,
+    /// The room the drawer's view had on the last frame: what its engine
+    /// is told it has when a key or a click reaches it.
+    dock_space: std::cell::Cell<uze_extensions::view::Size>,
     /// How far down the inspector is scrolled, settled by the frame so its
     /// last line stops at its foot.
     inspector_scroll: std::cell::Cell<u16>,

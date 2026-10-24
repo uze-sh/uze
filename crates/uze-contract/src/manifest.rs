@@ -34,15 +34,19 @@ pub enum Slot {
     View,
     /// A collapsible block of the workspace sidebar.
     Section,
+    /// A panel docked along the right of the agent area, opened by a
+    /// gesture and laid beside the pane rather than over it.
+    Drawer,
 }
 
 impl Slot {
-    pub const NAMES: &'static [&'static str] = &["view", "section"];
+    pub const NAMES: &'static [&'static str] = &["view", "section", "drawer"];
 
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "view" => Some(Self::View),
             "section" => Some(Self::Section),
+            "drawer" => Some(Self::Drawer),
             _ => None,
         }
     }
@@ -51,6 +55,7 @@ impl Slot {
         match self {
             Self::View => "view",
             Self::Section => "section",
+            Self::Drawer => "drawer",
         }
     }
 }

@@ -163,6 +163,42 @@ pub(crate) fn render(
     rendered
 }
 
+/// A view drawn in a drawer docked beside the pane rather than in the
+/// pane's place: its content alone, since a drawer has no navigator, no
+/// footer and no bar of its own. A tree scrolls as it does full-frame,
+/// its groove on the right edge `area` leaves past itself. Answers
+/// whether anything on it moves with the clock.
+pub(crate) fn render_docked(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    hovered: Option<ViewHit>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> bool {
+    match &view.content {
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            tree::render_tree_content(
+                frame,
+                area,
+                (heading, *scroll, root),
+                &view.modes,
+                tree::TreeFrame::now(hovered),
+                hits,
+            )
+            .animates
+        }
+        Content::Message { text, hint, role } => {
+            render_message(frame, area, text, hint.as_deref(), color(*role));
+            false
+        }
+        _ => false,
+    }
+}
+
 fn render_surface(
     frame: &mut ratatui::Frame<'_>,
     view: &View,

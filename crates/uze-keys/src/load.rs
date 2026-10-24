@@ -330,6 +330,10 @@ fn default_bindings() -> Vec<Binding> {
         // and moves by word on those, and the workspace scope takes a chord
         // before the pane ever sees it.
         bind(Scope::Surfaces, "alt+x", Action::ToggleSpec),
+        // A plugin's drawer stands beside whatever the pane shows, so its
+        // door is live over all of them. `k`, free in a shell's line
+        // editor; not `]`, whose escape opens a terminal's own sequences.
+        bind(Scope::Surfaces, "alt+k", Action::ToggleDrawer),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
         // The same key the code surface opens a row's actions with, under
         // the modifier the pane leaves free: the selected agent's menu.

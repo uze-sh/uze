@@ -148,6 +148,14 @@ impl DeclaredExtension {
         self.ui.get(surface)
     }
 
+    /// Lets go of where the viewer was on `surface`, as on a surface never
+    /// opened: what a host hands a drawer arriving in a space it was never
+    /// opened in, since one engine answers for every space.
+    pub fn forget(&mut self, surface: &str) {
+        self.ui.remove(surface);
+        self.scroll.remove(surface);
+    }
+
     pub fn locale(&self) -> &str {
         &self.locale
     }
@@ -206,7 +214,7 @@ impl DeclaredExtension {
             .surface(surface)
             .map(|decl| decl.slot)
         {
-            Some(uze_contract::Slot::View) => space,
+            Some(uze_contract::Slot::View | uze_contract::Slot::Drawer) => space,
             _ => Size::default(),
         }
     }
@@ -383,6 +391,7 @@ impl Extension for DeclaredExtension {
                 slot: match surface.slot {
                     uze_contract::Slot::View => SurfaceSlot::View,
                     uze_contract::Slot::Section => SurfaceSlot::Section,
+                    uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
                 },
                 title: self.title(surface),
             })
@@ -391,7 +400,7 @@ impl Extension for DeclaredExtension {
 
     fn view(&self, surface: &str, space: Size) -> Option<View> {
         let (decl, _) = self.declaration(surface)?;
-        if decl.slot != uze_contract::Slot::View {
+        if decl.slot == uze_contract::Slot::Section {
             return None;
         }
         let title = self.title(decl);
