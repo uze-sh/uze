@@ -24,11 +24,11 @@
 
 ## 4. Renderers (parallel, `src/ui/extension_view*`, `uze-theme`)
 
-- [ ] 4.1 `Symbol`s for bar steps, pips, marks and the activity mark, in every built-in theme and the schema
-- [ ] 4.2 A renderer per catalog node from the widget vocabulary, colour through `Token`s, glyphs through `theme::glyph`
-- [ ] 4.3 Host-animated `Activity` and ticking `Elapsed` without rebuilding the view
-- [ ] 4.4 The attribution strip on a declared `view`, and folding a declared `section` that does not fit
-- [ ] 4.5 TestBackend tests per node in a dark and a light theme, following the `design-system` skill's checklist
+- [x] 4.1 `Symbol`s for bar steps, pips, marks and the activity mark, in every built-in theme and the schema
+- [x] 4.2 A renderer per catalog node from the widget vocabulary, colour through `Token`s, glyphs through `theme::glyph`
+- [x] 4.3 Host-animated `Activity` and ticking `Elapsed` without rebuilding the view
+- [x] 4.4 The attribution strip on a declared `view`, and folding a declared `section` that does not fit
+- [x] 4.5 TestBackend tests per node in a dark and a light theme, following the `design-system` skill's checklist
 
 ## 5. Host (parallel, `src/ui/orchestrator*`, `uze-application`, `uze-core`)
 
