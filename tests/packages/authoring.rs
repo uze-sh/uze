@@ -648,3 +648,145 @@ fn a_deny_on_session_start_fails_the_check() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// `--extension` scaffolds a manifest, a view and its fixture into the new
+/// plugin, and the scaffold passes its own check with nothing to warn of:
+/// every field the view names is in the fixture.
+#[test]
+fn a_scaffolded_extension_passes_its_own_check() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let created = uze(&root)
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "greet",
+            "--market",
+            "tools",
+            "--extension",
+            "board",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let extension = at.join("plugins/greet/extensions/board");
+    for file in ["extension.kdl", "board.kdl", "fixtures/board.json"] {
+        assert!(extension.join(file).is_file(), "{file}");
+    }
+
+    let (passed, output) = check(&root, &at.join("plugins/greet"));
+    assert!(passed, "{output}");
+    assert!(output.contains("extension   board"), "{output}");
+    assert!(!output.contains('!'), "nothing to warn of: {output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// An id a built-in extension answers to is refused, and nothing written.
+#[test]
+fn a_reserved_extension_id_is_refused_before_the_scaffold() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-reserved");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let refused = uze(&root)
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "greet",
+            "--market",
+            "tools",
+            "--extension",
+            "code",
+        ])
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("reserved"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!at.join("plugins/greet").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// What would keep an extension from being hosted fails the check, located
+/// under its id; a field the view names that its fixture lacks is a
+/// warning, placed in the view, and passes.
+#[test]
+fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-check");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board",
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let view = plugin.join("extensions/board/board.kdl");
+    let written = fs::read_to_string(&view).unwrap();
+    fs::write(
+        &view,
+        written.replace("Text \"{name}\"", "Text \"{label}\""),
+    )
+    .unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "a warning does not fail the check: {output}");
+    assert!(output.contains("extension board"), "{output}");
+    assert!(
+        output.contains("board.kdl:24:9: `label` is not in the fixture fixtures/board.json"),
+        "{output}"
+    );
+
+    fs::write(
+        &view,
+        written.replace("action=\"refresh\"", "action=\"refresh\" colour=\"red\""),
+    )
+    .unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        output.contains("board.kdl:18:") && output.contains("no property `colour`"),
+        "{output}"
+    );
+    assert!(output.contains("check failed (1 problem)"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}

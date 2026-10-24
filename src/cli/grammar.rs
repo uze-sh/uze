@@ -333,11 +333,15 @@ pub(crate) enum AgentPluginAction {
         /// checkout of every project that declares the plugin
         #[arg(long)]
         rules: bool,
+        /// Also scaffold extensions/<id>/: a manifest declaring a view and
+        /// a sidebar section, the view they draw and its fixture
+        #[arg(long, value_name = "ID")]
+        extension: Option<String>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
     /// Validate an authored plugin offline — the same parsers the install
-    /// would run
+    /// would run, and every extension it carries bound to its fixtures
     Check {
         path: PathBuf,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
