@@ -1,0 +1,87 @@
+// What a phase's state is drawn as, and in which colour.
+lookup "mark" default="○" {
+    running "◆"
+    done "●"
+    ready "○"
+    waiting "○"
+}
+lookup "tone" default="muted" {
+    running "warning"
+    done "success"
+    ready "default"
+    waiting "faint"
+    ok "success"
+    attention "warning"
+    blocked "danger"
+}
+
+lookup "t" locale="en" {
+    phases "Phases"; blockers "Blockers"; stopped "Stopped at"; of "of"; phase "phases"
+    more "more in"; next "Run"; clear "New conversation"; none "Nothing blocks this milestone"
+}
+lookup "t" locale="pt" {
+    phases "Fases"; blockers "Bloqueios"; stopped "Parou em"; of "de"; phase "fases"
+    more "a mais no"; next "Executar"; clear "Nova conversa"; none "Nada bloqueia este milestone"
+}
+
+Stack gap=1 {
+    // Which milestone, where it stands, on which version and branch.
+    Stack {
+        Text "{title}" strong=#true truncate=#true
+        Row gap=1 {
+            Marks { Mark role="{tone:status.tone}"; }
+            Text "{status.text}" role="{tone:status.tone}" truncate=#true grow=#true
+        }
+        Row gap=2 {
+            Badge "{version}" role="info"
+            Text "⎇ {branch}" role="muted" truncate=#true
+        }
+    }
+
+    // How far it is.
+    Stack {
+        Row gap=2 {
+            Progress grow=#true {
+                Segment each="phases" weight=1 ratio="{ratio}" role="{tone:state}"
+            }
+            Text "{percent}%" strong=#true
+        }
+        Text "{done} {t::of} {total} {t::phase}" role="muted"
+    }
+
+    // The phases, the one in progress marked.
+    Stack {
+        Text "{t::phases}" role="secondary"
+        List each="phases" {
+            Row gap=1 {
+                Text "{mark:state}" role="{tone:state}"
+                Text "{number}" role="muted" min-width=3
+                Text "{name}" truncate=#true grow=#true
+            }
+        }
+    }
+
+    // What stands in the way.
+    Stack {
+        Text "{t::blockers}" role="secondary"
+        List each="blockers" empty="{t::none}" {
+            Row gap=1 {
+                Text "!" role="warning"
+                Text "{.}" truncate=#true grow=#true
+            }
+        }
+        Text "+{blockers_more} {t::more} {state_file}" role="faint" when="blockers_more"
+    }
+
+    // Where the last session stopped, in its own words.
+    Stack when="stopped" {
+        Text "{t::stopped}" role="secondary"
+        Text "{stopped}"
+    }
+
+    // The next step, and starting over.
+    Row gap=2 {
+        Button "▶ {next.command}" action="next" item="{next}" when="next"
+        Button "{t::clear}" action="clear"
+    }
+}

@@ -602,24 +602,26 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     for wanted in [
         "gsd-band · gsd@studio",
-        "GSD · v1.23 Assistente do lojista",
-        "Consulta de dados e diagn",
+        "v1.23  Assistente do lojista",
+        "Consulta de dados e diagnóstico",
         "Relatórios do lojista",
         "17/19",
-        "65% · 3 of 6 phases",
-        "▶ run phase 12",
+        "65%  3 of 6 done",
+        "Run phase 12",
+        "12-18  Diagnóstico de estoque baixo por loja",
     ] {
         assert!(shown(&rows, wanted), "{wanted}: {rows:#?}");
     }
-    // The band's section in the sidebar, drawn from the same view: its
-    // header row fits the column by leaving the title out, not by folding
-    // the whole band away.
+    // The band's section in the sidebar, drawn from its own compact view:
+    // the milestone, its bar and the phase in progress fit the column
+    // without folding the band away.
     let sidebar: Vec<String> = rows
         .iter()
         .map(|row| row.chars().take_while(|cell| *cell != '│').collect())
         .collect();
     assert!(shown(&sidebar, "▾ GSD"), "{sidebar:#?}");
-    assert!(shown(&sidebar, "3 of 6 phases"), "{sidebar:#?}");
+    assert!(shown(&sidebar, "v1.23 65%"), "{sidebar:#?}");
+    assert!(shown(&sidebar, "17/19"), "{sidebar:#?}");
 
     let log_tab = driven
         .attach
@@ -637,11 +639,11 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
             }) if *on == slot => Some(*rect),
             _ => None,
         })
-        .expect("the Log tab is drawn");
+        .expect("the Activity tab is drawn");
     driven.press(log_tab.x, log_tab.y);
     driven.frame();
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
-    assert!(shown(&rows, "turno concluído em 4m12s"), "{rows:#?}");
+    assert!(shown(&rows, "Turn finished in 4m12s"), "{rows:#?}");
     assert!(!shown(&rows, "Relatórios do lojista"), "{rows:#?}");
 
     // The author saves the view in the working tree; the recompile the
@@ -668,7 +670,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     );
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     assert!(shown(&rows, "65% done"), "{rows:#?}");
-    assert!(shown(&rows, "turno concluído em 4m12s"), "{rows:#?}");
+    assert!(shown(&rows, "Turn finished in 4m12s"), "{rows:#?}");
     assert_eq!(driven.attach.model.declared_open, Some(slot), "kept open");
     std::fs::remove_dir_all(root).unwrap();
 }

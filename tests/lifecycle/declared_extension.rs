@@ -49,9 +49,17 @@ fn installed_from_a_linked_marketplace(env: &TestEnvironment) -> (UzeApplication
 }
 
 fn the_band(app: &UzeApplication) -> InstalledExtension {
+    the(app, "gsd-band")
+}
+
+/// The extension `id` of the installed `gsd` plugin, which carries two.
+fn the(app: &UzeApplication, id: &str) -> InstalledExtension {
     let installed = app.extensions().installed();
-    assert_eq!(installed.len(), 1, "{installed:?}");
-    installed.into_iter().next().unwrap()
+    assert_eq!(installed.len(), 2, "the band and the panel: {installed:?}");
+    installed
+        .into_iter()
+        .find(|extension| extension.identity.id == id)
+        .unwrap_or_else(|| panic!("{id} is installed"))
 }
 
 /// The real engine, handed what the services compiled and read.
@@ -320,5 +328,51 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
     assert!(
         named.to_string().contains(&format!("board.kdl:{line}:9:")),
         "{named}"
+    );
+}
+
+#[test]
+fn the_panel_is_a_drawer_whose_story_is_told_whole() {
+    let env = TestEnvironment::isolated();
+    let (app, _market) = installed_from_a_linked_marketplace(&env);
+    let panel = the(&app, "gsd-panel");
+    let compiled = app
+        .extensions()
+        .compile(&panel)
+        .expect("the panel compiles");
+    let surface = compiled.manifest.surface("panel").expect("its one surface");
+    assert_eq!(surface.slot, uze_contract::Slot::Drawer);
+
+    let mut engine = DeclaredExtension::new(compiled.clone(), "en");
+    for (source, data) in app.extensions().fixtures(&panel, &compiled) {
+        engine.set_data(source, data);
+    }
+    let view = engine
+        .view("panel", SPACE)
+        .expect("a drawer answers a view");
+    let Content::Tree { root, .. } = view.content else {
+        panic!("a drawer is a tree");
+    };
+    let drawn = texts(&root);
+    for wanted in ["Phases", "Blockers", "Stopped at", "+71 more in STATE.md"] {
+        assert!(
+            drawn.iter().any(|text| text == wanted),
+            "{wanted}: {drawn:?}"
+        );
+    }
+    assert!(
+        nodes(&root).iter().any(|node| matches!(
+            &node.kind,
+            NodeKind::Button { label } if label == "▶ /gsd-discuss-phase 43"
+        )),
+        "the next step"
+    );
+    let stopped = drawn
+        .iter()
+        .find(|text| text.starts_with("Fases 43-45"))
+        .expect("where the session stopped");
+    assert!(
+        stopped.ends_with("Falta: commit + validação live em staging."),
+        "the paragraph is whole: {stopped}"
     );
 }
