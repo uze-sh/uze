@@ -749,8 +749,8 @@ no one reaches for CSS, a module or a web framework.
   `kdl` parser recurses without a depth limit (400 nested braces overflow a
   thread's stack, uncatchably) and has an open exponential case with
   slashdash (kdl-rs#177). So a manifest, a view or a test is parsed only by
-  `uze-core` (tests by `uze ext test`), at check, install, enable and dev
-  reload, after:
+  `uze-core` (tests by `uze ext test`), at check, install, enable and a
+  linked extension's reload, after:
   - a size cap (64 KiB per file);
   - a KDL-aware pre-scan (strings, raw strings, comments, `/-`) refusing
     nesting deeper than 32;
@@ -848,45 +848,77 @@ One set of rules, the same in every view, with no expressions:
   under D16: from a gesture, the confirmation shows the final text; never
   unattended, since that text is not fixed.
 
-### D25. Live development
+### D25. Live development is a linked extension, not a mode
 
-- **Fixtures as a data source.** In development a source may be fed by
-  `fixtures/<source>.json` instead of its program (`--fixtures`, and the
-  only mode before the runner exists, split 1): the view binds to the
-  fixture, saving the fixture redraws, and an action is recorded in the
-  inspector with the arguments it would receive instead of running.
-- **Load from a folder.** `uze ext dev <path>` links an extension into the
-  running workspace; `uze workspace --dev-extension <path>` opens one with
-  it. A dev extension is not stored or digest-pinned, is marked `dev` in the
-  Extensions screen and in its attribution strip, and lasts only the
-  session.
-- **The same grants and confinement as installed.** There is no dev mode
-  that allows more. Consent is asked once per grant set and again when it
-  widens. An agent may run `uze ext dev` from its pane; consent appears in
-  UZE's chrome for the operator, never in the pane.
-- **Hot reload per file**, debounced by 150 ms:
+There is no `uze ext dev` and no development mode. Authoring already has a
+path in UZE: a plugin in a **linked marketplace**, whose reads follow the
+working tree rather than commits (`marketplace-subdirectory`,
+`plugin-authoring`). An extension installed from one is the extension under
+development; nothing about it runs differently from an installed one.
+
+The author's loop, end to end:
+
+1. `uze agent plugin create --extension <id>` scaffolds the extension inside
+   a linked marketplace (creating one if there is none): manifest, a view, a
+   fixture and a passing test. It installs the plugin into the current
+   project, and the operator enables it from UZE's chrome, never from an
+   agent's pane.
+2. The author edits the files; the workspace reloads the extension on save.
+3. The inspector, opened by a key on any extension's surface, shows why the
+   surface looks as it does and lets the author provoke what has not
+   happened yet.
+4. `uze ext test` runs the same tests headlessly for CI (D26).
+
+- **Reload on save, for linked extensions only.** The workspace polls the
+  directories of extensions installed from linked marketplaces every 250 ms
+  (they are a handful of small files; no watcher, no new dependency) and
+  reloads what changed, debounced by 150 ms. An extension from any other
+  marketplace cannot change under the workspace, so nothing watches it.
 
   | Changed | The host |
   |---|---|
   | a view | recompiles it (D22) and redraws from the last answers, running no program |
-  | the manifest | rechecks and re-registers slots, keys and events, keeping the view's place |
-  | a program | invalidates its answers and reruns the visible sources |
-  | a component | restarts it; the store survives |
+  | the manifest | rechecks and re-registers slots, keys and events, keeping the view's place; a widened grant set waits for consent in the chrome |
+  | a script or program | invalidates its answers and reruns the visible sources |
+  | a fixture | redraws from it, when the source is fed by it |
 
-- **An error never blanks the surface.** It keeps the last good draw and
-  shows the error over it, with file, line, column and the suggestion.
-- **The inspector**, a drawer opened by a key on a dev extension:
-  - *runs*: each run's argv, stdin, stdout, stderr, exit, duration and the
-    bound hit, rerunnable with edited input;
-  - *events*: received, coalesced or dropped;
+- **The same grants and confinement as any extension.** A linked extension
+  is consented to by grant set (D5), so a save asks nothing unless it widens
+  the set.
+- **An error never blanks a surface**, for every extension, linked or not:
+  the surface keeps its last good draw and shows the error over it, with
+  file, line, column and the suggestion. For an installed extension this is
+  the same guarantee against a broken update.
+- **Fixtures are data, not a mode.** A source may declare `fixture
+  "fixtures/board.json"` beside its `script` or `run`. A source with only a
+  fixture is fed by it (the only kind before the runner exists, split 1);
+  for a source with both, the inspector of a linked extension switches it to
+  the fixture, and the switch lasts until switched back or the session
+  ends. An action whose answer would run nothing yet (no runner, or a
+  fixture-fed source) is recorded in the inspector with the arguments it
+  would receive. An extension from a non-linked marketplace never reads its
+  fixtures at runtime; they serve its tests.
+- **The inspector is the workspace's, for every extension**, as a drawer:
+  - *runs*: each run's input, output, stderr, exit, duration and the bound
+    hit, rerunnable with edited input on a linked extension;
+  - *events*: received, coalesced or dropped, and, on a linked extension,
+    *emit* to deliver a synthetic one (marked synthetic everywhere it is
+    shown);
   - *state*: `ui.*` values and the store;
   - *grants*: what was denied and why, and whether confinement is enforced;
   - *tree*: the compiled view and why a node is absent (`when` false, field
-    missing, `show` not matched).
-- **Making things happen.** `uze ext emit <extension> <event> [--data
-  <file>]` delivers a synthetic event; the inspector changes the slot's
-  size and the theme, injects fake agents, and records a session's real
-  events into a fixture file.
+    missing, `show` not matched);
+  - *cost*: runs per minute, p95 and memory (D28);
+  - on a linked extension, the slot's size and the theme can be changed, fake
+    agents injected, and a session's real events recorded into a fixture.
+
+  An operator uses the same drawer to see why an installed extension is
+  empty or slow.
+
+*Alternative:* a `uze ext dev <path>` session mode loading a loose folder.
+Rejected: a second lifecycle (not stored, not pinned, session-only, marked
+`dev`) beside the one linked marketplaces already give, and an extension
+that would behave one way in development and another once installed.
 
 ### D26. Tests without a TUI
 
@@ -1066,7 +1098,7 @@ What the budget takes from it:
 - [Third-party manifests and views are parsed by UZE] → Both are KDL (D22),
   so `noyalib` is off the extension path (it still reads agent
   frontmatter); they are parsed behind a size cap, a depth pre-scan and a
-  timed worker thread, only at check, install, enable and dev reload, never
+  timed worker thread, only at check, install, enable and a linked extension's reload, never
   by the client (D22).
 - [The KDL ecosystem is thin: one maintainer, v1 still common, no schema
   completion] → v2 only with a v1 hint in the check; the decoder is UZE's
@@ -1149,8 +1181,8 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    a plain panel need), the bounded KDL decoder and compiled views, the
    binding rules, lookups and templates, host-held UI state (D22–D24), the
    `view` and `section` slots, data from fixtures only (actions are
-   recorded in the inspector, never run), `uze ext dev` with hot reload, the
-   error overlay and a minimal inspector (D25), and KDL highlighting. It
+   recorded in the inspector, never run), reload on save for linked
+   extensions, the error overlay and a minimal inspector (D25), and KDL highlighting. It
    also lays the minimal generic path of D2 (the `Extension` contract, one
    slot map, one `spawn_extension_job`/`absorb_extension_answer` pair in
    `orchestrator/reads.rs`, one outcome follow-up), used by the engine only:
@@ -1188,7 +1220,7 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 
 | Change | New code | Existing code it changes |
 |---|---|---|
-| 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; `uze ext dev` | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
+| 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; reload of linked extensions; the inspector | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
 | 2 tests and LSP | `uze ext test`, `uze ext lsp` | — |
 | 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
 | 4 manifest and components | `uze-wasm` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |

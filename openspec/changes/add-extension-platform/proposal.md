@@ -82,7 +82,7 @@ mechanism chosen without a capability model cannot be given one afterwards
 - **Views, manifests and tests in KDL v2.** Catalog nodes in PascalCase,
   fixed binding rules with no expressions (references, `each`,
   `when`/`unless`, `show`, templates, lookup tables with locales), UI state
-  held by the host, parsed only at check, install, enable and dev reload
+  held by the host, parsed only at check, install, enable and reload
   behind UZE's own bounds, and highlighted in UZE's editor.
 - **A component first, a program when it must.** A source or an action is
   answered by a stateless WebAssembly component (the default, confined on
@@ -93,8 +93,10 @@ mechanism chosen without a capability model cannot be given one afterwards
   envelope of requests, and the portable hook exit codes, bounded in time
   and output. The host holds all view state; nothing stays resident unless
   the surface is resident.
-- **Live development and tests.** `uze ext dev` loads an extension from its
-  folder with hot reload, an error overlay, an inspector and fixtures;
+- **Live development without a mode.** An extension in a linked marketplace
+  (the authoring path UZE already has) reloads on save; every extension keeps
+  its last good draw on an error and has an inspector, which on a linked
+  extension also feeds fixtures and emits synthetic events;
   `uze ext test` runs headless tests with cell snapshots; `uze ext lsp`
   completes manifests, views and tests.
 - **A bridge to the agents, across harnesses.** A reporter UZE adds to each
