@@ -138,8 +138,8 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 211 |
-| MIT License (`MIT`) | 80 |
+| Apache License 2.0 (`Apache-2.0`) | 214 |
+| MIT License (`MIT`) | 81 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | zlib License (`Zlib`) | 1 |
 
@@ -269,6 +269,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `js-sys` | 0.3.105 | MIT OR Apache-2.0 |
 | `junction` | 1.4.2 | MIT |
 | `kasuari` | 0.4.12 | MIT OR Apache-2.0 |
+| `kdl` | 6.7.1 | Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
 | `libc` | 0.2.191 | MIT OR Apache-2.0 |
 | `libm` | 0.2.16 | MIT |
@@ -282,6 +283,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `lru` | 0.18.4 | MIT |
 | `matchers` | 0.2.0 | MIT |
 | `memchr` | 2.8.3 | Unlicense OR MIT |
+| `miette` | 7.6.0 | Apache-2.0 |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | `miniz_oxide` | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
 | `mio` | 1.2.3 | MIT |
@@ -398,6 +400,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 |
 | `unicode-truncate` | 2.0.1 | MIT OR Apache-2.0 |
+| `unicode-width` | 0.1.14 | MIT OR Apache-2.0 |
 | `unicode-width` | 0.2.2 | MIT OR Apache-2.0 |
 | `unit-prefix` | 0.5.2 | MIT |
 | `url` | 2.5.8 | MIT OR Apache-2.0 |
@@ -435,6 +438,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `windows_x86_64_gnu` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
+| `winnow` | 0.7.15 | MIT |
 | `winnow` | 1.0.4 | MIT |
 | `winreg` | 0.10.1 | MIT |
 | `writeable` | 0.6.4 | Unicode-3.0 |
