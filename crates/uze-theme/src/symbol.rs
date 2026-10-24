@@ -199,7 +199,8 @@ vocabulary! {
         TaskInReview = "task.review",
 
         // ── an agent's standing in the sidebar ─────────────────────────
-        /// Producing output right now. The one animated symbol.
+        /// Producing output right now. An agent's own animation, which
+        /// nothing else wears.
         StatusWorking = "status.working",
         /// Finished while the user was looking elsewhere.
         StatusCompleted = "status.completed",
@@ -212,6 +213,30 @@ vocabulary! {
         /// all a shell can be known to do is run something, not produce
         /// output, and an editor left open runs for hours.
         StatusRunning = "status.running",
+
+        // ── what a declared extension's view is made of ────────────────
+        /// The filled part of a progress bar. Its frames are not an
+        /// animation but the steps of one cell filling, from the least a
+        /// cell can show to a whole one: a set with eight draws a bar to
+        /// the eighth of a cell, a set with one draws it to the cell.
+        ProgressFill = "progress.fill",
+        /// The part of a progress bar not yet filled.
+        ProgressTrack = "progress.track",
+        /// One of a count's done marks: three of five drawn as five pips.
+        PipFilled = "pip.filled",
+        /// One of a count's marks still to do.
+        PipEmpty = "pip.empty",
+        /// One standing among several on the same row, said by its hue: a
+        /// phase's discussion, plan and execution side by side. Apart from
+        /// [`MarkStanding`](Self::MarkStanding), which is a row's one
+        /// standing: a run of these is read as one strip.
+        MarkFacet = "mark.facet",
+        /// Something an extension says is under way. Animated, and not
+        /// [`StatusWorking`](Self::StatusWorking): the pulsing star is an
+        /// agent's alone.
+        ActivityBusy = "activity.busy",
+        /// The same place, with nothing under way.
+        ActivityIdle = "activity.idle",
 
         // ── a checkout's history ───────────────────────────────────────
         /// The commit `HEAD` is on.
