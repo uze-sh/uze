@@ -337,9 +337,13 @@ fn height(node: &Node, width: u16) -> usize {
         }
         NodeKind::Row { gap, align } => {
             let (_, widths) = row_widths(&node.children, *gap, *align, width);
+            // A child squeezed to no cells draws nothing, so it takes no
+            // rows: wrapped at zero width, a text would count a row a
+            // character and fold a whole section away.
             node.children
                 .iter()
                 .zip(widths)
+                .filter(|(_, width)| *width > 0)
                 .map(|(child, width)| height(child, width))
                 .max()
                 .unwrap_or(0)
