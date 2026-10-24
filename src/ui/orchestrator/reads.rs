@@ -1701,8 +1701,9 @@ pub(super) fn spawn_declaration_save(
 /// What a declared-extension job is asked to do.
 #[derive(Clone, Debug)]
 pub(super) enum ExtensionJob {
-    /// Find every extension the installed plugins carry, and load each.
-    Discover,
+    /// Find every extension the installed plugins carry, and load each
+    /// that is new or no longer what the host compiled it from.
+    Discover(Known),
     /// Load these again: a linked extension's files were saved.
     Recompile(Vec<uze_application::InstalledExtension>),
 }
@@ -1731,7 +1732,7 @@ pub(super) fn spawn_extension_job(
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.declared_extensions", parent: &parent);
         let recompiled = match &job {
-            ExtensionJob::Discover => Vec::new(),
+            ExtensionJob::Discover(_) => Vec::new(),
             ExtensionJob::Recompile(list) => list
                 .iter()
                 .map(|installed| installed.identity.clone())
@@ -1753,9 +1754,19 @@ pub(super) fn spawn_extension_job(
                 };
                 let extensions = app.extensions();
                 let (discovered, asked) = match job {
-                    ExtensionJob::Discover => {
+                    ExtensionJob::Discover(known) => {
                         let found = extensions.installed();
-                        (Some(found.clone()), found)
+                        let changed = found
+                            .iter()
+                            .filter(|installed| {
+                                known.get(&installed.identity).is_none_or(|(dir, stamp)| {
+                                    *dir != installed.dir
+                                        || *stamp != uze_application::extension_stamp(dir)
+                                })
+                            })
+                            .cloned()
+                            .collect();
+                        (Some(found), changed)
                     }
                     ExtensionJob::Recompile(list) => (None, list),
                 };

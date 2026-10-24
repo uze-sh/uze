@@ -1111,6 +1111,7 @@ pub(crate) fn drain_worker_results(
                 model.inspection_in_flight = None;
             }
             WorkerResult::Mutated(ticket, Ok((message, data))) => {
+                crate::ui::extension_switch::plugins_changed();
                 model.refreshed(data);
                 // What was inspected before the change describes a plugin
                 // that no longer stands as it did; the drawer asks again.
@@ -1144,6 +1145,7 @@ pub(crate) fn drain_worker_results(
                 model.mutation_answered(ticket, context_applied(message, &report));
             }
             WorkerResult::ProfileApplied(ticket, Ok((message, results, data))) => {
+                crate::ui::extension_switch::plugins_changed();
                 model.refreshed(data);
                 model.profile_apply_results = results;
                 model.mutation_answered(ticket, Status::Success(message));

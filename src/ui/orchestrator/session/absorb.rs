@@ -809,6 +809,7 @@ impl Attach<'_> {
             .schedule_spec_summary(&self.channels.spec_summaries.sender);
         self.model.schedule_extension_jobs(
             self.home,
+            crate::ui::extension_switch::plugins_revision(),
             &self.channels.extension_jobs.sender,
             &self.channels.extension_stamps.sender,
         );

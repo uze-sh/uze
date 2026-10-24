@@ -18,6 +18,7 @@ pub mod fs_name;
 pub mod git;
 pub mod home;
 pub mod interrupt;
+pub mod locale;
 pub mod lock;
 pub mod machine;
 pub mod mounts;

@@ -33,10 +33,10 @@ pub(super) const DECLARED_POLL: Duration = Duration::from_millis(250);
 /// file in two steps, or an author saving twice, is one recompile.
 pub(super) const DECLARED_SETTLE: Duration = Duration::from_millis(150);
 
-/// The locale lookups are drawn in. The operator's own locale reaches the
-/// engine here once the workspace knows it; until then every table falls
-/// back to its own default.
-const LOCALE: &str = "en";
+/// How often the installed plugins are looked at again for extensions,
+/// besides whenever an install, update or removal in this process lands:
+/// one made from another terminal is seen within this.
+pub(super) const DECLARED_REDISCOVER: Duration = Duration::from_secs(5);
 
 /// The longest the inspector prints a source's data, in lines.
 const INSPECTED_DATA_LINES: usize = 200;
@@ -182,13 +182,18 @@ pub(super) struct Inspection {
     pub(super) recorded: Vec<String>,
 }
 
-/// Builds the engine a slot is answered by. A function rather than a
-/// constant so a test can host an engine of its own.
-pub(super) type EngineFactory = fn(CompiledExtension) -> Box<dyn Hosted>;
+/// Builds the engine a slot is answered by, for the operator's language.
+/// A function rather than a constant so a test can host an engine of its
+/// own.
+pub(super) type EngineFactory = fn(CompiledExtension, &str) -> Box<dyn Hosted>;
 
-fn declared_engine(compiled: CompiledExtension) -> Box<dyn Hosted> {
-    Box::new(DeclaredExtension::new(compiled, LOCALE))
+fn declared_engine(compiled: CompiledExtension, locale: &str) -> Box<dyn Hosted> {
+    Box::new(DeclaredExtension::new(compiled, locale))
 }
+
+/// What the host last compiled each extension from: where its files are
+/// and their stamp then. A discovery loads again only what differs.
+pub(super) type Known = BTreeMap<ExtensionIdentity, (PathBuf, u64)>;
 
 /// One surface a plugin declared, as the host holds it.
 pub(super) struct DeclaredSlot {
@@ -231,8 +236,11 @@ pub(super) struct DeclaredExtensions {
     /// declares them.
     pub(super) slots: Vec<DeclaredSlot>,
     pub(super) next_slot: SlotId,
-    /// Whether the installed extensions were asked for, this run.
-    pub(super) discovered: bool,
+    /// When the installed extensions were last asked for, this run.
+    pub(super) discovered_at: Option<Instant>,
+    /// The plugin set's revision that discovery answered for: a newer one
+    /// is an install, update or removal to look at now.
+    pub(super) plugins_seen: u64,
     pub(super) discovery_pending: bool,
     /// Extensions a recompile is out for.
     pub(super) recompiling: BTreeSet<ExtensionIdentity>,
@@ -241,6 +249,8 @@ pub(super) struct DeclaredExtensions {
     /// Where the viewer was on each surface, per checkout.
     pub(super) places: BTreeMap<(ExtensionIdentity, String, PathBuf), Opaque>,
     pub(super) engine: EngineFactory,
+    /// The language every engine draws its label tables in.
+    pub(super) locale: String,
 }
 
 impl Default for DeclaredExtensions {
@@ -249,13 +259,15 @@ impl Default for DeclaredExtensions {
             extensions: BTreeMap::new(),
             slots: Vec::new(),
             next_slot: 0,
-            discovered: false,
+            discovered_at: None,
+            plugins_seen: 0,
             discovery_pending: false,
             recompiling: BTreeSet::new(),
             stamps_pending: false,
             polled_at: None,
             places: BTreeMap::new(),
             engine: declared_engine,
+            locale: uze_platform::locale::language(),
         }
     }
 }
@@ -289,14 +301,41 @@ impl DeclaredExtensions {
             .collect()
     }
 
+    /// What each hosted extension was last compiled from.
+    pub(super) fn known(&self) -> Known {
+        self.extensions
+            .iter()
+            .map(|(identity, extension)| {
+                (
+                    identity.clone(),
+                    (extension.installed.dir.clone(), extension.stamp),
+                )
+            })
+            .collect()
+    }
+
+    /// Whether a discovery is due: none was asked yet this run, the plugin
+    /// set moved since the last, or [`DECLARED_REDISCOVER`] passed.
+    pub(super) fn discovery_due(&self, plugins: u64, now: Instant) -> bool {
+        !self.discovery_pending
+            && self.discovered_at.is_none_or(|at| {
+                plugins != self.plugins_seen || now.duration_since(at) >= DECLARED_REDISCOVER
+            })
+    }
+
     /// Takes what a discovery found: extensions no plugin carries any more
-    /// go, with their slots.
-    pub(super) fn absorb_discovery(&mut self, installed: &[InstalledExtension]) {
+    /// go, with their slots and the places kept on them. Answers whether
+    /// any went.
+    pub(super) fn absorb_discovery(&mut self, installed: &[InstalledExtension]) -> bool {
         let present: BTreeSet<&ExtensionIdentity> =
             installed.iter().map(|found| &found.identity).collect();
+        let before = self.extensions.len() + self.slots.len();
         self.extensions
             .retain(|identity, _| present.contains(identity));
         self.slots.retain(|slot| present.contains(&slot.identity));
+        self.places
+            .retain(|(identity, _, _), _| present.contains(identity));
+        before != self.extensions.len() + self.slots.len()
     }
 
     /// Takes one extension's compile and data. A compile that succeeded
@@ -381,7 +420,7 @@ impl DeclaredExtensions {
                     slot.surface = surface;
                 }
                 None => {
-                    let mut engine = (self.engine)(compiled.clone());
+                    let mut engine = (self.engine)(compiled.clone(), &self.locale);
                     give_data(engine.as_mut(), data);
                     let id = self.take_slot_id();
                     self.insert_slot(DeclaredSlot {
