@@ -2,7 +2,7 @@
 
 - [x] 1.1 Run a hosted engine's `jobs()` after it is opened, commanded or hit: each on a thread in `reads.rs` with `WorkspaceHost`, its fallback answered on a panic, the answer routed to the slot's `absorb` by slot id; a test extension in the orchestrator tests proves a job's answer redraws its surface and a panic answers the fallback
 
-- [ ] 1.2 One engine per extension, shared by its slots, so a view and a section of one extension keep one state (decisions D1)
+- [x] 1.2 One engine per extension, shared by its slots, so a view and a section of one extension keep one state (decisions D1)
 
 ## 2. Architect
 

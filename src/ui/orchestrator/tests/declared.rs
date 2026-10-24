@@ -1557,15 +1557,10 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         recompiled: Vec::new(),
         loaded: vec![loaded(Ok(compiled()))],
     }));
-    // An engine per slot, one slot per surface: each asks for itself.
-    let engines = model
-        .remembered
-        .declared
-        .slots
-        .iter()
-        .filter(|slot| slot.engine.is_some())
-        .count();
-    assert!(engines > 0);
+    // One engine for the extension, however many surfaces it declares.
+    assert!(model.remembered.declared.slots.len() > 1);
+    let engines = model.remembered.declared.engines.len();
+    assert_eq!(engines, 1);
     let (sender, receiver) = std::sync::mpsc::channel();
     model.schedule_engine_jobs(&sender);
     let mut absorbed = 0;
@@ -1583,12 +1578,14 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
             .is_err(),
         "asked once"
     );
-    for slot in &model.remembered.declared.slots {
-        let Some(engine) = slot.engine.as_ref() else {
-            continue;
-        };
-        let mut said = engine.inspect("board").nodes;
-        said.sort();
-        assert_eq!(said, ["fell back", "read through the host: true"]);
-    }
+    let engine = model
+        .remembered
+        .declared
+        .engines
+        .values()
+        .next()
+        .expect("an engine");
+    let mut said = engine.inspect("board").nodes;
+    said.sort();
+    assert_eq!(said, ["fell back", "read through the host: true"]);
 }

@@ -560,27 +560,19 @@ impl WorkspaceModel {
     /// Hands each hosted engine's pending jobs to a thread. Cheap enough
     /// for every tick: an engine with nothing to read answers none.
     pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) {
-        for slot in &mut self.remembered.declared.slots {
-            let Some(engine) = slot.engine.as_mut() else {
-                continue;
-            };
+        for (identity, engine) in &mut self.remembered.declared.engines {
             let jobs = engine.jobs();
             if !jobs.is_empty() {
-                spawn_engine_jobs(slot.id, jobs, engine.lanes(), answers.clone());
+                spawn_engine_jobs(identity.clone(), jobs, engine.lanes(), answers.clone());
             }
         }
     }
 
-    /// Takes what a hosted engine's job answered to the slot that asked.
-    /// One whose slot is gone, its extension removed meanwhile, is dropped.
-    /// Returns whether it is drawn.
+    /// Takes what a hosted engine's job answered to the engine that asked.
+    /// One whose extension went meanwhile is dropped. Returns whether it
+    /// is drawn.
     pub(super) fn absorb_engine_answer(&mut self, answer: EngineAnswer) -> bool {
-        let Some(engine) = self
-            .remembered
-            .declared
-            .slot_mut(answer.slot)
-            .and_then(|slot| slot.engine.as_mut())
-        else {
+        let Some(engine) = self.remembered.declared.engines.get_mut(&answer.extension) else {
             return false;
         };
         engine.absorb(answer.answer);
