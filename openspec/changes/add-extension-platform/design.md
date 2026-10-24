@@ -977,6 +977,14 @@ that would behave one way in development and another once installed.
   small, from the v2 grammar.
 - Every gallery entry (D20) ships its tests; they are the acceptance suite
   and the worked example of how to test.
+- As built (`extension-tests-and-lsp`): steps are `click`, `press`,
+  `press-button`, `expect-text`, `expect-no-text`, `expect-absent … because=`,
+  `expect-action` and `snapshot`; a gesture is found in what was drawn and
+  routed through the renderer's hit map and the keymap, as the workspace
+  routes it. A snapshot is text plus one colour token per cell, never RGB.
+  The language server is `lsp-server` with the protocol's few messages
+  written by hand, and its diagnostics are the check's own path run over
+  the editor's unsaved text.
 
 ### D27. A source or action is answered by a script first, a program when it must
 

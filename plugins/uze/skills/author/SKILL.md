@@ -104,9 +104,10 @@ each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `--rules` adds `rules/` with one example rule (see below);
 `--extension <id>` adds a declared extension under `extensions/<id>/`: an
 `extension.kdl` declaring a `view` and a sidebar `section`, the
-`board.kdl` view both draw, and the `fixtures/board.json` it is bound to
-(the id is lowercase with single hyphens, and `code`, `architect`, `spec`
-and `uze` are taken). There is no
+`board.kdl` view both draw, the `fixtures/board.json` it is bound to, and
+`tests/board.test.kdl` with the snapshot its first test takes (the id is
+lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
+are taken). There is no
 `--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
 flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -197,6 +198,49 @@ workspace hosts it with; what is wrong is said under `extension <id>` as
 surface's view is then bound to its source's fixture, and a field the view
 names that the fixture lacks is a warning placed in the view: add the
 field to the fixture, or stop naming it.
+
+### Test an extension
+
+Every `tests/*.test.kdl` runs in the check, which fails when one does. A
+test opens a surface in a world, then takes the steps an operator could:
+
+```kdl
+test "the notes tab shows the notes" {
+    surface "board"                       // by its id in extension.kdl
+    given "board" fixture="fixtures/empty.json"  // or json=#"{ … }"#
+    size 100 30                           // default: the slot's size
+    theme "light"                         // default: dark
+    locale "pt"                           // default: en
+    click "Notes"                         // a tab, a row: what draws this text
+    press "down"                          // a key, as the keymap spells it
+    press-button "refresh"
+    expect-text "A fixture is a sample"
+    expect-no-text "Nothing to do"
+    expect-absent "List" because="ui.tab=tasks"  // or a field a `when` missed
+    expect-action "refresh"               // with key=value of its item
+    snapshot "board"                      // the cells, as text and colour roles
+}
+```
+
+A failing step is said at its line with what was drawn. A snapshot lives
+at `tests/snapshots/<name>.<slot>.<width>x<height>.<theme>.snap`; after a
+change you meant, `uze agent plugin check <plugin> --update-snapshots`
+writes it again, and the diff is yours to review. Tests run nothing the
+plugin ships, so they pass the same on any machine.
+
+### Point your editor at the language server
+
+`uze agent plugin lsp` serves completion, hover and the check's own
+diagnostics for `extension.kdl`, views and tests, as you type:
+
+- **Helix** (`languages.toml`): `[language-server.uze] command = "uze"`,
+  `args = ["agent", "plugin", "lsp"]`, and `language-servers = ["uze"]`
+  on the `kdl` language.
+- **Neovim**: `vim.lsp.start({ name = "uze", cmd = { "uze", "agent",
+  "plugin", "lsp" }, root_dir = vim.fs.root(0, "extension.kdl") })` in an
+  autocommand for `*.kdl`.
+- **VS Code**: any generic LSP client extension, with the command
+  `uze agent plugin lsp` for the `kdl` language.
 
 A warning does not fail the check, but it is still yours to resolve: each
 one names the file and the one change that clears it. A marketplace
