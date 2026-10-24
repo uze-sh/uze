@@ -1,0 +1,323 @@
+//! The `gsd-band` reference extension from install to redraw, on real
+//! files: a plugin from a linked marketplace carries it, the workspace's
+//! services find it in the author's working tree, compile it behind their
+//! cache, read its fixture, and the real engine binds the two into the
+//! board. A save in the working tree is what the next compile draws, and a
+//! broken save is said where it is.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use uze_application::{InstalledExtension, UzeApplication, extension_stamp};
+use uze_core::{UzeHome, trust::AlwaysTrust};
+use uze_extensions::contract::Extension as _;
+use uze_extensions::declared::DeclaredExtension;
+use uze_extensions::view::{Content, Node, NodeAct, NodeKind, Role, Size, ViewHit};
+use uze_testkit::temp::TestEnvironment;
+
+const MARKET: &str = "studio";
+const BOARD: &str = "board";
+const SPACE: Size = Size {
+    width: 100,
+    height: 30,
+};
+
+/// The `gsd` fixture plugin as the one plugin of a marketplace repository,
+/// registered and linked to its working tree, then installed.
+fn installed_from_a_linked_marketplace(env: &TestEnvironment) -> (UzeApplication, PathBuf) {
+    let market = env.root().join("market");
+    let manifest = serde_json::json!({
+        "name": MARKET,
+        "plugins": [{ "name": "gsd", "source": "./plugins/gsd", "description": "GSD band." }],
+    });
+    uze_testkit::marketplace::stage(
+        &market,
+        &manifest.to_string(),
+        &[("gsd".to_owned(), uze_testkit::fixtures::canonical("gsd"))],
+    );
+    let app = UzeApplication::new(UzeHome::at(&env.uze_home), Vec::new());
+    app.marketplace()
+        .add(&market.display().to_string())
+        .expect("the marketplace registers");
+    app.marketplace()
+        .link(MARKET, &market)
+        .expect("the marketplace links to its working tree");
+    app.marketplace()
+        .install_plugin(&format!("gsd@{MARKET}"), &AlwaysTrust)
+        .expect("the gsd plugin installs");
+    (app, market)
+}
+
+fn the_band(app: &UzeApplication) -> InstalledExtension {
+    let installed = app.extensions().installed();
+    assert_eq!(installed.len(), 1, "{installed:?}");
+    installed.into_iter().next().unwrap()
+}
+
+/// The real engine, handed what the services compiled and read.
+fn engine(app: &UzeApplication, installed: &InstalledExtension) -> DeclaredExtension {
+    let compiled = app
+        .extensions()
+        .compile(installed)
+        .unwrap_or_else(|diagnostics| panic!("the band compiles: {diagnostics:#?}"));
+    let mut engine = DeclaredExtension::new(compiled.clone(), "en");
+    for (source, data) in app.extensions().fixtures(installed, &compiled) {
+        engine.set_data(source, data);
+    }
+    engine
+}
+
+fn board(engine: &DeclaredExtension) -> Node {
+    match engine
+        .view(BOARD, SPACE)
+        .expect("the board is a view")
+        .content
+    {
+        Content::Tree { root, .. } => root,
+        other => panic!("not a tree: {other:?}"),
+    }
+}
+
+fn nodes(root: &Node) -> Vec<&Node> {
+    let mut all = vec![root];
+    for child in &root.children {
+        all.extend(nodes(child));
+    }
+    all
+}
+
+fn text(node: &Node) -> String {
+    match &node.kind {
+        NodeKind::Text { spans, .. } => spans.iter().map(|span| span.text.as_str()).collect(),
+        other => panic!("not text: {other:?}"),
+    }
+}
+
+fn texts(root: &Node) -> Vec<String> {
+    nodes(root)
+        .into_iter()
+        .filter(|node| matches!(node.kind, NodeKind::Text { .. }))
+        .map(text)
+        .collect()
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    uze_platform::path::canonical(path).unwrap()
+}
+
+#[test]
+fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fixture() {
+    let env = TestEnvironment::isolated();
+    let (app, market) = installed_from_a_linked_marketplace(&env);
+
+    let band = the_band(&app);
+    assert_eq!(
+        band.identity.to_string(),
+        format!("gsd-band · gsd@{MARKET}")
+    );
+    assert!(band.linked, "a linked marketplace's extension is watched");
+    assert_eq!(
+        canonical(&band.dir),
+        canonical(&market.join("plugins/gsd/extensions/gsd-band")),
+        "read from the author's working tree, not the Store's copy"
+    );
+
+    // Compiled once: the second ask is served from the generated tier.
+    let compiled = app.extensions().compile(&band).expect("the band compiles");
+    assert_eq!(compiled.manifest.surfaces.len(), 2);
+    let cache = UzeHome::at(&env.uze_home).compiled_extensions_dir();
+    let cached: Vec<PathBuf> = fs::read_dir(&cache)
+        .expect("the compile is cached")
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(cached.len(), 1, "{cached:?}");
+    let mut marked: serde_json::Value =
+        serde_json::from_slice(&fs::read(&cached[0]).unwrap()).unwrap();
+    marked["manifest"]["name"] = "from the cache".into();
+    fs::write(&cached[0], marked.to_string()).unwrap();
+    assert_eq!(
+        app.extensions().compile(&band).unwrap().manifest.name,
+        "from the cache",
+        "the same files are not parsed again"
+    );
+    fs::remove_file(&cached[0]).unwrap();
+
+    let fixtures = app.extensions().fixtures(&band, &compiled);
+    let data = fixtures["board"].as_ref().expect("the fixture is read");
+    assert_eq!(data["phases"].as_array().map(Vec::len), Some(6));
+
+    let engine = engine(&app, &band);
+    let root = board(&engine);
+    let all = nodes(&root);
+
+    let segments = all
+        .iter()
+        .find_map(|node| match &node.kind {
+            NodeKind::Progress { segments } => Some(segments.clone()),
+            _ => None,
+        })
+        .expect("a progress bar");
+    assert_eq!(segments.len(), 6, "one segment a phase: {segments:?}");
+    assert_eq!(
+        segments
+            .iter()
+            .map(|segment| segment.weight)
+            .collect::<Vec<_>>(),
+        [4, 5, 6, 19, 4, 4]
+    );
+    assert_eq!(segments[3].role, Role::Warning, "the partial phase");
+    assert_eq!(segments[3].filled, 890);
+
+    let list = all
+        .iter()
+        .find(|node| matches!(node.kind, NodeKind::List { .. }))
+        .expect("the phases list, on the first tab");
+    assert_eq!(list.children.len(), 6);
+    let drawn = texts(&root);
+    for phase in [
+        "Fundação da loja",
+        "Consulta de dados e diagnóstico",
+        "Relatórios do lojista",
+    ] {
+        assert!(drawn.iter().any(|text| text == phase), "{phase}: {drawn:?}");
+    }
+    assert!(drawn.iter().any(|text| text == "65%"), "{drawn:?}");
+    assert!(
+        drawn.iter().any(|text| text == "· 3 of 6 phases"),
+        "{drawn:?}"
+    );
+    assert!(
+        all.iter().any(|node| matches!(
+            &node.kind,
+            NodeKind::Pips {
+                done: 17,
+                total: 19
+            }
+        )),
+        "the active phase's plans"
+    );
+
+    let tabs: Vec<(String, bool)> = all
+        .iter()
+        .find_map(|node| match &node.kind {
+            NodeKind::Tabs { tabs } => Some(
+                tabs.iter()
+                    .map(|tab| (tab.label.clone(), tab.active))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .expect("the tabs");
+    assert_eq!(tabs, [("Phases".into(), true), ("Log".into(), false)]);
+    assert!(
+        all.iter().any(|node| matches!(
+            &node.kind,
+            NodeKind::Button { label } if label == "▶ run phase 12"
+        )),
+        "the next step, labelled in the operator's locale"
+    );
+
+    let section = engine
+        .section("summary", false)
+        .expect("the band's section");
+    assert_eq!(section.title, "GSD");
+    let section_tree = section.tree.expect("drawn from the same view");
+    assert!(texts(&section_tree).contains(&"Catálogo de ajuda".to_owned()));
+}
+
+#[test]
+fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_next() {
+    let env = TestEnvironment::isolated();
+    let (app, market) = installed_from_a_linked_marketplace(&env);
+    let band = the_band(&app);
+    let mut engine = engine(&app, &band);
+    let data_before = engine.data("board").cloned();
+
+    let tabs = nodes(&board(&engine))
+        .into_iter()
+        .find(|node| matches!(node.kind, NodeKind::Tabs { .. }))
+        .expect("the tabs")
+        .id;
+    engine.hit(
+        BOARD,
+        ViewHit::Node {
+            node: tabs,
+            act: NodeAct::Tab(1),
+        },
+        SPACE,
+    );
+    let root = board(&engine);
+    assert!(
+        nodes(&root)
+            .iter()
+            .all(|node| !matches!(node.kind, NodeKind::List { .. })),
+        "the phases give way to the log"
+    );
+    assert!(
+        nodes(&root).iter().any(|node| matches!(
+            &node.kind,
+            NodeKind::Log { lines } if lines.iter().any(|line| line.text == "turno concluído em 4m12s")
+        )),
+        "the log is drawn"
+    );
+    assert_eq!(
+        engine.data("board").cloned(),
+        data_before,
+        "the data is untouched"
+    );
+    assert!(engine.recorded().is_empty(), "nothing ran");
+
+    // The author saves a change to the view in the working tree.
+    let view = band.dir.join("board.kdl");
+    let before = extension_stamp(&band.dir);
+    let source = fs::read_to_string(&view).unwrap();
+    let edited = source.replace(r#"Text "{percent}%""#, r#"Text "{percent}% done""#);
+    assert_ne!(edited, source, "the edit lands");
+    fs::write(&view, &edited).unwrap();
+    assert_ne!(extension_stamp(&band.dir), before, "the save is seen");
+    assert_eq!(
+        canonical(&the_band(&app).dir),
+        canonical(&market.join("plugins/gsd/extensions/gsd-band")),
+        "without a reinstall"
+    );
+
+    let recompiled = app.extensions().compile(&band).expect("the edit compiles");
+    engine.replace(recompiled);
+    let root = board(&engine);
+    assert!(
+        texts(&root).contains(&"65% done".to_owned()),
+        "{:?}",
+        texts(&root)
+    );
+    assert_eq!(
+        engine
+            .ui(BOARD)
+            .and_then(|ui| ui.get("tab"))
+            .map(String::as_str),
+        Some("log"),
+        "the reload keeps the tab"
+    );
+
+    // A broken save is said at its file, line and column.
+    let broken = edited.replace("    List each=", "    Lisst each=");
+    fs::write(&view, &broken).unwrap();
+    let diagnostics = app
+        .extensions()
+        .compile(&band)
+        .expect_err("an unknown node is refused");
+    let line = broken
+        .lines()
+        .position(|line| line.contains("Lisst"))
+        .unwrap()
+        + 1;
+    let named = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message.contains("Lisst"))
+        .unwrap_or_else(|| panic!("{diagnostics:#?}"));
+    assert!(named.file.ends_with("board.kdl"), "{named:?}");
+    assert_eq!((named.line, named.column), (line, 5), "{named:?}");
+    assert!(
+        named.to_string().contains(&format!("board.kdl:{line}:5:")),
+        "{named}"
+    );
+}

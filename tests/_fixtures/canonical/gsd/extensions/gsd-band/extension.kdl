@@ -1,0 +1,11 @@
+protocol 1
+id "gsd-band"
+name "GSD band"
+description "The checkout's GSD milestone, beside the agent"
+
+surface "board" slot="view" view="board.kdl" source="board"
+surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
+
+source "board" {
+    fixture "fixtures/board.json"
+}
