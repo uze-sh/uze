@@ -18,6 +18,7 @@
 //! - [`binding`]: how a compiled view refers to data and UI state.
 //! - [`catalog`]: the nodes a view may name, and what each accepts.
 //! - [`clean`]: the one way a string an extension supplied becomes drawable.
+//! - [`testing`]: what an extension's test file declares.
 
 #![forbid(unsafe_code)]
 
@@ -26,12 +27,14 @@ pub mod catalog;
 pub mod clean;
 pub mod compiled;
 pub mod manifest;
+pub mod testing;
 
 pub use binding::{Binding, Condition, Path, Scope, TextPart};
 pub use catalog::{NodeName, PropKind, RoleName};
 pub use clean::Clean;
 pub use compiled::{CompiledExtension, CompiledView, Item, Lookup, Node, Span};
 pub use manifest::{Manifest, Slot, SourceDecl, SurfaceDecl};
+pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another
 /// is refused with both numbers, never guessed at.
