@@ -1,0 +1,10 @@
+{
+  "title": "This week",
+  "status": "on track",
+  "notes": "A fixture is a sample of what the source answers.",
+  "tasks": [
+    { "name": "Write the view", "ratio": 1 },
+    { "name": "Fill the fixture", "ratio": 0.5 },
+    { "name": "Check the plugin", "ratio": 0 }
+  ]
+}
