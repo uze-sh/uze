@@ -88,7 +88,7 @@ mechanism chosen without a capability model cannot be given one afterwards
   answered by a stateless WebAssembly component (the default, confined on
   every platform) or by an argv program (to wrap a CLI, or a quick shell
   script), both on one contract: a JSON input (its slot, size, agent, and
-  the event, pipe, store, preferences and fields it names, also as argv or
+  the event, store, preferences and fields it names, also as argv or
   `UZE_IN_*` for a shell), a JSON, lines or media answer, optionally in an
   envelope of requests, and the portable hook exit codes, bounded in time
   and output. The host holds all view state; nothing stays resident unless
