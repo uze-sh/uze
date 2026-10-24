@@ -394,11 +394,11 @@ fn a_lookup_follows_the_locale_and_falls_back_to_its_default() {
     let view = |locale: &str| {
         let items = vec![
             n(NodeName::Text)
-                .arg("{t:next} {phase}")
+                .arg("{t::next} {phase}")
                 .prop("role", "{tone:e}")
                 .item(),
             n(NodeName::Badge)
-                .arg("{t:clear}")
+                .arg("{t::clear}")
                 .prop("role", "{tone:other}")
                 .item(),
         ];

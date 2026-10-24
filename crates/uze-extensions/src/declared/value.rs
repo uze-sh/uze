@@ -55,6 +55,9 @@ impl<'a> Env<'a> {
             Binding::Lookup { table, path } => {
                 Some(Cow::Owned(Value::String(self.look_up(table, scopes, path))))
             }
+            Binding::Label { table, key } => {
+                Some(Cow::Owned(Value::String(self.label(table, key))))
+            }
             Binding::Text(parts) => {
                 Some(Cow::Owned(Value::String(self.interpolate(scopes, parts))))
             }
@@ -84,26 +87,29 @@ impl<'a> Env<'a> {
                 TextPart::Lookup { table, path } => {
                     text.push_str(&self.look_up(table, scopes, path));
                 }
+                TextPart::Label { table, key } => text.push_str(&self.label(table, key)),
             }
         }
         text
     }
 
     /// The entry `table` gives the value at `path`, in the operator's
-    /// locale, or empty when the table has neither the entry nor a default.
-    ///
-    /// When `path` holds no scalar, its own name is the key: that is how a
-    /// label table reads, `{t:next}` meaning the label `next` rather than
-    /// whatever `next` holds (the blueprint's board has an object there).
-    /// A lookup therefore never hides its node for a missing field.
+    /// locale, or the table's default when the value is missing, not a
+    /// scalar, or has no entry; empty when there is no default either.
+    /// A lookup never hides its node.
     fn look_up(&self, table: &str, scopes: &[&'a Value], path: &Path) -> String {
-        let key = match self.resolve(scopes, path).as_deref() {
-            Some(value @ (Value::String(_) | Value::Number(_) | Value::Bool(_))) => {
-                scalar_text(value)
-            }
-            _ => path_text(path),
-        };
+        let key = self
+            .resolve(scopes, path)
+            .map(|value| scalar_text(&value))
+            .unwrap_or_default();
         look_up(self.lookups, table, &key, self.locale)
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    /// The entry `key` of `table` in the operator's locale (`{t::next}`).
+    fn label(&self, table: &str, key: &str) -> String {
+        look_up(self.lookups, table, key, self.locale)
             .unwrap_or_default()
             .to_owned()
     }
