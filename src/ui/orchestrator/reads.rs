@@ -1697,3 +1697,118 @@ pub(super) fn spawn_declaration_save(
         });
     });
 }
+
+/// What a declared-extension job is asked to do.
+#[derive(Clone, Debug)]
+pub(super) enum ExtensionJob {
+    /// Find every extension the installed plugins carry, and load each.
+    Discover,
+    /// Load these again: a linked extension's files were saved.
+    Recompile(Vec<uze_application::InstalledExtension>),
+}
+
+/// A declared-extension job's answer, carrying what it was asked.
+pub(super) struct ExtensionAnswer {
+    /// What a discovery found, for the extensions no plugin carries any
+    /// more to go. `None` for a recompile.
+    pub(super) discovered: Option<Vec<uze_application::InstalledExtension>>,
+    /// The extensions a recompile was asked for, so their reservation is
+    /// released whatever became of them.
+    pub(super) recompiled: Vec<uze_application::ExtensionIdentity>,
+    pub(super) loaded: Vec<LoadedExtension>,
+}
+
+/// Finding the declared extensions, compiling each and reading its
+/// fixtures: a walk of every installed plugin, a parse of a third party's
+/// KDL behind its bounds, and file reads — none of it the drawing thread's.
+pub(super) fn spawn_extension_job(
+    home: &UzeHome,
+    job: ExtensionJob,
+    sender: mpsc::Sender<ExtensionAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.declared_extensions", parent: &parent);
+        let recompiled = match &job {
+            ExtensionJob::Discover => Vec::new(),
+            ExtensionJob::Recompile(list) => list
+                .iter()
+                .map(|installed| installed.identity.clone())
+                .collect(),
+        };
+        let silence = ExtensionAnswer {
+            discovered: None,
+            recompiled: recompiled.clone(),
+            loaded: Vec::new(),
+        };
+        let answer = answered_or(
+            || {
+                let Ok(app) = tui_application(home.clone()) else {
+                    return ExtensionAnswer {
+                        discovered: None,
+                        recompiled: recompiled.clone(),
+                        loaded: Vec::new(),
+                    };
+                };
+                let extensions = app.extensions();
+                let (discovered, asked) = match job {
+                    ExtensionJob::Discover => {
+                        let found = extensions.installed();
+                        (Some(found.clone()), found)
+                    }
+                    ExtensionJob::Recompile(list) => (None, list),
+                };
+                let loaded = asked
+                    .into_iter()
+                    .map(|installed| {
+                        let stamp = uze_application::extension_stamp(&installed.dir);
+                        let compiled = extensions.compile(&installed);
+                        let data = compiled
+                            .as_ref()
+                            .map(|compiled| extensions.fixtures(&installed, compiled))
+                            .unwrap_or_default();
+                        LoadedExtension {
+                            installed,
+                            stamp,
+                            compiled,
+                            data,
+                        }
+                    })
+                    .collect();
+                ExtensionAnswer {
+                    discovered,
+                    recompiled: recompiled.clone(),
+                    loaded,
+                }
+            },
+            silence,
+        );
+        let _ = sender.send(answer);
+    });
+}
+
+/// The linked extensions' stamps, as one poll read them.
+pub(super) struct StampsAnswer {
+    pub(super) stamps: Vec<(uze_application::ExtensionIdentity, u64)>,
+}
+
+/// Reading when each linked extension's files last changed: metadata of a
+/// handful of files, still a filesystem the frame must not wait on.
+pub(super) fn spawn_extension_stamps(
+    watched: Vec<(uze_application::ExtensionIdentity, PathBuf)>,
+    sender: mpsc::Sender<StampsAnswer>,
+) {
+    thread::spawn(move || {
+        let stamps = answered_or(
+            || {
+                watched
+                    .into_iter()
+                    .map(|(identity, dir)| (identity, uze_application::extension_stamp(&dir)))
+                    .collect()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(StampsAnswer { stamps });
+    });
+}

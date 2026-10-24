@@ -67,6 +67,8 @@ mod agents;
 use agents::StatusAnswer;
 mod answers;
 mod approval;
+mod declared;
+use declared::*;
 mod events;
 mod interrupt;
 mod notices;
@@ -904,6 +906,8 @@ pub(super) enum WorkspaceHit {
     OpenArchitect,
     /// The tab strip's spec button, first of the three.
     OpenSpec,
+    /// A tab strip button for a view a plugin declared, by its slot.
+    OpenDeclared(SlotId),
     /// The tab strip's overview button, before the three: the space's
     /// overview, lit while it stands in the pane.
     OpenOverview,
@@ -1469,6 +1473,11 @@ struct Channels {
     artifacts: Answers<ArtifactsResolution>,
     spec: Answers<SpecResolution>,
     spec_summaries: Answers<SpecSummaryResolution>,
+    /// The declared extensions installed plugins carry: found, compiled and
+    /// their fixtures read, or one of them compiled again after a save.
+    extension_jobs: Answers<ExtensionAnswer>,
+    /// The linked ones' stamps, polled on [`DECLARED_POLL`].
+    extension_stamps: Answers<StampsAnswer>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
@@ -1578,6 +1587,9 @@ struct Remembered {
     /// The same for the spec surface: which change, and which of its
     /// documents.
     spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
+    /// The surfaces plugins declare, each with the engine that answers for
+    /// it, and where the viewer was on each per checkout.
+    declared: DeclaredExtensions,
     /// Preserved work across the machine, as last swept. The last good
     /// answer stays drawn while a new one is in flight, so opening the
     /// list never shows an empty one it is about to fill.
@@ -1904,6 +1916,14 @@ struct WorkspaceModel {
     /// `architect_root` and `architect_asked` are for the architect.
     spec_root: Option<PathBuf>,
     spec_asked: bool,
+    /// The declared view standing in the pane, by its slot, and the
+    /// checkout it was opened on — what its place is remembered under.
+    declared_open: Option<SlotId>,
+    declared_root: Option<PathBuf>,
+    /// Whether the inspector stands beside it.
+    inspecting: bool,
+    /// What its engine last asked to say at the end of its footer.
+    declared_notice: Option<uze_extensions::view::Span>,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -2347,6 +2367,7 @@ impl WorkspaceModel {
             && self.code.is_none()
             && self.architect.is_none()
             && self.spec.is_none()
+            && self.declared_open.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is

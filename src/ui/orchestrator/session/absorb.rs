@@ -782,6 +782,12 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.spec_summaries.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_spec_summary(resolution);
         }
+        while let Ok(answer) = self.channels.extension_jobs.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_extension_answer(answer);
+        }
+        while let Ok(answer) = self.channels.extension_stamps.receiver.try_recv() {
+            self.model.absorb_extension_stamps(answer);
+        }
     }
 
     /// Asks whatever those same surfaces now show and have not read.
@@ -801,6 +807,11 @@ impl Attach<'_> {
             .schedule_spec_read(self.home, &self.channels.spec.sender);
         self.model
             .schedule_spec_summary(&self.channels.spec_summaries.sender);
+        self.model.schedule_extension_jobs(
+            self.home,
+            &self.channels.extension_jobs.sender,
+            &self.channels.extension_stamps.sender,
+        );
     }
 
     /// Advances the activity spinner while anything it animates is on

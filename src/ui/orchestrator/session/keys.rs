@@ -52,6 +52,8 @@ impl Attach<'_> {
             Scope::Architect
         } else if self.model.spec.is_some() {
             Scope::Spec
+        } else if self.model.declared_open.is_some() {
+            Scope::Declared
         } else if self.model.code.is_some() {
             Scope::Code
         } else if let Some(overview) = &self.model.space_overview {
@@ -73,7 +75,12 @@ impl Attach<'_> {
         // chord. Innermost, because a surface seals everything behind it.
         if matches!(
             surface,
-            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec | Scope::SpaceOverview
+            Scope::Pane
+                | Scope::Code
+                | Scope::Architect
+                | Scope::Spec
+                | Scope::Declared
+                | Scope::SpaceOverview
         ) {
             scopes.push(Scope::Surfaces);
         }
@@ -346,6 +353,10 @@ impl Attach<'_> {
         }
         if self.model.spec.is_some() {
             self.spec_action(action);
+            return Flow::Continue;
+        }
+        if self.model.declared_open.is_some() {
+            self.declared_action(action);
             return Flow::Continue;
         }
         if self.model.code.is_some() {

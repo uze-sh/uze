@@ -3379,6 +3379,7 @@ dependencies = [
  "unicode-width 0.2.2",
  "uze",
  "uze-application",
+ "uze-contract",
  "uze-core",
  "uze-extensions",
  "uze-git",

@@ -84,6 +84,11 @@ pub enum ExtensionHit {
     Spec(view::ViewHit),
     /// The spec extension's sidebar section — its changes in flight.
     SpecSummary(view::ViewHit),
+    /// A surface a plugin declared, by the number the host gave the slot it
+    /// stands in. One variant for every declared surface, view and section
+    /// alike: which extension and which of its surfaces a slot is, is the
+    /// host's map to keep, since two plugins may declare the same ids.
+    Declared { slot: u32, hit: view::ViewHit },
 }
 
 /// Why [`Host::read_file`] has no contents to give.

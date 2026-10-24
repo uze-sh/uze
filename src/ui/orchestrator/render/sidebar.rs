@@ -283,7 +283,22 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
                 .saturating_sub(reserved),
         )
     });
-    let foot = reserved + spec_reserved;
+    // A plugin's sections sit over the spec section, each reserved the
+    // same way and each within what the ones below it left.
+    let declared_sections = model.declared_sections();
+    let mut declared_heights = Vec::with_capacity(declared_sections.len());
+    let mut declared_reserved = 0u16;
+    for (_, section) in &declared_sections {
+        let height = super::declared::declared_section_height(
+            section,
+            rows.remaining()
+                .saturating_sub(steps_height)
+                .saturating_sub(reserved + spec_reserved + declared_reserved),
+        );
+        declared_heights.push(height);
+        declared_reserved += height;
+    }
+    let foot = reserved + spec_reserved + declared_reserved;
     // Every header at the foot is a handle on the timeline (see
     // `WorkspaceModel::grab_foot`), and the one lit while dragging is the
     // one held: its distance from the timeline's own header is the grab.
@@ -412,7 +427,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
             &steps.section(),
             &mut Rows::over(rect),
             SectionState {
-                dragging: grabbed(spec_reserved + rect.height),
+                dragging: grabbed(declared_reserved + spec_reserved + rect.height),
                 ..SectionState::default()
             },
             &mut section_hits,
@@ -442,6 +457,23 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         }
     }
 
+    let mut declared_top = column_bottom - foot;
+    for ((slot, section), height) in declared_sections.iter().zip(declared_heights) {
+        if height == 0 {
+            continue;
+        }
+        let air = if !section.collapsed && height > SECTION_CHROME {
+            SECTION_AIR
+        } else {
+            0
+        };
+        rows.scroll_past(0);
+        rows.y = declared_top;
+        rows.bottom = declared_top + height - air;
+        metrics.marquee |= render_declared_section(frame, *slot, section, model, &mut rows, hits);
+        declared_top += height;
+    }
+
     if let Some(summary) = spec_summary
         && spec_reserved > 0
     {
@@ -452,7 +484,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
             0
         };
         rows.bottom = column_bottom - reserved - air;
-        rows.y = column_bottom - foot;
+        rows.y = column_bottom - reserved - spec_reserved;
         metrics.marquee |= render_spec_summary(
             frame,
             summary,
@@ -544,6 +576,50 @@ pub(super) fn render_spec_summary(
         (
             rect,
             WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
+        )
+    }));
+    slid
+}
+
+/// One section a plugin declared. Its fold is the host's, kept on the
+/// slot; its hits go back to the slot's engine.
+fn render_declared_section(
+    frame: &mut ratatui::Frame<'_>,
+    slot: SlotId,
+    section: &uze_extensions::view::Section,
+    model: &WorkspaceModel,
+    rows: &mut Rows,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let mut section_hits = Vec::new();
+    let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
+    let under = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: over, hit }))
+            if over == slot =>
+        {
+            Some(hit)
+        }
+        _ => None,
+    };
+    let lit_rows: Vec<usize> = match under {
+        Some(ViewHit::SelectItem(index)) => vec![index],
+        _ => Vec::new(),
+    };
+    let slid = crate::ui::extension_view::render_section(
+        frame,
+        section,
+        &mut column,
+        SectionState {
+            dragging: false,
+            sliding: under.map(|hit| (hit, model.hovered_for())),
+            lit_rows: &lit_rows,
+        },
+        &mut section_hits,
+    );
+    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
+        (
+            rect,
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
         )
     }));
     slid

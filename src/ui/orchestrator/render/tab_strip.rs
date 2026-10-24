@@ -161,7 +161,17 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         // covers. Said by the ground, not by the word's hue or weight.
         // In the order a change is read: what it intends, what it was
         // described as, and what it is.
-        let buttons: Vec<GroupButton> = [
+        // A plugin's views lead the group, so the built-ins keep the
+        // places at its end the eye already learned.
+        let declared = model.declared_views().map(|slot| GroupButton {
+            hit: WorkspaceHit::OpenDeclared(slot.id),
+            label: text::elide(&slot.surface.title, DECLARED_LABEL),
+            hue: theme::color(Token::TextSecondary),
+            strong: false,
+            lit: model.declared_open == Some(slot.id),
+            switch: true,
+        });
+        let built_in = [
             (
                 spec::CATALOG.id,
                 WorkspaceHit::OpenSpec,
@@ -196,8 +206,8 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             strong: false,
             lit: open,
             switch: true,
-        })
-        .collect();
+        });
+        let buttons: Vec<GroupButton> = declared.chain(built_in).collect();
         if !buttons.is_empty() {
             let width = group_width(&buttons);
             let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
@@ -629,6 +639,10 @@ fn render_agent_tabs(
 /// and plain Unicode has no sign for any of them, so what a set without
 /// icons can offer is a box or an arrow that means nothing here. The word
 /// already says it; the glyph joins it only where there is a real one.
+/// The most a plugin's view's name takes of the strip: the tabs' room
+/// comes before the buttons', and a title is the plugin's to make long.
+const DECLARED_LABEL: usize = 12;
+
 pub(super) fn surface_label(symbol: Symbol, name: &str) -> String {
     match theme::glyph(symbol) {
         glyph if glyph.is_empty() => name.to_string(),

@@ -1,4 +1,4 @@
-//! Opening and closing the extension surfaces over the workspace: code, architect and spec.
+//! Opening and closing the extension surfaces over the workspace: code, architect, spec and the views plugins declare.
 
 use super::*;
 
@@ -85,6 +85,12 @@ impl WorkspaceModel {
             self.close_spec();
             self.remembered.spec_summary = None;
         }
+        if self
+            .open_declared_slot()
+            .is_some_and(|slot| !self.offers_declared(&slot.identity))
+        {
+            self.close_declared();
+        }
         self.dirty = true;
     }
 
@@ -93,6 +99,7 @@ impl WorkspaceModel {
         self.close_code();
         self.close_architect();
         self.close_spec();
+        self.close_declared();
     }
 
     /// Closes the open surface once its tab is no longer the one in front.
@@ -128,6 +135,7 @@ pub(super) fn open_architect(model: &mut WorkspaceModel) {
     };
     model.close_code();
     model.close_spec();
+    model.close_declared();
     let place = model.remembered.architect_places.get(&root).cloned();
     let display_root = crate::ui::display_project_path(&root);
     model.stand_extension_in_front();
@@ -162,6 +170,7 @@ pub(super) fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::Spe
     model.close_code();
     model.close_architect();
     model.close_spec();
+    model.close_declared();
     let place = sent_to.or_else(|| model.remembered.spec_places.get(&root).cloned());
     let display_root = crate::ui::display_project_path(&root);
     model.stand_extension_in_front();
@@ -195,6 +204,7 @@ pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &
     );
     model.close_architect();
     model.close_spec();
+    model.close_declared();
     model.stand_extension_in_front();
     model.code = Some(view.resuming(place));
     model.code_tree_scroll = extension_view::NavigatorScroll::default();
@@ -215,6 +225,7 @@ pub(super) fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
     let view = code::CodeView::opening(cwd, display_root, mode);
     model.close_architect();
     model.close_spec();
+    model.close_declared();
     model.stand_extension_in_front();
     model.code = Some(match place {
         Some(place) => view.resuming(place),
