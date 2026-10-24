@@ -720,3 +720,110 @@ fn a_diagnostic_reads_as_file_line_column() {
         "board.kdl:1:1: `stack` is not a catalog node: catalog nodes are PascalCase (write `Stack`)"
     );
 }
+
+const A_TEST: &str = r##"test "the next step is offered" {
+    surface "panel"
+    given "session" fixture="fixtures/session.json"
+    given "agents" json=#"{"busy": true}"#
+    size 46 40
+    theme "light"
+    locale "pt"
+    expect-text "Fases"
+    click "Activity"
+    press "down"
+    press-button "▶ next"
+    expect-action "next" command="/gsd 43" count=2
+    expect-absent "Button" because="next"
+    expect-no-text "Deploy"
+    snapshot "panel"
+}
+"##;
+
+#[test]
+fn a_test_file_decodes_its_world_and_steps_in_order() {
+    let file = super::decode_test("tests/panel.test.kdl", A_TEST).expect("decodes");
+    let test = &file.tests[0];
+    assert_eq!(test.name, "the next step is offered");
+    assert_eq!(test.world.surface, "panel");
+    assert_eq!(test.world.size, Some((46, 40)));
+    assert_eq!(test.world.theme, Some(uze_contract::ThemeName::Light));
+    assert_eq!(test.world.locale.as_deref(), Some("pt"));
+    assert_eq!(test.world.given.len(), 2);
+    assert_eq!(
+        test.world.given[1].data,
+        uze_contract::GivenData::Json(serde_json::json!({"busy": true}))
+    );
+    use uze_contract::StepKind::*;
+    let kinds: Vec<_> = test.steps.iter().map(|step| step.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            ExpectText("Fases".into()),
+            Click("Activity".into()),
+            Press("down".into()),
+            PressButton("▶ next".into()),
+            ExpectAction {
+                action: "next".into(),
+                args: vec![
+                    ("command".into(), serde_json::json!("/gsd 43")),
+                    ("count".into(), serde_json::json!(2)),
+                ],
+            },
+            ExpectAbsent {
+                node: uze_contract::NodeName::Button,
+                because: "next".into(),
+            },
+            ExpectNoText("Deploy".into()),
+            Snapshot("panel".into()),
+        ]
+    );
+}
+
+#[test]
+fn a_misspelled_step_gets_the_nearest_and_a_test_needs_a_surface() {
+    let refused = super::decode_test(
+        "tests/a.test.kdl",
+        "test \"a\" {\n    surface \"x\"\n    expect-txt \"Phases\"\n}\ntest \"b\" {\n    expect-text \"y\"\n}\n",
+    )
+    .expect_err("refused");
+    let said: Vec<String> = refused.iter().map(ToString::to_string).collect();
+    assert!(
+        said.iter().any(|line| line
+            .starts_with("tests/a.test.kdl:3:5: a test has no step `expect-txt`")
+            && line.contains("did you mean `expect-text`?")),
+        "{said:#?}"
+    );
+    assert!(
+        said.iter().any(|line| line.contains("opens no surface")),
+        "{said:#?}"
+    );
+}
+
+#[test]
+fn a_test_file_is_bounded_like_a_view() {
+    let deep = format!(
+        "test \"a\" {{ surface \"x\"; {}{} }}",
+        "Stack {".repeat(400),
+        "}".repeat(400)
+    );
+    let refused = super::decode_test("tests/deep.test.kdl", &deep).expect_err("refused");
+    assert!(
+        refused.iter().any(|d| d.message.contains("nest")),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn test_files_are_found_under_tests_by_their_suffix() {
+    let root = std::env::temp_dir().join(format!("uze-test-files-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("tests")).unwrap();
+    for name in ["b.test.kdl", "a.test.kdl", "notes.md", "c.kdl"] {
+        std::fs::write(root.join("tests").join(name), "").unwrap();
+    }
+    assert_eq!(
+        super::test_files(&root),
+        ["tests/a.test.kdl", "tests/b.test.kdl"]
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
