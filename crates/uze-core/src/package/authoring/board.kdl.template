@@ -1,0 +1,27 @@
+// A view: PascalCase nodes from the catalog, bound to the source's data
+// with `{field}`. `{t::key}` is a label from the `t` lookup below.
+lookup "t" {
+    tasks "Tasks"
+    notes "Notes"
+    empty "Nothing to do"
+    refresh "refresh"
+}
+
+Stack {
+    Row align="center" {
+        Text "{title}" grow=#true
+        Badge "{status}" role="info"
+        Tabs id="tab" {
+            Tab "{t::tasks}" value="tasks"
+            Tab "{t::notes}" value="notes"
+        }
+        Button "{t::refresh}" action="refresh"
+    }
+    Progress {
+        Segment each="tasks" weight=1 ratio="{ratio}" role="success"
+    }
+    List each="tasks" show="ui.tab=tasks" empty="{t::empty}" {
+        Text "{name}"
+    }
+    Text "{notes}" show="ui.tab=notes" role="muted"
+}
