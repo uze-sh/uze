@@ -1,0 +1,56 @@
+// A phase's state, as the theme's colour role it is drawn in.
+lookup "tone" default="muted" {
+    done "success"
+    partial "warning"
+    ready "info"
+    blocked "muted"
+}
+
+lookup "t" locale="en" {
+    phases "Phases"; log "Log"; next "▶ run phase"; clear "clear"
+    empty "No phase in progress"
+}
+
+lookup "t" locale="pt" {
+    phases "Fases"; log "Log"; next "▶ executar fase"; clear "limpar"
+    empty "Nenhuma fase em andamento"
+}
+
+template "phase-row" {
+    Row gap=1 {
+        Text "{number}" min-width=3
+        Text "{name}" grow=#true truncate=#true
+        Marks {
+            Mark role="{tone:d}"
+            Mark role="{tone:p}"
+            Mark role="{tone:e}"
+        }
+        Pips done="{summaries}" total="{plans}" when="active"
+        Text "{summaries}/{plans}" role="muted" when="finished"
+        Text "{status}" role="{tone:e}"
+    }
+}
+
+Stack {
+    Row align="center" {
+        Activity agent="self"
+        Text "GSD · {version} {name}" role="muted" grow=#true
+        Tabs id="tab" {
+            Tab "{t::phases}" value="phases"
+            Tab "{t::log}" value="log"
+        }
+        Button "{t::clear}" action="clear"
+        Button "{t::next} {next.phase}" action="next" item="{next}" when="next"
+    }
+    Row gap=1 {
+        Progress grow=#true {
+            Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:e}"
+        }
+        Text "{percent}%"
+        Text "· {done} of {total} phases" role="muted"
+    }
+    List each="phases" show="ui.tab=phases" empty="{t::empty}" {
+        use "phase-row"
+    }
+    Log lines="{log}" show="ui.tab=log"
+}

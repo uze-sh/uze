@@ -518,3 +518,134 @@ fn the_inspector_stands_beside_the_view_and_esc_puts_it_away_first() {
     driven.press_key(key("esc"));
     assert_eq!(driven.attach.model.declared_open, None, "then the view");
 }
+
+/// The `gsd` fixture plugin installed from a marketplace linked to its
+/// working tree under `root`, answering with the view file an author edits.
+fn the_gsd_band_installed(root: &std::path::Path, home: &uze_application::UzeHome) -> PathBuf {
+    let market = root.join("market");
+    let manifest = serde_json::json!({
+        "name": "studio",
+        "plugins": [{ "name": "gsd", "source": "./plugins/gsd", "description": "GSD band." }],
+    });
+    uze_testkit::marketplace::stage(
+        &market,
+        &manifest.to_string(),
+        &[("gsd".to_owned(), uze_testkit::fixtures::canonical("gsd"))],
+    );
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    app.marketplace()
+        .add(&market.display().to_string())
+        .unwrap();
+    app.marketplace().link("studio", &market).unwrap();
+    app.marketplace()
+        .install_plugin("gsd@studio", &uze_application::AlwaysTrust)
+        .unwrap();
+    market.join("plugins/gsd/extensions/gsd-band/board.kdl")
+}
+
+/// What the real job answers, waited for: the read runs on its own
+/// thread, as the attach loop runs it, and is absorbed once it answers.
+fn answered(model: &mut WorkspaceModel, home: &uze_application::UzeHome, job: super::ExtensionJob) {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    super::spawn_extension_job(home, job, sender);
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the extension job answers");
+    assert!(model.absorb_extension_answer(answer));
+}
+
+fn shown(rows: &[String], wanted: &str) -> bool {
+    rows.iter().any(|row| row.contains(wanted))
+}
+
+#[test]
+fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
+    let root = uze_testkit::temp::scratch("declared-gsd-band");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    let view_file = the_gsd_band_installed(&root, &home);
+
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared.discovered = true;
+    answered(&mut model, &home, super::ExtensionJob::Discover);
+    let slot = view_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
+    driven.press(button.x, button.y);
+    assert_eq!(driven.attach.model.declared_open, Some(slot));
+
+    driven.frame();
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    for wanted in [
+        "gsd-band · gsd@studio",
+        "GSD · v1.23 Assistente do lojista",
+        "Consulta de dados e diagn",
+        "Relatórios do lojista",
+        "17/19",
+        "65% · 3 of 6 phases",
+        "▶ run phase 12",
+    ] {
+        assert!(shown(&rows, wanted), "{wanted}: {rows:#?}");
+    }
+    // The band's section in the sidebar, drawn from the same view: its
+    // header row fits the column by leaving the title out, not by folding
+    // the whole band away.
+    let sidebar: Vec<String> = rows
+        .iter()
+        .map(|row| row.chars().take_while(|cell| *cell != '│').collect())
+        .collect();
+    assert!(shown(&sidebar, "▾ GSD"), "{sidebar:#?}");
+    assert!(shown(&sidebar, "3 of 6 phases"), "{sidebar:#?}");
+
+    let log_tab = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot: on,
+                hit:
+                    ViewHit::Node {
+                        act: NodeAct::Tab(1),
+                        ..
+                    },
+            }) if *on == slot => Some(*rect),
+            _ => None,
+        })
+        .expect("the Log tab is drawn");
+    driven.press(log_tab.x, log_tab.y);
+    driven.frame();
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(shown(&rows, "turno concluído em 4m12s"), "{rows:#?}");
+    assert!(!shown(&rows, "Relatórios do lojista"), "{rows:#?}");
+
+    // The author saves the view in the working tree; the recompile the
+    // poll would ask for redraws it, on the tab the viewer chose.
+    let source = std::fs::read_to_string(&view_file).unwrap();
+    std::fs::write(
+        &view_file,
+        source.replace(r#"Text "{percent}%""#, r#"Text "{percent}% done""#),
+    )
+    .unwrap();
+    let installed = driven
+        .attach
+        .model
+        .remembered
+        .declared
+        .extensions
+        .values()
+        .map(|hosted| hosted.installed.clone())
+        .collect();
+    answered(
+        &mut driven.attach.model,
+        &home,
+        super::ExtensionJob::Recompile(installed),
+    );
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(shown(&rows, "65% done"), "{rows:#?}");
+    assert!(shown(&rows, "turno concluído em 4m12s"), "{rows:#?}");
+    assert_eq!(driven.attach.model.declared_open, Some(slot), "kept open");
+    std::fs::remove_dir_all(root).unwrap();
+}
