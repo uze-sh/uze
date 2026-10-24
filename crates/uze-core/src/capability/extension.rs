@@ -30,7 +30,11 @@ pub struct Diagnostic {
 impl std::fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.line > 0 {
-            write!(f, "{}:{}:{}: {}", self.file, self.line, self.column, self.message)?;
+            write!(
+                f,
+                "{}:{}:{}: {}",
+                self.file, self.line, self.column, self.message
+            )?;
         } else {
             write!(f, "{}: {}", self.file, self.message)?;
         }
