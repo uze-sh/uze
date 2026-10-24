@@ -17,8 +17,8 @@ use uze_contract::{CompiledExtension, Identity};
 use uze_core::capability::extension::{self, Diagnostic};
 use uze_core::digest::fnv1a64;
 
-use super::super::services::Extensions;
 use super::InstalledExtension;
+use crate::application::services::Extensions;
 
 /// The most a fixture may hold. A fixture is an author's sample of what a
 /// source answers, and the engine binds all of it on every change.

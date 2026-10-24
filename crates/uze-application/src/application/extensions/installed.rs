@@ -8,7 +8,7 @@ use uze_contract::Identity;
 use uze_core::acquisition::marketplace::{MarketplaceSubpath, repository_of};
 use uze_core::capability::extension;
 
-use super::super::services::Extensions;
+use crate::application::services::Extensions;
 
 /// An extension an installed plugin carries.
 #[derive(Clone, Debug, Eq, PartialEq)]

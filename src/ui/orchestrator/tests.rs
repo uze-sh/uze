@@ -22,6 +22,8 @@ mod attach;
 #[cfg(test)]
 mod context_menu;
 #[cfg(test)]
+mod declared;
+#[cfg(test)]
 mod delivery;
 #[cfg(test)]
 mod drawing;
