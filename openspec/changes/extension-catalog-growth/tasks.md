@@ -17,5 +17,5 @@
 ## 4. Proof
 
 - [x] 4.1 A reference extension in the canonical `gsd` fixture plugin's sibling, `showcase`, with one view per family and tests with snapshots in both themes
-- [ ] 4.2 The `uze:author` Skill's node list, and the catalog page's map
+- [x] 4.2 The `uze:author` Skill's node list, and the catalog page's map
 - [ ] 4.3 `make check`, `openspec validate --all --strict`
