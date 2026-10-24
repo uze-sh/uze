@@ -1,6 +1,6 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [x] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–25 into them; change 1 is `openspec/changes/extension-view-engine` (decided 2026-10-23)
+- [x] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–25 into them; change 1 is `openspec/changes/archive/2026-10-24-extension-view-engine` (decided 2026-10-23)
 - [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the `rhai` dependency review and the HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly

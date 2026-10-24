@@ -9,7 +9,7 @@ with no I/O, no other UZE crate and no rendering library, enforced by the
 architecture suite, so an extension handed one of its types is handed
 nothing that reaches the machine. It exists so the domain's decoder and the
 presentation engine share one definition of an extension without either
-reaching the other (`openspec/changes/extension-view-engine`). Nothing else
+reaching the other (`openspec/changes/archive/2026-10-24-extension-view-engine`). Nothing else
 about the decision changed.
 
 ## Context

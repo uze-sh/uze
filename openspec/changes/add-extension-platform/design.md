@@ -1100,7 +1100,8 @@ What the budget takes from it:
   chosen by provenance, with the sandbox settings D19 states.
 - **KDL v2 for manifests, views and tests, with UZE's own bounded
   decoder.** A new third-party parser on extension input, with the guards it
-  needs and an LSP to maintain.
+  needs and an LSP to maintain. Recorded as ADR-060 when `extension-view-engine`
+  was archived.
 - **Consent to extension code is enabling, recorded per grant set.**
   Modelled on ADR-055's stored approval of a project's commands (and, like
   `uze workspace allow`, refused from inside an agent's pane), and a
