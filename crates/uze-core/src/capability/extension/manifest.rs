@@ -11,7 +11,7 @@ use uze_contract::{
     Clean, Manifest, PROTOCOL, RESERVED_IDS, Slot, SourceDecl, SurfaceDecl, is_valid_id,
 };
 
-use super::document::{Place, Report, accepts, entries, refuse_extra, spelled};
+use super::document::{Place, Report, accepts, entries, nearest, refuse_extra, spelled};
 
 const NODES: &[&str] = &["protocol", "id", "name", "description", "surface", "source"];
 /// What later changes of `add-extension-platform` add to a manifest.
@@ -248,7 +248,10 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
             report.at(
                 offset,
                 format!("this version has no slot `{slot}`"),
-                Some(format!("a slot is one of {}", Slot::NAMES.join(", "))),
+                Some(match nearest(&slot, Slot::NAMES) {
+                    Some(near) => format!("did you mean `{near}`?"),
+                    None => format!("a slot is one of {}", Slot::NAMES.join(", ")),
+                }),
             );
         }
         parsed
@@ -397,9 +400,10 @@ fn unknown(node: &KdlNode, name: &str, report: &mut Report<'_>) {
     report.on(
         node,
         format!("a manifest has no `{name}`"),
-        Some(match case {
-            Some(known) => format!("manifest nodes are lowercase: write `{known}`"),
-            None => format!(
+        Some(match (case, nearest(name, NODES)) {
+            (Some(known), _) => format!("manifest nodes are lowercase: write `{known}`"),
+            (None, Some(near)) => format!("did you mean `{near}`?"),
+            (None, None) => format!(
                 "a manifest declares {}",
                 accepts(NODES).trim_start_matches("it takes ")
             ),

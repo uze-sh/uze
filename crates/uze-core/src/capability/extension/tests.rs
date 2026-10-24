@@ -519,10 +519,7 @@ Stack { use "a"; }"#,
 Stack { use "rows"; }"#,
     );
     assert!(missing.message.contains("no template `rows`"));
-    assert_eq!(
-        missing.suggestion.as_deref(),
-        Some("this view's templates: row")
-    );
+    assert_eq!(missing.suggestion.as_deref(), Some("did you mean `row`?"));
     assert!(
         the_one(
             r#"template "a" { }
@@ -826,4 +823,43 @@ fn test_files_are_found_under_tests_by_their_suffix() {
         ["tests/a.test.kdl", "tests/b.test.kdl"]
     );
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_misspelled_name_is_answered_with_the_nearest_one() {
+    let view = |source: &str| -> Vec<String> {
+        let mut report = Report::new("board.kdl", source);
+        let document = bounded::parse(&mut report).expect("parses");
+        view::compile(&document, "board.kdl", &mut report);
+        report
+            .into_diagnostics()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    };
+    let said = view("Tabel {\n}\n");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("`Tabel` is not a catalog node")
+                && line.contains("did you mean `Table`?")),
+        "{said:#?}"
+    );
+    let said = view("Text \"a\" rol=\"muted\"\n");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("did you mean `role=`?")),
+        "{said:#?}"
+    );
+    let said = view("Text \"a\" role=\"mutd\"\n");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("did you mean `muted`?")),
+        "{said:#?}"
+    );
+    let said = view("lookup \"tone\" { a \"success\"; }\nText \"a\" role=\"{tones:x}\"\n");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("did you mean `tone`?")),
+        "{said:#?}"
+    );
 }
