@@ -56,6 +56,19 @@ pub fn read(path: &Path, file: &str) -> Result<String, Diagnostic> {
     })
 }
 
+/// Text an editor holds for `file`, in place of what is on disk, refused
+/// past [`FILE_MAX`] like a file would be.
+pub fn held(text: &str, file: &str) -> Result<String, Diagnostic> {
+    if text.len() > FILE_MAX {
+        return Err(Diagnostic::whole(
+            file,
+            format!("is larger than the {} KiB a file may be", FILE_MAX / 1024),
+            Some("split it into smaller views, or move data into a fixture".to_owned()),
+        ));
+    }
+    Ok(text.to_owned())
+}
+
 /// Scans, then parses `source` under [`PARSE_LIMIT`]. Every refusal is
 /// reported; `None` means there is no document to decode.
 pub fn parse(report: &mut Report<'_>) -> Option<KdlDocument> {

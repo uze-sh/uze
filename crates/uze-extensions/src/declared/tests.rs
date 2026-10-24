@@ -1016,3 +1016,62 @@ fn a_wrapping_text_is_a_paragraph_and_is_not_cut_at_a_labels_length() {
         "a label is cut at a label's length"
     );
 }
+
+#[test]
+fn a_field_under_a_second_tab_is_found_missing_and_an_answered_when_is_not() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::Tabs)
+                .prop("id", "tab")
+                .child(n(NodeName::Tab).arg("Phases").prop("value", "phases"))
+                .child(n(NodeName::Tab).arg("Log").prop("value", "log"))
+                .item(),
+            n(NodeName::Text)
+                .arg("{phases}")
+                .show("tab", "phases")
+                .item(),
+            n(NodeName::Log)
+                .prop("lines", "{log}")
+                .show("tab", "log")
+                .item(),
+            n(NodeName::List)
+                .child(
+                    n(NodeName::Text)
+                        .each("servers")
+                        .arg("{tools}")
+                        .when("tools"),
+                )
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let fixtures = BTreeMap::from([(
+        SOURCE.to_owned(),
+        json!({"phases": 3, "servers": [{"tools": "6 tools"}, {"name": "sentry"}]}),
+    )]);
+    let missing = super::missing_fields(&extension(view), &fixtures, "en");
+    let fields: Vec<&str> = missing.iter().map(|field| field.field.as_str()).collect();
+    assert_eq!(fields, ["log"], "{missing:#?}");
+    assert_eq!(missing[0].fixture, "fixtures/board.json");
+}
+
+#[test]
+fn too_many_tab_combinations_bind_each_tab_alone() {
+    let tabs = |id: &str| {
+        let mut tabs = n(NodeName::Tabs).prop("id", id);
+        for value in ["a", "b", "c", "d", "e"] {
+            tabs = tabs.child(n(NodeName::Tab).arg(value).prop("value", value));
+        }
+        tabs.item()
+    };
+    let mut items: Vec<Item> = ["one", "two", "three"].iter().map(|id| tabs(id)).collect();
+    items.push(n(NodeName::Text).arg("{deep}").show("three", "e").item());
+    let view = compiled_view(items, Vec::new(), Vec::new());
+    let fixtures = BTreeMap::from([(SOURCE.to_owned(), json!({}))]);
+    let missing = super::missing_fields(&extension(view), &fixtures, "en");
+    assert!(
+        missing.iter().any(|field| field.field == "deep"),
+        "{missing:#?}"
+    );
+}
