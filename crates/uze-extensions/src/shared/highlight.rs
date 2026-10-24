@@ -39,7 +39,9 @@ fn bundled() -> &'static SyntaxSet {
 /// Grammars `two-face` ships only for onig: their upstream regexes once
 /// used what `fancy-regex` cannot compile, and onig is C, which this crate
 /// keeps out of the tree. Each is the upstream file with its licence
-/// beside it in `grammars/`.
+/// beside it in `grammars/`, except KDL, which `two-face` lacks and whose
+/// community grammar needs Oniguruma and Sublime's `extends`: UZE wrote
+/// that one, since an extension's views are KDL.
 ///
 /// A set of their own rather than added to [`bundled`]: adding one
 /// relinks every grammar in the dump, half a second before the first line
@@ -56,7 +58,10 @@ fn vendored() -> &'static SyntaxSet {
     })
 }
 
-const VENDORED_SOURCES: &[&str] = &[include_str!("../../grammars/PowerShell.sublime-syntax")];
+const VENDORED_SOURCES: &[&str] = &[
+    include_str!("../../grammars/PowerShell.sublime-syntax"),
+    include_str!("../../grammars/KDL.sublime-syntax"),
+];
 
 fn vendored_definitions() -> impl Iterator<Item = SyntaxDefinition> {
     VENDORED_SOURCES.iter().map(|source| {
@@ -345,7 +350,12 @@ mod tests {
 
     use syntect::parsing::{Regex, syntax_definition::Pattern};
 
-    use super::{FALLBACK_SYNTAX_THEME, highlighter, vendored_definitions};
+    use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
+
+    use super::{
+        FALLBACK_SYNTAX_THEME, highlighter, highlighter_for_language, line, lines, plain,
+        syntax_for, vendored_definitions,
+    };
 
     /// syntect compiles a pattern the first time a line reaches it, and a
     /// pattern `fancy-regex` refuses turns the rest of the file plain —
@@ -363,6 +373,16 @@ mod tests {
                                 return None;
                             };
                             let regex = pattern.regex.regex_str().to_owned();
+                            // A back reference to the match that pushed
+                            // the context is filled in when a line
+                            // reaches it; any text stands in for it here.
+                            let regex = if pattern.has_captures {
+                                (1..=9).fold(regex, |regex, group| {
+                                    regex.replace(&format!("\\{group}"), "#")
+                                })
+                            } else {
+                                regex
+                            };
                             Regex::try_compile(&regex)
                                 .map(|error| format!("{name}: {regex}\n  {error}"))
                         })
@@ -393,5 +413,194 @@ mod tests {
                 .highlight_line(&format!("{line}\n"), highlighter.set)
                 .unwrap_or_else(|error| panic!("{line:?}: {error}"));
         }
+    }
+
+    const KDL_SAMPLE: &str = r###"lookup "tone" default="muted" {
+    done "success"
+}
+Stack gap=1 {
+    Text "GSD · {version}" role="muted" grow=#true
+    Segment weight=19 ratio=0.89
+    /- Button "hidden" action="x"
+    Log lines=#"raw {x}"#
+    Badge (u8)3
+    Text """
+        multi
+        """
+}
+"###;
+
+    /// The scopes syntect gives each piece of `text` read as `path`, one
+    /// `(scope stack, piece)` per piece, the innermost scope last.
+    fn scoped(path: &str, text: &str) -> Vec<(String, String)> {
+        let grammar = super::grammar_for(Path::new(path), text.lines().next());
+        let mut state = ParseState::new(grammar.syntax);
+        let mut stack = ScopeStack::new();
+        let mut pieces = Vec::new();
+        for line in text.lines() {
+            let line = format!("{line}\n");
+            let ops = state
+                .parse_line(&line, grammar.set)
+                .unwrap_or_else(|error| panic!("{line:?}: {error}"));
+            let mut start = 0;
+            for (end, op) in ops.into_iter().chain([(line.len(), ScopeStackOp::Noop)]) {
+                if end > start {
+                    let scopes = stack
+                        .as_slice()
+                        .iter()
+                        .map(|scope| scope.build_string())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    pieces.push((scopes, line[start..end].to_owned()));
+                    start = end;
+                }
+                stack.apply(&op).expect("the grammar's scope ops balance");
+            }
+        }
+        pieces
+    }
+
+    /// The scopes of the piece that is `needle`, or else of the first that
+    /// holds it.
+    fn scope_of<'a>(pieces: &'a [(String, String)], needle: &str) -> &'a str {
+        pieces
+            .iter()
+            .find(|(_, piece)| piece == needle)
+            .or_else(|| pieces.iter().find(|(_, piece)| piece.contains(needle)))
+            .map(|(scopes, _)| scopes.as_str())
+            .unwrap_or_else(|| panic!("{needle:?} is not one piece of {pieces:#?}"))
+    }
+
+    #[test]
+    fn a_kdl_file_resolves_to_the_vendored_kdl_grammar() {
+        for path in ["board.kdl", "extension.kdl", "board.test.kdl"] {
+            assert_eq!(syntax_for(Path::new(path), None).name, "KDL", "{path}");
+        }
+    }
+
+    #[test]
+    fn a_kdl_fence_is_read_with_the_kdl_grammar() {
+        let mut highlighter = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        let spans = line(
+            &mut highlighter,
+            "Text \"hi\" grow=#true",
+            FALLBACK_SYNTAX_THEME,
+        );
+        assert!(spans.len() > 1, "a kdl fence is coloured: {spans:?}");
+    }
+
+    #[test]
+    fn a_kdl_v2_document_is_scoped_piece_by_piece() {
+        let pieces = scoped("board.kdl", KDL_SAMPLE);
+        let expectations = [
+            ("lookup", "entity.name.tag"),
+            ("Stack", "entity.name.tag"),
+            ("done", "entity.name.tag"),
+            ("default", "entity.other.attribute-name"),
+            ("success", "string.quoted.double"),
+            ("GSD", "string.quoted.double"),
+            ("version", "variable.other"),
+            ("#true", "constant.language"),
+            ("19", "constant.numeric"),
+            ("0.89", "constant.numeric"),
+            ("Button", "comment.block.slashdash"),
+            ("raw ", "string.quoted.double.raw"),
+            ("u8", "storage.type"),
+            ("3", "constant.numeric"),
+            ("multi", "string.quoted.triple"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+        assert!(
+            !scope_of(&pieces, "Log").contains("comment"),
+            "a slashdash comments out one node, not the ones after it"
+        );
+    }
+
+    #[test]
+    fn kdl_v2_comments_numbers_and_raw_strings_of_every_shape_are_scoped() {
+        let pieces = scoped(
+            "edge.kdl",
+            concat!(
+                "/* outer /* inner */ still */ node 0xFF_ff 0o17 0b1_0 #-inf\n",
+                "node2 r=##\"has \"# inside\"## key=#nan /-{\n",
+                "    gone 1\n",
+                "} kept // tail\n",
+                "after #\"\"\"\n",
+                "raw lines\n",
+                "\"\"\"#\n",
+            ),
+        );
+        let expectations = [
+            ("still", "comment.block"),
+            ("node", "entity.name.tag"),
+            ("0xFF_ff", "constant.numeric"),
+            ("0o17", "constant.numeric"),
+            ("0b1_0", "constant.numeric"),
+            ("#-inf", "constant.language"),
+            ("#nan", "constant.language"),
+            ("inside", "string.quoted.double.raw"),
+            ("gone", "comment.block.slashdash"),
+            ("kept", "string.unquoted"),
+            ("tail", "comment.line"),
+            ("after", "entity.name.tag"),
+            ("raw lines", "string.quoted.triple.raw"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+    }
+
+    /// Scopes the theme has no colour for would still draw as plain text,
+    /// so each kind of piece is checked against the colour it is drawn in.
+    #[test]
+    fn a_kdl_v2_document_is_coloured_apart_from_plain_text() {
+        let coloured = lines(
+            KDL_SAMPLE,
+            Path::new("board.kdl"),
+            FALLBACK_SYNTAX_THEME,
+            100,
+        );
+        let colour_of = |needle: &str| {
+            coloured
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        let kinds = [
+            ("node name", "Stack"),
+            ("string", "GSD"),
+            ("keyword", "#true"),
+            ("number", "19"),
+            ("raw string", "raw "),
+            ("multi-line string", "multi"),
+            ("slashdash", "Button"),
+            ("type annotation", "u8"),
+        ];
+        for (kind, needle) in kinds {
+            assert_ne!(colour_of(needle), foreground, "a {kind} is coloured");
+        }
+        assert_ne!(
+            colour_of("Stack"),
+            colour_of("GSD"),
+            "a node name is not a string"
+        );
+        assert_ne!(
+            colour_of("Button"),
+            colour_of("Text"),
+            "a commented node is not a node"
+        );
     }
 }

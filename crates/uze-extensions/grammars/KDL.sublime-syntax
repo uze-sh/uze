@@ -1,0 +1,269 @@
+%YAML 1.2
+---
+# Written by uze for KDL v2 (https://kdl.dev/spec), under the repository's
+# licence (Apache-2.0). The community grammar (eugenesvk/sublime-KDL) is
+# written for Oniguruma and Sublime's `extends`, neither of which syntect
+# with `fancy-regex` has, so this one is small on purpose: it colours what
+# an extension's views are written in, scoped for any syntax theme.
+# http://www.sublimetext.com/docs/syntax.html
+name: KDL
+scope: source.kdl
+version: 2
+
+file_extensions:
+  - kdl
+
+first_line_match: ^\s*/-\s*kdl-version\b
+
+variables:
+  # A character an identifier may hold: anything but whitespace and the
+  # characters KDL reserves.
+  ident_char: '[^\s\\/(){};\[\]="#]'
+  ident: '(?:{{ident_char}}(?:{{ident_char}}|#)*)'
+  boundary: '(?![^\s\\/(){};\[\]="])'
+
+contexts:
+  main:
+    - include: nodes
+
+  nodes:
+    - include: comments
+    - match: '/-'
+      scope: comment.block.slashdash.kdl punctuation.definition.comment.kdl
+      push: commented-node
+    - match: ';'
+      scope: punctuation.terminator.kdl
+    - include: type-annotation
+    - match: '(?=")'
+      push: [node, node-name-string]
+    - match: '(?=#+")'
+      push: [node, node-name-raw-string]
+    - match: '{{ident}}'
+      scope: entity.name.tag.kdl
+      push: node
+
+  node-name-string:
+    - match: '"'
+      scope: punctuation.definition.string.begin.kdl
+      set: [entity-name-string-body]
+  entity-name-string-body:
+    - meta_scope: entity.name.tag.kdl
+    - match: '\\.'
+      scope: constant.character.escape.kdl
+    - match: '"'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+  node-name-raw-string:
+    - match: '(#+)"'
+      scope: punctuation.definition.string.begin.kdl
+      set: [entity-name-raw-body]
+  entity-name-raw-body:
+    - meta_scope: entity.name.tag.kdl
+    - match: '"\1'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+
+  # A node's arguments, properties and children, up to the line's end, a
+  # `;` or the `}` closing its parent.
+  node:
+    - meta_scope: meta.node.kdl
+    - match: '\\'
+      scope: punctuation.separator.continuation.kdl
+      push: continuation
+    - include: comments
+    - match: '/-\s*(?=\{)'
+      scope: comment.block.slashdash.kdl punctuation.definition.comment.kdl
+      push: commented-children
+    - match: '/-'
+      scope: comment.block.slashdash.kdl punctuation.definition.comment.kdl
+      push: commented-value
+    - match: ';'
+      scope: punctuation.terminator.kdl
+      pop: true
+    - match: '\n'
+      pop: true
+    - match: '(?=\})'
+      pop: true
+    - match: '\{'
+      scope: punctuation.section.block.begin.kdl
+      push: children
+    - match: '({{ident}})\s*(=)'
+      captures:
+        1: entity.other.attribute-name.kdl
+        2: punctuation.separator.key-value.kdl
+    - match: '(?="(?:[^"\\]|\\.)*"\s*=)'
+      push: [property-separator, property-name-string]
+    - include: values
+
+  continuation:
+    - include: comments
+    - match: '\n'
+      pop: true
+
+  property-name-string:
+    - match: '"'
+      scope: punctuation.definition.string.begin.kdl
+      set: [property-name-string-body]
+  property-name-string-body:
+    - meta_scope: entity.other.attribute-name.kdl
+    - match: '\\.'
+      scope: constant.character.escape.kdl
+    - match: '"'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+  property-separator:
+    - match: '\s*(=)'
+      captures:
+        1: punctuation.separator.key-value.kdl
+      pop: true
+
+  children:
+    - meta_scope: meta.block.kdl
+    - match: '\}'
+      scope: punctuation.section.block.end.kdl
+      pop: true
+    - include: nodes
+
+  values:
+    - include: type-annotation
+    - include: strings
+    - match: '#(?:true|false|null|-inf|inf|nan){{boundary}}'
+      scope: constant.language.kdl
+    - match: '[+-]?0x[0-9a-fA-F][0-9a-fA-F_]*{{boundary}}'
+      scope: constant.numeric.integer.hexadecimal.kdl
+    - match: '[+-]?0o[0-7][0-7_]*{{boundary}}'
+      scope: constant.numeric.integer.octal.kdl
+    - match: '[+-]?0b[01][01_]*{{boundary}}'
+      scope: constant.numeric.integer.binary.kdl
+    - match: '[+-]?[0-9][0-9_]*(?:\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9][0-9_]*)?{{boundary}}'
+      scope: constant.numeric.decimal.kdl
+    - match: '{{ident}}'
+      scope: string.unquoted.kdl
+
+  type-annotation:
+    - match: '(\()\s*({{ident}}|"(?:[^"\\]|\\.)*")?\s*(\))'
+      captures:
+        1: punctuation.definition.annotation.begin.kdl
+        2: storage.type.kdl
+        3: punctuation.definition.annotation.end.kdl
+
+  strings:
+    - match: '(#+)"""'
+      scope: punctuation.definition.string.begin.kdl
+      push: raw-multiline-string
+    - match: '(#+)"'
+      scope: punctuation.definition.string.begin.kdl
+      push: raw-string
+    - match: '"""'
+      scope: punctuation.definition.string.begin.kdl
+      push: multiline-string
+    - match: '"'
+      scope: punctuation.definition.string.begin.kdl
+      push: string
+
+  raw-multiline-string:
+    - meta_scope: string.quoted.triple.raw.kdl
+    - match: '"""\1'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+    - include: field-references
+  raw-string:
+    - meta_scope: string.quoted.double.raw.kdl
+    - match: '"\1'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+    - include: field-references
+  multiline-string:
+    - meta_scope: string.quoted.triple.kdl
+    - match: '"""'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+    - include: escapes
+    - include: field-references
+  string:
+    - meta_scope: string.quoted.double.kdl
+    - match: '"'
+      scope: punctuation.definition.string.end.kdl
+      pop: true
+    - include: escapes
+    - include: field-references
+
+  escapes:
+    - match: '\\(?:u\{[0-9a-fA-F]{1,6}\}|\s+|.)'
+      scope: constant.character.escape.kdl
+
+  # `{field}` in a view's text, the data it is filled from.
+  field-references:
+    - match: '(\{)\s*[A-Za-z_][\w.\-]*\s*(\})'
+      scope: variable.other.field.kdl
+      captures:
+        1: punctuation.definition.variable.begin.kdl
+        2: punctuation.definition.variable.end.kdl
+
+  comments:
+    - match: '//'
+      scope: punctuation.definition.comment.kdl
+      push: line-comment
+    - match: '/\*'
+      scope: punctuation.definition.comment.begin.kdl
+      push: block-comment
+
+  # Leaves the newline to the node it ends.
+  line-comment:
+    - meta_scope: comment.line.double-slash.kdl
+    - match: '(?=\n)'
+      pop: true
+
+  block-comment:
+    - meta_scope: comment.block.kdl
+    - match: '/\*'
+      push: block-comment
+    - match: '\*/'
+      scope: punctuation.definition.comment.end.kdl
+      pop: true
+
+  # `/-` before a node: the node, its arguments and its children are
+  # commented out, however many lines the children take.
+  commented-node:
+    - meta_scope: comment.block.slashdash.kdl
+    - match: '\{'
+      push: commented-braces
+    - match: ';'
+      pop: true
+    - match: '\n'
+      pop: true
+    - match: '(?=\})'
+      pop: true
+    - match: '"""'
+      push: commented-multiline-string
+    - match: '"(?:[^"\\]|\\.)*"'
+    - match: '#+"[^"]*"#+'
+
+  # `/-` before a children block, inside a node.
+  commented-children:
+    - meta_scope: comment.block.slashdash.kdl
+    - match: '\{'
+      set: commented-braces
+
+  commented-braces:
+    - meta_scope: comment.block.slashdash.kdl
+    - match: '\{'
+      push: commented-braces
+    - match: '\}'
+      pop: true
+    - match: '"""'
+      push: commented-multiline-string
+    - match: '"(?:[^"\\]|\\.)*"'
+
+  commented-multiline-string:
+    - meta_scope: comment.block.slashdash.kdl
+    - match: '"""'
+      pop: true
+
+  # `/-` before one argument or property, inside a node.
+  commented-value:
+    - meta_scope: comment.block.slashdash.kdl
+    - match: '\s*(?:{{ident}}\s*=\s*)?(?:\([^)]*\))?(?:"(?:[^"\\]|\\.)*"|#+"[^"]*"#+|[^\s\\/(){};\[\]="]+)'
+      pop: true
+    - match: '(?=\S)'
+      pop: true
