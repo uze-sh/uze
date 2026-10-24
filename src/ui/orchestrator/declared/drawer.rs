@@ -12,7 +12,7 @@ use crate::ui::widget::ToastKind;
 /// The keys a drawer holding the focus takes from the pane: the moves
 /// every declared surface answers. Every other key stays the pane's, so
 /// typing to the agent never stops.
-pub(in super::super) fn drawer_answers(action: Action) -> bool {
+pub(in crate::ui::orchestrator) fn drawer_answers(action: Action) -> bool {
     matches!(
         action,
         Action::Dismiss
@@ -27,14 +27,16 @@ pub(in super::super) fn drawer_answers(action: Action) -> bool {
 }
 
 impl WorkspaceModel {
-    pub(in super::super) fn space_in_front(&self) -> Option<SpaceId> {
+    pub(in crate::ui::orchestrator) fn space_in_front(&self) -> Option<SpaceId> {
         self.session
             .as_ref()
             .map(|session| session.workspace.selected_space)
     }
 
     /// The declared drawers the tab strip offers, in slot order.
-    pub(in super::super) fn declared_drawers(&self) -> impl Iterator<Item = &DeclaredSlot> {
+    pub(in crate::ui::orchestrator) fn declared_drawers(
+        &self,
+    ) -> impl Iterator<Item = &DeclaredSlot> {
         self.remembered
             .declared
             .slots
@@ -43,7 +45,7 @@ impl WorkspaceModel {
     }
 
     /// The drawer open in the space in front, while its extension is on.
-    pub(in super::super) fn open_drawer_slot(&self) -> Option<&DeclaredSlot> {
+    pub(in crate::ui::orchestrator) fn open_drawer_slot(&self) -> Option<&DeclaredSlot> {
         let declared = &self.remembered.declared;
         let id = *declared.drawers.get(&self.space_in_front()?)?;
         declared
@@ -51,20 +53,23 @@ impl WorkspaceModel {
             .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.identity))
     }
 
-    pub(in super::super) fn open_drawer(&self) -> Option<SlotId> {
+    pub(in crate::ui::orchestrator) fn open_drawer(&self) -> Option<SlotId> {
         self.open_drawer_slot().map(|slot| slot.id)
     }
 
     /// What the layout is asked to dock beside the pane.
-    pub(in super::super) fn dock(&self) -> Option<super::super::render::Dock> {
-        self.open_drawer_slot().map(|_| super::super::render::Dock {
-            width: self.dock_width,
-        })
+    pub(in crate::ui::orchestrator) fn dock(
+        &self,
+    ) -> Option<crate::ui::orchestrator::render::Dock> {
+        self.open_drawer_slot()
+            .map(|_| crate::ui::orchestrator::render::Dock {
+                width: self.dock_width,
+            })
     }
 
     /// Whether the open drawer has the navigation keys now. Anything
     /// drawn over the frame takes them back while it is up.
-    pub(in super::super) fn drawer_focused(&self) -> bool {
+    pub(in crate::ui::orchestrator) fn drawer_focused(&self) -> bool {
         self.dock_focused && self.open_drawer().is_some() && self.chrome_answers()
     }
 
@@ -72,7 +77,7 @@ impl WorkspaceModel {
     /// there, or closes it when it is the one open. Refused, with a toast
     /// saying why, when beside `room` columns of agent area the pane would
     /// be left too narrow.
-    pub(in super::super) fn toggle_drawer(&mut self, id: SlotId, room: u16) {
+    pub(in crate::ui::orchestrator) fn toggle_drawer(&mut self, id: SlotId, room: u16) {
         if self.open_drawer() == Some(id) {
             self.close_drawer();
             return;
@@ -102,7 +107,7 @@ impl WorkspaceModel {
     }
 
     /// Closes the drawer open in the space in front.
-    pub(in super::super) fn close_drawer(&mut self) {
+    pub(in crate::ui::orchestrator) fn close_drawer(&mut self) {
         if let Some(space) = self.space_in_front() {
             self.remembered.declared.drawers.remove(&space);
         }
@@ -112,14 +117,14 @@ impl WorkspaceModel {
     }
 
     /// Gives the navigation keys back to the pane, with nothing armed.
-    pub(in super::super) fn leave_drawer_keys(&mut self) {
+    pub(in crate::ui::orchestrator) fn leave_drawer_keys(&mut self) {
         self.dock_focused = false;
         self.dock_esc_armed = false;
     }
 
     /// The drawer the key toggles: the one open, else the drawer of the
     /// extension whose view is in front, else the first one offered.
-    pub(in super::super) fn drawer_in_front(&self) -> Option<SlotId> {
+    pub(in crate::ui::orchestrator) fn drawer_in_front(&self) -> Option<SlotId> {
         if let Some(open) = self.open_drawer() {
             return Some(open);
         }
@@ -134,7 +139,7 @@ impl WorkspaceModel {
     /// front, keeping where they were in the one left. One engine answers
     /// a drawer in every space, so its place is moved rather than kept on
     /// it; a space it was never opened in starts it over.
-    pub(in super::super) fn follow_drawer_space(&mut self) {
+    pub(in crate::ui::orchestrator) fn follow_drawer_space(&mut self) {
         let now = self.space_in_front();
         let DeclaredExtensions {
             slots,
@@ -169,7 +174,7 @@ impl WorkspaceModel {
     }
 
     /// Closes every drawer of an extension switched off, in every space.
-    pub(in super::super) fn close_drawers_switched_off(&mut self) {
+    pub(in crate::ui::orchestrator) fn close_drawers_switched_off(&mut self) {
         let off: Vec<SlotId> = self
             .remembered
             .declared
@@ -188,7 +193,7 @@ impl WorkspaceModel {
     }
 
     /// Hands the open drawer's engine a command.
-    pub(in super::super) fn tell_drawer(&mut self, command: Command) {
+    pub(in crate::ui::orchestrator) fn tell_drawer(&mut self, command: Command) {
         let Some(id) = self.open_drawer() else {
             return;
         };
@@ -206,7 +211,7 @@ impl WorkspaceModel {
     }
 
     /// Scrolls the open drawer's content a step.
-    pub(in super::super) fn scroll_drawer(&mut self, direction: ScrollDirection) {
+    pub(in crate::ui::orchestrator) fn scroll_drawer(&mut self, direction: ScrollDirection) {
         let Some(id) = self.open_drawer() else {
             return;
         };
@@ -221,7 +226,7 @@ impl WorkspaceModel {
 
     /// What the drawer's engine answered, followed: its notice is said
     /// along the drawer's foot, since it has no footer of its own.
-    pub(in super::super) fn follow_drawer(&mut self, outcome: Outcome) {
+    pub(in crate::ui::orchestrator) fn follow_drawer(&mut self, outcome: Outcome) {
         match outcome {
             Outcome::Stay => {}
             Outcome::Close => self.close_drawer(),
