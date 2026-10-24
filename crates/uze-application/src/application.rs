@@ -65,6 +65,7 @@ mod setup;
 mod theme;
 
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
+pub use extensions::{FIXTURE_LIMIT, InstalledExtension, SourceData, extension_stamp};
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
 pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};

@@ -11,6 +11,9 @@ publish = false
 [dependencies]
 uze-platform = { path = "../uze-platform" }
 uze-core = { path = "../uze-core" }
+# The declared extensions' vocabulary: what `installed` and `compile` answer
+# in, and what the client hands the engine.
+uze-contract = { path = "../uze-contract" }
 uze-workspace = { path = "../uze-workspace" }
 uze-keys = { path = "../uze-keys" }
 uze-integrations = { path = "../uze-integrations" }

@@ -531,7 +531,8 @@ impl UzeHome {
     /// One compiled extension, by the digest of the files it was compiled
     /// from.
     pub fn compiled_extension_path(&self, digest: &str) -> PathBuf {
-        self.compiled_extensions_dir().join(format!("{digest}.json"))
+        self.compiled_extensions_dir()
+            .join(format!("{digest}.json"))
     }
 
     /// The rules engine's corner of the runtime tree.

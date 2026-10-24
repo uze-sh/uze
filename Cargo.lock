@@ -3399,6 +3399,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "uze-contract",
  "uze-core",
  "uze-git",
  "uze-integrations",
