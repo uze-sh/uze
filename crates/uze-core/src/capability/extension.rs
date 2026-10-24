@@ -11,9 +11,11 @@
 //! - [`manifest`]: `extension.kdl` into a [`uze_contract::Manifest`].
 //! - [`view`]: a view file into a [`uze_contract::CompiledView`].
 //! - [`test_file`]: a `tests/*.test.kdl` into a [`uze_contract::TestFile`].
+//! - [`locate`]: what is at a place in a file, for an editor.
 
 mod bounded;
 mod document;
+pub mod locate;
 mod manifest;
 mod test_file;
 mod view;

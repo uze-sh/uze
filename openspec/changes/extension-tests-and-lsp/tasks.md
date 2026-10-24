@@ -3,7 +3,7 @@
 - [x] 1.1 `uze-contract`: `TestFile`, `TestDecl`, the world (surface, data per source as fixture path or inline JSON, size, theme, locale) and `Step` with spans; the step names; a one-line `doc` per catalog node, property, role, slot and step
 - [x] 1.2 `uze-core` `capability/extension/test.rs`: decode `tests/*.test.kdl` through the bounded parse with the decoder's refusals; discover test files beside the manifest
 - [x] 1.3 Nearest names (T5): `strsim` as a direct `uze-core` dependency, used by every unknown-name diagnostic (nodes, properties, roles, slots, steps, declared lookups and templates); tests for `Tabel`, `expect-txt`, `rol`
-- [ ] 1.4 `locate(text, offset) -> Place` with the last-good-parse fallback, tested at a node name, after a node, inside a property value and inside `{…}`
+- [x] 1.4 `locate(text, offset) -> Place` with the last-good-parse fallback, tested at a node name, after a node, inside a property value and inside `{…}`
 
 ## 2. One analysis
 
