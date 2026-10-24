@@ -1214,3 +1214,57 @@ fn a_tree_view_wears_the_standard_scrollbar_when_it_overflows() {
     let heading: String = (0..5u16).map(|x| buffer[(x, 0)].symbol()).collect();
     assert_eq!(heading, "board");
 }
+
+#[test]
+fn a_text_a_row_squeezes_to_nothing_takes_no_rows_and_folds_nothing_away() {
+    // The gsd band's header in a sidebar's width: its growing title is
+    // left no cells by the controls beside it.
+    let title = growing(node(
+        1,
+        NodeKind::Text {
+            spans: vec![Span::new("GSD · v1.23 Assistente do lojista", Role::Muted)],
+            truncate: false,
+        },
+    ));
+    let header = row(
+        0,
+        0,
+        Align::Center,
+        vec![
+            node(2, NodeKind::Activity { busy: false }),
+            title,
+            node(
+                3,
+                NodeKind::Tabs {
+                    tabs: vec![tab("Phases", true), tab("Log", false)],
+                },
+            ),
+            node(
+                4,
+                NodeKind::Button {
+                    label: "clear".into(),
+                },
+            ),
+            node(
+                5,
+                NodeKind::Button {
+                    label: "▶ run phase 12".into(),
+                },
+            ),
+        ],
+    );
+    assert_eq!(row_widths(&header.children, 0, Align::Center, 25).1[1], 0);
+    assert_eq!(height(&header, 25), 1);
+
+    let band = stack(
+        6,
+        0,
+        vec![header, words(7, "Catálogo de ajuda", Role::Default)],
+    );
+    let folding = TreeFrame {
+        fold: true,
+        ..at(0)
+    };
+    let rows = draw(&band, 25, 4, 0, folding).rows();
+    assert!(rows[1].contains("Catálogo de ajuda"), "{rows:#?}");
+}
