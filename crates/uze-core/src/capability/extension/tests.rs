@@ -269,7 +269,7 @@ fn a_catalog_node_in_the_wrong_case_is_named() {
             .as_deref(),
         Some("write `template`")
     );
-    let unknown = the_one("Grid { }");
+    let unknown = the_one("Heatmap { }");
     assert!(unknown.suggestion.unwrap().contains("Stack, Row"));
 }
 
@@ -581,11 +581,11 @@ Text "a""#
 #[test]
 fn every_problem_in_a_view_is_reported_not_only_the_first() {
     let diagnostics = refused(
-        "stack {\n    Text \"a\" colour=\"red\"\n    Button \"Go\" action=\"{kind}\"\n}\nGrid",
+        "stack {\n    Text \"a\" colour=\"red\"\n    Button \"Go\" action=\"{kind}\"\n}\nHeatmap",
     );
     assert_eq!(diagnostics.len(), 2, "{diagnostics:#?}");
     let inner = refused(
-        "Stack {\n    Text \"a\" colour=\"red\"\n    Button \"Go\" action=\"{kind}\"\n    Grid\n}",
+        "Stack {\n    Text \"a\" colour=\"red\"\n    Button \"Go\" action=\"{kind}\"\n    Heatmap\n}",
     );
     assert_eq!(inner.len(), 3, "{inner:#?}");
     assert_eq!(
