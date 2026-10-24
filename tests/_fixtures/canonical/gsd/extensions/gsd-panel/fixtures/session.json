@@ -1,0 +1,23 @@
+{
+  "title": "Fechamento de caixa — Trilho A",
+  "status": { "text": "Código completo — não commitado, não validado em staging", "tone": "attention" },
+  "version": "v1.7",
+  "branch": "main",
+  "percent": 0,
+  "done": 0,
+  "total": 3,
+  "phases": [
+    { "number": "43", "name": "integration_status na sessão de caixa", "state": "running", "ratio": 0.0 },
+    { "number": "44", "name": "Serviço de export do fechamento", "state": "ready", "ratio": 0.0 },
+    { "number": "45", "name": "Endpoints pull + ack", "state": "ready", "ratio": 0.0 }
+  ],
+  "blockers": [
+    "Herdado do v1.5 (T-26-05, BACKLOG.md › ROLLOUT-01): company_id ausente no payload de integração",
+    "requirements mark-complete não encontrou SCHEMA-01/SCHEMA-05 no REQUIREMENTS.md",
+    "VAL-01/VAL-02 dependem de release externo do app (EAS build/submit)"
+  ],
+  "blockers_more": 71,
+  "state_file": "STATE.md",
+  "stopped": "Fases 43-45 (CXSRC-01..05) encontradas JÁ IMPLEMENTADAS no working tree em 2026-09-08, antes da discussão formal — CashierExportController/Service + CashierIntegrationService + migração cash_session_integration_status. 200/200 testes do módulo cashier verdes. Endpoints confirmados batendo com o consumidor real (nexos.service.ts do api-orul, Trilho B). Falta: commit + validação live em staging.",
+  "next": { "command": "/gsd-discuss-phase 43", "skill": "gsd:discuss-phase", "phase": "43" }
+}
