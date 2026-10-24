@@ -790,7 +790,11 @@ fn an_agent_is_re_entered_on_the_tab_it_was_left_on() {
 
     let mut driven = driven(model, &home);
     driven.frame();
-    let layout = compute_layout(Rect::new(0, 0, 80, 24), driven.attach.model.sidebar_width);
+    let layout = compute_layout(
+        Rect::new(0, 0, 80, 24),
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    );
     let row = driven
         .attach
         .model
@@ -848,7 +852,11 @@ fn a_shell_that_became_an_agent_is_not_where_its_first_agent_is_re_entered() {
 
     let mut driven = driven(model, &home);
     driven.frame();
-    let layout = compute_layout(Rect::new(0, 0, 80, 24), driven.attach.model.sidebar_width);
+    let layout = compute_layout(
+        Rect::new(0, 0, 80, 24),
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    );
     let row = driven
         .attach
         .model
@@ -893,7 +901,11 @@ fn clicking_the_agent_you_are_already_in_selects_the_agent_itself() {
 
     let mut driven = driven(model, &home);
     driven.frame();
-    let layout = compute_layout(Rect::new(0, 0, 80, 24), driven.attach.model.sidebar_width);
+    let layout = compute_layout(
+        Rect::new(0, 0, 80, 24),
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    );
     let row = driven
         .attach
         .model

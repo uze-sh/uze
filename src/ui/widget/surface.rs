@@ -78,6 +78,29 @@ impl Surface {
         }
     }
 
+    /// A box raised off the screen beside live content it does not cover —
+    /// a plugin's drawer docked by an agent's pane. The full hairline and
+    /// a ground a step up from the backdrop's, so it reads as lifted over
+    /// the work rather than a column of it; no inset, since what it holds
+    /// keeps its own.
+    ///
+    /// The caller must have cleared what is underneath.
+    pub(crate) fn raised() -> Self {
+        Self {
+            ground: Some(Token::SurfaceRaised),
+            ..Self::card()
+        }
+    }
+
+    /// The hairline in the accent, for a surface whose edge is held by
+    /// the pointer: the light every dragged handle wears.
+    pub(crate) fn held(mut self, held: bool) -> Self {
+        if held {
+            self.tone = Token::Accent;
+        }
+        self
+    }
+
     /// A card the keyboard can land on, whose border is what says so. The
     /// rounded corner is the one place the UI uses one, and it is load
     /// bearing: these cards are chosen from rather than read, and the

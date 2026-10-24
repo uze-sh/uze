@@ -22,6 +22,8 @@ pub enum SurfaceSlot {
     View,
     /// A collapsible block of the sidebar.
     Section,
+    /// A panel docked along the right of the agent area, beside the pane.
+    Drawer,
 }
 
 /// One surface an extension offers.
@@ -92,7 +94,8 @@ pub trait Extension: Send {
 
     fn surfaces(&self) -> Vec<SurfaceInfo>;
 
-    /// The full-frame view of `surface`, or `None` when it is not a view.
+    /// The view of `surface` (full-frame, or the drawer's column), or `None`
+    /// when it is neither.
     fn view(&self, surface: &str, space: Size) -> Option<View>;
 
     /// The sidebar section of `surface`, or `None` when it is not one.

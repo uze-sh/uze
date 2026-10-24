@@ -91,6 +91,7 @@ impl WorkspaceModel {
         {
             self.close_declared();
         }
+        self.close_drawers_switched_off();
         self.dirty = true;
     }
 

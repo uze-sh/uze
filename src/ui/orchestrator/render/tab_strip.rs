@@ -171,6 +171,16 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             lit: model.declared_open == Some(slot.id),
             switch: true,
         });
+        // Its drawers beside them: lit while one stands docked by the
+        // pane, which it shares the frame with rather than replacing.
+        let drawers = model.declared_drawers().map(|slot| GroupButton {
+            hit: WorkspaceHit::ToggleDrawer(slot.id),
+            label: text::elide(&slot.surface.title, DECLARED_LABEL),
+            hue: theme::color(Token::TextSecondary),
+            strong: false,
+            lit: model.open_drawer() == Some(slot.id),
+            switch: true,
+        });
         let built_in = [
             (
                 spec::CATALOG.id,
@@ -207,7 +217,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             lit: open,
             switch: true,
         });
-        let buttons: Vec<GroupButton> = declared.chain(built_in).collect();
+        let buttons: Vec<GroupButton> = declared.chain(drawers).chain(built_in).collect();
         if !buttons.is_empty() {
             let width = group_width(&buttons);
             let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);

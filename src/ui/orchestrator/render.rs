@@ -55,6 +55,16 @@ pub(super) struct WorkspaceLayout {
     pub(super) sidebar: Rect,
     pub(super) tab_strip: Rect,
     pub(super) pane: Rect,
+    /// The column a plugin's drawer is docked in, its gap included, when
+    /// one is open and fits: beside the pane, never over it.
+    pub(super) drawer: Option<Rect>,
+}
+
+/// A drawer docked beside the pane, as the layout is asked for one: the
+/// width it was dragged to, `None` for its width at rest.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct Dock {
+    pub(super) width: Option<u16>,
 }
 
 /// The one source of truth for workspace geometry — both the renderer and
@@ -67,9 +77,15 @@ pub(super) struct WorkspaceLayout {
 /// and health chrome that used to live in a titlebar now opens the sidebar
 /// itself (see [`render_sidebar`]), and this client never shows the help
 /// toolbar — that stays exclusive to the management modal.
+///
+/// `dock` is the drawer open beside the pane, if any. The pane gives up its
+/// width and the gap before it, so the PTY is sized to what stays visible
+/// and no cell an agent draws is covered; the size changes when a drawer
+/// opens, closes or is dragged, never because of what one answers.
 pub(super) fn compute_layout(
     frame_area: Rect,
     sidebar_width_override: Option<u16>,
+    dock: Option<Dock>,
 ) -> WorkspaceLayout {
     let (sidebar, column) = crate::ui::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
@@ -89,16 +105,32 @@ pub(super) fn compute_layout(
     // `layout.pane.width/height`), so insetting it here — not just where
     // it's drawn — keeps what the shell thinks its size is in sync with
     // what's visible.
-    let pane = Rect::new(
+    let area = Rect::new(
         content_rows[1].x,
         content_rows[1].y,
         content_rows[1].width.saturating_sub(1),
         content_rows[1].height,
     );
+    let docked = dock.and_then(|dock| widget::drawer::docked_width(dock.width, area.width));
+    let (pane, drawer) = match docked {
+        Some(width) => {
+            let column = width + widget::drawer::DOCKED_GAP;
+            let pane = Rect {
+                width: area.width - column,
+                ..area
+            };
+            (
+                pane,
+                Some(Rect::new(pane.right(), area.y, column, area.height)),
+            )
+        }
+        None => (area, None),
+    };
     WorkspaceLayout {
         sidebar,
         tab_strip: content_rows[0],
         pane,
+        drawer,
     }
 }
 
@@ -148,7 +180,7 @@ pub(super) fn render(
     metrics: &mut FrameMetrics,
 ) {
     widget::root(frame, frame.area());
-    let layout = compute_layout(frame.area(), model.sidebar_width);
+    let layout = compute_layout(frame.area(), model.sidebar_width, model.dock());
     render_sidebar(frame, layout.sidebar, model, identities, hits, metrics);
     // The sidebar's own hairline right border doubles as a drag handle —
     // it sits just past `inner` (which `render_sidebar` never draws into),
@@ -203,6 +235,9 @@ pub(super) fn render(
             None
         }
     };
+    if let Some(area) = layout.drawer {
+        metrics.marquee |= render_declared_drawer(frame, area, model, hits);
+    }
     // Drawn last so it sits on top of the pane — same ordering the
     // management modal's dialogs use in its own `render`. Anchored to
     // `picker.anchor` (the "✦" button's own rect) rather than centered on

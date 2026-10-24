@@ -943,6 +943,10 @@ fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
     driven.area = ratatui::layout::Rect::new(0, 0, 80, 30);
     driven.frame();
     let rule = drawn(&driven.attach.model, WorkspaceHit::ResizeOverviewDrawer);
-    let layout = super::compute_layout(driven.area, driven.attach.model.sidebar_width);
+    let layout = super::compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    );
     assert!(layout.pane.right() - rule.x <= layout.pane.width / 2 + 1);
 }

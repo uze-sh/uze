@@ -260,7 +260,12 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
 
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    )
+    .pane;
     let track = Rect::new(pane.right(), pane.y + 1, 1, pane.height - 1);
     let bar = crate::ui::widget::Scrollbar::measure(track, usize::from(track.height), 500)
         .expect("five hundred lines in a pane is a scrollbar");
@@ -766,7 +771,8 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
     // default width the menu has no room to name what it chooses.
     let mut driven = driven(model, &home).on_a_roomy_terminal();
 
-    let space = crate::ui::extension_view::board_space(compute_layout(driven.area, None).pane);
+    let space =
+        crate::ui::extension_view::board_space(compute_layout(driven.area, None, None).pane);
     let highlighted = |driven: &Driven<'_>| {
         architect::view(driven.attach.model.architect.as_ref().unwrap(), space)
             .navigator

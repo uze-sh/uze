@@ -368,7 +368,7 @@ fn a_toast_lines_up_with_the_controls_above_it() {
     model.raise_toast(ToastKind::Done, "synced", "to main", None);
 
     let frame_area = Rect::new(0, 0, 120, 30);
-    let layout = compute_layout(frame_area, model.sidebar_width);
+    let layout = compute_layout(frame_area, model.sidebar_width, model.dock());
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
     let mut hits = Vec::new();
     terminal

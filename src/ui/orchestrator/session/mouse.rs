@@ -115,6 +115,12 @@ impl Attach<'_> {
         // A key a hint names is the host's wherever it is drawn: what it
         // performs is an action, which the surface beneath never sees.
         let over = self.model.hit_at(mouse.column, mouse.row);
+        // A press anywhere but the drawer gives its keys back to the pane,
+        // and any press at all disarms the Esc that would close it.
+        self.model.dock_esc_armed = false;
+        if !self.on_drawer(over) {
+            self.model.dock_focused = false;
+        }
         // A click anywhere outside the overview's form leaves what is
         // being typed there; the form's own targets leave it themselves,
         // knowing which row they land on, and so does a hint: it is a key
@@ -528,6 +534,21 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
+            // The docked drawer's card starts a column past its gap: its
+            // width is what lies between there and the agent area's edge.
+            _ if self.model.dragging_dock => {
+                if let Some(drawer) = layout.drawer {
+                    let room = self.agent_room(viewport);
+                    let wanted = drawer
+                        .right()
+                        .saturating_sub(mouse.column + crate::ui::widget::drawer::DOCKED_GAP);
+                    let width = crate::ui::widget::drawer::docked_width(Some(wanted), room);
+                    if width.is_some() && self.model.dock_width != width {
+                        self.model.dock_width = width;
+                        self.model.dirty = true;
+                    }
+                }
+            }
             _ if self.model.dragging_sidebar => {
                 let new_width = crate::ui::clamp_sidebar_width(
                     mouse.column.saturating_sub(layout.sidebar.x),
@@ -662,6 +683,9 @@ impl Attach<'_> {
         }
         self.model.dragging_sidebar = false;
         if std::mem::take(&mut self.model.dragging_overview_drawer) {
+            self.model.dirty = true;
+        }
+        if std::mem::take(&mut self.model.dragging_dock) {
             self.model.dirty = true;
         }
         // A press that never moved is a click, and a click on the edge
@@ -1093,6 +1117,18 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            // The drawer scrolls under the pointer, wherever the keys are.
+            _ if layout
+                .drawer
+                .is_some_and(|drawer| drawer.contains(Position::new(mouse.column, mouse.row))) =>
+            {
+                self.model
+                    .scroll_drawer(if mouse.kind == MouseEventKind::ScrollUp {
+                        ScrollDirection::Up
+                    } else {
+                        ScrollDirection::Down
+                    });
+            }
             _ if self.model.inspecting
                 && self.model.hit_at(mouse.column, mouse.row) == Some(WorkspaceHit::Inspector) =>
             {
@@ -1515,6 +1551,18 @@ impl Attach<'_> {
                 self.model.close_declared();
             }
             WorkspaceHit::OpenDeclared(slot) => open_declared(&mut self.model, slot),
+            WorkspaceHit::ToggleDrawer(slot) => {
+                let room = self.agent_room(viewport);
+                self.model.toggle_drawer(slot, room);
+            }
+            WorkspaceHit::ResizeDock => {
+                self.model.dragging_dock = true;
+                self.model.dirty = true;
+            }
+            WorkspaceHit::DockBody => {
+                self.model.dock_focused = true;
+                self.model.dirty = true;
+            }
             WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
@@ -1612,6 +1660,15 @@ impl Attach<'_> {
                 }
                 _ => {}
             },
+            // The docked drawer's: the engine's, told the room its view
+            // had, and the drawer has the navigation keys from now on.
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
+                if self.model.open_drawer() == Some(slot) =>
+            {
+                self.model.dock_focused = true;
+                let space = self.model.dock_space.get();
+                self.model.hit_declared(slot, hit, space);
+            }
             // A declared section's: its header folds it, and everything
             // else is the engine's. The open view's are answered above.
             WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }) => {
@@ -1660,5 +1717,28 @@ impl Attach<'_> {
             }
         }
         Flow::Continue
+    }
+}
+
+impl Attach<'_> {
+    /// Whether a hit is the docked drawer's: its card, its edge, or
+    /// anything its view drew.
+    pub(super) fn on_drawer(&self, hit: Option<WorkspaceHit>) -> bool {
+        match hit {
+            Some(WorkspaceHit::DockBody | WorkspaceHit::ResizeDock) => true,
+            Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. })) => {
+                self.model.open_drawer() == Some(slot)
+            }
+            _ => false,
+        }
+    }
+
+    /// The columns of agent area the pane and a drawer share: the pane's
+    /// width with no drawer beside it.
+    pub(super) fn agent_room(&self, viewport: &Viewport) -> u16 {
+        let frame = Rect::new(0, 0, viewport.size.width, viewport.size.height);
+        compute_layout(frame, self.model.sidebar_width, None)
+            .pane
+            .width
     }
 }

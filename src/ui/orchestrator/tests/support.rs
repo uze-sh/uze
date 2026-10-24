@@ -234,7 +234,7 @@ pub(super) fn full_frame_at(model: &mut WorkspaceModel, area: Rect) -> Workspace
     }
     model.absorb_manage_frame(metrics.manage);
     model.absorb_overview_frame(metrics.overview);
-    compute_layout(area, model.sidebar_width)
+    compute_layout(area, model.sidebar_width, model.dock())
 }
 
 /// The whole frame as text, row by row — for asserting not just that
@@ -699,7 +699,11 @@ impl Driven<'_> {
     /// use — the rest of a drag, which `press` alone cannot say.
     pub(super) fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
         let area = self.area;
-        let layout = compute_layout(area, self.attach.model.sidebar_width);
+        let layout = compute_layout(
+            area,
+            self.attach.model.sidebar_width,
+            self.attach.model.dock(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),
             columns: layout.pane.width,
@@ -713,7 +717,11 @@ impl Driven<'_> {
     /// One key, through the same dispatch the attach loop uses.
     pub(super) fn press_key(&mut self, key: crossterm::event::KeyEvent) {
         let area = self.area;
-        let layout = compute_layout(area, self.attach.model.sidebar_width);
+        let layout = compute_layout(
+            area,
+            self.attach.model.sidebar_width,
+            self.attach.model.dock(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),
             columns: layout.pane.width,

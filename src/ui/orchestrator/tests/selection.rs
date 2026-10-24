@@ -39,7 +39,12 @@ fn pane_showing(model: &mut WorkspaceModel, line: &str, reports_clicks: bool) {
 
 fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::event::KeyModifiers) {
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    )
+    .pane;
     for (column, kind) in [
         (pane.x, MouseEventKind::Down(MouseButton::Left)),
         (pane.x + 4, MouseEventKind::Drag(MouseButton::Left)),
@@ -47,7 +52,11 @@ fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::eve
     ] {
         let mut event = mouse_at(column, pane.y, kind);
         event.modifiers = modifiers;
-        let layout = compute_layout(driven.area, driven.attach.model.sidebar_width);
+        let layout = compute_layout(
+            driven.area,
+            driven.attach.model.sidebar_width,
+            driven.attach.model.dock(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(driven.area.width, driven.area.height),
             columns: layout.pane.width,
@@ -342,7 +351,12 @@ fn a_click_still_reaches_a_program_that_owns_the_mouse() {
     pane_showing(&mut model, "hello world", true);
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    )
+    .pane;
 
     driven.press(pane.x + 2, pane.y);
     assert!(
@@ -391,7 +405,12 @@ fn a_drag_past_the_top_of_a_full_screen_program_scrolls_it_with_the_wheel() {
     }
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.dock(),
+    )
+    .pane;
 
     driven.press(pane.x + 2, pane.y + 1);
     driven.mouse(

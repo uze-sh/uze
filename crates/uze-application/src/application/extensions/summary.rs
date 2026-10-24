@@ -22,6 +22,8 @@ pub struct DeclaredExtensionSummary {
     pub views: Vec<String>,
     /// The titles of the sections it draws in the sidebar.
     pub sections: Vec<String>,
+    /// The titles of the drawers it docks beside the agent's pane.
+    pub drawers: Vec<String>,
     /// What its last compile said was wrong, one problem a line. Empty
     /// when it compiled.
     pub errors: Vec<String>,
@@ -55,6 +57,7 @@ fn summarize(
         description: String::new(),
         views: Vec::new(),
         sections: Vec::new(),
+        drawers: Vec::new(),
         errors: Vec::new(),
     };
     match compiled {
@@ -69,6 +72,7 @@ fn summarize(
                 match surface.slot {
                     Slot::View => summary.views.push(title),
                     Slot::Section => summary.sections.push(title),
+                    Slot::Drawer => summary.drawers.push(title),
                 }
             }
         }
