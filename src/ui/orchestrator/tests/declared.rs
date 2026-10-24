@@ -113,6 +113,16 @@ impl Extension for Board {
     }
 
     fn scroll(&mut self, _surface: &str, _target: ScrollTarget, _direction: ScrollDirection) {}
+
+    fn place(&self, _surface: &str) -> Option<uze_extensions::contract::Opaque> {
+        Some(uze_extensions::contract::Opaque::new(self.tab))
+    }
+
+    fn resume(&mut self, _surface: &str, place: uze_extensions::contract::Opaque) {
+        if let Some(tab) = place.downcast::<usize>() {
+            self.tab = tab;
+        }
+    }
 }
 
 impl Hosted for Board {
@@ -127,7 +137,7 @@ impl Hosted for Board {
     }
 }
 
-fn board(_compiled: CompiledExtension) -> Box<dyn Hosted> {
+fn board(_compiled: CompiledExtension, _locale: &str) -> Box<dyn Hosted> {
     Box::new(Board {
         tab: 0,
         compiles: 1,
@@ -214,7 +224,7 @@ fn hosting_the_board() -> WorkspaceModel {
     select_tab(&mut model, first);
     model.remembered.declared = DeclaredExtensions {
         engine: board,
-        discovered: true,
+        discovered_at: Some(std::time::Instant::now()),
         ..DeclaredExtensions::default()
     };
     assert!(model.absorb_extension_answer(discovered()));
@@ -401,7 +411,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
     select_tab(&mut model, first);
     model.remembered.declared = DeclaredExtensions {
         engine: board,
-        discovered: true,
+        discovered_at: Some(std::time::Instant::now()),
         ..DeclaredExtensions::default()
     };
     model.absorb_extension_answer(ExtensionAnswer {
@@ -566,8 +576,12 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
 
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.declared.discovered = true;
-    answered(&mut model, &home, super::ExtensionJob::Discover);
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
     let slot = view_slot(&model);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
@@ -648,4 +662,158 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     assert!(shown(&rows, "turno concluído em 4m12s"), "{rows:#?}");
     assert_eq!(driven.attach.model.declared_open, Some(slot), "kept open");
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// A second plugin's extension, installed while the workspace is open.
+fn notes() -> InstalledExtension {
+    InstalledExtension {
+        identity: ExtensionIdentity {
+            marketplace: "market".to_owned(),
+            plugin: "notes".to_owned(),
+            id: "notes".to_owned(),
+        },
+        dir: PathBuf::from("/market/plugins/notes/extensions/notes"),
+        linked: false,
+    }
+}
+
+fn notes_compiled() -> CompiledExtension {
+    let mut compiled = compiled();
+    compiled.identity = notes().identity;
+    compiled.manifest.id = "notes".to_owned();
+    compiled.manifest.surfaces.truncate(1);
+    compiled
+}
+
+#[test]
+fn a_discovery_is_due_when_the_plugins_move_or_the_clock_says_so() {
+    let now = std::time::Instant::now();
+    let mut declared = DeclaredExtensions::default();
+    assert!(declared.discovery_due(0, now), "never asked this run");
+
+    declared.discovered_at = Some(now);
+    assert!(!declared.discovery_due(0, now), "just asked");
+    assert!(
+        declared.discovery_due(1, now),
+        "an install landed in this process"
+    );
+    assert!(
+        declared.discovery_due(0, now + super::DECLARED_REDISCOVER),
+        "one made elsewhere is seen within the interval"
+    );
+
+    declared.discovery_pending = true;
+    assert!(!declared.discovery_due(1, now), "one at a time");
+}
+
+#[test]
+fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    super::open_declared(&mut model, slot);
+    model.tell_declared(
+        Command::NextView,
+        Size {
+            width: 80,
+            height: 20,
+        },
+    );
+    model.close_declared();
+    assert_eq!(model.remembered.declared.places.len(), 1, "a place kept");
+
+    // Installed: only the newcomer is loaded, the board is as it was.
+    let changed = model.absorb_extension_answer(ExtensionAnswer {
+        discovered: Some(vec![installed(), notes()]),
+        recompiled: Vec::new(),
+        loaded: vec![LoadedExtension {
+            installed: notes(),
+            stamp: 1,
+            compiled: Ok(notes_compiled()),
+            data: BTreeMap::new(),
+        }],
+    });
+    assert!(changed);
+    let views: Vec<String> = model
+        .declared_views()
+        .map(|slot| slot.identity.id.clone())
+        .collect();
+    assert_eq!(views, ["gsd-band", "notes"]);
+    assert_eq!(model.declared_views().next().unwrap().id, slot, "kept");
+
+    // Removed: its slots close and its place goes with them.
+    super::open_declared(&mut model, slot);
+    let changed = model.absorb_extension_answer(ExtensionAnswer {
+        discovered: Some(vec![notes()]),
+        recompiled: Vec::new(),
+        loaded: Vec::new(),
+    });
+    assert!(changed);
+    assert_eq!(model.declared_open, None, "its open view closed");
+    let declared = &model.remembered.declared;
+    assert!(
+        declared
+            .slots
+            .iter()
+            .all(|slot| slot.identity == notes().identity)
+    );
+    assert!(declared.places.is_empty(), "its place dropped");
+
+    // Nothing moved: nothing to redraw.
+    assert!(!model.absorb_extension_answer(ExtensionAnswer {
+        discovered: Some(vec![notes()]),
+        recompiled: Vec::new(),
+        loaded: Vec::new(),
+    }));
+}
+
+#[test]
+fn a_discovery_reloads_only_what_differs_from_what_was_compiled() {
+    let model = hosting_the_board();
+    let known = model.remembered.declared.known();
+    assert_eq!(known.get(&identity()), Some(&(installed().dir, 1)));
+}
+
+#[test]
+fn an_install_in_this_process_rediscovers_on_the_next_schedule() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-rediscover"));
+    let mut model = hosting_the_board();
+    let (jobs, answers) = std::sync::mpsc::channel();
+    let (stamps, _polled) = std::sync::mpsc::channel();
+    model.remembered.declared.discovery_pending = false;
+
+    model.schedule_extension_jobs(&home, 0, &jobs, &stamps);
+    assert!(
+        !model.remembered.declared.discovery_pending,
+        "nothing moved, nothing asked"
+    );
+
+    model.schedule_extension_jobs(&home, 1, &jobs, &stamps);
+    assert!(model.remembered.declared.discovery_pending, "asked again");
+    let answer = answers
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the discovery answered");
+    // This home has no plugin installed: the board was removed.
+    assert!(model.absorb_extension_answer(answer));
+    assert!(model.remembered.declared.slots.is_empty());
+    assert!(!model.remembered.declared.discovery_pending);
+}
+
+#[test]
+fn every_engine_is_built_for_the_operators_language() {
+    fn portuguese_only(compiled: CompiledExtension, locale: &str) -> Box<dyn Hosted> {
+        assert_eq!(locale, "pt", "the engine was handed another language");
+        board(compiled, locale)
+    }
+    assert_eq!(
+        DeclaredExtensions::default().locale,
+        uze_platform::locale::language(),
+        "the platform's answer, read once"
+    );
+    let mut declared = DeclaredExtensions {
+        engine: portuguese_only,
+        locale: "pt".to_owned(),
+        ..DeclaredExtensions::default()
+    };
+    declared.absorb_loaded(loaded(Ok(compiled())));
+    assert_eq!(declared.slots.len(), 2);
 }

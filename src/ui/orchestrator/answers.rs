@@ -513,21 +513,25 @@ impl WorkspaceModel {
 }
 
 impl WorkspaceModel {
-    /// Asks for the declared extensions once a run, polls the linked ones'
-    /// stamps on [`DECLARED_POLL`], and compiles again each one whose save
-    /// has settled. Cheap enough for every tick: it compares instants.
+    /// Asks for the declared extensions when a discovery is due (once a
+    /// run, whenever `plugins` — the plugin set's revision — moves, and
+    /// on [`DECLARED_REDISCOVER`] otherwise), polls the linked ones' stamps
+    /// on [`DECLARED_POLL`], and compiles again each one whose save has
+    /// settled. Cheap enough for every tick: it compares instants.
     pub(super) fn schedule_extension_jobs(
         &mut self,
         home: &UzeHome,
+        plugins: u64,
         jobs: &mpsc::Sender<ExtensionAnswer>,
         stamps: &mpsc::Sender<StampsAnswer>,
     ) {
         let now = Instant::now();
         let declared = &mut self.remembered.declared;
-        if !declared.discovered {
-            declared.discovered = true;
+        if declared.discovery_due(plugins, now) {
+            declared.discovered_at = Some(now);
+            declared.plugins_seen = plugins;
             declared.discovery_pending = true;
-            spawn_extension_job(home, ExtensionJob::Discover, jobs.clone());
+            spawn_extension_job(home, ExtensionJob::Discover(declared.known()), jobs.clone());
             return;
         }
         if declared.discovery_pending {
@@ -560,9 +564,10 @@ impl WorkspaceModel {
         for identity in &answer.recompiled {
             declared.recompiling.remove(identity);
         }
+        let mut went = false;
         if let Some(found) = &answer.discovered {
             declared.discovery_pending = false;
-            declared.absorb_discovery(found);
+            went = declared.absorb_discovery(found);
         }
         // A recompile answers only for an extension still installed: one a
         // discovery took away meanwhile stays away.
@@ -574,7 +579,7 @@ impl WorkspaceModel {
                 !recompiled || declared.extensions.contains_key(&loaded.installed.identity)
             })
             .collect();
-        let changed = answer.discovered.is_some() || !loaded.is_empty();
+        let changed = went || !loaded.is_empty();
         for loaded in loaded {
             declared.absorb_loaded(loaded);
         }
