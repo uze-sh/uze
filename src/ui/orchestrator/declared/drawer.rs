@@ -143,6 +143,7 @@ impl WorkspaceModel {
         let now = self.space_in_front();
         let DeclaredExtensions {
             slots,
+            engines,
             drawer_places,
             drawer_space,
             ..
@@ -151,8 +152,8 @@ impl WorkspaceModel {
             return;
         }
         let before = std::mem::replace(drawer_space, now);
-        for slot in slots.iter_mut().filter(|slot| slot.is_drawer()) {
-            let Some(engine) = slot.engine.as_mut() else {
+        for slot in slots.iter().filter(|slot| slot.is_drawer()) {
+            let Some(engine) = engines.get_mut(&slot.identity) else {
                 continue;
             };
             let surface = slot.surface.id.clone();
@@ -201,11 +202,8 @@ impl WorkspaceModel {
         let outcome = self
             .remembered
             .declared
-            .slot_mut(id)
-            .and_then(|slot| {
-                let surface = slot.surface.id.clone();
-                Some(slot.engine.as_mut()?.command(&surface, command, space))
-            })
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.command(&surface, command, space))
             .unwrap_or(Outcome::Stay);
         self.follow_drawer(outcome);
     }
@@ -215,11 +213,8 @@ impl WorkspaceModel {
         let Some(id) = self.open_drawer() else {
             return;
         };
-        if let Some(slot) = self.remembered.declared.slot_mut(id) {
-            let surface = slot.surface.id.clone();
-            if let Some(engine) = slot.engine.as_mut() {
-                engine.scroll(&surface, ScrollTarget::Content, direction);
-            }
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll(&surface, ScrollTarget::Content, direction);
         }
         self.dirty = true;
     }

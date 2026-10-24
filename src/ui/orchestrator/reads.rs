@@ -1824,9 +1824,9 @@ pub(super) fn spawn_extension_stamps(
     });
 }
 
-/// What a hosted engine's job answered, for the slot that asked.
+/// What a hosted engine's job answered, for the extension that asked.
 pub(super) struct EngineAnswer {
-    pub(super) slot: super::declared::SlotId,
+    pub(super) extension: uze_application::ExtensionIdentity,
     pub(super) answer: uze_extensions::contract::Opaque,
 }
 
@@ -1835,7 +1835,7 @@ pub(super) struct EngineAnswer {
 /// lane is serial, each on its own thread for one that runs in parallel. A
 /// job that panics answers its fallback, so a failed read is drawn as one.
 pub(super) fn spawn_engine_jobs(
-    slot: super::declared::SlotId,
+    extension: uze_application::ExtensionIdentity,
     jobs: Vec<uze_extensions::contract::Job>,
     lanes: uze_extensions::contract::Lanes,
     sender: mpsc::Sender<EngineAnswer>,
@@ -1855,7 +1855,7 @@ pub(super) fn spawn_engine_jobs(
                 let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
                 for job in jobs {
                     let _ = sender.send(EngineAnswer {
-                        slot,
+                        extension: extension.clone(),
                         answer: answered(job, &WorkspaceHost),
                     });
                 }
@@ -1865,11 +1865,12 @@ pub(super) fn spawn_engine_jobs(
             for job in jobs {
                 let sender = sender.clone();
                 let parent = parent.clone();
+                let extension = extension.clone();
                 thread::spawn(move || {
                     let _pass =
                         crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
                     let _ = sender.send(EngineAnswer {
-                        slot,
+                        extension: extension.clone(),
                         answer: answered(job, &WorkspaceHost),
                     });
                 });

@@ -211,10 +211,6 @@ pub(super) struct DeclaredSlot {
     pub(super) id: SlotId,
     pub(super) identity: ExtensionIdentity,
     pub(super) surface: SurfaceInfo,
-    /// `None` for the stand-in of an extension that has never compiled: it
-    /// has no surfaces to speak of yet, and its error needs somewhere to be
-    /// said.
-    pub(super) engine: Option<Box<dyn Hosted>>,
     /// A section folded to its header.
     pub(super) collapsed: bool,
 }
@@ -247,6 +243,10 @@ pub(super) struct HostedExtension {
 /// remembered per checkout.
 pub(super) struct DeclaredExtensions {
     pub(super) extensions: BTreeMap<ExtensionIdentity, HostedExtension>,
+    /// One engine per extension, shared by its slots, so its view, its
+    /// section and its drawer keep one state. None for an extension that
+    /// has never compiled: its slot is a stand-in for its error.
+    pub(super) engines: BTreeMap<ExtensionIdentity, Box<dyn Hosted>>,
     /// In identity order, each extension's surfaces in the order it
     /// declares them.
     pub(super) slots: Vec<DeclaredSlot>,
@@ -280,6 +280,7 @@ impl Default for DeclaredExtensions {
     fn default() -> Self {
         Self {
             extensions: BTreeMap::new(),
+            engines: BTreeMap::new(),
             slots: Vec::new(),
             next_slot: 0,
             discovered_at: None,
@@ -305,6 +306,19 @@ impl DeclaredExtensions {
 
     pub(super) fn slot_mut(&mut self, id: SlotId) -> Option<&mut DeclaredSlot> {
         self.slots.iter_mut().find(|slot| slot.id == id)
+    }
+
+    /// The engine of an extension, when it has compiled.
+    pub(super) fn engine(&self, identity: &ExtensionIdentity) -> Option<&dyn Hosted> {
+        self.engines.get(identity).map(|engine| engine.as_ref())
+    }
+
+    /// A slot's surface id and its extension's engine.
+    pub(super) fn slot_engine_mut(&mut self, id: SlotId) -> Option<(String, &mut Box<dyn Hosted>)> {
+        let slot = self.slots.iter().find(|slot| slot.id == id)?;
+        let surface = slot.surface.id.clone();
+        let engine = self.engines.get_mut(&slot.identity)?;
+        Some((surface, engine))
     }
 
     pub(super) fn errors_of(&self, identity: &ExtensionIdentity) -> &[String] {
@@ -359,6 +373,8 @@ impl DeclaredExtensions {
         self.extensions
             .retain(|identity, _| present.contains(identity));
         self.slots.retain(|slot| present.contains(&slot.identity));
+        self.engines
+            .retain(|identity, _| present.contains(identity));
         self.places
             .retain(|(identity, _, _), _| present.contains(identity));
         self.drawer_places
@@ -413,7 +429,6 @@ impl DeclaredExtensions {
                             title: identity.id.clone(),
                         },
                         identity,
-                        engine: None,
                         collapsed: false,
                     });
                 }
@@ -430,13 +445,25 @@ impl DeclaredExtensions {
         let surfaces = surfaces_of(&compiled);
         // The stand-in of a compile that never went through, and surfaces
         // the extension no longer declares.
+        let hosted = self.engines.contains_key(identity);
         self.slots.retain(|slot| {
             &slot.identity != identity
-                || (slot.engine.is_some()
+                || (hosted
                     && surfaces.iter().any(|surface| {
                         surface.id == slot.surface.id && surface.slot == slot.surface.slot
                     }))
         });
+        match self.engines.get_mut(identity) {
+            Some(engine) => {
+                engine.replace(compiled.clone());
+                give_data(engine.as_mut(), data);
+            }
+            None => {
+                let mut engine = (self.engine)(compiled.clone(), &self.locale);
+                give_data(engine.as_mut(), data);
+                self.engines.insert(identity.clone(), engine);
+            }
+        }
         let slots = &self.slots;
         self.drawers
             .retain(|_, id| slots.iter().any(|slot| slot.id == *id));
@@ -446,22 +473,13 @@ impl DeclaredExtensions {
                 .iter_mut()
                 .find(|slot| &slot.identity == identity && slot.surface.id == surface.id);
             match existing {
-                Some(slot) => {
-                    if let Some(engine) = slot.engine.as_mut() {
-                        engine.replace(compiled.clone());
-                        give_data(engine.as_mut(), data);
-                    }
-                    slot.surface = surface;
-                }
+                Some(slot) => slot.surface = surface,
                 None => {
-                    let mut engine = (self.engine)(compiled.clone(), &self.locale);
-                    give_data(engine.as_mut(), data);
                     let id = self.take_slot_id();
                     self.insert_slot(DeclaredSlot {
                         id,
                         identity: identity.clone(),
                         surface,
-                        engine: Some(engine),
                         collapsed: false,
                     });
                 }
@@ -596,9 +614,8 @@ impl WorkspaceModel {
         let Some(slot) = declared.slot(id) else {
             return;
         };
-        let place = slot
-            .engine
-            .as_ref()
+        let place = declared
+            .engine(&slot.identity)
             .and_then(|engine| engine.place(&slot.surface.id));
         if let (Some(place), Some(root)) = (place, root) {
             let key = (slot.identity.clone(), slot.surface.id.clone(), root);
@@ -624,11 +641,8 @@ impl WorkspaceModel {
         let outcome = self
             .remembered
             .declared
-            .slot_mut(id)
-            .and_then(|slot| {
-                let surface = slot.surface.id.clone();
-                Some(slot.engine.as_mut()?.command(&surface, command, space))
-            })
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.command(&surface, command, space))
             .unwrap_or(Outcome::Stay);
         self.follow_declared(outcome);
     }
@@ -645,11 +659,8 @@ impl WorkspaceModel {
         let outcome = self
             .remembered
             .declared
-            .slot_mut(id)
-            .and_then(|slot| {
-                let surface = slot.surface.id.clone();
-                Some(slot.engine.as_mut()?.hit(&surface, hit, space))
-            })
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.hit(&surface, hit, space))
             .unwrap_or(Outcome::Stay);
         if self.open_drawer() == Some(id) {
             self.follow_drawer(outcome);
@@ -666,11 +677,8 @@ impl WorkspaceModel {
         let Some(id) = self.declared_open else {
             return;
         };
-        if let Some(slot) = self.remembered.declared.slot_mut(id) {
-            let surface = slot.surface.id.clone();
-            if let Some(engine) = slot.engine.as_mut() {
-                engine.scroll(&surface, target, direction);
-            }
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll(&surface, target, direction);
         }
         self.dirty = true;
     }
@@ -691,9 +699,10 @@ impl WorkspaceModel {
     /// or a message saying why it has none yet.
     pub(super) fn surface_view(&self, slot: &DeclaredSlot, space: Size) -> View {
         let errors = self.remembered.declared.errors_of(&slot.identity);
-        let drawn = slot
-            .engine
-            .as_ref()
+        let drawn = self
+            .remembered
+            .declared
+            .engine(&slot.identity)
             .and_then(|engine| engine.view(&slot.surface.id, space));
         drawn.unwrap_or_else(|| {
             let (text, role) = if errors.is_empty() {
@@ -740,9 +749,8 @@ impl WorkspaceModel {
             })
             .filter_map(|slot| {
                 let errors = declared.errors_of(&slot.identity);
-                let drawn = slot
-                    .engine
-                    .as_ref()
+                let drawn = declared
+                    .engine(&slot.identity)
                     .and_then(|engine| engine.section(&slot.surface.id, slot.collapsed));
                 let section = match (drawn, errors.is_empty()) {
                     (Some(section), true) => section,
@@ -781,9 +789,10 @@ impl WorkspaceModel {
     /// What the inspector shows of the open view.
     pub(super) fn inspection(&self) -> Option<Inspection> {
         let slot = self.open_declared_slot()?;
-        let mut inspection = slot
-            .engine
-            .as_ref()
+        let mut inspection = self
+            .remembered
+            .declared
+            .engine(&slot.identity)
             .map(|engine| engine.inspect(&slot.surface.id))
             .unwrap_or_default();
         inspection.data.truncate(INSPECTED_DATA_LINES);
@@ -832,10 +841,13 @@ pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
     model.close_extension();
     model.stand_extension_in_front();
     let declared = &mut model.remembered.declared;
-    if let Some(slot) = declared.slots.iter_mut().find(|slot| slot.id == id) {
+    if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {
         let key = (slot.identity.clone(), slot.surface.id.clone(), root.clone());
-        if let (Some(place), Some(engine)) = (declared.places.remove(&key), slot.engine.as_mut()) {
-            engine.resume(&slot.surface.id, place);
+        if let (Some(place), Some(engine)) = (
+            declared.places.remove(&key),
+            declared.engines.get_mut(&key.0),
+        ) {
+            engine.resume(&key.1, place);
         }
     }
     model.declared_open = Some(id);
