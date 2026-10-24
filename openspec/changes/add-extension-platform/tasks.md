@@ -184,13 +184,13 @@
 
 ## 23. Authoring loop, inspector and tests
 
-- [ ] 23.1 `uze agent plugin create --extension <id>`: scaffold manifest, view, fixture and a passing test inside a linked marketplace (creating one if none), install it into the current project, with enabling asked in UZE's chrome — `extension-view-engine` scaffolds manifest, view and fixture; the passing test arrives with split 2
+- [x] 23.1 `uze agent plugin create --extension <id>`: scaffold manifest, view, fixture and a passing test inside a linked marketplace (creating one if none), install it into the current project, with enabling asked in UZE's chrome (`extension-view-engine`, its test from `extension-tests-and-lsp`; enabling is asked in the Extensions screen)
 - [ ] 23.2 Reload linked extensions on save: poll their directories every 250 ms, debounce 150 ms, per-file behaviour of D25; widened grants wait for consent; the last good draw kept with the error over it, for every extension — `extension-view-engine` ships all of it but the consent for widened grants, which waits for grants (split 4)
 - [ ] 23.3 The inspector drawer for every extension: runs, events, state, grants, the compiled tree with why a node is absent, cost; rerun with edited input on linked extensions — `extension-view-engine` ships the compiled tree with why a node is absent, data, UI state, recorded actions and errors; runs, events, grants, cost and rerun remain
 - [ ] 23.0 `fixture` on a source: fed by it when it has nothing else, switchable from a linked extension's inspector, never read at runtime from a non-linked marketplace; actions that would run nothing recorded with their arguments — `extension-view-engine` feeds sources from fixtures and records actions; switching from the inspector remains
 - [ ] 23.4 On a linked extension's inspector: emit a synthetic event, change size and theme, inject fake agents, record a session's events into a fixture
-- [ ] 23.5 Tests in `uze agent plugin check` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update-snapshots`
-- [ ] 23.6 `uze agent plugin lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
+- [x] 23.5 Tests in `uze agent plugin check` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update-snapshots` (`extension-tests-and-lsp`; `--run` waits for programs, split 5)
+- [x] 23.6 `uze agent plugin lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3) (`extension-tests-and-lsp`)
 - [ ] 23.7 Tests for every gallery entry (D20)
 - [ ] 23.8 Vendor a KDL v2 grammar into `crates/uze-extensions/grammars/` with its licence, map `.kdl`, and test that it compiles under `fancy-regex` and colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences; write a small one if no upstream v2 grammar compiles — `extension-view-engine` ships the grammar in the editor, the preview and preview fences; a `kdl` fence inside a `.md` open in the editor is not coloured yet
 

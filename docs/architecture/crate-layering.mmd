@@ -3,7 +3,7 @@ title: Crate layering
 ---
 flowchart TD
   subgraph presentation [Presentation · src/]
-    cli[CLI<br/>main.rs · clap]
+    cli[CLI<br/>main.rs · clap · lsp-server]
     tui[Workspace TUI<br/>src/ui · ratatui]
     shim[Runtime shim<br/>src/shim.rs · the workspace's]
   end
@@ -42,6 +42,7 @@ flowchart TD
   ext --> contract
   capability --> contract
   cli --> ext
+  cli -->|extension tests| tui
   tui --> keys
   tui --> terminal
   cli --> theme
