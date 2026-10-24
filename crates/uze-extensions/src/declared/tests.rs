@@ -956,3 +956,33 @@ fn memory_carries_the_recorded_actions() {
     again.restore_memory(memory);
     assert_eq!(again.recorded().len(), 1);
 }
+
+#[test]
+fn a_wrapping_text_is_a_paragraph_and_is_not_cut_at_a_labels_length() {
+    let long = "word ".repeat(120).trim_end().to_owned();
+    let extension = hosted(
+        vec![
+            n(NodeName::Text).arg("{note}").item(),
+            n(NodeName::Text)
+                .arg("{note}")
+                .literal("truncate", json!(true))
+                .item(),
+        ],
+        json!({ "note": long }),
+    );
+    let root = tree(&extension);
+    let said: Vec<String> = root
+        .children
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Text { spans, .. } => spans.iter().map(|span| span.text.clone()).collect(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(said[0], long, "a paragraph keeps every word");
+    assert_eq!(
+        said[1].chars().count(),
+        uze_contract::clean::LABEL_MAX,
+        "a label is cut at a label's length"
+    );
+}
