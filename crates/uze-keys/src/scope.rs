@@ -164,6 +164,10 @@ scopes! {
     /// The spec surface: a checkout's changes and specs, read as
     /// documents.
     Spec => "spec", "Spec", Workspace, seals: true, text: false;
+    /// A surface a plugin declared, open full-frame. One scope for every
+    /// declared extension: what its keys mean is the host's generic
+    /// vocabulary (select, switch tabs, activate), never the extension's.
+    Declared => "declared", "A plugin's surface", Workspace, seals: true, text: false;
     /// A space's overview, standing where the pane is. It does not seal:
     /// the sidebar's chords stay live over it, since it is where a space
     /// is landed on.
