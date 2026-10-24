@@ -3403,6 +3403,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "tracing",
+ "uze-contract",
  "uze-document",
  "uze-git",
  "uze-platform",
