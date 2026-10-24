@@ -485,6 +485,7 @@ fn framed(
                 FooterKeys {
                     scope,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -614,6 +615,7 @@ fn a_notice_is_said_at_the_end_of_the_footer() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -1007,6 +1009,7 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -1157,6 +1160,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                     FooterKeys {
                         scope: uze_keys::Scope::Architect,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut hits,
@@ -1846,6 +1850,7 @@ fn marked_text_is_inverted_where_it_was_drawn() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 Some(&selection),
                 &mut hits,
@@ -1888,6 +1893,7 @@ fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2087,6 +2093,7 @@ fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -2217,6 +2224,7 @@ fn chrome_uses_the_hosts_palette_and_content_keeps_its_own() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2345,6 +2353,7 @@ fn drawn_with(view: &View, scroll: NavigatorScroll) -> (Vec<String>, NavigatorSc
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2614,6 +2623,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
                     FooterKeys {
                         scope: uze_keys::Scope::Spec,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut Vec::new(),
@@ -2695,6 +2705,7 @@ fn a_flat_rows_detail_slides_with_its_name() {
                     FooterKeys {
                         scope: uze_keys::Scope::Code,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut Vec::new(),

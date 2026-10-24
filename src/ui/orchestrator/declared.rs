@@ -711,8 +711,24 @@ impl WorkspaceModel {
     pub(super) fn toggle_inspector(&mut self) {
         if self.declared_open.is_some() {
             self.inspecting = !self.inspecting;
+            self.inspector_scroll.set(0);
             self.dirty = true;
         }
+    }
+
+    /// Scrolls the inspector by `rows`, down when positive. The frame
+    /// stops it at its last line.
+    pub(super) fn scroll_inspector(&mut self, rows: i16) {
+        let scroll = self.inspector_scroll.get().saturating_add_signed(rows);
+        self.inspector_scroll.set(scroll);
+        self.dirty = true;
+    }
+
+    /// Scrolls the inspector a page, keeping a line of the last one.
+    pub(super) fn page_inspector(&mut self, down: bool) {
+        let page =
+            i16::try_from(self.inspector_rows.get().saturating_sub(1).max(1)).unwrap_or(i16::MAX);
+        self.scroll_inspector(if down { page } else { -page });
     }
 
     /// What the inspector shows of the open view.

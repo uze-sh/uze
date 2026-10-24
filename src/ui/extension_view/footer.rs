@@ -51,6 +51,7 @@ pub(super) fn render_footer(
         .iter()
         .copied()
         .filter_map(action_of)
+        .chain(keys.host.iter().copied())
         .fold(Hints::new(&scopes), Hints::key)
         .hovered(keys.hovered)
         .render(frame, area)

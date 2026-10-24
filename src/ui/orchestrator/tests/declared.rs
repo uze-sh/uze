@@ -132,8 +132,13 @@ impl Hosted for Board {
 
     fn set_data(&mut self, _source: &str, _data: uze_application::SourceData) {}
 
+    /// Taller than any drawer: two hundred nodes.
     fn inspect(&self, _surface: &str) -> Inspection {
-        Inspection::default()
+        Inspection {
+            nodes: (0..200).map(|node| format!("node {node}")).collect(),
+            traced: true,
+            ..Inspection::default()
+        }
     }
 }
 
@@ -816,4 +821,128 @@ fn every_engine_is_built_for_the_operators_language() {
     };
     declared.absorb_loaded(loaded(Ok(compiled())));
     assert_eq!(declared.slots.len(), 2);
+}
+
+fn inspector_open() -> Driven<'static> {
+    let home: &'static uze_application::UzeHome = Box::leak(Box::new(
+        uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-inspector-drawer")),
+    ));
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    super::open_declared(&mut model, slot);
+    let mut driven = driven(model, home).on_a_roomy_terminal();
+    driven.frame();
+    let hint = drawn(
+        &driven.attach.model,
+        WorkspaceHit::HintAction(uze_keys::Action::ToggleInspector),
+    );
+    driven.press(hint.x, hint.y);
+    driven.frame();
+    driven
+}
+
+/// The inspector's key is named in the view's footer, and clicking it is
+/// pressing it: open, and closed again.
+#[test]
+fn clicking_the_inspector_hint_is_pressing_its_key() {
+    let mut driven = inspector_open();
+    assert!(driven.attach.model.inspecting, "opened by the pointer");
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(rows.iter().any(|row| row.contains("node 0")), "{rows:#?}");
+
+    driven.attach.model.last_click = None;
+    let hint = drawn(
+        &driven.attach.model,
+        WorkspaceHit::HintAction(uze_keys::Action::ToggleInspector),
+    );
+    driven.press(hint.x, hint.y);
+    assert!(!driven.attach.model.inspecting, "closed by the same hint");
+    assert!(
+        driven.attach.model.declared_open.is_some(),
+        "the view stays"
+    );
+}
+
+#[test]
+fn the_inspector_scrolls_by_wheel_and_by_page_and_stops_at_its_end() {
+    let mut driven = inspector_open();
+    let drawer = drawn(&driven.attach.model, WorkspaceHit::Inspector);
+    let model = &driven.attach.model;
+    assert_eq!(model.inspector_scroll.get(), 0);
+
+    driven.mouse(
+        drawer.x + 2,
+        drawer.y + 2,
+        crossterm::event::MouseEventKind::ScrollDown,
+    );
+    driven.frame();
+    let wheeled = driven.attach.model.inspector_scroll.get();
+    assert!(wheeled > 0, "the wheel scrolled it");
+
+    let key = |name: &str| key_event(uze_keys::Chord::parse(name).unwrap());
+    driven.press_key(key("pagedown"));
+    driven.frame();
+    let paged = driven.attach.model.inspector_scroll.get();
+    assert_eq!(
+        paged,
+        wheeled + drawer.height - 1,
+        "a page, keeping a line of the last"
+    );
+    assert_eq!(
+        said(&driven.attach.model),
+        "tab 0 compile 1",
+        "the view stayed"
+    );
+
+    for _ in 0..20 {
+        driven.press_key(key("pagedown"));
+    }
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(
+        rows.iter().any(|row| row.contains("nothing pressed")),
+        "its last group is on screen: {rows:#?}"
+    );
+    let settled = driven.attach.model.inspector_scroll.get();
+    driven.press_key(key("pagedown"));
+    driven.frame();
+    assert_eq!(
+        driven.attach.model.inspector_scroll.get(),
+        settled,
+        "stopped"
+    );
+
+    driven.press_key(key("pageup"));
+    driven.frame();
+    assert!(driven.attach.model.inspector_scroll.get() < settled);
+}
+
+#[test]
+fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
+    let mut driven = inspector_open();
+    let rule = drawn(&driven.attach.model, WorkspaceHit::ResizeOverviewDrawer);
+    let drawer = drawn(&driven.attach.model, WorkspaceHit::Inspector);
+    driven.press(rule.x, rule.y + 2);
+    driven.mouse(
+        rule.x + 10,
+        rule.y + 2,
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+    );
+    driven.mouse(
+        rule.x + 10,
+        rule.y + 2,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    );
+    driven.frame();
+    let moved = drawn(&driven.attach.model, WorkspaceHit::ResizeOverviewDrawer);
+    assert_eq!(moved.x, rule.x + 10, "dragged narrower");
+    let narrower = drawn(&driven.attach.model, WorkspaceHit::Inspector);
+    assert_eq!(narrower.width + 10, drawer.width);
+    assert!(driven.attach.model.inspecting, "a drag is not a dismissal");
+
+    // On a narrow frame it never takes more than half the pane.
+    driven.area = ratatui::layout::Rect::new(0, 0, 80, 30);
+    driven.frame();
+    let rule = drawn(&driven.attach.model, WorkspaceHit::ResizeOverviewDrawer);
+    let layout = super::compute_layout(driven.area, driven.attach.model.sidebar_width);
+    assert!(layout.pane.right() - rule.x <= layout.pane.width / 2 + 1);
 }

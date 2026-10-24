@@ -257,9 +257,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ToggleMap,
         Control("the Map chip, beside the code surface's other views"),
     );
-    // An author's tool, not a reader's: the index lists it while a
-    // plugin's surface is open, and its key is the one the footer names.
-    put(Action::ToggleInspector, Index);
+    put(
+        Action::ToggleInspector,
+        Control("the inspector key in a plugin's view footer"),
+    );
     put(
         Action::DeliverTask,
         Control("the deliver key in a ready row's hint in recent"),

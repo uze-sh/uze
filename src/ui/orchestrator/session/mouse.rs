@@ -131,8 +131,17 @@ impl Attach<'_> {
         ) {
             self.finish_editing();
         }
-        let on_hint = matches!(over, Some(WorkspaceHit::HintAction(_)));
-        let on_surface = !on_hint
+        // A footer's keys, and the inspector beside a declared view, are
+        // the host's: they stand in the pane without being the surface's.
+        let on_host = matches!(
+            over,
+            Some(
+                WorkspaceHit::HintAction(_)
+                    | WorkspaceHit::Inspector
+                    | WorkspaceHit::ResizeOverviewDrawer
+            )
+        );
+        let on_surface = !on_host
             && (layout
                 .pane
                 .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
@@ -1084,6 +1093,14 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self.model.inspecting
+                && self.model.hit_at(mouse.column, mouse.row) == Some(WorkspaceHit::Inspector) =>
+            {
+                self.model.scroll_inspector(match mouse.kind {
+                    MouseEventKind::ScrollUp => -crate::ui::input::PREVIEW_WHEEL,
+                    _ => crate::ui::input::PREVIEW_WHEEL,
+                });
+            }
             _ if self.model.declared_open.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -1471,7 +1488,7 @@ impl Attach<'_> {
             | WorkspaceHit::OverviewAnswer(_)
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}
-            WorkspaceHit::OverviewDrawer => {}
+            WorkspaceHit::OverviewDrawer | WorkspaceHit::Inspector => {}
             WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is
