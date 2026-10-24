@@ -8,11 +8,11 @@
 
 ## 2. Decoder (parallel, `uze-core` `capability/extension/`)
 
-- [ ] 2.1 Dependency review of `kdl` (`default-features = false`, `span`): publisher, `cargo tree`, `cargo deny check`, licences; record the trade-off in the PR
-- [ ] 2.2 The bounded parse: 64 KiB cap, a KDL-aware nesting pre-scan refusing above 32, a worker thread with an explicit stack and a time limit; tests with a 400-deep nest and kdl-rs#177's input
-- [ ] 2.3 The hand-written decoder of `extension.kdl` and views into `uze-contract` types with spans: unknown nodes, properties and arguments, repeated properties, type annotations, wrong case and v1 spellings refused with file, line, column and a suggestion
-- [ ] 2.4 The compiler: references, scopes, `each` nesting ≤ 2, identity properties literal, roles checked, templates acyclic, lookups with defaults and locales; diagnostics collected, not first-only
-- [ ] 2.5 Discovery of `extensions/*/extension.kdl` in a plugin directory, with reserved ids and protocol refused per extension and the rest of the plugin unaffected
+- [x] 2.1 Dependency review of `kdl` (`default-features = false`, `span`): publisher, `cargo tree`, `cargo deny check`, licences; record the trade-off in the PR
+- [x] 2.2 The bounded parse: 64 KiB cap, a KDL-aware nesting pre-scan refusing above 32, a worker thread with an explicit stack and a time limit; tests with a 400-deep nest and kdl-rs#177's input
+- [x] 2.3 The hand-written decoder of `extension.kdl` and views into `uze-contract` types with spans: unknown nodes, properties and arguments, repeated properties, type annotations, wrong case and v1 spellings refused with file, line, column and a suggestion
+- [x] 2.4 The compiler: references, scopes, `each` nesting ≤ 2, identity properties literal, roles checked, templates acyclic, lookups with defaults and locales; diagnostics collected, not first-only
+- [x] 2.5 Discovery of `extensions/*/extension.kdl` in a plugin directory, with reserved ids and protocol refused per extension and the rest of the plugin unaffected
 
 ## 3. Engine (parallel, `uze-extensions/src/declared/`)
 
