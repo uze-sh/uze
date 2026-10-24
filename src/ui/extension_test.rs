@@ -511,3 +511,31 @@ impl Stage {
 
 /// The extensions' tests a check runs, by extension id.
 pub type Runs = BTreeMap<String, TestRun>;
+
+/// What a test's click on `text` reaches on `surface`, drawn at `size` in
+/// the dark theme: for proving a test and the workspace agree.
+#[cfg(test)]
+pub(crate) fn hit_for_text(
+    compiled: &uze_contract::CompiledExtension,
+    data: BTreeMap<String, serde_json::Value>,
+    surface: &str,
+    (width, height): (u16, u16),
+    text: &str,
+) -> Option<ViewHit> {
+    let slot = compiled.manifest.surface(surface)?.slot;
+    let mut stage = Stage {
+        engine: DeclaredExtension::new(compiled.clone(), DEFAULT_LOCALE),
+        surface: surface.to_owned(),
+        slot,
+        identity: compiled.identity.clone(),
+        theme: ThemeName::Dark,
+        width,
+        height,
+        drawn: None,
+    };
+    for (source, value) in data {
+        stage.engine.set_data(source, Ok(value));
+    }
+    stage.draw();
+    stage.hit_on(text)
+}

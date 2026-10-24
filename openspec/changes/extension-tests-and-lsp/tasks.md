@@ -18,7 +18,7 @@
 - [x] 3.3 Expectations: `expect-text`, `expect-no-text`, `expect-absent` with `because` against the trace, `expect-action` with arguments against the recorded actions
 - [x] 3.4 Snapshots (T3): text and token grids with a legend and the protocol version, colour mapped to tokens through the palette, a row diff on mismatch, `--update-snapshots` writing and naming each file
 - [x] 3.5 `uze agent plugin check` runs every test and fails on a failing one, naming the test, the file and the step's line; the report follows the `design-system` skill (read it first, run its checklist)
-- [ ] 3.6 One orchestrator test proving a test's click and the workspace's click on the same surface reach the same node
+- [x] 3.6 One orchestrator test proving a test's click and the workspace's click on the same surface reach the same node
 
 ## 4. The language server
 

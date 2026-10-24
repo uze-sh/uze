@@ -1330,3 +1330,68 @@ fn the_drawer_is_drawn_raised_beside_a_live_pane() {
         "the pane keeps its own"
     );
 }
+
+/// A test's click and the workspace's land on the same node: the runner
+/// finds the text in what it drew and asks the renderer's hit map, as the
+/// workspace's pointer does.
+#[test]
+fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
+    let root = uze_testkit::temp::scratch("declared-test-click");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    the_gsd_band_installed(&root, &home);
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let band = app
+        .extensions()
+        .installed()
+        .into_iter()
+        .find(|extension| extension.identity.id == "gsd-band")
+        .expect("the band is installed");
+    let compiled = app.extensions().compile(&band).expect("it compiles");
+    let data: std::collections::BTreeMap<String, serde_json::Value> = app
+        .extensions()
+        .fixtures(&band, &compiled)
+        .into_iter()
+        .filter_map(|(source, data)| Some((source, data.ok()?)))
+        .collect();
+    let from_a_test =
+        crate::ui::extension_test::hit_for_text(&compiled, data, "board", (112, 30), "Activity")
+            .expect("a test finds the tab");
+
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let slot = view_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
+    driven.press(button.x, button.y);
+    driven.frame();
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    let (y, row) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.contains("Activity") && row.contains("Phases"))
+        .expect("the tabs are drawn");
+    let x = row[..row.find("Activity").unwrap()].chars().count() as u16;
+    let from_the_workspace = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .rev()
+        .find(|(rect, _)| rect.contains(ratatui::layout::Position { x, y: y as u16 }))
+        .map(|(_, hit)| *hit);
+    assert_eq!(
+        from_the_workspace,
+        Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot,
+            hit: from_a_test
+        }))
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
