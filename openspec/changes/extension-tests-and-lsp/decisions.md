@@ -47,3 +47,13 @@
 - decided:  A `view` is drawn at 100×30, a `section` at 30×16 (the sidebar's width), a `drawer` at 46×30. `expect-text` passes when the text is on one row, or when its words follow each other across rows once the drawer's frame is set aside.
 - rejected: Requiring `size` in every test (noisier tests for the common case); matching only within a row (every long paragraph would need a substring chosen to fit a row).
 - blast:    Snapshot file names carry the size, so a changed default renames the snapshots of tests that omit `size`.
+
+## D6 — Take lsp-server, write the protocol's messages by hand instead of lsp-types
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  T6 named both `lsp-server` and `lsp-types`. The review found that `lsp-server` (rust-lang, rust-analyzer's tree) adds no crate the lock does not already hold, while `lsp-types` (gluon-lang) adds `fluent-uri`, `bitflags` 1 and `serde_repr`.
+- decided:  `lsp-server` 0.10 for the framing and the initialize handshake; the six messages the server speaks (initialize's capabilities, open, change, close, publishDiagnostics, completion, hover) as `serde_json` values in `src/cli/lsp/`.
+- rejected: `lsp-types` (three new crates from one maintainer for typed shapes of six messages); hand-writing the framing too (rust-lang already maintains it).
+- blast:    Switching to `lsp-types` later means replacing the `json!` shapes with its structs, in one module.
