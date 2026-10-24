@@ -184,6 +184,18 @@ fn walk(dir: &Path) -> Option<Vec<(String, PathBuf)>> {
 /// A fixture's JSON, read from inside the extension's directory and no
 /// further than [`FIXTURE_LIMIT`].
 pub(super) fn read_fixture(dir: &Path, fixture: &str) -> SourceData {
+    let bytes = fixture_bytes(dir, fixture)?;
+    parse_fixture(&bytes).map_err(|(line, column, why)| format!("{fixture}:{line}:{column}: {why}"))
+}
+
+/// A fixture's JSON, or where it stops reading and why.
+pub(super) fn parse_fixture(bytes: &[u8]) -> Result<serde_json::Value, (usize, usize, String)> {
+    serde_json::from_slice(bytes).map_err(|error| (error.line(), error.column(), error.to_string()))
+}
+
+/// A fixture's bytes, read from inside the extension's directory and no
+/// further than [`FIXTURE_LIMIT`].
+pub(super) fn fixture_bytes(dir: &Path, fixture: &str) -> Result<Vec<u8>, String> {
     let relative = Path::new(fixture);
     if !relative
         .components()
@@ -207,8 +219,7 @@ pub(super) fn read_fixture(dir: &Path, fixture: &str) -> SourceData {
     if bytes.len() as u64 > FIXTURE_LIMIT {
         return Err(format!("{fixture}: larger than 1 MiB"));
     }
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{fixture}:{}:{}: {error}", error.line(), error.column()))
+    Ok(bytes)
 }
 
 #[cfg(test)]

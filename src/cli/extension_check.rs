@@ -13,19 +13,22 @@ const LOCALE: &str = "en";
 
 /// Binds each surface of `checked` to its source's fixture, under every
 /// choice of its tabs, and adds a warning, placed in the view, for each
-/// field the view reaches for that the fixture does not hold.
+/// field the view reaches for that the fixture does not hold. The one
+/// analysis the check and the language server both add to what the
+/// application found, so they say the same thing.
 pub(crate) fn bind_fixtures(checked: &mut CheckedExtension) {
     let Some(compiled) = checked.compiled.clone() else {
         return;
     };
     for missing in missing_fields(&compiled, &checked.fixtures, LOCALE) {
-        let place = checked
-            .place(&missing.view, missing.span.offset)
-            .map_or_else(String::new, |(line, column)| format!(":{line}:{column}"));
-        checked.warnings.push(format!(
-            "{}{place}: `{}` is not in the fixture {}",
-            missing.view, missing.field, missing.fixture
-        ));
+        checked.warn_at(
+            &missing.view,
+            missing.span.offset,
+            format!(
+                "`{}` is not in the fixture {}",
+                missing.field, missing.fixture
+            ),
+        );
     }
 }
 
