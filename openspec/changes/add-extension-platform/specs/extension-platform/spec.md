@@ -112,9 +112,10 @@ declared literal). Anything else SHALL be refused.
 
 ### Requirement: Lookup tables map values to roles and labels
 A view MAY declare named lookup tables mapping a value to a role, a label
-or a symbol, optionally per locale, used as `{table:field}`. A value
-missing from a table SHALL draw the table's default, or the role `Default`
-with a check warning when it has none.
+or a symbol, optionally per locale, used as `{table:field}` (the entry for
+the field's value) or `{table::key}` (the entry for a literal key, as a
+label). A value missing from a table SHALL draw the table's default, or the
+role `Default` with a check warning when it has none.
 
 #### Scenario: A state becomes a role without the program
 - **WHEN** a view declares `lookup "tone" { done "success"; partial "warning" }` and binds `role="{tone:state}"` to an item whose `state` is `partial`
@@ -122,7 +123,7 @@ with a check warning when it has none.
 
 #### Scenario: Labels follow the operator's locale
 - **WHEN** a view declares the table `t` for locales `pt` and `en` and the operator's locale is `pt`
-- **THEN** `"{t:next}"` draws the `pt` label
+- **THEN** `"{t::next}"` draws the `pt` label
 
 ### Requirement: UI state declared in a view is held by the host
 A `tabs`, `toggle`, `select`, `field` or list selection with an `id` SHALL
@@ -141,8 +142,9 @@ action names it in `with`. A `form`'s fields SHALL reach its action as
 
 ### Requirement: A surface occupies one of the host's slots
 A surface SHALL declare one slot: `view` (the full frame), `section` (a
-sidebar block), `status` (a row in the sidebar's header), `band` (1 to 6
-rows the manifest fixes, on an edge of an agent's pane), `overlay` (a
+sidebar block), `drawer` (a panel docked on the right of the agent area,
+laid beside the pane), `status` (a row in the sidebar's header), `band` (1
+to 6 rows the manifest fixes, on an edge of an agent's pane), `overlay` (a
 picker, form or dialog) or `notify`. The host SHALL own every slot's
 geometry, SHALL NOT let a surface cover a pane's cells, and SHALL refuse an
 unknown slot or `kind="interactive"`.
@@ -150,6 +152,10 @@ unknown slot or `kind="interactive"`.
 #### Scenario: A section joins the sidebar
 - **WHEN** an enabled extension declares a `section` surface
 - **THEN** the workspace sidebar shows it as a collapsible block titled by the extension, drawn from its source
+
+#### Scenario: The pane narrows while a drawer is open
+- **WHEN** the operator opens an extension's `drawer` from its button or key
+- **THEN** the agent's pane, and its terminal, narrow by the drawer's column, and return to their width when it closes
 
 #### Scenario: A band sits beside its agent, not over it
 - **WHEN** an extension declares a 4-row `band` at the top of agent panes and an agent's pane is 30 rows tall

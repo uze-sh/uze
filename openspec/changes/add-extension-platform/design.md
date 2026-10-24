@@ -407,6 +407,7 @@ list over a CLI, and making each one a resident script would trade the
 |---|---|---|---|
 | `view` | the full frame, opened like `code` | the frame less the host's attribution strip | layouts `sidebar` or `board`, as before |
 | `section` | a collapsible block of the workspace sidebar | sidebar width, rows the host grants | the timeline's place |
+| `drawer` | a card docked on the right of the agent area, toggled by its strip button or `alt+k` | 45% of the agent area, 44 to 72 columns, draggable; the pane keeps at least 40 | laid beside the pane, so the pane and its PTY narrow on open; not modal: a click lends it the keys, Esc gives them back; one open per space (added by `extension-view-engine`) |
 | `status` | a compact row in the sidebar's header | one row, sidebar width | no workspace status bar exists (`render.rs:57-67`), and one would shorten every pane; the operator orders segments |
 | `band` | a fixed number of rows (1 to 6, declared in the manifest) along the top or bottom of an agent's pane | pane width × declared rows | reserved in `compute_layout`; never resized by an answer |
 | `overlay` | a picker, form or dialog over the frame | host-chosen | modal, under host chrome, opened by a gesture or the `open` action |
@@ -420,9 +421,9 @@ list over a CLI, and making each one a resident script would trade the
   never resizes the agent's terminal (a resize is a SIGWINCH and hides real
   activity for `AGENT_REDRAW_GRACE`); mouse and selection coordinates of the
   pane are offset by the band.
-- A `view` keeps a one-row strip the host draws (`id · plugin@marketplace`)
-  that no answer can cover, so a full-frame surface cannot pass for an
-  agent's pane or for UZE.
+- A `view` and a `drawer` keep a one-row strip the host draws
+  (`id · plugin@marketplace`) that no answer can cover, so a surface cannot
+  pass for an agent's pane or for UZE.
 - No slot reaches a harness's own output. Rewriting a transcript row is a
   non-goal.
 
@@ -770,6 +771,9 @@ no one reaches for CSS, a module or a web framework.
 - Every decoded string passes the sanitizer (D7) after escapes are applied,
   including raw and multi-line strings; ids and names are matched exactly
   against the catalog and the declared sets, with S15's charset.
+- A manifest's `id` is the name of its directory under `extensions/`, so
+  the files and the identity cannot disagree; while sources are fixtures
+  only (`extension-view-engine`), every source names one.
 - The dependency is `kdl` with `default-features = false, features =
   ["span"]`, in `uze-core` (`capability/extension`), never in `uze-contract`,
   `uze-extensions` or `src/ui`. The PATH shim is the same binary, so the
@@ -819,11 +823,19 @@ One set of rules, the same in every view, with no expressions:
 - **Lookup tables.** `lookup "tone" { success "done"; warning "partial"; … }`
   declares a mapping from a value to a role, a label or a symbol, used as
   `role="{tone:state}"`. Keyed by locale, the same mechanism carries labels
-  in several languages (`lookup "t" locale="pt" { … }`, `"{t:next}"`), so
-  programs stop emitting role names and built-in sources become usable.
+  in several languages (`lookup "t" locale="pt" { … }`), so programs stop
+  emitting role names and built-in sources become usable. `{t:field}` takes
+  the entry for the field's value; `{t::key}` the entry for a literal key,
+  which is how a view's own labels are written (`"{t::phases}"`).
+- **One condition per node.** A node carries at most one of `when`,
+  `unless`, `show` and `show-any`; `show-any` lists its pairs separated by
+  commas. Nesting gives "and".
 - **Missing fields.** A missing field that is a whole property hides the
   node; inside a mixed string it draws empty and is a check warning against
   the fixtures (D26).
+- **Text.** A `Text` with `truncate` is one line cut with an ellipsis; one
+  without it is a paragraph that wraps, breaking a word longer than a row
+  after its last `/`, `_`, `.` or `-` before cutting it at the cell.
 - D3's and D15's "a reference is a whole value" is replaced by these
   rules, and the manifest keeps the original, stricter form: whole-value
   references only.
@@ -1189,7 +1201,7 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 1. **extension-view-engine**: the starting catalog (the nodes `gsd-band` and
    a plain panel need), the bounded KDL decoder and compiled views, the
    binding rules, lookups and templates, host-held UI state (D22–D24), the
-   `view` and `section` slots, data from fixtures only (actions are
+   `view`, `section` and `drawer` slots, data from fixtures only (actions are
    recorded in the inspector, never run), reload on save for linked
    extensions, the error overlay and a minimal inspector (D25), and KDL highlighting. It
    also lays the minimal generic path of D2 (the `Extension` contract, one
