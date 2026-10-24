@@ -10,10 +10,12 @@
 //! - [`document`]: places in a file, and the checks every node gets.
 //! - [`manifest`]: `extension.kdl` into a [`uze_contract::Manifest`].
 //! - [`view`]: a view file into a [`uze_contract::CompiledView`].
+//! - [`test_file`]: a `tests/*.test.kdl` into a [`uze_contract::TestFile`].
 
 mod bounded;
 mod document;
 mod manifest;
+mod test_file;
 mod view;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,6 +24,7 @@ use std::path::{Path, PathBuf};
 use uze_contract::{CompiledExtension, Identity};
 
 pub use bounded::{DEPTH_MAX, FILE_MAX, PARSE_LIMIT};
+pub use test_file::{TEST_SUFFIX, TESTS_DIR};
 pub use view::EACH_MAX;
 
 use document::Report;
@@ -167,6 +170,48 @@ fn compile_view(path: &Path, file: &str) -> Result<uze_contract::CompiledView, V
         bounded::parse(&mut report).map(|document| view::compile(&document, file, &mut report));
     match compiled {
         Some(view) if report.diagnostics().is_empty() => Ok(view),
+        _ => Err(report.into_diagnostics()),
+    }
+}
+
+/// The test files of the extension in `dir`, by name relative to it
+/// (`tests/board.test.kdl`), in name order.
+pub fn test_files(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir.join(TESTS_DIR)) else {
+        return Vec::new();
+    };
+    let mut files: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.ends_with(TEST_SUFFIX))
+        .map(|name| format!("{TESTS_DIR}/{name}"))
+        .collect();
+    files.sort();
+    files
+}
+
+/// Reads and decodes one test file of the extension in `dir`, behind the
+/// same bounds as a view.
+pub fn compile_test(dir: &Path, file: &str) -> Result<uze_contract::TestFile, Vec<Diagnostic>> {
+    let path = inside(dir, file).map_err(|why| {
+        vec![Diagnostic::whole(
+            file,
+            format!("the test file {why}"),
+            None,
+        )]
+    })?;
+    let source = bounded::read(&path, file).map_err(|refusal| vec![refusal])?;
+    decode_test(file, &source)
+}
+
+/// Decodes a test file from `source`, as [`compile_test`] does from disk.
+pub fn decode_test(file: &str, source: &str) -> Result<uze_contract::TestFile, Vec<Diagnostic>> {
+    let mut report = Report::new(file, source);
+    let decoded =
+        bounded::parse(&mut report).map(|document| test_file::decode(&document, &mut report));
+    match decoded {
+        Some(tests) if report.diagnostics().is_empty() => Ok(tests),
         _ => Err(report.into_diagnostics()),
     }
 }

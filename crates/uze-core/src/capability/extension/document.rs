@@ -200,6 +200,24 @@ pub fn count(n: usize, noun: &str) -> String {
     }
 }
 
+/// The one name of `known` close enough to `name` to be what was meant:
+/// within two edits (one for a name of four characters or fewer), case
+/// aside, the closest winning and the first of equals. `None` when nothing
+/// is that close, and the caller lists what is accepted instead.
+pub fn nearest<'k>(name: &str, known: &[&'k str]) -> Option<&'k str> {
+    let wanted = name.to_lowercase();
+    let reach = if wanted.chars().count() <= 4 { 1 } else { 2 };
+    known
+        .iter()
+        .map(|candidate| {
+            let distance = strsim::damerau_levenshtein(&wanted, &candidate.to_lowercase());
+            (distance, *candidate)
+        })
+        .filter(|(distance, _)| *distance <= reach)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate)
+}
+
 /// The suggestion that lists what is accepted.
 pub fn accepts(names: &[&str]) -> String {
     if names.is_empty() {
@@ -212,6 +230,19 @@ pub fn accepts(names: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_nearest_name_is_offered_only_when_it_is_close() {
+        let nodes = ["Stack", "Table", "Tabs", "Text"];
+        assert_eq!(nearest("Tabel", &nodes), Some("Table"));
+        assert_eq!(nearest("stak", &nodes), Some("Stack"));
+        assert_eq!(nearest("Txt", &nodes), Some("Text"));
+        assert_eq!(nearest("Chart", &nodes), None);
+        assert_eq!(
+            nearest("expect-txt", &["expect-text", "expect-no-text"]),
+            Some("expect-text")
+        );
+    }
 
     #[test]
     fn a_position_counts_lines_and_characters_from_one() {
