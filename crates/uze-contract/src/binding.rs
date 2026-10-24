@@ -78,6 +78,12 @@ pub enum TextPart {
         table: String,
         path: Path,
     },
+    /// `{table::key}`: the entry `key` itself, a label the view names and
+    /// the data has no part in, such as `{t::next}` for a translated word.
+    Label {
+        table: String,
+        key: String,
+    },
 }
 
 /// What a property or an argument is bound to.
@@ -90,6 +96,8 @@ pub enum Binding {
     Ref(Path),
     /// Exactly one lookup and nothing around it.
     Lookup { table: String, path: Path },
+    /// Exactly one label and nothing around it.
+    Label { table: String, key: String },
     /// Text with references in it, always a string, interpolating scalars
     /// only. Display text only: the compiler refuses it on a property that
     /// carries identity.
@@ -161,6 +169,15 @@ pub fn parse_text(source: &str) -> Result<Vec<TextPart>, String> {
 }
 
 fn reference(inner: &str) -> Result<TextPart, String> {
+    if let Some((table, key)) = inner.split_once("::") {
+        let (table, key) = (table.trim(), key.trim());
+        return (is_field_name(table) && is_field_name(key))
+            .then(|| TextPart::Label {
+                table: table.to_owned(),
+                key: key.to_owned(),
+            })
+            .ok_or_else(|| format!("`{{{inner}}}` is not a label: write `{{table::key}}`"));
+    }
     if let Some((table, field)) = inner.split_once(':') {
         let path = Path::parse(field).filter(|_| is_field_name(table.trim()));
         return path
@@ -181,6 +198,7 @@ pub fn binding_of(parts: Vec<TextPart>) -> Binding {
     match <[TextPart; 1]>::try_from(parts) {
         Ok([TextPart::Ref(path)]) => Binding::Ref(path),
         Ok([TextPart::Lookup { table, path }]) => Binding::Lookup { table, path },
+        Ok([TextPart::Label { table, key }]) => Binding::Label { table, key },
         Ok([TextPart::Literal(text)]) => Binding::Literal(serde_json::Value::String(text)),
         Err(parts) if parts.is_empty() => {
             Binding::Literal(serde_json::Value::String(String::new()))
@@ -250,6 +268,14 @@ mod tests {
                 path: path(Scope::Item, &["e"])
             }
         );
+        assert_eq!(
+            binding_of(parse_text("{t::next}").unwrap()),
+            Binding::Label {
+                table: "t".into(),
+                key: "next".into()
+            }
+        );
+        assert!(parse_text("{t::}").is_err());
         assert!(parse_text("{done > 0}").is_err());
         assert!(parse_text("{open").is_err());
     }

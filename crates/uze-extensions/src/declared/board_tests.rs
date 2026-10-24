@@ -61,13 +61,13 @@ fn board() -> CompiledView {
         .child(
             n(NodeName::Tabs)
                 .prop("id", "tab")
-                .child(n(NodeName::Tab).arg("{t:phases}").prop("value", "phases"))
-                .child(n(NodeName::Tab).arg("{t:log}").prop("value", "log")),
+                .child(n(NodeName::Tab).arg("{t::phases}").prop("value", "phases"))
+                .child(n(NodeName::Tab).arg("{t::log}").prop("value", "log")),
         )
-        .child(n(NodeName::Button).arg("{t:clear}").prop("action", "clear"))
+        .child(n(NodeName::Button).arg("{t::clear}").prop("action", "clear"))
         .child(
             n(NodeName::Button)
-                .arg("{t:next} {next.phase}")
+                .arg("{t::next} {next.phase}")
                 .prop("action", "next")
                 .prop("item", "{next}")
                 .when("next"),
@@ -97,7 +97,7 @@ fn board() -> CompiledView {
                 n(NodeName::List)
                     .each("phases")
                     .show("tab", "phases")
-                    .prop("empty", "{t:empty}")
+                    .prop("empty", "{t::empty}")
                     .uses("phase-row"),
             )
             .child(n(NodeName::Log).prop("lines", "{log}").show("tab", "log"))
