@@ -32,13 +32,13 @@
 
 ## 5. Host (parallel, `src/ui/orchestrator*`, `uze-application`, `uze-core`)
 
-- [ ] 5.1 `installed_extensions()` in `uze-application`: identity, directories (the linked working tree when linked, by making `materialize_from_link`'s placement public in `uze-core`), linked or not
-- [ ] 5.2 The compile service off the drawing thread, the compiled-view cache in the generated tier named in `UzeHome`, and fixtures read bounded at 1 MiB
-- [ ] 5.3 The generic slot path: `ExtensionSlot` map, `ExtensionHit::Declared`, `WorkspaceHit::OpenDeclared`, `Scope::Declared`, one spawn/absorb pair inside `thread::spawn` in `reads.rs`, one outcome follow-up; open, close, keys, pointer, render, tab strip and sidebar for declared surfaces; the extension switch by identity
-- [ ] 5.4 Reload of linked extensions: poll every 250 ms, digest of modification times, debounce 150 ms, keep the place
-- [ ] 5.5 The last good draw with the error over it, for every declared surface
-- [ ] 5.6 The inspector drawer: compiled tree with why a node is absent, data, UI state, recorded actions, last errors
-- [ ] 5.7 Orchestrator tests: open and close, tab switching runs nothing, a stale answer dropped, reload keeps the place, an error keeps the last draw
+- [x] 5.1 `installed_extensions()` in `uze-application`: identity, directories (the linked working tree when linked, by making `materialize_from_link`'s placement public in `uze-core`), linked or not
+- [x] 5.2 The compile service off the drawing thread, the compiled-view cache in the generated tier named in `UzeHome`, and fixtures read bounded at 1 MiB
+- [x] 5.3 The generic slot path: `ExtensionSlot` map, `ExtensionHit::Declared`, `WorkspaceHit::OpenDeclared`, `Scope::Declared`, one spawn/absorb pair inside `thread::spawn` in `reads.rs`, one outcome follow-up; open, close, keys, pointer, render, tab strip and sidebar for declared surfaces; the extension switch by identity
+- [x] 5.4 Reload of linked extensions: poll every 250 ms, digest of modification times, debounce 150 ms, keep the place
+- [x] 5.5 The last good draw with the error over it, for every declared surface
+- [x] 5.6 The inspector drawer: compiled tree with why a node is absent, data, UI state, recorded actions, last errors
+- [x] 5.7 Orchestrator tests: open and close, tab switching runs nothing, a stale answer dropped, reload keeps the place, an error keeps the last draw
 
 ## 6. Highlighting (parallel, `uze-extensions/grammars`)
 

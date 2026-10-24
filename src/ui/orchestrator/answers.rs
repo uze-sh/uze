@@ -564,8 +564,18 @@ impl WorkspaceModel {
             declared.discovery_pending = false;
             declared.absorb_discovery(found);
         }
-        let changed = answer.discovered.is_some() || !answer.loaded.is_empty();
-        for loaded in answer.loaded {
+        // A recompile answers only for an extension still installed: one a
+        // discovery took away meanwhile stays away.
+        let recompiled = answer.discovered.is_none();
+        let loaded: Vec<LoadedExtension> = answer
+            .loaded
+            .into_iter()
+            .filter(|loaded| {
+                !recompiled || declared.extensions.contains_key(&loaded.installed.identity)
+            })
+            .collect();
+        let changed = answer.discovered.is_some() || !loaded.is_empty();
+        for loaded in loaded {
             declared.absorb_loaded(loaded);
         }
         // A view whose extension went, or whose surface it stopped

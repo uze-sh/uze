@@ -230,7 +230,7 @@ pub(super) struct DeclaredExtensions {
     /// In identity order, each extension's surfaces in the order it
     /// declares them.
     pub(super) slots: Vec<DeclaredSlot>,
-    next_slot: SlotId,
+    pub(super) next_slot: SlotId,
     /// Whether the installed extensions were asked for, this run.
     pub(super) discovered: bool,
     pub(super) discovery_pending: bool,
