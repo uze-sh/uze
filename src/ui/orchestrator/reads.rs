@@ -1823,3 +1823,57 @@ pub(super) fn spawn_extension_stamps(
         let _ = sender.send(StampsAnswer { stamps });
     });
 }
+
+/// What a hosted engine's job answered, for the slot that asked.
+pub(super) struct EngineAnswer {
+    pub(super) slot: super::declared::SlotId,
+    pub(super) answer: uze_extensions::contract::Opaque,
+}
+
+/// Runs a hosted engine's jobs, each with the workspace's `Host`, off the
+/// drawing thread: one after another on one thread for an engine whose
+/// lane is serial, each on its own thread for one that runs in parallel. A
+/// job that panics answers its fallback, so a failed read is drawn as one.
+pub(super) fn spawn_engine_jobs(
+    slot: super::declared::SlotId,
+    jobs: Vec<uze_extensions::contract::Job>,
+    lanes: uze_extensions::contract::Lanes,
+    sender: mpsc::Sender<EngineAnswer>,
+) {
+    fn answered(
+        job: uze_extensions::contract::Job,
+        host: &dyn uze_extensions::Host,
+    ) -> uze_extensions::contract::Opaque {
+        let uze_extensions::contract::Job { run, fallback } = job;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(host)))
+            .unwrap_or_else(|_| fallback())
+    }
+    let parent = tracing::Span::current();
+    match lanes {
+        uze_extensions::contract::Lanes::Serial => {
+            thread::spawn(move || {
+                let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+                for job in jobs {
+                    let _ = sender.send(EngineAnswer {
+                        slot,
+                        answer: answered(job, &WorkspaceHost),
+                    });
+                }
+            });
+        }
+        uze_extensions::contract::Lanes::Parallel => {
+            for job in jobs {
+                let sender = sender.clone();
+                let parent = parent.clone();
+                thread::spawn(move || {
+                    let _pass =
+                        crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+                    let _ = sender.send(EngineAnswer {
+                        slot,
+                        answer: answered(job, &WorkspaceHost),
+                    });
+                });
+            }
+        }
+    }
+}

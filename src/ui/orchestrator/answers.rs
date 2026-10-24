@@ -557,6 +557,36 @@ impl WorkspaceModel {
         }
     }
 
+    /// Hands each hosted engine's pending jobs to a thread. Cheap enough
+    /// for every tick: an engine with nothing to read answers none.
+    pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) {
+        for slot in &mut self.remembered.declared.slots {
+            let Some(engine) = slot.engine.as_mut() else {
+                continue;
+            };
+            let jobs = engine.jobs();
+            if !jobs.is_empty() {
+                spawn_engine_jobs(slot.id, jobs, engine.lanes(), answers.clone());
+            }
+        }
+    }
+
+    /// Takes what a hosted engine's job answered to the slot that asked.
+    /// One whose slot is gone, its extension removed meanwhile, is dropped.
+    /// Returns whether it is drawn.
+    pub(super) fn absorb_engine_answer(&mut self, answer: EngineAnswer) -> bool {
+        let Some(engine) = self
+            .remembered
+            .declared
+            .slot_mut(answer.slot)
+            .and_then(|slot| slot.engine.as_mut())
+        else {
+            return false;
+        };
+        engine.absorb(answer.answer);
+        true
+    }
+
     /// Takes a declared-extension job's answer. Returns whether anything on
     /// screen may have changed.
     pub(super) fn absorb_extension_answer(&mut self, answer: ExtensionAnswer) -> bool {

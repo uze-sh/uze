@@ -1458,3 +1458,137 @@ fn the_drawers_scrollbar_follows_the_pointer() {
     assert!(!driven.attach.model.dragging_dock_content);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// An engine that asks the host for two reads once, one of which panics,
+/// and says what came back.
+struct Fetcher {
+    asked: bool,
+    said: Vec<String>,
+}
+
+impl Extension for Fetcher {
+    fn identity(&self) -> String {
+        "fetcher".to_owned()
+    }
+
+    fn surfaces(&self) -> Vec<SurfaceInfo> {
+        Vec::new()
+    }
+
+    fn view(&self, _surface: &str, _space: Size) -> Option<View> {
+        None
+    }
+
+    fn section(&self, _surface: &str, _collapsed: bool) -> Option<Section> {
+        None
+    }
+
+    fn command(&mut self, _surface: &str, _command: Command, _space: Size) -> Outcome {
+        Outcome::Stay
+    }
+
+    fn hit(&mut self, _surface: &str, _hit: ViewHit, _space: Size) -> Outcome {
+        Outcome::Stay
+    }
+
+    fn scroll(&mut self, _surface: &str, _target: ScrollTarget, _direction: ScrollDirection) {}
+
+    fn jobs(&mut self) -> Vec<uze_extensions::contract::Job> {
+        if std::mem::replace(&mut self.asked, true) {
+            return Vec::new();
+        }
+        let answer = |said: &'static str| -> uze_extensions::contract::JobFallback {
+            Box::new(move || uze_extensions::contract::Opaque::new(said.to_owned()))
+        };
+        vec![
+            uze_extensions::contract::Job {
+                run: Box::new(|host| {
+                    let read = host.read_file(std::path::Path::new(file!())).is_ok();
+                    uze_extensions::contract::Opaque::new(format!("read through the host: {read}"))
+                }),
+                fallback: answer("never"),
+            },
+            uze_extensions::contract::Job {
+                run: Box::new(|_| panic!("a read that fails")),
+                fallback: answer("fell back"),
+            },
+        ]
+    }
+
+    fn absorb(&mut self, answer: uze_extensions::contract::Opaque) {
+        if let Some(said) = answer.downcast::<String>() {
+            self.said.push(said);
+        }
+    }
+}
+
+impl Hosted for Fetcher {
+    fn replace(&mut self, _compiled: CompiledExtension) {}
+    fn set_data(&mut self, _source: &str, _data: uze_application::SourceData) {}
+    fn inspect(&self, _surface: &str) -> Inspection {
+        Inspection {
+            nodes: self.said.clone(),
+            ..Inspection::default()
+        }
+    }
+}
+
+fn fetcher(_compiled: CompiledExtension, _locale: &str) -> Box<dyn Hosted> {
+    Box::new(Fetcher {
+        asked: false,
+        said: Vec::new(),
+    })
+}
+
+/// A hosted engine's jobs run on a thread with the workspace's host, once,
+/// and each answer reaches the same engine; a job that panics answers its
+/// fallback rather than leaving the engine waiting.
+#[test]
+fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared = DeclaredExtensions {
+        engine: fetcher,
+        discovered_at: Some(std::time::Instant::now()),
+        ..DeclaredExtensions::default()
+    };
+    assert!(model.absorb_extension_answer(ExtensionAnswer {
+        discovered: Some(vec![installed()]),
+        recompiled: Vec::new(),
+        loaded: vec![loaded(Ok(compiled()))],
+    }));
+    // An engine per slot, one slot per surface: each asks for itself.
+    let engines = model
+        .remembered
+        .declared
+        .slots
+        .iter()
+        .filter(|slot| slot.engine.is_some())
+        .count();
+    assert!(engines > 0);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    model.schedule_engine_jobs(&sender);
+    let mut absorbed = 0;
+    while absorbed < 2 * engines {
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("each job answers");
+        assert!(model.absorb_engine_answer(answer));
+        absorbed += 1;
+    }
+    model.schedule_engine_jobs(&sender);
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "asked once"
+    );
+    for slot in &model.remembered.declared.slots {
+        let Some(engine) = slot.engine.as_ref() else {
+            continue;
+        };
+        let mut said = engine.inspect("board").nodes;
+        said.sort();
+        assert_eq!(said, ["fell back", "read through the host: true"]);
+    }
+}
