@@ -20,6 +20,7 @@ members = [
   "crates/uze-integrations",
   "crates/uze-application",
   "crates/uze-extensions",
+  "crates/uze-contract",
   "crates/uze-git",
   "crates/uze-testkit",
   "crates/uze-terminal",

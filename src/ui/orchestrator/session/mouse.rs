@@ -1570,6 +1570,7 @@ impl Attach<'_> {
                     &self.channels.commit_details.sender,
                 ),
                 ViewHit::GrabNavigatorEdge
+                | ViewHit::Node { .. }
                 | ViewHit::ToggleGroup(_)
                 | ViewHit::OpenMenu(_)
                 | ViewHit::MenuEntry(_)

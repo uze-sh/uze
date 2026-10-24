@@ -1,0 +1,415 @@
+//! The nodes a view may name, and what each one accepts.
+//!
+//! One table, read by the decoder that checks a view, the engine that binds
+//! it and, later, the language server that completes it, so the three can
+//! never disagree about what `Progress` takes. A node joins the catalog when
+//! a gallery entry needs it (D15, D20); this is the starting set
+//! (`extension-view-engine`).
+
+use serde::{Deserialize, Serialize};
+
+/// A catalog node, as a view spells it: PascalCase, unlike a view's
+/// directives (`template`, `use`, `lookup`), which are lowercase.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum NodeName {
+    Stack,
+    Row,
+    Text,
+    Badge,
+    Marks,
+    Mark,
+    Pips,
+    Progress,
+    Segment,
+    List,
+    Table,
+    Tabs,
+    Tab,
+    Toggle,
+    Button,
+    Activity,
+    Elapsed,
+    Log,
+}
+
+/// What a property's value must be once bound.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PropKind {
+    /// Display text: a literal, a reference or mixed text.
+    Text,
+    /// A whole number of cells or a count.
+    Count,
+    /// A number, such as a weight or a ratio.
+    Number,
+    /// `#true` or `#false`, or a reference to one.
+    Flag,
+    /// One of [`RoleName`], or a reference or lookup resolving to one.
+    Role,
+    /// A literal the view declares and the host keys state or actions by.
+    /// Never interpolated (D23): identity cannot depend on data.
+    Identity,
+    /// A literal naming one of a closed set of words.
+    Word(&'static [&'static str]),
+    /// Any value, handed through to whatever receives it (an action's item).
+    Value,
+}
+
+/// What a node accepts: its arguments, its properties and whether it holds
+/// other nodes.
+#[derive(Clone, Copy, Debug)]
+pub struct NodeSpec {
+    pub name: NodeName,
+    /// The kind of each positional argument, in order; more than this many
+    /// is refused.
+    pub args: &'static [PropKind],
+    /// How many of [`NodeSpec::args`] must be present.
+    pub required_args: usize,
+    pub props: &'static [(&'static str, PropKind)],
+    /// The nodes it may hold, or `None` for a leaf.
+    pub children: Option<&'static [NodeName]>,
+}
+
+/// Properties every node accepts, beside its own: whether it is drawn, and
+/// how it shares a row.
+pub const COMMON_PROPS: &[(&str, PropKind)] = &[
+    ("each", PropKind::Identity),
+    ("when", PropKind::Identity),
+    ("unless", PropKind::Identity),
+    ("show", PropKind::Identity),
+    ("show-any", PropKind::Identity),
+    ("grow", PropKind::Flag),
+    ("min-width", PropKind::Count),
+];
+
+const ALIGN: PropKind = PropKind::Word(&["start", "center", "end"]);
+
+/// Any node a container may hold.
+const ANY: &[NodeName] = &[
+    NodeName::Stack,
+    NodeName::Row,
+    NodeName::Text,
+    NodeName::Badge,
+    NodeName::Marks,
+    NodeName::Pips,
+    NodeName::Progress,
+    NodeName::List,
+    NodeName::Table,
+    NodeName::Tabs,
+    NodeName::Toggle,
+    NodeName::Button,
+    NodeName::Activity,
+    NodeName::Elapsed,
+    NodeName::Log,
+];
+
+pub const CATALOG: &[NodeSpec] = &[
+    NodeSpec {
+        name: NodeName::Stack,
+        args: &[],
+        required_args: 0,
+        props: &[("gap", PropKind::Count)],
+        children: Some(ANY),
+    },
+    NodeSpec {
+        name: NodeName::Row,
+        args: &[],
+        required_args: 0,
+        props: &[("gap", PropKind::Count), ("align", ALIGN)],
+        children: Some(ANY),
+    },
+    NodeSpec {
+        name: NodeName::Text,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[
+            ("role", PropKind::Role),
+            ("strong", PropKind::Flag),
+            ("truncate", PropKind::Flag),
+        ],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Badge,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Marks,
+        args: &[],
+        required_args: 0,
+        props: &[],
+        children: Some(&[NodeName::Mark]),
+    },
+    NodeSpec {
+        name: NodeName::Mark,
+        args: &[],
+        required_args: 0,
+        props: &[("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Pips,
+        args: &[],
+        required_args: 0,
+        props: &[("done", PropKind::Count), ("total", PropKind::Count)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Progress,
+        args: &[],
+        required_args: 0,
+        props: &[("ratio", PropKind::Number), ("role", PropKind::Role)],
+        children: Some(&[NodeName::Segment]),
+    },
+    NodeSpec {
+        name: NodeName::Segment,
+        args: &[],
+        required_args: 0,
+        props: &[
+            ("weight", PropKind::Number),
+            ("ratio", PropKind::Number),
+            ("role", PropKind::Role),
+        ],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::List,
+        args: &[],
+        required_args: 0,
+        props: &[("id", PropKind::Identity), ("empty", PropKind::Text)],
+        children: Some(ANY),
+    },
+    NodeSpec {
+        name: NodeName::Table,
+        args: &[
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+            PropKind::Text,
+        ],
+        required_args: 0,
+        props: &[("empty", PropKind::Text)],
+        children: Some(&[NodeName::Row]),
+    },
+    NodeSpec {
+        name: NodeName::Tabs,
+        args: &[],
+        required_args: 0,
+        props: &[("id", PropKind::Identity)],
+        children: Some(&[NodeName::Tab]),
+    },
+    NodeSpec {
+        name: NodeName::Tab,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("value", PropKind::Identity)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Toggle,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("id", PropKind::Identity), ("on", PropKind::Flag)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Button,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("action", PropKind::Identity), ("item", PropKind::Value)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Activity,
+        args: &[],
+        required_args: 0,
+        props: &[("agent", PropKind::Identity), ("busy", PropKind::Flag)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Elapsed,
+        args: &[],
+        required_args: 0,
+        props: &[("since", PropKind::Text), ("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Log,
+        args: &[],
+        required_args: 0,
+        props: &[("lines", PropKind::Value)],
+        children: None,
+    },
+];
+
+impl NodeName {
+    pub fn spec(self) -> &'static NodeSpec {
+        CATALOG
+            .iter()
+            .find(|spec| spec.name == self)
+            .expect("every node name has a catalog entry, proved by a test")
+    }
+
+    /// The name as a view writes it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stack => "Stack",
+            Self::Row => "Row",
+            Self::Text => "Text",
+            Self::Badge => "Badge",
+            Self::Marks => "Marks",
+            Self::Mark => "Mark",
+            Self::Pips => "Pips",
+            Self::Progress => "Progress",
+            Self::Segment => "Segment",
+            Self::List => "List",
+            Self::Table => "Table",
+            Self::Tabs => "Tabs",
+            Self::Tab => "Tab",
+            Self::Toggle => "Toggle",
+            Self::Button => "Button",
+            Self::Activity => "Activity",
+            Self::Elapsed => "Elapsed",
+            Self::Log => "Log",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        CATALOG
+            .iter()
+            .map(|spec| spec.name)
+            .find(|node| node.as_str() == name)
+    }
+
+    /// A catalog node written in the wrong case, for the check's
+    /// suggestion: `stack` → `Stack`.
+    pub fn parse_ignoring_case(name: &str) -> Option<Self> {
+        CATALOG
+            .iter()
+            .map(|spec| spec.name)
+            .find(|node| node.as_str().eq_ignore_ascii_case(name))
+    }
+
+    /// The kind of `prop` on this node, its own or one every node takes.
+    pub fn prop(self, prop: &str) -> Option<PropKind> {
+        self.spec()
+            .props
+            .iter()
+            .chain(COMMON_PROPS)
+            .find(|(name, _)| *name == prop)
+            .map(|(_, kind)| *kind)
+    }
+}
+
+impl std::fmt::Display for NodeName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The semantic colours a view may name: the host's roles (`view::Role` in
+/// `uze-extensions`), spelled in lowercase. No colour value is a role, which
+/// is how `role="#ff0000"` is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RoleName {
+    Default,
+    Muted,
+    Secondary,
+    Bright,
+    Inactive,
+    Accent,
+    Dim,
+    Faint,
+    Info,
+    Success,
+    Warning,
+    Danger,
+}
+
+impl RoleName {
+    pub const ALL: &'static [RoleName] = &[
+        Self::Default,
+        Self::Muted,
+        Self::Secondary,
+        Self::Bright,
+        Self::Inactive,
+        Self::Accent,
+        Self::Dim,
+        Self::Faint,
+        Self::Info,
+        Self::Success,
+        Self::Warning,
+        Self::Danger,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Muted => "muted",
+            Self::Secondary => "secondary",
+            Self::Bright => "bright",
+            Self::Inactive => "inactive",
+            Self::Accent => "accent",
+            Self::Dim => "dim",
+            Self::Faint => "faint",
+            Self::Info => "info",
+            Self::Success => "success",
+            Self::Warning => "warning",
+            Self::Danger => "danger",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|role| role.as_str() == name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_node_has_one_catalog_entry_and_round_trips_its_name() {
+        for spec in CATALOG {
+            assert_eq!(NodeName::parse(spec.name.as_str()), Some(spec.name));
+            assert_eq!(
+                CATALOG
+                    .iter()
+                    .filter(|other| other.name == spec.name)
+                    .count(),
+                1
+            );
+            assert!(spec.required_args <= spec.args.len());
+        }
+    }
+
+    #[test]
+    fn the_wrong_case_is_found_for_a_suggestion_but_not_accepted() {
+        assert_eq!(NodeName::parse("stack"), None);
+        assert_eq!(
+            NodeName::parse_ignoring_case("stack"),
+            Some(NodeName::Stack)
+        );
+    }
+
+    #[test]
+    fn identity_properties_are_never_text() {
+        assert_eq!(NodeName::Button.prop("action"), Some(PropKind::Identity));
+        assert_eq!(NodeName::Tabs.prop("id"), Some(PropKind::Identity));
+        assert_eq!(NodeName::Text.prop("each"), Some(PropKind::Identity));
+        assert_eq!(NodeName::Text.prop("colour"), None);
+    }
+
+    #[test]
+    fn a_colour_value_is_not_a_role() {
+        assert_eq!(RoleName::parse("warning"), Some(RoleName::Warning));
+        assert_eq!(RoleName::parse("#ff0000"), None);
+        assert_eq!(RoleName::ALL.len(), 12);
+    }
+}

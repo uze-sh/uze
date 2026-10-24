@@ -1,10 +1,10 @@
 ## 1. Foundation (first, one commit, before the parallel streams)
 
-- [ ] 1.1 Create `crates/uze-contract`: `Manifest`, `SurfaceDecl`, `SourceDecl`, `CompiledView` (`Node`, templates, lookups), `Binding`, `Condition`, `Clean` and the sanitizer, catalog node and property names, reserved ids and protocol version; serde only, no I/O, no `uze_*`, no `kdl`
-- [ ] 1.2 Add the new catalog types to `crates/uze-extensions/src/view.rs`: a `Content::Tree` of layout and data nodes (`Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, segmented `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`), the section row with several marks, and the `ViewHit`s for a tab, a toggle and a button
-- [ ] 1.3 Add the `Extension` contract to `uze-extensions` with the A1 hooks (lanes, fallback answers, `orphaned`, memory beside place) and the declared engine's entry-point signature
-- [ ] 1.4 Amend ADR-041 and AGENTS.md (`uze-extensions` may depend on `uze-contract` only), add layering rules (no I/O, `uze_*` or rendering crates in `uze-contract`; no `kdl` in `uze-extensions` or `src/ui`), and add `uze-contract` to `crate-layering.mmd`
-- [ ] 1.5 `cargo build --workspace`, `cargo clippy --all-targets -- -D warnings`, the architecture suite, `make artifacts`
+- [x] 1.1 Create `crates/uze-contract`: `Manifest`, `SurfaceDecl`, `SourceDecl`, `CompiledView` (`Node`, templates, lookups), `Binding`, `Condition`, `Clean` and the sanitizer, catalog node and property names, reserved ids and protocol version; serde only, no I/O, no `uze_*`, no `kdl`
+- [x] 1.2 Add the new catalog types to `crates/uze-extensions/src/view.rs`: a `Content::Tree` of layout and data nodes (`Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, segmented `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`), the section row with several marks, and the `ViewHit`s for a tab, a toggle and a button
+- [x] 1.3 Add the `Extension` contract to `uze-extensions` with the A1 hooks (lanes, fallback answers, `orphaned`, memory beside place) and the declared engine's entry-point signature
+- [x] 1.4 Amend ADR-041 and AGENTS.md (`uze-extensions` may depend on `uze-contract` only), add layering rules (no I/O, `uze_*` or rendering crates in `uze-contract`; no `kdl` in `uze-extensions` or `src/ui`), and add `uze-contract` to `crate-layering.mmd`
+- [x] 1.5 `cargo build --workspace`, `cargo clippy --all-targets -- -D warnings`, the architecture suite, `make artifacts`
 
 ## 2. Decoder (parallel, `uze-core` `capability/extension/`)
 

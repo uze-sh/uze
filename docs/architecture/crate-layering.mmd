@@ -8,6 +8,7 @@ flowchart TD
     shim[Runtime shim<br/>src/shim.rs · the workspace's]
   end
   ext[uze-extensions<br/>describes, never draws]
+  contract[uze-contract<br/>manifest · compiled views · catalog]
   keys[uze-keys<br/>actions · scopes]
   theme[uze-theme<br/>tokens · symbols]
   terminal[uze-terminal<br/>PTY server + protocol]
@@ -38,6 +39,8 @@ flowchart TD
   cli --> app
   tui --> app
   tui --> ext
+  ext --> contract
+  capability --> contract
   cli --> ext
   tui --> keys
   tui --> terminal

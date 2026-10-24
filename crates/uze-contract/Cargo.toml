@@ -1,0 +1,15 @@
+[package]
+name = "uze-contract"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "The extension contract: manifest and compiled-view types, the binding grammar, the catalog's names and the sanitizer"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# An extension's data is JSON from its fixture (and, later, its script), so
+# the contract names the one value type every side already shares.
+serde_json = { version = "1", features = ["preserve_order"] }

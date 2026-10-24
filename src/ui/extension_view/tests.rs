@@ -122,6 +122,7 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
             caption: Span::new(caption, Role::Muted),
             collapsed: true,
             scroll: 0,
+            tree: None,
             rows: Vec::new(),
         };
         let mut terminal = Terminal::new(TestBackend::new(40, 4)).unwrap();
@@ -190,6 +191,7 @@ fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: vec![uze_extensions::view::SectionRow {
             mark: uze_extensions::view::RowMark::Commit,
             mark_role: Role::Muted,
@@ -250,6 +252,7 @@ fn the_row_under_the_pointer_lifts_its_name() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: vec![commit("fix(ui): one"), commit("feat(cli): two")],
     };
     let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
@@ -292,6 +295,7 @@ fn a_pulled_header_lights_its_title() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: Vec::new(),
     };
     let title_fg = |dragging: bool| {

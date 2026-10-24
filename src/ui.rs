@@ -596,6 +596,7 @@ impl FirstSteps<'_> {
             caption: ViewSpan::new(self.caption(), Role::Faint),
             collapsed: self.collapsed,
             scroll: 0,
+            tree: None,
             rows: self
                 .steps
                 .iter()
