@@ -352,6 +352,9 @@ pub(crate) enum AgentPluginAction {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Serve an editor completion, hover and the check's diagnostics for
+    /// extension files, over stdio (the Language Server Protocol)
+    Lsp,
 }
 
 #[derive(Debug, Subcommand)]

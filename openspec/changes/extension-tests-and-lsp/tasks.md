@@ -23,10 +23,10 @@
 ## 4. The language server
 
 - [x] 4.1 Dependency review of `lsp-server` and `lsp-types` under the `dependencies` rule; add them to the root crate; `cargo deny check`; `make attributions`
-- [ ] 4.2 `uze agent plugin lsp`: stdio loop, `initialize` with capabilities, full document sync, file kind by path, debounced `analyse` on a worker, diagnostics published for every file of the extension; classified in `command_performance.rs`
-- [ ] 4.3 Completion: nodes valid at the place, a node's properties, allowed values (roles, slots, declared lookups as `{table:…}`), fixture keys inside `{…}` at the `each` depth, steps in tests
-- [ ] 4.4 Hover from the catalog's docs for nodes, properties, roles and steps
-- [ ] 4.5 Tests driving the server over in-memory channels: initialize, open a view with `Tabel`, receive the check's diagnostic with its suggestion; completion after `Progress `; hover on `Segment`
+- [x] 4.2 `uze agent plugin lsp`: stdio loop, `initialize` with capabilities, full document sync, file kind by path, debounced `analyse` on a worker, diagnostics published for every file of the extension; classified in `command_performance.rs`
+- [x] 4.3 Completion: nodes valid at the place, a node's properties, allowed values (roles, slots, declared lookups as `{table:…}`), fixture keys inside `{…}` at the `each` depth, steps in tests
+- [x] 4.4 Hover from the catalog's docs for nodes, properties, roles and steps
+- [x] 4.5 Tests driving the server over in-memory channels: initialize, open a view with `Tabel`, receive the check's diagnostic with its suggestion; completion after `Progress `; hover on `Segment`
 
 ## 5. Scaffold, fixtures and docs
 

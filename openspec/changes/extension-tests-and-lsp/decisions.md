@@ -52,7 +52,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   89719f10
 - trigger:  T6 named both `lsp-server` and `lsp-types`. The review found that `lsp-server` (rust-lang, rust-analyzer's tree) adds no crate the lock does not already hold, while `lsp-types` (gluon-lang) adds `fluent-uri`, `bitflags` 1 and `serde_repr`.
 - decided:  `lsp-server` 0.10 for the framing and the initialize handshake; the six messages the server speaks (initialize's capabilities, open, change, close, publishDiagnostics, completion, hover) as `serde_json` values in `src/cli/lsp/`.
 - rejected: `lsp-types` (three new crates from one maintainer for typed shapes of six messages); hand-writing the framing too (rust-lang already maintains it).
