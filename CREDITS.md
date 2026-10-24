@@ -138,7 +138,7 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 214 |
+| Apache License 2.0 (`Apache-2.0`) | 215 |
 | MIT License (`MIT`) | 81 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | zlib License (`Zlib`) | 1 |
@@ -281,6 +281,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `lock_api` | 0.4.14 | MIT OR Apache-2.0 |
 | `log` | 0.4.34 | MIT OR Apache-2.0 |
 | `lru` | 0.18.4 | MIT |
+| `lsp-server` | 0.10.0 | MIT OR Apache-2.0 |
 | `matchers` | 0.2.0 | MIT |
 | `memchr` | 2.8.3 | Unlicense OR MIT |
 | `miette` | 7.6.0 | Apache-2.0 |
