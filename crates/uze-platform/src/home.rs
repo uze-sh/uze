@@ -126,6 +126,6 @@ mod tests {
         std::os::unix::fs::symlink(&real, &linked).unwrap();
 
         assert!(super::same_place(&linked, &real));
-        assert!(!super::same_place(&linked, &scratch.path().to_path_buf()));
+        assert!(!super::same_place(&linked, scratch.path()));
     }
 }
