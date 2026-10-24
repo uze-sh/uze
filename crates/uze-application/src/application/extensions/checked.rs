@@ -123,6 +123,15 @@ impl Extensions<'_> {
     }
 }
 
+impl Extensions<'_> {
+    /// A fixture of the extension in `dir`, read as the workspace reads one:
+    /// from inside its directory, bounded, with where it stopped reading
+    /// when it is not JSON.
+    pub fn fixture(&self, dir: &Path, fixture: &str) -> Result<serde_json::Value, Diagnostic> {
+        fixture_data(dir, fixture, &Overlay::new())
+    }
+}
+
 fn plugin_name(plugin_dir: &Path) -> String {
     uze_core::store::read_plugin_manifest(plugin_dir)
         .map(|manifest| manifest.name)

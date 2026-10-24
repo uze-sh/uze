@@ -341,9 +341,14 @@ pub(crate) enum AgentPluginAction {
         format: OutputFormat,
     },
     /// Validate an authored plugin offline — the same parsers the install
-    /// would run, and every extension it carries bound to its fixtures
+    /// would run, and every extension it carries bound to its fixtures and
+    /// put through its tests
     Check {
         path: PathBuf,
+        /// Write each extension snapshot that is missing or differs,
+        /// instead of failing on it
+        #[arg(long)]
+        update_snapshots: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
