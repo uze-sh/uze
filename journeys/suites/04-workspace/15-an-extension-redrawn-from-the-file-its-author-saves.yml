@@ -1,0 +1,217 @@
+journey: a plugin's declared extension opens in the workspace and is redrawn from the file its author saves
+tags: [gate, tui, workspace]
+about: |
+  The author's loop for an extension a plugin declares in KDL: the plugin
+  comes from a marketplace linked to the author's working tree, its board
+  opens from the tab strip drawn from its fixture, a tab is switched
+  without anything being read or written, and a save to the view in the
+  working tree is what the open board shows next — without a reinstall.
+
+  The machine is what each scene checks: the compiled view the workspace
+  keeps in its generated tier, the Store's copy the save never touched,
+  and the files a tab switch leaves exactly as they were. The screen only
+  gates each gesture.
+
+world:
+  project: demo-app
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and links.",
+        "plugins": [
+          { "name": "gsd", "source": "./plugins/gsd", "description": "The gsd-band reference extension." }
+        ]
+      }
+    market/plugins/gsd/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "gsd",
+        "version": "1.0.0",
+        "description": "The gsd-band reference extension: a board view and a sidebar section declared in KDL and drawn from a fixture."
+      }
+    market/plugins/gsd/extensions/gsd-band/extension.kdl: |
+      protocol 1
+      id "gsd-band"
+      name "GSD band"
+      description "The checkout's GSD milestone, beside the agent"
+
+      surface "board" slot="view" view="board.kdl" source="board"
+      surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
+
+      source "board" {
+          fixture "fixtures/board.json"
+      }
+    market/plugins/gsd/extensions/gsd-band/board.kdl: |
+      // A phase's state, as the theme's colour role it is drawn in.
+      lookup "tone" default="muted" {
+          done "success"
+          partial "warning"
+          ready "info"
+          blocked "muted"
+      }
+
+      lookup "t" locale="en" {
+          phases "Phases"; log "Log"; next "▶ run phase"; clear "clear"
+          empty "No phase in progress"
+      }
+
+      lookup "t" locale="pt" {
+          phases "Fases"; log "Log"; next "▶ executar fase"; clear "limpar"
+          empty "Nenhuma fase em andamento"
+      }
+
+      template "phase-row" {
+          Row gap=1 {
+              Text "{number}" min-width=3
+              Text "{name}" grow=#true truncate=#true
+              Marks {
+                  Mark role="{tone:d}"
+                  Mark role="{tone:p}"
+                  Mark role="{tone:e}"
+              }
+              Pips done="{summaries}" total="{plans}" when="active"
+              Text "{summaries}/{plans}" role="muted" when="finished"
+              Text "{status}" role="{tone:e}"
+          }
+      }
+
+      Stack {
+          Row align="center" {
+              Activity agent="self"
+              Text "GSD · {version} {name}" role="muted" grow=#true
+              Tabs id="tab" {
+                  Tab "{t::phases}" value="phases"
+                  Tab "{t::log}" value="log"
+              }
+              Button "{t::clear}" action="clear"
+              Button "{t::next} {next.phase}" action="next" item="{next}" when="next"
+          }
+          Row gap=1 {
+              Progress grow=#true {
+                  Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:e}"
+              }
+              Text "{percent}%"
+              Text "· {done} of {total} phases" role="muted"
+          }
+          List each="phases" show="ui.tab=phases" empty="{t::empty}" {
+              use "phase-row"
+          }
+          Log lines="{log}" show="ui.tab=log"
+      }
+    market/plugins/gsd/extensions/gsd-band/fixtures/board.json: |
+      {
+        "version": "v1.23",
+        "name": "Assistente do lojista",
+        "percent": 65, "done": 3, "total": 6,
+        "next": { "phase": "12", "skill": "gsd:execute-phase" },
+        "phases": [
+          { "number": "09", "name": "Fundação da loja", "plans": 4, "summaries": 4,
+            "weight": 4, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
+            "finished": true, "active": false, "status": "Concluída" },
+          { "number": "10", "name": "Pedidos e pagamentos", "plans": 5, "summaries": 5,
+            "weight": 5, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
+            "finished": true, "active": false, "status": "Concluída" },
+          { "number": "11", "name": "Catálogo de ajuda", "plans": 6, "summaries": 6,
+            "weight": 6, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
+            "finished": true, "active": false, "status": "Concluída" },
+          { "number": "12", "name": "Consulta de dados e diagnóstico", "plans": 19, "summaries": 17,
+            "weight": 19, "ratio": 0.89, "d": "done", "p": "done", "e": "partial",
+            "finished": false, "active": true, "status": "Execução parcial (17/19)" },
+          { "number": "13", "name": "Ações com confirmação", "plans": 0, "summaries": 0,
+            "weight": 4, "ratio": 0.0, "d": "ready", "p": "blocked", "e": "blocked",
+            "finished": false, "active": false, "status": "Pronta para discussão" },
+          { "number": "14", "name": "Relatórios do lojista", "plans": 0, "summaries": 0,
+            "weight": 4, "ratio": 0.0, "d": "blocked", "p": "blocked", "e": "blocked",
+            "finished": false, "active": false, "status": "Aguarda a fase 13" }
+        ],
+        "log": ["12-17-SUMMARY.md escrito", "turno concluído em 4m12s"]
+      }
+
+scenes:
+  - scene: a plugin from a linked marketplace is installed, its extension with it
+    when:
+      - shell: "{uze} market add {world}/market && {uze} market link studio {world}/market && {uze} install -m gsd@studio"
+        say: register the marketplace, link it to its working tree, install the plugin
+    then:
+      - json: "{uze_home}/state/marketplaces.json"
+        at: marketplaces.studio.link
+        equals: "{world}/market"
+        about: the marketplace follows the author's working tree
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.kdl"
+        contains: 'Text "{percent}%"'
+        about: the extension's view was installed with the plugin
+      - dir: "{uze_home}/runtime/extensions"
+        exists: false
+        about: nothing is compiled until the workspace asks
+
+  - scene: and then the board opens from the tab strip, compiled once and kept
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      # The strip's surfaces are about a project, so an agent stands in
+      # front first: the board opens on the checkout it works in.
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - click: "GSD band"
+        say: open the extension's board from the tab strip
+        in: strip
+        expect: "gsd-band · gsd@studio"
+        expect_timeout: 20
+      - wait: screen
+        until: "65% · 3 of 6 phases"
+        in: pane
+        timeout: 20
+        say: the board is drawn from its fixture
+    then:
+      - file: "{uze_home}/runtime/extensions/*.json"
+        count: 1
+        about: the compiled view is kept in the generated tier, so the next open parses nothing
+      - capture:
+          name: before-the-tab
+          tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+
+  - scene: and then switching a tab draws the log and touches nothing
+    when:
+      - click: "Log"
+        say: switch the board to its log
+        in: pane
+        occurrence: first
+        expect: "turno concluído em 4m12s"
+        expect_timeout: 10
+    then:
+      - tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+        same_as: before-the-tab
+        about: a tab is the host's state — nothing was compiled, read into the cache or written
+
+  - scene: and then a save to the view in the working tree is what the board draws next
+    when:
+      - shell: |
+          {python} -c "import pathlib; p = pathlib.Path(r'{world}/market/plugins/gsd/extensions/gsd-band/board.kdl'); p.write_text(p.read_text(encoding='utf-8').replace('Text \"{percent}%\"', 'Text \"{percent}% done\"'), encoding='utf-8')"
+        say: the author saves a change to the board's view
+      - wait: screen
+        until: "65% done"
+        in: pane
+        timeout: 10
+        say: the open board redraws on its own
+      - wait: screen
+        until: "turno concluído em 4m12s"
+        in: pane
+        timeout: 5
+        say: on the tab the author chose
+    then:
+      - file: "{uze_home}/runtime/extensions/*.json"
+        count: 2
+        about: the save was compiled anew, beside the compile of the files it replaced
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.kdl"
+        excludes: "% done"
+        about: read from the working tree — the Store's copy was never reinstalled

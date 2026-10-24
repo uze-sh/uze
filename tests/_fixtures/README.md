@@ -37,7 +37,9 @@ old `packages/` set hard to reason about.
   `board.kdl`, fed by `fixtures/board.json`'s six phases). Installed from a
   linked marketplace by `tests/lifecycle/declared_extension.rs`, by the
   workspace's real-engine test in `src/ui/orchestrator/tests/declared.rs`
-  and by the `gsd-band` journey.
+  and by the journey
+  `journeys/suites/04-workspace/15-an-extension-redrawn-from-the-file-its-author-saves.yml`,
+  which stages the same files inline (its container mounts `journeys/` only).
 
 ## foreign/
 
