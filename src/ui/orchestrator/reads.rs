@@ -1697,3 +1697,184 @@ pub(super) fn spawn_declaration_save(
         });
     });
 }
+
+/// What a declared-extension job is asked to do.
+#[derive(Clone, Debug)]
+pub(super) enum ExtensionJob {
+    /// Find every extension the installed plugins carry, and load each
+    /// that is new or no longer what the host compiled it from.
+    Discover(Known),
+    /// Load these again: a linked extension's files were saved.
+    Recompile(Vec<uze_application::InstalledExtension>),
+}
+
+/// A declared-extension job's answer, carrying what it was asked.
+pub(super) struct ExtensionAnswer {
+    /// What a discovery found, for the extensions no plugin carries any
+    /// more to go. `None` for a recompile.
+    pub(super) discovered: Option<Vec<uze_application::InstalledExtension>>,
+    /// The extensions a recompile was asked for, so their reservation is
+    /// released whatever became of them.
+    pub(super) recompiled: Vec<uze_application::ExtensionIdentity>,
+    pub(super) loaded: Vec<LoadedExtension>,
+}
+
+/// Finding the declared extensions, compiling each and reading its
+/// fixtures: a walk of every installed plugin, a parse of a third party's
+/// KDL behind its bounds, and file reads — none of it the drawing thread's.
+pub(super) fn spawn_extension_job(
+    home: &UzeHome,
+    job: ExtensionJob,
+    sender: mpsc::Sender<ExtensionAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.declared_extensions", parent: &parent);
+        let recompiled = match &job {
+            ExtensionJob::Discover(_) => Vec::new(),
+            ExtensionJob::Recompile(list) => list
+                .iter()
+                .map(|installed| installed.identity.clone())
+                .collect(),
+        };
+        let silence = ExtensionAnswer {
+            discovered: None,
+            recompiled: recompiled.clone(),
+            loaded: Vec::new(),
+        };
+        let answer = answered_or(
+            || {
+                let Ok(app) = tui_application(home.clone()) else {
+                    return ExtensionAnswer {
+                        discovered: None,
+                        recompiled: recompiled.clone(),
+                        loaded: Vec::new(),
+                    };
+                };
+                let extensions = app.extensions();
+                let (discovered, asked) = match job {
+                    ExtensionJob::Discover(known) => {
+                        let found = extensions.installed();
+                        let changed = found
+                            .iter()
+                            .filter(|installed| {
+                                known.get(&installed.identity).is_none_or(|(dir, stamp)| {
+                                    *dir != installed.dir
+                                        || *stamp != uze_application::extension_stamp(dir)
+                                })
+                            })
+                            .cloned()
+                            .collect();
+                        (Some(found), changed)
+                    }
+                    ExtensionJob::Recompile(list) => (None, list),
+                };
+                let loaded = asked
+                    .into_iter()
+                    .map(|installed| {
+                        let stamp = uze_application::extension_stamp(&installed.dir);
+                        let compiled = extensions.compile(&installed);
+                        let data = compiled
+                            .as_ref()
+                            .map(|compiled| extensions.fixtures(&installed, compiled))
+                            .unwrap_or_default();
+                        LoadedExtension {
+                            installed,
+                            stamp,
+                            compiled,
+                            data,
+                        }
+                    })
+                    .collect();
+                ExtensionAnswer {
+                    discovered,
+                    recompiled: recompiled.clone(),
+                    loaded,
+                }
+            },
+            silence,
+        );
+        let _ = sender.send(answer);
+    });
+}
+
+/// The linked extensions' stamps, as one poll read them.
+pub(super) struct StampsAnswer {
+    pub(super) stamps: Vec<(uze_application::ExtensionIdentity, u64)>,
+}
+
+/// Reading when each linked extension's files last changed: metadata of a
+/// handful of files, still a filesystem the frame must not wait on.
+pub(super) fn spawn_extension_stamps(
+    watched: Vec<(uze_application::ExtensionIdentity, PathBuf)>,
+    sender: mpsc::Sender<StampsAnswer>,
+) {
+    thread::spawn(move || {
+        let stamps = answered_or(
+            || {
+                watched
+                    .into_iter()
+                    .map(|(identity, dir)| (identity, uze_application::extension_stamp(&dir)))
+                    .collect()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(StampsAnswer { stamps });
+    });
+}
+
+/// What a hosted engine's job answered, for the extension that asked.
+pub(super) struct EngineAnswer {
+    pub(super) extension: uze_application::ExtensionIdentity,
+    pub(super) answer: uze_extensions::contract::Opaque,
+}
+
+/// Runs a hosted engine's jobs, each with the workspace's `Host`, off the
+/// drawing thread: one after another on one thread for an engine whose
+/// lane is serial, each on its own thread for one that runs in parallel. A
+/// job that panics answers its fallback, so a failed read is drawn as one.
+pub(super) fn spawn_engine_jobs(
+    extension: uze_application::ExtensionIdentity,
+    jobs: Vec<uze_extensions::contract::Job>,
+    lanes: uze_extensions::contract::Lanes,
+    sender: mpsc::Sender<EngineAnswer>,
+) {
+    fn answered(
+        job: uze_extensions::contract::Job,
+        host: &dyn uze_extensions::Host,
+    ) -> uze_extensions::contract::Opaque {
+        let uze_extensions::contract::Job { run, fallback } = job;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(host)))
+            .unwrap_or_else(|_| fallback())
+    }
+    let parent = tracing::Span::current();
+    match lanes {
+        uze_extensions::contract::Lanes::Serial => {
+            thread::spawn(move || {
+                let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+                for job in jobs {
+                    let _ = sender.send(EngineAnswer {
+                        extension: extension.clone(),
+                        answer: answered(job, &WorkspaceHost),
+                    });
+                }
+            });
+        }
+        uze_extensions::contract::Lanes::Parallel => {
+            for job in jobs {
+                let sender = sender.clone();
+                let parent = parent.clone();
+                let extension = extension.clone();
+                thread::spawn(move || {
+                    let _pass =
+                        crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+                    let _ = sender.send(EngineAnswer {
+                        extension: extension.clone(),
+                        answer: answered(job, &WorkspaceHost),
+                    });
+                });
+            }
+        }
+    }
+}

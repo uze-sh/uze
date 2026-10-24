@@ -4,9 +4,11 @@
 
 mod agent;
 mod config;
+mod extension_check;
 mod grammar;
 mod help;
 mod install;
+mod lsp;
 mod market;
 mod output;
 mod report;

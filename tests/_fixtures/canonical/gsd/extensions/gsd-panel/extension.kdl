@@ -1,0 +1,10 @@
+protocol 1
+id "gsd-panel"
+name "GSD"
+description "The checkout's GSD milestone in a side panel: where it stands, what blocks it, where it stopped and what to run next"
+
+surface "panel" slot="drawer" view="panel.kdl" source="session" title="GSD"
+
+source "session" {
+    fixture "fixtures/session.json"
+}

@@ -6,8 +6,13 @@
 //! model. The workspace compares its own copy against this one every
 //! frame, so an extension switched off in the modal is gone — its keys,
 //! its buttons, its sidebar section — by the time the modal closes.
+//!
+//! The plugin set is told the same way: every install, update or removal
+//! the modal lands moves [`plugins_revision`], and the workspace looks
+//! for the extensions plugins carry again on the next frame.
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use uze_application::UzeHome;
@@ -17,6 +22,17 @@ use uze_keys::Action;
 use super::tui_application;
 
 static DISABLED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+static PLUGINS: AtomicU64 = AtomicU64::new(0);
+
+/// How many times the installed plugins changed in this process.
+pub(crate) fn plugins_revision() -> u64 {
+    PLUGINS.load(Ordering::Relaxed)
+}
+
+/// Says that the installed plugins may have changed.
+pub(crate) fn plugins_changed() {
+    PLUGINS.fetch_add(1, Ordering::Relaxed);
+}
 
 pub(crate) fn disabled() -> BTreeSet<String> {
     DISABLED
@@ -41,6 +57,13 @@ pub(crate) fn load(home: &UzeHome) {
         .and_then(|app| app.extensions().disabled())
         .unwrap_or_default();
     *DISABLED.lock().unwrap_or_else(PoisonError::into_inner) = chosen;
+}
+
+/// The key a declared extension is switched by: the attribution it is
+/// drawn with (`id · plugin@marketplace`), which no built-in's id can
+/// collide with.
+pub(crate) fn declared_id(identity: &uze_application::ExtensionIdentity) -> String {
+    identity.to_string()
 }
 
 /// The extension whose surface `action` opens, so that switching an

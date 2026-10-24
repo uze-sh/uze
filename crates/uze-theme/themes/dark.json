@@ -102,6 +102,16 @@
     "status.selected": "●",
     "status.idle": "○",
     "status.running": "▸",
+
+    "progress.fill": ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"],
+    "progress.track": "─",
+    "chart.level": ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"],
+    "pip.filled": "●",
+    "pip.empty": "○",
+    "mark.facet": "■",
+    "activity.busy": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+    "activity.idle": "·",
+
     "sync.behind": "↓",
     "sync.ahead": "↑",
     "commit.head": "◉",

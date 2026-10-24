@@ -15,7 +15,7 @@ use ratatui::{
 };
 use uze_theme::{Symbol, Token};
 
-use super::{Align, Button, Edge, Rule, button_row};
+use super::{Align, Button, Edge, Rule, Surface, button_row};
 use crate::ui::theme;
 
 /// A drawer's width at rest, and on a terminal wide enough that the list
@@ -53,6 +53,60 @@ pub(crate) fn width(requested: Option<u16>, room: u16) -> u16 {
         DEFAULT_WIDTH
     };
     requested.unwrap_or(rest).clamp(MIN_WIDTH, ceiling)
+}
+
+/// A drawer docked beside a live pane rather than beside a list: the
+/// narrowest and widest it is drawn, and the narrowest pane it leaves. An
+/// agent's terminal under forty columns wraps every line it prints.
+pub(crate) const DOCKED_MIN_WIDTH: u16 = 44;
+pub(crate) const DOCKED_MAX_WIDTH: u16 = 72;
+pub(crate) const DOCKED_PANE_MIN_WIDTH: u16 = 40;
+/// The share of the agent area, in percent, it takes at rest.
+const DOCKED_SHARE: u16 = 45;
+/// The column of air between the pane and the docked drawer's edge.
+pub(crate) const DOCKED_GAP: u16 = 1;
+
+/// How wide a docked drawer's card is beside `room` columns of agent
+/// area: where it was dragged to (`requested`) or its share at rest,
+/// within its bounds and never leaving the pane narrower than its floor.
+/// `None` when even its narrowest would: then it is not drawn at all,
+/// since a drawer over the pane would cover cells an agent drew.
+pub(crate) fn docked_width(requested: Option<u16>, room: u16) -> Option<u16> {
+    let ceiling = room
+        .saturating_sub(DOCKED_GAP + DOCKED_PANE_MIN_WIDTH)
+        .min(DOCKED_MAX_WIDTH);
+    if ceiling < DOCKED_MIN_WIDTH {
+        return None;
+    }
+    let rest = u16::try_from(u32::from(room) * u32::from(DOCKED_SHARE) / 100).unwrap_or(u16::MAX);
+    Some(requested.unwrap_or(rest).clamp(DOCKED_MIN_WIDTH, ceiling))
+}
+
+/// Draws a docked drawer over `area`: its gap, then a raised card whose
+/// edge lights while `held`, with `note` along its foot. Answers with the
+/// rect inside the card and the drag handle — the gap and the card's left
+/// edge, the line the pointer reaches for.
+pub(crate) fn render_docked(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    held: bool,
+    note: Option<Line<'static>>,
+) -> (Rect, Rect) {
+    frame.render_widget(Clear, area);
+    super::fill(frame, area, Token::SurfaceBackground);
+    let gap = DOCKED_GAP.min(area.width);
+    let card = Rect {
+        x: area.x + gap,
+        width: area.width - gap,
+        ..area
+    };
+    let mut surface = Surface::raised().held(held);
+    if let Some(note) = note {
+        surface = surface.hint(note);
+    }
+    let inner = surface.render(frame, card);
+    let handle = Rect::new(area.x, area.y, (gap + 1).min(area.width), area.height);
+    (inner, handle)
 }
 
 /// Draws the drawer's shell over `area` — the whole column, its rule

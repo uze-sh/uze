@@ -1,0 +1,126 @@
+{
+  "milestone": "v1.23",
+  "title": "Assistente do lojista",
+  "percent": 65,
+  "finished": 3,
+  "total": 6,
+  "next": {
+    "number": "12",
+    "skill": "gsd:execute-phase"
+  },
+  "current": {
+    "number": "12",
+    "name": "Consulta de dados e diagnóstico",
+    "done": 17,
+    "total": 19,
+    "left": 2,
+    "remaining": [
+      {
+        "id": "12-18",
+        "title": "Diagnóstico de estoque baixo por loja"
+      },
+      {
+        "id": "12-19",
+        "title": "Relatório de erros de integração"
+      }
+    ]
+  },
+  "phases": [
+    {
+      "number": "09",
+      "name": "Fundação da loja",
+      "plans": 4,
+      "summaries": 4,
+      "weight": 4,
+      "ratio": 1.0,
+      "discussed": "done",
+      "planned": "done",
+      "executed": "done",
+      "state": "done",
+      "running": false
+    },
+    {
+      "number": "10",
+      "name": "Pedidos e pagamentos",
+      "plans": 5,
+      "summaries": 5,
+      "weight": 5,
+      "ratio": 1.0,
+      "discussed": "done",
+      "planned": "done",
+      "executed": "done",
+      "state": "done",
+      "running": false
+    },
+    {
+      "number": "11",
+      "name": "Catálogo de ajuda",
+      "plans": 6,
+      "summaries": 6,
+      "weight": 6,
+      "ratio": 1.0,
+      "discussed": "done",
+      "planned": "done",
+      "executed": "done",
+      "state": "done",
+      "running": false
+    },
+    {
+      "number": "12",
+      "name": "Consulta de dados e diagnóstico",
+      "plans": 19,
+      "summaries": 17,
+      "weight": 19,
+      "ratio": 0.89,
+      "discussed": "done",
+      "planned": "done",
+      "executed": "running",
+      "state": "running",
+      "running": true
+    },
+    {
+      "number": "13",
+      "name": "Ações com confirmação",
+      "plans": 0,
+      "summaries": 0,
+      "weight": 4,
+      "ratio": 0.0,
+      "discussed": "ready",
+      "planned": "waiting",
+      "executed": "waiting",
+      "state": "ready",
+      "running": false
+    },
+    {
+      "number": "14",
+      "name": "Relatórios do lojista",
+      "plans": 0,
+      "summaries": 0,
+      "weight": 4,
+      "ratio": 0.0,
+      "discussed": "waiting",
+      "planned": "waiting",
+      "executed": "waiting",
+      "state": "waiting",
+      "running": false
+    }
+  ],
+  "activity": [
+    {
+      "text": "12-17 · Consulta de pedidos por status — summary written",
+      "role": "success"
+    },
+    {
+      "text": "12-17 · 214 tests passed",
+      "role": "muted"
+    },
+    {
+      "text": "12-18 · Diagnóstico de estoque — plan started",
+      "role": "warning"
+    },
+    {
+      "text": "Turn finished in 4m12s",
+      "role": "muted"
+    }
+  ]
+}

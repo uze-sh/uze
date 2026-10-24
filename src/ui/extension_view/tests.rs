@@ -65,7 +65,8 @@ fn a_quote_keeps_its_bar_and_code_hangs_past_its_indent() {
 
     let code = prose_at("```bash\ngit commit -m feat-preview-resources\n```\n", 20);
     assert_eq!(code[0], "  git commit -m");
-    assert_eq!(code[1], "    feat-preview-res");
+    assert_eq!(code[1], "    feat-preview-");
+    assert_eq!(code[2], "    resources");
 }
 
 /// A word longer than a whole row is broken where the row ends, since
@@ -79,6 +80,24 @@ fn a_word_longer_than_a_row_is_broken_at_the_cell() {
     );
     assert_eq!(rows[0], "See");
     assert!(rows[1].starts_with("https://"));
+}
+
+/// A long identifier breaks where it is joined, so no row ends mid-name
+/// when the word offers a `/`, `_`, `.` or `-` to break after.
+#[test]
+fn a_long_word_breaks_after_a_joint_rather_than_mid_name() {
+    let rows = prose_at(
+        "CashierExportController/Service cash_session_integration_status\n",
+        26,
+    );
+    assert!(
+        rows.iter().all(|row| row.chars().count() <= 26),
+        "{rows:#?}"
+    );
+    assert_eq!(rows[0], "CashierExportController/");
+    assert_eq!(rows[1], "Service");
+    assert_eq!(rows[2], "cash_session_integration_");
+    assert_eq!(rows[3], "status");
 }
 
 #[test]
@@ -122,6 +141,7 @@ fn a_caption_too_long_for_its_room_passes_through_it() {
             caption: Span::new(caption, Role::Muted),
             collapsed: true,
             scroll: 0,
+            tree: None,
             rows: Vec::new(),
         };
         let mut terminal = Terminal::new(TestBackend::new(40, 4)).unwrap();
@@ -190,6 +210,7 @@ fn a_rows_name_too_long_for_its_room_slides_under_the_pointer() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: vec![uze_extensions::view::SectionRow {
             mark: uze_extensions::view::RowMark::Commit,
             mark_role: Role::Muted,
@@ -250,6 +271,7 @@ fn the_row_under_the_pointer_lifts_its_name() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: vec![commit("fix(ui): one"), commit("feat(cli): two")],
     };
     let mut terminal = Terminal::new(TestBackend::new(40, 6)).unwrap();
@@ -292,6 +314,7 @@ fn a_pulled_header_lights_its_title() {
         caption: Span::new("main", Role::Muted),
         collapsed: false,
         scroll: 0,
+        tree: None,
         rows: Vec::new(),
     };
     let title_fg = |dragging: bool| {
@@ -481,6 +504,7 @@ fn framed(
                 FooterKeys {
                     scope,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -610,6 +634,7 @@ fn a_notice_is_said_at_the_end_of_the_footer() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -1003,6 +1028,7 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -1153,6 +1179,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                     FooterKeys {
                         scope: uze_keys::Scope::Architect,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut hits,
@@ -1842,6 +1869,7 @@ fn marked_text_is_inverted_where_it_was_drawn() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 Some(&selection),
                 &mut hits,
@@ -1884,6 +1912,7 @@ fn drawn_rows(view: &View) -> (ratatui::buffer::Buffer, Rendered) {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2083,6 +2112,7 @@ fn the_caret_marks_the_character_it_sits_on_without_hiding_it() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut hits,
@@ -2213,6 +2243,7 @@ fn chrome_uses_the_hosts_palette_and_content_keeps_its_own() {
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2341,6 +2372,7 @@ fn drawn_with(view: &View, scroll: NavigatorScroll) -> (Vec<String>, NavigatorSc
                 FooterKeys {
                     scope: uze_keys::Scope::Code,
                     hovered: None,
+                    host: &[],
                 },
                 None,
                 &mut Vec::new(),
@@ -2610,6 +2642,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
                     FooterKeys {
                         scope: uze_keys::Scope::Spec,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut Vec::new(),
@@ -2691,6 +2724,7 @@ fn a_flat_rows_detail_slides_with_its_name() {
                     FooterKeys {
                         scope: uze_keys::Scope::Code,
                         hovered: None,
+                        host: &[],
                     },
                     None,
                     &mut Vec::new(),

@@ -20,6 +20,7 @@ members = [
   "crates/uze-integrations",
   "crates/uze-application",
   "crates/uze-extensions",
+  "crates/uze-contract",
   "crates/uze-git",
   "crates/uze-testkit",
   "crates/uze-terminal",
@@ -51,6 +52,8 @@ uze-integrations = { path = "crates/uze-integrations" }
 uze-application = { path = "crates/uze-application" }
 uze-platform = { path = "crates/uze-platform" }
 uze-extensions = { path = "crates/uze-extensions" }
+# The compiled views the workspace hosts, read for the inspector; plain data.
+uze-contract = { path = "crates/uze-contract" }
 uze-git = { path = "crates/uze-git" }
 uze-terminal = { path = "crates/uze-terminal" }
 uze-theme = { path = "crates/uze-theme" }
@@ -73,6 +76,13 @@ indicatif = "0.18"
 anstyle = "1"
 dialoguer = "0.12"
 unicode-width = "0.2"
+# `uze agent plugin lsp`: the Language Server Protocol's JSON-RPC framing
+# over stdio. rust-lang, published from rust-analyzer's own tree;
+# MIT/Apache-2.0, pure Rust, and every dependency it has is already in the
+# lock. The protocol's message shapes are written by hand (`src/cli/lsp/`)
+# rather than taken from lsp-types, which would add fluent-uri, bitflags 1
+# and serde_repr for the six messages the server speaks.
+lsp-server = "0.10"
 
 # The MCP conformance fixture and the local playground server. Optional, and
 # activated only by `dev-servers` below: `[dependencies]` applies to every

@@ -511,3 +511,115 @@ impl WorkspaceModel {
         }
     }
 }
+
+impl WorkspaceModel {
+    /// Asks for the declared extensions when a discovery is due (once a
+    /// run, whenever `plugins` — the plugin set's revision — moves, and
+    /// on [`DECLARED_REDISCOVER`] otherwise), polls the linked ones' stamps
+    /// on [`DECLARED_POLL`], and compiles again each one whose save has
+    /// settled. Cheap enough for every tick: it compares instants.
+    pub(super) fn schedule_extension_jobs(
+        &mut self,
+        home: &UzeHome,
+        plugins: u64,
+        jobs: &mpsc::Sender<ExtensionAnswer>,
+        stamps: &mpsc::Sender<StampsAnswer>,
+    ) {
+        let now = Instant::now();
+        let declared = &mut self.remembered.declared;
+        if declared.discovery_due(plugins, now) {
+            declared.discovered_at = Some(now);
+            declared.plugins_seen = plugins;
+            declared.discovery_pending = true;
+            spawn_extension_job(home, ExtensionJob::Discover(declared.known()), jobs.clone());
+            return;
+        }
+        if declared.discovery_pending {
+            return;
+        }
+        let settled = declared.settled(now);
+        if !settled.is_empty() {
+            declared
+                .recompiling
+                .extend(settled.iter().map(|installed| installed.identity.clone()));
+            spawn_extension_job(home, ExtensionJob::Recompile(settled), jobs.clone());
+        }
+        let due = declared
+            .polled_at
+            .is_none_or(|at| now.duration_since(at) >= DECLARED_POLL);
+        if !declared.stamps_pending && due {
+            let watched = declared.watched();
+            if !watched.is_empty() {
+                declared.stamps_pending = true;
+                declared.polled_at = Some(now);
+                spawn_extension_stamps(watched, stamps.clone());
+            }
+        }
+    }
+
+    /// Hands each hosted engine's pending jobs to a thread. Cheap enough
+    /// for every tick: an engine with nothing to read answers none.
+    pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) {
+        for (identity, engine) in &mut self.remembered.declared.engines {
+            let jobs = engine.jobs();
+            if !jobs.is_empty() {
+                spawn_engine_jobs(identity.clone(), jobs, engine.lanes(), answers.clone());
+            }
+        }
+    }
+
+    /// Takes what a hosted engine's job answered to the engine that asked.
+    /// One whose extension went meanwhile is dropped. Returns whether it
+    /// is drawn.
+    pub(super) fn absorb_engine_answer(&mut self, answer: EngineAnswer) -> bool {
+        let Some(engine) = self.remembered.declared.engines.get_mut(&answer.extension) else {
+            return false;
+        };
+        engine.absorb(answer.answer);
+        true
+    }
+
+    /// Takes a declared-extension job's answer. Returns whether anything on
+    /// screen may have changed.
+    pub(super) fn absorb_extension_answer(&mut self, answer: ExtensionAnswer) -> bool {
+        let declared = &mut self.remembered.declared;
+        for identity in &answer.recompiled {
+            declared.recompiling.remove(identity);
+        }
+        let mut went = false;
+        if let Some(found) = &answer.discovered {
+            declared.discovery_pending = false;
+            went = declared.absorb_discovery(found);
+        }
+        // A recompile answers only for an extension still installed: one a
+        // discovery took away meanwhile stays away.
+        let recompiled = answer.discovered.is_none();
+        let loaded: Vec<LoadedExtension> = answer
+            .loaded
+            .into_iter()
+            .filter(|loaded| {
+                !recompiled || declared.extensions.contains_key(&loaded.installed.identity)
+            })
+            .collect();
+        let changed = went || !loaded.is_empty();
+        for loaded in loaded {
+            declared.absorb_loaded(loaded);
+        }
+        // A view whose extension went, or whose surface it stopped
+        // declaring, is put away rather than drawn from nothing.
+        if self.declared_open.is_some() && self.open_declared_slot().is_none() {
+            self.declared_open = None;
+            self.declared_root = None;
+            self.inspecting = false;
+        }
+        changed
+    }
+
+    /// Takes a poll of the linked extensions' stamps. Nothing on screen
+    /// changes until a save settles and is compiled.
+    pub(super) fn absorb_extension_stamps(&mut self, answer: StampsAnswer) {
+        let declared = &mut self.remembered.declared;
+        declared.stamps_pending = false;
+        declared.absorb_stamps(answer.stamps, Instant::now());
+    }
+}

@@ -573,7 +573,7 @@ impl TuiModel {
             // Enter switches an extension whichever way it is not.
             Route::Extensions => match self.selected_extension() {
                 Some(extension) => {
-                    self.switch_selected_extension(!self.extension_enabled(extension.id))
+                    self.switch_selected_extension(!self.extension_enabled(&extension.id()))
                 }
                 None => Intent::None,
             },

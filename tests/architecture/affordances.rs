@@ -258,6 +258,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("the Map chip, beside the code surface's other views"),
     );
     put(
+        Action::ToggleInspector,
+        Control("the inspector key in a plugin's view footer"),
+    );
+    put(
+        Action::ToggleDrawer,
+        Control("a plugin drawer's button in the tab strip, beside its views"),
+    );
+    put(
         Action::DeliverTask,
         Control("the deliver key in a ready row's hint in recent"),
     );

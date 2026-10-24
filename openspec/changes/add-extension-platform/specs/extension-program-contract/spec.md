@@ -6,6 +6,25 @@ writes standard output, with no SDK and no resident process.
 
 ## ADDED Requirements
 
+### Requirement: A declaration is answered by a script or a program
+A source or action SHALL be answered by a Rhai script called once per
+question (`script`), by a program (`run`), or by a fixture. A script and a
+program SHALL receive the same input and answer the same output and
+envelope, so changing which one answers SHALL NOT change the view or the
+tests. A script SHALL need no build.
+
+#### Scenario: A shell script becomes a Rhai script without touching the view
+- **WHEN** an author replaces `run "./bin/board.sh"` with `script "board.rhai"` and its `answer` returns the same map
+- **THEN** the surface draws the same and the extension's tests pass unchanged
+
+#### Scenario: A script needs no exec grant
+- **WHEN** an extension's sources are all scripts that call only `read_checkout`
+- **THEN** consent asks only for `read:checkout`, and the extension is confined on every platform
+
+#### Scenario: A script wrapping a CLI is as confined as the CLI
+- **WHEN** a script calls `run_program` to run `nvidia-smi`
+- **THEN** enabling asks for `exec:nvidia-smi` apart, and the Extensions screen reports the program's confinement as the platform gives it
+
 ### Requirement: A program is an argv the host runs once per question
 A source, an action or a command declared by an extension SHALL be an argv
 array. The host SHALL run it once per question, without a shell, with the
@@ -20,8 +39,8 @@ string to be split or interpreted by a shell SHALL be refused by the check.
 - **THEN** the host runs the source's argv once, reads its answer, and no process of that extension remains afterwards
 
 #### Scenario: A shell string is refused
-- **WHEN** a manifest declares `run: "openspec list --json | jq ."`
-- **THEN** `uze agent extension check` fails naming the field and saying a program is an argv array
+- **WHEN** a manifest declares `run "openspec list --json | jq ."`
+- **THEN** `uze agent plugin check` fails naming the field and saying a program is an argv array
 
 ### Requirement: Input is one JSON document on stdin
 The host SHALL write exactly one JSON object to the program's standard input
@@ -33,21 +52,35 @@ the surface's state. Nothing the declaration did not name SHALL be sent.
 > **Unresolved review findings** (design.md): S8.
 
 #### Scenario: Only declared inputs reach the program
-- **WHEN** a source declares `input: [change, mode]` and the operator has selected change `support-macos` in mode `tasks`
+- **WHEN** a source declares `input "change" "mode"` and the operator has selected change `support-macos` in mode `tasks`
 - **THEN** the program's stdin carries `input: {"change": "support-macos", "mode": "tasks"}` and no other field of the selection
 
 #### Scenario: The context names where the question comes from
 - **WHEN** the host runs a program
-- **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface` and `extension`
+- **THEN** the `context` object carries `checkout`, `branch`, `work` when the checkout has a named work, `surface`, `extension`, `slot`, the slot's `size` in cells, and `agent` when the surface sits on an agent's pane
+
+### Requirement: Declared fields can reach a program without JSON
+A declaration MAY substitute declared flat fields into its argv, each as one
+whole argument, or set them as `UZE_IN_<NAME>` environment variables, so a
+shell program needs no JSON tool to read its input. A substituted value
+beginning with `-` SHALL be refused unless the argv puts `--` before it.
+
+#### Scenario: A shell script reads its input from argv
+- **WHEN** a source declares `run "./bin/calls.sh" "--" "{event.tool}"` and a tool event names `Bash`
+- **THEN** the program receives `Bash` as its argument after `--`, with the full input still on stdin
+
+#### Scenario: A dash value cannot become a flag
+- **WHEN** a declaration substitutes `{name}` without a preceding `--` and the value is `--force`
+- **THEN** the run is refused naming the field and the rule
 
 ### Requirement: Output is one JSON document on stdout
-A program SHALL answer with one JSON value on standard output: a list of
-objects for a list-shaped source, an object for a document-shaped source,
-and for an action either nothing or an object whose optional `toast` and
-`refresh` fields the host applies. Standard error SHALL be kept only as the
-reason of a refusal or failure, bounded, and never parsed as an answer.
+In `json` mode a program SHALL answer one JSON value on stdout: a list of
+objects for a list source, an object for a document source, and for an
+action nothing or an object whose `toast`, `refresh` and `store` fields the
+host applies. Stderr SHALL be only a refusal's or failure's reason, bounded,
+never parsed.
 
-> **Unresolved review findings** (design.md): an `output: lines` mode for `sh` authors.
+> **Unresolved review findings** (design.md): `output: lines` (adopted, D4).
 
 #### Scenario: A list source feeds a navigator
 - **WHEN** a list source prints `[{"name": "support-macos", "status": "in-progress"}]`
@@ -56,6 +89,39 @@ reason of a refusal or failure, bounded, and never parsed as an answer.
 #### Scenario: Output that is not JSON is a failure, drawn
 - **WHEN** a source prints `hello` and exits 0
 - **THEN** the surface shows that the source answered with something that is not JSON, naming the source, and the rest of the workspace is unaffected
+
+### Requirement: A declaration names its output mode
+A source SHALL declare its output mode: `json` (the default), `lines` (one
+item per line, tab-separated fields the declaration names), `view` (a
+catalog tree), or `cells`, `image` or `sprite`. The host SHALL check the
+answer against its mode and bound its size before decoding it, and an answer
+that does not match SHALL be a failure drawn on the surface that asked.
+
+#### Scenario: A shell author lists without jq
+- **WHEN** a source declares `output "lines"` with `fields "name" "status"` and prints `build\tok`
+- **THEN** the navigator shows one item named `build` with status `ok`
+
+#### Scenario: A view answer outside the catalog is refused
+- **WHEN** a `view` source answers a node of type `iframe`
+- **THEN** the surface shows that the source answered a node the catalog does not have, naming it, and draws nothing of that answer
+
+#### Scenario: An oversized image is refused before decoding
+- **WHEN** an `image` source answers more bytes than the image ceiling
+- **THEN** the run is a failure naming the bound, and no decoder ran on it
+
+### Requirement: Any answer may carry requests in an envelope
+A program MAY wrap its answer as `{data, store, refresh, toast, notice,
+notify, sound}`, where `data` is the answer of its mode. The host SHALL
+apply each request only under the extension's grants, attributed to it, and
+SHALL treat a bare answer as `data` alone.
+
+#### Scenario: A source patches the store and asks for a cue
+- **WHEN** a source answers `{"data": [...], "store": {"history": [3, 5]}, "sound": "done"}` and the extension holds `notify`
+- **THEN** the surface draws `data`, the store's `history` becomes `[3, 5]`, and the `done` cue is emitted once
+
+#### Scenario: A request without its grant is dropped and named
+- **WHEN** an answer requests `notify` and the extension does not hold `notify`
+- **THEN** no notification is emitted, the rest of the answer applies, and the surface's notice names the missing grant
 
 ### Requirement: Exit codes follow the portable hook contract
 Exit code `0` SHALL mean the program answered. Exit code `3` SHALL mean it

@@ -67,6 +67,8 @@ mod agents;
 use agents::StatusAnswer;
 mod answers;
 mod approval;
+mod declared;
+use declared::*;
 mod events;
 mod interrupt;
 mod notices;
@@ -451,9 +453,13 @@ pub(crate) fn attach_workspace(
     // it to, so the pane starts at its real width immediately instead of
     // assuming the sidebar's responsive default.
     let size = terminal.size()?;
+    // No drawer: which one stands open belongs to the space this client
+    // lands in, which the server has not said yet; the first frame's
+    // resize narrows the pane if one does.
     let geometry = compute_layout(
         Rect::new(0, 0, size.width, size.height),
         layout.sidebar.width,
+        None,
     );
     let (columns, rows) = (geometry.pane.width, geometry.pane.height);
 
@@ -642,6 +648,7 @@ pub(crate) fn attach_workspace(
         let geometry = compute_layout(
             Rect::new(0, 0, size.width, size.height),
             attach.model.sidebar_width,
+            attach.model.dock(),
         );
         let viewport = Viewport {
             size,
@@ -904,6 +911,16 @@ pub(super) enum WorkspaceHit {
     OpenArchitect,
     /// The tab strip's spec button, first of the three.
     OpenSpec,
+    /// A tab strip button for a view a plugin declared, by its slot.
+    OpenDeclared(SlotId),
+    /// A tab strip button for a drawer a plugin declared, by its slot:
+    /// opens it beside the pane, or closes it.
+    ToggleDrawer(SlotId),
+    /// The docked drawer's left edge, dragged to resize it.
+    ResizeDock,
+    /// The docked drawer itself, behind what it drew: a click there lends
+    /// it the navigation keys and does nothing else.
+    DockBody,
     /// The tab strip's overview button, before the three: the space's
     /// overview, lit while it stands in the pane.
     OpenOverview,
@@ -921,11 +938,15 @@ pub(super) enum WorkspaceHit {
     OverviewChoice(usize, usize),
     /// One of the paths a list's field offers, by position.
     OverviewPick(usize),
-    /// The rule along the overview's drawer, dragged to resize it.
+    /// The rule along the overview's drawer, or the inspector's, dragged
+    /// to resize it: the workspace's drawers share one width.
     ResizeOverviewDrawer,
     /// The text of the overview's drawer: the wheel scrolls it rather than
     /// the section, and a click on it does nothing.
     OverviewDrawer,
+    /// The inspector beside a declared view: the wheel scrolls it rather
+    /// than the view, and a click on it does nothing.
+    Inspector,
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
@@ -1469,6 +1490,13 @@ struct Channels {
     artifacts: Answers<ArtifactsResolution>,
     spec: Answers<SpecResolution>,
     spec_summaries: Answers<SpecSummaryResolution>,
+    /// The declared extensions installed plugins carry: found, compiled and
+    /// their fixtures read, or one of them compiled again after a save.
+    extension_jobs: Answers<ExtensionAnswer>,
+    /// The linked ones' stamps, polled on [`DECLARED_POLL`].
+    extension_stamps: Answers<StampsAnswer>,
+    /// What hosted engines' jobs answered, each for the slot that asked.
+    engine_answers: Answers<EngineAnswer>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
@@ -1578,6 +1606,9 @@ struct Remembered {
     /// The same for the spec surface: which change, and which of its
     /// documents.
     spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
+    /// The surfaces plugins declare, each with the engine that answers for
+    /// it, and where the viewer was on each per checkout.
+    declared: DeclaredExtensions,
     /// Preserved work across the machine, as last swept. The last good
     /// answer stays drawn while a new one is in flight, so opening the
     /// list never shows an empty one it is about to fill.
@@ -1904,6 +1935,43 @@ struct WorkspaceModel {
     /// `architect_root` and `architect_asked` are for the architect.
     spec_root: Option<PathBuf>,
     spec_asked: bool,
+    /// The declared view standing in the pane, by its slot, and the
+    /// checkout it was opened on — what its place is remembered under.
+    declared_open: Option<SlotId>,
+    declared_root: Option<PathBuf>,
+    /// Whether the inspector stands beside it.
+    inspecting: bool,
+    /// The width a plugin's docked drawer was dragged to, kept for the
+    /// rest of the run. Apart from the overview's drawer width because the
+    /// inspector, which shares that one, can stand open beside it.
+    dock_width: Option<u16>,
+    /// Whether the docked drawer's edge is held by the pointer.
+    dragging_dock: bool,
+    /// Whether the docked drawer's scrollbar is held by the pointer.
+    dragging_dock_content: bool,
+    /// The docked drawer's scrollbar on the last frame, and the first row
+    /// it showed: what a press or a drag on its track is measured against.
+    dock_bar: std::cell::Cell<Option<(crate::ui::widget::Scrollbar, usize)>>,
+    /// Whether the docked drawer has the navigation keys: a click in it
+    /// lends them, Esc or a click anywhere else gives them back. Every
+    /// other key stays the pane's.
+    dock_focused: bool,
+    /// Esc has just given the keys back: the next Esc closes the drawer
+    /// rather than reaching the pane. Anything else in between disarms it.
+    dock_esc_armed: bool,
+    /// What the drawer's engine last asked to say, along its foot.
+    dock_notice: Option<uze_extensions::view::Span>,
+    /// The room the drawer's view had on the last frame: what its engine
+    /// is told it has when a key or a click reaches it.
+    dock_space: std::cell::Cell<uze_extensions::view::Size>,
+    /// How far down the inspector is scrolled, settled by the frame so its
+    /// last line stops at its foot.
+    inspector_scroll: std::cell::Cell<u16>,
+    /// The rows the inspector showed at once on the last frame: what a
+    /// page key moves it by.
+    inspector_rows: std::cell::Cell<u16>,
+    /// What its engine last asked to say at the end of its footer.
+    declared_notice: Option<uze_extensions::view::Span>,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -1921,8 +1989,9 @@ struct WorkspaceModel {
     /// the rows it was on, edits not yet saved — so opening it again
     /// returns to it rather than starting over.
     put_away_overviews: std::collections::BTreeMap<SpaceId, SpaceOverviewView>,
-    /// The width the overview's drawer was dragged to, kept across
-    /// openings for the rest of the attach.
+    /// The width the overview's drawer, or the inspector, was dragged to,
+    /// kept across openings for the rest of the attach: one width for the
+    /// workspace's drawers, as manage's share one.
     overview_drawer_width: Option<u16>,
     /// Whether the drawer's rule is held by the pointer.
     dragging_overview_drawer: bool,
@@ -2347,6 +2416,7 @@ impl WorkspaceModel {
             && self.code.is_none()
             && self.architect.is_none()
             && self.spec.is_none()
+            && self.declared_open.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is

@@ -37,6 +37,7 @@ mod navigator;
 mod picture;
 mod prose;
 mod section;
+pub(crate) mod tree;
 
 pub(crate) use footer::*;
 pub(crate) use geometry::*;
@@ -122,6 +123,10 @@ pub(crate) struct Rendered {
 pub(crate) struct FooterKeys {
     pub(crate) scope: uze_keys::Scope,
     pub(crate) hovered: Option<uze_keys::Action>,
+    /// Keys the host offers on this surface beyond the ones its commands
+    /// name, after them: a declared view's inspector, which no engine
+    /// knows of.
+    pub(crate) host: &'static [uze_keys::Action],
 }
 
 /// Where the host holds the navigator this frame: the width it was
@@ -158,6 +163,53 @@ pub(crate) fn render(
     rendered
 }
 
+/// What a docked view drew that its host needs after the frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Docked {
+    /// Whether anything on it moves with the clock.
+    pub(crate) animates: bool,
+    /// Its scrollbar, and the first row it showed, when it scrolls.
+    pub(crate) bar: Option<(Scrollbar, usize)>,
+}
+
+/// A view drawn in a drawer docked beside the pane rather than in the
+/// pane's place: its content alone, since a drawer has no navigator, no
+/// footer and no bar of its own. A tree scrolls as it does full-frame,
+/// its groove on the right edge `area` leaves past itself.
+pub(crate) fn render_docked(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    hovered: Option<ViewHit>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> Docked {
+    match &view.content {
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            let drawn = tree::render_tree_content(
+                frame,
+                area,
+                (heading, *scroll, root),
+                &view.modes,
+                tree::TreeFrame::now(hovered),
+                hits,
+            );
+            Docked {
+                animates: drawn.animates,
+                bar: drawn.bar.map(|bar| (bar, *scroll)),
+            }
+        }
+        Content::Message { text, hint, role } => {
+            render_message(frame, area, text, hint.as_deref(), color(*role));
+            Docked::default()
+        }
+        _ => Docked::default(),
+    }
+}
+
 fn render_surface(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
@@ -174,7 +226,8 @@ fn render_surface(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let mut rendered = render_board(frame, view, area, keys, selection, hits);
+        let hovered = held.sliding.map(|(hit, _)| hit);
+        let mut rendered = render_board(frame, view, area, keys, hovered, selection, hits);
         rendered.content_space = board_space(area);
         return rendered;
     }
@@ -219,6 +272,24 @@ fn render_surface(
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, content_area, text, hint.as_deref(), color(*role))
+        }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            let drawn = tree::render_tree_content(
+                frame,
+                content_area,
+                (heading, *scroll, root),
+                column_modes,
+                tree::TreeFrame::now(held.sliding.map(|(hit, _)| hit)),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee |= drawn.animates;
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
@@ -374,6 +445,7 @@ fn render_board(
     view: &View,
     area: Rect,
     keys: FooterKeys,
+    hovered: Option<ViewHit>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -386,6 +458,24 @@ fn render_board(
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, board, text, hint.as_deref(), color(*role));
+        }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            let drawn = tree::render_tree_content(
+                frame,
+                board,
+                ("", *scroll, root),
+                &[],
+                tree::TreeFrame::now(hovered),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee = drawn.animates;
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();

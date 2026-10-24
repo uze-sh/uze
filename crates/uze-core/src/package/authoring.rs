@@ -30,12 +30,15 @@ pub use agent_plugins::{
 };
 
 /// The optional capability files a scaffold writes, one flag each.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ScaffoldCapabilities {
     pub hook: bool,
     pub mcp: bool,
     pub agent: bool,
     pub rules: bool,
+    /// The id of a declared extension to scaffold under `extensions/`: a
+    /// manifest, a view and the fixture it draws.
+    pub extension: Option<String>,
 }
 
 /// The manifest every marketplace carries.
@@ -255,6 +258,9 @@ pub fn scaffold_plugin(
             path: market_root.to_path_buf(),
         });
     }
+    if let Some(id) = &caps.extension {
+        refuse_an_extension_id(id)?;
+    }
     let manifest_path = market_root.join(MARKETPLACE_MANIFEST);
     if !manifest_path.is_file() {
         return Err(UzeError::MarketplaceScaffold(format!(
@@ -400,7 +406,56 @@ fn write_plugin_files(
             include_str!("authoring/rule.md.template"),
         )?;
     }
+    if let Some(id) = &caps.extension {
+        write_extension_files(plugin_root, id)?;
+    }
     Ok(())
+}
+
+/// An extension id the scaffold can write: the manifest's own id rule, and
+/// none a built-in extension answers to. Asked before any file is written.
+fn refuse_an_extension_id(id: &str) -> Result<()> {
+    if !uze_contract::is_valid_id(id) {
+        return Err(UzeError::MarketplaceScaffold(format!(
+            "`{id}` is not an extension id — lowercase letters, digits and single hyphens, \
+             starting with a letter"
+        )));
+    }
+    if uze_contract::RESERVED_IDS.contains(&id) {
+        return Err(UzeError::MarketplaceScaffold(format!(
+            "`{id}` is reserved by a built-in extension — choose another id"
+        )));
+    }
+    Ok(())
+}
+
+/// `extensions/<id>/`: a manifest declaring a view and a section over one
+/// source, the view both draw, the fixture that source answers with, and
+/// tests of the view.
+fn write_extension_files(plugin_root: &Path, id: &str) -> Result<()> {
+    let extension = plugin_root
+        .join(crate::capability::extension::EXTENSIONS_DIR)
+        .join(id);
+    let fixtures = extension.join("fixtures");
+    create_dir(&fixtures)?;
+    write_file(
+        &extension.join(crate::capability::extension::MANIFEST_FILE),
+        include_str!("authoring/extension.kdl.template").replace("{EXTENSION_ID}", id),
+    )?;
+    write_file(
+        &extension.join("board.kdl"),
+        include_str!("authoring/board.kdl.template"),
+    )?;
+    write_file(
+        &fixtures.join("board.json"),
+        include_str!("authoring/board.json"),
+    )?;
+    let tests = extension.join(crate::capability::extension::TESTS_DIR);
+    create_dir(&tests)?;
+    write_file(
+        &tests.join("board.test.kdl"),
+        include_str!("authoring/board.test.kdl.template"),
+    )
 }
 
 /// A description as a YAML double-quoted scalar. JSON's string escaping is

@@ -147,6 +147,13 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
              artifact's own",
         ),
     ),
+    (
+        "agent plugin lsp",
+        PerformanceClass::JustifiedSlow(
+            "a language server: it runs until the editor shuts it down, and each change \
+             checks the edited extension, which costs what the check costs",
+        ),
+    ),
     // Machine scope: market.
     ("market list", PerformanceClass::Budgeted),
     ("market remove", PerformanceClass::Budgeted),

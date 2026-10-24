@@ -37,7 +37,7 @@ dependencies = [
  "rustix-openpty",
  "serde",
  "signal-hook 0.4.4",
- "unicode-width",
+ "unicode-width 0.2.2",
  "vte",
  "windows-sys 0.59.0",
 ]
@@ -400,7 +400,7 @@ checksum = "4fe5f465a4f6fee88fad41b85d990f84c835335e85b5d9e6e63e0d06d28cba7c"
 dependencies = [
  "encode_unicode",
  "libc",
- "unicode-width",
+ "unicode-width 0.2.2",
  "windows-sys 0.61.2",
 ]
 
@@ -1303,7 +1303,7 @@ checksum = "9433806cd6b4ec1aba79c021c7e4c58fb4c3b9977c085062e611ac929998fb0c"
 dependencies = [
  "console",
  "portable-atomic",
- "unicode-width",
+ "unicode-width 0.2.2",
  "unit-prefix",
  "web-time",
 ]
@@ -1390,6 +1390,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdl"
+version = "6.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "082ddf81b2acd76fe04412655d17befedfff1837db772f8e74c38050d25ed670"
+dependencies = [
+ "miette",
+ "num-traits",
+ "winnow 0.7.15",
+]
+
+[[package]]
 name = "lab"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1471,6 +1482,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsp-server"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ee25a31f2e571e426eef2896179450cafc7e2f5be00d8a93b1c2d21c0ff7656"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
 name = "mac_address"
 version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1508,6 +1532,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "miette"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
+dependencies = [
+ "cfg-if",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -2189,7 +2223,7 @@ dependencies = [
  "thiserror 2.0.21",
  "unicode-segmentation",
  "unicode-truncate",
- "unicode-width",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -2252,7 +2286,7 @@ dependencies = [
  "strum",
  "time",
  "unicode-segmentation",
- "unicode-width",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -3065,7 +3099,7 @@ dependencies = [
  "toml_datetime",
  "toml_parser",
  "toml_writer",
- "winnow",
+ "winnow 1.0.4",
 ]
 
 [[package]]
@@ -3074,7 +3108,7 @@ version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
- "winnow",
+ "winnow 1.0.4",
 ]
 
 [[package]]
@@ -3273,8 +3307,14 @@ checksum = "16b380a1238663e5f8a691f9039c73e1cdae598a30e9855f541d29b08b53e9a5"
 dependencies = [
  "itertools",
  "unicode-segmentation",
- "unicode-width",
+ "unicode-width 0.2.2",
 ]
+
+[[package]]
+name = "unicode-width"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unicode-width"
@@ -3335,6 +3375,7 @@ dependencies = [
  "dialoguer",
  "indicatif",
  "libc",
+ "lsp-server",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -3349,9 +3390,10 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "unicode-width",
+ "unicode-width 0.2.2",
  "uze",
  "uze-application",
+ "uze-contract",
  "uze-core",
  "uze-extensions",
  "uze-git",
@@ -3372,6 +3414,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "uze-contract",
  "uze-core",
  "uze-git",
  "uze-integrations",
@@ -3382,19 +3425,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "uze-contract"
+version = "1.0.0-beta.20"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "uze-core"
 version = "1.0.0-beta.20"
 dependencies = [
  "deno_task_shell",
+ "kdl",
  "libc",
  "noyalib",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "strsim",
  "thiserror 2.0.21",
  "tokio",
  "toml_edit",
  "tracing",
+ "uze-contract",
  "uze-document",
  "uze-git",
  "uze-platform",
@@ -3422,7 +3476,8 @@ dependencies = [
  "serde_json",
  "syntect",
  "two-face",
- "unicode-width",
+ "unicode-width 0.2.2",
+ "uze-contract",
  "uze-git",
  "uze-testkit",
  "zune-jpeg",
@@ -3506,7 +3561,7 @@ dependencies = [
  "serde_json",
  "syntect",
  "thiserror 2.0.21",
- "unicode-width",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -3922,6 +3977,15 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "winnow"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

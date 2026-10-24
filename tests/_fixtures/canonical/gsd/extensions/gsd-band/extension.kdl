@@ -1,0 +1,11 @@
+protocol 1
+id "gsd-band"
+name "GSD"
+description "The checkout's GSD milestone: every phase, where it stands, and what to run next"
+
+surface "board" slot="view" view="board.kdl" source="milestone" title="Milestone"
+surface "summary" slot="section" view="summary.kdl" source="milestone" title="GSD"
+
+source "milestone" {
+    fixture "fixtures/milestone.json"
+}

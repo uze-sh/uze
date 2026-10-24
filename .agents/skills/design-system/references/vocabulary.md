@@ -13,7 +13,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 
 | need | reach for |
 |---|---|
-| a bordered box | `Surface::floating()`, `Surface::card()`, `Surface::selectable(RowState)` |
+| a bordered box | `Surface::floating()`, `Surface::card()`, `Surface::raised()` (beside live content, `.held(bool)` lights its edge), `Surface::selectable(RowState)` |
 | a ground | `fill`, `root` |
 | a hairline | `Rule::new(Edge)`, `Rule::draggable(edge, dragging)` |
 | buttons | `Button::new(label, hue)`, `button_row(...)`, which returns rects to register |
@@ -25,9 +25,11 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a grid of cards | `grid::Shape::fitting(...).lay(...)` |
 | tabs | `Tab`, `tab_bar` |
 | a detail column | `drawer::render`, `drawer::foot` |
+| a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |
+| a problem with content still drawn under it | `banner::render` |
 | actions on a thing | `menu::render` over `menu::Entry` (`opens` draws the submenu arrow) |
 | summary figures | `stat::cards` |
 | a list line | `row::RowState::of`, `row::fill`, `push_trailing(_marquee)`, `marquee`, `title_row` |
@@ -39,6 +41,14 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | the action index (F1) | `action_index` |
 | a scrollbar | `Scrollbar::render`, `render_on_draggable` |
 | spacing | `TRAILING_PAD`, `POPUP_H_PAD`, `POPUP_V_PAD` |
+
+A declared extension's view (`Content::Tree`, `Section::tree`) is drawn by
+`src/ui/extension_view/tree.rs`, one renderer per catalog node from the
+pieces above: tabs are `render_chips`, list rows take `RowState`'s ground,
+a button is `Button`. The host calls `tree::render_attribution` for the
+strip naming a declared view, and reserves a declared section's rows with
+`tree_section_height`; a section too tall for them folds to whole nodes and
+a `MarkMore` row instead of cropping.
 
 A widget holds no state, does no layout and does no hit-testing. The
 caller passes `hovered`/`pressed` in and registers the rects it gets back
@@ -94,6 +104,12 @@ pointer lands (`tests/architecture/affordances.rs`).
 Only the two adapters name a colour value. Only `theme.rs` writes a chrome
 glyph.
 
+A declared view's marks have symbols of their own: `ProgressFill` (whose
+frames are the steps of a cell filling, not an animation) over
+`ProgressTrack`, `PipFilled`/`PipEmpty`, `MarkFacet` for one standing among
+several on a row, and `ActivityBusy`/`ActivityIdle`, which never borrow the
+agents' `StatusWorking`.
+
 ### Tests
 
 | what | where |
@@ -101,6 +117,12 @@ glyph.
 | widgets | `src/ui/widget/tests.rs`, `drawn(w, h, ...)` |
 | manage | `src/ui/tests/`, `drawn(&model)`, `drawn_at(&model, w, h)`, which answers `(terminal, hits)`: find the rect in `hits` and `model.click(x, y)` it |
 | workspace | `src/ui/orchestrator/tests/`, `driven(model, &home)` |
+
+To draw a surface in another theme, wrap the draw in
+`uze_theme::with_active(theme, || ...)`: it holds on the test's thread
+alone, where `set_active` would repaint every neighbour drawing at the same
+moment. `src/ui/extension_view/tree/tests.rs` runs each check in `uze` and
+`light` that way.
 
 `Driven` has `.frame()`, `.press(x, y)`, `.mouse(x, y, kind)`,
 `.press_key(key_event(chord))` and `.on_a_roomy_terminal()`; the last

@@ -160,6 +160,33 @@ impl MarketplaceSubpath {
         Ok(canonical)
     }
 
+    /// The repository-relative directory `plugin` occupies in `checkout`,
+    /// a working tree of the repository, read from the catalogue that
+    /// working tree carries: `.` for a plugin that is the whole repository.
+    ///
+    /// What a linked marketplace reads a plugin from, and the one place
+    /// that answer is computed: installing from the link and finding the
+    /// files a linked plugin carries ask the same question.
+    pub fn linked_plugin_path(&self, checkout: &Path, plugin: &str) -> Result<String> {
+        let manifest_path = self
+            .directory_in(checkout)?
+            .join(crate::anchor::MARKETPLACE_MANIFEST_NAME);
+        let manifest_bytes =
+            std::fs::read(&manifest_path).map_err(UzeError::read(&manifest_path))?;
+        let manifest = parse_manifest(&manifest_bytes)?;
+        self.plugin_path(&manifest, plugin)
+    }
+
+    /// [`Self::linked_plugin_path`] as a directory inside `checkout`.
+    pub fn linked_plugin_dir(&self, checkout: &Path, plugin: &str) -> Result<PathBuf> {
+        let within = self.linked_plugin_path(checkout, plugin)?;
+        Ok(if within == "." {
+            checkout.to_path_buf()
+        } else {
+            checkout.join(within)
+        })
+    }
+
     fn join(&self, relative: &str) -> String {
         match &self.0 {
             Some(subpath) => format!("{subpath}/{relative}"),

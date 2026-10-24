@@ -123,6 +123,10 @@ pub(crate) fn render_section(
     if section.collapsed {
         return slid;
     }
+    if let Some(root) = &section.tree {
+        let hovered = sliding.map(|(hit, _)| hit);
+        return render_tree_rows(frame, root, section.scroll, rows, hovered, hits) || slid;
+    }
     // Scrolled by whole rows, never past the page that ends on the last
     // one — so the section is always full when its content is.
     let visible = usize::from(rows.remaining());
@@ -176,4 +180,45 @@ pub(crate) fn render_section(
         hits.push((rect, ViewHit::SelectItem(index)));
     }
     slid
+}
+
+/// A declared section's tree, in the rows the column has left and the
+/// inset its rows keep, folded rather than cut when it is taller than that.
+/// Answers whether anything on it moves with the clock.
+fn render_tree_rows(
+    frame: &mut ratatui::Frame<'_>,
+    root: &uze_extensions::view::Node,
+    scroll: usize,
+    rows: &mut crate::ui::Rows,
+    hovered: Option<ViewHit>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> bool {
+    let Some(column) = rows.next(0) else {
+        return false;
+    };
+    let width = column.width.saturating_sub(TRAILING_PAD.saturating_mul(2));
+    let wanted = tree::tree_height(root, width);
+    let Some(area) = rows.next(wanted.min(rows.remaining())) else {
+        return false;
+    };
+    let held = tree::TreeFrame {
+        fold: true,
+        ..tree::TreeFrame::now(hovered)
+    };
+    let area = Rect::new(
+        area.x.saturating_add(TRAILING_PAD),
+        area.y,
+        width,
+        area.height,
+    );
+    tree::render_tree(frame, area, scroll, root, held, hits).animates
+}
+
+/// The rows a declared section takes when open at `width`, header
+/// included: what the host reserves for it in its column.
+pub(crate) fn tree_section_height(root: &uze_extensions::view::Node, width: u16) -> u16 {
+    SECTION_CHROME.saturating_add(tree::tree_height(
+        root,
+        width.saturating_sub(TRAILING_PAD.saturating_mul(2)),
+    ))
 }

@@ -42,6 +42,16 @@
     "status.idle": ".",
     "status.running": ">",
 
+    "progress.fill": ["#"],
+    "progress.track": "-",
+    "chart.level": ["_", "-", "=", "#"],
+    "pip.filled": "*",
+    "pip.empty": ".",
+    "mark.facet": "#",
+    "activity.busy": ["|", "/", "-", "\\"],
+    "activity.idle": ".",
+
+
     "commit.head": "@",
     "commit": "o",
 

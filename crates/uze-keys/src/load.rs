@@ -330,6 +330,10 @@ fn default_bindings() -> Vec<Binding> {
         // and moves by word on those, and the workspace scope takes a chord
         // before the pane ever sees it.
         bind(Scope::Surfaces, "alt+x", Action::ToggleSpec),
+        // A plugin's drawer stands beside whatever the pane shows, so its
+        // door is live over all of them. `k`, free in a shell's line
+        // editor; not `]`, whose escape opens a terminal's own sequences.
+        bind(Scope::Surfaces, "alt+k", Action::ToggleDrawer),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
         // The same key the code surface opens a row's actions with, under
         // the modifier the pane leaves free: the selected agent's menu.
@@ -398,6 +402,17 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Spec, "pagedown", Action::ScrollPageDown),
         bind(Scope::Spec, "pageup", Action::ScrollPageUp),
         bind(Scope::Spec, "p", Action::TogglePreview),
+        // A plugin's surface: the moves every list and row of tabs shares,
+        // so nothing a plugin declares needs keys of its own.
+        bind(Scope::Declared, "esc", Action::Dismiss),
+        bind(Scope::Declared, "down", Action::SelectNext),
+        bind(Scope::Declared, "up", Action::SelectPrevious),
+        bind(Scope::Declared, "tab", Action::NextDiagram),
+        bind(Scope::Declared, "shift+tab", Action::PreviousDiagram),
+        bind(Scope::Declared, "enter", Action::Activate),
+        bind(Scope::Declared, "pagedown", Action::ScrollPageDown),
+        bind(Scope::Declared, "pageup", Action::ScrollPageUp),
+        bind(Scope::Declared, "i", Action::ToggleInspector),
         bind(Scope::Code, "e", Action::EditFile),
         bind(Scope::Code, "p", Action::TogglePreview),
         bind(Scope::Code, "m", Action::ToggleMap),

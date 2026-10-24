@@ -2,6 +2,16 @@
 
 Status: Accepted
 
+Amended 2026-10-23: `uze-extensions` may depend on exactly one UZE crate,
+`uze-contract`, the extension contract (manifest and compiled-view types,
+the binding grammar, the catalog's names, the sanitizer). It is plain data
+with no I/O, no other UZE crate and no rendering library, enforced by the
+architecture suite, so an extension handed one of its types is handed
+nothing that reaches the machine. It exists so the domain's decoder and the
+presentation engine share one definition of an extension without either
+reaching the other (`openspec/changes/archive/2026-10-24-extension-view-engine`). Nothing else
+about the decision changed.
+
 ## Context
 
 UZE already has a trust boundary. `trust.rs` gates one question — may
@@ -33,7 +43,8 @@ Two consequences bind now, while there is nothing to load:
 
 - An extension never touches UZE's own state — no `UzeHome`, no Store, no
   receipts, no `uze-application`. `uze-extensions` depends on no UZE
-  crate and names no process, filesystem or environment API; everything
+  crate but the data-only `uze-contract` (amendment above) and names no
+  process, filesystem or environment API; everything
   it needs arrives through the `Host` trait the TUI implements. This is
   enforced by the architecture suite rather than left as a doc comment.
   It is what keeps an extension a pure function of what it is handed.

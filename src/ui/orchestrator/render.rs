@@ -13,6 +13,7 @@ use crate::ui::widget::{
     TRAILING_PAD, action_index, chip, mark, row, text,
 };
 
+mod declared;
 mod pane;
 mod popups;
 mod recent;
@@ -20,6 +21,7 @@ mod sidebar;
 mod space_overview;
 mod tab_strip;
 
+use declared::*;
 pub(super) use pane::*;
 pub(super) use popups::*;
 use recent::*;
@@ -53,6 +55,16 @@ pub(super) struct WorkspaceLayout {
     pub(super) sidebar: Rect,
     pub(super) tab_strip: Rect,
     pub(super) pane: Rect,
+    /// The column a plugin's drawer is docked in, its gap included, when
+    /// one is open and fits: beside the pane, never over it.
+    pub(super) drawer: Option<Rect>,
+}
+
+/// A drawer docked beside the pane, as the layout is asked for one: the
+/// width it was dragged to, `None` for its width at rest.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct Dock {
+    pub(super) width: Option<u16>,
 }
 
 /// The one source of truth for workspace geometry — both the renderer and
@@ -65,9 +77,15 @@ pub(super) struct WorkspaceLayout {
 /// and health chrome that used to live in a titlebar now opens the sidebar
 /// itself (see [`render_sidebar`]), and this client never shows the help
 /// toolbar — that stays exclusive to the management modal.
+///
+/// `dock` is the drawer open beside the pane, if any. The pane gives up its
+/// width and the gap before it, so the PTY is sized to what stays visible
+/// and no cell an agent draws is covered; the size changes when a drawer
+/// opens, closes or is dragged, never because of what one answers.
 pub(super) fn compute_layout(
     frame_area: Rect,
     sidebar_width_override: Option<u16>,
+    dock: Option<Dock>,
 ) -> WorkspaceLayout {
     let (sidebar, column) = crate::ui::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
@@ -87,16 +105,32 @@ pub(super) fn compute_layout(
     // `layout.pane.width/height`), so insetting it here — not just where
     // it's drawn — keeps what the shell thinks its size is in sync with
     // what's visible.
-    let pane = Rect::new(
+    let area = Rect::new(
         content_rows[1].x,
         content_rows[1].y,
         content_rows[1].width.saturating_sub(1),
         content_rows[1].height,
     );
+    let docked = dock.and_then(|dock| widget::drawer::docked_width(dock.width, area.width));
+    let (pane, drawer) = match docked {
+        Some(width) => {
+            let column = width + widget::drawer::DOCKED_GAP;
+            let pane = Rect {
+                width: area.width - column,
+                ..area
+            };
+            (
+                pane,
+                Some(Rect::new(pane.right(), area.y, column, area.height)),
+            )
+        }
+        None => (area, None),
+    };
     WorkspaceLayout {
         sidebar,
         tab_strip: content_rows[0],
         pane,
+        drawer,
     }
 }
 
@@ -146,7 +180,7 @@ pub(super) fn render(
     metrics: &mut FrameMetrics,
 ) {
     widget::root(frame, frame.area());
-    let layout = compute_layout(frame.area(), model.sidebar_width);
+    let layout = compute_layout(frame.area(), model.sidebar_width, model.dock());
     render_sidebar(frame, layout.sidebar, model, identities, hits, metrics);
     // The sidebar's own hairline right border doubles as a drag handle —
     // it sits just past `inner` (which `render_sidebar` never draws into),
@@ -160,7 +194,22 @@ pub(super) fn render(
         ),
         WorkspaceHit::ResizeSidebar,
     ));
-    let open = open_extension(model, layout.pane);
+    let (surface_area, inspector_area) = declared_split(model, layout.pane);
+    // A plugin's view is drawn under the strip naming whose it is, which
+    // nothing it draws can cover.
+    let surface_area = match model.open_declared_slot() {
+        Some(slot) => crate::ui::extension_view::tree::render_attribution(
+            frame,
+            surface_area,
+            &crate::ui::extension_view::tree::attribution(
+                &slot.identity.id,
+                &slot.identity.plugin,
+                &slot.identity.marketplace,
+            ),
+        ),
+        None => surface_area,
+    };
+    let open = open_extension(model, surface_area);
     let leading = match open {
         Some(_) => LeadingSlot::Surface,
         None => LeadingSlot::AgentTabs,
@@ -168,8 +217,9 @@ pub(super) fn render(
     let slot = render_tab_strip(frame, layout.tab_strip, model, identities, leading, hits);
     let question = match &open {
         Some(open) => {
-            let question = render_extension(frame, layout.pane, model, open, hits, metrics);
-            render_extension_navigation(frame, slot, layout.pane, open, hits);
+            let question = render_extension(frame, surface_area, model, open, hits, metrics);
+            render_extension_navigation(frame, slot, surface_area, open, hits);
+            render_declared_overlays(frame, surface_area, inspector_area, model, hits);
             question
         }
         None => {
@@ -185,6 +235,9 @@ pub(super) fn render(
             None
         }
     };
+    if let Some(area) = layout.drawer {
+        metrics.marquee |= render_declared_drawer(frame, area, model, hits);
+    }
     // Drawn last so it sits on top of the pane — same ordering the
     // management modal's dialogs use in its own `render`. Anchored to
     // `picker.anchor` (the "✦" button's own rect) rather than centered on
@@ -212,7 +265,7 @@ pub(super) fn render(
             0..0,
             view_hits
                 .into_iter()
-                .map(|(rect, hit)| (rect, WorkspaceHit::Extension((question.tag)(hit)))),
+                .map(|(rect, hit)| (rect, WorkspaceHit::Extension(question.tag.apply(hit)))),
         );
     }
     if let Some(modal) = &model.release_notes {
@@ -336,12 +389,21 @@ fn render_extension(
                     | ExtensionHit::Spec(hit)
                     | ExtensionHit::Architect(hit),
                 )) => Some((hit, model.hovered_for())),
+                Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
+                    if model.declared_open == Some(slot) =>
+                {
+                    Some((hit, model.hovered_for()))
+                }
                 _ => None,
             },
         },
         crate::ui::extension_view::FooterKeys {
             scope,
             hovered: model.hovered_hint(),
+            host: match tag {
+                Tag::Declared(_) => &[uze_keys::Action::ToggleInspector],
+                Tag::BuiltIn(_) => &[],
+            },
         },
         match &model.selection {
             Some(Selection::Text(marking)) => Some(marking),
@@ -360,7 +422,7 @@ fn render_extension(
     hits.extend(
         view_hits
             .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag.apply(hit)))),
     );
     // After the row menu's: one opened low enough to cover the footer
     // answers for the cells it covers.
@@ -396,7 +458,7 @@ fn render_extension_navigation(
         0..0,
         navigation_hits
             .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension((open.tag)(hit)))),
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(open.tag.apply(hit)))),
     );
 }
 
@@ -406,10 +468,35 @@ fn render_extension_navigation(
 struct OpenExtension {
     view: uze_extensions::view::View,
     scope: uze_keys::Scope,
-    tag: fn(ViewHit) -> ExtensionHit,
+    tag: Tag,
+}
+
+/// Whose a hit the open surface drew is: a built-in's, by the variant that
+/// names it, or a declared slot's, by its number.
+#[derive(Clone, Copy)]
+enum Tag {
+    BuiltIn(fn(ViewHit) -> ExtensionHit),
+    Declared(SlotId),
+}
+
+impl Tag {
+    fn apply(self, hit: ViewHit) -> ExtensionHit {
+        match self {
+            Self::BuiltIn(tag) => tag(hit),
+            Self::Declared(slot) => ExtensionHit::Declared { slot, hit },
+        }
+    }
 }
 
 fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
+    if let Some(slot) = model.declared_open {
+        let space = crate::ui::extension_view::code_space(area, model.code_tree_width, None);
+        return Some(OpenExtension {
+            view: model.declared_view(space)?,
+            scope: uze_keys::Scope::Declared,
+            tag: Tag::Declared(slot),
+        });
+    }
     let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) =
         if let Some(architect) = &model.architect {
             (
@@ -441,7 +528,11 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
         } else {
             return None;
         };
-    Some(OpenExtension { view, scope, tag })
+    Some(OpenExtension {
+        view,
+        scope,
+        tag: Tag::BuiltIn(tag),
+    })
 }
 
 /// The question an open surface waits on. Drawn with the client's other
@@ -451,7 +542,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
 struct Question {
     confirm: uze_extensions::view::Confirm,
     scope: uze_keys::Scope,
-    tag: fn(ViewHit) -> ExtensionHit,
+    tag: Tag,
 }
 
 /// Pins, on the space in front, the control that places a new agent in

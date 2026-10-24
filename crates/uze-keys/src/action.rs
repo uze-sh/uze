@@ -292,6 +292,12 @@ actions! {
     ToggleMap => "toggle-map", false,
         "Map", "Show the checkout as a map of where its lines are, or leave it";
 
+    // --- A plugin's surface ----------------------------------------------
+    ToggleInspector => "toggle-inspector", false,
+        "Inspector", "Show how a plugin's surface was drawn: its nodes, data, state and actions";
+    ToggleDrawer => "toggle-drawer", false,
+        "Drawer", "Open or close the drawer a plugin docks beside the pane";
+
     // --- The code surface, and typing into a file ------------------------
     EditFile => "edit-file", false,
         "Edit", "Open the selected file's contents and start typing";

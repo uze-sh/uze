@@ -188,7 +188,7 @@ impl<'a> Hints<'a> {
     }
 
     fn key_style(&self) -> Style {
-        theme::fg_bold(Token::Accent)
+        key_style()
     }
 
     /// A lit label takes its key's colour and nothing else of it, so the
@@ -222,6 +222,11 @@ fn run_text(first: Chord, last: Chord) -> String {
     } else {
         format!("{first_text}–{last_text}")
     }
+}
+
+/// How a key is drawn wherever UZE names one: a hint's, and a view's `Kbd`.
+pub(crate) fn key_style() -> Style {
+    theme::fg_bold(Token::Accent)
 }
 
 #[cfg(test)]

@@ -58,6 +58,21 @@ mod tests {
         assert!(disabled(&home).expect("readable").is_empty());
     }
 
+    /// A declared extension is switched by its attribution, spaces, `·`
+    /// and `@` included.
+    #[test]
+    fn a_declared_extension_s_identity_round_trips_as_its_key() {
+        let home = home("extensions-declared-key");
+        let key = "gsd-band · gsd@market";
+        set_enabled(&home, key, false).expect("written");
+        assert_eq!(
+            disabled(&home).expect("readable"),
+            BTreeSet::from([key.to_owned()])
+        );
+        set_enabled(&home, key, true).expect("written");
+        assert!(disabled(&home).expect("readable").is_empty());
+    }
+
     #[test]
     fn a_value_that_is_not_a_boolean_leaves_the_extension_on() {
         let home = home("extensions-unknown");

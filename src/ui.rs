@@ -52,6 +52,9 @@ mod agent_support;
 mod chime;
 pub mod extension_host;
 mod extension_switch;
+/// An extension's tests, drawn and driven the way the workspace draws and
+/// drives its surfaces; run by `uze agent plugin check`.
+pub mod extension_test;
 mod extension_view;
 mod graphics;
 mod hit;
@@ -596,6 +599,7 @@ impl FirstSteps<'_> {
             caption: ViewSpan::new(self.caption(), Role::Faint),
             collapsed: self.collapsed,
             scroll: 0,
+            tree: None,
             rows: self
                 .steps
                 .iter()

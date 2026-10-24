@@ -63,7 +63,7 @@ pub mod appearance;
 // Flat public API. Each line also says which concern the module belongs to,
 // which is the second reason for keeping them: the crate root is where a
 // reader looks first.
-pub use capability::{hook, skill};
+pub use capability::{extension, hook, skill};
 pub use delivery::{
     delivered_root, engine, exposure, integration, leftovers, persistence, reconciliation, router,
     session, state,

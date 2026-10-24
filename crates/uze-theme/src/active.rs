@@ -12,9 +12,12 @@
 //! `$UZE_HOME` is resolved — [`active`] answers with the built-in default,
 //! which needs no I/O.
 
-use std::sync::{
-    Arc, OnceLock, RwLock,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    cell::RefCell,
+    sync::{
+        Arc, OnceLock, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use crate::{Theme, load::default_theme};
@@ -24,8 +27,16 @@ fn cell() -> &'static RwLock<Arc<Theme>> {
     ACTIVE.get_or_init(|| RwLock::new(Arc::new(default_theme().clone())))
 }
 
+thread_local! {
+    /// A theme in force on one thread alone, set by [`with_active`].
+    static SCOPED: RefCell<Option<Arc<Theme>>> = const { RefCell::new(None) };
+}
+
 /// The theme in force. Cheap enough to call per span: it clones an `Arc`.
 pub fn active() -> Arc<Theme> {
+    if let Some(theme) = SCOPED.with(|scoped| scoped.borrow().clone()) {
+        return theme;
+    }
     match cell().read() {
         Ok(theme) => Arc::clone(&theme),
         // A panic while a theme was being swapped must not take the UI's
@@ -44,6 +55,25 @@ pub fn set_active(theme: Theme) {
         Err(poisoned) => *poisoned.into_inner() = theme,
     }
     GENERATION.fetch_add(1, Ordering::Release);
+}
+
+/// Runs `draw` with `theme` in force on this thread alone, and puts back
+/// whatever was in force on it before, even when `draw` panics.
+///
+/// What lets a test draw a surface in the light theme: [`set_active`] is
+/// process-wide, and a test swapping it swaps the colours under every
+/// neighbour drawing at the same moment.
+pub fn with_active<R>(theme: Theme, draw: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Arc<Theme>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            SCOPED.with(|scoped| *scoped.borrow_mut() = previous);
+        }
+    }
+    let previous = SCOPED.with(|scoped| scoped.borrow_mut().replace(Arc::new(theme)));
+    let _restore = Restore(previous);
+    draw()
 }
 
 /// Counts the themes put in force, so a screen that drew in one can tell
@@ -78,6 +108,21 @@ mod tests {
             active().color(Token::Accent),
             default_theme().color(Token::Accent)
         );
+    }
+
+    #[test]
+    fn a_scoped_theme_is_seen_on_its_own_thread_alone() {
+        let light = crate::builtin("light").expect("bundled").clone();
+        let light_ground = light.color(Token::SurfaceBackground);
+        let seen = with_active(light, || {
+            let elsewhere = std::thread::spawn(|| active().color(Token::SurfaceBackground))
+                .join()
+                .expect("the other thread reads");
+            (active().color(Token::SurfaceBackground), elsewhere)
+        });
+        assert_eq!(seen.0, light_ground);
+        assert_ne!(seen.1, light_ground, "another thread keeps the global");
+        assert_ne!(active().color(Token::SurfaceBackground), light_ground);
     }
 
     #[test]

@@ -32,6 +32,16 @@ old `packages/` set hard to reason about.
   marketplace/consumer example used all over lifecycle tests.
 - `workflow/` — `workflow` package with one Skill `review`; the
   invocation-policy carrier (its `SKILL.md` defines `invoke` blocks).
+- `gsd/` — `gsd` package carrying the `gsd-band` reference extension
+  (`extensions/gsd-band/`: a `board` view (`board.kdl`: the milestone's bar,
+  a table of its six phases, the phase in progress and its activity) and a
+  compact `summary` section (`summary.kdl`), both fed by
+  `fixtures/milestone.json`). Installed from a
+  linked marketplace by `tests/lifecycle/declared_extension.rs`, by the
+  workspace's real-engine test in `src/ui/orchestrator/tests/declared.rs`
+  and by the journey
+  `journeys/suites/04-workspace/15-an-extension-redrawn-from-the-file-its-author-saves.yml`,
+  which stages the same files inline (its container mounts `journeys/` only).
 
 ## foreign/
 

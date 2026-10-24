@@ -10,8 +10,10 @@ rendering, geometry, hit-testing and the palette, and
 `src/ui/extension_view.rs` renders both. Every other capability (running
 Git, reading a file, resolving `$HOME`) arrives through
 `uze_extensions::Host`, implemented in `src/ui/extension_host.rs`.
-`uze-extensions` depends on no UZE crate and names no process, filesystem
-or environment API; the architecture suite fails on each. An extension is
+`uze-extensions` depends on no UZE crate but `uze-contract` (plain data:
+the manifest, compiled views, the catalog, the sanitizer) and names no
+process, filesystem or environment API, nor `kdl`; the architecture suite
+fails on each. An extension is
 code UZE runs in its own process, a different trust class from plugin bytes
 a harness reads (ADR-041).
 

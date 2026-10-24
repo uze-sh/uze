@@ -91,7 +91,7 @@ pub(crate) fn run_agent_market(app: &UzeApplication, action: AgentMarketAction) 
         }
         AgentMarketAction::Check { path, format } => {
             let report = app.project().check(&path, true)?;
-            emit(format, &report, |report| render_check(report, true));
+            emit(format, &report, |report| render_check(report, true, &[]));
             if !report.is_clean() {
                 return Err(uze_application::UzeError::LifecycleBlocked(format!(
                     "check failed ({})",
@@ -116,6 +116,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             agent,
             instructions,
             rules,
+            extension,
             format,
         } => {
             if instructions {
@@ -126,6 +127,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         .to_owned(),
                 ));
             }
+            let scaffolded_extension = extension.clone();
             let report = with_spinner(&format!("Scaffolding plugin {name}..."), || {
                 app.project().create_plugin(
                     &market,
@@ -137,9 +139,19 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         mcp,
                         agent,
                         rules,
+                        extension,
                     },
                 )
             })?;
+            if let Some(id) = scaffolded_extension {
+                // The scaffolded test takes a snapshot; it is recorded now,
+                // from the files just written, so the first check passes.
+                let dir = report.root.join("extensions").join(&id);
+                let checked = app
+                    .extensions()
+                    .check_extension(&dir, &uze_application::ExtensionOverlay::new());
+                uze::ui::extension_test::run_tests(app, &checked, true);
+            }
             emit(format, &report, |report| {
                 format!(
                     "{}{}\n",
@@ -159,27 +171,69 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                 )
             });
         }
-        AgentPluginAction::Check { path, format } => {
+        AgentPluginAction::Check {
+            path,
+            update_snapshots,
+            format,
+        } => {
             let report = app.project().check(&path, false)?;
-            emit(format, &report, |report| render_check(report, false));
-            if !report.is_clean() {
+            let mut extensions = app.extensions().check(&path);
+            let mut runs = uze::ui::extension_test::Runs::new();
+            for extension in &mut extensions {
+                super::extension_check::bind_fixtures(extension);
+                let run = uze::ui::extension_test::run_tests(app, extension, update_snapshots);
+                extension.errors.extend(run.failures.iter().cloned());
+                runs.insert(extension.id.clone(), run);
+            }
+            let checked = PluginCheckReport {
+                report: &report,
+                extensions: &extensions,
+            };
+            emit(format, &checked, |checked| {
+                format!(
+                    "{}{}",
+                    render_check(checked.report, false, checked.extensions),
+                    super::extension_check::render_extensions(checked.extensions, &runs)
+                )
+            });
+            let problems = report.findings.len()
+                + extensions
+                    .iter()
+                    .map(|extension| extension.errors.len())
+                    .sum::<usize>();
+            if problems > 0 {
                 return Err(uze_application::UzeError::LifecycleBlocked(format!(
                     "check failed ({})",
-                    count(report.findings.len(), "problem")
+                    count(problems, "problem")
                 )));
             }
         }
+        AgentPluginAction::Lsp => super::lsp::serve(app)?,
     }
     Ok(())
 }
 
+/// A plugin check's answer for a program: the plugin's report, and each
+/// extension it carries when it carries any, so a plugin without one reads
+/// as it always has.
+#[derive(serde::Serialize)]
+pub(crate) struct PluginCheckReport<'a> {
+    #[serde(flatten)]
+    report: &'a uze_application::ValidationReport,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    extensions: &'a [uze_application::CheckedExtension],
+}
+
 /// The check's answer: what it would deliver, and every finding, located.
+/// Each extension the plugin carries is a row of what it delivers; what is
+/// wrong with one is said under its id, after this.
 pub(crate) fn render_check(
     report: &uze_application::ValidationReport,
     as_marketplace: bool,
+    extensions: &[uze_application::CheckedExtension],
 ) -> String {
     let mut text = String::new();
-    if report.is_clean() {
+    if report.is_clean() && extensions.iter().all(|extension| extension.is_clean()) {
         let standard = report
             .agent_plugins
             .as_ref()
@@ -204,6 +258,11 @@ pub(crate) fn render_check(
             let (kind, name) = delivered_as(identity);
             vec![progress::label(kind), name]
         })
+        .chain(
+            extensions
+                .iter()
+                .map(|extension| vec![progress::label("extension"), extension.id.clone()]),
+        )
         .collect();
     if !rows.is_empty() {
         text.push_str(&progress::aligned_rows(rows));

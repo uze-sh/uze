@@ -52,6 +52,8 @@ impl Attach<'_> {
             Scope::Architect
         } else if self.model.spec.is_some() {
             Scope::Spec
+        } else if self.model.declared_open.is_some() {
+            Scope::Declared
         } else if self.model.code.is_some() {
             Scope::Code
         } else if let Some(overview) = &self.model.space_overview {
@@ -73,7 +75,12 @@ impl Attach<'_> {
         // chord. Innermost, because a surface seals everything behind it.
         if matches!(
             surface,
-            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec | Scope::SpaceOverview
+            Scope::Pane
+                | Scope::Code
+                | Scope::Architect
+                | Scope::Spec
+                | Scope::Declared
+                | Scope::SpaceOverview
         ) {
             scopes.push(Scope::Surfaces);
         }
@@ -118,6 +125,9 @@ impl Attach<'_> {
         let Some(chord) = crate::ui::keys::chord_of(key) else {
             return Flow::Continue;
         };
+        if let Some(flow) = self.drawer_key(chord) {
+            return flow;
+        }
         let scopes = self.scopes();
         match uze_keys::active().resolve(chord, &scopes) {
             Resolution::Act(action) if !self.model.offers_action(action) => {
@@ -334,6 +344,15 @@ impl Attach<'_> {
             self.recent_action(action);
             return Flow::Continue;
         }
+        // The drawer's door stands over every surface: the drawer is laid
+        // beside whatever the pane shows rather than in its place.
+        if action == Action::ToggleDrawer {
+            if let Some(slot) = self.model.drawer_in_front() {
+                let room = self.agent_room(viewport);
+                self.model.toggle_drawer(slot, room);
+            }
+            return Flow::Continue;
+        }
         // The overview's door stands over the surfaces too, as theirs do
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
@@ -346,6 +365,10 @@ impl Attach<'_> {
         }
         if self.model.spec.is_some() {
             self.spec_action(action);
+            return Flow::Continue;
+        }
+        if self.model.declared_open.is_some() {
+            self.declared_action(action);
             return Flow::Continue;
         }
         if self.model.code.is_some() {
@@ -526,5 +549,51 @@ impl Attach<'_> {
             return;
         };
         self.land_on_tab(target, columns, rows);
+    }
+}
+
+impl Attach<'_> {
+    /// A key the docked drawer answers before anything else: one of the
+    /// navigation keys while a click in it lent it them, or the second
+    /// Esc after the first gave them back, which closes it. `None` hands
+    /// the key on as if no drawer were open.
+    fn drawer_key(&mut self, chord: Chord) -> Option<Flow> {
+        let armed = std::mem::take(&mut self.model.dock_esc_armed);
+        if !self.model.chrome_answers() || self.model.open_drawer().is_none() {
+            return None;
+        }
+        let meaning = match uze_keys::active()
+            .resolve(chord, &[Scope::Global, Scope::Workspace, Scope::Declared])
+        {
+            Resolution::Act(action) => action,
+            _ => return None,
+        };
+        if armed && meaning == Action::Dismiss {
+            self.model.close_drawer();
+            return Some(Flow::Continue);
+        }
+        if !self.model.drawer_focused() || !drawer_answers(meaning) {
+            return None;
+        }
+        self.dock_action(meaning);
+        Some(Flow::Continue)
+    }
+
+    /// The docked drawer, holding the navigation keys: Esc gives them back
+    /// to the pane and arms the next Esc to close it; every other key is a
+    /// command its engine answers.
+    pub(super) fn dock_action(&mut self, action: Action) {
+        match action {
+            Action::Dismiss => {
+                self.model.dock_focused = false;
+                self.model.dock_esc_armed = true;
+            }
+            _ => {
+                if let Some(command) = crate::ui::extension_view::command_for(action) {
+                    self.model.tell_drawer(command);
+                }
+            }
+        }
+        self.model.dirty = true;
     }
 }

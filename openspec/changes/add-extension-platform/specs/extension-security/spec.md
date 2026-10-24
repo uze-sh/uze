@@ -7,18 +7,17 @@ terminal, and from being installed or widened without the operator saying so.
 ## ADDED Requirements
 
 ### Requirement: An extension declares every grant it needs
-An extension manifest SHALL list, under `wants`, every capability its programs
-and surfaces use: each external program by name (`exec:<name>`), network
-access (`net`), writes to the checkout (`write:checkout`), the clipboard
-(`clipboard`), and opening a path in the code surface (`open_path`). A
-declaration that uses a capability it did not list SHALL be refused by the
-check and at install.
+An extension manifest SHALL list, under `wants`, every capability it uses:
+`exec:<name>`, `net`, `write:checkout`, `read:checkout` (scripts),
+`clipboard`, `open_path`, `notify`, `resident`, `agent:observe`,
+`agent:prompt`, `agent:prompt:auto` and `agent:control`. A declaration that uses a capability it did not list SHALL
+be refused by the check and at install.
 
 > **Unresolved review findings** (design.md): S2, S3, S7.
 
 #### Scenario: An undeclared program is refused
 - **WHEN** an action runs `[gh, pr, list]` and `wants` has no `exec:gh`
-- **THEN** `uze agent extension check` fails naming the action and the missing grant
+- **THEN** `uze agent plugin check` fails naming the action and the missing grant
 
 #### Scenario: A packaged program needs no grant
 - **WHEN** an action runs a program shipped inside the extension's own directory and `wants` has no `exec:` for it
@@ -69,7 +68,7 @@ A bare program name SHALL run only under its `exec:` grant.
 - **THEN** `openspec` receives the single argument `x; rm -rf ~` and no shell ever sees it
 
 #### Scenario: A path cannot escape the package
-- **WHEN** a manifest declares `run: [../../bin/tool]` or a link inside the extension points outside it
+- **WHEN** a manifest declares `run "../../bin/tool"` or a link inside the extension points outside it
 - **THEN** the check and the host refuse the program as resolving outside the extension
 
 ### Requirement: Programs run with a scrubbed environment and confined where possible
@@ -150,3 +149,33 @@ the rest of `$UZE_HOME`.
 #### Scenario: The Store is not handed over
 - **WHEN** a source runs
 - **THEN** its context names the checkout and its own extension directory and nothing else under `$UZE_HOME`
+
+### Requirement: Consent states what a grant combination can do
+The consent screen SHALL lead with the implicit rights and with what the
+grants can do together, and SHALL say that `agent:prompt` gives the
+extension what the agent can do. `agent:prompt:auto` SHALL be asked
+separately from `agent:prompt`, after it, and never as part of a list
+accepted in one gesture.
+
+#### Scenario: Prompt and network together are named
+- **WHEN** an extension wants `agent:prompt` and `net`
+- **THEN** the consent screen says the extension can have the agent act on the checkout and send what it reads over the network
+
+#### Scenario: Unattended prompting is its own question
+- **WHEN** an extension wants `agent:prompt:auto`
+- **THEN** the operator is asked about it on its own, after the other grants, and declining it leaves the rest enabled with prompts only on a gesture
+
+### Requirement: Untrusted channels never start an agent action alone
+A source's answer, an event and a composed tree SHALL NOT cause a
+clipboard write or an open of a path, and SHALL cause a write into an agent
+only under `agent:prompt:auto`, with the manifest's fixed text or a declared
+closed set, never text they carry. Each write SHALL be attributed where the
+operator sees it.
+
+#### Scenario: An event payload cannot type into an agent
+- **WHEN** a tool event's summary contains `rm -rf ~` and a source mapped to that event answers it as prompt text
+- **THEN** no text reaches any agent but the manifest's fixed text or a member of its declared closed set
+
+#### Scenario: Repository content never becomes a prompt
+- **WHEN** an extension holding `agent:prompt:auto` reads a `STATE.md` that contains an instruction and answers it as the next prompt
+- **THEN** the host sends nothing but the manifest's fixed text or a member of its declared closed set, and the answered text is ignored

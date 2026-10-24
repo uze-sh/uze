@@ -131,7 +131,11 @@ for a crate arrives when you touch it.
 - `crates/uze-theme`, `crates/uze-keys` — the design and input
   vocabularies (`Token`, `Symbol`; `Action`, `Chord`, `Keymap`).
 - `crates/uze-extensions` — built-in TUI extensions (`code`, `architect`,
-  `spec`), which describe and never draw.
+  `spec`) and the engine for extensions a plugin declares, which describe
+  and never draw.
+- `crates/uze-contract` — the extension contract: manifest and
+  compiled-view types, the binding grammar, the catalog, the sanitizer.
+  Plain data, and the one UZE crate `uze-extensions` may depend on.
 - `crates/uze-testkit` — shared test infrastructure; `tests/` holds the
   domain suites (taxonomy in `tests/README.md`).
 - `conformance/` — the Harness Conformance Lab (Python, Docker): real
@@ -169,7 +173,7 @@ uze-integrations (Claude, Codex, Antigravity, OpenCode — implement Integration
 
 uze-git          (transport, no domain — used by core, workspace, integrations, application)
 uze-terminal     (local terminal runtime — reaches only uze-platform and uze-document)
-leaves           uze-platform, uze-document, uze-theme, uze-keys (name no domain)
+leaves           uze-platform, uze-document, uze-theme, uze-keys, uze-contract (name no domain)
 ```
 
 `uze-core` never depends on `uze-workspace`: that is how the package

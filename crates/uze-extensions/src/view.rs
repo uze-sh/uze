@@ -479,6 +479,227 @@ pub enum Content {
     /// depends on the space and the glyphs the host draws with, and both
     /// are the host's.
     Picture { heading: String, picture: Picture },
+    /// A tree of laid-out nodes: what a declared extension's view becomes
+    /// once bound to its data (`extension-view-engine`).
+    ///
+    /// The third shape of content, beside lines and a picture, because a
+    /// declared view is neither: it is a composition of the catalog's
+    /// meanings (a row of marks, a segmented bar, a table), each of which
+    /// the host draws in its own palette, and none of which an extension
+    /// positions.
+    Tree {
+        heading: String,
+        /// First row to show. The host clamps it to what the tree takes.
+        scroll: usize,
+        root: Node,
+    },
+}
+
+/// One node of a [`Content::Tree`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Node {
+    /// The engine's own identifier, handed back verbatim in
+    /// [`ViewHit::Node`]. Opaque to the host, and unique within one tree.
+    pub id: usize,
+    pub kind: NodeKind,
+    /// Takes the room a row has left, shared with its other growing nodes.
+    pub grow: bool,
+    /// The fewest cells it is drawn in, so a column of numbers lines up.
+    pub min_width: u16,
+    pub children: Vec<Node>,
+}
+
+impl Node {
+    pub fn new(id: usize, kind: NodeKind) -> Self {
+        Self {
+            id,
+            kind,
+            grow: false,
+            min_width: 0,
+            children: Vec::new(),
+        }
+    }
+}
+
+/// What a [`Node`] means. Each is a kind the host knows how to draw; none
+/// says how.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NodeKind {
+    /// Its children one above another, `gap` rows apart.
+    Stack {
+        gap: u16,
+    },
+    /// Its children side by side, `gap` cells apart.
+    Row {
+        gap: u16,
+        align: Align,
+    },
+    Text {
+        spans: Vec<Span>,
+        truncate: bool,
+    },
+    /// A short label set apart from the text around it.
+    Badge {
+        text: String,
+        role: Role,
+    },
+    /// A run of marks, each in its role: a row's standing on several axes
+    /// at once, such as a phase's discussion, plan and execution.
+    Marks(Vec<Role>),
+    /// Done of total, as that many marks with the done ones filled.
+    Pips {
+        done: u16,
+        total: u16,
+    },
+    /// A bar in segments, each as wide as its weight is of their sum and
+    /// filled to its own share. One segment is a plain progress bar.
+    Progress {
+        segments: Vec<Segment>,
+    },
+    /// Its children as rows to choose between; `selected` is the index of
+    /// the chosen one, if any.
+    List {
+        selected: Option<usize>,
+        /// Said when there are no rows, instead of an empty space.
+        empty: Option<String>,
+    },
+    /// Its children are rows whose children are the cells under these
+    /// headings.
+    Table {
+        columns: Vec<String>,
+        empty: Option<String>,
+    },
+    /// A choice of what is shown, one of them active. The choice is the
+    /// host's state; the engine reports which tab it holds.
+    Tabs {
+        tabs: Vec<Tab>,
+    },
+    Toggle {
+        label: String,
+        on: bool,
+    },
+    Button {
+        label: String,
+    },
+    /// A mark the host animates while `busy`, on its own clock.
+    Activity {
+        busy: bool,
+    },
+    /// The time since `since_ms` (milliseconds of the Unix epoch), ticked
+    /// by the host; nothing when `None`.
+    Elapsed {
+        since_ms: Option<u64>,
+        role: Role,
+    },
+    Log {
+        lines: Vec<Span>,
+    },
+    /// Something the engine itself has to say inside the tree, such as a
+    /// view folded at its node cap.
+    Notice {
+        text: String,
+        role: Role,
+    },
+    /// A hairline across the width, with a label when there is one.
+    Rule {
+        label: Option<String>,
+        role: Role,
+    },
+    /// Key/value pairs, its children each an [`NodeKind::Entry`].
+    Details,
+    /// One pair of a [`NodeKind::Details`].
+    Entry {
+        key: String,
+        value: String,
+        role: Role,
+    },
+    /// Markdown, folded to the width it is drawn at.
+    Markdown {
+        text: String,
+    },
+    /// Code, highlighted for `language` and cut at the width.
+    Code {
+        text: String,
+        language: String,
+    },
+    /// A labelled meter, filled to `filled` thousandths, in the role its
+    /// thresholds chose.
+    Gauge {
+        label: String,
+        filled: u16,
+        role: Role,
+    },
+    /// A series of numbers, each as thousandths of the largest.
+    Chart {
+        kind: ChartKind,
+        levels: Vec<u16>,
+        height: u16,
+        role: Role,
+    },
+    /// A figure and its label, with a change beside it.
+    Stat {
+        value: String,
+        label: String,
+        delta: Option<String>,
+        role: Role,
+    },
+    /// A key, drawn as the host draws its own.
+    Kbd {
+        key: String,
+    },
+    /// Its children as tiles, as many columns as fit their `min-width`.
+    Grid {
+        gap: u16,
+    },
+}
+
+/// How a [`NodeKind::Chart`] draws its series.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChartKind {
+    /// One row, a level per value.
+    #[default]
+    Sparkline,
+    /// A column per value, `height` rows tall.
+    Bar,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Align {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+/// One part of a [`NodeKind::Progress`] bar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Segment {
+    /// Its share of the bar's width, against the other segments' weights.
+    pub weight: u32,
+    /// How much of it is filled, in thousandths: a whole number, so the
+    /// view stays comparable and two equal bars are equal.
+    pub filled: u16,
+    pub role: Role,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Tab {
+    pub label: String,
+    pub active: bool,
+}
+
+/// What was done to one [`Node`], handed back with its id in
+/// [`ViewHit::Node`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NodeAct {
+    /// A tab of a [`NodeKind::Tabs`], by its index.
+    Tab(usize),
+    /// A [`NodeKind::Toggle`], flipped.
+    Toggle,
+    /// A [`NodeKind::Button`], pressed.
+    Press,
+    /// A row of a [`NodeKind::List`], by its index.
+    Row(usize),
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.
@@ -580,6 +801,9 @@ pub struct Section {
     /// same way it clamps [`Content::Lines::scroll`].
     pub scroll: usize,
     pub rows: Vec<SectionRow>,
+    /// A declared extension's section is a tree of nodes rather than rows.
+    /// When present it is drawn instead of [`Section::rows`].
+    pub tree: Option<Node>,
 }
 
 /// What a [`SectionRow`]'s mark stands for, so the host can draw it.
@@ -678,6 +902,11 @@ pub enum ViewHit {
     /// answer, and it is not known until it is released or moved, so the
     /// host resolves it from the track it drew.
     DragContentScrollbar,
+    /// A [`Content::Tree`] node, acted on — by the node's own id.
+    Node {
+        node: usize,
+        act: NodeAct,
+    },
     /// A [`Section`]'s header, which folds it.
     ToggleSection,
     Close,
