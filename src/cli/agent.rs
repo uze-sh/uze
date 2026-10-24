@@ -127,6 +127,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         .to_owned(),
                 ));
             }
+            let scaffolded_extension = extension.clone();
             let report = with_spinner(&format!("Scaffolding plugin {name}..."), || {
                 app.project().create_plugin(
                     &market,
@@ -142,6 +143,15 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                     },
                 )
             })?;
+            if let Some(id) = scaffolded_extension {
+                // The scaffolded test takes a snapshot; it is recorded now,
+                // from the files just written, so the first check passes.
+                let dir = report.root.join("extensions").join(&id);
+                let checked = app
+                    .extensions()
+                    .check_extension(&dir, &uze_application::ExtensionOverlay::new());
+                uze::ui::extension_test::run_tests(app, &checked, true);
+            }
             emit(format, &report, |report| {
                 format!(
                     "{}{}\n",
