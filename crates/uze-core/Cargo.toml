@@ -9,6 +9,8 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+# The extension contract: what a declared extension compiles into.
+uze-contract = { path = "../uze-contract" }
 # Locks that hold across processes, and ending a process with its tree.
 uze-platform = { path = "../uze-platform" }
 # Spans on every process this crate runs; a no-op until the binary
