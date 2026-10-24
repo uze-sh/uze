@@ -183,7 +183,7 @@ fn walk(dir: &Path) -> Option<Vec<(String, PathBuf)>> {
 
 /// A fixture's JSON, read from inside the extension's directory and no
 /// further than [`FIXTURE_LIMIT`].
-fn read_fixture(dir: &Path, fixture: &str) -> SourceData {
+pub(super) fn read_fixture(dir: &Path, fixture: &str) -> SourceData {
     let relative = Path::new(fixture);
     if !relative
         .components()
