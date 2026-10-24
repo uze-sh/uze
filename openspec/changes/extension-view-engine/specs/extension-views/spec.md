@@ -59,12 +59,13 @@ compiled, validated views and SHALL NOT parse KDL.
 - **WHEN** a malformed view would take the parser longer than its time limit
 - **THEN** the view is refused naming the limit, and the workspace keeps working
 
-### Requirement: Surfaces occupy a view or a sidebar section
-A surface SHALL declare the slot `view` (the full frame) or `section` (a
-collapsible sidebar block). The host SHALL own the geometry, fold a section
-that does not fit instead of cropping it, and keep an attribution strip on
-every `view` that no content can cover. Other slots SHALL be refused as not
-supported by this version.
+### Requirement: Surfaces occupy a view, a sidebar section or a drawer
+A surface SHALL declare the slot `view` (the full frame), `section` (a
+collapsible sidebar block) or `drawer` (docked on the right of the agent
+area, opened by a gesture, laid beside the pane so no pane cell is covered).
+The host SHALL own the geometry, fold a section that does not fit, and keep
+an attribution strip on every `view` and `drawer` that no content can cover.
+Other slots SHALL be refused as not supported by this version.
 
 #### Scenario: A section joins the sidebar
 - **WHEN** an enabled extension declares a `section` surface
@@ -73,6 +74,14 @@ supported by this version.
 #### Scenario: A full-frame surface is attributed
 - **WHEN** an extension's `view` is open
 - **THEN** a row naming `id · plugin@marketplace` is drawn by the host and no part of the view covers it
+
+#### Scenario: The pane narrows while a drawer is open
+- **WHEN** the operator opens an extension's `drawer` from its button or key
+- **THEN** the agent's pane, and its terminal, narrow by the drawer's column, and return to their width when it closes
+
+#### Scenario: A drawer stays open while the operator types
+- **WHEN** a `drawer` is open and the operator types into the agent's pane
+- **THEN** the keystrokes reach the agent and the drawer stays open beside it
 
 ### Requirement: Views are drawn from the catalog in the active theme
 A view SHALL be built only from catalog nodes: `Stack`, `Row`, `Text`,

@@ -116,6 +116,12 @@ The declared engine implements it; no built-in does yet.
   sidebar draws each declared `section` above the timeline, as `spec`'s is.
 - Declared extensions are switched on and off by the same extension switch
   as built-ins (`extension_switch.rs`), by identity.
+- A declared `drawer` is answered as a view is (a `View` whose content is a
+  tree) and docked by the host: `compute_layout` gives it a column on the
+  right of the agent area, so the pane and its PTY narrow on open and widen
+  on close, and nothing covers a pane cell. One is open per space, toggled
+  from its strip button or `alt+k`; a click in it lends it the
+  `Scope::Declared` keys and Esc gives them back.
 
 ### E5. Finding an extension's files
 
