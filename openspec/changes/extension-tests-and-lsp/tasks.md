@@ -8,8 +8,8 @@
 ## 2. One analysis
 
 - [x] 2.1 Move fixture binding from `src/cli/extension_check.rs` into a pure function in `uze-extensions` `declared/`, binding every combination of tab choices up to 64 and once per tab past that
-- [ ] 2.2 `uze-application` `extensions().analyse(dir, overlay)`: diagnostics with path, line, column, severity and suggestion for the manifest, the views, the tests and the bindings; `check` reduced to it with no overlay
-- [ ] 2.3 Tests: a field under a second tab is warned about at its reference; an overlay's unsaved text is what is analysed
+- [x] 2.2 `uze-application` `extensions().analyse(dir, overlay)`: diagnostics with path, line, column, severity and suggestion for the manifest, the views, the tests and the bindings; `check` reduced to it with no overlay
+- [x] 2.3 Tests: a field under a second tab is warned about at its reference; an overlay's unsaved text is what is analysed
 
 ## 3. The test runner
 
