@@ -450,6 +450,16 @@ names.
 | cells | `cells` (a grid of `{ch, role}` with clickable `regions`), tier 2 and above |
 | input | `button`, `toggle`, `select`, `field` (text), `form` (typed fields), `picker` (fuzzy list the host filters) |
 
+As built so far: `extension-view-engine` shipped `Stack`, `Row`, `Tabs`/`Tab`,
+`Text`, `Log`, `List`, `Table`, `Progress`/`Segment`, `Pips`, `Badge`,
+`Marks`/`Mark`, `Activity`, `Elapsed`, `Toggle` and `Button`;
+`extension-catalog-growth` added `Rule`, `Details`/`Entry`, `Markdown`,
+`Code`, `Gauge` (with `warning`/`danger` thresholds), `Chart` (`sparkline`
+and `bar`), `Grid`, and two the table did not name, `Stat` (a figure with
+its label and delta) and `Kbd` (a key, as the workspace draws its own).
+Still to come: `Split`, `gap` as a node, grouped and tree `List`, `Heatmap`,
+`Chip`, the inputs past `Toggle`/`Button`, media and `cells`.
+
 Feedback is not a node. A composed tree or a reply *requests* `toast`,
 `notice`, `notify` or `sound` (a cue from a fixed list) through its answer
 (D4), and a confirmation comes only from an action's declaration; the host
