@@ -132,6 +132,10 @@ impl Hosted for Board {
 
     fn set_data(&mut self, _source: &str, _data: uze_application::SourceData) {}
 
+    fn forget(&mut self, _surface: &str) {
+        self.tab = 0;
+    }
+
     /// Taller than any drawer: two hundred nodes.
     fn inspect(&self, _surface: &str) -> Inspection {
         Inspection {
@@ -949,4 +953,375 @@ fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
         driven.attach.model.dock(),
     );
     assert!(layout.pane.right() - rule.x <= layout.pane.width / 2 + 1);
+}
+
+/// The board with a drawer besides its view and section, hosted with an
+/// agent in front.
+fn hosting_the_drawer() -> WorkspaceModel {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared = DeclaredExtensions {
+        engine: board,
+        discovered_at: Some(std::time::Instant::now()),
+        ..DeclaredExtensions::default()
+    };
+    let mut with_drawer = compiled();
+    with_drawer
+        .manifest
+        .surfaces
+        .push(uze_contract::SurfaceDecl {
+            id: "side".to_owned(),
+            slot: uze_contract::Slot::Drawer,
+            view: "side.kdl".to_owned(),
+            source: "board".to_owned(),
+            title: Some("Side".to_owned()),
+        });
+    assert!(model.absorb_extension_answer(ExtensionAnswer {
+        discovered: Some(vec![installed()]),
+        recompiled: Vec::new(),
+        loaded: vec![loaded(Ok(with_drawer))],
+    }));
+    model.follow_drawer_space();
+    model
+}
+
+fn drawer_slot(model: &WorkspaceModel) -> u32 {
+    model
+        .declared_drawers()
+        .next()
+        .expect("the board's drawer is offered")
+        .id
+}
+
+/// What the drawer's line says: which tab its engine holds.
+fn drawer_said(model: &WorkspaceModel) -> String {
+    let slot = model
+        .remembered
+        .declared
+        .slot(drawer_slot(model))
+        .expect("the drawer's slot");
+    match model.surface_view(slot, Size::default()).content {
+        Content::Tree { root, .. } => match &root.children[1].kind {
+            NodeKind::Text { spans, .. } => spans[0].text.clone(),
+            other => panic!("not the line: {other:?}"),
+        },
+        other => panic!("not the board: {other:?}"),
+    }
+}
+
+fn layout_of(driven: &Driven<'_>) -> super::WorkspaceLayout {
+    let model = &driven.attach.model;
+    super::compute_layout(driven.area, model.sidebar_width, model.dock())
+}
+
+#[test]
+fn a_drawer_opens_from_its_button_beside_the_pane_and_closes_from_it() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-button"));
+    let model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    let alone = layout_of(&driven);
+    assert!(alone.drawer.is_none());
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::ToggleDrawer(slot));
+    driven.press(button.x, button.y);
+    assert_eq!(driven.attach.model.open_drawer(), Some(slot), "opened");
+    assert_eq!(driven.attach.model.declared_open, None, "not a view");
+
+    let docked = layout_of(&driven);
+    let drawer = docked.drawer.expect("docked beside the pane");
+    assert_eq!(docked.pane.x, alone.pane.x);
+    assert_eq!(
+        docked.pane.width + drawer.width,
+        alone.pane.width,
+        "the pane gives up exactly the drawer's column"
+    );
+    assert_eq!(docked.pane.right(), drawer.x, "beside it, never over it");
+    assert_eq!(drawer.right(), alone.pane.right());
+
+    driven.frame();
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    let drawer_text: Vec<String> = rows
+        .iter()
+        .map(|row| row.chars().skip(usize::from(drawer.x)).collect())
+        .collect();
+    assert!(
+        drawer_text
+            .iter()
+            .any(|row| row.contains("gsd-band · gsd@market")),
+        "attributed: {rows:#?}"
+    );
+    assert!(
+        drawer_text
+            .iter()
+            .any(|row| row.contains("tab 0 compile 1")),
+        "its view under the strip: {rows:#?}"
+    );
+
+    driven.attach.model.last_click = None;
+    let button = drawn(&driven.attach.model, WorkspaceHit::ToggleDrawer(slot));
+    driven.press(button.x, button.y);
+    assert_eq!(driven.attach.model.open_drawer(), None, "closed by it");
+    let back = layout_of(&driven);
+    assert!(back.drawer.is_none());
+    assert_eq!(back.pane, alone.pane, "the pane has its width back");
+}
+
+#[test]
+fn the_drawer_key_toggles_it_while_typing_still_reaches_the_pane() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-key"));
+    let model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    let chord = uze_keys::active()
+        .chord_for(uze_keys::Action::ToggleDrawer, &[uze_keys::Scope::Surfaces])
+        .expect("the drawer's door has a key");
+    driven.press_key(key_event(chord));
+    assert_eq!(driven.attach.model.open_drawer(), Some(slot));
+    let _ = driven.sent();
+
+    driven.press_key(key_event(uze_keys::Chord::parse("x").unwrap()));
+    assert!(
+        driven.sent().iter().any(|request| matches!(
+            request,
+            crate::ui::orchestrator::ClientRequest::Input { .. }
+        )),
+        "the letter reached the agent"
+    );
+    driven.press_key(key_event(uze_keys::Chord::parse("tab").unwrap()));
+    assert_eq!(
+        drawer_said(&driven.attach.model),
+        "tab 0 compile 1",
+        "the drawer took no key it was not lent"
+    );
+    assert_eq!(driven.attach.model.open_drawer(), Some(slot), "still open");
+
+    driven.press_key(key_event(chord));
+    assert_eq!(driven.attach.model.open_drawer(), None, "closed by its key");
+}
+
+#[test]
+fn a_click_in_the_drawer_reaches_its_engine_and_esc_gives_the_keys_back_then_closes() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-click"));
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, 200);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let tab = drawn(
+        &driven.attach.model,
+        WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot,
+            hit: ViewHit::Node {
+                node: 1,
+                act: NodeAct::Tab(1),
+            },
+        }),
+    );
+    driven.press(tab.x, tab.y);
+    assert_eq!(drawer_said(&driven.attach.model), "tab 1 compile 1");
+    assert!(driven.attach.model.drawer_focused(), "lent the keys");
+
+    let key = |name: &str| key_event(uze_keys::Chord::parse(name).unwrap());
+    driven.press_key(key("tab"));
+    assert_eq!(
+        drawer_said(&driven.attach.model),
+        "tab 0 compile 1",
+        "its key, as its tab"
+    );
+
+    driven.press_key(key("esc"));
+    assert!(!driven.attach.model.drawer_focused(), "esc gives them back");
+    assert_eq!(driven.attach.model.open_drawer(), Some(slot), "and stays");
+    driven.press_key(key("esc"));
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        None,
+        "a second esc closes it"
+    );
+
+    // Given back by a click elsewhere, the next esc is the pane's.
+    driven.attach.model.toggle_drawer(slot, 200);
+    driven.frame();
+    let body = drawn(&driven.attach.model, WorkspaceHit::DockBody);
+    driven.press(body.x + 3, body.bottom() - 2);
+    assert!(driven.attach.model.drawer_focused());
+    let pane = layout_of(&driven).pane;
+    driven.press(pane.x + 2, pane.y + 2);
+    assert!(!driven.attach.model.drawer_focused(), "a click in the pane");
+    driven.press_key(key("esc"));
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        Some(slot),
+        "esc was the pane's"
+    );
+}
+
+#[test]
+fn the_wheel_over_the_drawer_scrolls_it() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-wheel"));
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, 200);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let body = drawn(&driven.attach.model, WorkspaceHit::DockBody);
+    driven.attach.model.dirty = false;
+    driven.mouse(
+        body.x + 4,
+        body.y + 4,
+        crossterm::event::MouseEventKind::ScrollDown,
+    );
+    assert!(driven.attach.model.dirty, "the drawer was scrolled");
+    assert_eq!(driven.attach.model.open_drawer(), Some(slot));
+}
+
+#[test]
+fn the_drawer_refuses_to_open_when_the_pane_would_be_too_narrow() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-narrow"));
+    let model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::ToggleDrawer(slot));
+    driven.press(button.x, button.y);
+    assert_eq!(driven.attach.model.open_drawer(), None, "not opened");
+    let toasts = driven.attach.model.toast_stack();
+    assert_eq!(toasts.len(), 1, "and said why");
+    assert!(layout_of(&driven).drawer.is_none());
+}
+
+#[test]
+fn the_drawer_is_resized_by_its_edge_and_remembers_it() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-resize"));
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, 200);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let before = layout_of(&driven);
+    let edge = drawn(&driven.attach.model, WorkspaceHit::ResizeDock);
+    driven.press(edge.x, edge.y + 3);
+    assert!(driven.attach.model.dragging_dock, "held");
+    driven.mouse(
+        edge.x - 6,
+        edge.y + 3,
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+    );
+    driven.mouse(
+        edge.x - 6,
+        edge.y + 3,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    );
+    assert!(!driven.attach.model.dragging_dock, "let go");
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        Some(slot),
+        "a drag closes nothing"
+    );
+    let after = layout_of(&driven);
+    assert_eq!(
+        after.pane.width + 6,
+        before.pane.width,
+        "the pane gave up six"
+    );
+    assert_eq!(after.drawer.unwrap().x + 6, before.drawer.unwrap().x);
+
+    driven.attach.model.close_drawer();
+    driven.attach.model.toggle_drawer(slot, 200);
+    assert_eq!(layout_of(&driven).pane, after.pane, "the width is kept");
+}
+
+#[test]
+fn each_space_keeps_its_own_drawer_and_place() {
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    let first = model.space_in_front().unwrap();
+    model.toggle_drawer(slot, 200);
+    model.tell_drawer(Command::NextView);
+    assert_eq!(drawer_said(&model), "tab 1 compile 1");
+
+    let session = model.session.as_mut().unwrap();
+    session.create_space(Some("two".into()), PathBuf::from("/two"), 80, 24);
+    model.follow_drawer_space();
+    assert_eq!(model.open_drawer(), None, "the other space has none open");
+    model.toggle_drawer(slot, 200);
+    assert_eq!(drawer_said(&model), "tab 0 compile 1", "and starts over");
+    let second = model.space_in_front().unwrap();
+
+    model.session.as_mut().unwrap().workspace.selected_space = first;
+    model.follow_drawer_space();
+    assert_eq!(model.open_drawer(), Some(slot));
+    assert_eq!(drawer_said(&model), "tab 1 compile 1", "where it was left");
+    model.close_drawer();
+
+    model.session.as_mut().unwrap().workspace.selected_space = second;
+    model.follow_drawer_space();
+    assert_eq!(
+        model.open_drawer(),
+        Some(slot),
+        "closing one closed only it"
+    );
+}
+
+#[test]
+fn a_switched_off_extension_takes_its_drawer_away() {
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, 200);
+    model.follow_extension_switch(std::collections::BTreeSet::from([super::switch_id(
+        &identity(),
+    )]));
+    assert_eq!(model.open_drawer(), None);
+    assert!(model.declared_drawers().next().is_none());
+    model.follow_extension_switch(std::collections::BTreeSet::new());
+    assert_eq!(
+        model.open_drawer(),
+        None,
+        "switched back on, it stays closed"
+    );
+}
+
+#[test]
+fn the_drawer_is_drawn_raised_beside_a_live_pane() {
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, 200);
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    let layout = super::compute_layout(area, model.sidebar_width, model.dock());
+    let drawer = layout.drawer.unwrap();
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))
+            .unwrap();
+    terminal
+        .draw(|frame| {
+            super::render::render(
+                frame,
+                &model,
+                &identities_fixture(),
+                &mut Vec::new(),
+                &mut super::render::FrameMetrics::default(),
+            )
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let card = drawer.x + crate::ui::widget::drawer::DOCKED_GAP;
+    assert_eq!(buffer[(card, drawer.y)].symbol(), "┌", "a card's edge");
+    assert_eq!(buffer[(drawer.right() - 1, drawer.y)].symbol(), "┐");
+    assert_eq!(
+        buffer[(drawer.x, drawer.y + 3)].symbol(),
+        " ",
+        "air before it"
+    );
+    let raised = crate::ui::theme::color(crate::ui::theme::Token::SurfaceRaised);
+    assert_eq!(
+        buffer[(card + 3, drawer.bottom() - 3)].bg,
+        raised,
+        "on a raised ground"
+    );
+    assert_ne!(
+        buffer[(layout.pane.x + 2, layout.pane.y + 3)].bg,
+        raised,
+        "the pane keeps its own"
+    );
 }
