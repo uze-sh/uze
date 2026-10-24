@@ -190,6 +190,50 @@ fn a_row_shares_what_is_left_with_its_growing_children_and_aligns_the_rest() {
     });
 }
 
+/// A row without room folds its wrapping text onto a second row, widest
+/// first, rather than cutting the last word to a sliver or losing it.
+#[test]
+fn a_crowded_row_wraps_its_widest_text_and_keeps_the_last_whole() {
+    let paragraph = |id, said: &str, role| {
+        node(
+            id,
+            NodeKind::Text {
+                spans: vec![Span::new(said, role)],
+                truncate: false,
+            },
+        )
+    };
+    let crowded = row(
+        0,
+        2,
+        Align::Start,
+        vec![
+            paragraph(
+                1,
+                "12 · A long phase name that takes the row",
+                Role::Default,
+            ),
+            paragraph(2, "2 plans left", Role::Muted),
+        ],
+    );
+    let rows = draw(&crowded, 40, 3, 0, at(0)).rows();
+    assert!(rows[0].ends_with("2 plans left"), "{rows:#?}");
+    assert!(rows[1].contains("takes the row"), "{rows:#?}");
+
+    let tight = row(
+        0,
+        1,
+        Align::Start,
+        vec![
+            paragraph(1, "412 passed", Role::Success),
+            paragraph(2, "2 failed", Role::Danger),
+            paragraph(3, "9 skipped", Role::Faint),
+        ],
+    );
+    let rows = draw(&tight, 28, 2, 0, at(0)).rows();
+    assert!(rows[0].ends_with("9 skipped"), "{rows:#?}");
+}
+
 #[test]
 fn a_min_width_holds_a_column_open() {
     let mut name = words(1, "a", Role::Default);

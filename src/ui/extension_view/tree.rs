@@ -395,7 +395,9 @@ fn height(node: &Node, width: u16) -> usize {
 /// Every child gets what it asks for; the growing ones share what is left;
 /// a row with none that grow is placed by its alignment. A row that cannot
 /// give everyone what they ask takes it first from text that elides, then
-/// from whoever comes last.
+/// from text that wraps, widest first and never below its longest word, and
+/// only then from whoever comes last: a paragraph folding onto a second row
+/// reads, where a word pushed to the edge was cut to a sliver or lost.
 fn row_widths(children: &[Node], gap: u16, align: Align, width: u16) -> (u16, Vec<u16>) {
     if children.is_empty() {
         return (0, Vec::new());
@@ -418,6 +420,26 @@ fn row_widths(children: &[Node], gap: u16, align: Align, width: u16) -> (u16, Ve
                 *width -= given;
                 over -= given;
             }
+        }
+        while over > 0 {
+            let widest = children
+                .iter()
+                .zip(widths.iter())
+                .enumerate()
+                .filter(|(_, (child, width))| {
+                    matches!(
+                        child.kind,
+                        NodeKind::Text {
+                            truncate: false,
+                            ..
+                        }
+                    ) && **width > wrap_floor(child)
+                })
+                .max_by_key(|(_, (_, width))| **width)
+                .map(|(index, _)| index);
+            let Some(index) = widest else { break };
+            widths[index] -= 1;
+            over -= 1;
         }
         let mut left = room;
         for width in &mut widths {
@@ -444,6 +466,22 @@ fn row_widths(children: &[Node], gap: u16, align: Align, width: u16) -> (u16, Ve
         }
     }
     (0, widths)
+}
+
+/// The narrowest a wrapping text is drawn in a crowded row: its longest
+/// word, or its whole self when that is shorter, and never under its
+/// `min-width`.
+fn wrap_floor(node: &Node) -> u16 {
+    let NodeKind::Text { spans, .. } = &node.kind else {
+        return natural(node);
+    };
+    let longest = spans
+        .iter()
+        .flat_map(|span| span.text.split_whitespace())
+        .map(|word| cells_of(text::columns(word)))
+        .max()
+        .unwrap_or(0);
+    longest.max(node.min_width).min(natural(node))
 }
 
 /// The cells of a table's row: a row node's children, or any other node as
