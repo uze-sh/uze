@@ -17,7 +17,7 @@ use uze_contract::{Clean, CompiledView, Condition, Item, NodeName};
 use super::time::since_ms;
 use super::trace::{Absence, TraceNode};
 use super::value::{Env, Scopes, as_count, as_flag, as_number, as_role, path_text, scalar_text};
-use crate::view::{self, Align, NodeKind, Role, Segment, Tab};
+use crate::view::{self, Align, ChartKind, NodeKind, Role, Segment, Tab};
 
 /// The most nodes one tree holds. Past it the build stops and says so:
 /// two nested `each` over a large answer would otherwise draw (and cost)
@@ -407,6 +407,13 @@ impl<'a> Builder<'a> {
             .replace('\n', " ")
     }
 
+    /// A block of text that keeps its lines: Markdown or code, bounded as
+    /// a block and cleaned like every other string.
+    fn block(&self, node: &'a Compiled, scopes: &[&'a Value]) -> String {
+        let text = self.arg(node, scopes, 0).map(|value| scalar_text(&value));
+        Clean::text(&text.unwrap_or_default()).into_string()
+    }
+
     fn text_prop(&self, node: &'a Compiled, scopes: &[&'a Value], name: &str) -> Option<String> {
         self.prop(node, scopes, name)
             .map(|value| Clean::label(&scalar_text(&value)).into_string())
@@ -504,7 +511,7 @@ fn make_node<'a>(
 ) -> Option<view::Node> {
     if matches!(
         node.name,
-        NodeName::Mark | NodeName::Segment | NodeName::Tab
+        NodeName::Mark | NodeName::Segment | NodeName::Tab | NodeName::Entry
     ) {
         trace.absent(Absence::Misplaced);
         return None;
@@ -543,6 +550,16 @@ fn make_node<'a>(
         }
         NodeName::Progress => progress(builder, node, scopes, trace),
         NodeName::Tabs => tabs(builder, node, scopes, trace, id),
+        NodeName::Details => {
+            children = builder.expand(&node.children, scopes, &mut trace.children, make_entry);
+            NodeKind::Details
+        }
+        NodeName::Grid => {
+            children = builder.expand(&node.children, scopes, &mut trace.children, make_node);
+            NodeKind::Grid {
+                gap: builder.count_prop(node, scopes, "gap"),
+            }
+        }
         _ => leaf(builder, node, scopes, id),
     };
     let mut built = view::Node::new(id, kind);
@@ -550,6 +567,21 @@ fn make_node<'a>(
     built.min_width = builder.count_prop(node, scopes, "min-width");
     built.children = children;
     Some(built)
+}
+
+/// One pair of a `Details`; anything else there is misplaced.
+fn make_entry<'a>(
+    builder: &mut Builder<'a>,
+    node: &'a Compiled,
+    scopes: &mut Scopes<'a>,
+    trace: &mut TraceNode,
+) -> Option<view::Node> {
+    if node.name != NodeName::Entry {
+        trace.absent(Absence::Misplaced);
+        return None;
+    }
+    let id = builder.id();
+    Some(view::Node::new(id, leaf(builder, node, scopes, id)))
 }
 
 fn leaf<'a>(
@@ -617,6 +649,43 @@ fn leaf<'a>(
                 .prop(node, scopes, "lines")
                 .map(|value| log_lines(&value))
                 .unwrap_or_default(),
+        },
+        NodeName::Rule => NodeKind::Rule {
+            label: Some(builder.label(node, scopes)).filter(|label| !label.is_empty()),
+            role: builder.role_prop(node, scopes),
+        },
+        NodeName::Entry => NodeKind::Entry {
+            key: builder.label(node, scopes),
+            value: builder
+                .arg(node, scopes, 1)
+                .map(|value| Clean::label(&scalar_text(&value)).into_string())
+                .unwrap_or_default(),
+            role: builder.role_prop(node, scopes),
+        },
+        NodeName::Markdown => NodeKind::Markdown {
+            text: builder.block(node, scopes),
+        },
+        NodeName::Code => NodeKind::Code {
+            text: builder.block(node, scopes),
+            language: builder
+                .text_prop(node, scopes, "language")
+                .unwrap_or_default(),
+        },
+        NodeName::Gauge => gauge(builder, node, scopes),
+        NodeName::Chart => chart(builder, node, scopes),
+        NodeName::Stat => NodeKind::Stat {
+            value: builder.label(node, scopes),
+            label: builder
+                .arg(node, scopes, 1)
+                .map(|value| Clean::label(&scalar_text(&value)).into_string())
+                .unwrap_or_default(),
+            delta: builder
+                .text_prop(node, scopes, "delta")
+                .filter(|delta| !delta.is_empty()),
+            role: builder.role_prop(node, scopes),
+        },
+        NodeName::Kbd => NodeKind::Kbd {
+            key: builder.label(node, scopes),
         },
         // Containers are built by `make_node`, and parts of a container by
         // their container; neither reaches here.
@@ -770,6 +839,80 @@ fn make_tab<'a>(
 }
 
 /// A ratio as thousandths, held to `0..=1000`.
+/// A gauge's role: its own until its ratio reaches the `warning`
+/// threshold, then `warning`, then `danger` past that one.
+fn gauge<'a>(builder: &Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
+    let number = |name: &str| {
+        builder
+            .prop(node, scopes, name)
+            .and_then(|value| as_number(&value))
+    };
+    let ratio = number("ratio").unwrap_or(0.0).clamp(0.0, 1.0);
+    let reached = |name: &str| number(name).is_some_and(|threshold| ratio >= threshold);
+    let role = if reached("danger") {
+        Role::Danger
+    } else if reached("warning") {
+        Role::Warning
+    } else {
+        builder.role_prop(node, scopes)
+    };
+    NodeKind::Gauge {
+        label: builder.label(node, scopes),
+        filled: thousandths(ratio),
+        role,
+    }
+}
+
+/// The largest series a chart draws, so a fixture cannot widen a view
+/// without limit.
+const CHART_MAX: usize = 512;
+/// How tall a bar chart is when it does not say.
+const BARS_HEIGHT: u16 = 4;
+/// The tallest a bar chart may be.
+const BARS_MAX: u16 = 24;
+
+/// A chart's series as thousandths of its largest value: negative and
+/// non-numeric values draw as nothing.
+fn chart<'a>(builder: &Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
+    let values: Vec<f64> = builder
+        .prop(node, scopes, "series")
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .take(CHART_MAX)
+        .map(|value| as_number(value).unwrap_or(0.0).max(0.0))
+        .collect();
+    let top = values.iter().copied().fold(0.0_f64, f64::max);
+    let levels = values
+        .iter()
+        .map(|value| match top > 0.0 {
+            true => thousandths(value / top),
+            false => 0,
+        })
+        .collect();
+    let kind = match builder
+        .prop(node, scopes, "kind")
+        .as_deref()
+        .and_then(Value::as_str)
+    {
+        Some("bar") => ChartKind::Bar,
+        _ => ChartKind::Sparkline,
+    };
+    let height = match kind {
+        ChartKind::Sparkline => 1,
+        ChartKind::Bar => match builder.count_prop(node, scopes, "height") {
+            0 => BARS_HEIGHT,
+            asked => asked.min(BARS_MAX),
+        },
+    };
+    NodeKind::Chart {
+        kind,
+        levels,
+        height,
+        role: builder.role_prop(node, scopes),
+    }
+}
+
 fn thousandths(ratio: f64) -> u16 {
     (ratio * 1000.0).round().clamp(0.0, 1000.0) as u16
 }

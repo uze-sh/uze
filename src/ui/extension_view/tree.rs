@@ -11,6 +11,8 @@
 //! [`Clock`] the frame is handed, which is how both stay current without
 //! the extension being asked for a new tree.
 
+mod display;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use uze_extensions::view::{Align, Node, NodeAct, NodeKind, Segment, Tab};
@@ -119,6 +121,7 @@ pub(super) fn render_tree(
         held,
         hits,
         folded: None,
+        gauge_labels: None,
     };
     painter.node(root, area.x, area.width, 0);
     if held.fold && overflows {
@@ -324,6 +327,26 @@ fn natural(node: &Node) -> u16 {
                 .unwrap_or(0),
         ),
         NodeKind::Notice { text: said, .. } => cells_of(text::columns(said)),
+        NodeKind::Rule { label, .. } => display::rule_width(label.as_deref()),
+        NodeKind::Details => {
+            let (keys, values) = entry_columns(&node.children);
+            keys.saturating_add(2).saturating_add(values)
+        }
+        NodeKind::Entry { key, value, .. } => cells_of(text::columns(key))
+            .saturating_add(2)
+            .saturating_add(cells_of(text::columns(value))),
+        NodeKind::Markdown { text: source } => display::block_width(source).min(MARKDOWN_MEASURE),
+        NodeKind::Code { text: source, .. } => display::block_width(source),
+        NodeKind::Gauge { label, .. } => display::gauge_width(label),
+        NodeKind::Chart { levels, .. } => cells_of(levels.len()),
+        NodeKind::Stat {
+            value,
+            label,
+            delta,
+            ..
+        } => display::stat_width(value, label, delta.as_deref()),
+        NodeKind::Kbd { key } => cells_of(text::columns(key)),
+        NodeKind::Grid { .. } => node.children.iter().map(natural).max().unwrap_or(0),
     };
     own.max(node.min_width)
 }
@@ -379,7 +402,33 @@ fn height(node: &Node, width: u16) -> usize {
         NodeKind::Notice { text: said, role } => wrapped(&[Span::new(said.clone(), *role)], width)
             .len()
             .max(1),
-        NodeKind::Badge { .. }
+        NodeKind::Details => node.children.len(),
+        NodeKind::Markdown { text: source } => display::markdown(source, width).len().max(1),
+        NodeKind::Code {
+            text: source,
+            language,
+        } => display::code(source, language, width).len().max(1),
+        NodeKind::Chart { height: rows, .. } => usize::from(*rows),
+        NodeKind::Stat { .. } => 2,
+        NodeKind::Grid { gap } => {
+            let (columns, tile) = grid_columns(node, *gap, width);
+            let rows: Vec<usize> = node
+                .children
+                .chunks(columns)
+                .map(|row| {
+                    row.iter()
+                        .map(|child| height(child, tile))
+                        .max()
+                        .unwrap_or(0)
+                })
+                .collect();
+            rows.iter().sum::<usize>() + usize::from(*gap > 0) * rows.len().saturating_sub(1)
+        }
+        NodeKind::Rule { .. }
+        | NodeKind::Entry { .. }
+        | NodeKind::Gauge { .. }
+        | NodeKind::Kbd { .. }
+        | NodeKind::Badge { .. }
         | NodeKind::Marks(_)
         | NodeKind::Pips { .. }
         | NodeKind::Progress { .. }
@@ -388,6 +437,40 @@ fn height(node: &Node, width: u16) -> usize {
         | NodeKind::Button { .. }
         | NodeKind::Activity { .. } => 1,
     }
+}
+
+/// The widest a `Markdown` asks to be: a reading measure, past which its
+/// paragraphs would be lines too long to follow.
+const MARKDOWN_MEASURE: u16 = 80;
+/// A `Grid`'s tile when it names no `min-width`.
+const GRID_TILE: u16 = 24;
+
+/// A `Grid`'s columns at `width`, and each tile's width: as many as fit
+/// its `min-width` with `gap` between them, never fewer than one.
+fn grid_columns(grid: &Node, gap: u16, width: u16) -> (usize, u16) {
+    let tile = match grid.min_width {
+        0 => GRID_TILE,
+        asked => asked,
+    };
+    let columns = (u32::from(width) + u32::from(gap)) / (u32::from(tile) + u32::from(gap));
+    let columns = u16::try_from(columns.max(1))
+        .unwrap_or(1)
+        .min(cells_of(grid.children.len().max(1)));
+    let gaps = gap.saturating_mul(columns - 1);
+    (usize::from(columns), width.saturating_sub(gaps) / columns)
+}
+
+/// The key and value columns of a `Details`' entries.
+fn entry_columns(entries: &[Node]) -> (u16, u16) {
+    entries
+        .iter()
+        .fold((0, 0), |(keys, values), entry| match &entry.kind {
+            NodeKind::Entry { key, value, .. } => (
+                keys.max(cells_of(text::columns(key))),
+                values.max(cells_of(text::columns(value))),
+            ),
+            _ => (keys, values),
+        })
 }
 
 /// Where a row's children start and how wide each is drawn.
@@ -722,6 +805,9 @@ struct Painter<'p, 'f> {
     hits: &'p mut Vec<(Rect, ViewHit)>,
     /// Where a folded tree stopped and how many nodes it left out there.
     folded: Option<(usize, usize)>,
+    /// The label column the gauges of the stack being drawn share, so
+    /// their bars start together.
+    gauge_labels: Option<u16>,
 }
 
 impl Painter<'_, '_> {
@@ -908,6 +994,128 @@ impl Painter<'_, '_> {
                     self.line(y + row, x, width, line);
                 }
             }
+            NodeKind::Rule { label, role } => {
+                self.line(y, x, width, display::rule(label.as_deref(), *role, width));
+            }
+            NodeKind::Details => {
+                let keys: Vec<&str> = node
+                    .children
+                    .iter()
+                    .filter_map(|entry| match &entry.kind {
+                        NodeKind::Entry { key, .. } => Some(key.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                let column = display::key_column(&keys, width);
+                for (row, entry) in node.children.iter().enumerate() {
+                    if let NodeKind::Entry { key, value, role } = &entry.kind {
+                        if self.held.fold && !self.fits(y + row, 1) {
+                            return self.fold_at(y + row, node.children.len() - row);
+                        }
+                        self.line(
+                            y + row,
+                            x,
+                            width,
+                            display::entry(key, value, *role, column, width),
+                        );
+                    }
+                }
+            }
+            NodeKind::Entry { key, value, role } => {
+                let column = display::key_column(&[key], width);
+                self.line(
+                    y,
+                    x,
+                    width,
+                    display::entry(key, value, *role, column, width),
+                );
+            }
+            NodeKind::Markdown { text: source } => {
+                return self.rows_of(display::markdown(source, width), x, width, y);
+            }
+            NodeKind::Code {
+                text: source,
+                language,
+            } => return self.rows_of(display::code(source, language, width), x, width, y),
+            NodeKind::Gauge {
+                label,
+                filled,
+                role,
+            } => {
+                let column = self.gauge_labels.unwrap_or(cells_of(text::columns(label)));
+                self.line(
+                    y,
+                    x,
+                    width,
+                    display::gauge(label, column, *filled, *role, width),
+                );
+            }
+            NodeKind::Chart {
+                kind,
+                levels,
+                height: rows,
+                role,
+            } => {
+                return self.rows_of(
+                    display::chart(*kind, levels, *rows, *role, width),
+                    x,
+                    width,
+                    y,
+                );
+            }
+            NodeKind::Stat {
+                value,
+                label,
+                delta,
+                role,
+            } => {
+                return self.rows_of(
+                    display::stat(value, label, delta.as_deref(), *role, width),
+                    x,
+                    width,
+                    y,
+                );
+            }
+            NodeKind::Kbd { key } => self.line(y, x, width, display::kbd(key, width)),
+            NodeKind::Grid { gap } => return self.grid(node, *gap, x, width, y),
+        }
+        true
+    }
+
+    /// Lines one under another from row `y`; folding, the first that does
+    /// not fit ends the tree.
+    fn rows_of(&mut self, lines: Vec<Line<'static>>, x: u16, width: u16, y: usize) -> bool {
+        let count = lines.len();
+        for (row, line) in lines.into_iter().enumerate() {
+            if self.held.fold && !self.fits(y + row, 1) {
+                return self.fold_at(y + row, count - row);
+            }
+            self.line(y + row, x, width, line);
+        }
+        true
+    }
+
+    /// Tiles row by row, each row as tall as its tallest tile.
+    fn grid(&mut self, node: &Node, gap: u16, x: u16, width: u16, y: usize) -> bool {
+        let (columns, tile) = grid_columns(node, gap, width);
+        let mut at = y;
+        for (index, row) in node.children.chunks(columns).enumerate() {
+            let rows = row
+                .iter()
+                .map(|child| height(child, tile))
+                .max()
+                .unwrap_or(0);
+            if self.held.fold && !self.fits(at, rows) {
+                return self.fold_at(at, node.children.len() - index * columns);
+            }
+            let mut left = x;
+            for child in row {
+                if !self.node(child, left, tile, at) {
+                    return false;
+                }
+                left = left.saturating_add(tile).saturating_add(gap);
+            }
+            at += rows + usize::from(gap > 0);
         }
         true
     }
@@ -915,6 +1123,20 @@ impl Painter<'_, '_> {
     /// Children one above another; folding, the first that does not fit
     /// whole ends the tree.
     fn stack(&mut self, children: &[Node], gap: u16, x: u16, width: u16, y: usize) -> bool {
+        let labels = children
+            .iter()
+            .filter_map(|child| match &child.kind {
+                NodeKind::Gauge { label, .. } => Some(cells_of(text::columns(label))),
+                _ => None,
+            })
+            .max();
+        let outer = std::mem::replace(&mut self.gauge_labels, labels);
+        let drawn = self.stacked(children, gap, x, width, y);
+        self.gauge_labels = outer;
+        drawn
+    }
+
+    fn stacked(&mut self, children: &[Node], gap: u16, x: u16, width: u16, y: usize) -> bool {
         let mut at = y;
         for (index, child) in children.iter().enumerate() {
             let rows = height(child, width);

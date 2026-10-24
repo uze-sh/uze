@@ -1075,3 +1075,157 @@ fn too_many_tab_combinations_bind_each_tab_alone() {
         "{missing:#?}"
     );
 }
+
+#[test]
+fn a_gauge_turns_at_its_thresholds_and_a_chart_scales_to_its_largest() {
+    let gauge = |used: f64| {
+        let extension = hosted(
+            vec![
+                n(NodeName::Gauge)
+                    .arg("Context")
+                    .prop("ratio", "{used}")
+                    .prop("role", "info")
+                    .literal("warning", json!(0.7))
+                    .literal("danger", json!(0.9))
+                    .item(),
+            ],
+            json!({ "used": used }),
+        );
+        tree(&extension).children[0].kind.clone()
+    };
+    assert!(matches!(
+        gauge(0.5),
+        NodeKind::Gauge {
+            role: Role::Info,
+            filled: 500,
+            ..
+        }
+    ));
+    assert!(matches!(
+        gauge(0.75),
+        NodeKind::Gauge {
+            role: Role::Warning,
+            ..
+        }
+    ));
+    assert!(matches!(
+        gauge(0.93),
+        NodeKind::Gauge {
+            role: Role::Danger,
+            filled: 930,
+            ..
+        }
+    ));
+
+    let extension = hosted(
+        vec![
+            n(NodeName::Chart)
+                .prop("series", "{history}")
+                .prop("kind", "bar")
+                .item(),
+        ],
+        json!({ "history": [1, 4, 8, -3, "x"] }),
+    );
+    let NodeKind::Chart {
+        kind,
+        levels,
+        height,
+        ..
+    } = tree(&extension).children[0].kind.clone()
+    else {
+        panic!("a chart");
+    };
+    assert_eq!(kind, view::ChartKind::Bar);
+    assert_eq!(levels, [125, 500, 1000, 0, 0]);
+    assert_eq!(height, 4, "the default height of bars");
+}
+
+#[test]
+fn details_stats_rules_blocks_and_keys_bind_their_arguments() {
+    let extension = hosted(
+        vec![
+            n(NodeName::Details)
+                .child(
+                    n(NodeName::Entry)
+                        .arg("Plan")
+                        .arg("{plan}")
+                        .prop("role", "info"),
+                )
+                .item(),
+            n(NodeName::Stat)
+                .arg("{cost}")
+                .arg("Today")
+                .prop("delta", "+12%")
+                .prop("role", "success")
+                .item(),
+            n(NodeName::Rule).arg("Blockers").item(),
+            n(NodeName::Rule).item(),
+            n(NodeName::Markdown).arg("{plan_text}").item(),
+            n(NodeName::Code)
+                .arg("{snippet}")
+                .prop("language", "rust")
+                .item(),
+            n(NodeName::Kbd).arg("alt+k").item(),
+            n(NodeName::Grid)
+                .prop("gap", "2")
+                .child(n(NodeName::Text).arg("a"))
+                .item(),
+        ],
+        json!({ "plan": "Max 5x", "cost": "$15.48", "plan_text": "## Plan\n- one", "snippet": "fn main() {}\n" }),
+    );
+    let root = tree(&extension);
+    let kinds: Vec<NodeKind> = root.children.iter().map(|node| node.kind.clone()).collect();
+    assert_eq!(kinds[0], NodeKind::Details);
+    assert_eq!(
+        root.children[0].children[0].kind,
+        NodeKind::Entry {
+            key: "Plan".into(),
+            value: "Max 5x".into(),
+            role: Role::Info
+        }
+    );
+    assert_eq!(
+        kinds[1],
+        NodeKind::Stat {
+            value: "$15.48".into(),
+            label: "Today".into(),
+            delta: Some("+12%".into()),
+            role: Role::Success
+        }
+    );
+    assert_eq!(
+        kinds[2],
+        NodeKind::Rule {
+            label: Some("Blockers".into()),
+            role: Role::Default
+        }
+    );
+    assert_eq!(
+        kinds[3],
+        NodeKind::Rule {
+            label: None,
+            role: Role::Default
+        }
+    );
+    assert_eq!(
+        kinds[4],
+        NodeKind::Markdown {
+            text: "## Plan\n- one".into()
+        },
+        "lines kept"
+    );
+    assert_eq!(
+        kinds[5],
+        NodeKind::Code {
+            text: "fn main() {}\n".into(),
+            language: "rust".into()
+        }
+    );
+    assert_eq!(
+        kinds[6],
+        NodeKind::Kbd {
+            key: "alt+k".into()
+        }
+    );
+    assert_eq!(kinds[7], NodeKind::Grid { gap: 2 });
+}

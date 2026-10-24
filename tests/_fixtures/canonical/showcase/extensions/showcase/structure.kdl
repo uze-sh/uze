@@ -1,0 +1,12 @@
+Stack gap=1 {
+    Details {
+        Entry "Plan" "{plan_name}" role="info"
+        Entry "Branch" "{branch}"
+        Entry "Resets in" "{resets}" role="warning"
+    }
+    Rule
+    Row gap=1 {
+        Kbd "alt+k"
+        Text "closes this drawer" role="muted"
+    }
+}
