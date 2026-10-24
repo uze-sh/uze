@@ -27,3 +27,23 @@
 - decided:  `uze-application` answers `check_extension(dir, overlay)`: compile diagnostics, fixtures, decoded tests and file texts, all structured (`ExtensionDiagnostic`). The root crate adds the engine's findings (`extension_check::bind_fixtures`, then the test runner) to that one value, and both `uze agent plugin check` and the language server call that same path.
 - rejected: Adding a `uze-extensions` dependency to `uze-application`, which would invert the layering the architecture tests hold.
 - blast:    `CheckedExtension`'s diagnostics went from strings to `ExtensionDiagnostic`; JSON output still prints them as the same lines.
+
+## D4 — Run tests from the library's ui module, not src/cli
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  T2 placed the runner in `src/cli/extension_test/`. The CLI is the binary crate and the renderers are private modules of the library's `ui`, which the binary cannot reach.
+- decided:  The runner is `uze::ui::extension_test`, a public module of `ui` whose children may reach `extension_view`, the widgets and the theme; `uze agent plugin check` calls `run_tests` from the binary.
+- rejected: Making `extension_view` and the widgets public to the binary: the TUI's internals would become the library's API.
+- blast:    The module moves; nothing else names it.
+
+## D5 — Default sizes per slot, and a text match that reads across wrapped rows
+
+- status:   pending
+- task:     3.3
+- commit:
+- trigger:  The spec says what a test leaves unsaid takes "the slot's default size" without naming one, and a wrapped paragraph is never on one row.
+- decided:  A `view` is drawn at 100×30, a `section` at 30×16 (the sidebar's width), a `drawer` at 46×30. `expect-text` passes when the text is on one row, or when its words follow each other across rows once the drawer's frame is set aside.
+- rejected: Requiring `size` in every test (noisier tests for the common case); matching only within a row (every long paragraph would need a substring chosen to fit a row).
+- blast:    Snapshot file names carry the size, so a changed default renames the snapshots of tests that omit `size`.

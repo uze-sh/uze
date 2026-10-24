@@ -13,11 +13,11 @@
 
 ## 3. The test runner
 
-- [ ] 3.1 `src/cli/extension_test/`: build the world, draw a surface in its slot's frame (view with attribution, section at sidebar width, drawer in its card) into a `TestBackend`, and keep the renderer's hit rects
-- [ ] 3.2 Gestures: `click` and `press-button` by drawn text through the hit map, `press` through `uze-keys` in `Scope::Declared`, a redraw after each; a target not drawn fails naming what was drawn
-- [ ] 3.3 Expectations: `expect-text`, `expect-no-text`, `expect-absent` with `because` against the trace, `expect-action` with arguments against the recorded actions
-- [ ] 3.4 Snapshots (T3): text and token grids with a legend and the protocol version, colour mapped to tokens through the palette, a row diff on mismatch, `--update-snapshots` writing and naming each file
-- [ ] 3.5 `uze agent plugin check` runs every test and fails on a failing one, naming the test, the file and the step's line; the report follows the `design-system` skill (read it first, run its checklist)
+- [x] 3.1 `src/cli/extension_test/`: build the world, draw a surface in its slot's frame (view with attribution, section at sidebar width, drawer in its card) into a `TestBackend`, and keep the renderer's hit rects
+- [x] 3.2 Gestures: `click` and `press-button` by drawn text through the hit map, `press` through `uze-keys` in `Scope::Declared`, a redraw after each; a target not drawn fails naming what was drawn
+- [x] 3.3 Expectations: `expect-text`, `expect-no-text`, `expect-absent` with `because` against the trace, `expect-action` with arguments against the recorded actions
+- [x] 3.4 Snapshots (T3): text and token grids with a legend and the protocol version, colour mapped to tokens through the palette, a row diff on mismatch, `--update-snapshots` writing and naming each file
+- [x] 3.5 `uze agent plugin check` runs every test and fails on a failing one, naming the test, the file and the step's line; the report follows the `design-system` skill (read it first, run its checklist)
 - [ ] 3.6 One orchestrator test proving a test's click and the workspace's click on the same surface reach the same node
 
 ## 4. The language server

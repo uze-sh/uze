@@ -52,6 +52,9 @@ mod agent_support;
 mod chime;
 pub mod extension_host;
 mod extension_switch;
+/// An extension's tests, drawn and driven the way the workspace draws and
+/// drives its surfaces; run by `uze agent plugin check`.
+pub mod extension_test;
 mod extension_view;
 mod graphics;
 mod hit;

@@ -161,11 +161,19 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                 )
             });
         }
-        AgentPluginAction::Check { path, format } => {
+        AgentPluginAction::Check {
+            path,
+            update_snapshots,
+            format,
+        } => {
             let report = app.project().check(&path, false)?;
             let mut extensions = app.extensions().check(&path);
+            let mut runs = uze::ui::extension_test::Runs::new();
             for extension in &mut extensions {
                 super::extension_check::bind_fixtures(extension);
+                let run = uze::ui::extension_test::run_tests(app, extension, update_snapshots);
+                extension.errors.extend(run.failures.iter().cloned());
+                runs.insert(extension.id.clone(), run);
             }
             let checked = PluginCheckReport {
                 report: &report,
@@ -175,7 +183,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                 format!(
                     "{}{}",
                     render_check(checked.report, false, checked.extensions),
-                    super::extension_check::render_extensions(checked.extensions)
+                    super::extension_check::render_extensions(checked.extensions, &runs)
                 )
             });
             let problems = report.findings.len()
