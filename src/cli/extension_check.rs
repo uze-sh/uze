@@ -64,17 +64,18 @@ pub(crate) fn bind_fixtures(checked: &mut CheckedExtension) {
 }
 
 /// Every field a node was not drawn for because the data lacks it, in the
-/// order the view writes them.
+/// order the view writes them. A `when` that some item answered is the
+/// presence test doing its job on the others, so it is said only when no
+/// item ever held the field: then it is likely misspelled.
 fn missing_fields(nodes: &[TraceNode], into: &mut Vec<(Span, String)>) {
     for node in nodes {
         for absence in &node.absent {
             let field = match absence {
-                Absence::Missing { field }
-                | Absence::EachMissing { field }
-                | Absence::When {
+                Absence::Missing { field } | Absence::EachMissing { field } => field,
+                Absence::When {
                     field,
                     missing: true,
-                } => field,
+                } if node.drawn == 0 => field,
                 _ => continue,
             };
             into.push((node.span, field.clone()));
@@ -104,4 +105,40 @@ pub(crate) fn render_extensions(extensions: &[CheckedExtension]) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use uze_contract::NodeName;
+    use uze_extensions::declared::TraceEntry;
+
+    use super::*;
+
+    fn guarded(drawn: u32) -> TraceNode {
+        TraceNode {
+            entry: TraceEntry::Node(NodeName::Text),
+            span: Span { offset: 7, len: 4 },
+            reached: 3,
+            drawn,
+            absent: vec![Absence::When {
+                field: "tools".to_owned(),
+                missing: true,
+            }],
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_when_some_item_answered_is_not_a_missing_field() {
+        let mut said = Vec::new();
+        missing_fields(&[guarded(2)], &mut said);
+        assert!(said.is_empty(), "{said:?}");
+    }
+
+    #[test]
+    fn a_when_no_item_ever_answered_is_said_as_likely_misspelled() {
+        let mut said = Vec::new();
+        missing_fields(&[guarded(0)], &mut said);
+        assert_eq!(said, [(Span { offset: 7, len: 4 }, "tools".to_owned())]);
+    }
 }
