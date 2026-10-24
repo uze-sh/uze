@@ -65,7 +65,8 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--category <word>] [--hook] [--mcp] [--agent] [--rules]
+    [--category <word>] [--hook] [--mcp] [--agent] [--rules] \
+    [--extension <id>]
 ```
 
 Each field has one file that owns it. `plugin.json` describes the plugin:
@@ -100,7 +101,12 @@ is refused there, the package with it — `uze agent plugin check` names
 each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `scripts/` (keep its stdout for the protocol alone — log to stderr);
 `--agent` adds an agent definition under `agents/<name>.md`;
-`--rules` adds `rules/` with one example rule (see below). There is no
+`--rules` adds `rules/` with one example rule (see below);
+`--extension <id>` adds a declared extension under `extensions/<id>/`: an
+`extension.kdl` declaring a `view` and a sidebar `section`, the
+`board.kdl` view both draw, and the `fixtures/board.json` it is bound to
+(the id is lowercase with single hyphens, and `code`, `architect`, `spec`
+and `uze` are taken). There is no
 `--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
 flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -184,6 +190,13 @@ arrives here, before anything is delivered. Its `Agent Plugins 1.0`
 section says whether the plugin is a valid plugin of the standard or names
 what keeps it from being one; that is advice, never a reason the check
 fails.
+
+Each extension the plugin carries is compiled with the rules the
+workspace hosts it with; what is wrong is said under `extension <id>` as
+`file:line:column: message (suggestion)`, and fails the check. Each
+surface's view is then bound to its source's fixture, and a field the view
+names that the fixture lacks is a warning placed in the view: add the
+field to the fixture, or stop naming it.
 
 A warning does not fail the check, but it is still yours to resolve: each
 one names the file and the one change that clears it. A marketplace

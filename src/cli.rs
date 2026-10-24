@@ -4,6 +4,7 @@
 
 mod agent;
 mod config;
+mod extension_check;
 mod grammar;
 mod help;
 mod install;
