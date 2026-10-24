@@ -65,7 +65,8 @@ fn a_quote_keeps_its_bar_and_code_hangs_past_its_indent() {
 
     let code = prose_at("```bash\ngit commit -m feat-preview-resources\n```\n", 20);
     assert_eq!(code[0], "  git commit -m");
-    assert_eq!(code[1], "    feat-preview-res");
+    assert_eq!(code[1], "    feat-preview-");
+    assert_eq!(code[2], "    resources");
 }
 
 /// A word longer than a whole row is broken where the row ends, since
@@ -79,6 +80,24 @@ fn a_word_longer_than_a_row_is_broken_at_the_cell() {
     );
     assert_eq!(rows[0], "See");
     assert!(rows[1].starts_with("https://"));
+}
+
+/// A long identifier breaks where it is joined, so no row ends mid-name
+/// when the word offers a `/`, `_`, `.` or `-` to break after.
+#[test]
+fn a_long_word_breaks_after_a_joint_rather_than_mid_name() {
+    let rows = prose_at(
+        "CashierExportController/Service cash_session_integration_status\n",
+        26,
+    );
+    assert!(
+        rows.iter().all(|row| row.chars().count() <= 26),
+        "{rows:#?}"
+    );
+    assert_eq!(rows[0], "CashierExportController/");
+    assert_eq!(rows[1], "Service");
+    assert_eq!(rows[2], "cash_session_integration_");
+    assert_eq!(rows[3], "status");
 }
 
 #[test]

@@ -1200,18 +1200,21 @@ fn the_drawer_is_resized_by_its_edge_and_remembers_it() {
     let slot = drawer_slot(&model);
     model.toggle_drawer(slot, 200);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
+    // Wide enough that six columns either way stay within the drawer's
+    // bounds and the pane's floor.
+    driven.area = ratatui::layout::Rect::new(0, 0, 200, 40);
     driven.frame();
     let before = layout_of(&driven);
     let edge = drawn(&driven.attach.model, WorkspaceHit::ResizeDock);
     driven.press(edge.x, edge.y + 3);
     assert!(driven.attach.model.dragging_dock, "held");
     driven.mouse(
-        edge.x - 6,
+        edge.x + 6,
         edge.y + 3,
         crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
     );
     driven.mouse(
-        edge.x - 6,
+        edge.x + 6,
         edge.y + 3,
         crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
     );
@@ -1223,11 +1226,11 @@ fn the_drawer_is_resized_by_its_edge_and_remembers_it() {
     );
     let after = layout_of(&driven);
     assert_eq!(
-        after.pane.width + 6,
-        before.pane.width,
-        "the pane gave up six"
+        after.pane.width,
+        before.pane.width + 6,
+        "the pane took six back"
     );
-    assert_eq!(after.drawer.unwrap().x + 6, before.drawer.unwrap().x);
+    assert_eq!(after.drawer.unwrap().x, before.drawer.unwrap().x + 6);
 
     driven.attach.model.close_drawer();
     driven.attach.model.toggle_drawer(slot, 200);
