@@ -216,13 +216,6 @@ fn render_tree_rows(
 
 /// The rows a declared section takes when open at `width`, header
 /// included: what the host reserves for it in its column.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the declared-section host reserves it (tasks 5.3)"
-    )
-)]
 pub(crate) fn tree_section_height(root: &uze_extensions::view::Node, width: u16) -> u16 {
     SECTION_CHROME.saturating_add(tree::tree_height(
         root,

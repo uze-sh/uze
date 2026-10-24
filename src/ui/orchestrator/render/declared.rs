@@ -108,6 +108,7 @@ fn render_inspector(
 /// content and a row of air, within a third of what the column has left.
 pub(super) fn declared_section_height(
     section: &uze_extensions::view::Section,
+    width: u16,
     remaining: u16,
 ) -> u16 {
     let budget = remaining / 3;
@@ -117,31 +118,9 @@ pub(super) fn declared_section_height(
     if section.collapsed {
         return SECTION_CHROME;
     }
-    let body = match &section.tree {
-        Some(tree) => tree_rows(tree),
-        None => u16::try_from(section.rows.len()).unwrap_or(u16::MAX),
+    let open = match &section.tree {
+        Some(tree) => crate::ui::extension_view::tree_section_height(tree, width),
+        None => SECTION_CHROME + u16::try_from(section.rows.len()).unwrap_or(u16::MAX),
     };
-    (SECTION_CHROME + body + SECTION_AIR).min(budget)
-}
-
-/// How many rows a tree of nodes asks for, laid out as the renderer lays
-/// it: a stack is its children and their gaps, a row its tallest child, a
-/// list or a table a row per child (and its headings).
-pub(super) fn tree_rows(node: &uze_extensions::view::Node) -> u16 {
-    use uze_extensions::view::NodeKind;
-    let children = || node.children.iter().map(tree_rows);
-    match &node.kind {
-        NodeKind::Stack { gap } => {
-            let count = u16::try_from(node.children.len()).unwrap_or(u16::MAX);
-            children()
-                .fold(0u16, u16::saturating_add)
-                .saturating_add(gap.saturating_mul(count.saturating_sub(1)))
-        }
-        NodeKind::Row { .. } => children().max().unwrap_or(1),
-        NodeKind::List { .. } => children().fold(0u16, u16::saturating_add).max(1),
-        NodeKind::Table { .. } => children().fold(0u16, u16::saturating_add).saturating_add(1),
-        NodeKind::Log { lines } => u16::try_from(lines.len()).unwrap_or(u16::MAX).max(1),
-        NodeKind::Tabs { .. } => children().fold(1u16, u16::saturating_add),
-        _ => 1,
-    }
+    (open + SECTION_AIR).min(budget)
 }

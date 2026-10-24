@@ -212,10 +212,6 @@ pub(crate) fn tree_animates(root: &Node) -> bool {
 /// The strip naming whose a declared view is, across the top of `area`,
 /// answering with the room left under it: the view is drawn there, so no
 /// part of it can cover the strip.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the declared-view host draws it (tasks 5.3)")
-)]
 pub(crate) fn render_attribution(frame: &mut ratatui::Frame<'_>, area: Rect, said: &str) -> Rect {
     if area.height == 0 {
         return area;
@@ -240,10 +236,6 @@ pub(crate) fn render_attribution(frame: &mut ratatui::Frame<'_>, area: Rect, sai
 
 /// What the attribution strip says: the extension, and the plugin and
 /// marketplace it came from.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the declared-view host draws it (tasks 5.3)")
-)]
 pub(crate) fn attribution(extension: &str, plugin: &str, marketplace: &str) -> String {
     format!(
         "{extension}{}{plugin}@{marketplace}",

@@ -16,8 +16,11 @@ use super::*;
 use uze_application::{
     CompiledExtension, ExtensionDiagnostic, ExtensionIdentity, InstalledExtension, SourceData,
 };
+use uze_contract::Clean;
 use uze_extensions::contract::{Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
-use uze_extensions::declared::{DeclaredExtension, RecordedAction};
+use uze_extensions::declared::{
+    Absence, DataState, DeclaredExtension, NODE_CAP, RecordedAction, TraceEntry, TraceNode,
+};
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
 /// The host's number for a slot, handed out once and never reused, so a
@@ -61,100 +64,108 @@ impl Hosted for DeclaredExtension {
     fn inspect(&self, surface: &str) -> Inspection {
         let compiled = self.compiled();
         let declared = compiled.manifest.surface(surface);
+        let trace = self.trace(surface);
         let mut nodes = Vec::new();
-        if let Some(view) = compiled.view_of(surface) {
-            outline(&view.items, 0, &mut nodes);
+        if let Some(trace) = &trace {
+            match &trace.data {
+                DataState::Bound => {}
+                DataState::Waiting => nodes.push("waiting for data".to_owned()),
+                DataState::Failed(reason) => nodes.push(format!("no data: {reason}")),
+            }
+            outline(&trace.items, 0, &mut nodes);
+            for (name, body) in &trace.templates {
+                nodes.push(format!("template {}", Clean::label(name).as_str()));
+                outline(body, 1, &mut nodes);
+            }
+            if trace.folded {
+                nodes.push(format!("folded at {NODE_CAP} nodes"));
+            }
         }
+        // What a fixture holds is a third party's text: drawn only once
+        // it is clean, like everything else the plugin supplies.
         let data = declared
             .and_then(|declared| self.data(&declared.source))
             .map(|data| match data {
                 Ok(value) => serde_json::to_string_pretty(value)
                     .unwrap_or_default()
                     .lines()
-                    .map(str::to_owned)
+                    .map(|line| Clean::label(line).into_string())
                     .collect(),
-                Err(reason) => vec![reason.clone()],
+                Err(reason) => vec![Clean::label(reason).into_string()],
             })
             .unwrap_or_default();
         Inspection {
             nodes,
-            // The engine's "why absent" (`extension-view-engine` 3.3) has no
-            // entry point on the contract yet; each node says so until then.
-            traced: false,
+            traced: trace.is_some(),
             data,
             ui: self
                 .ui(surface)
                 .map(|ui| {
                     ui.iter()
-                        .map(|(id, value)| (format!("ui.{id}"), value.clone()))
+                        .map(|(id, value)| {
+                            (
+                                format!("ui.{}", Clean::label(id).as_str()),
+                                Clean::label(value).into_string(),
+                            )
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),
-            recorded: self
-                .recorded()
-                .iter()
-                .filter(|action| action.surface == surface)
-                .map(recorded_line)
-                .collect(),
+            recorded: trace
+                .map(|trace| trace.recorded.iter().map(recorded_line).collect())
+                .unwrap_or_default(),
         }
     }
 }
 
 fn recorded_line(action: &RecordedAction) -> String {
-    format!("{} {}", action.action, action.item)
+    Clean::label(&format!("{} {}", action.action, action.item)).into_string()
 }
 
-/// The compiled view as an indented outline, one node a line, with what
-/// decides whether it is drawn.
-fn outline(items: &[uze_contract::Item], depth: usize, lines: &mut Vec<String>) {
+/// The traced view as an indented outline, one node a line: how often it
+/// was drawn of how often it was reached, and why it was not.
+fn outline(nodes: &[TraceNode], depth: usize, lines: &mut Vec<String>) {
     let indent = "  ".repeat(depth);
-    for item in items {
-        match item {
-            uze_contract::Item::Use { template, .. } => {
-                lines.push(format!("{indent}use {template}"));
-            }
-            uze_contract::Item::Node(node) => {
-                let mut line = format!("{indent}{}", node.name);
-                if let Some(each) = &node.each {
-                    line.push_str(&format!(" each {}", path_text(each)));
-                }
-                if let Some(condition) = &node.condition {
-                    line.push_str(&format!(" {}", condition_text(condition)));
-                }
-                lines.push(line);
-                outline(&node.children, depth + 1, lines);
-            }
+    for node in nodes {
+        let name = match &node.entry {
+            TraceEntry::Node(name) => name.to_string(),
+            TraceEntry::Use(template) => format!("use {}", Clean::label(template).as_str()),
+        };
+        let standing = match (node.reached, node.drawn) {
+            (0, _) => " · not reached".to_owned(),
+            (reached, drawn) if drawn == reached => String::new(),
+            (reached, drawn) => format!(" · drawn {drawn} of {reached}"),
+        };
+        lines.push(format!("{indent}{name}{standing}"));
+        for absence in &node.absent {
+            lines.push(format!("{indent}  absent: {}", absence_text(absence)));
         }
+        outline(&node.children, depth + 1, lines);
     }
 }
 
-fn path_text(path: &uze_contract::Path) -> String {
-    let prefix = match path.scope {
-        uze_contract::Scope::Item => "",
-        uze_contract::Scope::Parent => "^.",
-        uze_contract::Scope::Ui => "ui.",
-        uze_contract::Scope::Context => "context.",
+fn absence_text(absence: &Absence) -> String {
+    let said = match absence {
+        Absence::When {
+            field,
+            missing: true,
+        } => format!("`{field}` is missing from the data"),
+        Absence::When { field, .. } => format!("`{field}` is empty"),
+        Absence::Unless { field } => format!("`{field}` is present"),
+        Absence::Show { id, value, actual } => match actual {
+            Some(actual) => format!("ui.{id} is {actual}, not {value}"),
+            None => format!("ui.{id} is not {value}"),
+        },
+        Absence::ShowAny => "none of its show-any pairs hold".to_owned(),
+        Absence::EachMissing { field } => format!("`{field}` is missing from the data"),
+        Absence::EachEmpty { field } => format!("`{field}` is an empty list"),
+        Absence::EachNotList { field } => format!("`{field}` is not a list"),
+        Absence::Missing { field } => format!("`{field}` is missing from the data"),
+        Absence::CapReached => format!("the view reached {NODE_CAP} nodes"),
+        Absence::UnknownTemplate => "no template of that name".to_owned(),
+        Absence::Misplaced => "it only means something inside another node".to_owned(),
     };
-    match path.segments.as_slice() {
-        [] => ".".to_owned(),
-        segments => format!("{prefix}{}", segments.join(".")),
-    }
-}
-
-fn condition_text(condition: &uze_contract::Condition) -> String {
-    match condition {
-        uze_contract::Condition::When(path) => format!("when {}", path_text(path)),
-        uze_contract::Condition::Unless(path) => format!("unless {}", path_text(path)),
-        uze_contract::Condition::Show { id, value } => format!("show ui.{id}={value}"),
-        uze_contract::Condition::ShowAny(pairs) => format!(
-            "show-any {}",
-            pairs
-                .iter()
-                .map(|(id, value)| format!("ui.{id}={value}"))
-                .collect::<Vec<_>>()
-                .join(" ")
-        ),
-    }
+    Clean::label(&said).into_string()
 }
 
 /// What the inspector shows of one surface.
