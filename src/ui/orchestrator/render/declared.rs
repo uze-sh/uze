@@ -10,7 +10,7 @@ pub(super) fn declared_split(model: &WorkspaceModel, pane: Rect) -> (Rect, Optio
     if model.declared_open.is_none() || !model.inspecting {
         return (pane, None);
     }
-    let width = widget::drawer::width(None, pane.width);
+    let width = widget::drawer::width(model.overview_drawer_width, pane.width);
     let surface = Rect::new(pane.x, pane.y, pane.width - width, pane.height);
     let drawer = Rect::new(surface.right(), pane.y, width, pane.height);
     (surface, Some(drawer))
@@ -23,6 +23,7 @@ pub(super) fn render_declared_overlays(
     surface: Rect,
     inspector: Option<Rect>,
     model: &WorkspaceModel,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let Some(slot) = model.open_declared_slot() else {
         return;
@@ -36,7 +37,7 @@ pub(super) fn render_declared_overlays(
         widget::banner::render(frame, content, &error_title(errors.len()), errors);
     }
     if let Some(area) = inspector {
-        render_inspector(frame, area, model, &slot.surface.title, errors);
+        render_inspector(frame, area, model, &slot.surface.title, errors, hits);
     }
 }
 
@@ -53,8 +54,10 @@ fn render_inspector(
     model: &WorkspaceModel,
     title: &str,
     errors: &[String],
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let (inner, _handle) = widget::drawer::render(frame, area, false);
+    let (inner, handle) = widget::drawer::render(frame, area, model.dragging_overview_drawer);
+    hits.push((handle, WorkspaceHit::ResizeOverviewDrawer));
     let inspection = model.inspection().unwrap_or_default();
     let measure = usize::from(inner.width);
     let mut lines = vec![
@@ -101,7 +104,36 @@ fn render_inspector(
     );
     group("recorded actions", inspection.recorded, "nothing pressed");
     group("errors", errors.to_vec(), "none");
-    frame.render_widget(Paragraph::new(lines), inner);
+    draw_scrolled(frame, inner, lines, model);
+    hits.push((inner, WorkspaceHit::Inspector));
+}
+
+/// The inspector's lines from where it is scrolled, settled so its last
+/// line stops at its foot, with a handle in the drawer's right margin when
+/// they do not all fit — as the overview's drawer draws its text.
+fn draw_scrolled(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    model: &WorkspaceModel,
+) {
+    let visible = usize::from(area.height);
+    let first = usize::from(model.inspector_scroll.get()).min(lines.len().saturating_sub(visible));
+    model
+        .inspector_scroll
+        .set(u16::try_from(first).unwrap_or(u16::MAX));
+    model.inspector_rows.set(area.height);
+    let track = Rect::new(
+        area.right().saturating_add(1),
+        area.y,
+        widget::Scrollbar::width(),
+        area.height,
+    );
+    if let Some(bar) = widget::Scrollbar::measure(track, visible, lines.len()) {
+        bar.render(frame, first);
+    }
+    let shown: Vec<_> = lines.into_iter().skip(first).take(visible).collect();
+    frame.render_widget(Paragraph::new(shown), area);
 }
 
 /// The rows a declared section takes: its header, and while it is open its

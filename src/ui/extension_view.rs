@@ -123,6 +123,10 @@ pub(crate) struct Rendered {
 pub(crate) struct FooterKeys {
     pub(crate) scope: uze_keys::Scope,
     pub(crate) hovered: Option<uze_keys::Action>,
+    /// Keys the host offers on this surface beyond the ones its commands
+    /// name, after them: a declared view's inspector, which no engine
+    /// knows of.
+    pub(crate) host: &'static [uze_keys::Action],
 }
 
 /// Where the host holds the navigator this frame: the width it was

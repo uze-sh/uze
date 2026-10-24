@@ -925,11 +925,15 @@ pub(super) enum WorkspaceHit {
     OverviewChoice(usize, usize),
     /// One of the paths a list's field offers, by position.
     OverviewPick(usize),
-    /// The rule along the overview's drawer, dragged to resize it.
+    /// The rule along the overview's drawer, or the inspector's, dragged
+    /// to resize it: the workspace's drawers share one width.
     ResizeOverviewDrawer,
     /// The text of the overview's drawer: the wheel scrolls it rather than
     /// the section, and a click on it does nothing.
     OverviewDrawer,
+    /// The inspector beside a declared view: the wheel scrolls it rather
+    /// than the view, and a click on it does nothing.
+    Inspector,
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
@@ -1922,6 +1926,12 @@ struct WorkspaceModel {
     declared_root: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
+    /// How far down the inspector is scrolled, settled by the frame so its
+    /// last line stops at its foot.
+    inspector_scroll: std::cell::Cell<u16>,
+    /// The rows the inspector showed at once on the last frame: what a
+    /// page key moves it by.
+    inspector_rows: std::cell::Cell<u16>,
     /// What its engine last asked to say at the end of its footer.
     declared_notice: Option<uze_extensions::view::Span>,
     /// The tab the open surface stands in for. It is drawn where that
@@ -1941,8 +1951,9 @@ struct WorkspaceModel {
     /// the rows it was on, edits not yet saved — so opening it again
     /// returns to it rather than starting over.
     put_away_overviews: std::collections::BTreeMap<SpaceId, SpaceOverviewView>,
-    /// The width the overview's drawer was dragged to, kept across
-    /// openings for the rest of the attach.
+    /// The width the overview's drawer, or the inspector, was dragged to,
+    /// kept across openings for the rest of the attach: one width for the
+    /// workspace's drawers, as manage's share one.
     overview_drawer_width: Option<u16>,
     /// Whether the drawer's rule is held by the pointer.
     dragging_overview_drawer: bool,

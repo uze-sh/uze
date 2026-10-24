@@ -187,7 +187,7 @@ pub(super) fn render(
         Some(open) => {
             let question = render_extension(frame, surface_area, model, open, hits, metrics);
             render_extension_navigation(frame, slot, surface_area, open, hits);
-            render_declared_overlays(frame, surface_area, inspector_area, model);
+            render_declared_overlays(frame, surface_area, inspector_area, model, hits);
             question
         }
         None => {
@@ -365,6 +365,10 @@ fn render_extension(
         crate::ui::extension_view::FooterKeys {
             scope,
             hovered: model.hovered_hint(),
+            host: match tag {
+                Tag::Declared(_) => &[uze_keys::Action::ToggleInspector],
+                Tag::BuiltIn(_) => &[],
+            },
         },
         match &model.selection {
             Some(Selection::Text(marking)) => Some(marking),

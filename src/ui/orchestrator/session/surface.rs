@@ -474,7 +474,8 @@ impl Attach<'_> {
 
     /// A plugin's view: the doors lead to the built-in surfaces, its key
     /// opens the inspector beside it, and everything else is a command its
-    /// engine answers. Esc puts the inspector away before the view.
+    /// engine answers. Esc puts the inspector away before the view, and
+    /// the page keys scroll it while it is open, since it was opened last.
     pub(super) fn declared_action(&mut self, action: Action) {
         match action {
             Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
@@ -483,6 +484,8 @@ impl Attach<'_> {
             Action::ToggleSpec => open_spec(&mut self.model),
             Action::ToggleInspector => self.model.toggle_inspector(),
             Action::Dismiss if self.model.inspecting => self.model.toggle_inspector(),
+            Action::ScrollPageDown if self.model.inspecting => self.model.page_inspector(true),
+            Action::ScrollPageUp if self.model.inspecting => self.model.page_inspector(false),
             _ => {
                 if let Some(command) = crate::ui::extension_view::command_for(action) {
                     let space = self.code_space();
