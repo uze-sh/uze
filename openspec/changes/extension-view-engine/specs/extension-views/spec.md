@@ -124,7 +124,8 @@ SHALL keep its JSON type; identity properties SHALL be literals.
 ### Requirement: Templates and lookup tables are declared in the view
 A view MAY declare `template`s used with `use`, resolved against the current
 item, with no parameters and no cycle; and `lookup` tables mapping a value
-to a role or a label, optionally per locale, used as `{table:field}`. A value
+to a role or a label, optionally per locale, used as `{table:field}` or, for
+a literal key, `{table::key}`. A value
 missing from a table SHALL draw the table's default.
 
 #### Scenario: A template cannot use itself
@@ -137,7 +138,7 @@ missing from a table SHALL draw the table's default.
 
 #### Scenario: Labels follow the operator's locale
 - **WHEN** a view declares the table `t` for locales `pt` and `en` and the operator's locale is `pt`
-- **THEN** `"{t:next}"` draws the `pt` label
+- **THEN** `"{t::next}"` draws the `pt` label
 
 ### Requirement: UI state declared in a view is held by the host
 A `Tabs`, `Toggle` or `List` selection with an `id` SHALL keep its value in
