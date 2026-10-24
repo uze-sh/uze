@@ -59,6 +59,13 @@ pub(crate) fn load(home: &UzeHome) {
     *DISABLED.lock().unwrap_or_else(PoisonError::into_inner) = chosen;
 }
 
+/// The key a declared extension is switched by: the attribution it is
+/// drawn with (`id · plugin@marketplace`), which no built-in's id can
+/// collide with.
+pub(crate) fn declared_id(identity: &uze_application::ExtensionIdentity) -> String {
+    identity.to_string()
+}
+
 /// The extension whose surface `action` opens, so that switching an
 /// extension off takes its keys with it. `None` for every action that
 /// belongs to the workspace itself; the actions *inside* a surface need no

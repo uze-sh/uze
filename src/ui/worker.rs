@@ -854,6 +854,7 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
         marketplace_plugins: snapshot.marketplace_plugins,
         marketplaces: snapshot.marketplaces,
         profiles: snapshot.profiles,
+        declared_extensions: app.extensions().summaries(),
         context_status: snapshot.context_status,
         workspace: snapshot.workspace,
         // Only `spawn_startup` ever fills this in; an ordinary refresh

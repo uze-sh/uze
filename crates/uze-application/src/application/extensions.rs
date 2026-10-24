@@ -14,10 +14,12 @@ use super::services::Extensions;
 mod checked;
 mod compiled;
 mod installed;
+mod summary;
 
 pub use checked::CheckedExtension;
 pub use compiled::{FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use installed::InstalledExtension;
+pub use summary::DeclaredExtensionSummary;
 
 impl Extensions<'_> {
     /// The ids switched off; empty until the operator switches one off.

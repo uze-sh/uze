@@ -523,10 +523,10 @@ pub(super) struct LoadedExtension {
     pub(super) data: BTreeMap<String, SourceData>,
 }
 
-/// The key a declared extension is switched on and off by: the attribution
-/// it is drawn with, which no built-in's id can collide with.
+/// The key a declared extension is switched on and off by, the same one
+/// the Extensions screen switches.
 pub(super) fn switch_id(identity: &ExtensionIdentity) -> String {
-    identity.to_string()
+    crate::ui::extension_switch::declared_id(identity)
 }
 
 impl WorkspaceModel {

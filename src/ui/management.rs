@@ -608,7 +608,7 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             ProfilePanel::Harnesses => None,
         },
         Route::Extensions => model.selected_extension().map(|extension| {
-            if model.extension_enabled(extension.id) {
+            if model.extension_enabled(&extension.id()) {
                 "disable"
             } else {
                 "enable"

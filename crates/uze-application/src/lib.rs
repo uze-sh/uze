@@ -48,7 +48,8 @@ pub use uze_core::{
 /// A declared extension as the workspace hosts it: who it is, what it
 /// compiled to, and what was wrong with it when it did not.
 pub use application::{
-    CheckedExtension, FIXTURE_LIMIT, InstalledExtension, SourceData, extension_stamp,
+    CheckedExtension, DeclaredExtensionSummary, FIXTURE_LIMIT, InstalledExtension, SourceData,
+    extension_stamp,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;
