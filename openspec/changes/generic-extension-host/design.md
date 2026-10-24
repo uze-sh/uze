@@ -42,6 +42,18 @@ the host owns today for every surface; the slot path keeps them in the
 orchestrator and hands the engine only `ViewHit`s and `Command`s, as the
 declared drawer and view already do.
 
+### H4. What the contract must grow before `architect` moves
+Mapping `architect`'s 99 references showed gestures the `Extension` trait
+does not carry yet, all of which `code` needs too:
+- `hover(surface, hit) -> bool` (a diagram node lights under the pointer);
+- `drag(surface, columns, rows, space)` and `pan(surface, columns, space)`
+  (a grabbed diagram follows the pointer; a sideways wheel pans it);
+- `scroll_to(surface, first, space)` (a press on the content scrollbar);
+- `text(surface, lines) -> Vec<String>` (copying a selection of its rows);
+- `Outcome::OpenPath { path, line }` and `Outcome::Copy(String)`.
+Each joins the trait with a default that does nothing, so the declared
+engine is unchanged, before the extension that needs it moves.
+
 ## Risks / Trade-offs
 
 - [The orchestrator is large and these sites interlock] → one extension per
