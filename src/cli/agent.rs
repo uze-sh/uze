@@ -198,6 +198,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                 )));
             }
         }
+        AgentPluginAction::Lsp => super::lsp::serve(app)?,
     }
     Ok(())
 }
