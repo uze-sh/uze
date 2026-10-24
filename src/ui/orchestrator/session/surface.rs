@@ -248,6 +248,11 @@ impl Attach<'_> {
                 rect,
                 WorkspaceHit::Extension(ExtensionHit::Code(hit) | ExtensionHit::Spec(hit)),
             )) => Some((rect, hit)),
+            Some((rect, WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })))
+                if self.model.declared_open == Some(slot) =>
+            {
+                Some((rect, hit))
+            }
             _ => None,
         }
     }
@@ -298,6 +303,8 @@ impl Attach<'_> {
         } else if let Some(view) = self.model.spec.as_mut() {
             let outcome = spec::handle_mouse(view, Some(hit), space);
             self.follow_spec(Some(outcome));
+        } else if let Some(slot) = self.model.declared_open {
+            self.model.hit_declared(slot, hit, space);
         } else if let Some(view) = self.model.code.as_mut() {
             let outcome = code::handle_mouse(view, Some(hit), space);
             self.follow_code(outcome);
@@ -328,6 +335,9 @@ impl Attach<'_> {
             architect::handle_scroll(view, direction, space);
         } else if let Some(view) = self.model.spec.as_mut() {
             spec::handle_scroll(view, direction);
+        } else if self.model.declared_open.is_some() {
+            self.model
+                .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
         } else if let Some(view) = self.model.code.as_mut() {
             code::handle_scroll(view, direction, at_end);
         }
@@ -457,6 +467,27 @@ impl Attach<'_> {
                         .map(|view| spec::handle_command(view, command, space))
                 });
                 self.follow_spec(outcome);
+            }
+        }
+        self.model.dirty = true;
+    }
+
+    /// A plugin's view: the doors lead to the built-in surfaces, its key
+    /// opens the inspector beside it, and everything else is a command its
+    /// engine answers. Esc puts the inspector away before the view.
+    pub(super) fn declared_action(&mut self, action: Action) {
+        match action {
+            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
+            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleArchitect => open_architect(&mut self.model),
+            Action::ToggleSpec => open_spec(&mut self.model),
+            Action::ToggleInspector => self.model.toggle_inspector(),
+            Action::Dismiss if self.model.inspecting => self.model.toggle_inspector(),
+            _ => {
+                if let Some(command) = crate::ui::extension_view::command_for(action) {
+                    let space = self.code_space();
+                    self.model.tell_declared(command, space);
+                }
             }
         }
         self.model.dirty = true;

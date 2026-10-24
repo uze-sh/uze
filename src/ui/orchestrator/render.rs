@@ -13,6 +13,7 @@ use crate::ui::widget::{
     TRAILING_PAD, action_index, chip, mark, row, text,
 };
 
+mod declared;
 mod pane;
 mod popups;
 mod recent;
@@ -20,6 +21,7 @@ mod sidebar;
 mod space_overview;
 mod tab_strip;
 
+use declared::*;
 pub(super) use pane::*;
 pub(super) use popups::*;
 use recent::*;
@@ -160,7 +162,8 @@ pub(super) fn render(
         ),
         WorkspaceHit::ResizeSidebar,
     ));
-    let open = open_extension(model, layout.pane);
+    let (surface_area, inspector_area) = declared_split(model, layout.pane);
+    let open = open_extension(model, surface_area);
     let leading = match open {
         Some(_) => LeadingSlot::Surface,
         None => LeadingSlot::AgentTabs,
@@ -168,8 +171,9 @@ pub(super) fn render(
     let slot = render_tab_strip(frame, layout.tab_strip, model, identities, leading, hits);
     let question = match &open {
         Some(open) => {
-            let question = render_extension(frame, layout.pane, model, open, hits, metrics);
-            render_extension_navigation(frame, slot, layout.pane, open, hits);
+            let question = render_extension(frame, surface_area, model, open, hits, metrics);
+            render_extension_navigation(frame, slot, surface_area, open, hits);
+            render_declared_overlays(frame, surface_area, inspector_area, model);
             question
         }
         None => {
@@ -212,7 +216,7 @@ pub(super) fn render(
             0..0,
             view_hits
                 .into_iter()
-                .map(|(rect, hit)| (rect, WorkspaceHit::Extension((question.tag)(hit)))),
+                .map(|(rect, hit)| (rect, WorkspaceHit::Extension(question.tag.apply(hit)))),
         );
     }
     if let Some(modal) = &model.release_notes {
@@ -336,6 +340,11 @@ fn render_extension(
                     | ExtensionHit::Spec(hit)
                     | ExtensionHit::Architect(hit),
                 )) => Some((hit, model.hovered_for())),
+                Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
+                    if model.declared_open == Some(slot) =>
+                {
+                    Some((hit, model.hovered_for()))
+                }
                 _ => None,
             },
         },
@@ -360,7 +369,7 @@ fn render_extension(
     hits.extend(
         view_hits
             .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag(hit)))),
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag.apply(hit)))),
     );
     // After the row menu's: one opened low enough to cover the footer
     // answers for the cells it covers.
@@ -396,7 +405,7 @@ fn render_extension_navigation(
         0..0,
         navigation_hits
             .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension((open.tag)(hit)))),
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(open.tag.apply(hit)))),
     );
 }
 
@@ -406,10 +415,35 @@ fn render_extension_navigation(
 struct OpenExtension {
     view: uze_extensions::view::View,
     scope: uze_keys::Scope,
-    tag: fn(ViewHit) -> ExtensionHit,
+    tag: Tag,
+}
+
+/// Whose a hit the open surface drew is: a built-in's, by the variant that
+/// names it, or a declared slot's, by its number.
+#[derive(Clone, Copy)]
+enum Tag {
+    BuiltIn(fn(ViewHit) -> ExtensionHit),
+    Declared(SlotId),
+}
+
+impl Tag {
+    fn apply(self, hit: ViewHit) -> ExtensionHit {
+        match self {
+            Self::BuiltIn(tag) => tag(hit),
+            Self::Declared(slot) => ExtensionHit::Declared { slot, hit },
+        }
+    }
 }
 
 fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
+    if let Some(slot) = model.declared_open {
+        let space = crate::ui::extension_view::code_space(area, model.code_tree_width, None);
+        return Some(OpenExtension {
+            view: model.declared_view(space)?,
+            scope: uze_keys::Scope::Declared,
+            tag: Tag::Declared(slot),
+        });
+    }
     let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) =
         if let Some(architect) = &model.architect {
             (
@@ -441,7 +475,11 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
         } else {
             return None;
         };
-    Some(OpenExtension { view, scope, tag })
+    Some(OpenExtension {
+        view,
+        scope,
+        tag: Tag::BuiltIn(tag),
+    })
 }
 
 /// The question an open surface waits on. Drawn with the client's other
@@ -451,7 +489,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
 struct Question {
     confirm: uze_extensions::view::Confirm,
     scope: uze_keys::Scope,
-    tag: fn(ViewHit) -> ExtensionHit,
+    tag: Tag,
 }
 
 /// Pins, on the space in front, the control that places a new agent in

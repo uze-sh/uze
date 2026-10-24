@@ -350,6 +350,30 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self.model.declared_open.is_some() && on_surface => {
+                let open = self.model.declared_open;
+                let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
+                    Some((_, WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })))
+                        if Some(slot) == open =>
+                    {
+                        Some(hit)
+                    }
+                    _ => None,
+                };
+                // The frame's geometry is the host's, as on every surface.
+                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
+                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
+                } else if view_hit == Some(ViewHit::DragContentScrollbar)
+                    && self.model.code_scrollbars.content_bar.is_some()
+                {
+                    self.model.dragging_code_content = true;
+                    self.scroll_code_content_to(mouse.row);
+                } else if let (Some(slot), Some(hit)) = (open, view_hit) {
+                    let space = self.code_space();
+                    self.model.hit_declared(slot, hit, space);
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.code.is_some() && on_surface => {
                 let hit = self.model.hit_rect_at(mouse.column, mouse.row);
                 // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
@@ -1060,6 +1084,15 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self.model.declared_open.is_some() && in_pane => {
+                let direction = if mouse.kind == MouseEventKind::ScrollUp {
+                    ScrollDirection::Up
+                } else {
+                    ScrollDirection::Down
+                };
+                self.model
+                    .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
+            }
             _ if self.model.spec.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -1461,6 +1494,10 @@ impl Attach<'_> {
                 self.model.close_architect();
             }
             WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
+            WorkspaceHit::OpenDeclared(slot) if self.model.declared_open == Some(slot) => {
+                self.model.close_declared();
+            }
+            WorkspaceHit::OpenDeclared(slot) => open_declared(&mut self.model, slot),
             WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
@@ -1558,6 +1595,15 @@ impl Attach<'_> {
                 }
                 _ => {}
             },
+            // A declared section's: its header folds it, and everything
+            // else is the engine's. The open view's are answered above.
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }) => {
+                let space = uze_extensions::view::Size {
+                    width: layout.sidebar.width,
+                    height: 1,
+                };
+                self.model.hit_declared(slot, hit, space);
+            }
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
                 ViewHit::ToggleSection => self.press_foot_header(
                     WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),

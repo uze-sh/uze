@@ -52,6 +52,8 @@ uze-integrations = { path = "crates/uze-integrations" }
 uze-application = { path = "crates/uze-application" }
 uze-platform = { path = "crates/uze-platform" }
 uze-extensions = { path = "crates/uze-extensions" }
+# The compiled views the workspace hosts, read for the inspector; plain data.
+uze-contract = { path = "crates/uze-contract" }
 uze-git = { path = "crates/uze-git" }
 uze-terminal = { path = "crates/uze-terminal" }
 uze-theme = { path = "crates/uze-theme" }
