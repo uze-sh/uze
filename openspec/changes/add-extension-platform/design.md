@@ -971,6 +971,69 @@ program at all. *Alternative:* components only. Rejected: the extensions
 that wrap a CLI would still run it, and the shell author would be turned
 away.
 
+### D28. A performance budget, from measurements
+
+Measured on 2026-10-23 on the operator's machine (WSL2, 16 CPUs, release
+build, warm file cache) with `rhai` 1.27.0 and `kdl` 6.7.1 and the gallery's
+`gsd-band` (the blueprint's `board.rhai` and `board.kdl`) over a realistic
+`.planning/` (6 phases, one with 37 files). Rhai is the scripting candidate
+under discussion for D27; the program rows are the same answer written for
+`sh`, `node` (26.12) and `python3` (3.15), each run as a process per
+question.
+
+| Per question | p50 | Against an embedded script |
+|---|---|---|
+| embedded script (`answer()`: 2 reads, 6 directory listings, the board) | 0.45 ms | — |
+| of which file I/O (the same calls in Rust) | 0.05 ms | — |
+| of which a bare call into the interpreter | 0.002 ms | — |
+| `python3` process | 18.6 ms | ×41 |
+| `node` process | 24.2 ms | ×54 |
+| `sh` process (its own `ls`/`grep` forks) | 55.4 ms | ×120 |
+| the process floor (`/bin/true`) | 0.56 ms | — |
+
+| Per extension loaded (engine with grants, compiled script, parsed manifest and view) | |
+|---|---|
+| memory, 1 / 20 / 50 extensions | +292 KiB / +7.4 MiB / +11.8 MiB (about 0.25–0.37 MiB each) |
+| one idle `node` process, for comparison | 45 MiB |
+| one idle `python3` process, for comparison | 11.4 MiB |
+| startup: engine 0.19 ms, script 0.15 ms, `extension.kdl` 0.29 ms, view 0.47 ms | about 1.1 ms, so 55 ms for 50 loaded eagerly |
+| binding the compiled view to an answer (77 nodes; a prototype binder without lookups, sanitizing or layout) | 0.03 ms |
+
+| One `agent.turn.finished`, 15 extensions × 5 agents | |
+|---|---|
+| 75 runs, one thread | 41.9 ms |
+| 75 runs, a pool of two threads | 29.7 ms |
+| 15 runs, answers shared across agents on one checkout | 8.0 ms |
+| the same 75 as `node` processes (projected) | about 1.8 s of CPU |
+
+Not measured: drawing to the terminal (ratatui, Sixel), the KDL pre-scan and
+sanitizer, a cold file cache, Windows (where processes cost more, so
+programs get slower and scripts do not), and contention with running agents.
+
+What the budget takes from it:
+- **Answers are shared.** One question (extension, source, checkout, input
+  digest) runs once and feeds every surface and band that asked it; bands on
+  five agents of one checkout are one run, not five.
+- **One pool.** Extension jobs run on a global pool of two threads (the
+  workspace's `jobs = 2`), with a serial lane per extension, so a burst of
+  events never competes with the agents for more.
+- **Lazy loading.** A script and a view compile on first use and are cached
+  by digest; enabling fifty extensions does not cost fifty compiles at
+  startup.
+- **Native primitives.** The interpreter is about seven times the I/O of the
+  answer it gives; the host registers fast primitives (lines, glob, regex,
+  JSON, front matter, KDL) so a script orchestrates and the heavy work runs
+  in Rust.
+- **Programs pay per question.** The check warns when a program-backed
+  source has an `every` under 30 seconds, and the inspector shows runs per
+  minute.
+- **Targets**, checked by a performance test in the style of
+  `command_performance.rs`: an embedded answer at p95 under 20 ms, binding
+  under 1 ms per visible surface, under 1 MiB per loaded extension, and the
+  storm above under 50 ms with sharing. The inspector and `uze doctor` show
+  each extension's runs per minute, p95 and memory, and flag those over
+  target.
+
 ## Candidate ADRs
 
 - **Extension logic is a WebAssembly component first, a confined program

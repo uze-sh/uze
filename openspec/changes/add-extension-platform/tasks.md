@@ -1,6 +1,6 @@
 ## 0. Resolve before implementation (plan frozen)
 
-- [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–24 into them; the first change (groups 2, 13.3, 21, 22.1–22.4 and 23.1–23.3 with fixtures, 23.8) runs no third-party code and can be unfrozen alone
+- [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–25 into them; the first change (groups 2, 13.3, 21, 22.1–22.4 and 23.1–23.3 with fixtures, 23.8) runs no third-party code and can be unfrozen alone
 - [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime and HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
@@ -202,3 +202,12 @@
 - [ ] 24.2 `wasm "…"` declarations in the manifest, run by `uze-wasm` with the D19 budgets and imports, in change 4
 - [ ] 24.3 The argv runner and `exec:` grants only in change 5, with OS confinement or its explicit "runs as you" disclosure
 - [ ] 24.4 Lead the check, the scaffold and the Skill with components, documenting the shell path as fully supported
+
+## 25. Performance budget (D28)
+
+- [ ] 25.1 Share answers: one run per (extension, source, checkout, input digest) feeding every surface and band that asked it
+- [ ] 25.2 A global pool of two threads for extension jobs with a serial lane per extension
+- [ ] 25.3 Compile scripts and views on first use, cached by digest
+- [ ] 25.4 Register native primitives for scripts: lines, glob, regex, JSON, front matter, KDL
+- [ ] 25.5 Warn in the check when a program-backed source has `every` under 30 s
+- [ ] 25.6 A performance test holding D28's targets (embedded answer p95 < 20 ms, binding < 1 ms per surface, < 1 MiB per extension, the 15 × 5 storm < 50 ms with sharing), and per-extension runs per minute, p95 and memory in the inspector and `uze doctor`
