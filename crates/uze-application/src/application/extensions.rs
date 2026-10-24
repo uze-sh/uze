@@ -1,5 +1,7 @@
-//! Which built-in extensions this machine switched off. Only the choice:
-//! what switching one off takes away is the client's, which draws them.
+//! The workspace's extensions as this machine has them: which ones the
+//! operator switched off, and the declared ones installed plugins carry —
+//! where their files are and what they compile to. What an extension draws
+//! is the client's.
 
 use std::collections::BTreeSet;
 
@@ -8,6 +10,12 @@ use uze_core::Result;
 use uze_workspace::extensions;
 
 use super::services::Extensions;
+
+mod compiled;
+mod installed;
+
+pub use compiled::{FIXTURE_LIMIT, SourceData, extension_stamp};
+pub use installed::InstalledExtension;
 
 impl Extensions<'_> {
     /// The ids switched off; empty until the operator switches one off.
