@@ -506,15 +506,32 @@ impl UzeHome {
     /// harness reads on every request: sweeping it took that context away
     /// seconds after the launch that wrote it. `rules` holds which rules
     /// each running session was already given: sweeping it would deliver
-    /// them all again on the session's next tool call.
-    pub fn runtime_tenants(&self) -> [PathBuf; 5] {
+    /// them all again on the session's next tool call. `extensions` holds
+    /// compiled extension views: sweeping it costs a compile on the next
+    /// open, so it is kept rather than swept by every `doctor`.
+    pub fn runtime_tenants(&self) -> [PathBuf; 6] {
         [
             self.runtime_projects_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
             self.runtime_sessions_dir(),
             self.runtime_rules_dir(),
+            self.compiled_extensions_dir(),
         ]
+    }
+
+    /// Declared extensions as last compiled, one file per digest of an
+    /// extension's files. Generated: deleting it costs a compile the next
+    /// time the extension is opened, and an entry no extension's files
+    /// digest to any more is simply never read again.
+    pub fn compiled_extensions_dir(&self) -> PathBuf {
+        self.runtime_dir().join("extensions")
+    }
+
+    /// One compiled extension, by the digest of the files it was compiled
+    /// from.
+    pub fn compiled_extension_path(&self, digest: &str) -> PathBuf {
+        self.compiled_extensions_dir().join(format!("{digest}.json"))
     }
 
     /// The rules engine's corner of the runtime tree.
