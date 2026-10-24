@@ -307,6 +307,33 @@ impl NodeName {
     }
 }
 
+impl NodeName {
+    /// What the node draws, in one line: what hover shows and completion
+    /// describes, so an editor and the reference say the same thing.
+    pub fn doc(self) -> &'static str {
+        match self {
+            Self::Stack => "Its children one under another, `gap` rows apart.",
+            Self::Row => "Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.",
+            Self::Text => "Text in a role, `strong` for emphasis; with `truncate` one line cut with an ellipsis, otherwise a paragraph that wraps.",
+            Self::Badge => "A short label on a ground of its role's colour.",
+            Self::Marks => "Role-coloured marks in a row, one per `Mark`.",
+            Self::Mark => "One mark of a `Marks`, in its role's colour.",
+            Self::Pips => "`done` of `total` as a row of filled and empty pips.",
+            Self::Progress => "A bar: one fill at `ratio`, or one segment per `Segment`.",
+            Self::Segment => "One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in its role.",
+            Self::List => "Rows repeated over `each`; with an `id`, the host holds which one is selected.",
+            Self::Table => "Named columns, one argument per heading; each child `Row` is a line whose children are its cells.",
+            Self::Tabs => "A choice the host holds as `ui.<id>`; `show=\"ui.<id>=<value>\"` picks what is drawn under it.",
+            Self::Tab => "One choice of a `Tabs`: its label, and the `value` `show` compares with.",
+            Self::Toggle => "A switch the host holds as `ui.<id>`, `on` at first when given.",
+            Self::Button => "A label that records its `action` with its `item` when pressed.",
+            Self::Activity => "A mark the host animates while `busy`.",
+            Self::Elapsed => "The time since `since`, ticked by the host.",
+            Self::Log => "Lines, each a string or an object with `text` and a `role`.",
+        }
+    }
+}
+
 impl std::fmt::Display for NodeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -368,6 +395,58 @@ impl RoleName {
     pub fn parse(name: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|role| role.as_str() == name)
     }
+
+    /// When to reach for the role, in one line.
+    pub fn doc(self) -> &'static str {
+        match self {
+            Self::Default => "Body text.",
+            Self::Muted => "Supporting text a reader skims past.",
+            Self::Secondary => "Labels and headings of a group.",
+            Self::Bright => "What the eye should land on first.",
+            Self::Inactive => "Something switched off or not reachable.",
+            Self::Accent => "The extension's one point of emphasis.",
+            Self::Dim => "Quieter than muted, still readable.",
+            Self::Faint => "Hints, placeholders and empty states.",
+            Self::Info => "Neutral status: a version, a count, a note.",
+            Self::Success => "Done, passing, healthy.",
+            Self::Warning => "In progress, waiting, needs attention.",
+            Self::Danger => "Failed, blocked, destructive.",
+        }
+    }
+}
+
+/// What a property does, in one line, for the properties every node takes
+/// and the ones a node of the catalog names.
+pub fn prop_doc(prop: &str) -> Option<&'static str> {
+    Some(match prop {
+        "each" => "Repeat this node once per item of a list field.",
+        "when" => "Draw only while the field is present: not missing, null, false, empty or zero.",
+        "unless" => "Draw only while the field is absent.",
+        "show" => "Draw only while a UI value equals a declared literal: `ui.<id>=<value>`.",
+        "show-any" => "Draw while any of several `ui.<id>=<value>` pairs, comma-separated, holds.",
+        "grow" => "Take a share of what is left of the row.",
+        "min-width" => "Never draw narrower than this many columns.",
+        "gap" => "Rows (in a `Stack`) or columns (in a `Row`) between children.",
+        "align" => "Where a row with nothing that grows sits: `start`, `center` or `end`.",
+        "role" => "The semantic colour, or `{table:field}` to look one up.",
+        "strong" => "Emphasis.",
+        "truncate" => "One line, cut with an ellipsis, instead of a paragraph that wraps.",
+        "done" => "How many pips are filled.",
+        "total" => "How many pips there are.",
+        "ratio" => "How full, from 0 to 1.",
+        "weight" => "How wide, relative to the other segments.",
+        "id" => "The name the host keeps this node's state under, as `ui.<id>`.",
+        "empty" => "What to draw when there are no rows.",
+        "value" => "What `show` compares the tab's choice with.",
+        "on" => "Whether the switch starts on.",
+        "action" => "The action a press records, by name.",
+        "item" => "What the action receives: a field, or `{.}` for the whole item.",
+        "agent" => "The agent whose activity this mark follows.",
+        "busy" => "Whether the mark is animated.",
+        "since" => "A timestamp: milliseconds, or an RFC 3339 date.",
+        "lines" => "A list field of lines, or one string of several.",
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -386,6 +465,19 @@ mod tests {
                 1
             );
             assert!(spec.required_args <= spec.args.len());
+        }
+    }
+
+    #[test]
+    fn every_node_role_and_property_is_documented() {
+        for spec in CATALOG {
+            assert!(!spec.name.doc().is_empty());
+            for (prop, _) in spec.props.iter().chain(COMMON_PROPS) {
+                assert!(prop_doc(prop).is_some(), "{} {prop}", spec.name);
+            }
+        }
+        for role in RoleName::ALL {
+            assert!(!role.doc().is_empty());
         }
     }
 
