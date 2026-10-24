@@ -143,7 +143,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     fs::remove_file(&cached[0]).unwrap();
 
     let fixtures = app.extensions().fixtures(&band, &compiled);
-    let data = fixtures["board"].as_ref().expect("the fixture is read");
+    let data = fixtures["milestone"].as_ref().expect("the fixture is read");
     assert_eq!(data["phases"].as_array().map(Vec::len), Some(6));
 
     let engine = engine(&app, &band);
@@ -168,11 +168,11 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     assert_eq!(segments[3].role, Role::Warning, "the partial phase");
     assert_eq!(segments[3].filled, 890);
 
-    let list = all
+    let table = all
         .iter()
-        .find(|node| matches!(node.kind, NodeKind::List { .. }))
-        .expect("the phases list, on the first tab");
-    assert_eq!(list.children.len(), 6);
+        .find(|node| matches!(node.kind, NodeKind::Table { .. }))
+        .expect("the phases table, on the first tab");
+    assert_eq!(table.children.len(), 6, "a row a phase");
     let drawn = texts(&root);
     for phase in [
         "Fundação da loja",
@@ -182,10 +182,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
         assert!(drawn.iter().any(|text| text == phase), "{phase}: {drawn:?}");
     }
     assert!(drawn.iter().any(|text| text == "65%"), "{drawn:?}");
-    assert!(
-        drawn.iter().any(|text| text == "· 3 of 6 phases"),
-        "{drawn:?}"
-    );
+    assert!(drawn.iter().any(|text| text == "3 of 6 done"), "{drawn:?}");
     assert!(
         all.iter().any(|node| matches!(
             &node.kind,
@@ -194,7 +191,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
                 total: 19
             }
         )),
-        "the active phase's plans"
+        "the phase in progress, plan by plan"
     );
 
     let tabs: Vec<(String, bool)> = all
@@ -208,11 +205,11 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
             _ => None,
         })
         .expect("the tabs");
-    assert_eq!(tabs, [("Phases".into(), true), ("Log".into(), false)]);
+    assert_eq!(tabs, [("Phases".into(), true), ("Activity".into(), false)]);
     assert!(
         all.iter().any(|node| matches!(
             &node.kind,
-            NodeKind::Button { label } if label == "▶ run phase 12"
+            NodeKind::Button { label } if label == "Run phase 12"
         )),
         "the next step, labelled in the operator's locale"
     );
@@ -221,8 +218,12 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
         .section("summary", false)
         .expect("the band's section");
     assert_eq!(section.title, "GSD");
-    let section_tree = section.tree.expect("drawn from the same view");
-    assert!(texts(&section_tree).contains(&"Catálogo de ajuda".to_owned()));
+    let section_tree = section.tree.expect("drawn from its own view");
+    assert!(
+        texts(&section_tree).contains(&"Consulta de dados e diagnóstico".to_owned()),
+        "the sidebar shows the phase in progress: {:?}",
+        texts(&section_tree)
+    );
 }
 
 #[test]
@@ -231,7 +232,7 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
     let (app, market) = installed_from_a_linked_marketplace(&env);
     let band = the_band(&app);
     let mut engine = engine(&app, &band);
-    let data_before = engine.data("board").cloned();
+    let data_before = engine.data("milestone").cloned();
 
     let tabs = nodes(&board(&engine))
         .into_iter()
@@ -250,18 +251,18 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
     assert!(
         nodes(&root)
             .iter()
-            .all(|node| !matches!(node.kind, NodeKind::List { .. })),
-        "the phases give way to the log"
+            .all(|node| !matches!(node.kind, NodeKind::Table { .. })),
+        "the phases give way to the activity"
     );
     assert!(
         nodes(&root).iter().any(|node| matches!(
             &node.kind,
-            NodeKind::Log { lines } if lines.iter().any(|line| line.text == "turno concluído em 4m12s")
+            NodeKind::Log { lines } if lines.iter().any(|line| line.text == "Turn finished in 4m12s")
         )),
-        "the log is drawn"
+        "the activity is drawn"
     );
     assert_eq!(
-        engine.data("board").cloned(),
+        engine.data("milestone").cloned(),
         data_before,
         "the data is untouched"
     );
@@ -299,7 +300,7 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
     );
 
     // A broken save is said at its file, line and column.
-    let broken = edited.replace("    List each=", "    Lisst each=");
+    let broken = edited.replace("        Table \"#\"", "        Tabel \"#\"");
     fs::write(&view, &broken).unwrap();
     let diagnostics = app
         .extensions()
@@ -307,17 +308,17 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
         .expect_err("an unknown node is refused");
     let line = broken
         .lines()
-        .position(|line| line.contains("Lisst"))
+        .position(|line| line.contains("Tabel"))
         .unwrap()
         + 1;
     let named = diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.message.contains("Lisst"))
+        .find(|diagnostic| diagnostic.message.contains("Tabel"))
         .unwrap_or_else(|| panic!("{diagnostics:#?}"));
     assert!(named.file.ends_with("board.kdl"), "{named:?}");
-    assert_eq!((named.line, named.column), (line, 5), "{named:?}");
+    assert_eq!((named.line, named.column), (line, 9), "{named:?}");
     assert!(
-        named.to_string().contains(&format!("board.kdl:{line}:5:")),
+        named.to_string().contains(&format!("board.kdl:{line}:9:")),
         "{named}"
     );
 }

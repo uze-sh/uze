@@ -1,56 +1,95 @@
-// A phase's state, as the theme's colour role it is drawn in.
+// The colour a phase's state is drawn in.
 lookup "tone" default="muted" {
     done "success"
-    partial "warning"
+    running "warning"
     ready "info"
-    blocked "muted"
+    waiting "faint"
+}
+
+// What each state is called, in the operator's language.
+lookup "state" locale="en" default="" {
+    done "Done"
+    running "In progress"
+    ready "Ready to discuss"
+    waiting "Waiting"
+}
+lookup "state" locale="pt" default="" {
+    done "Concluída"
+    running "Em execução"
+    ready "Pronta para discussão"
+    waiting "Aguardando"
 }
 
 lookup "t" locale="en" {
-    phases "Phases"; log "Log"; next "▶ run phase"; clear "clear"
-    empty "No phase in progress"
+    phases "Phases"; log "Activity"; now "Now"; next "Run phase"
+    left "left"; plans "plans"; of "of"; done "done"; empty "Nothing in this milestone yet"
+    phase "Phase"; status "Status"; quiet "No activity yet"
 }
-
 lookup "t" locale="pt" {
-    phases "Fases"; log "Log"; next "▶ executar fase"; clear "limpar"
-    empty "Nenhuma fase em andamento"
+    phases "Fases"; log "Atividade"; now "Agora"; next "Executar fase"
+    left "faltam"; plans "planos"; of "de"; done "concluídas"; empty "Nada neste milestone ainda"
+    phase "Fase"; status "Situação"; quiet "Nenhuma atividade ainda"
 }
 
-template "phase-row" {
-    Row gap=1 {
-        Text "{number}" min-width=3
-        Text "{name}" grow=#true truncate=#true
-        Marks {
-            Mark role="{tone:d}"
-            Mark role="{tone:p}"
-            Mark role="{tone:e}"
-        }
-        Pips done="{summaries}" total="{plans}" when="active"
-        Text "{summaries}/{plans}" role="muted" when="finished"
-        Text "{status}" role="{tone:e}"
+Stack gap=1 {
+    // The milestone and the one action that moves it.
+    Row align="center" gap=2 {
+        Text "{milestone}" strong=#true
+        Text "{title}" role="muted" grow=#true truncate=#true
+        Button "{t::next} {next.number}" action="next" item="{next}" when="next"
     }
-}
 
-Stack {
-    Row align="center" {
-        Activity agent="self"
-        Text "GSD · {version} {name}" role="muted" grow=#true
-        Tabs id="tab" {
-            Tab "{t::phases}" value="phases"
-            Tab "{t::log}" value="log"
-        }
-        Button "{t::clear}" action="clear"
-        Button "{t::next} {next.phase}" action="next" item="{next}" when="next"
-    }
-    Row gap=1 {
+    // How far the milestone is: one segment per phase, as wide as its plans.
+    Row gap=2 {
         Progress grow=#true {
-            Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:e}"
+            Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:state}"
         }
-        Text "{percent}%"
-        Text "· {done} of {total} phases" role="muted"
+        Text "{percent}%" strong=#true
+        Text "{finished} {t::of} {total} {t::done}" role="muted"
     }
-    List each="phases" show="ui.tab=phases" empty="{t::empty}" {
-        use "phase-row"
+
+    Tabs id="tab" {
+        Tab "{t::phases}" value="phases"
+        Tab "{t::log}" value="log"
     }
-    Log lines="{log}" show="ui.tab=log"
+
+    Stack gap=1 show="ui.tab=phases" {
+        Table "#" "{t::phase}" "D" "P" "E" "Plans" "{t::status}" empty="{t::empty}" {
+            // A phase: its number and name, the three steps a GSD phase
+            // goes through (discuss, plan, execute), its plans and its state.
+            Row each="phases" {
+                Text "{number}" role="muted"
+                Text "{name}" truncate=#true
+                Marks { Mark role="{tone:discussed}"; }
+                Marks { Mark role="{tone:planned}"; }
+                Marks { Mark role="{tone:executed}"; }
+                Row {
+                    Text "{summaries}/{plans}" role="muted" when="plans"
+                    Text "–" role="faint" unless="plans"
+                }
+                Text "{state:state}" role="{tone:state}"
+            }
+        }
+
+        // The phase in progress, and exactly what is left of it.
+        Stack when="current" {
+            Row gap=2 {
+                Badge "{t::now}" role="warning"
+                Text "{current.number} · {current.name}" strong=#true
+                Pips done="{current.done}" total="{current.total}"
+                Text "{current.left} {t::plans} {t::left}" role="muted"
+            }
+            List each="current.remaining" {
+                Row gap=1 {
+                    Text "{id}" role="muted" min-width=6
+                    Text "{title}" truncate=#true
+                }
+            }
+        }
+    }
+
+    Stack show="ui.tab=log" {
+        Log lines="{activity}" when="activity"
+        Text "{t::quiet}" role="faint" unless="activity"
+    }
 }

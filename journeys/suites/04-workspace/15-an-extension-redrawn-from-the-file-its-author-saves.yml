@@ -33,99 +33,260 @@ world:
     market/plugins/gsd/extensions/gsd-band/extension.kdl: |
       protocol 1
       id "gsd-band"
-      name "GSD band"
-      description "The checkout's GSD milestone, beside the agent"
+      name "GSD"
+      description "The checkout's GSD milestone: every phase, where it stands, and what to run next"
 
-      surface "board" slot="view" view="board.kdl" source="board"
-      surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
+      surface "board" slot="view" view="board.kdl" source="milestone" title="Milestone"
+      surface "summary" slot="section" view="summary.kdl" source="milestone" title="GSD"
 
-      source "board" {
-          fixture "fixtures/board.json"
+      source "milestone" {
+          fixture "fixtures/milestone.json"
       }
     market/plugins/gsd/extensions/gsd-band/board.kdl: |
-      // A phase's state, as the theme's colour role it is drawn in.
+      // The colour a phase's state is drawn in.
       lookup "tone" default="muted" {
           done "success"
-          partial "warning"
+          running "warning"
           ready "info"
-          blocked "muted"
+          waiting "faint"
+      }
+
+      // What each state is called, in the operator's language.
+      lookup "state" locale="en" default="" {
+          done "Done"
+          running "In progress"
+          ready "Ready to discuss"
+          waiting "Waiting"
+      }
+      lookup "state" locale="pt" default="" {
+          done "Concluída"
+          running "Em execução"
+          ready "Pronta para discussão"
+          waiting "Aguardando"
       }
 
       lookup "t" locale="en" {
-          phases "Phases"; log "Log"; next "▶ run phase"; clear "clear"
-          empty "No phase in progress"
+          phases "Phases"; log "Activity"; now "Now"; next "Run phase"
+          left "left"; plans "plans"; of "of"; done "done"; empty "Nothing in this milestone yet"
+          phase "Phase"; status "Status"; quiet "No activity yet"
       }
-
       lookup "t" locale="pt" {
-          phases "Fases"; log "Log"; next "▶ executar fase"; clear "limpar"
-          empty "Nenhuma fase em andamento"
+          phases "Fases"; log "Atividade"; now "Agora"; next "Executar fase"
+          left "faltam"; plans "planos"; of "de"; done "concluídas"; empty "Nada neste milestone ainda"
+          phase "Fase"; status "Situação"; quiet "Nenhuma atividade ainda"
       }
 
-      template "phase-row" {
-          Row gap=1 {
-              Text "{number}" min-width=3
-              Text "{name}" grow=#true truncate=#true
-              Marks {
-                  Mark role="{tone:d}"
-                  Mark role="{tone:p}"
-                  Mark role="{tone:e}"
-              }
-              Pips done="{summaries}" total="{plans}" when="active"
-              Text "{summaries}/{plans}" role="muted" when="finished"
-              Text "{status}" role="{tone:e}"
+      Stack gap=1 {
+          // The milestone and the one action that moves it.
+          Row align="center" gap=2 {
+              Text "{milestone}" strong=#true
+              Text "{title}" role="muted" grow=#true truncate=#true
+              Button "{t::next} {next.number}" action="next" item="{next}" when="next"
           }
+
+          // How far the milestone is: one segment per phase, as wide as its plans.
+          Row gap=2 {
+              Progress grow=#true {
+                  Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:state}"
+              }
+              Text "{percent}%" strong=#true
+              Text "{finished} {t::of} {total} {t::done}" role="muted"
+          }
+
+          Tabs id="tab" {
+              Tab "{t::phases}" value="phases"
+              Tab "{t::log}" value="log"
+          }
+
+          Stack gap=1 show="ui.tab=phases" {
+              Table "#" "{t::phase}" "D" "P" "E" "Plans" "{t::status}" empty="{t::empty}" {
+                  // A phase: its number and name, the three steps a GSD phase
+                  // goes through (discuss, plan, execute), its plans and its state.
+                  Row each="phases" {
+                      Text "{number}" role="muted"
+                      Text "{name}" truncate=#true
+                      Marks { Mark role="{tone:discussed}"; }
+                      Marks { Mark role="{tone:planned}"; }
+                      Marks { Mark role="{tone:executed}"; }
+                      Row {
+                          Text "{summaries}/{plans}" role="muted" when="plans"
+                          Text "–" role="faint" unless="plans"
+                      }
+                      Text "{state:state}" role="{tone:state}"
+                  }
+              }
+
+              // The phase in progress, and exactly what is left of it.
+              Stack when="current" {
+                  Row gap=2 {
+                      Badge "{t::now}" role="warning"
+                      Text "{current.number} · {current.name}" strong=#true
+                      Pips done="{current.done}" total="{current.total}"
+                      Text "{current.left} {t::plans} {t::left}" role="muted"
+                  }
+                  List each="current.remaining" {
+                      Row gap=1 {
+                          Text "{id}" role="muted" min-width=6
+                          Text "{title}" truncate=#true
+                      }
+                  }
+              }
+          }
+
+          Stack show="ui.tab=log" {
+              Log lines="{activity}" when="activity"
+              Text "{t::quiet}" role="faint" unless="activity"
+          }
+      }
+    market/plugins/gsd/extensions/gsd-band/summary.kdl: |
+      // The milestone at a glance, for the sidebar's narrow column.
+      lookup "tone" default="muted" {
+          done "success"
+          running "warning"
+          ready "info"
+          waiting "faint"
       }
 
       Stack {
-          Row align="center" {
-              Activity agent="self"
-              Text "GSD · {version} {name}" role="muted" grow=#true
-              Tabs id="tab" {
-                  Tab "{t::phases}" value="phases"
-                  Tab "{t::log}" value="log"
-              }
-              Button "{t::clear}" action="clear"
-              Button "{t::next} {next.phase}" action="next" item="{next}" when="next"
-          }
           Row gap=1 {
-              Progress grow=#true {
-                  Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:e}"
-              }
-              Text "{percent}%"
-              Text "· {done} of {total} phases" role="muted"
+              Text "{milestone}" strong=#true
+              Text "{percent}%" role="muted"
           }
-          List each="phases" show="ui.tab=phases" empty="{t::empty}" {
-              use "phase-row"
+          Progress {
+              Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:state}"
           }
-          Log lines="{log}" show="ui.tab=log"
+          Row gap=1 when="current" {
+              Text "{current.number}" role="warning"
+              Text "{current.name}" truncate=#true grow=#true
+              Text "{current.done}/{current.total}" role="muted"
+          }
       }
-    market/plugins/gsd/extensions/gsd-band/fixtures/board.json: |
+    market/plugins/gsd/extensions/gsd-band/fixtures/milestone.json: |
       {
-        "version": "v1.23",
-        "name": "Assistente do lojista",
-        "percent": 65, "done": 3, "total": 6,
-        "next": { "phase": "12", "skill": "gsd:execute-phase" },
+        "milestone": "v1.23",
+        "title": "Assistente do lojista",
+        "percent": 65,
+        "finished": 3,
+        "total": 6,
+        "next": {
+          "number": "12",
+          "skill": "gsd:execute-phase"
+        },
+        "current": {
+          "number": "12",
+          "name": "Consulta de dados e diagnóstico",
+          "done": 17,
+          "total": 19,
+          "left": 2,
+          "remaining": [
+            {
+              "id": "12-18",
+              "title": "Diagnóstico de estoque baixo por loja"
+            },
+            {
+              "id": "12-19",
+              "title": "Relatório de erros de integração"
+            }
+          ]
+        },
         "phases": [
-          { "number": "09", "name": "Fundação da loja", "plans": 4, "summaries": 4,
-            "weight": 4, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
-            "finished": true, "active": false, "status": "Concluída" },
-          { "number": "10", "name": "Pedidos e pagamentos", "plans": 5, "summaries": 5,
-            "weight": 5, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
-            "finished": true, "active": false, "status": "Concluída" },
-          { "number": "11", "name": "Catálogo de ajuda", "plans": 6, "summaries": 6,
-            "weight": 6, "ratio": 1.0, "d": "done", "p": "done", "e": "done",
-            "finished": true, "active": false, "status": "Concluída" },
-          { "number": "12", "name": "Consulta de dados e diagnóstico", "plans": 19, "summaries": 17,
-            "weight": 19, "ratio": 0.89, "d": "done", "p": "done", "e": "partial",
-            "finished": false, "active": true, "status": "Execução parcial (17/19)" },
-          { "number": "13", "name": "Ações com confirmação", "plans": 0, "summaries": 0,
-            "weight": 4, "ratio": 0.0, "d": "ready", "p": "blocked", "e": "blocked",
-            "finished": false, "active": false, "status": "Pronta para discussão" },
-          { "number": "14", "name": "Relatórios do lojista", "plans": 0, "summaries": 0,
-            "weight": 4, "ratio": 0.0, "d": "blocked", "p": "blocked", "e": "blocked",
-            "finished": false, "active": false, "status": "Aguarda a fase 13" }
+          {
+            "number": "09",
+            "name": "Fundação da loja",
+            "plans": 4,
+            "summaries": 4,
+            "weight": 4,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "10",
+            "name": "Pedidos e pagamentos",
+            "plans": 5,
+            "summaries": 5,
+            "weight": 5,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "11",
+            "name": "Catálogo de ajuda",
+            "plans": 6,
+            "summaries": 6,
+            "weight": 6,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "12",
+            "name": "Consulta de dados e diagnóstico",
+            "plans": 19,
+            "summaries": 17,
+            "weight": 19,
+            "ratio": 0.89,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "running",
+            "state": "running",
+            "running": true
+          },
+          {
+            "number": "13",
+            "name": "Ações com confirmação",
+            "plans": 0,
+            "summaries": 0,
+            "weight": 4,
+            "ratio": 0.0,
+            "discussed": "ready",
+            "planned": "waiting",
+            "executed": "waiting",
+            "state": "ready",
+            "running": false
+          },
+          {
+            "number": "14",
+            "name": "Relatórios do lojista",
+            "plans": 0,
+            "summaries": 0,
+            "weight": 4,
+            "ratio": 0.0,
+            "discussed": "waiting",
+            "planned": "waiting",
+            "executed": "waiting",
+            "state": "waiting",
+            "running": false
+          }
         ],
-        "log": ["12-17-SUMMARY.md escrito", "turno concluído em 4m12s"]
+        "activity": [
+          {
+            "text": "12-17 · Consulta de pedidos por status — summary written",
+            "role": "success"
+          },
+          {
+            "text": "12-17 · 214 tests passed",
+            "role": "muted"
+          },
+          {
+            "text": "12-18 · Diagnóstico de estoque — plan started",
+            "role": "warning"
+          },
+          {
+            "text": "Turn finished in 4m12s",
+            "role": "muted"
+          }
+        ]
       }
 
 scenes:
@@ -162,13 +323,13 @@ scenes:
         expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
-      - click: "GSD band"
+      - click: "Milestone"
         say: open the extension's board from the tab strip
         in: strip
         expect: "gsd-band · gsd@studio"
         expect_timeout: 20
       - wait: screen
-        until: "65% · 3 of 6 phases"
+        until: "65%  3 of 6 done"
         in: pane
         timeout: 20
         say: the board is drawn from its fixture
@@ -182,11 +343,11 @@ scenes:
 
   - scene: and then switching a tab draws the log and touches nothing
     when:
-      - click: "Log"
+      - click: "Activity"
         say: switch the board to its log
         in: pane
         occurrence: first
-        expect: "turno concluído em 4m12s"
+        expect: "Turn finished in 4m12s"
         expect_timeout: 10
     then:
       - tree: ["{world}/market", "{uze_home}/runtime/extensions"]
@@ -204,7 +365,7 @@ scenes:
         timeout: 10
         say: the open board redraws on its own
       - wait: screen
-        until: "turno concluído em 4m12s"
+        until: "Turn finished in 4m12s"
         in: pane
         timeout: 5
         say: on the tab the author chose
