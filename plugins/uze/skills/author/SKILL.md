@@ -199,6 +199,22 @@ surface's view is then bound to its source's fixture, and a field the view
 names that the fixture lacks is a warning placed in the view: add the
 field to the fixture, or stop naming it.
 
+### What a view can draw
+
+A view is built from the catalog's nodes, PascalCase, each documented in
+the language server's hover:
+
+- layout: `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
+- text: `Text`, `Markdown`, `Code`, `Log`, `Kbd`
+- data: `List`, `Table`, `Details`/`Entry`
+- measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
+- status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
+- input: `Toggle`, `Button` (recorded, not run, in this protocol)
+
+Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
+value. `ui.` and `context.` are scopes: a fixture field named `context`
+is not reachable as `{context.…}`.
+
 ### Test an extension
 
 Every `tests/*.test.kdl` runs in the check, which fails when one does. A
