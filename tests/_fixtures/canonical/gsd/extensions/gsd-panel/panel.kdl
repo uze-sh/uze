@@ -3,7 +3,7 @@ lookup "mark" default="○" {
     running "◆"
     done "●"
     ready "○"
-    waiting "○"
+    waiting "·"
 }
 lookup "tone" default="muted" {
     running "warning"
@@ -17,70 +17,75 @@ lookup "tone" default="muted" {
 
 lookup "t" locale="en" {
     phases "Phases"; blockers "Blockers"; stopped "Stopped at"; of "of"; phase "phases"
-    more "more in"; next "Run"; clear "New conversation"; none "Nothing blocks this milestone"
+    more "more in"; clear "New conversation"; none "Nothing blocks this milestone"
+    now "now"
 }
 lookup "t" locale="pt" {
     phases "Fases"; blockers "Bloqueios"; stopped "Parou em"; of "de"; phase "fases"
-    more "a mais no"; next "Executar"; clear "Nova conversa"; none "Nada bloqueia este milestone"
+    more "a mais no"; clear "Nova conversa"; none "Nada bloqueia este milestone"
+    now "agora"
 }
 
 Stack gap=1 {
-    // Which milestone, where it stands, on which version and branch.
+    // Which milestone, on which version and branch, and how far.
     Stack {
-        Text "{title}" strong=#true truncate=#true
-        Row gap=1 {
-            Marks { Mark role="{tone:status.tone}"; }
-            Text "{status.text}" role="{tone:status.tone}" truncate=#true grow=#true
-        }
-        Row gap=2 {
+        Row gap=1 align="center" {
+            Text "{title}" strong=#true grow=#true
             Badge "{version}" role="info"
-            Text "⎇ {branch}" role="muted" truncate=#true
         }
+        Text "⎇ {branch}  ·  {done} {t::of} {total} {t::phase}  ·  {percent}%" role="muted"
     }
 
-    // How far it is.
-    Stack {
-        Row gap=2 {
-            Progress grow=#true {
-                Segment each="phases" weight=1 ratio="{ratio}" role="{tone:state}"
-            }
-            Text "{percent}%" strong=#true
-        }
-        Text "{done} {t::of} {total} {t::phase}" role="muted"
+    // Where it stands, said once and in full.
+    Row gap=1 {
+        Marks { Mark role="{tone:status.tone}"; }
+        Text "{status.text}" role="{tone:status.tone}" grow=#true
     }
 
-    // The phases, the one in progress marked.
+    Progress {
+        Segment each="phases" weight=1 ratio="{ratio}" role="{tone:state}"
+    }
+
+    // The phases, the one in progress marked and named as such.
     Stack {
-        Text "{t::phases}" role="secondary"
+        Row gap=1 {
+            Text "{t::phases}" role="secondary" grow=#true
+            Text "{done}/{total}" role="faint"
+        }
         List each="phases" {
             Row gap=1 {
                 Text "{mark:state}" role="{tone:state}"
-                Text "{number}" role="muted" min-width=3
-                Text "{name}" truncate=#true grow=#true
+                Text "{number}" role="muted" min-width=2
+                Text "{name}" grow=#true
+                Text "{t::now}" role="warning" when="current"
             }
         }
     }
 
-    // What stands in the way.
-    Stack {
-        Text "{t::blockers}" role="secondary"
-        List each="blockers" empty="{t::none}" {
+    // What stands in the way: the first few in full, the rest counted.
+    Stack when="blockers" {
+        Row gap=1 {
+            Text "{t::blockers}" role="secondary" grow=#true
+            Badge "{blockers_total}" role="warning"
+        }
+        List each="blockers" {
             Row gap=1 {
                 Text "!" role="warning"
-                Text "{.}" truncate=#true grow=#true
+                Text "{.}" grow=#true
             }
         }
         Text "+{blockers_more} {t::more} {state_file}" role="faint" when="blockers_more"
     }
+    Text "{t::none}" role="faint" unless="blockers"
 
     // Where the last session stopped, in its own words.
     Stack when="stopped" {
         Text "{t::stopped}" role="secondary"
-        Text "{stopped}"
+        Text "{stopped}" role="default"
     }
 
-    // The next step, and starting over.
-    Row gap=2 {
+    // The next step first; starting over below it.
+    Stack {
         Button "▶ {next.command}" action="next" item="{next}" when="next"
         Button "{t::clear}" action="clear"
     }
