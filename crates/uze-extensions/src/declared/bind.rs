@@ -397,6 +397,16 @@ impl<'a> Builder<'a> {
         Clean::label(&text.unwrap_or_default()).into_string()
     }
 
+    /// A `Text` that wraps is a paragraph, not a label: it is bounded as a
+    /// block of text rather than cut at a label's length, and its breaks
+    /// read as spaces, since the host wraps it to the room it has.
+    fn paragraph(&self, node: &'a Compiled, scopes: &[&'a Value]) -> String {
+        let text = self.arg(node, scopes, 0).map(|value| scalar_text(&value));
+        Clean::text(&text.unwrap_or_default())
+            .as_str()
+            .replace('\n', " ")
+    }
+
     fn text_prop(&self, node: &'a Compiled, scopes: &[&'a Value], name: &str) -> Option<String> {
         self.prop(node, scopes, name)
             .map(|value| Clean::label(&scalar_text(&value)).into_string())
@@ -550,12 +560,16 @@ fn leaf<'a>(
 ) -> NodeKind {
     match node.name {
         NodeName::Text => {
-            let mut span =
-                view::Span::new(builder.label(node, scopes), builder.role_prop(node, scopes));
+            let truncate = builder.flag_prop(node, scopes, "truncate");
+            let said = match truncate {
+                true => builder.label(node, scopes),
+                false => builder.paragraph(node, scopes),
+            };
+            let mut span = view::Span::new(said, builder.role_prop(node, scopes));
             span.bold = builder.flag_prop(node, scopes, "strong");
             NodeKind::Text {
                 spans: vec![span],
-                truncate: builder.flag_prop(node, scopes, "truncate"),
+                truncate,
             }
         }
         NodeName::Badge => NodeKind::Badge {
