@@ -30,6 +30,16 @@ pub enum NodeName {
     Activity,
     Elapsed,
     Log,
+    Rule,
+    Details,
+    Entry,
+    Markdown,
+    Code,
+    Gauge,
+    Chart,
+    Stat,
+    Kbd,
+    Grid,
 }
 
 /// What a property's value must be once bound.
@@ -100,7 +110,18 @@ const ANY: &[NodeName] = &[
     NodeName::Activity,
     NodeName::Elapsed,
     NodeName::Log,
+    NodeName::Rule,
+    NodeName::Details,
+    NodeName::Markdown,
+    NodeName::Code,
+    NodeName::Gauge,
+    NodeName::Chart,
+    NodeName::Stat,
+    NodeName::Kbd,
+    NodeName::Grid,
 ];
+
+const CHART_KIND: PropKind = PropKind::Word(&["sparkline", "bar"]);
 
 pub const CATALOG: &[NodeSpec] = &[
     NodeSpec {
@@ -246,6 +267,86 @@ pub const CATALOG: &[NodeSpec] = &[
         props: &[("lines", PropKind::Value)],
         children: None,
     },
+    NodeSpec {
+        name: NodeName::Rule,
+        args: &[PropKind::Text],
+        required_args: 0,
+        props: &[("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Details,
+        args: &[],
+        required_args: 0,
+        props: &[],
+        children: Some(&[NodeName::Entry]),
+    },
+    NodeSpec {
+        name: NodeName::Entry,
+        args: &[PropKind::Text, PropKind::Text],
+        required_args: 2,
+        props: &[("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Markdown,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Code,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("language", PropKind::Text)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Gauge,
+        args: &[PropKind::Text],
+        required_args: 0,
+        props: &[
+            ("ratio", PropKind::Number),
+            ("role", PropKind::Role),
+            ("warning", PropKind::Number),
+            ("danger", PropKind::Number),
+        ],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Chart,
+        args: &[],
+        required_args: 0,
+        props: &[
+            ("series", PropKind::Value),
+            ("kind", CHART_KIND),
+            ("height", PropKind::Count),
+            ("role", PropKind::Role),
+        ],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Stat,
+        args: &[PropKind::Text, PropKind::Text],
+        required_args: 2,
+        props: &[("delta", PropKind::Text), ("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Kbd,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Grid,
+        args: &[],
+        required_args: 0,
+        props: &[("gap", PropKind::Count)],
+        children: Some(ANY),
+    },
 ];
 
 impl NodeName {
@@ -277,6 +378,16 @@ impl NodeName {
             Self::Activity => "Activity",
             Self::Elapsed => "Elapsed",
             Self::Log => "Log",
+            Self::Rule => "Rule",
+            Self::Details => "Details",
+            Self::Entry => "Entry",
+            Self::Markdown => "Markdown",
+            Self::Code => "Code",
+            Self::Gauge => "Gauge",
+            Self::Chart => "Chart",
+            Self::Stat => "Stat",
+            Self::Kbd => "Kbd",
+            Self::Grid => "Grid",
         }
     }
 
@@ -342,6 +453,28 @@ impl NodeName {
             Self::Activity => "A mark the host animates while `busy`.",
             Self::Elapsed => "The time since `since`, ticked by the host.",
             Self::Log => "Lines, each a string or an object with `text` and a `role`.",
+            Self::Rule => "A hairline across the width, with its label when given.",
+            Self::Details => {
+                "Key/value pairs, one `Entry` each, with the keys in one aligned column."
+            }
+            Self::Entry => "One pair of a `Details`: its key, then its value, in its role.",
+            Self::Markdown => {
+                "Text written in Markdown: headings, lists, quotes, emphasis and fenced code, wrapped."
+            }
+            Self::Code => {
+                "A block of code highlighted for its `language`, one row per line, cut rather than wrapped."
+            }
+            Self::Gauge => {
+                "A labelled meter at `ratio`, in `role` until it reaches `warning` or `danger`."
+            }
+            Self::Chart => {
+                "A list of numbers (`series`) as one `sparkline` row or as `bar`s `height` rows tall."
+            }
+            Self::Stat => "A figure and its label, with a `delta` in its role when given.",
+            Self::Kbd => "A key, drawn as the workspace draws its own keys.",
+            Self::Grid => {
+                "Its children as tiles, in as many columns as fit their `min-width`, row by row."
+            }
         }
     }
 }
@@ -457,6 +590,13 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "busy" => "Whether the mark is animated.",
         "since" => "A timestamp: milliseconds, or an RFC 3339 date.",
         "lines" => "A list field of lines, or one string of several.",
+        "language" => "The language the code is highlighted for, such as `rust` or `json`.",
+        "warning" => "The ratio from which the gauge is drawn in the `warning` role.",
+        "danger" => "The ratio from which the gauge is drawn in the `danger` role.",
+        "series" => "A list field of numbers.",
+        "kind" => "`sparkline` (one row) or `bar` (columns `height` rows tall).",
+        "height" => "How many rows the bars take.",
+        "delta" => "A change beside the figure, such as `+12%`, in `role`.",
         _ => return None,
     })
 }

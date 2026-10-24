@@ -1312,3 +1312,155 @@ fn a_text_a_row_squeezes_to_nothing_takes_no_rows_and_folds_nothing_away() {
     let rows = draw(&band, 25, 4, 0, folding).rows();
     assert!(rows[1].contains("Catálogo de ajuda"), "{rows:#?}");
 }
+
+fn gauge_node(id: usize, label: &str, filled: u16, role: Role) -> Node {
+    node(
+        id,
+        NodeKind::Gauge {
+            label: label.into(),
+            filled,
+            role,
+        },
+    )
+}
+
+#[test]
+fn gauges_in_a_stack_share_their_label_column_and_say_their_percent() {
+    in_both(|theme| {
+        let root = stack(
+            0,
+            0,
+            vec![
+                gauge_node(1, "Opus", 620, Role::Info),
+                gauge_node(2, "Sonnet", 930, Role::Danger),
+            ],
+        );
+        let drawn = draw(&root, 40, 2, 0, at(0));
+        let rows = drawn.rows();
+        assert!(
+            rows[0].ends_with(" 62%") && rows[1].ends_with(" 93%"),
+            "{theme}: {rows:#?}"
+        );
+        let bar_start = |row: &str| {
+            row.char_indices()
+                .find(|(_, ch)| !ch.is_alphanumeric() && *ch != ' ')
+                .map(|(at, _)| row[..at].chars().count())
+        };
+        assert_eq!(
+            bar_start(&rows[0]),
+            bar_start(&rows[1]),
+            "{theme}: {rows:#?}"
+        );
+        assert_eq!(drawn.fg(39, 1), color(Role::Danger), "{theme}");
+    });
+}
+
+#[test]
+fn a_sparkline_scales_to_its_largest_and_bars_stack_from_the_bottom() {
+    in_both(|theme| {
+        let levels = theme::frames(Symbol::ChartLevel);
+        let spark = node(
+            0,
+            NodeKind::Chart {
+                kind: uze_extensions::view::ChartKind::Sparkline,
+                levels: vec![125, 500, 1000, 0],
+                height: 1,
+                role: Role::Accent,
+            },
+        );
+        let row = draw(&spark, 4, 1, 0, at(0)).rows()[0].clone();
+        let cells: Vec<String> = row.chars().map(String::from).collect();
+        assert_eq!(cells[0], levels[0], "{theme}: the lowest level above empty");
+        assert_eq!(cells[2], *levels.last().unwrap(), "{theme}: the tallest");
+        let bars = node(
+            0,
+            NodeKind::Chart {
+                kind: uze_extensions::view::ChartKind::Bar,
+                levels: vec![1000, 500, 0],
+                height: 2,
+                role: Role::Info,
+            },
+        );
+        let rows = draw(&bars, 3, 2, 0, at(0)).rows();
+        let full = levels.last().unwrap();
+        assert!(rows[0].starts_with(full.as_str()), "{theme}: {rows:#?}");
+        assert!(
+            rows[1].starts_with(&format!("{full}{full}")),
+            "{theme}: {rows:#?}"
+        );
+        let zeros = node(
+            0,
+            NodeKind::Chart {
+                kind: uze_extensions::view::ChartKind::Sparkline,
+                levels: vec![0, 0],
+                height: 1,
+                role: Role::Info,
+            },
+        );
+        assert_eq!(
+            draw(&zeros, 4, 1, 0, at(0)).rows()[0],
+            "",
+            "{theme}: nothing to draw"
+        );
+    });
+}
+
+#[test]
+fn a_grid_reflows_its_tiles_with_the_width() {
+    let tile = |id: usize| words(id, &format!("tile {id}"), Role::Default);
+    let mut grid = node(0, NodeKind::Grid { gap: 2 });
+    grid.min_width = 20;
+    grid.children = (1..=4).map(tile).collect();
+    let narrow = draw(&grid, 44, 3, 0, at(0)).rows();
+    assert!(
+        narrow[0].contains("tile 1") && narrow[0].contains("tile 2"),
+        "{narrow:#?}"
+    );
+    assert!(
+        narrow[2].contains("tile 3"),
+        "two rows with a gap: {narrow:#?}"
+    );
+    let wide = draw(&grid, 90, 1, 0, at(0)).rows();
+    assert!(wide[0].contains("tile 4"), "one row of four: {wide:#?}");
+}
+
+#[test]
+fn details_align_their_keys_and_code_is_cut_not_wrapped() {
+    let entry = |id, key: &str, value: &str| {
+        node(
+            id,
+            NodeKind::Entry {
+                key: key.into(),
+                value: value.into(),
+                role: Role::Default,
+            },
+        )
+    };
+    let mut details = node(0, NodeKind::Details);
+    details.children = vec![entry(1, "Plan", "Max 5x"), entry(2, "Resets in", "1h54m")];
+    let rows = draw(&details, 30, 2, 0, at(0)).rows();
+    assert_eq!(rows[0].find("Max"), rows[1].find("1h54m"), "{rows:#?}");
+
+    let code = node(
+        0,
+        NodeKind::Code {
+            text: "let base = Duration::from_millis(100); // a long line of code\n".into(),
+            language: "rust".into(),
+        },
+    );
+    assert_eq!(height(&code, 24), 1, "one line of code is one row, cut");
+}
+
+#[test]
+fn markdown_wraps_and_stops_at_its_cap() {
+    let long: String = (0..400).map(|line| format!("- item {line}\n")).collect();
+    let markdown = node(0, NodeKind::Markdown { text: long });
+    assert_eq!(height(&markdown, 40), super::display::BLOCK_ROWS_MAX);
+    let prose = node(
+        1,
+        NodeKind::Markdown {
+            text: "Make payment retries back off and stop after five attempts.".into(),
+        },
+    );
+    assert!(height(&prose, 20) > 1, "wrapped to its width");
+}

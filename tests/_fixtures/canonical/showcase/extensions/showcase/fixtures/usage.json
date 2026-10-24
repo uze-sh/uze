@@ -1,0 +1,13 @@
+{
+  "cost": { "today": "$15.48", "delta": "+12%" },
+  "tokens": "4.56M",
+  "sessions": "7",
+  "window": { "opus": 0.62, "sonnet": 0.78, "haiku": 0.93 },
+  "burn": [3, 5, 4, 8, 12, 9, 15, 22, 18, 25, 30, 27, 21, 19, 24, 33, 41, 38, 29, 35],
+  "daily": [12, 18, 9, 22, 30, 14, 26],
+  "plan": "## Retry policy\n\nMake payment retries **back off** and stop after five attempts.\n\n- read the current retry loop\n- write failing tests for the backoff\n- implement exponential backoff with jitter\n\n> Keep the existing timeout.",
+  "snippet": "fn backoff(attempt: u32) -> Duration {\n    let base = Duration::from_millis(100);\n    base * 2u32.pow(attempt.min(5))\n}\n",
+  "plan_name": "Max 5x",
+  "branch": "feat/retry-backoff",
+  "resets": "1h54m"
+}

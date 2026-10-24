@@ -600,6 +600,67 @@ pub enum NodeKind {
         text: String,
         role: Role,
     },
+    /// A hairline across the width, with a label when there is one.
+    Rule {
+        label: Option<String>,
+        role: Role,
+    },
+    /// Key/value pairs, its children each an [`NodeKind::Entry`].
+    Details,
+    /// One pair of a [`NodeKind::Details`].
+    Entry {
+        key: String,
+        value: String,
+        role: Role,
+    },
+    /// Markdown, folded to the width it is drawn at.
+    Markdown {
+        text: String,
+    },
+    /// Code, highlighted for `language` and cut at the width.
+    Code {
+        text: String,
+        language: String,
+    },
+    /// A labelled meter, filled to `filled` thousandths, in the role its
+    /// thresholds chose.
+    Gauge {
+        label: String,
+        filled: u16,
+        role: Role,
+    },
+    /// A series of numbers, each as thousandths of the largest.
+    Chart {
+        kind: ChartKind,
+        levels: Vec<u16>,
+        height: u16,
+        role: Role,
+    },
+    /// A figure and its label, with a change beside it.
+    Stat {
+        value: String,
+        label: String,
+        delta: Option<String>,
+        role: Role,
+    },
+    /// A key, drawn as the host draws its own.
+    Kbd {
+        key: String,
+    },
+    /// Its children as tiles, as many columns as fit their `min-width`.
+    Grid {
+        gap: u16,
+    },
+}
+
+/// How a [`NodeKind::Chart`] draws its series.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChartKind {
+    /// One row, a level per value.
+    #[default]
+    Sparkline,
+    /// A column per value, `height` rows tall.
+    Bar,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

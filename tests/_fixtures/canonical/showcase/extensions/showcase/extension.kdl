@@ -1,0 +1,12 @@
+protocol 1
+id "showcase"
+name "Showcase"
+description "One surface per family of the catalog"
+
+surface "measures" slot="view" view="measures.kdl" source="usage" title="Measures"
+surface "blocks" slot="view" view="blocks.kdl" source="usage" title="Blocks"
+surface "structure" slot="drawer" view="structure.kdl" source="usage" title="Structure"
+
+source "usage" {
+    fixture "fixtures/usage.json"
+}

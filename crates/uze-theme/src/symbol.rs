@@ -237,6 +237,10 @@ vocabulary! {
         ActivityBusy = "activity.busy",
         /// The same place, with nothing under way.
         ActivityIdle = "activity.idle",
+        /// A chart's height, a frame per level from the least a cell can
+        /// show to a whole one: a sparkline draws one cell per value at its
+        /// level, a bar stacks whole cells and tops them with a level.
+        ChartLevel = "chart.level",
 
         // ── a checkout's history ───────────────────────────────────────
         /// The commit `HEAD` is on.

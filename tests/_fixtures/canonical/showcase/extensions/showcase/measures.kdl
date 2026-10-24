@@ -1,0 +1,17 @@
+Stack gap=1 {
+    Grid min-width=22 gap=2 {
+        Stat "{cost.today}" "Spent today" delta="{cost.delta}" role="warning"
+        Stat "{tokens}" "Tokens this block"
+        Stat "{sessions}" "Sessions"
+    }
+    Rule "Context"
+    Gauge "Opus" ratio="{window.opus}" role="info" warning=0.7 danger=0.9
+    Gauge "Sonnet" ratio="{window.sonnet}" role="info" warning=0.7 danger=0.9
+    Gauge "Haiku" ratio="{window.haiku}" role="info" warning=0.7 danger=0.9
+    Rule "Burn rate"
+    Row gap=2 {
+        Text "last hour" role="muted" min-width=10
+        Chart series="{burn}" kind="sparkline" role="accent" grow=#true
+    }
+    Chart series="{daily}" kind="bar" height=4 role="info"
+}
