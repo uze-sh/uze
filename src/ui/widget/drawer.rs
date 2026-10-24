@@ -58,11 +58,11 @@ pub(crate) fn width(requested: Option<u16>, room: u16) -> u16 {
 /// A drawer docked beside a live pane rather than beside a list: the
 /// narrowest and widest it is drawn, and the narrowest pane it leaves. An
 /// agent's terminal under forty columns wraps every line it prints.
-pub(crate) const DOCKED_MIN_WIDTH: u16 = 36;
+pub(crate) const DOCKED_MIN_WIDTH: u16 = 44;
 pub(crate) const DOCKED_MAX_WIDTH: u16 = 72;
 pub(crate) const DOCKED_PANE_MIN_WIDTH: u16 = 40;
 /// The share of the agent area, in percent, it takes at rest.
-const DOCKED_SHARE: u16 = 40;
+const DOCKED_SHARE: u16 = 45;
 /// The column of air between the pane and the docked drawer's edge.
 pub(crate) const DOCKED_GAP: u16 = 1;
 
