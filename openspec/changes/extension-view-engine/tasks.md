@@ -16,11 +16,11 @@
 
 ## 3. Engine (parallel, `uze-extensions/src/declared/`)
 
-- [ ] 3.1 The binder: compiled view + JSON data + UI state + locale → `View`/`Section`, with typed lone references, mixed text, `each`, `when`/`unless`, `show`/`show-any`, `use`, lookups, and every string through `Clean`
-- [ ] 3.2 The node cap with a folded notice, and memoization per (data digest, size, UI state)
-- [ ] 3.3 The "why absent" trace for the inspector, and recorded actions with the arguments they would receive
-- [ ] 3.4 The declared engine as an `Extension`: slots `view` and `section`, UI state (`ui.<id>`) for `Tabs`, `Toggle` and selection, place and memory
-- [ ] 3.5 Engine tests from compiled fixtures: each binding rule, the cap, the trace, UI state switching without a rebuild of data
+- [x] 3.1 The binder: compiled view + JSON data + UI state + locale → `View`/`Section`, with typed lone references, mixed text, `each`, `when`/`unless`, `show`/`show-any`, `use`, lookups, and every string through `Clean`
+- [x] 3.2 The node cap with a folded notice, and memoization per (data digest, size, UI state)
+- [x] 3.3 The "why absent" trace for the inspector, and recorded actions with the arguments they would receive
+- [x] 3.4 The declared engine as an `Extension`: slots `view` and `section`, UI state (`ui.<id>`) for `Tabs`, `Toggle` and selection, place and memory
+- [x] 3.5 Engine tests from compiled fixtures: each binding rule, the cap, the trace, UI state switching without a rebuild of data
 
 ## 4. Renderers (parallel, `src/ui/extension_view*`, `uze-theme`)
 
