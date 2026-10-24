@@ -175,7 +175,7 @@ unknown slot or `kind="interactive"`.
 A surface SHALL declare a `feed`: `bind` (manifest nodes filled from a
 source's data), `compose` (a source answers a catalog tree), `cells`,
 `image` or `sprite` (a source answers that medium), or `resident` (a
-WebAssembly component, under the `resident` grant). Changing a surface's feed
+script kept alive, under the `resident` grant). Changing a surface's feed
 SHALL NOT change its slot, actions, keys or grants other than `resident`.
 
 #### Scenario: A composed surface draws the tree it was answered
@@ -385,7 +385,7 @@ added only when a reference extension needs it.
 
 #### Scenario: Snake runs resident
 - **WHEN** the `snake` reference's view is focused and the operator presses arrow keys
-- **THEN** the component receives the keys, answers a cell grid each frame within its budget, and keeps its best score in its store
+- **THEN** the script receives the keys, answers a cell grid each frame within its budget, and keeps its best score in its store
 
 ### Requirement: An extension's state is reported where its plugin's is
 `uze status` and `uze inspect <plugin>` SHALL report each extension a plugin

@@ -1,7 +1,7 @@
 ## 0. Resolve before implementation (plan frozen)
 
 - [ ] 0.1 Decide the split into eight changes, visual engine first (design.md, *Proposed split*), and move groups 1–25 into them; the first change (groups 2, 13.3, 21, 22.1–22.4, 23.0–23.3, 23.8 and 0.10) runs no third-party code and can be unfrozen alone
-- [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the WebAssembly runtime and HTTP client, the unattended prompt rate
+- [ ] 0.2 Settle the product decisions owed: `write:checkout`, enablement scope, unenforced-consent wording, the `rhai` dependency review and the HTTP client, the unattended prompt rate
 - [ ] 0.3 Resolve architecture blockers A1–A5 and rewrite D2, D8 and discovery accordingly
 - [ ] 0.4 Resolve security criticals S1–S6 and rewrite D5, D6 and the extension-security spec accordingly
 - [ ] 0.5 Fold the majors, highs and mediums into the specs, design and tasks, or record why each is deferred
@@ -9,7 +9,7 @@
 - [x] 0.7 Review the 2026-10-23 revision (D13–D20) for architecture fit, security and authoring, and record its findings beside the earlier ones (design.md, *Second review*)
 - [ ] 0.8 Resolve the second review's open items (R-A1 amendments to ADR-056 and ADR-040, R-A5 reserving `spec`, R-A8 several images per frame, R-A10 consent refused in an agent's pane, R-A12 `notify`/`sound` in `uze-platform`, R-A13 stale citations, R-S12 a per-extension memory budget, R-U7 `open` and global keys)
 - [ ] 0.10 Lay the minimal generic path of D2 in the first change (contract, slot map, one spawn/absorb pair in `orchestrator/reads.rs`, one outcome follow-up) for the view engine only, adding no per-extension field, channel or hit variant
-- [ ] 0.9 Amend ADR-059 (writes to a pane stay refuse-not-queue, now also from extensions), ADR-041 (WebAssembly as the only resident form; extension state in `UzeHome`) and the extensions rule (raw keys for the resident tier) with task 1.1
+- [ ] 0.9 Amend ADR-059 (writes to a pane stay refuse-not-queue, now also from extensions), ADR-041 (Rhai as the only embedded language, in `uze-script`; extension state in `UzeHome`) and the extensions rule (raw keys for the resident tier) with task 1.1
 
 ## 1. Generic host contract (no observable change)
 
@@ -150,11 +150,9 @@
 
 ## 18. Resident tier
 
-- [ ] 18.1 Create `uze-wasm` (depending on `uze-contract` and `uze-platform` only) and publish the WIT world with every type (exports `start`, `event`, `input`, `render`, `stop`; imports `run-program`, `fetch`, `store`, `clock`, `timer`, `read-checkout`, `agent-prompt`, `notify`)
-- [ ] 18.2 Dependency review of the chosen runtime and HTTP client (0.2), then embed the runtime off the drawing thread behind an `Extension` adapter
-- [ ] 18.3 Refuse at check and enable a component whose imports its grants do not cover, or whose digest (checked on the buffer that is compiled) differs from the consented one; `read-checkout` resolves beneath the root with no link followed; `agent-prompt` raises the host confirmation without `agent:prompt:auto`; `run-program` shares the declared sources' limits; enforcement reported per import
-- [ ] 18.4 Fuel and memory bounds per call, a 30-per-second frame cap, stop on breach with the bound named
-- [ ] 18.5 Raw keys and pointer to a focused resident surface, the host's escape chord excepted
+- [ ] 18.1 The resident entry points in `uze-script`: `start`, `event`, `input`, `render`, `stop`, with the scope kept between calls while the surface is open
+- [ ] 18.2 Raw keys and pointer to a focused resident surface, the host's escape chord and pause key excepted; renders at most once per frame and 30 per second
+- [ ] 18.3 Stop a resident script on a breached budget with the bound named, and keep the last frame when a render is late
 
 ## 19. Authoring
 
@@ -196,12 +194,14 @@
 - [ ] 23.7 Tests for every gallery entry (D20)
 - [ ] 23.8 Vendor a KDL v2 grammar into `crates/uze-extensions/grammars/` with its licence, map `.kdl`, and test that it compiles under `fancy-regex` and colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences; write a small one if no upstream v2 grammar compiles
 
-## 24. Components first (D27)
+## 24. Scripts first (D27, D19)
 
-- [ ] 24.1 The stateless WIT world (`answer(question) -> answer`, the D4 input and envelope), extended by the resident world of D19
-- [ ] 24.2 `wasm "…"` declarations in the manifest, run by `uze-wasm` with the D19 budgets and imports, in change 4
-- [ ] 24.3 The argv runner and `exec:` grants only in change 5, with OS confinement or its explicit "runs as you" disclosure
-- [ ] 24.4 Lead the check, the scaffold and the Skill with components, documenting the shell path as fully supported
+- [ ] 24.1 Dependency review of `rhai` (publisher, `cargo tree`, `cargo deny`, its `unsafe`), then create `uze-script` depending on `uze-contract` and `uze-platform` only, behind an `Extension` adapter
+- [ ] 24.2 The engine per extension: built raw with chosen packages, no module resolver, `eval` disabled, `print`/`debug` to the inspector, the operation, depth and size bounds and a deadline hook
+- [ ] 24.3 Host functions as grants: `read_checkout` and `list_checkout` beneath the root with no link followed, `run_program` under its program's grants and the sources' limits, `agent_prompt` with D16's confirmation, `store`, `clock`, `timer`, `notify`, and the native primitives of D28; the check refuses a script naming a function its grants do not register
+- [ ] 24.4 `script "…"` declarations answered by `answer(question)` on the job pool, compiled at load and on a linked extension's save, digest-checked against consent
+- [ ] 24.5 The argv runner and `exec:` grants only in change 5, with OS confinement or its explicit "runs as you" disclosure
+- [ ] 24.6 Lead the check, the scaffold and the Skill with scripts, documenting programs as fully supported
 
 ## 25. Performance budget (D28)
 

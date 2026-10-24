@@ -6,23 +6,23 @@ writes standard output, with no SDK and no resident process.
 
 ## ADDED Requirements
 
-### Requirement: A declaration is answered by a component or a program
-A source or action SHALL be answered by a WebAssembly component called once
-per question (`wasm`), by a program (`run`), or, in development and tests
-only, by a fixture. A component and a program SHALL receive the same input
-and answer the same output and envelope, so changing which one answers SHALL
-NOT change the view or the tests.
+### Requirement: A declaration is answered by a script or a program
+A source or action SHALL be answered by a Rhai script called once per
+question (`script`), by a program (`run`), or by a fixture. A script and a
+program SHALL receive the same input and answer the same output and
+envelope, so changing which one answers SHALL NOT change the view or the
+tests. A script SHALL need no build.
 
-#### Scenario: A script becomes a component without touching the view
-- **WHEN** an author replaces `run "./bin/board.sh"` with `wasm "bin/board.wasm"` and the component answers the same JSON
+#### Scenario: A shell script becomes a Rhai script without touching the view
+- **WHEN** an author replaces `run "./bin/board.sh"` with `script "board.rhai"` and its `answer` returns the same map
 - **THEN** the surface draws the same and the extension's tests pass unchanged
 
-#### Scenario: A component needs no exec grant
-- **WHEN** an extension's sources are all components that import only `read-checkout`
+#### Scenario: A script needs no exec grant
+- **WHEN** an extension's sources are all scripts that call only `read_checkout`
 - **THEN** consent asks only for `read:checkout`, and the extension is confined on every platform
 
-#### Scenario: A component wrapping a CLI is as confined as the CLI
-- **WHEN** a component imports `run-program` to run `nvidia-smi`
+#### Scenario: A script wrapping a CLI is as confined as the CLI
+- **WHEN** a script calls `run_program` to run `nvidia-smi`
 - **THEN** enabling asks for `exec:nvidia-smi` apart, and the Extensions screen reports the program's confinement as the platform gives it
 
 ### Requirement: A program is an argv the host runs once per question

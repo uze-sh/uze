@@ -117,7 +117,7 @@ text and the target agent, and the operator accepts.
 - **THEN** nothing is written to any pane
 
 ### Requirement: Unattended prompts carry only declared text
-An `agent.prompt` caused by an event, a timer or a resident component
+An `agent.prompt` caused by an event, a timer or a resident script
 without a gesture SHALL need `agent:prompt:auto` for that project and agent,
 SHALL send only the manifest's fixed text or a declared skill with arguments
 from a closed set, SHALL be rate-limited per agent and attributed, and SHALL

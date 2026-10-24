@@ -63,9 +63,9 @@ mechanism chosen without a capability model cannot be given one afterwards
   - *cells and media*: still stateless, an answer may also be a grid of
     themed cells with clickable regions, an image, or a sprite whose frames
     the host animates from an agent's state;
-  - *resident*: a WebAssembly component that keeps state, receives input and
-    timers, and answers a catalog tree or cells every frame, reaching nothing
-    but the host imports it was granted.
+  - *resident*: the extension's Rhai script kept alive, with state, input
+    and timers, answering a catalog tree or cells every frame, reaching
+    nothing but the host functions it was granted.
 - **Places an extension may occupy.** A full-frame view (with a host
   attribution strip it cannot cover), a sidebar section, a row in the
   sidebar's header, a band of fixed rows along the edge of an agent's pane,
@@ -84,10 +84,10 @@ mechanism chosen without a capability model cannot be given one afterwards
   `when`/`unless`, `show`, templates, lookup tables with locales), UI state
   held by the host, parsed only at check, install, enable and reload
   behind UZE's own bounds, and highlighted in UZE's editor.
-- **A component first, a program when it must.** A source or an action is
-  answered by a stateless WebAssembly component (the default, confined on
-  every platform) or by an argv program (to wrap a CLI, or a quick shell
-  script), both on one contract: a JSON input (its slot, size, agent, and
+- **A script first, a program when it must.** A source or an action is
+  answered by a Rhai script embedded in UZE (the default: no build, no SDK,
+  confined on every platform) or by an argv program (to wrap a CLI, or in
+  the author's own language), both on one contract: a JSON input (its slot, size, agent, and
   the event, store, preferences and fields it names, also as argv or
   `UZE_IN_*` for a shell), a JSON, lines or media answer, optionally in an
   envelope of requests, and the portable hook exit codes, bounded in time
@@ -141,7 +141,7 @@ mechanism chosen without a capability model cannot be given one afterwards
 - `extension-program-contract`: the stdin/stdout/exit-code contract a source, action or command program answers, its output modes, limits and failure states.
 - `extension-security`: grants, consent and re-consent, execution confinement, output sanitization, attribution of host chrome, and key shadowing.
 - `extension-agent-bridge`: the normalized agent events, the agents read model, and the actions an extension may take on an agent, with their grants and safeguards.
-- `extension-resident`: the resident tier: a WebAssembly component's lifecycle, its imports as grants, its budgets, and what it may answer.
+- `extension-resident`: the resident tier: a script kept alive, its host functions as grants, its budgets, and what it may answer.
 
 ### Modified Capabilities
 - `input-keymap`: extension actions become keymap actions in an extension scope; a key an extension suggests never takes a chord the host has bound; a focused resident surface receives raw keys except the host's escape chord.
@@ -157,7 +157,7 @@ mechanism chosen without a capability model cannot be given one afterwards
   the runner), `uze-platform` (confinement, one implementation per
   platform), `uze-application` (extension read model, runner and view
   compiler services), `uze-integrations` (the reporter in each launch, the
-  skill-invocation spelling), a new `uze-wasm` crate (the
+  skill-invocation spelling), a new `uze-script` crate (the
   resident tier), `src/ui` (orchestrator, the agents read model,
   extension host, slots, keymap, management Extensions screen),
   `src/cli` (the extension flags of `uze agent plugin create|check`, `uze
@@ -168,8 +168,8 @@ mechanism chosen without a capability model cannot be given one afterwards
   `uze_document::Shaped` and tiered by what deleting it costs. Secrets go to
   the OS keychain through `uze-platform`.
 - **Dependencies**: possibly `landlock` (Linux confinement), `schemars`
-  (JSON Schema of the manifest and wire types), a WebAssembly runtime and
-  an HTTP client for it,
+  (JSON Schema of the manifest and wire types), `rhai` (the script engine) and
+  an HTTP client for `fetch`,
   each justified per the dependency policy in design.md.
 - **Architecture tests**: layering rules updated to admit exactly the new
   leaf crate; new rules for sanitization, for extension execution going

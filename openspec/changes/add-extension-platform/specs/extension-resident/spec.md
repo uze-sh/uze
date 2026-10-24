@@ -1,69 +1,77 @@
 ## Purpose
 
-Lets an extension that needs state, raw input or per-frame drawing run as a
-WebAssembly component inside UZE, reaching nothing but the host imports its
-grants cover, on every platform.
+Lets an extension that needs state, raw input or per-frame drawing keep its
+Rhai script alive for as long as its surface is open, reaching nothing but
+the host functions its grants register, on every platform.
 
 ## ADDED Requirements
 
-### Requirement: A resident surface is fed by a packaged WebAssembly component
-A surface with `feed="resident"` SHALL be fed by one WebAssembly component the
-plugin ships inside the extension's directory, loaded from the Store with the
-digest that was consented to. UZE SHALL NOT compile an extension, and SHALL
-refuse a component that is not a module of the published world.
+### Requirement: A resident surface keeps its script alive
+A surface with `feed="resident"` SHALL keep its extension's packaged script
+loaded while the surface is open, calling its `start`, `event`, `input`,
+`render` and `stop` functions with a scope that survives between calls. The
+script SHALL be the one whose digest was consented to; UZE SHALL NOT build
+anything at install.
 
 #### Scenario: The consented bytes are what runs
-- **WHEN** a component in the Store differs from the digest recorded at consent
-- **THEN** the surface does not start and the Extensions screen says the component changed since it was accepted
+- **WHEN** a script in the Store differs from the digest recorded at consent
+- **THEN** the surface does not start and the Extensions screen says the script changed since it was accepted
 
-### Requirement: A component reaches only the imports its grants cover
-A component SHALL be given no ambient filesystem, network, environment or
-process access; it SHALL reach the machine only through host imports, each
-under its grant (`fetch`: `net`; `read-checkout`: `read:checkout`;
-`agent-prompt`: `agent:prompt`; `run-program`: its program's grants). A
-component importing anything its grants do not cover SHALL be refused.
+#### Scenario: State survives between frames
+- **WHEN** a resident game's `input` moves the snake and the host then calls `render`
+- **THEN** `render` sees the moved snake, kept in the script's scope between the two calls
 
-#### Scenario: An ungranted import refuses the component
-- **WHEN** a component imports `fetch` and the extension's `wants` has no `net`
-- **THEN** the check and enabling refuse the component, naming the import and the grant it needs
+### Requirement: A script reaches only the functions its grants register
+A script SHALL be given no filesystem, network, environment, process or
+module loading of its own; it SHALL reach the machine only through host
+functions, each registered only under its grant (`fetch`: `net`;
+`read_checkout`: `read:checkout`; `agent_prompt`: `agent:prompt`;
+`run_program`: its program's grants). `eval` SHALL be unavailable.
+
+#### Scenario: An ungranted function does not exist
+- **WHEN** a script calls `fetch` and the extension's `wants` has no `net`
+- **THEN** the check refuses the script naming the call and the grant it needs, and at runtime the call fails as an unknown function
+
+#### Scenario: A script cannot load another file
+- **WHEN** a script writes `import "../../secrets"`
+- **THEN** the import fails, since the engine has no module resolver
 
 #### Scenario: Confinement holds where the OS offers none
-- **WHEN** a resident extension that imports no `run-program` runs on a platform without Landlock or Seatbelt
-- **THEN** its component still reaches only the imports its grants cover, and the Extensions screen reports it as enforced
+- **WHEN** a script that calls no `run_program` runs on a platform without Landlock or Seatbelt
+- **THEN** it still reaches only the functions its grants register, and the Extensions screen reports it as enforced
 
 #### Scenario: Programs it runs are reported as they are
-- **WHEN** a resident extension imports `run-program` on a platform without Landlock or Seatbelt
-- **THEN** the Extensions screen reports the component as enforced and the programs it runs as not enforced
+- **WHEN** a script calls `run_program` on a platform without Landlock or Seatbelt
+- **THEN** the Extensions screen reports the script as enforced and the programs it runs as not enforced
 
 #### Scenario: A checkout read cannot leave the checkout
-- **WHEN** a component calls `read-checkout` on `docs/key` and `docs` is a link to `~/.ssh`
+- **WHEN** a script calls `read_checkout` on `docs/key` and `docs` is a link to `~/.ssh`
 - **THEN** the read is refused, since no link is followed and no path resolves outside the checkout
 
-#### Scenario: The component cannot prompt on its own
-- **WHEN** a component calls `agent-prompt` from a timer and the extension holds `agent:prompt` but not `agent:prompt:auto`
+#### Scenario: The script cannot prompt on its own
+- **WHEN** a script calls `agent_prompt` from a timer and the extension holds `agent:prompt` but not `agent:prompt:auto`
 - **THEN** the host raises its confirmation with the exact text, and nothing is written unless the operator accepts
 
-### Requirement: A component is bounded in time, memory and frames
-Each call into a component SHALL be bounded in computation and its memory
-SHALL be bounded, and the host SHALL ask it to render at most once per frame
-and at most thirty times a second. A component exceeding a bound SHALL be
-stopped, its surface showing which bound, while every other surface keeps
-working.
+### Requirement: A script is bounded in operations, size and frames
+Each call into a script SHALL be bounded in operations, call depth and the
+size of its strings, arrays and maps, and stopped past its deadline; the
+host SHALL ask it to render at most once per frame and 30 times a second. A
+script exceeding a bound SHALL be stopped, its surface naming the bound,
+while every other surface keeps working.
 
 #### Scenario: A runaway loop is stopped
-- **WHEN** a component's input handler never returns
-- **THEN** the call is stopped at its bound, the surface says the extension exceeded its computation budget, and keys keep working everywhere else
+- **WHEN** a script's `input` handler loops forever
+- **THEN** the call is stopped at its operation bound, the surface says the extension exceeded its budget, and keys keep working everywhere else
 
 #### Scenario: A late frame keeps the last one
-- **WHEN** a component's render misses the frame it was asked for
+- **WHEN** a script's render misses the frame it was asked for
 - **THEN** the surface keeps drawing its previous frame and the workspace does not wait for it
 
-### Requirement: A component answers the catalog, never terminal bytes
-A component's render SHALL answer a catalog tree or a cell grid of
-characters and semantic roles, sanitized like any other extension output.
-It SHALL NOT emit terminal escape sequences, colour values outside an image,
-or anything drawn outside its slot.
+### Requirement: A script answers the catalog, never terminal bytes
+A script's render SHALL answer a catalog tree or a cell grid of characters
+and semantic roles, sanitized like any other extension output. Its `print`
+and `debug` output SHALL go to the inspector, never to a terminal.
 
 #### Scenario: An escape in a cell is inert
-- **WHEN** a component answers a cell whose character is ESC
+- **WHEN** a script answers a cell whose character is ESC
 - **THEN** the cell is drawn blank and nothing reaches the terminal but the host's own output
