@@ -42,8 +42,8 @@
 
 ## 6. Highlighting (parallel, `uze-extensions/grammars`)
 
-- [ ] 6.1 Try the MIT `eugenesvk/sublime-KDL` KDL2 grammar under `fancy-regex`; if it does not compile, write a small KDL v2 grammar
-- [ ] 6.2 Vendor it with its licence beside `PowerShell.sublime-syntax`, map `.kdl`, and test it colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences
+- [x] 6.1 Try the MIT `eugenesvk/sublime-KDL` KDL2 grammar under `fancy-regex`; if it does not compile, write a small KDL v2 grammar
+- [x] 6.2 Vendor it with its licence beside `PowerShell.sublime-syntax`, map `.kdl`, and test it colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences
 
 ## 7. Integration and proof
 
