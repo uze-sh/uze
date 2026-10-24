@@ -37,6 +37,7 @@ mod navigator;
 mod picture;
 mod prose;
 mod section;
+mod tree;
 
 pub(crate) use footer::*;
 pub(crate) use geometry::*;
@@ -220,6 +221,14 @@ fn render_surface(
         Content::Message { text, hint, role } => {
             render_message(frame, content_area, text, hint.as_deref(), color(*role))
         }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            tree::render_tree(frame, content_area, *scroll, root, hits);
+        }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
             rendered.picture = picture::render_picture(
@@ -386,6 +395,14 @@ fn render_board(
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, board, text, hint.as_deref(), color(*role));
+        }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            tree::render_tree(frame, board, *scroll, root, hits);
         }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();

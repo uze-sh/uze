@@ -378,6 +378,73 @@ const RULES: &[Rule] = &[
         budget: &[],
     },
     Rule {
+        name: "the extension contract does no I/O",
+        scope: "crates/uze-contract/src",
+        forbidden: "std::fs",
+        reason: "uze-contract is the one UZE crate uze-extensions may depend on \
+                 (ADR-041, amended), and it is allowed there because it is plain \
+                 data: an extension handed a type from it is handed nothing that \
+                 reaches the machine.",
+        remedy: "keep reading files in uze-core (the decoder) or in the host, and \
+                 pass what was read into the contract's types.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract spawns nothing",
+        scope: "crates/uze-contract/src",
+        forbidden: "std::process",
+        reason: "same argument: the contract is data, and a type that can spawn \
+                 would carry a capability into every extension that holds one.",
+        remedy: "run programs where the plan puts them (the runner in uze-core, \
+                 under confinement), never in the contract.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract names no other UZE crate",
+        scope: "crates/uze-contract/src",
+        forbidden: "uze_core",
+        reason: "uze-core depends on the contract to read manifests; the contract \
+                 naming it back would be a cycle, and would hand the domain to \
+                 every extension through the one door ADR-041 opened.",
+        remedy: "define the type in the contract and have uze-core use it.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract draws nothing",
+        scope: "crates/uze-contract/src",
+        forbidden: "ratatui",
+        reason: "the contract says what a view is; drawing it is the workspace \
+                 client's, and a rendering library here would put geometry back \
+                 on the extension's side of the boundary.",
+        remedy: "describe it as data; `src/ui/extension_view` draws it.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the workspace client never parses an extension's KDL",
+        scope: "src/ui",
+        forbidden: "kdl::",
+        reason: "a third-party document is parsed only by uze-core, behind a size \
+                 cap, a nesting pre-scan and a timed worker (D22), because the \
+                 parser recurses without a limit; the client draws compiled views.",
+        remedy: "ask uze-application for the compiled extension.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "an extension never parses KDL",
+        scope: "crates/uze-extensions/src",
+        forbidden: "kdl::",
+        reason: "the engine binds compiled views; parsing is uze-core's, behind \
+                 the bounds that make a hostile document safe to read.",
+        remedy: "take a `uze_contract::CompiledView`.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
         name: "an extension never names the domain crate",
         scope: "crates/uze-extensions/src",
         forbidden: "uze_core",
@@ -1540,6 +1607,26 @@ fn the_platform_crate_is_a_leaf_and_the_terminal_reaches_only_it_and_documents()
     let mut terminal = workspace_dependencies(&manifest("uze-terminal"));
     terminal.sort();
     assert_eq!(terminal, ["uze-document", "uze-platform"]);
+}
+
+/// `uze-extensions` depends on one UZE crate, the extension contract, and the
+/// contract on none (ADR-041, amended): the door is exactly one type wide.
+#[test]
+fn an_extension_depends_on_the_contract_alone() {
+    let root = repository_root();
+    let manifest = |crate_name: &str| {
+        std::fs::read_to_string(root.join("crates").join(crate_name).join("Cargo.toml")).unwrap()
+    };
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-extensions")),
+        ["uze-contract"],
+        "uze-extensions may name uze-contract and no other workspace crate outside its tests"
+    );
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-contract")),
+        Vec::<String>::new(),
+        "uze-contract names no workspace crate"
+    );
 }
 
 /// The project's `AGENTS.md` is the operator's: no UZE operation creates,

@@ -114,6 +114,7 @@ pub fn timeline_section(timeline: &Timeline, collapsed: bool, scroll: usize) -> 
         caption: Span::new(timeline.branch.clone(), Role::Dim),
         collapsed,
         scroll,
+        tree: None,
         rows: timeline
             .commits
             .iter()

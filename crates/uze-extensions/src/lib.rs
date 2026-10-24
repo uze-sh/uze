@@ -49,6 +49,8 @@
 
 pub mod architect;
 pub mod code;
+pub mod contract;
+pub mod declared;
 pub mod registry;
 mod shared;
 pub mod spec;
