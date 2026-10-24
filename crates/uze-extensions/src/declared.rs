@@ -12,6 +12,7 @@
 //! - `time`: the instant an `Elapsed` counts from.
 
 mod bind;
+mod fixture_check;
 mod time;
 mod trace;
 mod value;
@@ -29,6 +30,7 @@ use crate::view::{
 };
 pub use bind::NODE_CAP;
 use bind::{Act, Built};
+pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
 pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 
 /// What a source answered: its data, or why there is none.

@@ -31,6 +31,10 @@ pub use view::EACH_MAX;
 
 use document::Report;
 
+/// Text an editor holds for files of an extension, by path relative to its
+/// directory, read in place of what is on disk.
+pub type Overlay = BTreeMap<String, String>;
+
 /// Where an extension's manifest sits inside its plugin.
 pub const EXTENSIONS_DIR: &str = "extensions";
 pub const MANIFEST_FILE: &str = "extension.kdl";
@@ -109,8 +113,16 @@ pub fn discover(plugin_dir: &Path) -> Vec<FoundExtension> {
 /// its manifest and every view its surfaces name. Every problem found is
 /// returned, not only the first.
 pub fn compile(identity: Identity, dir: &Path) -> Result<CompiledExtension, Vec<Diagnostic>> {
-    let source =
-        bounded::read(&dir.join(MANIFEST_FILE), MANIFEST_FILE).map_err(|refusal| vec![refusal])?;
+    compile_overlaid(identity, dir, &Overlay::new())
+}
+
+/// [`compile`], reading each file `overlay` holds from it instead of disk.
+pub fn compile_overlaid(
+    identity: Identity,
+    dir: &Path,
+    overlay: &Overlay,
+) -> Result<CompiledExtension, Vec<Diagnostic>> {
+    let source = read_file(dir, MANIFEST_FILE, overlay).map_err(|refusal| vec![refusal])?;
     let mut report = Report::new(MANIFEST_FILE, &source);
     let decoded = bounded::parse(&mut report)
         .and_then(|document| manifest::decode(&document, &identity.id, &mut report));
@@ -129,8 +141,12 @@ pub fn compile(identity: Identity, dir: &Path) -> Result<CompiledExtension, Vec<
         if !read.insert(surface.view.as_str()) {
             continue;
         }
-        match inside(dir, &surface.view) {
-            Ok(path) => match compile_view(&path, &surface.view) {
+        let found = match overlay.contains_key(&surface.view) {
+            true => Ok(()),
+            false => inside(dir, &surface.view).map(|_| ()),
+        };
+        match found {
+            Ok(()) => match compile_view(dir, &surface.view, overlay) {
                 Ok(view) => {
                     views.insert(surface.view.clone(), view);
                 }
@@ -143,6 +159,9 @@ pub fn compile(identity: Identity, dir: &Path) -> Result<CompiledExtension, Vec<
         let Some(fixture) = &source.fixture else {
             continue;
         };
+        if overlay.contains_key(fixture) {
+            continue;
+        }
         if let Err(why) = inside(dir, fixture).and_then(|path| {
             if path.is_file() {
                 Ok(())
@@ -165,8 +184,12 @@ pub fn compile(identity: Identity, dir: &Path) -> Result<CompiledExtension, Vec<
     })
 }
 
-fn compile_view(path: &Path, file: &str) -> Result<uze_contract::CompiledView, Vec<Diagnostic>> {
-    let source = bounded::read(path, file).map_err(|refusal| vec![refusal])?;
+fn compile_view(
+    dir: &Path,
+    file: &str,
+    overlay: &Overlay,
+) -> Result<uze_contract::CompiledView, Vec<Diagnostic>> {
+    let source = read_file(dir, file, overlay).map_err(|refusal| vec![refusal])?;
     let mut report = Report::new(file, &source);
     let compiled =
         bounded::parse(&mut report).map(|document| view::compile(&document, file, &mut report));
@@ -195,16 +218,23 @@ pub fn test_files(dir: &Path) -> Vec<String> {
 
 /// Reads and decodes one test file of the extension in `dir`, behind the
 /// same bounds as a view.
-pub fn compile_test(dir: &Path, file: &str) -> Result<uze_contract::TestFile, Vec<Diagnostic>> {
-    let path = inside(dir, file).map_err(|why| {
-        vec![Diagnostic::whole(
-            file,
-            format!("the test file {why}"),
-            None,
-        )]
-    })?;
-    let source = bounded::read(&path, file).map_err(|refusal| vec![refusal])?;
+pub fn compile_test(
+    dir: &Path,
+    file: &str,
+    overlay: &Overlay,
+) -> Result<uze_contract::TestFile, Vec<Diagnostic>> {
+    let source = read_file(dir, file, overlay).map_err(|refusal| vec![refusal])?;
     decode_test(file, &source)
+}
+
+/// `file` of the extension in `dir`: the text `overlay` holds for it, else
+/// the file on disk, refused when it leads outside the directory.
+fn read_file(dir: &Path, file: &str, overlay: &Overlay) -> Result<String, Diagnostic> {
+    if let Some(text) = overlay.get(file) {
+        return bounded::held(text, file);
+    }
+    let path = inside(dir, file).map_err(|why| Diagnostic::whole(file, why, None))?;
+    bounded::read(&path, file)
 }
 
 /// Decodes a test file from `source`, as [`compile_test`] does from disk.

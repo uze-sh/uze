@@ -110,19 +110,40 @@ pub enum StepKind {
 /// first, then the steps. One table for the decoder, the runner's errors and
 /// the language server.
 pub const STEPS: &[(&str, &str)] = &[
-    ("surface", "The surface this test opens, by its id in the manifest."),
-    ("given", "Data for a source: `fixture=\"…\"` or `json=#\"…\"#`."),
+    (
+        "surface",
+        "The surface this test opens, by its id in the manifest.",
+    ),
+    (
+        "given",
+        "Data for a source: `fixture=\"…\"` or `json=#\"…\"#`.",
+    ),
     ("size", "The columns and rows the surface is drawn in."),
     ("theme", "`dark` or `light`."),
     ("locale", "The locale lookups are read in, such as `pt`."),
     ("expect-text", "The text is drawn somewhere on the surface."),
-    ("expect-no-text", "The text is drawn nowhere on the surface."),
-    ("expect-absent", "A node of this kind was not drawn, `because` a field or UI value."),
-    ("expect-action", "The action was recorded; each property must equal the same key of its item."),
-    ("click", "Click what draws this text: a tab, a row, a toggle."),
+    (
+        "expect-no-text",
+        "The text is drawn nowhere on the surface.",
+    ),
+    (
+        "expect-absent",
+        "A node of this kind was not drawn, `because` a field or UI value.",
+    ),
+    (
+        "expect-action",
+        "The action was recorded; each property must equal the same key of its item.",
+    ),
+    (
+        "click",
+        "Click what draws this text: a tab, a row, a toggle.",
+    ),
     ("press", "Press a chord, as the keymap spells it."),
     ("press-button", "Press the button drawn with this label."),
-    ("snapshot", "Compare the cells drawn with the snapshot of this name."),
+    (
+        "snapshot",
+        "Compare the cells drawn with the snapshot of this name.",
+    ),
 ];
 
 /// The one-line description of a test directive.

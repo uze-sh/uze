@@ -313,17 +313,29 @@ impl NodeName {
     pub fn doc(self) -> &'static str {
         match self {
             Self::Stack => "Its children one under another, `gap` rows apart.",
-            Self::Row => "Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.",
-            Self::Text => "Text in a role, `strong` for emphasis; with `truncate` one line cut with an ellipsis, otherwise a paragraph that wraps.",
+            Self::Row => {
+                "Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`."
+            }
+            Self::Text => {
+                "Text in a role, `strong` for emphasis; with `truncate` one line cut with an ellipsis, otherwise a paragraph that wraps."
+            }
             Self::Badge => "A short label on a ground of its role's colour.",
             Self::Marks => "Role-coloured marks in a row, one per `Mark`.",
             Self::Mark => "One mark of a `Marks`, in its role's colour.",
             Self::Pips => "`done` of `total` as a row of filled and empty pips.",
             Self::Progress => "A bar: one fill at `ratio`, or one segment per `Segment`.",
-            Self::Segment => "One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in its role.",
-            Self::List => "Rows repeated over `each`; with an `id`, the host holds which one is selected.",
-            Self::Table => "Named columns, one argument per heading; each child `Row` is a line whose children are its cells.",
-            Self::Tabs => "A choice the host holds as `ui.<id>`; `show=\"ui.<id>=<value>\"` picks what is drawn under it.",
+            Self::Segment => {
+                "One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in its role."
+            }
+            Self::List => {
+                "Rows repeated over `each`; with an `id`, the host holds which one is selected."
+            }
+            Self::Table => {
+                "Named columns, one argument per heading; each child `Row` is a line whose children are its cells."
+            }
+            Self::Tabs => {
+                "A choice the host holds as `ui.<id>`; `show=\"ui.<id>=<value>\"` picks what is drawn under it."
+            }
             Self::Tab => "One choice of a `Tabs`: its label, and the `value` `show` compares with.",
             Self::Toggle => "A switch the host holds as `ui.<id>`, `on` at first when given.",
             Self::Button => "A label that records its `action` with its `item` when pressed.",
