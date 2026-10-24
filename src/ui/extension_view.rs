@@ -163,39 +163,50 @@ pub(crate) fn render(
     rendered
 }
 
+/// What a docked view drew that its host needs after the frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Docked {
+    /// Whether anything on it moves with the clock.
+    pub(crate) animates: bool,
+    /// Its scrollbar, and the first row it showed, when it scrolls.
+    pub(crate) bar: Option<(Scrollbar, usize)>,
+}
+
 /// A view drawn in a drawer docked beside the pane rather than in the
 /// pane's place: its content alone, since a drawer has no navigator, no
 /// footer and no bar of its own. A tree scrolls as it does full-frame,
-/// its groove on the right edge `area` leaves past itself. Answers
-/// whether anything on it moves with the clock.
+/// its groove on the right edge `area` leaves past itself.
 pub(crate) fn render_docked(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
     hovered: Option<ViewHit>,
     hits: &mut Vec<(Rect, ViewHit)>,
-) -> bool {
+) -> Docked {
     match &view.content {
         Content::Tree {
             heading,
             scroll,
             root,
         } => {
-            tree::render_tree_content(
+            let drawn = tree::render_tree_content(
                 frame,
                 area,
                 (heading, *scroll, root),
                 &view.modes,
                 tree::TreeFrame::now(hovered),
                 hits,
-            )
-            .animates
+            );
+            Docked {
+                animates: drawn.animates,
+                bar: drawn.bar.map(|bar| (bar, *scroll)),
+            }
         }
         Content::Message { text, hint, role } => {
             render_message(frame, area, text, hint.as_deref(), color(*role));
-            false
+            Docked::default()
         }
-        _ => false,
+        _ => Docked::default(),
     }
 }
 

@@ -86,8 +86,10 @@ pub(super) fn render_declared_drawer(
         _ => None,
     };
     let mut view_hits = Vec::new();
-    let animates =
+    let docked =
         crate::ui::extension_view::render_docked(frame, &view, content, hovered, &mut view_hits);
+    model.dock_bar.set(docked.bar);
+    let animates = docked.animates;
     let errors = model.remembered.declared.errors_of(&slot.identity);
     if !errors.is_empty() {
         widget::banner::render(frame, content, &error_title(errors.len()), errors);

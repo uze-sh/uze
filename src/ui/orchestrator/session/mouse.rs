@@ -536,6 +536,9 @@ impl Attach<'_> {
             }
             // The docked drawer's card starts a column past its gap: its
             // width is what lies between there and the agent area's edge.
+            _ if self.model.dragging_dock_content => {
+                self.model.scroll_drawer_to(mouse.row);
+            }
             _ if self.model.dragging_dock => {
                 if let Some(drawer) = layout.drawer {
                     let room = self.agent_room(viewport);
@@ -688,6 +691,7 @@ impl Attach<'_> {
         if std::mem::take(&mut self.model.dragging_dock) {
             self.model.dirty = true;
         }
+        self.model.dragging_dock_content = false;
         // A press that never moved is a click, and a click on the edge
         // asks the list to show that part of itself — the gesture that
         // sharing the column with the divider would otherwise have cost.
@@ -1662,6 +1666,16 @@ impl Attach<'_> {
             },
             // The docked drawer's: the engine's, told the room its view
             // had, and the drawer has the navigation keys from now on.
+            // Its scrollbar is the host's, as on every surface: held, it
+            // follows the pointer.
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::DragContentScrollbar,
+            }) if self.model.open_drawer() == Some(slot) => {
+                self.model.dock_focused = true;
+                self.model.dragging_dock_content = true;
+                self.model.scroll_drawer_to(mouse.row);
+            }
             WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
                 if self.model.open_drawer() == Some(slot) =>
             {
