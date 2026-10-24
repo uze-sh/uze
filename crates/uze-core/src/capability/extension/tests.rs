@@ -49,7 +49,7 @@ Stack {
             Tab "Log" value="log"
         }
         Button "limpar" action="clear"
-        Button "{t:next} {next.phase}" action="next" item="{next}" when="next"
+        Button "{t::next} {next.phase}" action="next" item="{next}" when="next"
     }
     Row gap=1 {
         Progress grow=#true {
@@ -530,7 +530,7 @@ fn lookups_carry_defaults_and_locales() {
         r#"lookup "tone" default="muted" { done "success"; }
 lookup "t" locale="pt" { next "executar"; }
 lookup "t" locale="en" { next "run"; }
-Text "{t:next}" role="{tone:e}""#,
+Text "{t::next}" role="{tone:e}""#,
     )
     .unwrap();
     let tone = &compiled.lookups[0];

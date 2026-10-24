@@ -64,7 +64,11 @@ fn board() -> CompiledView {
                 .child(n(NodeName::Tab).arg("{t::phases}").prop("value", "phases"))
                 .child(n(NodeName::Tab).arg("{t::log}").prop("value", "log")),
         )
-        .child(n(NodeName::Button).arg("{t::clear}").prop("action", "clear"))
+        .child(
+            n(NodeName::Button)
+                .arg("{t::clear}")
+                .prop("action", "clear"),
+        )
         .child(
             n(NodeName::Button)
                 .arg("{t::next} {next.phase}")

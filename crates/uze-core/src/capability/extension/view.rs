@@ -518,7 +518,7 @@ impl Compiler<'_, '_> {
     fn text(&mut self, text: &str, entry: &KdlEntry) -> Result<Binding, (String, Option<String>)> {
         let parts = parse_text(text).map_err(|error| (error, None))?;
         for part in &parts {
-            if let TextPart::Lookup { table, .. } = part {
+            if let TextPart::Lookup { table, .. } | TextPart::Label { table, .. } = part {
                 self.tables.push((table.clone(), entry.offset()));
             }
         }
@@ -533,7 +533,9 @@ impl Compiler<'_, '_> {
         what: &str,
     ) -> Result<Binding, (String, Option<String>)> {
         match self.text(text, entry)? {
-            binding @ (Binding::Ref(_) | Binding::Lookup { .. }) => Ok(binding),
+            binding @ (Binding::Ref(_) | Binding::Lookup { .. } | Binding::Label { .. }) => {
+                Ok(binding)
+            }
             _ => Err((
                 format!(
                     "{what} is {}: write it bare, or as one reference and nothing around it",
@@ -563,7 +565,9 @@ impl Compiler<'_, '_> {
                 format!("{what} names no role: \"{text}\" is not one"),
                 Some(roles()),
             )),
-            binding @ (Binding::Ref(_) | Binding::Lookup { .. }) => Ok(binding),
+            binding @ (Binding::Ref(_) | Binding::Lookup { .. } | Binding::Label { .. }) => {
+                Ok(binding)
+            }
             Binding::Text(_) => Err((
                 format!("{what} is one role, or one reference to one, and nothing around it"),
                 Some("map values to roles with a `lookup` and write \"{table:field}\"".to_owned()),
