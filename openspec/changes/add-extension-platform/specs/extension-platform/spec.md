@@ -74,8 +74,8 @@ a suggestion, and SHALL say how to write a KDL v1 spelling in v2.
 - **THEN** the check fails saying KDL v2 writes booleans as `#true`
 
 ### Requirement: Parsing a view is bounded and outside the client
-A view SHALL be parsed only at check, install, enable and development
-reload, never by the drawing process's render path, and only after a size
+A view SHALL be parsed only at check, install, enable and a linked
+extension's reload, never by the drawing process's render path, and only after a size
 cap and a nesting-depth scan; parsing SHALL run under a time limit. The
 client SHALL draw from the compiled, validated view, never from KDL.
 
@@ -452,28 +452,63 @@ surface.
 - **WHEN** the operator disables an extension
 - **THEN** its surfaces disappear from the workspace and none of its sources, actions, events or commands run
 
-### Requirement: An extension can be developed live from its folder
-`uze ext dev <path>` SHALL load an extension from its folder into the running
-workspace for the session, under the same grants and confinement as an
-installed one, reloading on save: a view or manifest change SHALL redraw
-from the last answers without running a program, and an error SHALL keep the
-last good draw with the error shown over it.
+### Requirement: A linked extension reloads on save
+An extension installed from a linked marketplace SHALL reload when its files
+change: a view or manifest change SHALL redraw from the last answers without
+running a program, a script or program change SHALL rerun the visible
+sources, and a widened grant set SHALL wait for consent in UZE's chrome. It
+SHALL run under the same grants and confinement as any extension.
 
 #### Scenario: Editing a view redraws at once
-- **WHEN** an author changes a `gap` in a view of a dev extension and saves
+- **WHEN** an author changes a `gap` in a view of a linked extension and saves
 - **THEN** the surface redraws with the new gap from its last answers and no program runs
+
+#### Scenario: A linked extension gets nothing extra
+- **WHEN** a linked extension's program writes outside the checkout without `write:checkout`
+- **THEN** the write is denied exactly as for an extension from any other marketplace, and the inspector shows the denial
+
+#### Scenario: Only linked extensions are watched
+- **WHEN** an extension is installed from a marketplace that is not linked
+- **THEN** the workspace does not watch its files
+
+### Requirement: An error never blanks a surface
+For every extension, a view, manifest, script or answer that fails SHALL leave
+the surface on its last good draw with the error shown over it, naming the
+file, line and column where there is one.
 
 #### Scenario: A broken save keeps the surface
 - **WHEN** an author saves a view with an unknown node
 - **THEN** the surface keeps its last good draw and shows the error with file, line and column over it
 
-#### Scenario: Dev mode grants nothing extra
-- **WHEN** a dev extension's program writes outside the checkout without `write:checkout`
-- **THEN** the write is denied exactly as for the installed extension, and the inspector shows the denial
+### Requirement: A source may be fed by a fixture
+A source MAY declare a fixture file. A source with only a fixture SHALL be fed
+by it; a linked extension's inspector MAY switch a source to its fixture for
+the session; an extension from a non-linked marketplace SHALL NOT read its
+fixtures at runtime. An action that would run nothing SHALL be recorded in the
+inspector with the arguments it would receive.
 
-#### Scenario: A synthetic event reaches the extension
-- **WHEN** the author runs `uze ext emit deploys agent.turn.finished`
-- **THEN** the sources mapped to that event run as if an agent had finished a turn, and the inspector lists the event as synthetic
+#### Scenario: A board drawn before any script exists
+- **WHEN** a source declares only `fixture "fixtures/board.json"` and the author saves a change to that file
+- **THEN** the surface redraws from the new fixture
+
+#### Scenario: A button is recorded, not run
+- **WHEN** the operator presses a button whose action belongs to a fixture-fed source
+- **THEN** nothing runs and the inspector lists the action with the arguments it would have received
+
+### Requirement: The inspector explains any extension
+The workspace SHALL offer, for every extension's surface, an inspector showing
+its runs, events, UI state and store, grant denials and confinement, the
+compiled view with why a node is absent, and its cost. On a linked extension
+it SHALL also rerun with edited input, emit a synthetic event, change the
+slot's size and the theme, and record events into a fixture.
+
+#### Scenario: A synthetic event reaches a linked extension
+- **WHEN** the author emits `agent.turn.finished` from the inspector of a linked extension
+- **THEN** the sources mapped to that event run as if an agent had finished a turn, and the event is shown as synthetic
+
+#### Scenario: An operator finds out why a surface is empty
+- **WHEN** an installed extension's section shows nothing and the operator opens its inspector
+- **THEN** the tree names the node that is absent and why, such as a `when` field missing from the answer
 
 ### Requirement: An extension's tests run without a TUI
 `uze ext test <path>` SHALL run an extension's test files headlessly on the
