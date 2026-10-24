@@ -11,9 +11,11 @@ use uze_workspace::extensions;
 
 use super::services::Extensions;
 
+mod checked;
 mod compiled;
 mod installed;
 
+pub use checked::CheckedExtension;
 pub use compiled::{FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use installed::InstalledExtension;
 
