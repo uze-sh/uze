@@ -1395,3 +1395,66 @@ fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The drawer's scrollbar answers the pointer as every scrollbar does: a
+/// press on its track jumps there, and the thumb follows a drag.
+#[test]
+fn the_drawers_scrollbar_follows_the_pointer() {
+    let root = uze_testkit::temp::scratch("drawer-scrollbar");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    the_gsd_band_installed(&root, &home);
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let slot = drawer_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.area = ratatui::layout::Rect::new(0, 0, 120, 24);
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::ToggleDrawer(slot));
+    driven.press(button.x, button.y);
+    driven.frame();
+    let bar = drawn(
+        &driven.attach.model,
+        WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot,
+            hit: ViewHit::DragContentScrollbar,
+        }),
+    );
+    assert_eq!(
+        driven.attach.model.dock_bar.get().map(|(_, first)| first),
+        Some(0)
+    );
+    driven.press(bar.x, bar.y + bar.height - 1);
+    driven.frame();
+    let after_press = driven
+        .attach
+        .model
+        .dock_bar
+        .get()
+        .map(|(_, first)| first)
+        .unwrap();
+    assert!(after_press > 0, "a press low on the track scrolls down");
+    driven.mouse(
+        bar.x,
+        bar.y,
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+    );
+    driven.frame();
+    assert_eq!(
+        driven.attach.model.dock_bar.get().map(|(_, first)| first),
+        Some(0),
+        "dragged back to the top"
+    );
+    driven.mouse(
+        bar.x,
+        bar.y,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    );
+    assert!(!driven.attach.model.dragging_dock_content);
+    let _ = std::fs::remove_dir_all(root);
+}

@@ -224,6 +224,24 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// Scrolls the drawer to what a pointer at `row` of its scrollbar asks
+    /// to see, from where the last frame showed it.
+    pub(in crate::ui::orchestrator) fn scroll_drawer_to(&mut self, row: u16) {
+        let Some((bar, shown)) = self.dock_bar.get() else {
+            return;
+        };
+        let wanted = bar.first_at(row);
+        let direction = match wanted.cmp(&shown) {
+            std::cmp::Ordering::Equal => return,
+            std::cmp::Ordering::Greater => ScrollDirection::Down,
+            std::cmp::Ordering::Less => ScrollDirection::Up,
+        };
+        for _ in 0..wanted.abs_diff(shown) {
+            self.scroll_drawer(direction);
+        }
+        self.dock_bar.set(Some((bar, wanted)));
+    }
+
     /// What the drawer's engine answered, followed: its notice is said
     /// along the drawer's foot, since it has no footer of its own.
     pub(in crate::ui::orchestrator) fn follow_drawer(&mut self, outcome: Outcome) {

@@ -1945,6 +1945,11 @@ struct WorkspaceModel {
     dock_width: Option<u16>,
     /// Whether the docked drawer's edge is held by the pointer.
     dragging_dock: bool,
+    /// Whether the docked drawer's scrollbar is held by the pointer.
+    dragging_dock_content: bool,
+    /// The docked drawer's scrollbar on the last frame, and the first row
+    /// it showed: what a press or a drag on its track is measured against.
+    dock_bar: std::cell::Cell<Option<(crate::ui::widget::Scrollbar, usize)>>,
     /// Whether the docked drawer has the navigation keys: a click in it
     /// lends them, Esc or a click anywhere else gives them back. Every
     /// other key stays the pane's.
