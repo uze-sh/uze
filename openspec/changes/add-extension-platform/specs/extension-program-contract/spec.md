@@ -40,7 +40,7 @@ string to be split or interpreted by a shell SHALL be refused by the check.
 
 #### Scenario: A shell string is refused
 - **WHEN** a manifest declares `run "openspec list --json | jq ."`
-- **THEN** `uze agent extension check` fails naming the field and saying a program is an argv array
+- **THEN** `uze agent plugin check` fails naming the field and saying a program is an argv array
 
 ### Requirement: Input is one JSON document on stdin
 The host SHALL write exactly one JSON object to the program's standard input

@@ -17,7 +17,7 @@ be refused by the check and at install.
 
 #### Scenario: An undeclared program is refused
 - **WHEN** an action runs `[gh, pr, list]` and `wants` has no `exec:gh`
-- **THEN** `uze agent extension check` fails naming the action and the missing grant
+- **THEN** `uze agent plugin check` fails naming the action and the missing grant
 
 #### Scenario: A packaged program needs no grant
 - **WHEN** an action runs a program shipped inside the extension's own directory and `wants` has no `exec:` for it
@@ -166,15 +166,15 @@ accepted in one gesture.
 - **THEN** the operator is asked about it on its own, after the other grants, and declining it leaves the rest enabled with prompts only on a gesture
 
 ### Requirement: Untrusted channels never start an agent action alone
-A pipe, a source's answer, an event and a composed tree SHALL NOT cause a
+A source's answer, an event and a composed tree SHALL NOT cause a
 clipboard write or an open of a path, and SHALL cause a write into an agent
 only under `agent:prompt:auto`, with the manifest's fixed text or a declared
 closed set, never text they carry. Each write SHALL be attributed where the
 operator sees it.
 
-#### Scenario: A pipe cannot type into an agent
-- **WHEN** a local process runs `uze ext pipe gsd-band next '{"text": "rm -rf ~"}'`
-- **THEN** no text reaches any agent and the pipe only refreshes the sources the manifest maps it to
+#### Scenario: An event payload cannot type into an agent
+- **WHEN** a tool event's summary contains `rm -rf ~` and a source mapped to that event answers it as prompt text
+- **THEN** no text reaches any agent but the manifest's fixed text or a member of its declared closed set
 
 #### Scenario: Repository content never becomes a prompt
 - **WHEN** an extension holding `agent:prompt:auto` reads a `STATE.md` that contains an instruction and answers it as the next prompt
