@@ -1495,6 +1495,8 @@ struct Channels {
     extension_jobs: Answers<ExtensionAnswer>,
     /// The linked ones' stamps, polled on [`DECLARED_POLL`].
     extension_stamps: Answers<StampsAnswer>,
+    /// What hosted engines' jobs answered, each for the slot that asked.
+    engine_answers: Answers<EngineAnswer>,
     /// The code surface's map, measured once per checkout it is opened on.
     code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
