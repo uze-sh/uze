@@ -26,13 +26,13 @@ pointer and through the action index.
 
 ### Requirement: A focused resident surface receives raw keys, except the host's escape
 While a resident surface has focus, the host SHALL deliver keys and pointer
-gestures to its component, except the host's escape chord and the pause
+gestures to its script, except the host's escape chord and the pause
 key for unattended prompts, which SHALL always reach the host and SHALL NOT
 be rebindable by an extension.
 
 #### Scenario: The escape chord always leaves
 - **WHEN** a resident game has focus and the operator presses the host's escape chord
-- **THEN** focus returns to the workspace and the component receives no key for that chord
+- **THEN** focus returns to the workspace and the script receives no key for that chord
 
 ### Requirement: An extension may offer a global key to open a surface
 An action whose built-in is `open` MAY suggest a key in the workspace scope.

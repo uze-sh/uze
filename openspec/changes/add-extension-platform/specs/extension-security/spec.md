@@ -8,7 +8,7 @@ terminal, and from being installed or widened without the operator saying so.
 
 ### Requirement: An extension declares every grant it needs
 An extension manifest SHALL list, under `wants`, every capability it uses:
-`exec:<name>`, `net`, `write:checkout`, `read:checkout` (resident),
+`exec:<name>`, `net`, `write:checkout`, `read:checkout` (scripts),
 `clipboard`, `open_path`, `notify`, `resident`, `agent:observe`,
 `agent:prompt`, `agent:prompt:auto` and `agent:control`. A declaration that uses a capability it did not list SHALL
 be refused by the check and at install.

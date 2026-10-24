@@ -98,7 +98,8 @@ What the survey says, in the order the decisions below answer it:
 - Raw terminal output from an extension at any tier: no ANSI, no escape
   sequences, no colour values outside an image.
 - Native code in UZE's process: dynamic libraries and native interpreters
-  stay ruled out (ADR-041). The resident tier is WebAssembly only.
+  stay ruled out (ADR-041). The only embedded language is Rhai, in its own
+  crate (D19, D27).
 - Remembering a view's place across runs of the client. The built-ins don't,
   and adding it is a persisted-state question of its own.
 - Distributing extensions outside plugins and marketplaces.
@@ -387,7 +388,7 @@ costs:
 |---|---|---|---|---|
 | declared | `bind` or `compose` | no | data bound by the manifest, or a catalog tree (D15) | — |
 | cells and media | `cells`, `image`, `sprite` | no | a cell grid with regions, an image, a sprite sheet | — |
-| resident | `resident` | yes, one component per extension | catalog trees or cells, every frame it asks for | `resident` |
+| resident | `resident` | yes, the extension's script kept alive | catalog trees or cells, every frame it asks for | `resident` |
 
 - Tiers share the manifest, the grants record, the keymap, the slots and
   the sanitizer. Moving a surface up a tier is changing its `feed`, not
@@ -397,7 +398,7 @@ costs:
 - `kind: interactive` is retired: the resident tier is what it reserved.
 
 *Alternative:* one tier, resident for all. Rejected: most extensions are a
-list over a CLI, and making each one a compiled component would trade the
+list over a CLI, and making each one a resident script would trade the
 `sh` author for nothing.
 
 ### D14. Slots: the places an extension may occupy
@@ -621,61 +622,59 @@ D10 is superseded by this decision; tasks 7.x are folded into group 15.
   an `agent.prompt` (tainted), and its strings are checked for the secret
   before they are drawn.
 
-### D19. The resident tier: a WebAssembly component
+### D19. The resident tier: a Rhai script that keeps its state
 
-A resident surface is fed by one component per extension, built against a
-WIT world UZE publishes:
+A resident surface is fed by the extension's script (D27) kept alive for as
+long as the surface is open: the same engine, the same grants, with a scope
+that survives between calls.
 
-- **Exports**: `start(context)`, `event(event) -> redraw?`,
-  `input(input) -> redraw?` (keys and pointer while its surface is focused),
-  `render(slot, size) -> tree | cells`, `stop()`. The WIT carries every
-  type: the catalog tree, a cell, the key and pointer encoding, the event
-  variant (agent events, `every`, timer ticks), the store.
-- **Imports** are the grants:
-  - `run-program` under the grants of the program it runs, through the same
-    rate and concurrency limits as declared sources;
-  - `fetch` only with `net`;
-  - `read-checkout` only with `read:checkout`, resolving every path beneath
-    the checkout root with no symlink followed;
-  - `agent-prompt` only with `agent:prompt`, and always raising the host's
-    confirmation unless `agent:prompt:auto` holds for that agent, with the
-    D16 rules;
-  - `store`, `clock`, `timer`, `notify`.
+- **Entry points** the script defines: `start(context)`, `event(event)`,
+  `input(input)` (keys and pointer while its surface is focused), `render(slot,
+  size)` answering a catalog tree or cells, and `stop()`. `event` and `input`
+  answer whether to redraw. Timer ticks and `every` arrive as events.
+- **Host functions are the grants**, registered per extension and nothing
+  else: `read_checkout` and `list_checkout` with `read:checkout` (paths
+  resolved beneath the checkout root, no link followed), `run_program` under
+  the grants of the program it runs and the same rate and concurrency limits
+  as declared sources, `fetch` with `net`, `agent_prompt` with `agent:prompt`
+  (always raising the host's confirmation unless `agent:prompt:auto` holds for
+  that agent, with D16's rules), and `store`, `clock`, `timer`, `notify`. A
+  script calling what its grants do not cover finds no such function, and the
+  check refuses a script that names one.
+- **No way out of the engine.** The engine is built raw with only the
+  packages UZE chooses; `import` has no module resolver (a script cannot load
+  another file), `eval` is disabled, and `print` and `debug` go to the
+  inspector, never to a terminal.
+- **Budgets**: a maximum number of operations per call, maximum call depth,
+  expression depth and string, array and map sizes, and a progress hook that
+  stops a call past its deadline; at most one render per frame the host asks
+  for and 30 per second. A script that exceeds a budget is stopped and its
+  surface shows which. It runs on the job pool (D28), never on the drawing
+  thread; a render that misses its frame keeps the last one.
+- **Confinement** is the engine's, on every platform: a script reaches only
+  the functions registered for it. `run_program` is confined only where D6
+  is, and the Extensions screen says so when it is used.
+- **Input**: a focused resident surface receives raw keys and pointer except
+  the host's escape chord and the pause key. This amends the extensions rule
+  that an extension knows nothing of the keyboard, for this tier only.
+- **What runs is what was consented to.** Scripts are packaged with the
+  plugin, stored and digested like any other bytes; UZE compiles them at
+  load and never builds anything at install.
+- **Where it lives**: a dedicated crate, `uze-script`, depending on
+  `uze-contract` and `uze-platform` only, wrapped by an `Extension` adapter
+  on the host side. Neither `uze-core` (the package manager, which the shim
+  uses) nor `uze-application` (which does not depend on `uze-extensions`)
+  hosts it.
+- **Dependency**: `rhai`, published by the `rhaiscript` organisation
+  (13.4M downloads, released 2026-10-21), MIT or Apache-2.0, pure Rust with
+  no C, MSRV below the workspace's; it uses `unsafe` in a few places and does
+  not forbid it, which the dependency review states. `fetch` needs a
+  production HTTP/TLS client, which the workspace does not have outside
+  telemetry; it is owed with the change that ships `net`.
 
-  A component that imports what its grants do not cover is refused at
-  enable time; there is no ambient WASI filesystem, network or environment.
-- **Budgets**: fuel per call, a memory ceiling, at most one render per frame
-  the host asks for and 30 per second; a component that exceeds a budget is
-  stopped and its surface shows why. It runs off the drawing thread; a
-  render that misses its frame keeps the last one.
-- **Confinement** is reported per import: the component's own reach is
-  enforced on every platform; `run-program` is enforced only where D6 is,
-  and the Extensions screen says so when it is imported.
-- **Input**: a focused resident surface receives raw keys and pointer
-  except the host's escape chord and the pause key. This amends the
-  extensions rule that an extension knows nothing of the keyboard, for
-  this tier only.
-- **The author compiles; UZE only loads.** A plugin ships the built
-  component (`extensions/<id>/<name>.wasm`), stored and digested like any
-  other bytes; the digest is checked on the same in-memory buffer that is
-  compiled, and any change of it asks again, whatever D5 says of grant
-  sets. One file runs on every platform and architecture. UZE never builds
-  an extension at install; the check validates the component's imports
-  against its grants, and the Skill names the toolchains (`cargo
-  component`, `jco`, TinyGo) without UZE depending on any.
-- **Where it lives**: a dedicated crate, `uze-wasm`, depending
-  on `uze-contract` and `uze-platform` only, wrapped by an `Extension`
-  adapter on the host side. Neither `uze-core` (the package manager, which
-  the shim uses) nor `uze-application` (which does not depend on
-  `uze-extensions`) can host it.
-- **Runtime and HTTP**: owed (see *Product decisions owed*). `wasmi` (an
-  interpreter, pure Rust, the one Zellij embeds) and `wasmtime` (a JIT,
-  larger, faster) are the candidates; `fetch` needs a production HTTP/TLS
-  client, which the workspace does not have outside telemetry.
-
-*Alternative:* a resident process speaking JSON over stdio. Rejected: a
-process is confined only where the OS can confine it, and it costs a
-process per extension.
+*Alternatives:* a WebAssembly component (see D27). A resident process
+speaking JSON over stdio: confined only where the OS confines, and a process
+per extension.
 
 ### D20. The gallery
 
@@ -967,50 +966,59 @@ that would behave one way in development and another once installed.
 - Every gallery entry (D20) ships its tests; they are the acceptance suite
   and the worked example of how to test.
 
-### D27. A source or action is answered by a component first, a program when it must
+### D27. A source or action is answered by a script first, a program when it must
 
 Decided by the operator on 2026-10-23. Views are KDL whatever answers them;
 what changes is who answers "give me the data" or "do this":
 
 | Answer | Declared as | For | Confinement | Consent |
 |---|---|---|---|---|
-| a **WebAssembly component**, called once per question, keeping no state | `wasm "bin/board.wasm"` | the default: parsing checkout files, computing fields, building a compose tree | the component model's, on every platform | the plain grants (`read:checkout`, `net` …) |
-| a **program** (argv) | `run "./bin/board.sh"` | wrapping a CLI (`gh`, `kubectl`, `nvidia-smi`, `openspec`), or a quick shell script that prints JSON or lines | D6's, where the platform offers it | `exec:` grants asked apart, stating "runs programs on your system, as you"; where confinement is unavailable, an explicit "runs as you, with everything you can reach" |
-| a **fixture** | `fixtures/<source>.json` | development and tests only (D25, D26) | — | — |
+| a **Rhai script**, called once per question, keeping no state | `script "board.rhai"` | the default: parsing checkout files, computing fields, building a compose tree | the engine's (D19), on every platform | the plain grants (`read:checkout`, `net` …) |
+| a **program** (argv) | `run "./bin/board.sh"` | wrapping a CLI (`gh`, `kubectl`, `nvidia-smi`, `openspec`), or a quick script in the author's own language | D6's, where the platform offers it | `exec:` grants asked apart, stating "runs programs on your system, as you"; where confinement is unavailable, an explicit "runs as you, with everything you can reach" |
+| a **fixture** | `fixture "fixtures/board.json"` | before a script exists, the inspector, and tests (D25, D26) | — | — |
 
-- Both answer the same contract: the input object of D4 and the envelope of
-  D4. A stateless component exports one function, `answer(question) ->
-  answer`, in a WIT world that the resident world (D19) extends, so a
-  source can move from a script to a component, or a component to resident,
-  without its view or tests changing.
-- A component reaches the machine only through D19's imports. One that
-  wraps a CLI imports `run-program`, which runs the program under D6 and its
-  `exec:` grant: wrapping a CLI is never more confined than the program it
-  runs, and consent says so.
-- The check, the scaffold and the Skill lead with components; the shell path
-  is documented as fully supported, for wrappers and for authors who want no
-  toolchain. Neither is deprecated.
-- Consequences for the split: the stateless component runner and `uze-wasm`
-  (with its runtime, `wasmi` recommended) arrive in change 4, confined
-  everywhere from their first commit; the argv runner arrives with OS
-  confinement in change 5, so `exec:` is never offered before confinement
-  or its explicit disclosure exists; change 7 adds only the resident
-  exports and the media.
+- One language, embedded, with no build. The author writes a `.rhai` file;
+  UZE compiles it at load and recompiles a linked extension's on save. There
+  is no toolchain to install, no SDK and no binary to publish.
+- Script and program answer the same contract: the input object and the
+  envelope of D4. A script's `answer(question)` returns a map; a program
+  prints the same JSON. A source moves from one to the other without its
+  view or tests changing.
+- A script that wraps a CLI calls `run_program`, which runs the program
+  under D6 and its `exec:` grant: wrapping a CLI is never more confined than
+  the program it runs, and consent says so.
+- The host registers fast native primitives (lines, glob, regex, JSON, front
+  matter, KDL) so a script orchestrates and the heavy work runs in Rust
+  (D28).
+- The check, the scaffold and the Skill lead with scripts; the program path
+  is documented as fully supported, for wrappers and for authors who want
+  their own language. Neither is deprecated.
+- Consequences for the split: `uze-script` and the stateless script runner
+  arrive in change 4, confined everywhere from their first commit; the argv
+  runner arrives with OS confinement in change 5, so `exec:` is never
+  offered before confinement or its explicit disclosure exists; change 7
+  adds the resident entry points of D19 and the media.
 
-*Alternative:* programs only, components for resident surfaces. Rejected:
-it makes OS confinement, which varies by platform and is where most open
-findings sit, the gate for every extension, including the many that need no
-program at all. *Alternative:* components only. Rejected: the extensions
-that wrap a CLI would still run it, and the shell author would be turned
-away.
+*Alternative:* WebAssembly components, compiled by the author in any
+language. Rejected after measuring and weighing it: every language needs its
+own toolchain and build step, interpreted languages ship their interpreter
+inside the component (tens of megabytes), UZE would maintain a WIT world, a
+runtime and a build command, and the component model is still moving. What
+it would add over Rhai is native speed for heavy computation, which no
+gallery entry needs; native primitives cover the heavy parts. It can return
+if an extension needs that. *Alternative:* programs only. Rejected: it makes
+OS confinement, which varies by platform and holds most open findings, the
+gate for every extension, including the many that run no program at all.
+*Alternative:* Lua or Luau, or an embedded JavaScript engine. Rejected by the
+dependency rule: each compiles C on the release matrix.
 
 ### D28. A performance budget, from measurements
 
 Measured on 2026-10-23 on the operator's machine (WSL2, 16 CPUs, release
 build, warm file cache) with `rhai` 1.27.0 and `kdl` 6.7.1 and the gallery's
 `gsd-band` (the blueprint's `board.rhai` and `board.kdl`) over a realistic
-`.planning/` (6 phases, one with 37 files). Rhai is the scripting candidate
-under discussion for D27; the program rows are the same answer written for
+`.planning/` (6 phases, one with 37 files). Rhai is the scripting engine
+D27 chose; the program rows are the same answer written for
 `sh`, `node` (26.12) and `python3` (3.15), each run as a process per
 question.
 
@@ -1069,15 +1077,15 @@ What the budget takes from it:
 
 ## Candidate ADRs
 
-- **Extension logic is a WebAssembly component first, a confined program
-  when it must be, and WebAssembly is the only resident form (D27).** This answers
+- **Extension logic is an embedded Rhai script first, a confined program
+  when it must be, and Rhai is the only resident form (D19, D27).** This answers
   ADR-041's deferred question: the mechanism is chosen, and dynamic
   libraries and native resident interpreters are ruled out.
 - **Extensions may act on agents through the bridge.** Writing into an
   agent's prompt gives an extension the agent's reach; the grants, the
   gesture rule and the unattended safeguards are the decision.
-- **The WebAssembly runtime dependency.** A large, long-lived dependency
-  chosen by provenance.
+- **The `rhai` dependency.** A scripting engine inside UZE's process,
+  chosen by provenance, with the sandbox settings D19 states.
 - **KDL v2 for manifests, views and tests, with UZE's own bounded
   decoder.** A new third-party parser on extension input, with the guards it
   needs and an LSP to maintain.
@@ -1127,7 +1135,7 @@ What the budget takes from it:
   It travels through each integration's launch contribution, only inside
   UZE, fails open, and its absence on a harness (or under a sandbox that
   denies `$UZE_HOME`) is reported, not papered over (D16).
-- [A resident component can burn CPU in the TUI process] → Fuel and memory
+- [A resident script can burn CPU in the TUI process] → Operation and size
   budgets, a frame cap, and stopping on breach; it runs off the drawing
   thread.
 - [Composed views from large answers are built on the render thread] →
@@ -1157,7 +1165,7 @@ harness reads.
 `docs/architecture/crate-layering.mmd` gains `uze-contract` and its
 edges (from `uze-core` and `uze-extensions`). `containers.mmd` gains the
 extension program as an external process the workspace client runs, the
-resident runtime crate (`uze-wasm`) and its edges, and the
+script engine crate (`uze-script`) and its edges, and the
 reporter as an edge from each agent's pane, through its journal, to the
 workspace client. Both are validated with
 `cargo test -p uze-extensions` and `make artifacts`.
@@ -1197,12 +1205,12 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    moved onto the path split 1 laid, the per-extension fields, channels and
    hit variants removed, and the invariant and AGENTS.md edits for
    `ExtensionHit`, with no new behaviour.
-4. **extension-manifest-and-components**: the full `extension.kdl`,
-   discovery, check, `uze-wasm` with the stateless component runner (D27),
+4. **extension-manifest-and-scripts**: the full `extension.kdl`,
+   discovery, check, `uze-script` with the stateless script runner (D27),
    output modes and the envelope, sources, actions, `every`,
    `paths.changed`, the store and preferences, the grants record and
    consent. Third-party code runs from here on, confined on every platform.
-   Proof: `jump`, and `gsd-band`'s board from a component.
+   Proof: `jump`, and `gsd-band`'s board from its script.
 5. **extension-programs-and-confinement**: the argv runner and `exec:`
    grants, with Landlock, seccomp and Seatbelt as `uze-platform`'s
    confinement and the dependency review. Proof: `gpu-meter`.
@@ -1225,10 +1233,10 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 | 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; reload of linked extensions; the inspector | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
 | 2 tests and LSP | tests in `uze agent plugin check`, `uze agent plugin lsp` | — |
 | 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
-| 4 manifest and components | `uze-wasm` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
+| 4 manifest and scripts | `uze-script` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
 | 5 confinement | the argv runner; confinement in `uze-platform` | — |
 | 6 agent bridge | the journal, `uze agent report`, the `agents` source | each of the four integrations; `capability/hook.rs`; `compute_layout` for bands |
-| 7 media and resident | the resident exports in `uze-wasm` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
+| 7 media and resident | the resident entry points in `uze-script` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
 
 Each change carries, in the same commit as the code that needs it: reads off
 the drawing thread through `orchestrator/reads.rs` (the
@@ -1257,8 +1265,9 @@ must come before or with task 1.1.
 - **What unenforced consent says**: the plan needs the exact wording for
   "this runs as you, with everything you can reach", and whether an extension
   may be enabled at all where confinement is missing.
-- **The WebAssembly runtime and the HTTP client** (D19, D27; needed by
-  change 4): `wasmi` (recommended) or `wasmtime`, and which TLS client, judged by the dependency policy with
+- **The `rhai` review and the HTTP client** (D19, D27): the dependency
+  review of `rhai` (needed by change 4), and which TLS client `fetch` uses
+  (needed by the change that ships `net`), judged by the dependency policy with
   their cost on build time and binary size.
 - **Unattended prompt rate** (D16): the number per agent per window.
 
@@ -1304,7 +1313,7 @@ Architecture:
 - **R-A5** The built-in `spec` extension was ignored (five `ExtensionHit`
   variants, `spec_places`, GSD already read). → Context, split 1, D20.
   **Open**: reserve `spec` with S15.
-- **R-A6** The WebAssembly runtime cannot live in `uze-core` or
+- **R-A6** (written for WebAssembly; holds for `uze-script`) The runtime cannot live in `uze-core` or
   `uze-application`; `fetch` needs an HTTP client; raw keys invert the
   extensions rule. → D19 (own crate, owed HTTP, rule amended).
 - **R-A7** A band sized by its answer resizes the PTY (SIGWINCH, redraw
