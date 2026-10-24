@@ -27,7 +27,7 @@ can observe.
 ### Requirement: An extension is declared in one manifest that carries no logic
 A plugin SHALL declare an extension in `extensions/<id>/extension.kdl`,
 holding `protocol`, `id`, `name`, `description`, `surfaces`, `sources`,
-`actions`, `events`, `pipes`, `preferences`, `commands` and `wants`. Values in the manifest SHALL be
+`actions`, `events`, `preferences` and `wants`. Values in the manifest SHALL be
 literals or field references (`{field}`) into the answer of a source or the
 current selection; the manifest SHALL NOT contain conditionals, loops or
 expressions. Unknown keys SHALL be refused.
@@ -271,7 +271,7 @@ except the pixels of an image.
 An action SHALL declare an `id`, a `label`, where it applies (`on:
 <surface>` or `<surface>.item`), an optional key and confirmation, and what
 it does: a program, or a built-in (`clipboard`, `open_path`, `refresh`,
-`pipe`, `open`, `focus_agent`, an agent action). An item's action SHALL appear in
+`open`, `focus_agent`, an agent action). An item's action SHALL appear in
 its menu; every action SHALL appear in the footer and action index with its
 resolved key.
 
@@ -314,25 +314,6 @@ SHALL be coalesced per extension in a window.
 - **WHEN** a manifest declares `every "1s"` for a source shown only in a folded section
 - **THEN** the check reports the interval raised to the 5-second floor, and the source does not run while nothing that shows it is visible
 
-### Requirement: Pipes carry data into an extension from outside
-`uze ext pipe`, another extension's `pipe` action, or a hook SHALL deliver
-a named message, with its sender, to an extension that declares that pipe.
-A pipe SHALL only refresh the sources it maps to, its payload sanitized and
-bounded in `input.pipe`; it SHALL never run an action. A pipe from another
-extension SHALL be accepted only from a sender the receiver names.
-
-#### Scenario: A pipe refreshes a source with its payload
-- **WHEN** `uze ext pipe chimes play '{"cue": "done"}'` is run and `chimes` maps the pipe `play` to its `cue` source
-- **THEN** the `cue` source runs once with `{"cue": "done"}` in its input
-
-#### Scenario: A pipe from an unnamed extension is refused
-- **WHEN** extension `a` pipes to `b` and `b`'s manifest does not name `a` as a sender
-- **THEN** nothing of `b` runs and `a` is told the sender is not accepted
-
-#### Scenario: An undeclared pipe is refused
-- **WHEN** a message names a pipe the extension does not declare
-- **THEN** nothing of the extension runs and the sender is told the pipe is unknown
-
 ### Requirement: An extension keeps a small store of its own
 An extension SHALL have one bounded key/value store per project, keyed by
 its identity (`plugin@marketplace/id`), or one for all projects only if the
@@ -348,7 +329,7 @@ removed with the plugin; a patch over the bound SHALL be refused.
 A manifest MAY declare preferences of type `text`, `number`, `toggle`,
 `choice` or `secret`, edited on the Extensions screen. A program SHALL
 receive only those its declaration names. A `secret` SHALL be kept outside
-UZE's plain records, never shown again, logged, piped, cached under, or
+UZE's plain records, never shown again, logged, cached under, or
 sent to an agent, and an answer of a run that received it SHALL NOT patch
 the store.
 
@@ -406,38 +387,15 @@ added only when a reference extension needs it.
 - **WHEN** the `snake` reference's view is focused and the operator presses arrow keys
 - **THEN** the component receives the keys, answers a cell grid each frame within its budget, and keeps its best score in its store
 
-### Requirement: Extensions may add CLI commands under their own name
-A command declared by an extension SHALL be reachable as
-`uze ext <extension> <command> [args...]`, run in the current project's
-checkout with the same program contract, its answer printed as the program
-wrote it and its exit code returned. Extension commands SHALL be listed by
-`uze ext <extension> --help` and SHALL NOT appear among UZE's own commands.
+### Requirement: An extension's state is reported where its plugin's is
+`uze status` and `uze inspect <plugin>` SHALL report each extension a plugin
+carries: enabled, disabled, needing consent, or held by a widened update,
+with the grants it asks for. No command SHALL enable an extension from inside
+an agent's pane.
 
-> **Unresolved review findings** (design.md): S11, M7.
-
-#### Scenario: A declared command runs
-- **WHEN** the operator runs `uze ext openspec status`
-- **THEN** the declared program runs in the current checkout and its output and exit code are UZE's
-
-#### Scenario: An extension cannot shadow a UZE command
-- **WHEN** an extension declares a command named `install`
-- **THEN** it is reachable only as `uze ext <extension> install` and `uze install` is unchanged
-
-### Requirement: `uze ext` names extensions, and its own verbs are reserved
-`uze ext list`, `uze ext enable <extension>` and `uze ext disable <extension>`
-SHALL list, enable (after showing and accepting its grants) and disable
-installed extensions, machine-wide. An extension id equal to one of these verbs,
-or to `help`, SHALL be refused by the check.
-
-> **Unresolved review findings** (design.md): M7, S15, S4.
-
-#### Scenario: Enabling from the CLI shows the grants
-- **WHEN** the operator runs `uze ext enable openspec` in a terminal
-- **THEN** the grants are listed and the extension is enabled only if they are accepted
-
-#### Scenario: A reserved id is refused
-- **WHEN** a manifest declares `id: list`
-- **THEN** the check fails saying `list` is reserved by `uze ext`
+#### Scenario: A held extension is visible from the CLI
+- **WHEN** an update widened an extension's grants and the operator runs `uze status`
+- **THEN** the report names the extension as held, the new grant, and that it is accepted on the Extensions screen
 
 ### Requirement: The operator can enable, disable and inspect each extension
 The Extensions screen SHALL list built-in and installed extensions with their
@@ -511,10 +469,10 @@ slot's size and the theme, and record events into a fixture.
 - **THEN** the tree names the node that is absent and why, such as a `when` field missing from the answer
 
 ### Requirement: An extension's tests run without a TUI
-`uze ext test <path>` SHALL run an extension's test files headlessly on the
+`uze agent plugin check <path>` SHALL run an extension's test files headlessly on the
 host's renderer, with recorded answers by default and real programs under
 confinement only on request, comparing cell snapshots per slot, size and
-theme; `uze agent extension check` SHALL fail when a test fails.
+theme, and SHALL fail when a test fails.
 
 #### Scenario: A gesture is tested end to end
 - **WHEN** a test gives a recorded answer, selects `api`, presses `r` and accepts the confirmation
@@ -522,11 +480,11 @@ theme; `uze agent extension check` SHALL fail when a test fails.
 
 #### Scenario: A visual change fails its snapshot
 - **WHEN** a view's change moves a column and its snapshot was recorded before
-- **THEN** the test fails showing the cell difference, and `--update` rewrites the snapshot
+- **THEN** the test fails showing the cell difference, and `--update-snapshots` rewrites the snapshot
 
 #### Scenario: Tests need no program by default
 - **WHEN** every test of an extension gives recorded answers
-- **THEN** `uze ext test` runs no program and passes on a machine without the extension's tools
+- **THEN** `uze agent plugin check` runs no program and passes on a machine without the extension's tools
 
 ### Requirement: KDL is highlighted in UZE's own editor
 The code surface's editor and preview, and fenced `kdl` blocks in Markdown,

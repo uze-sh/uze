@@ -227,7 +227,7 @@ are requests the host applies under the extension's grants (`notify` needs
 The input object carries, besides the declared `input` fields:
 `context` (`checkout`, `branch`, `work`, `surface`, `extension`, `slot`,
 `size` in cells, and `agent` for a surface on an agent's pane), and, only
-when the declaration names them, `event`, `pipe`, `store` and
+when the declaration names them, `event`, `store` and
 `preferences`.
 
 ### D5. Consent is enabling, and it is recorded
@@ -251,7 +251,9 @@ plugin:
     prompt style of `PromptingAuthority`.
   - A non-interactive install leaves the extension disabled and reports it.
   - The TUI Extensions screen has Enable/Disable with the grants listed.
-  - `uze ext enable|disable|list` from the CLI.
+  - `uze status` and `uze inspect <plugin>` report each extension's state
+    (enabled, needing consent, held by a widened update); enabling is never
+    a CLI verb run from an agent's pane (R-A10).
 - Built-in extensions are part of the binary and need no grants.
 
 *Alternative:* extend `trust.rs`'s `executable_capabilities` so installing
@@ -343,21 +345,28 @@ No filesystem watcher and no new dependency:
 
 Events are coalesced per extension and per frame.
 
-### D11. CLI
+### D11. No `uze ext`: an extension is a plugin capability
 
-A named `Command::Ext { args: Vec<String> }` variant, not the existing
-`External` shorthand catch-all:
+An extension ships as part of a plugin, so it is installed, updated,
+removed, reported and checked by the verbs plugins already have. There is
+no `uze ext` noun.
 
-| Command | Classification in `command_performance.rs` |
-|---|---|
-| `uze ext list` | Budgeted (reads the record) |
-| `uze ext enable <id>` | JustifiedSlow (prompt) |
-| `uze ext disable <id>` | Budgeted |
-| `uze ext <id> <command> [args]` | JustifiedSlow (runs a foreign program) |
-| `uze agent extension check <path>` | JustifiedSlow |
+| Need | Where | Classification in `command_performance.rs` |
+|---|---|---|
+| see extensions and their state | `uze status`, `uze inspect <plugin>` (existing) | unchanged, Budgeted |
+| enable, disable, accept grants | the Extensions screen; the `uze install` prompt on a TTY | unchanged |
+| validate, run tests, update snapshots | `uze agent plugin check <path>` (existing), with `--run` and `--update-snapshots` | unchanged, JustifiedSlow |
+| scaffold | `uze agent plugin create --extension <id>` (existing verb, new flag) | unchanged |
+| editor support | `uze agent plugin lsp` (new leaf, started by an editor) | JustifiedSlow (long-running) |
 
-`uze agent plugin create --extension` scaffolds a working example: a manifest
-plus a `sh` source that needs only `jq`-free JSON printing.
+Two capabilities of the first draft leave this change, each until a gallery
+entry needs it, because none does today and each carried a security finding:
+- **commands an extension adds to the CLI** (`uze ext <id> <command>`;
+  S11's raw output and M7's mixed scopes);
+- **pipes** pushing data in from outside (D17; R-S6's confused deputy).
+
+The finding text stays in *Unresolved review findings*, moot while the
+capability is out.
 
 ### D12. A dedicated Skill, `uze:extension`, linked from `uze:author`
 
@@ -552,10 +561,10 @@ in an open approval are actions. So:
 - `agent:prompt`: from a gesture, after the host shows the exact text, the
   target agent and the extension.
 - `agent:prompt:auto`, asked on its own after the rest, per project and per
-  agent, time-boxed, never machine-wide: an event or a pipe may send only
+  agent, time-boxed, never machine-wide: an event or a timer may send only
   the manifest's **fixed text**, or a declared skill with arguments from a
   **closed set** the manifest lists. Nothing from a source's answer, an
-  event payload, a pipe payload or the repository becomes prompt text.
+  event payload or the repository becomes prompt text.
   Each write is rate-limited per agent, attributed in the band or a notice,
   and pausable with the host's pause key, which a resident surface cannot
   capture. Any change of the extension's digest revokes it, whatever D5
@@ -585,15 +594,10 @@ D10 is superseded by this decision; tasks 7.x are folded into group 15.
   order, bounded per window; the excess is counted and reported in the
   next input as `dropped`). A built-in source, `events`, answers the last
   N events the extension may see, so a log can be drawn without a store.
-- **Pipes.** `uze ext pipe <extension> <pipe> [payload]`, another
-  extension's `pipe` action, or a hook sends a named message. Every pipe
-  carries its sender (`operator` from a TTY outside an agent pane,
-  `agent:<id>`, `extension:<identity>`, `hook`). A pipe may only refresh
-  sources (the payload in `input.pipe`); it never runs an action, so no
-  confirmation, write or agent action is reachable through one. A pipe
-  from another extension is accepted only if the receiver names that
-  sender in its manifest. A pipe to an extension with no open surface marks
-  its sources stale and wakes nothing.
+- **Pipes are out of this change** (D11). If a gallery entry needs data
+  pushed from outside, they return with the rules the second review set:
+  a sender on every message, refresh only, named senders for messages from
+  other extensions.
 
 ### D18. Store and preferences
 
@@ -626,7 +630,7 @@ WIT world UZE publishes:
   `input(input) -> redraw?` (keys and pointer while its surface is focused),
   `render(slot, size) -> tree | cells`, `stop()`. The WIT carries every
   type: the catalog tree, a cell, the key and pointer encoding, the event
-  variant (agent events, `every`, timer ticks, pipes), the store.
+  variant (agent events, `every`, timer ticks), the store.
 - **Imports** are the grants:
   - `run-program` under the grants of the program it runs, through the same
     rate and concurrency limits as declared sources;
@@ -711,11 +715,9 @@ reels streams video at a cost the gallery does not need to prove.
   example per slot and per feed in the reference page and the Skill. What a
   reviewer had to invent (how a surface names its source, a band's edge and
   rows, a target, the `open` action, a timeout) is fixed there.
-- `uze ext simulate <path> <declaration> [--event …] [--selection …]
-  [--store …] [--size …]` runs one declaration under the host's confinement
-  against canned inputs and prints what the host would draw, as text. It is
-  the core of `uze agent extension check` and the author's test loop, and
-  it runs only with `--run` where confinement is not enforced (S12).
+- Running one declaration against canned inputs and printing what the host
+  would draw is a test (D26), run by `uze agent plugin check`; there is no
+  separate simulate command.
 - A packaged script with an interpreter shebang declares the interpreter
   as `exec:<name>`; consent names it as "can run anything", per S3.
 
@@ -749,7 +751,7 @@ no one reaches for CSS, a module or a web framework.
   `kdl` parser recurses without a depth limit (400 nested braces overflow a
   thread's stack, uncatchably) and has an open exponential case with
   slashdash (kdl-rs#177). So a manifest, a view or a test is parsed only by
-  `uze-core` (tests by `uze ext test`), at check, install, enable and a
+  `uze-core` (tests by `uze agent plugin check`), at check, install, enable and a
   linked extension's reload, after:
   - a size cap (64 KiB per file);
   - a KDL-aware pre-scan (strings, raw strings, comments, `/-`) refusing
@@ -867,7 +869,7 @@ The author's loop, end to end:
 3. The inspector, opened by a key on any extension's surface, shows why the
    surface looks as it does and lets the author provoke what has not
    happened yet.
-4. `uze ext test` runs the same tests headlessly for CI (D26).
+4. `uze agent plugin check` runs the same tests headlessly for CI (D26).
 
 - **Reload on save, for linked extensions only.** The workspace polls the
   directories of extensions installed from linked marketplaces every 250 ms
@@ -922,7 +924,7 @@ that would behave one way in development and another once installed.
 
 ### D26. Tests without a TUI
 
-- `uze ext test <path>` runs `tests/*.test.kdl` headlessly, on the host's
+- `uze agent plugin check <path>` runs `tests/*.test.kdl` headlessly, on the host's
   renderer with a test backend (the way UZE tests its own surfaces):
 
   ```kdl
@@ -940,15 +942,14 @@ that would behave one way in development and another once installed.
   }
   ```
 
-- Snapshots are cell grids per slot, size and theme; `--update` rewrites
-  them.
+- Snapshots are cell grids per slot, size and theme; `--update-snapshots`
+  rewrites them.
 - `given … answer=` uses a recorded answer, so a test runs nothing and works
   in any CI; `--run` executes the programs under confinement, and only
   where confinement is enforced unless the operator says otherwise (S12).
-- `uze agent extension check` runs the tests, so a plugin with a failing
-  test is not accepted by the check.
-- D21's `uze ext simulate` is one test step run from the command line.
-- **The LSP is required work**, not a later nicety: `uze ext lsp` is
+- Testing is checking: a plugin with a failing test does not pass
+  `uze agent plugin check`, which is the same gate an install runs.
+- **The LSP is required work**, not a later nicety: `uze agent plugin lsp` is
   generated from the catalog in `uze-contract` and gives completion, hover
   and the check's diagnostics for manifests, views and tests, since no
   editor completes KDL from a schema.
@@ -1189,8 +1190,8 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    no per-extension fields, channels or `ExtensionHit` variant are added for
    it, so split 3 moves the built-ins onto that path and writes nothing new.
    Proof: the `gsd-band` board drawn from a fixture, edited live.
-2. **extension-tests-and-lsp**: `uze ext test` with recorded answers and
-   cell snapshots, and `uze ext lsp` (D26). Visual extensions can be written
+2. **extension-tests-and-lsp**: tests in `uze agent plugin check` with
+   recorded answers and cell snapshots, and `uze agent plugin lsp` (D26). Visual extensions can be written
    and tested end to end.
 3. **generic-extension-host**: group 1, with `code`, `architect` and `spec`
    moved onto the path split 1 laid, the per-extension fields, channels and
@@ -1213,7 +1214,8 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 7. **extension-media-and-resident**: `cells` with regions, `image`,
    `sprite`, then the resident exports of D19 on the runtime change 4
    brought, and its HTTP client. Proof: `pets`, `screen`, `snake`.
-8. **Growth**: pipes and CLI commands, then whatever a new gallery entry
+8. **Growth**: pipes and extension CLI commands only if a gallery entry
+   needs them (D11), then whatever a new gallery entry
    needs.
 
 ### What each change touches
@@ -1221,7 +1223,7 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 | Change | New code | Existing code it changes |
 |---|---|---|
 | 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; reload of linked extensions; the inspector | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
-| 2 tests and LSP | `uze ext test`, `uze ext lsp` | — |
+| 2 tests and LSP | tests in `uze agent plugin check`, `uze agent plugin lsp` | — |
 | 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
 | 4 manifest and components | `uze-wasm` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
 | 5 confinement | the argv runner; confinement in `uze-platform` | — |
@@ -1275,10 +1277,10 @@ It resolves none of them outright. It changes these:
   confined on every platform; programs, including those it runs, are not.
 - *`kind: interactive`*: retired in favour of the resident tier (D13).
 - *M4*: compose (D15) makes it more pressing; memoized per answer and size.
-- *S4*: the identity `plugin@marketplace/id` now keys the store, pipes and
-  grants (D17, D18); D4's cache path, D8's action names and D11's CLI still
+- *S4*: the identity `plugin@marketplace/id` now keys the store and
+  grants (D18); D4's cache path and D8's action names still
   use the bare id and must follow.
-- *S12*: `uze ext simulate` runs only with `--run` where confinement is not
+- *S12*: `uze agent plugin check` runs programs only with `--run`, and only where confinement is not
   enforced (D21).
 
 ### Second review (2026-10-23)
@@ -1312,8 +1314,9 @@ Architecture:
   D4, D15, split 6. **Open**: several images per frame.
 - **R-A9** D10/D17 and D9/D15 duplicate; proofs needed later splits. →
   D9/D10 superseded, split reordered.
-- **R-A10** ADR-055 already stores consent; `uze ext enable` must refuse in
-  an agent's pane. → Candidate ADRs. **Open**: D5 and D11 text.
+- **R-A10** ADR-055 already stores consent; enabling must refuse in an
+  agent's pane. → Candidate ADRs; D11 has no enabling verb. **Open**: D5
+  text.
 - **R-A11** Compose is rebuilt every frame and depends on size. → D15
   (memoized per answer and size).
 - **R-A12** `notify` and `sound` have no platform concept. → split 5.

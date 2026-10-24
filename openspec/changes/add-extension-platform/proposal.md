@@ -97,8 +97,8 @@ mechanism chosen without a capability model cannot be given one afterwards
   (the authoring path UZE already has) reloads on save; every extension keeps
   its last good draw on an error and has an inspector, which on a linked
   extension also feeds fixtures and emits synthetic events;
-  `uze ext test` runs headless tests with cell snapshots; `uze ext lsp`
-  completes manifests, views and tests.
+  `uze agent plugin check` runs headless tests with cell snapshots; `uze
+  agent plugin lsp` completes manifests, views and tests.
 - **A bridge to the agents, across harnesses.** A reporter UZE adds to each
   launch tells the workspace each agent's turns, tool calls and approvals as
   normalized events, which are drawn but never trusted to release a write;
@@ -107,10 +107,8 @@ mechanism chosen without a capability model cannot be given one afterwards
   its integration spells in its harness's dialect, filtered, shown as sent,
   and refused when the pane is not ready. Unattended, it may send only text
   its manifest fixes, under a per-project, per-agent grant.
-- **Richer reasons to refresh, and a way in from outside.** An interval with
-  a floor, declared paths changing, and pipes: `uze ext pipe` and other
-  extensions push data to a surface, waking it if it is closed, without
-  making it resident.
+- **Richer reasons to refresh.** An interval with a floor, and declared
+  paths changing, including paths Git ignores.
 - **Memory and preferences.** A small per-extension store, and typed
   preferences the operator edits on the Extensions screen.
 - **A security model for extension code.** Grants declared in the manifest
@@ -125,11 +123,13 @@ mechanism chosen without a capability model cannot be given one afterwards
 - **A gallery that proves it.** Ten reference extensions, each recreating a
   plugin operators already use on a harness, are the acceptance suite; a
   primitive joins the catalog when a gallery entry needs it.
-- **Authoring tools and a skill.** `uze agent plugin create --extension`,
-  `uze agent extension check <path>` (schema, bindings, and a real dry run
-  of every source), `uze ext simulate` to run one declaration against
-  canned inputs without a TUI, `uze ext <extension> <command>`,
-  and a dedicated `uze:extension` Skill, linked from `uze:author`.
+- **No new command noun.** An extension is a plugin capability: it is
+  installed, updated and removed with its plugin, reported by `uze status`
+  and `uze inspect`, enabled on the Extensions screen, and checked and
+  tested by `uze agent plugin check`; `uze agent plugin create --extension`
+  scaffolds one, and a dedicated `uze:extension` Skill, linked from
+  `uze:author`, teaches it. Commands an extension adds to the CLI and pipes
+  from outside are left out until a gallery entry needs them.
 - Rewriting a harness's own transcript, raw terminal output from an
   extension, and native code loaded into UZE's process are **not** part of
   this change, at any tier.
@@ -137,7 +137,7 @@ mechanism chosen without a capability model cannot be given one afterwards
 ## Capabilities
 
 ### New Capabilities
-- `extension-platform`: how an extension is declared, discovered, enabled and hosted; the generic host contract; the places it may occupy; the catalog a surface is built from; events, pipes, storage, preferences and CLI commands; the reference gallery.
+- `extension-platform`: how an extension is declared, discovered, enabled and hosted; the generic host contract; the places it may occupy; the catalog a surface is built from; events, storage and preferences; authoring through linked marketplaces; the reference gallery.
 - `extension-program-contract`: the stdin/stdout/exit-code contract a source, action or command program answers, its output modes, limits and failure states.
 - `extension-security`: grants, consent and re-consent, execution confinement, output sanitization, attribution of host chrome, and key shadowing.
 - `extension-agent-bridge`: the normalized agent events, the agents read model, and the actions an extension may take on an agent, with their grants and safeguards.
@@ -160,7 +160,8 @@ mechanism chosen without a capability model cannot be given one afterwards
   skill-invocation spelling), a new `uze-wasm` crate (the
   resident tier), `src/ui` (orchestrator, the agents read model,
   extension host, slots, keymap, management Extensions screen),
-  `src/main.rs` (`uze ext`, `uze agent extension check`).
+  `src/cli` (the extension flags of `uze agent plugin create|check`, `uze
+  agent plugin lsp`, extensions in `uze status` and `uze inspect`).
 - **Persisted state**: one record (consented grants per extension, per
   digest, plus preferences) under `state/`, one store per extension and
   project, and one bounded journal per agent, each declared through

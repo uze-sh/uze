@@ -36,7 +36,7 @@
 - [ ] 3.1 Create the leaf crate `uze-contract`: `Manifest`, `SurfaceDecl`, `SourceDecl`, `ActionDecl`, `EventName`, `CommandDecl`, `Grant`, and the contract's `ProgramInput`/`ProgramAnswer` as serde types with `deny_unknown_fields`
 - [ ] 3.2 Implement the field-reference grammar (`{field}` and `{a.b}` only) with a parser that refuses expressions, and table tests for it
 - [ ] 3.3 Implement the sanitizer (C0/C1 controls, ESC sequences, bidi overrides, length bounds) with tests covering OSC 52, OSC 8, CSI cursor moves and RLO
-- [ ] 3.4 Reserve the ids `list`, `enable`, `disable`, `help`, `pipe`, `simulate`, `code`, `architect`, `spec` and `uze`, and the protocol version `1`
+- [ ] 3.4 Reserve the built-in ids `code`, `architect`, `spec` and `uze`, and the protocol version `1`
 - [ ] 3.5 Generate the JSON Schema of the compose wire with `schemars` behind a non-default feature, write it to `docs/extensions/schema.json`, and add a test that fails on drift (record the dependency justification in the PR)
 - [ ] 3.6 In the commit that creates `uze-contract`: amend ADR-041 and AGENTS.md so `uze-extensions` may depend on `uze-contract` only, admit exactly that edge in `layering.rs`, forbid I/O, `uze_*` and rendering crates inside it, and update `crate-layering.mmd`
 
@@ -90,10 +90,10 @@
 
 ## 10. CLI
 
-- [ ] 10.1 Add `Command::Ext` with `list`, `enable` (prompts with grants on a TTY, refuses without one), `disable` and `<id> <command> [args]`, and classify each in `command_performance.rs`
-- [ ] 10.2 After `uze install`, prompt on a TTY for extensions needing consent, and report them otherwise
-- [ ] 10.3 Add `uze agent extension check <path>`: schema and rules, then a dry run of every source in a scratch checkout under confinement, verifying every field reference against the real answer
-- [ ] 10.4 Add `uze agent plugin create --extension`, scaffolding a working manifest and a `sh` source, and extend the scaffold tests so it passes check
+- [ ] 10.1 Report extensions in `uze status` and `uze inspect <plugin>`: enabled, disabled, needing consent, held by a widened update, with their grants; no `uze ext` noun
+- [ ] 10.2 After `uze install`, prompt on a TTY outside an agent's pane for extensions needing consent, and report them otherwise
+- [ ] 10.3 Extend `uze agent plugin check` to extensions: manifest and views, field references against fixtures, the tests with recorded answers, `--run` under confinement, `--update-snapshots`
+- [ ] 10.4 Add `--extension <id>` to `uze agent plugin create` (see 23.1), and `uze agent plugin lsp`, classified in `command_performance.rs`
 
 ## 11. Authoring skill and docs
 
@@ -130,12 +130,12 @@
 - [ ] 14.7 `agent:prompt:auto` per project and agent, time-boxed, revoked by any digest change; fixed text or closed set only; rate limit, attribution and the pause key
 - [ ] 14.8 Architecture rule: agent actions from an extension go only through the bridge
 
-## 15. Events and pipes
+## 15. Events
 
 - [ ] 15.1 `every` with a 5-second floor, run only while a surface showing its sources is visible
 - [ ] 15.2 `paths.changed` and per-checkout `checkout.changed` from the one-second watch, with a bounded digest of declared paths, Git-ignored ones included
 - [ ] 15.3 Event payloads in `input.event`, `deliver: latest | each` with a per-window bound and a `dropped` count, and the built-in `events` source
-- [ ] 15.4 `uze ext pipe <extension> <pipe> [payload]`, the `pipe` built-in, and hook delivery of pipes, each with its sender; refresh only; cross-extension pipes accepted from named senders; classified in `command_performance.rs`
+- [ ] 15.4 (out of this change, D11: pipes return only if a gallery entry needs them) `uze ext pipe <extension> <pipe> [payload]`, the `pipe` built-in, and hook delivery of pipes, each with its sender; refresh only; cross-extension pipes accepted from named senders; classified in `command_performance.rs`
 
 ## 16. Store and preferences
 
@@ -159,7 +159,7 @@
 ## 19. Authoring
 
 - [ ] 19.1 Write the manifest and wire grammar into the generated schema with one complete worked example per slot and per feed (D21)
-- [ ] 19.2 (folded into 23.x) 19.2 Add `uze ext simulate <path> <declaration>` with canned event, selection, store and size, printing what the host would draw; make it the core of `uze agent extension check`; `--run` required where confinement is not enforced
+- [ ] 19.2 (dropped: running one declaration on canned inputs is a test, 23.5) Add `uze ext simulate <path> <declaration>` with canned event, selection, store and size, printing what the host would draw; make it the core of `uze agent extension check`; `--run` required where confinement is not enforced
 
 ## 20. Gallery
 
@@ -191,8 +191,8 @@
 - [ ] 23.3 The inspector drawer for every extension: runs, events, state, grants, the compiled tree with why a node is absent, cost; rerun with edited input on linked extensions
 - [ ] 23.0 `fixture` on a source: fed by it when it has nothing else, switchable from a linked extension's inspector, never read at runtime from a non-linked marketplace; actions that would run nothing recorded with their arguments
 - [ ] 23.4 On a linked extension's inspector: emit a synthetic event, change size and theme, inject fake agents, record a session's events into a fixture
-- [ ] 23.5 `uze ext test` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update`; run by `uze agent extension check`
-- [ ] 23.6 `uze ext lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
+- [ ] 23.5 Tests in `uze agent plugin check` over `tests/*.test.kdl` on the test backend: recorded answers by default, `--run` under confinement, cell snapshots per slot, size and theme with `--update-snapshots`
+- [ ] 23.6 `uze agent plugin lsp` generated from the catalog: completion, hover and the check's diagnostics for manifests, views and tests, shipped with the views (split 3)
 - [ ] 23.7 Tests for every gallery entry (D20)
 - [ ] 23.8 Vendor a KDL v2 grammar into `crates/uze-extensions/grammars/` with its licence, map `.kdl`, and test that it compiles under `fancy-regex` and colours `#true`, raw and multi-line strings, slashdash and type annotations in the editor, the preview and Markdown fences; write a small one if no upstream v2 grammar compiles
 

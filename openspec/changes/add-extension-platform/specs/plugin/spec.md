@@ -3,7 +3,7 @@
 ### Requirement: A plugin may carry extensions
 A plugin MAY carry extensions under `extensions/<id>/`, each an
 `extension.kdl` and its views. `uze agent plugin check` SHALL validate each
-as `uze agent extension check` does; installing SHALL deliver them to the
+with the rules of the extension check; installing SHALL deliver them to the
 workspace client only, never to a harness; removing the plugin SHALL remove
 them and their accepted grants.
 
@@ -18,11 +18,11 @@ them and their accepted grants.
 - **THEN** the extension disappears from the Extensions screen and its accepted grants are no longer recorded
 
 ### Requirement: An extension is checked offline before it is installed
-`uze agent extension check <path>` SHALL validate a manifest against its
-schema, verify every field reference against a real answer by running each
-source once in a scratch checkout under the same confinement as the host, and
-report every problem it finds with the file, the field and the fix, exiting
-non-zero when there is one.
+`uze agent plugin check <path>` SHALL validate each extension's manifest and
+views, verify field references against its fixtures, run its tests with
+recorded answers, run sources only with `--run` under the host's
+confinement, and report every problem with the file, the field and the fix,
+exiting non-zero when there is one.
 
 > **Unresolved review findings** (design.md): S12, M8.
 
