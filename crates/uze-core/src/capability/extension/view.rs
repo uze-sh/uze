@@ -17,7 +17,9 @@ use uze_contract::{
     Binding, CompiledView, Condition, Item, Lookup, Node, NodeName, PropKind, RoleName,
 };
 
-use super::document::{Entries, Place, Report, accepts, count, entries, refuse_extra, spelled};
+use super::document::{
+    Entries, Place, Report, accepts, count, entries, nearest, refuse_extra, spelled,
+};
 
 /// How deep `each` may nest (D23).
 pub const EACH_MAX: usize = 2;
@@ -186,7 +188,10 @@ impl Compiler<'_, '_> {
             self.report.on(
                 node,
                 format!("`{name}` is not a catalog node"),
-                Some(format!("a view draws {}", names.join(", "))),
+                Some(match nearest(name, &names) {
+                    Some(near) => format!("did you mean `{near}`?"),
+                    None => format!("a view draws {}", names.join(", ")),
+                }),
             );
         }
     }
@@ -335,9 +340,10 @@ impl Compiler<'_, '_> {
             self.report.on(
                 entry,
                 format!("`{kind}` has no property `{prop}`"),
-                Some(match near {
-                    Some(name) => format!("properties are kebab-case: write `{name}=`"),
-                    None => accepts(&own),
+                Some(match (near, nearest(prop, &own)) {
+                    (Some(name), _) => format!("properties are kebab-case: write `{name}=`"),
+                    (None, Some(close)) => format!("did you mean `{close}=`?"),
+                    (None, None) => accepts(&own),
                 }),
             );
             return false;
@@ -561,10 +567,16 @@ impl Compiler<'_, '_> {
             {
                 Ok(Binding::Literal(serde_json::Value::String(name)))
             }
-            Binding::Literal(_) => Err((
-                format!("{what} names no role: \"{text}\" is not one"),
-                Some(roles()),
-            )),
+            Binding::Literal(_) => {
+                let names: Vec<&str> = RoleName::ALL.iter().map(|role| role.as_str()).collect();
+                Err((
+                    format!("{what} names no role: \"{text}\" is not one"),
+                    Some(match nearest(text, &names) {
+                        Some(near) => format!("did you mean `{near}`?"),
+                        None => roles(),
+                    }),
+                ))
+            }
             binding @ (Binding::Ref(_) | Binding::Lookup { .. } | Binding::Label { .. }) => {
                 Ok(binding)
             }
@@ -810,13 +822,13 @@ impl Compiler<'_, '_> {
                 self.report.at(
                     site.offset,
                     format!("there is no template `{}` in this view", site.template),
-                    Some(if known.is_empty() {
-                        format!(
+                    Some(match (known.is_empty(), nearest(&site.template, &known)) {
+                        (true, _) => format!(
                             "declare `template \"{}\" {{ … }}` at the top of the view",
                             site.template
-                        )
-                    } else {
-                        format!("this view's templates: {}", known.join(", "))
+                        ),
+                        (false, Some(near)) => format!("did you mean `{near}`?"),
+                        (false, None) => format!("this view's templates: {}", known.join(", ")),
                     }),
                 );
             }
@@ -948,7 +960,12 @@ impl Compiler<'_, '_> {
                 self.report.at(
                     *offset,
                     format!("there is no lookup table `{table}` in this view"),
-                    Some(format!("declare `lookup \"{table}\" {{ value \"…\"; }}`")),
+                    Some(
+                        match nearest(table, &declared.iter().copied().collect::<Vec<_>>()) {
+                            Some(near) => format!("did you mean `{near}`?"),
+                            None => format!("declare `lookup \"{table}\" {{ value \"…\"; }}`"),
+                        },
+                    ),
                 );
             }
         }
