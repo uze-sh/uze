@@ -682,14 +682,96 @@ fn a_scaffolded_extension_passes_its_own_check() {
         String::from_utf8_lossy(&created.stderr)
     );
     let extension = at.join("plugins/greet/extensions/board");
-    for file in ["extension.kdl", "board.kdl", "fixtures/board.json"] {
+    for file in [
+        "extension.kdl",
+        "board.kdl",
+        "fixtures/board.json",
+        "tests/board.test.kdl",
+        "tests/snapshots/board.view.100x30.dark.snap",
+    ] {
         assert!(extension.join(file).is_file(), "{file}");
     }
 
     let (passed, output) = check(&root, &at.join("plugins/greet"));
     assert!(passed, "{output}");
     assert!(output.contains("extension   board"), "{output}");
+    assert!(output.contains("3 tests passed"), "{output}");
     assert!(!output.contains('!'), "nothing to warn of: {output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A test that no longer holds fails the check at its step's line, saying
+/// what was drawn; a changed view fails its snapshot until it is written
+/// again with `--update-snapshots`.
+#[test]
+fn a_failing_extension_test_fails_the_check_until_its_snapshot_is_updated() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-tests");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let fixture = plugin.join("extensions/board/fixtures/board.json");
+    let written = fs::read_to_string(&fixture).unwrap();
+    fs::write(&fixture, written.replace("This week", "Next week")).unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        output.contains("tests/board.test.kdl:5:5: test \"the board opens on its tasks\": `This week` is not drawn"),
+        "{output}"
+    );
+
+    let test = plugin.join("extensions/board/tests/board.test.kdl");
+    fs::write(
+        &test,
+        fs::read_to_string(&test)
+            .unwrap()
+            .replace("\"This week\"", "\"Next week\""),
+    )
+    .unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "the snapshot still holds the old title: {output}");
+    assert!(
+        output.contains("the cells differ from tests/snapshots/board.view.100x30.dark.snap"),
+        "{output}"
+    );
+
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&updated.stdout);
+    assert!(updated.status.success(), "{said}");
+    assert!(
+        said.contains("wrote tests/snapshots/board.view.100x30.dark.snap"),
+        "{said}"
+    );
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -760,6 +842,9 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
             .success()
     );
     let plugin = at.join("plugins/greet");
+    // What a warning does to the check alone, without the scaffold's tests,
+    // which expect the field this renames.
+    fs::remove_dir_all(plugin.join("extensions/board/tests")).unwrap();
     let view = plugin.join("extensions/board/board.kdl");
     let written = fs::read_to_string(&view).unwrap();
     fs::write(

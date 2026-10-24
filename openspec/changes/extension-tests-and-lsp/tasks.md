@@ -30,8 +30,8 @@
 
 ## 5. Scaffold, fixtures and docs
 
-- [ ] 5.1 `uze agent plugin create --extension` writes a passing test and records its snapshot; the scaffold test proves the check runs it
-- [ ] 5.2 Tests for `gsd-band` and `gsd-panel` in `tests/_fixtures/canonical/gsd/` (tab switch, the next-step button recorded, a snapshot per theme)
+- [x] 5.1 `uze agent plugin create --extension` writes a passing test and records its snapshot; the scaffold test proves the check runs it
+- [x] 5.2 Tests for `gsd-band` and `gsd-panel` in `tests/_fixtures/canonical/gsd/` (tab switch, the next-step button recorded, a snapshot per theme)
 - [ ] 5.3 The `uze:author` Skill: "Test an extension" and "Point your editor at the LSP" (Helix, Neovim, VS Code)
 - [ ] 5.4 `docs/architecture/crate-layering.mmd`: the `lsp-server` edge from the root crate; run `make artifacts` and `cargo test -p uze-extensions`
 - [ ] 5.5 Mark tasks 23.5 and 23.6 of `add-extension-platform` done and note what this change decided in D26
