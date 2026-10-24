@@ -163,6 +163,20 @@ pub(super) fn render(
         WorkspaceHit::ResizeSidebar,
     ));
     let (surface_area, inspector_area) = declared_split(model, layout.pane);
+    // A plugin's view is drawn under the strip naming whose it is, which
+    // nothing it draws can cover.
+    let surface_area = match model.open_declared_slot() {
+        Some(slot) => crate::ui::extension_view::tree::render_attribution(
+            frame,
+            surface_area,
+            &crate::ui::extension_view::tree::attribution(
+                &slot.identity.id,
+                &slot.identity.plugin,
+                &slot.identity.marketplace,
+            ),
+        ),
+        None => surface_area,
+    };
     let open = open_extension(model, surface_area);
     let leading = match open {
         Some(_) => LeadingSlot::Surface,

@@ -291,6 +291,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     for (_, section) in &declared_sections {
         let height = super::declared::declared_section_height(
             section,
+            rows.width,
             rows.remaining()
                 .saturating_sub(steps_height)
                 .saturating_sub(reserved + spec_reserved + declared_reserved),
