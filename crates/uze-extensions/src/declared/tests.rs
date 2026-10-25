@@ -1257,3 +1257,43 @@ fn tabs_without_values_are_bound_by_their_labels_and_open_on_the_first() {
         "the first tab is the one drawn"
     );
 }
+
+#[test]
+fn a_log_keeps_its_latest_lines_and_counts_them_against_the_cap() {
+    let lines: Vec<String> = (0..10_000).map(|line| format!("line {line}")).collect();
+    let extension = hosted(
+        vec![n(NodeName::Log).prop("lines", "{log}").item()],
+        json!({ "log": lines }),
+    );
+    let NodeKind::Log { lines } = tree(&extension).children[0].kind.clone() else {
+        panic!("a log");
+    };
+    assert_eq!(lines.len(), 500);
+    assert_eq!(
+        lines.last().map(|span| span.text.as_str()),
+        Some("line 9999")
+    );
+
+    let items: Vec<Value> = (0..100).map(|_| json!({})).collect();
+    let log: Vec<String> = (0..500).map(|line| format!("{line}")).collect();
+    let multiplied = hosted(
+        vec![
+            n(NodeName::Stack)
+                .child(n(NodeName::Log).each("items").prop("lines", "{^.log}"))
+                .item(),
+        ],
+        json!({ "items": items, "log": log }),
+    );
+    let drawn: usize = nodes(&tree(&multiplied))
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Log { lines } => lines.len(),
+            _ => 1,
+        })
+        .sum();
+    assert!(drawn > 1_000, "the logs were drawn: {drawn}");
+    assert!(
+        drawn <= super::NODE_CAP + 500,
+        "bounded by the cap: {drawn}"
+    );
+}

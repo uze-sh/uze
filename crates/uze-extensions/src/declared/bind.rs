@@ -658,12 +658,17 @@ fn leaf<'a>(
                 .and_then(|value| since_ms(&value)),
             role: builder.role_prop(node, scopes),
         },
-        NodeName::Log => NodeKind::Log {
-            lines: builder
+        NodeName::Log => {
+            let lines = builder
                 .prop(node, scopes, "lines")
                 .map(|value| log_lines(&value))
-                .unwrap_or_default(),
-        },
+                .unwrap_or_default();
+            // Each line is a row drawn, so it counts against the cap as a
+            // node would: a log under an `each` cannot multiply a large
+            // list past what one tree may hold.
+            builder.count = builder.count.saturating_add(lines.len().saturating_sub(1));
+            NodeKind::Log { lines }
+        }
         NodeName::Rule => NodeKind::Rule {
             label: Some(builder.label(node, scopes)).filter(|label| !label.is_empty()),
             role: builder.role_prop(node, scopes),
@@ -888,14 +893,17 @@ const BARS_MAX: u16 = 24;
 /// A chart's series as thousandths of its largest value: negative and
 /// non-numeric values draw as nothing.
 fn chart<'a>(builder: &Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
-    let values: Vec<f64> = builder
-        .prop(node, scopes, "series")
-        .and_then(|value| value.as_array().cloned())
-        .unwrap_or_default()
-        .iter()
-        .take(CHART_MAX)
-        .map(|value| as_number(value).unwrap_or(0.0).max(0.0))
-        .collect();
+    let series = builder.prop(node, scopes, "series");
+    let values: Vec<f64> = series
+        .as_deref()
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .take(CHART_MAX)
+                .map(|value| as_number(value).unwrap_or(0.0).max(0.0))
+                .collect()
+        })
+        .unwrap_or_default();
     let top = values.iter().copied().fold(0.0_f64, f64::max);
     let levels = values
         .iter()
@@ -941,6 +949,10 @@ fn align(value: Option<&Value>) -> Align {
 
 /// A log's lines: a list of them, or one string of several. A line may be
 /// an object with `text` and a `role`, for a log whose lines have a tone.
+/// The most lines one `Log` keeps: its latest, as a log is read from its
+/// end.
+const LOG_MAX: usize = 500;
+
 fn log_lines(value: &Value) -> Vec<view::Span> {
     let mut lines = Vec::new();
     let mut push = |text: &str, role: Role| {
@@ -950,7 +962,7 @@ fn log_lines(value: &Value) -> Vec<view::Span> {
     };
     match value {
         Value::Array(entries) => {
-            for entry in entries {
+            for entry in &entries[entries.len().saturating_sub(LOG_MAX)..] {
                 match entry {
                     Value::Object(fields) => push(
                         &fields.get("text").map(scalar_text).unwrap_or_default(),
@@ -963,5 +975,7 @@ fn log_lines(value: &Value) -> Vec<view::Span> {
         Value::String(text) => push(text, Role::Default),
         _ => {}
     }
+    let keep = lines.len().saturating_sub(LOG_MAX);
+    lines.drain(..keep);
     lines
 }
