@@ -34,6 +34,9 @@ pub type SourceData = Result<serde_json::Value, String>;
 const WALK_DEPTH: usize = 4;
 const WALK_FILES: usize = 256;
 const WALK_BYTES: u64 = 8 * 1024 * 1024;
+/// How deep a linked extension's stamp looks for a save: past the digest's
+/// depth, since an extension too deep to cache still reloads on save.
+const STAMP_DEPTH: usize = 16;
 
 impl Extensions<'_> {
     /// Compiles `installed`, from the cache when its files are the ones the
@@ -107,8 +110,15 @@ fn files_digest(identity: &Identity, dir: &Path) -> Option<String> {
         push_field(&mut stream, part.as_bytes());
     }
     let mut total = 0u64;
-    for (relative, path) in walk(dir)? {
-        let bytes = std::fs::read(&path).ok()?;
+    for (relative, path) in walk(dir, WALK_DEPTH)? {
+        // Read no further than the bound allows: one file of gigabytes is
+        // past it after its first eight mebibytes, not after all of it.
+        let mut bytes = Vec::new();
+        std::fs::File::open(&path)
+            .ok()?
+            .take(WALK_BYTES - total + 1)
+            .read_to_end(&mut bytes)
+            .ok()?;
         total += bytes.len() as u64;
         if total > WALK_BYTES {
             return None;
@@ -124,7 +134,7 @@ fn files_digest(identity: &Identity, dir: &Path) -> Option<String> {
 /// extension can be asked several times a second.
 pub fn extension_stamp(dir: &Path) -> u64 {
     let mut stream = Vec::new();
-    for (relative, path) in walk(dir).unwrap_or_default() {
+    for (relative, path) in walk(dir, STAMP_DEPTH).unwrap_or_default() {
         let Ok(metadata) = std::fs::metadata(&path) else {
             continue;
         };
@@ -149,8 +159,9 @@ fn push_field(stream: &mut Vec<u8>, field: &[u8]) {
 
 /// The files under `dir`, by their path relative to it in `/` spelling,
 /// sorted. Links are not followed: an extension's files are its own.
-/// `None` past [`WALK_FILES`] files.
-fn walk(dir: &Path) -> Option<Vec<(String, PathBuf)>> {
+/// `None` past [`WALK_FILES`] files or a directory deeper than
+/// `max_depth`: a digest that left files out would serve a stale compile.
+fn walk(dir: &Path, max_depth: usize) -> Option<Vec<(String, PathBuf)>> {
     let mut files = Vec::new();
     let mut pending = vec![(dir.to_path_buf(), String::new(), 0usize)];
     while let Some((directory, prefix, depth)) = pending.pop() {
@@ -167,7 +178,10 @@ fn walk(dir: &Path) -> Option<Vec<(String, PathBuf)>> {
             } else {
                 format!("{prefix}/{name}")
             };
-            if kind.is_dir() && depth < WALK_DEPTH {
+            if kind.is_dir() {
+                if depth >= max_depth {
+                    return None;
+                }
                 pending.push((entry.path(), relative, depth + 1));
             } else if kind.is_file() {
                 files.push((relative, entry.path()));
@@ -264,6 +278,32 @@ mod tests {
             },
             views: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn a_directory_past_the_walks_bounds_is_not_digested() {
+        let root = uze_testkit::temp::scratch("extensions-digest-bounds");
+        let identity = Identity {
+            marketplace: "m".into(),
+            plugin: "p".into(),
+            id: "x".into(),
+        };
+        fs::create_dir_all(root.join("v/a/b/c/d")).unwrap();
+        fs::write(root.join("v/a/b/c/d/board.kdl"), "Text \"a\"").unwrap();
+        assert_eq!(
+            files_digest(&identity, &root),
+            None,
+            "too deep to see every file"
+        );
+
+        let flat = root.join("flat");
+        fs::create_dir_all(&flat).unwrap();
+        fs::write(flat.join("board.kdl"), "Text \"a\"").unwrap();
+        assert!(files_digest(&identity, &flat).is_some());
+        let blob = fs::File::create(flat.join("blob.bin")).unwrap();
+        blob.set_len(WALK_BYTES + 1).unwrap();
+        assert_eq!(files_digest(&identity, &flat), None, "too large");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
