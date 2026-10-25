@@ -875,3 +875,47 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
     assert!(output.contains("check failed (1 problem)"), "{output}");
     let _ = fs::remove_dir_all(root);
 }
+
+/// The language server exits once the editor says `shutdown` and `exit`,
+/// as an editor expects of it, rather than waiting on its own output.
+#[test]
+fn the_language_server_exits_after_shutdown() {
+    use std::io::Write as _;
+    let root = uze_testkit::temp::scratch("authoring-lsp-exit");
+    let message = |body: serde_json::Value| {
+        let body = body.to_string();
+        format!("Content-Length: {}\r\n\r\n{body}", body.len())
+    };
+    let session: String = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "shutdown"}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
+    ]
+    .into_iter()
+    .map(message)
+    .collect();
+    let mut server = uze(&root)
+        .args(["agent", "plugin", "lsp"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    server
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(session.as_bytes())
+        .unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(server.wait_with_output());
+    });
+    let output = receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the server exits")
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"hoverProvider\":true"));
+    let _ = fs::remove_dir_all(root);
+}

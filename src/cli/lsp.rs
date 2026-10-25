@@ -29,6 +29,9 @@ const SETTLE: Duration = Duration::from_millis(150);
 pub(crate) fn serve(app: &UzeApplication) -> uze_application::Result<()> {
     let (connection, threads) = Connection::stdio();
     run(app, &connection)?;
+    // The writer thread ends once every sender of its channel is gone;
+    // joining while the connection holds one waits forever.
+    drop(connection);
     threads.join().map_err(|error| {
         uze_application::UzeError::LifecycleBlocked(format!("the language server's stdio: {error}"))
     })
