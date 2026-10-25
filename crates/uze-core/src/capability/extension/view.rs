@@ -65,6 +65,12 @@ pub fn compile(document: &KdlDocument, file: &str, report: &mut Report<'_>) -> C
 
 /// Whether `kind` may stand at the top of a view: what any container
 /// holds, which leaves out the parts of one (`Mark`, `Segment`, `Tab`).
+/// A language as the operator's locale is read: two or three lowercase
+/// letters, the way `uze-platform` answers it.
+fn is_language(code: &str) -> bool {
+    (2..=3).contains(&code.len()) && code.bytes().all(|byte| byte.is_ascii_lowercase())
+}
+
 fn top_level(kind: NodeName) -> bool {
     NodeName::Stack
         .spec()
@@ -764,7 +770,20 @@ impl Compiler<'_, '_> {
                 }
             };
             match *prop {
-                "locale" => lookup.locale = Some(value),
+                "locale" if is_language(&value) => lookup.locale = Some(value),
+                "locale" => {
+                    // The operator's locale is matched as its language
+                    // alone, read the way the platform reads it.
+                    let language = uze_platform::locale::language_of(&value);
+                    self.report.on(
+                        *entry,
+                        format!("`{value}` is not a language a locale is matched by"),
+                        Some(match language {
+                            Some(language) => format!("write `locale=\"{language}\"`"),
+                            None => "write a language code, such as `locale=\"pt\"`".to_owned(),
+                        }),
+                    );
+                }
                 "default" => lookup.default = Some(value),
                 _ => {}
             }

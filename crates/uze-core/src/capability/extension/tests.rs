@@ -910,3 +910,17 @@ Tabs id="t" { use "tabs"; }"#
         .is_ok()
     );
 }
+
+#[test]
+fn a_lookups_locale_is_a_language_as_the_operators_is_read() {
+    let said = the_one(
+        r#"lookup "t" locale="pt-BR" { next "executar"; }
+Text "{t::next}""#,
+    );
+    assert!(
+        said.message.contains("`pt-BR` is not a language"),
+        "{said:?}"
+    );
+    assert_eq!(said.suggestion.as_deref(), Some("write `locale=\"pt\"`"));
+    assert!(view("lookup \"t\" locale=\"pt\" { next \"executar\"; }\nText \"{t::next}\"").is_ok());
+}
