@@ -14,9 +14,9 @@
 
 ## 3. Spec
 
-- [ ] 3.1 `SpecExtension: Extension`: the document surface and the summary section, both reads as jobs, its place
-- [ ] 3.2 Host it; remove its fields, channels, reads, `ExtensionHit::Spec`/`SpecSummary` and `spec_places`
-- [ ] 3.3 Tests green
+- [x] 3.1 `SpecExtension: Extension`: the document surface and the summary section, both reads as jobs, its place
+- [x] 3.2 Host it; remove its fields, channels, reads, `ExtensionHit::Spec`/`SpecSummary` and `spec_places`
+- [x] 3.3 Tests green
 
 ## 4. Code
 

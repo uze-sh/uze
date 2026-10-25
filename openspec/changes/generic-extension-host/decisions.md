@@ -37,3 +37,13 @@
 - decided:  `Extension` gained `open(surface, Checkout)`, `layout(surface)`, `missed(surface, space)` and `close(surface)`, each doing nothing by default; `scroll` takes the room the surface is drawn in, as every other gesture does; `Host` gained `artifact_source`, which the workspace answers from `workspace.artifacts`. A declared engine answers `scroll_to` itself, so the host no longer walks a held scrollbar a row at a time.
 - rejected: `hit(surface, Option<ViewHit>)` for the missed press: it would change every engine's signature for one case.
 - blast:    One behaviour moved: architect's content scrollbar now follows a held drag, as every other surface's does, where before a press jumped once and the drag was dropped.
+
+## D5 — A built-in's section keeps its own place and behaviour
+
+- status:   decided by the operator
+- task:     3.2
+- commit:   e9abb401, c67dbb4e
+- trigger:  The spec summary is not a generic section: it sits at the sidebar's foot on the timeline, takes up to half the column (a plugin's a third), its header is a handle on the timeline, its fold is the client's, and it is recounted every five seconds for the checkout in front against the branch the host evaluated.
+- decided:  The operator asked that it keep exactly what it does today, seen and used. Its slot is hosted, but the sidebar draws it in its own place with its own budget, fold and handle, as before; the engine is told the checkout in front and its target on every pass (`Extension::focus`, `Checkout::target`) and recounts on the same cadence; a row sends the view to its change (`Outcome::Show`), which wins over the place last left; the row of the change on show is the extension's to say (`Section::lit`). The view's read asks the host for the delivery target, which needs the home (`Host::delivery_target`, answered by `EngineHost`). The code timeline (task 4) follows the same rule.
+- rejected: One rule for every section (budget and handle), which would change how either the spec or a plugin's section looks.
+- blast:    The redraw after a count is no longer skipped when it found nothing new: one frame every five seconds while an agent's checkout is in front.
