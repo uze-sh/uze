@@ -3,6 +3,7 @@
 //! every field a view names that its fixture lacks said as a warning.
 
 use uze_application::CheckedExtension;
+use uze_contract::Clean;
 use uze_extensions::declared::missing_fields;
 
 use crate::*;
@@ -47,15 +48,19 @@ pub(crate) fn render_extensions(
             continue;
         }
         text.push('\n');
+        // An extension's id is its directory's name and its diagnostics
+        // quote its files: both are the plugin's, cleaned before a terminal.
         text.push_str(&progress::report_section(&format!(
             "extension {}",
-            extension.id
+            Clean::label(&extension.id).as_str()
         )));
         for error in &extension.errors {
-            text.push_str(&format!("{} {error}\n", progress::error_icon()));
+            let said = Clean::text(&error.to_string());
+            text.push_str(&format!("{} {}\n", progress::error_icon(), said.as_str()));
         }
         for warning in &extension.warnings {
-            text.push_str(&format!("{} {warning}\n", progress::warning_icon()));
+            let said = Clean::text(&warning.to_string());
+            text.push_str(&format!("{} {}\n", progress::warning_icon(), said.as_str()));
         }
         if let Some(run) = run {
             for written in &run.written {

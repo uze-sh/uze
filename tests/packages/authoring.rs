@@ -919,3 +919,87 @@ fn the_language_server_exits_after_shutdown() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("\"hoverProvider\":true"));
     let _ = fs::remove_dir_all(root);
 }
+
+/// A snapshot a plugin links elsewhere is never written through, and what
+/// a snapshot file says reaches the terminal cleaned.
+#[cfg(unix)]
+#[test]
+fn a_linked_snapshot_is_refused_and_a_held_one_is_said_cleaned() {
+    let root = uze_testkit::temp::scratch("authoring-snapshot-link");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let snapshot = plugin.join("extensions/board/tests/snapshots/board.view.100x30.dark.snap");
+
+    fs::write(&snapshot, "\u{1b}]52;c;ZXZpbA==\u{7}stolen\n").unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        !output.contains('\u{1b}'),
+        "no escape reaches the terminal: {output:?}"
+    );
+    assert!(output.contains("stolen"), "{output}");
+
+    let outside = root.join("operator-file");
+    fs::write(&outside, "mine").unwrap();
+    fs::remove_file(&snapshot).unwrap();
+    std::os::unix::fs::symlink(&outside, &snapshot).unwrap();
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    assert!(!updated.status.success());
+    assert!(
+        String::from_utf8_lossy(&updated.stdout).contains("reached through a link"),
+        "{}",
+        String::from_utf8_lossy(&updated.stdout)
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "mine");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// An extension's directory name is the plugin's, so the check says it
+/// cleaned, whatever escape it was given.
+#[cfg(unix)]
+#[test]
+fn an_extension_directory_name_reaches_the_terminal_cleaned() {
+    let root = uze_testkit::temp::scratch("authoring-hostile-id");
+    let plugin = root.join("legacy");
+    let extension = plugin.join("extensions/x\u{1b}[2Jy");
+    fs::create_dir_all(&extension).unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name":"legacy"}"#).unwrap();
+    fs::write(extension.join("extension.kdl"), "protocol 1\n").unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(!output.contains('\u{1b}'), "{output:?}");
+    assert!(
+        output.contains("extension xy"),
+        "the sequence is dropped whole: {output}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

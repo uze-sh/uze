@@ -258,11 +258,12 @@ pub(crate) fn render_check(
             let (kind, name) = delivered_as(identity);
             vec![progress::label(kind), name]
         })
-        .chain(
-            extensions
-                .iter()
-                .map(|extension| vec![progress::label("extension"), extension.id.clone()]),
-        )
+        .chain(extensions.iter().map(|extension| {
+            vec![
+                progress::label("extension"),
+                uze_contract::Clean::label(&extension.id).into_string(),
+            ]
+        }))
         .collect();
     if !rows.is_empty() {
         text.push_str(&progress::aligned_rows(rows));

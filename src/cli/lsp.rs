@@ -185,6 +185,7 @@ impl<'a> Server<'a> {
                     Some(suggestion) => format!("{} ({suggestion})", diagnostic.message),
                     None => diagnostic.message.clone(),
                 };
+                let message = uze_contract::Clean::text(&message).into_string();
                 by_file
                     .entry(diagnostic.file.clone())
                     .or_default()

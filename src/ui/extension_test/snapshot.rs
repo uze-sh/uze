@@ -107,11 +107,13 @@ pub(super) fn difference(held: &str, taken: &str) -> String {
             said.push_str("\n  …");
             break;
         }
+        // The held file is the plugin's: what it says is cleaned like any
+        // other string of it before it reaches a terminal.
         said.push_str(&format!(
             "\n  line {}\n  - {}\n  + {}",
             index + 1,
-            before.unwrap_or(""),
-            after.unwrap_or("")
+            uze_contract::Clean::label(before.unwrap_or("")).as_str(),
+            uze_contract::Clean::label(after.unwrap_or("")).as_str()
         ));
         shown += 1;
     }

@@ -238,12 +238,12 @@ fn run_one(
                     theme.as_str()
                 );
                 let taken = stage.snapshot();
-                let held = std::fs::read_to_string(checked.dir.join(&path)).ok();
+                let target = unlinked(&checked.dir, &path).map_err(|why| fail(at, why))?;
+                let held = std::fs::read_to_string(&target).ok();
                 if held.as_deref() == Some(taken.as_str()) {
                     continue;
                 }
                 if update {
-                    let target = checked.dir.join(&path);
                     if let Some(parent) = target.parent() {
                         std::fs::create_dir_all(parent)
                             .map_err(|error| fail(at, format!("cannot write {path}: {error}")))?;
@@ -269,6 +269,22 @@ fn run_one(
         }
     }
     Ok(())
+}
+
+/// `relative` under the extension's `dir`, refused when it, or a directory
+/// on the way to it, is a link: a snapshot is read and written there, and
+/// a plugin's link would aim that write at a file of the operator's.
+fn unlinked(dir: &std::path::Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    let mut at = dir.to_path_buf();
+    for part in relative.split('/') {
+        at.push(part);
+        if std::fs::symlink_metadata(&at).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            return Err(format!(
+                "{relative} is reached through a link, and a snapshot is written only inside the extension"
+            ));
+        }
+    }
+    Ok(at)
 }
 
 /// Whether a node of `kind` was not drawn because of `because`: a field a
