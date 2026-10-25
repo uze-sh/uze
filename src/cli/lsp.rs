@@ -103,8 +103,10 @@ struct Server<'a> {
     /// fixed file is cleared.
     published: BTreeMap<PathBuf, BTreeSet<String>>,
     /// The data each extension's views are bound to, for completing a
-    /// reference, from its last check.
+    /// reference, from its last check: each source's fixture, and the
+    /// source each view's surfaces read.
     fields: BTreeMap<PathBuf, BTreeMap<String, Value>>,
+    sources: BTreeMap<PathBuf, BTreeMap<String, String>>,
 }
 
 impl<'a> Server<'a> {
@@ -115,6 +117,7 @@ impl<'a> Server<'a> {
             pending: BTreeSet::new(),
             published: BTreeMap::new(),
             fields: BTreeMap::new(),
+            sources: BTreeMap::new(),
         }
     }
 
@@ -171,6 +174,15 @@ impl<'a> Server<'a> {
             let checked = self.check(&extension);
             self.fields
                 .insert(extension.clone(), checked.fixtures.clone());
+            if let Some(compiled) = &checked.compiled {
+                let sources = compiled
+                    .manifest
+                    .surfaces
+                    .iter()
+                    .map(|surface| (surface.view.clone(), surface.source.clone()))
+                    .collect();
+                self.sources.insert(extension.clone(), sources);
+            }
             let mut by_file: BTreeMap<String, Vec<Value>> = BTreeMap::new();
             for (diagnostic, severity) in checked
                 .errors
@@ -282,24 +294,16 @@ impl<'a> Server<'a> {
     }
 
     /// The data the view being edited is bound to: the fixture of the
-    /// first source a surface drawing it reads, from the last check.
+    /// source a surface drawing it reads, as the last check compiled the
+    /// manifest; the first fixture when no surface names the view yet.
     fn view_fields(&self, document: &Document) -> Value {
         let Some(fixtures) = self.fields.get(&document.extension) else {
             return Value::Null;
         };
-        let manifest = self.text_of(&document.extension, "extension.kdl");
-        let source = manifest.lines().find_map(|line| {
-            let line = line.trim_start();
-            if !line.starts_with("surface ")
-                || !line.contains(&format!("view=\"{}\"", document.relative))
-            {
-                return None;
-            }
-            let rest = line.split("source=\"").nth(1)?;
-            rest.split('"').next().map(str::to_owned)
-        });
-        source
-            .and_then(|source| fixtures.get(&source).cloned())
+        self.sources
+            .get(&document.extension)
+            .and_then(|sources| sources.get(&document.relative))
+            .and_then(|source| fixtures.get(source).cloned())
             .or_else(|| fixtures.values().next().cloned())
             .unwrap_or(Value::Null)
     }
