@@ -1571,7 +1571,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
     let engines = model.remembered.declared.engines.len();
     assert_eq!(engines, 1);
     let (sender, receiver) = std::sync::mpsc::channel();
-    model.schedule_engine_jobs(&sender);
+    assert_eq!(model.schedule_engine_jobs(&sender), 2);
     let mut absorbed = 0;
     while absorbed < 2 * engines {
         let answer = receiver
@@ -1580,13 +1580,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         assert!(model.absorb_engine_answer(answer));
         absorbed += 1;
     }
-    model.schedule_engine_jobs(&sender);
-    assert!(
-        receiver
-            .recv_timeout(std::time::Duration::from_millis(200))
-            .is_err(),
-        "asked once"
-    );
+    assert_eq!(model.schedule_engine_jobs(&sender), 0, "asked once");
     let engine = model
         .remembered
         .declared

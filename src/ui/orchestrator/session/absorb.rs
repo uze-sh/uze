@@ -816,7 +816,8 @@ impl Attach<'_> {
             &self.channels.extension_jobs.sender,
             &self.channels.extension_stamps.sender,
         );
-        self.model
+        let _ = self
+            .model
             .schedule_engine_jobs(&self.channels.engine_answers.sender);
     }
 

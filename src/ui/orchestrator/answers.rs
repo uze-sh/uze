@@ -557,15 +557,19 @@ impl WorkspaceModel {
         }
     }
 
-    /// Hands each hosted engine's pending jobs to a thread. Cheap enough
-    /// for every tick: an engine with nothing to read answers none.
-    pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) {
+    /// Hands each hosted engine's pending jobs to a thread, and answers how
+    /// many it handed. Cheap enough for every tick: an engine with nothing
+    /// to read answers none.
+    pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) -> usize {
+        let mut handed = 0;
         for (identity, engine) in &mut self.remembered.declared.engines {
             let jobs = engine.jobs();
+            handed += jobs.len();
             if !jobs.is_empty() {
                 spawn_engine_jobs(identity.clone(), jobs, engine.lanes(), answers.clone());
             }
         }
+        handed
     }
 
     /// Takes what a hosted engine's job answered to the engine that asked.
