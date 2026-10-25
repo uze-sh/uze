@@ -592,7 +592,7 @@ impl Attach<'_> {
     }
 
     /// What the Git badge, the release notes, the commit detail and the
-    /// code and architect surfaces' reads answered.
+    /// code and spec surfaces' and the hosted engines' reads answered.
     /// What keeping `AGENTS.md` in step could not do: said once a session
     /// per file, never repaired over the operator's edit.
     /// The registry's launcher names, asked once and absorbed when they
@@ -773,9 +773,6 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.code_measures.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_measure(resolution);
         }
-        while let Ok(resolution) = self.channels.artifacts.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_artifacts(resolution);
-        }
         while let Ok(resolution) = self.channels.spec.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_spec(resolution);
         }
@@ -804,8 +801,6 @@ impl Attach<'_> {
             .schedule_file_request(&self.channels.code_files.sender);
         self.model
             .schedule_code_measure(&self.channels.code_measures.sender);
-        self.model
-            .schedule_artifacts_read(&self.channels.artifacts.sender);
         self.model
             .schedule_spec_read(self.home, &self.channels.spec.sender);
         self.model

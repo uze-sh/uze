@@ -781,7 +781,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     assert!(changed);
     let views: Vec<String> = model
         .declared_views()
-        .map(|slot| slot.identity.id.clone())
+        .filter_map(|slot| slot.owner.declared().map(|identity| identity.id.clone()))
         .collect();
     assert_eq!(views, ["gsd-band", "notes"]);
     assert_eq!(model.declared_views().next().unwrap().id, slot, "kept");
@@ -801,7 +801,8 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
         declared
             .slots
             .iter()
-            .all(|slot| slot.identity == notes().identity)
+            .filter_map(|slot| slot.owner.declared())
+            .all(|identity| *identity == notes().identity)
     );
     assert!(declared.places.is_empty(), "its place dropped");
 
@@ -842,7 +843,15 @@ fn an_install_in_this_process_rediscovers_on_the_next_schedule() {
         .expect("the discovery answered");
     // This home has no plugin installed: the board was removed.
     assert!(model.absorb_extension_answer(answer));
-    assert!(model.remembered.declared.slots.is_empty());
+    assert!(
+        model
+            .remembered
+            .declared
+            .slots
+            .iter()
+            .all(|slot| slot.owner.declared().is_none()),
+        "only the built-ins stay"
+    );
     assert!(!model.remembered.declared.discovery_pending);
 }
 
@@ -863,7 +872,11 @@ fn every_engine_is_built_for_the_operators_language() {
         ..DeclaredExtensions::default()
     };
     declared.absorb_loaded(loaded(Ok(compiled())));
-    assert_eq!(declared.slots.len(), 2);
+    let declared_slots = declared
+        .slots
+        .iter()
+        .filter(|slot| slot.owner.declared().is_some());
+    assert_eq!(declared_slots.count(), 2);
 }
 
 fn inspector_open() -> Driven<'static> {
@@ -1604,8 +1617,17 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         loaded: vec![loaded(Ok(compiled()))],
     }));
     // One engine for the extension, however many surfaces it declares.
-    assert!(model.remembered.declared.slots.len() > 1);
-    let engines = model.remembered.declared.engines.len();
+    let declared = &model.remembered.declared;
+    let ours = |owner: &super::Owner| owner.declared() == Some(&identity());
+    assert!(
+        declared
+            .slots
+            .iter()
+            .filter(|slot| ours(&slot.owner))
+            .count()
+            > 1
+    );
+    let engines = declared.engines.keys().filter(|owner| ours(owner)).count();
     assert_eq!(engines, 1);
     let (sender, receiver) = std::sync::mpsc::channel();
     assert_eq!(model.schedule_engine_jobs(&sender), 2);
@@ -1622,8 +1644,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         .remembered
         .declared
         .engines
-        .values()
-        .next()
+        .get(&super::Owner::Declared(identity()))
         .expect("an engine");
     let mut said = engine.inspect("board").nodes;
     said.sort();

@@ -97,11 +97,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
         (|model: &mut WorkspaceModel| open_code(model, uze_extensions::code::ContentMode::Contents))
             as fn(&mut WorkspaceModel),
         |model| model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned())),
-        |model| {
-            model.architect = Some(uze_extensions::architect::ArchitectView::opening(
-                "/repo".to_owned(),
-            ))
-        },
+        |model| open_architect(model),
     ] {
         let (mut model, first, _second) = two_agents_with_shells();
         select_tab(&mut model, first);
@@ -110,7 +106,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
         let over: Vec<_> = model
             .hits
             .iter()
-            .filter(|(rect, hit)| hit.is_open_surfaces() && layout.sidebar.intersects(*rect))
+            .filter(|(rect, hit)| model.is_open_surfaces(*hit) && layout.sidebar.intersects(*rect))
             .collect();
         assert!(over.is_empty(), "over the sidebar: {over:?}");
     }
@@ -163,7 +159,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
         let model = &driven.attach.model;
         match (
             model.code.as_ref().map(CodeView::showing),
-            model.architect.is_some(),
+            model.showing(uze_extensions::architect::CATALOG.id),
             model.spec.is_some(),
         ) {
             (Some(mode), false, false) => format!("code {mode:?}"),
@@ -261,7 +257,12 @@ fn the_spec_button_opens_and_closes_the_spec_surface() {
     driven.press(button.x, button.y);
     assert!(driven.attach.model.spec.is_some(), "opened by its button");
     assert!(driven.attach.model.code.is_none());
-    assert!(driven.attach.model.architect.is_none());
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id)
+    );
 
     driven.frame();
     let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
@@ -284,7 +285,10 @@ fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
     select_tab(&mut model, first);
     open_architect(&mut model);
     model.follow_extension_switch(switched_off(&[uze_extensions::architect::CATALOG.id]));
-    assert!(model.architect.is_none(), "the open surface closed");
+    assert!(
+        !model.showing(uze_extensions::architect::CATALOG.id),
+        "the open surface closed"
+    );
 
     let mut driven = driven(model, &home);
     driven.frame();
@@ -302,7 +306,10 @@ fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
     driven.sent();
     driven.press_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::ALT));
     assert!(
-        driven.attach.model.architect.is_none(),
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id),
         "its key opens nothing"
     );
     assert!(
@@ -547,7 +554,10 @@ fn another_tab_in_front_puts_the_open_surface_away() {
         ClientEvent::SessionUpdated { session },
         &identities_fixture(),
     );
-    assert!(model.architect.is_some(), "the same tab in front keeps it");
+    assert!(
+        model.showing(uze_extensions::architect::CATALOG.id),
+        "the same tab in front keeps it"
+    );
 
     let mut session = model.session.clone().expect("session");
     session.select_tab(second);
@@ -555,7 +565,7 @@ fn another_tab_in_front_puts_the_open_surface_away() {
         ClientEvent::SessionUpdated { session },
         &identities_fixture(),
     );
-    assert!(model.architect.is_none());
+    assert!(!model.showing(uze_extensions::architect::CATALOG.id));
 }
 
 /// A group of buttons is one ground with a seam where the fills

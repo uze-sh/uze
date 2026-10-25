@@ -1326,13 +1326,6 @@ pub(super) fn spawn_changes_refresh(
     });
 }
 
-/// The artifacts a project declares, read for the checkout they were
-/// asked about.
-pub(super) struct ArtifactsResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: architect::ArtifactsAnswer,
-}
-
 /// The changes in flight in a checkout, counted, for the sidebar.
 pub(super) struct SpecSummaryResolution {
     pub(super) cwd: PathBuf,
@@ -1359,31 +1352,6 @@ pub(super) struct MeasureResolution {
     pub(super) root: PathBuf,
     /// `None` outside a repository, where there is nothing to measure.
     pub(super) measure: Option<code::Measure>,
-}
-
-/// Resolving the manifest, walking the declared directory and reading
-/// every file in it: three unbounded reads, none of them the render
-/// thread's to make.
-pub(super) fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.architect_artifacts", parent: &parent);
-        let silence = architect::ArtifactsAnswer {
-            branch: String::new(),
-            artifacts: architect::Artifacts::Nothing {
-                text: "Reading the project's artifacts failed".to_owned(),
-                hint: "Close this and open it again.".to_owned(),
-            },
-        };
-        let answer = answered_or(
-            || {
-                let source = crate::ui::extension_host::artifacts_declared_in(&root);
-                architect::read_artifacts(&WorkspaceHost, &root, source)
-            },
-            silence,
-        );
-        let _ = sender.send(ArtifactsResolution { root, answer });
-    });
 }
 
 /// Counting the changes in flight: a directory walk and a read of every
@@ -1833,7 +1801,7 @@ pub(super) fn spawn_extension_stamps(
 
 /// What a hosted engine's job answered, for the extension that asked.
 pub(super) struct EngineAnswer {
-    pub(super) extension: uze_application::ExtensionIdentity,
+    pub(super) extension: super::declared::Owner,
     pub(super) answer: uze_extensions::contract::Opaque,
 }
 
@@ -1842,7 +1810,7 @@ pub(super) struct EngineAnswer {
 /// lane is serial, each on its own thread for one that runs in parallel. A
 /// job that panics answers its fallback, so a failed read is drawn as one.
 pub(super) fn spawn_engine_jobs(
-    extension: uze_application::ExtensionIdentity,
+    extension: super::declared::Owner,
     jobs: Vec<uze_extensions::contract::Job>,
     lanes: uze_extensions::contract::Lanes,
     sender: mpsc::Sender<EngineAnswer>,

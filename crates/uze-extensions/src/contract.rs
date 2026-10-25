@@ -136,6 +136,10 @@ pub trait Extension: Send {
     /// handed back to it.
     fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
 
+    /// A press on `surface` landed on nothing it drew: a list it has open
+    /// shuts, as a click outside every menu here does.
+    fn missed(&mut self, _surface: &str, _space: Size) {}
+
     /// `surface` was put away; what it held for the viewer may go. Called
     /// after its place was taken.
     fn close(&mut self, _surface: &str) {}

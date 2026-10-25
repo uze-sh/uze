@@ -51,7 +51,7 @@ use crate::shared::places::{ArtifactRoot, ArtifactSource};
 use catalog::Catalog;
 
 pub use catalog::Artifact;
-pub use extension::{ArchitectExtension, SURFACE};
+pub use extension::{ArchitectExtension, ArtifactsRead, SURFACE};
 use minimap::Minimap;
 use model::Diagram;
 use paint::{Leads, Scene};

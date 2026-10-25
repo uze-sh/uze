@@ -78,8 +78,6 @@ pub enum ExtensionHit {
     /// file list than in a list of commits, and the host is the only side
     /// that knows which of the two it drew.
     CodeTimeline(view::ViewHit),
-    /// The architect extension's full-frame surface.
-    Architect(view::ViewHit),
     /// The spec extension's full-frame surface.
     Spec(view::ViewHit),
     /// The spec extension's sidebar section — its changes in flight.

@@ -24,9 +24,9 @@ struct Open {
 
 /// What a read of the artifacts answered, with the checkout it was asked
 /// about: one landing after the viewer opened another is dropped.
-struct Read {
-    root: PathBuf,
-    answer: ArtifactsAnswer,
+pub struct ArtifactsRead {
+    pub root: PathBuf,
+    pub answer: ArtifactsAnswer,
 }
 
 #[derive(Default)]
@@ -105,6 +105,12 @@ impl Extension for ArchitectExtension {
         }
     }
 
+    fn missed(&mut self, surface: &str, space: Size) {
+        if let Some(state) = self.view_mut(surface) {
+            handle_mouse(state, None, space);
+        }
+    }
+
     fn open(&mut self, surface: &str, checkout: &Checkout) {
         if surface == SURFACE {
             self.open = Some(Open {
@@ -169,10 +175,10 @@ impl Extension for ArchitectExtension {
             run: Box::new(move |host| {
                 let source = host.artifact_source(&root);
                 let answer = read_artifacts(host, &root, source);
-                Opaque::new(Read { root, answer })
+                Opaque::new(ArtifactsRead { root, answer })
             }),
             fallback: Box::new(move || {
-                Opaque::new(Read {
+                Opaque::new(ArtifactsRead {
                     root: fallback_root,
                     answer: ArtifactsAnswer {
                         branch: String::new(),
@@ -187,7 +193,7 @@ impl Extension for ArchitectExtension {
     }
 
     fn absorb(&mut self, answer: Opaque) {
-        let Some(read) = answer.downcast::<Read>() else {
+        let Some(read) = answer.downcast::<ArtifactsRead>() else {
             return;
         };
         if let Some(open) = self.open.as_mut().filter(|open| open.root == read.root) {

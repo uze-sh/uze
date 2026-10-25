@@ -197,7 +197,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
                 // and the strip's room is the tabs' before it is the
                 // buttons'.
                 "arch",
-                model.architect.is_some(),
+                model.showing(architect::CATALOG.id),
             ),
             (
                 code::CATALOG.id,

@@ -53,16 +53,16 @@ impl Attach<'_> {
             MouseEventKind::Moved => self.hover(mouse),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => self.wheel(mouse, viewport),
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
-                if self.model.architect.is_some() =>
+                if self.model.declared_open.is_some() =>
             {
-                let space = self.architect_space();
+                let space = self.code_space();
                 let columns = if mouse.kind == MouseEventKind::ScrollLeft {
                     -6
                 } else {
                     6
                 };
-                if let Some(view) = self.model.architect.as_mut() {
-                    architect::pan(view, columns, space);
+                if let Some((surface, engine)) = self.model.open_engine_mut() {
+                    engine.pan(&surface, columns, space);
                     self.model.dirty = true;
                 }
                 Flow::Continue
@@ -152,7 +152,7 @@ impl Attach<'_> {
                 .pane
                 .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
                 || self.on_content_scrollbar(mouse.column, mouse.row)
-                || over.is_some_and(WorkspaceHit::is_open_surfaces));
+                || over.is_some_and(|hit| self.model.is_open_surfaces(hit)));
         self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar, over);
         match mouse {
             _ if self.model.approval.is_some() => {
@@ -337,9 +337,6 @@ impl Attach<'_> {
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
-            _ if self.model.architect.is_some() && on_surface => {
-                self.architect_press(mouse.column, mouse.row);
-            }
             _ if self.model.spec.is_some() && on_surface => {
                 let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
                     Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
@@ -366,28 +363,7 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
             _ if self.model.declared_open.is_some() && on_surface => {
-                let open = self.model.declared_open;
-                let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
-                    Some((_, WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })))
-                        if Some(slot) == open =>
-                    {
-                        Some(hit)
-                    }
-                    _ => None,
-                };
-                // The frame's geometry is the host's, as on every surface.
-                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
-                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
-                } else if view_hit == Some(ViewHit::DragContentScrollbar)
-                    && self.model.code_scrollbars.content_bar.is_some()
-                {
-                    self.model.dragging_code_content = true;
-                    self.scroll_code_content_to(mouse.row);
-                } else if let (Some(slot), Some(hit)) = (open, view_hit) {
-                    let space = self.code_space();
-                    self.model.hit_declared(slot, hit, space);
-                }
-                self.model.dirty = true;
+                self.slot_press(mouse.column, mouse.row);
             }
             _ if self.model.code.is_some() && on_surface => {
                 let hit = self.model.hit_rect_at(mouse.column, mouse.row);
@@ -492,8 +468,8 @@ impl Attach<'_> {
             {
                 self.mark_text_to(mouse.column, mouse.row);
             }
-            _ if self.model.architect_grab.is_some() => {
-                self.drag_diagram(mouse.column, mouse.row);
+            _ if self.model.board_grab.is_some() => {
+                self.drag_board(mouse.column, mouse.row);
             }
             _ if self.model.dragging_code_content => {
                 self.scroll_code_content_to(mouse.row);
@@ -653,7 +629,7 @@ impl Attach<'_> {
         {
             forward_mouse(&mut self.stream, &self.model, layout.pane, mouse);
         }
-        self.release_diagram();
+        self.release_board();
         if let Some(dragging) = self.model.dragging_space.take() {
             if let Some(pending) = dragging.pending {
                 let _ = send_request(
@@ -995,13 +971,12 @@ impl Attach<'_> {
                 // by the same rule — but resolved its way, not the
                 // chrome's, or the hover lands on the board beneath it.
                 let over = self
-                    .architect_hit_at(mouse.column, mouse.row)
+                    .slot_hit_at(mouse.column, mouse.row)
                     .map(|(_, hit)| hit);
                 if self
                     .model
-                    .architect
-                    .as_mut()
-                    .is_some_and(|view| architect::handle_hover(view, over))
+                    .open_engine_mut()
+                    .is_some_and(|(surface, engine)| engine.hover(&surface, over))
                 {
                     self.model.dirty = true;
                 }
@@ -1108,18 +1083,6 @@ impl Attach<'_> {
                     overview.scroll[section] = overview.scroll[section].scrolled(direction);
                     self.model.dirty = true;
                 }
-            }
-            _ if self.model.architect.is_some() && in_pane => {
-                let direction = if mouse.kind == MouseEventKind::ScrollUp {
-                    ScrollDirection::Up
-                } else {
-                    ScrollDirection::Down
-                };
-                let space = self.architect_space();
-                if let Some(view) = self.model.architect.as_mut() {
-                    architect::handle_scroll(view, direction, space);
-                }
-                self.model.dirty = true;
             }
             // The drawer scrolls under the pointer, wherever the keys are.
             _ if layout
@@ -1551,8 +1514,8 @@ impl Attach<'_> {
             // away in one click. Unlit, it is the keys' door: it opens, or
             // switches from the other surface.
             WorkspaceHit::OpenFiles if self.model.code.is_some() => self.model.close_code(),
-            WorkspaceHit::OpenArchitect if self.model.architect.is_some() => {
-                self.model.close_architect();
+            WorkspaceHit::OpenArchitect if self.model.showing(architect::CATALOG.id) => {
+                self.model.close_declared();
             }
             WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
             WorkspaceHit::OpenDeclared(slot) if self.model.declared_open == Some(slot) => {
@@ -1646,9 +1609,7 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
-            WorkspaceHit::Extension(
-                ExtensionHit::Code(_) | ExtensionHit::Architect(_) | ExtensionHit::Spec(_),
-            ) => {}
+            WorkspaceHit::Extension(ExtensionHit::Code(_) | ExtensionHit::Spec(_)) => {}
             // The spec section: its header folds it, and a change opens the
             // surface on that change. Nothing else is drawn in it.
             WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {

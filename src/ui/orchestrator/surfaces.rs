@@ -34,16 +34,6 @@ impl WorkspaceModel {
             .insert(view.root().to_path_buf(), view.place());
     }
 
-    /// Closes the architect surface, keeping where the viewer was on this
-    /// checkout — every way out goes through here, for the reason
-    /// [`Self::close_code`] does.
-    pub(super) fn close_architect(&mut self) {
-        let (Some(view), Some(root)) = (self.architect.take(), self.architect_root.clone()) else {
-            return;
-        };
-        self.remembered.architect_places.insert(root, view.place());
-    }
-
     /// Closes the spec surface, keeping where the viewer was on this
     /// checkout, for the reason [`Self::close_code`] does.
     pub(super) fn close_spec(&mut self) {
@@ -78,16 +68,13 @@ impl WorkspaceModel {
             self.commit_detail = None;
             self.commit_detail_pending = None;
         }
-        if !self.offers_extension(architect::CATALOG.id) {
-            self.close_architect();
-        }
         if !self.offers_extension(spec::CATALOG.id) {
             self.close_spec();
             self.remembered.spec_summary = None;
         }
         if self
             .open_declared_slot()
-            .is_some_and(|slot| !self.offers_declared(&slot.identity))
+            .is_some_and(|slot| !self.offers_declared(&slot.owner))
         {
             self.close_declared();
         }
@@ -98,7 +85,6 @@ impl WorkspaceModel {
     /// Closes whichever surface is standing in the pane.
     pub(super) fn close_extension(&mut self) {
         self.close_code();
-        self.close_architect();
         self.close_spec();
         self.close_declared();
     }
@@ -126,29 +112,13 @@ impl WorkspaceModel {
 }
 
 pub(super) fn open_architect(model: &mut WorkspaceModel) {
-    if !model.offers_extension(architect::CATALOG.id) {
-        return;
+    let slot = model
+        .remembered
+        .declared
+        .builtin_slot(architect::CATALOG.id, architect::SURFACE);
+    if let Some(slot) = slot {
+        open_declared(model, slot);
     }
-    // An agent's surface, never a shell of the space's: a shell works in
-    // no project, wherever it stands.
-    let Some(root) = model.focused_cwd() else {
-        return;
-    };
-    model.close_code();
-    model.close_spec();
-    model.close_declared();
-    let place = model.remembered.architect_places.get(&root).cloned();
-    let display_root = crate::ui::display_project_path(&root);
-    model.stand_extension_in_front();
-    model.architect_root = Some(root);
-    model.architect_asked = false;
-    let view = architect::ArchitectView::opening(display_root);
-    model.architect = Some(match place {
-        Some(place) => view.resuming(place),
-        None => view,
-    });
-    model.code_tree_scroll = extension_view::NavigatorScroll::default();
-    model.dirty = true;
 }
 
 pub(super) fn open_spec(model: &mut WorkspaceModel) {
@@ -169,7 +139,6 @@ pub(super) fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::Spe
         return;
     };
     model.close_code();
-    model.close_architect();
     model.close_spec();
     model.close_declared();
     let place = sent_to.or_else(|| model.remembered.spec_places.get(&root).cloned());
@@ -203,7 +172,6 @@ pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &
         display_root,
         code::ContentMode::Contents,
     );
-    model.close_architect();
     model.close_spec();
     model.close_declared();
     model.stand_extension_in_front();
@@ -224,7 +192,6 @@ pub(super) fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
     let display_root = crate::ui::display_project_path(&cwd);
     let place = model.remembered.code_places.get(&cwd).cloned();
     let view = code::CodeView::opening(cwd, display_root, mode);
-    model.close_architect();
     model.close_spec();
     model.close_declared();
     model.stand_extension_in_front();

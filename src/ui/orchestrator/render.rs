@@ -197,14 +197,17 @@ pub(super) fn render(
     let (surface_area, inspector_area) = declared_split(model, layout.pane);
     // A plugin's view is drawn under the strip naming whose it is, which
     // nothing it draws can cover.
-    let surface_area = match model.open_declared_slot() {
-        Some(slot) => crate::ui::extension_view::tree::render_attribution(
+    let declared = model
+        .open_declared_slot()
+        .and_then(|slot| slot.owner.declared());
+    let surface_area = match declared {
+        Some(identity) => crate::ui::extension_view::tree::render_attribution(
             frame,
             surface_area,
             &crate::ui::extension_view::tree::attribution(
-                &slot.identity.id,
-                &slot.identity.plugin,
-                &slot.identity.marketplace,
+                &identity.id,
+                &identity.plugin,
+                &identity.marketplace,
             ),
         ),
         None => surface_area,
@@ -385,9 +388,7 @@ fn render_extension(
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
             sliding: match model.hovered {
                 Some(WorkspaceHit::Extension(
-                    ExtensionHit::Code(hit)
-                    | ExtensionHit::Spec(hit)
-                    | ExtensionHit::Architect(hit),
+                    ExtensionHit::Code(hit) | ExtensionHit::Spec(hit),
                 )) => Some((hit, model.hovered_for())),
                 Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
                     if model.declared_open == Some(slot) =>
@@ -400,9 +401,11 @@ fn render_extension(
         crate::ui::extension_view::FooterKeys {
             scope,
             hovered: model.hovered_hint(),
-            host: match tag {
-                Tag::Declared(_) => &[uze_keys::Action::ToggleInspector],
-                Tag::BuiltIn(_) => &[],
+            host: match model.open_declared_slot() {
+                Some(slot) if slot.owner.declared().is_some() => {
+                    &[uze_keys::Action::ToggleInspector]
+                }
+                _ => &[],
             },
         },
         match &model.selection {
@@ -489,45 +492,47 @@ impl Tag {
 }
 
 fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
-    if let Some(slot) = model.declared_open {
-        let space = crate::ui::extension_view::code_space(area, model.code_tree_width, None);
+    if let Some(slot) = model.open_declared_slot() {
+        let space = match model.open_layout() {
+            Some(uze_extensions::view::Layout::Board) => {
+                crate::ui::extension_view::board_space(area)
+            }
+            _ => crate::ui::extension_view::code_space(area, model.code_tree_width, None),
+        };
+        let scope = match &slot.owner {
+            Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
+                uze_keys::Scope::Architect
+            }
+            _ => uze_keys::Scope::Declared,
+        };
+        let tag = Tag::Declared(slot.id);
         return Some(OpenExtension {
             view: model.declared_view(space)?,
-            scope: uze_keys::Scope::Declared,
-            tag: Tag::Declared(slot),
+            scope,
+            tag,
         });
     }
-    let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) =
-        if let Some(architect) = &model.architect {
-            (
-                uze_extensions::architect::view(
-                    architect,
-                    crate::ui::extension_view::board_space(area),
-                ),
-                uze_keys::Scope::Architect,
-                ExtensionHit::Architect,
-            )
-        } else if let Some(spec) = &model.spec {
-            (
-                uze_extensions::spec::view(
-                    spec,
-                    crate::ui::extension_view::code_space(area, model.code_tree_width, None),
-                ),
-                uze_keys::Scope::Spec,
-                ExtensionHit::Spec,
-            )
-        } else if let Some(code) = &model.code {
-            (
-                uze_extensions::code::view(
-                    code,
-                    crate::ui::extension_view::code_space(area, model.code_tree_width, Some(code)),
-                ),
-                uze_keys::Scope::Code,
-                ExtensionHit::Code,
-            )
-        } else {
-            return None;
-        };
+    let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) = if let Some(spec) = &model.spec {
+        (
+            uze_extensions::spec::view(
+                spec,
+                crate::ui::extension_view::code_space(area, model.code_tree_width, None),
+            ),
+            uze_keys::Scope::Spec,
+            ExtensionHit::Spec,
+        )
+    } else if let Some(code) = &model.code {
+        (
+            uze_extensions::code::view(
+                code,
+                crate::ui::extension_view::code_space(area, model.code_tree_width, Some(code)),
+            ),
+            uze_keys::Scope::Code,
+            ExtensionHit::Code,
+        )
+    } else {
+        return None;
+    };
     Some(OpenExtension {
         view,
         scope,

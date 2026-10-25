@@ -29,7 +29,7 @@ pub(super) fn render_declared_overlays(
     let Some(slot) = model.open_declared_slot() else {
         return;
     };
-    let errors = model.remembered.declared.errors_of(&slot.identity);
+    let errors = model.remembered.declared.errors_of(&slot.owner);
     if !errors.is_empty() {
         let content = Rect {
             height: surface.height.saturating_sub(1),
@@ -62,15 +62,18 @@ pub(super) fn render_declared_drawer(
         ))
     });
     let (inner, handle) = widget::drawer::render_docked(frame, area, model.dragging_dock, note);
-    let content = crate::ui::extension_view::tree::render_attribution(
-        frame,
-        inner,
-        &crate::ui::extension_view::tree::attribution(
-            &slot.identity.id,
-            &slot.identity.plugin,
-            &slot.identity.marketplace,
+    let content = match slot.owner.declared() {
+        Some(identity) => crate::ui::extension_view::tree::render_attribution(
+            frame,
+            inner,
+            &crate::ui::extension_view::tree::attribution(
+                &identity.id,
+                &identity.plugin,
+                &identity.marketplace,
+            ),
         ),
-    );
+        None => inner,
+    };
     let space = uze_extensions::view::Size {
         width: content.width,
         height: content.height,
@@ -90,7 +93,7 @@ pub(super) fn render_declared_drawer(
         crate::ui::extension_view::render_docked(frame, &view, content, hovered, &mut view_hits);
     model.dock_bar.set(docked.bar);
     let animates = docked.animates;
-    let errors = model.remembered.declared.errors_of(&slot.identity);
+    let errors = model.remembered.declared.errors_of(&slot.owner);
     if !errors.is_empty() {
         widget::banner::render(frame, content, &error_title(errors.len()), errors);
     }

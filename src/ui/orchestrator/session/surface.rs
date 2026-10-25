@@ -34,56 +34,65 @@ impl Attach<'_> {
         }
     }
 
-    /// A press on the architect surface. A click on the diagram is
-    /// finished here, like the code surface's caret: the render knew which
-    /// row it drew, and only the pointer knows how far along it landed.
-    pub(super) fn architect_press(&mut self, column: u16, row: u16) {
-        let hit = self.architect_hit_at(column, row);
-        let view_hit = hit.map(|(rect, hit)| self.finished(rect, hit, column));
-        if let Some(click @ ViewHit::PlaceCaret { .. }) = view_hit {
-            self.model.architect_grab = Some(DiagramGrab {
-                last: (column, row),
-                moved: false,
-                click,
-            });
-        } else if view_hit == Some(ViewHit::DragContentScrollbar) {
-            let space = self.architect_space();
-            if let Some(bar) = self.model.code_scrollbars.content_bar
-                && let Some(view) = self.model.architect.as_mut()
-            {
-                architect::scroll_to(view, bar.first_at(row), space);
+    /// A press on the view standing in the pane. The frame's geometry is
+    /// the host's, as on every surface: the navigator's edge and the
+    /// content's scrollbar. A press on a board is not yet a click: the
+    /// first movement says whether it is one or a drag, so it is held
+    /// until then, finished here like the code surface's caret, since the
+    /// render knew which row it drew and only the pointer knows how far
+    /// along it landed.
+    pub(super) fn slot_press(&mut self, column: u16, row: u16) {
+        let Some(slot) = self.model.declared_open else {
+            return;
+        };
+        let view_hit = self
+            .slot_hit_at(column, row)
+            .map(|(rect, hit)| self.finished(rect, hit, column));
+        let space = self.code_space();
+        match view_hit {
+            Some(ViewHit::GrabNavigatorEdge) => {
+                self.model.code_edge_drag = Some(EdgeDrag::armed_at(column, row));
             }
-        } else {
-            let space = self.architect_space();
-            let outcome = self
-                .model
-                .architect
-                .as_mut()
-                .map(|view| architect::handle_mouse(view, view_hit, space));
-            self.follow_architect(outcome);
+            Some(ViewHit::DragContentScrollbar)
+                if self.model.code_scrollbars.content_bar.is_some() =>
+            {
+                self.model.dragging_code_content = true;
+                self.scroll_code_content_to(row);
+            }
+            Some(click @ ViewHit::PlaceCaret { .. })
+                if self.model.open_layout() == Some(uze_extensions::view::Layout::Board) =>
+            {
+                self.model.board_grab = Some(DiagramGrab {
+                    last: (column, row),
+                    moved: false,
+                    click,
+                });
+            }
+            Some(hit) => self.model.hit_declared(slot, hit, space),
+            None => {
+                if let Some((surface, engine)) = self.model.open_engine_mut() {
+                    engine.missed(&surface, space);
+                }
+            }
         }
         self.model.dirty = true;
     }
 
-    /// The architect's own hit under a pointer, resolved the way that
-    /// surface hands its hits down: **first** in the list is topmost, an
-    /// open list having been spliced in front of the board it covers.
-    /// The workspace's own `hit_at` reads the other way round — latest
-    /// drawn first — which is right for chrome it drew itself and wrong
-    /// for a list somebody else ordered. One resolver, so a press and a
-    /// hover cannot land on two different things.
-    pub(super) fn architect_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
-        self.model.hits.iter().find_map(|(rect, hit)| {
-            let inside = rect.x <= column
-                && column < rect.x + rect.width
-                && rect.y <= row
-                && row < rect.y + rect.height;
-            match hit {
-                WorkspaceHit::Extension(ExtensionHit::Architect(hit)) if inside => {
-                    Some((*rect, *hit))
-                }
-                _ => None,
+    /// The open view's own hit under a pointer, resolved the way a surface
+    /// hands its hits down: **first** in the list is topmost, an open list
+    /// having been spliced in front of the board it covers, and only its
+    /// own are looked at, so chrome registered ahead of it cannot hide
+    /// them. One resolver, so a press and a hover cannot land on two
+    /// different things.
+    pub(super) fn slot_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
+        let open = self.model.declared_open?;
+        self.model.hits.iter().find_map(|(rect, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
+                if *slot == open && rect.contains(Position::new(column, row)) =>
+            {
+                Some((*rect, *hit))
             }
+            _ => None,
         })
     }
 
@@ -102,50 +111,33 @@ impl Attach<'_> {
         self.model.code_scrollbars.content_space
     }
 
-    /// The same, for the architect's board — and for the same reason: its
-    /// diagrams are placed in the room they are given.
-    pub(super) fn architect_space(&self) -> uze_extensions::view::Size {
-        self.model.code_scrollbars.content_space
-    }
-
-    pub(super) fn drag_diagram(&mut self, column: u16, row: u16) {
-        let space = self.architect_space();
-        if let Some(grab) = self.model.architect_grab.as_mut()
-            && let Some(view) = self.model.architect.as_mut()
-        {
-            let columns = i32::from(column) - i32::from(grab.last.0);
-            let rows = i32::from(row) - i32::from(grab.last.1);
-            architect::drag_by(view, columns, rows, space);
-            grab.last = (column, row);
-            grab.moved = true;
-            self.model.dirty = true;
+    /// A held board follows the pointer: the room it is moved in is the
+    /// room the last frame laid it out in, for the reason
+    /// [`Self::code_space`] gives.
+    pub(super) fn drag_board(&mut self, column: u16, row: u16) {
+        let space = self.code_space();
+        let Some(mut grab) = self.model.board_grab else {
+            return;
+        };
+        let columns = i32::from(column) - i32::from(grab.last.0);
+        let rows = i32::from(row) - i32::from(grab.last.1);
+        if let Some((surface, engine)) = self.model.open_engine_mut() {
+            engine.drag(&surface, columns, rows, space);
         }
+        grab.last = (column, row);
+        grab.moved = true;
+        self.model.board_grab = Some(grab);
+        self.model.dirty = true;
     }
 
     /// A press that never moved was a click on whatever was under it.
-    pub(super) fn release_diagram(&mut self) {
-        let space = self.architect_space();
-        if let Some(grab) = self.model.architect_grab.take()
+    pub(super) fn release_board(&mut self) {
+        let space = self.code_space();
+        if let Some(grab) = self.model.board_grab.take()
             && !grab.moved
+            && let Some(slot) = self.model.declared_open
         {
-            let outcome = self
-                .model
-                .architect
-                .as_mut()
-                .map(|view| architect::handle_mouse(view, Some(grab.click), space));
-            self.follow_architect(outcome);
-        }
-    }
-
-    /// What the architect surface asked for by answering: to stay, to be
-    /// closed, or to hand over to the code a box stands for.
-    pub(super) fn follow_architect(&mut self, outcome: Option<architect::ArchitectOutcome>) {
-        match outcome {
-            Some(architect::ArchitectOutcome::Close) => self.model.close_architect(),
-            Some(architect::ArchitectOutcome::OpenPath { project, target }) => {
-                open_code_at(&mut self.model, &project, &target);
-            }
-            Some(architect::ArchitectOutcome::Stay) | None => {}
+            self.model.hit_declared(slot, grab.click, space);
         }
     }
 
@@ -240,19 +232,14 @@ impl Attach<'_> {
     /// The open surface's own hit under a point, resolved the way that
     /// surface orders its hits.
     pub(super) fn surface_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
-        if self.model.architect.is_some() {
-            return self.architect_hit_at(column, row);
+        if self.model.declared_open.is_some() {
+            return self.slot_hit_at(column, row);
         }
         match self.model.hit_rect_at(column, row) {
             Some((
                 rect,
                 WorkspaceHit::Extension(ExtensionHit::Code(hit) | ExtensionHit::Spec(hit)),
             )) => Some((rect, hit)),
-            Some((rect, WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })))
-                if self.model.declared_open == Some(slot) =>
-            {
-                Some((rect, hit))
-            }
             _ => None,
         }
     }
@@ -297,10 +284,7 @@ impl Attach<'_> {
     /// Hands the open surface a pointer gesture the host finished itself.
     pub(super) fn surface_mouse(&mut self, hit: ViewHit) {
         let space = self.code_space();
-        if let Some(view) = self.model.architect.as_mut() {
-            let outcome = architect::handle_mouse(view, Some(hit), space);
-            self.follow_architect(Some(outcome));
-        } else if let Some(view) = self.model.spec.as_mut() {
+        if let Some(view) = self.model.spec.as_mut() {
             let outcome = spec::handle_mouse(view, Some(hit), space);
             self.follow_spec(Some(outcome));
         } else if let Some(slot) = self.model.declared_open {
@@ -316,8 +300,13 @@ impl Attach<'_> {
     /// rather than read off the frame, because a selection reaches lines
     /// scrolled out of what was drawn.
     pub(super) fn surface_text(&self, lines: std::ops::Range<usize>) -> Vec<String> {
-        if let Some(view) = self.model.architect.as_ref() {
-            architect::text(view, lines)
+        if let Some(slot) = self.model.open_declared_slot() {
+            self.model
+                .remembered
+                .declared
+                .engine(&slot.owner)
+                .map(|engine| engine.text(&slot.surface.id, lines))
+                .unwrap_or_default()
         } else if let Some(view) = self.model.spec.as_ref() {
             spec::text(view, lines)
         } else if let Some(view) = self.model.code.as_ref() {
@@ -331,9 +320,7 @@ impl Attach<'_> {
     pub(super) fn scroll_surface_content(&mut self, direction: ScrollDirection) {
         let space = self.code_space();
         let at_end = self.model.code_scrollbars.content_at_end;
-        if let Some(view) = self.model.architect.as_mut() {
-            architect::handle_scroll(view, direction, space);
-        } else if let Some(view) = self.model.spec.as_mut() {
+        if let Some(view) = self.model.spec.as_mut() {
             spec::handle_scroll(view, direction);
         } else if self.model.declared_open.is_some() {
             self.model.scroll_declared(
@@ -349,14 +336,17 @@ impl Attach<'_> {
     /// Whether a point is on the groove an open surface drew for its
     /// content.
     pub(super) fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
-        matches!(
-            self.model.hit_at(column, row),
+        match self.model.hit_at(column, row) {
             Some(WorkspaceHit::Extension(
                 ExtensionHit::Code(ViewHit::DragContentScrollbar)
-                    | ExtensionHit::Spec(ViewHit::DragContentScrollbar)
-                    | ExtensionHit::Architect(ViewHit::DragContentScrollbar)
-            ))
-        )
+                | ExtensionHit::Spec(ViewHit::DragContentScrollbar),
+            )) => true,
+            Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::DragContentScrollbar,
+            })) => self.model.declared_open == Some(slot),
+            _ => false,
+        }
     }
 
     /// Shows the part of the list a point on its scrollbar names. The
@@ -434,28 +424,6 @@ impl Attach<'_> {
         self.tell_the_code_surface(command);
     }
 
-    /// The architect surface: its own door closes it, the code surface's
-    /// doors lead there, and everything else is a command it answers.
-    pub(super) fn architect_action(&mut self, action: Action) {
-        match action {
-            Action::ToggleArchitect => self.model.close_architect(),
-            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
-            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
-            Action::ToggleSpec => open_spec(&mut self.model),
-            _ => {
-                let space = self.architect_space();
-                let outcome = crate::ui::extension_view::command_for(action).and_then(|command| {
-                    self.model
-                        .architect
-                        .as_mut()
-                        .map(|view| architect::handle_command(view, command, space))
-                });
-                self.follow_architect(outcome);
-            }
-        }
-        self.model.dirty = true;
-    }
-
     /// The spec surface: its own door closes it, the other surfaces'
     /// doors lead there, and everything else is a command it answers.
     pub(super) fn spec_action(&mut self, action: Action) {
@@ -478,12 +446,16 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// A plugin's view: the doors lead to the built-in surfaces, its key
-    /// opens the inspector beside it, and everything else is a command its
-    /// engine answers. Esc puts the inspector away before the view, and
-    /// the page keys scroll it while it is open, since it was opened last.
+    /// The view standing in a slot: its own door closes it, the doors lead
+    /// to the other surfaces, a plugin's key opens the inspector beside it,
+    /// and everything else is a command its engine answers. Esc puts the
+    /// inspector away before the view, and the page keys scroll it while it
+    /// is open, since it was opened last.
     pub(super) fn declared_action(&mut self, action: Action) {
         match action {
+            Action::ToggleArchitect if self.model.showing(architect::CATALOG.id) => {
+                self.model.close_declared();
+            }
             Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
             Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
             Action::ToggleArchitect => open_architect(&mut self.model),

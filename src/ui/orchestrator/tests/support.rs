@@ -940,3 +940,77 @@ pub(super) fn select_tab(model: &mut WorkspaceModel, tab: TabId) {
     model.session.as_mut().expect("session").select_tab(tab);
     model.note_space_projects(&identities_fixture());
 }
+
+/// The architect's engine, as the slot map hosts it.
+pub(super) fn architect_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .expect("the architect is hosted")
+        .as_mut()
+}
+
+/// Opens the architect on the checkout in front and answers its read
+/// with `artifacts`, as its job would have.
+pub(super) fn open_architect_with(
+    model: &mut WorkspaceModel,
+    artifacts: Vec<uze_extensions::architect::Artifact>,
+) {
+    use uze_extensions::architect;
+    super::open_architect(model);
+    let root = model.declared_root.clone().expect("opened on a checkout");
+    let answer = architect::ArtifactsAnswer {
+        branch: "main".to_owned(),
+        artifacts: architect::Artifacts::Found {
+            artifacts,
+            project: root.clone(),
+        },
+    };
+    architect_engine(model).absorb(uze_extensions::contract::Opaque::new(
+        architect::ArtifactsRead { root, answer },
+    ));
+}
+
+/// Where the viewer is on the open architect.
+pub(super) fn architect_place(model: &WorkspaceModel) -> uze_extensions::architect::ArchitectPlace {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .and_then(|engine| engine.place(uze_extensions::architect::SURFACE))
+        .and_then(|place| place.downcast())
+        .expect("the architect is open")
+}
+
+/// What the open architect draws in `space`.
+pub(super) fn architect_view(
+    model: &WorkspaceModel,
+    space: uze_extensions::view::Size,
+) -> uze_extensions::view::View {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .and_then(|engine| engine.view(uze_extensions::architect::SURFACE, space))
+        .expect("the architect is open")
+}
+
+/// The architect's slot, as its hits are tagged.
+pub(super) fn architect_slot(model: &WorkspaceModel) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(
+            uze_extensions::architect::CATALOG.id,
+            uze_extensions::architect::SURFACE,
+        )
+        .expect("the architect has a slot")
+}

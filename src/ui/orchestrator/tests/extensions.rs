@@ -4,8 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, SpecResolution, SpecSummaryState, WorkspaceModel, open_architect, open_code,
-    open_spec,
+    ExtensionHit, SpecResolution, SpecSummaryState, WorkspaceModel, open_code, open_spec,
     render::{self, compute_layout},
 };
 use crate::ui::theme::{self, Token};
@@ -92,17 +91,13 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
 
     let (mut model, first, second) = two_agents_with_shells();
     let answer_artifacts = |model: &mut WorkspaceModel| {
-        let view = model.architect.as_mut().expect("the surface is open");
-        view.absorb(architect::ArtifactsAnswer {
-            branch: "main".to_owned(),
-            artifacts: architect::Artifacts::Found {
-                artifacts: vec![
-                    architect::Artifact::read("one.mmd", "flowchart TD\n a --> b"),
-                    architect::Artifact::read("two.mmd", "flowchart TD\n c --> d"),
-                ],
-                project: PathBuf::from("/repo"),
-            },
-        });
+        open_architect_with(
+            model,
+            vec![
+                architect::Artifact::read("one.mmd", "flowchart TD\n a --> b"),
+                architect::Artifact::read("two.mmd", "flowchart TD\n c --> d"),
+            ],
+        );
     };
     let space = uze_extensions::view::Size {
         width: 120,
@@ -110,36 +105,29 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
     };
 
     select_tab(&mut model, first);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     // Moved off the diagram the surface opens on, which is the part
     // that must survive the round trip.
-    architect::handle_command(
-        model.architect.as_mut().expect("open"),
-        Command::NextView,
-        space,
-    );
-    let moved_to = model.architect.as_ref().expect("open").place();
+    model.tell_declared(Command::NextView, space);
+    let moved_to = architect_place(&model);
 
-    model.close_architect();
-    assert!(model.architect.is_none());
+    model.close_declared();
+    assert!(!model.showing(architect::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
     select_tab(&mut model, second);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_ne!(
-        model.architect.as_ref().expect("open").place(),
+        architect_place(&model),
         moved_to,
         "a checkout never visited opens on its own first diagram"
     );
-    model.close_architect();
+    model.close_declared();
 
     select_tab(&mut model, first);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_eq!(
-        model.architect.as_ref().expect("open").place(),
+        architect_place(&model),
         moved_to,
         "and the one left mid-walk is where it was left"
     );
@@ -746,27 +734,23 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
 fn a_list_open_over_the_architects_board_follows_the_pointer() {
     use uze_extensions::{architect, view::Choosing};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-hover"));
-    let mut view = architect::ArchitectView::opening("~/repo".to_owned());
-    view.absorb(architect::ArtifactsAnswer {
-        branch: "main".to_owned(),
-        artifacts: architect::Artifacts::Found {
-            artifacts: [
-                (
-                    "crate-layering.mmd",
-                    include_str!("../../../../docs/architecture/crate-layering.mmd"),
-                ),
-                (
-                    "install-pipeline.mmd",
-                    include_str!("../../../../docs/architecture/install-pipeline.mmd"),
-                ),
-            ]
-            .map(|(origin, source)| architect::Artifact::read(origin, source))
-            .into(),
-            project: PathBuf::from("/repo"),
-        },
-    });
-    let mut model = model_of(session("/repo"));
-    model.architect = Some(view);
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        [
+            (
+                "crate-layering.mmd",
+                include_str!("../../../../docs/architecture/crate-layering.mmd"),
+            ),
+            (
+                "install-pipeline.mmd",
+                include_str!("../../../../docs/architecture/install-pipeline.mmd"),
+            ),
+        ]
+        .map(|(origin, source)| architect::Artifact::read(origin, source))
+        .into(),
+    );
+    let slot = architect_slot(&model);
     // Roomy, because the board is drawn beside the sidebar: at the
     // default width the menu has no room to name what it chooses.
     let mut driven = driven(model, &home).on_a_roomy_terminal();
@@ -774,7 +758,7 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
     let space =
         crate::ui::extension_view::board_space(compute_layout(driven.area, None, None).pane);
     let highlighted = |driven: &Driven<'_>| {
-        architect::view(driven.attach.model.architect.as_ref().unwrap(), space)
+        architect_view(&driven.attach.model, space)
             .navigator
             .expect("a menu")
             .choosing
@@ -786,7 +770,10 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
             .hits
             .iter()
             .find(|(_, hit)| {
-                *hit == WorkspaceHit::Extension(ExtensionHit::Architect(ViewHit::SelectItem(item)))
+                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                    slot,
+                    hit: ViewHit::SelectItem(item),
+                })
             })
             .map(|(rect, _)| *rect)
             .unwrap_or_else(|| panic!("no row for artifact {item}"))
@@ -799,7 +786,10 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
         .hits
         .iter()
         .find(|(_, hit)| {
-            *hit == WorkspaceHit::Extension(ExtensionHit::Architect(ViewHit::ChooseItem))
+            *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::ChooseItem,
+            })
         })
         .map(|(rect, _)| *rect)
         .expect("two artifacts in the area, so it opens");
@@ -828,16 +818,11 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
     use uze_extensions::architect;
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-copy"));
     let source = include_str!("../../../../docs/architecture/crate-layering.mmd");
-    let mut view = architect::ArchitectView::opening("~/repo".to_owned());
-    view.absorb(architect::ArtifactsAnswer {
-        branch: "main".to_owned(),
-        artifacts: architect::Artifacts::Found {
-            artifacts: [architect::Artifact::read("crate-layering.mmd", source)].into(),
-            project: PathBuf::from("/repo"),
-        },
-    });
-    let mut model = model_of(session("/repo"));
-    model.architect = Some(view);
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        vec![architect::Artifact::read("crate-layering.mmd", source)],
+    );
     let mut driven = driven(model, &home).on_a_roomy_terminal();
 
     driven.frame();
@@ -847,9 +832,11 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
     );
 
     let space = driven.attach.model.code_scrollbars.content_space;
-    if let Some(view) = driven.attach.model.architect.as_mut() {
-        architect::handle_mouse(view, Some(ViewHit::SelectMode(2)), space);
-    }
+    let slot = architect_slot(&driven.attach.model);
+    driven
+        .attach
+        .model
+        .hit_declared(slot, ViewHit::SelectMode(2), space);
     driven.frame();
     let row_of = |driven: &Driven<'_>, line: usize| {
         driven
@@ -879,5 +866,79 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
     assert_eq!(
         driven.attach.model.clipboard.as_deref(),
         Some(expected.join("\n").as_str())
+    );
+}
+
+/// The architect is hosted like any extension: opening it asks its read as
+/// a job through the workspace's host, and the answer reaches its engine.
+#[test]
+fn opening_the_architect_reads_its_artifacts_as_a_job() {
+    let mut model = agent_session_in("/repo");
+    super::open_architect(&mut model);
+    assert!(model.showing(uze_extensions::architect::CATALOG.id));
+    let reading = |model: &WorkspaceModel| {
+        matches!(
+            architect_view(model, uze_extensions::view::Size { width: 80, height: 24 }).content,
+            uze_extensions::view::Content::Message { text, .. } if text.starts_with("Reading")
+        )
+    };
+    assert!(reading(&model));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    assert_eq!(model.schedule_engine_jobs(&sender), 1);
+    assert_eq!(model.schedule_engine_jobs(&sender), 0, "asked once");
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the read answers");
+    assert!(model.absorb_engine_answer(answer));
+    assert!(!reading(&model), "the answer was drawn");
+}
+
+/// A board held and moved follows the pointer; one pressed and let go
+/// where it was is a click on what was under it.
+#[test]
+fn the_architects_board_is_dragged_through_its_slot() {
+    use uze_extensions::architect;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-drag"));
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        vec![architect::Artifact::read(
+            "crate-layering.mmd",
+            include_str!("../../../../docs/architecture/crate-layering.mmd"),
+        )],
+    );
+    let slot = architect_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let board = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit::Declared {
+                    slot: hit_slot,
+                    hit: ViewHit::PlaceCaret { .. },
+                }) if *hit_slot == slot
+            )
+        })
+        .map(|(rect, _)| *rect)
+        .expect("the board is drawn");
+    let before = architect_place(&driven.attach.model);
+    let (column, row) = (board.x + board.width / 2, board.y + board.height / 2);
+    driven.press(column, row);
+    assert!(
+        driven.attach.model.board_grab.is_some(),
+        "held, not clicked"
+    );
+    driven.mouse(column + 4, row + 2, MouseEventKind::Drag(MouseButton::Left));
+    driven.mouse(column + 4, row + 2, MouseEventKind::Up(MouseButton::Left));
+    assert!(driven.attach.model.board_grab.is_none());
+    assert_ne!(
+        architect_place(&driven.attach.model),
+        before,
+        "the board moved with the pointer"
     );
 }

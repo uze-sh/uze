@@ -48,7 +48,7 @@ impl Attach<'_> {
             // it, the same way the action index does: nothing else may
             // answer a letter.
             Scope::CodeEditing
-        } else if self.model.architect.is_some() {
+        } else if self.model.showing(architect::CATALOG.id) {
             Scope::Architect
         } else if self.model.spec.is_some() {
             Scope::Spec
@@ -357,10 +357,6 @@ impl Attach<'_> {
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
             self.toggle_space_overview();
-            return Flow::Continue;
-        }
-        if self.model.architect.is_some() {
-            self.architect_action(action);
             return Flow::Continue;
         }
         if self.model.spec.is_some() {

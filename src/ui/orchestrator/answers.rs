@@ -249,16 +249,6 @@ impl WorkspaceModel {
         }
     }
 
-    pub(super) fn schedule_artifacts_read(&mut self, sender: &mpsc::Sender<ArtifactsResolution>) {
-        if self.architect.is_none() || self.architect_asked {
-            return;
-        }
-        if let Some(root) = self.architect_root.clone() {
-            self.architect_asked = true;
-            spawn_artifacts_read(root, sender.clone());
-        }
-    }
-
     pub(super) fn schedule_spec_read(
         &mut self,
         home: &UzeHome,
@@ -276,16 +266,6 @@ impl WorkspaceModel {
     pub(super) fn absorb_spec(&mut self, resolution: SpecResolution) -> bool {
         match self.spec.as_mut() {
             Some(view) if self.spec_root.as_ref() == Some(&resolution.root) => {
-                view.absorb(resolution.answer);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub(super) fn absorb_artifacts(&mut self, resolution: ArtifactsResolution) -> bool {
-        match self.architect.as_mut() {
-            Some(view) if self.architect_root.as_ref() == Some(&resolution.root) => {
                 view.absorb(resolution.answer);
                 true
             }

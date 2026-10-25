@@ -1022,15 +1022,14 @@ pub(super) enum WorkspaceHit {
 }
 
 impl WorkspaceHit {
-    /// Whether this is a target the open surface drew — in the pane, or in
-    /// the bar's leading slot — rather than one of the sections an
-    /// extension keeps in the sidebar, which answer as the sidebar does.
+    /// Whether this is a target a built-in's open surface drew — in the
+    /// pane, or in the bar's leading slot — rather than one of the sections
+    /// an extension keeps in the sidebar, which answer as the sidebar does.
+    /// A slot's are told apart by the model, which knows which is open.
     pub(super) fn is_open_surfaces(self) -> bool {
         matches!(
             self,
-            WorkspaceHit::Extension(
-                ExtensionHit::Code(_) | ExtensionHit::Spec(_) | ExtensionHit::Architect(_)
-            )
+            WorkspaceHit::Extension(ExtensionHit::Code(_) | ExtensionHit::Spec(_))
         )
     }
 
@@ -1487,7 +1486,6 @@ struct Channels {
     labels: Answers<LabelResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
-    artifacts: Answers<ArtifactsResolution>,
     spec: Answers<SpecResolution>,
     spec_summaries: Answers<SpecSummaryResolution>,
     /// The declared extensions installed plugins carry: found, compiled and
@@ -1597,12 +1595,6 @@ struct Remembered {
     /// being rewritten while nobody is looking; within a session it is
     /// worth returning to, and across runs it is worth nothing.
     code_places: BTreeMap<PathBuf, code::CodePlace>,
-    /// Where the viewer was on each checkout's architect surface, keyed
-    /// the same way and for the same reason: a drawing is walked into —
-    /// a level entered, a box selected, the board moved to it — and a
-    /// surface that forgets all of that on the way out is one nobody
-    /// leaves to check something.
-    architect_places: BTreeMap<PathBuf, architect::ArchitectPlace>,
     /// The same for the spec surface: which change, and which of its
     /// documents.
     spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
@@ -1924,15 +1916,14 @@ struct WorkspaceModel {
     /// dismissal but a click on whatever it landed on. `Esc`, either
     /// shortcut that opens it, or putting another tab in front closes it.
     code: Option<code::CodeView>,
-    /// Open state of the architect surface. It borrows the code surface's
+    /// Open state of the spec surface. It borrows the code surface's
     /// frame — the navigator width, its scroll, the scrollbars — because
     /// the two are never open together and the frame is the host's, not
     /// either extension's.
-    architect: Option<architect::ArchitectView>,
-    /// Open state of the spec surface, on the same borrowed frame.
     spec: Option<spec::SpecView>,
-    /// The checkout it belongs to, and whether it has been read yet — as
-    /// `architect_root` and `architect_asked` are for the architect.
+    /// The checkout it belongs to, and whether it has been read yet: asked
+    /// once per opening, and the answer carries the root, so one that
+    /// arrives for a surface since closed or reopened elsewhere is dropped.
     spec_root: Option<PathBuf>,
     spec_asked: bool,
     /// The declared view standing in the pane, by its slot, and the
@@ -1995,17 +1986,11 @@ struct WorkspaceModel {
     overview_drawer_width: Option<u16>,
     /// Whether the drawer's rule is held by the pointer.
     dragging_overview_drawer: bool,
-    /// The diagram held by the pointer. A press on it is not yet a click
-    /// or a drag — the first movement says which, as it does for
+    /// The open board held by the pointer. A press on it is not yet a
+    /// click or a drag — the first movement says which, as it does for
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here
     /// until release.
-    architect_grab: Option<DiagramGrab>,
-    /// The checkout the open architect surface belongs to, and whether
-    /// its artifacts have been asked for yet. Asked once per opening: the
-    /// answer carries the root, so one that arrives for a surface since
-    /// closed or reopened elsewhere is dropped rather than drawn.
-    architect_root: Option<PathBuf>,
-    architect_asked: bool,
+    board_grab: Option<DiagramGrab>,
     /// User-dragged navigator width; `None` falls back to its own
     /// responsive default. Mirrors `sidebar_width`/`dragging_sidebar`
     /// above, kept on the model rather than on the view itself so it
@@ -2414,7 +2399,6 @@ impl WorkspaceModel {
     fn no_modal_open(&self) -> bool {
         self.chrome_answers()
             && self.code.is_none()
-            && self.architect.is_none()
             && self.spec.is_none()
             && self.declared_open.is_none()
     }

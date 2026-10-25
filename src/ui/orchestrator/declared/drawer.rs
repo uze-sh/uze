@@ -41,7 +41,7 @@ impl WorkspaceModel {
             .declared
             .slots
             .iter()
-            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.identity))
+            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.owner))
     }
 
     /// The drawer open in the space in front, while its extension is on.
@@ -50,7 +50,7 @@ impl WorkspaceModel {
         let id = *declared.drawers.get(&self.space_in_front()?)?;
         declared
             .slot(id)
-            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.identity))
+            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.owner))
     }
 
     pub(in crate::ui::orchestrator) fn open_drawer(&self) -> Option<SlotId> {
@@ -88,7 +88,7 @@ impl WorkspaceModel {
         let Some(slot) = self.remembered.declared.slot(id) else {
             return;
         };
-        if !slot.is_drawer() || !self.offers_declared(&slot.identity) {
+        if !slot.is_drawer() || !self.offers_declared(&slot.owner) {
             return;
         }
         if crate::ui::widget::drawer::docked_width(self.dock_width, room).is_none() {
@@ -128,9 +128,9 @@ impl WorkspaceModel {
         if let Some(open) = self.open_drawer() {
             return Some(open);
         }
-        let viewing = self.open_declared_slot().map(|slot| &slot.identity);
+        let viewing = self.open_declared_slot().map(|slot| &slot.owner);
         self.declared_drawers()
-            .find(|slot| Some(&slot.identity) == viewing)
+            .find(|slot| Some(&slot.owner) == viewing)
             .or_else(|| self.declared_drawers().next())
             .map(|slot| slot.id)
     }
@@ -153,18 +153,17 @@ impl WorkspaceModel {
         }
         let before = std::mem::replace(drawer_space, now);
         for slot in slots.iter().filter(|slot| slot.is_drawer()) {
-            let Some(engine) = engines.get_mut(&slot.identity) else {
+            let Some(engine) = engines.get_mut(&slot.owner) else {
                 continue;
             };
             let surface = slot.surface.id.clone();
             if let Some(before) = before
                 && let Some(place) = engine.place(&surface)
             {
-                drawer_places.insert((slot.identity.clone(), surface.clone(), before), place);
+                drawer_places.insert((slot.owner.clone(), surface.clone(), before), place);
             }
-            let kept = now.and_then(|now| {
-                drawer_places.remove(&(slot.identity.clone(), surface.clone(), now))
-            });
+            let kept = now
+                .and_then(|now| drawer_places.remove(&(slot.owner.clone(), surface.clone(), now)));
             match kept {
                 Some(place) => engine.resume(&surface, place),
                 None => engine.forget(&surface),
@@ -181,7 +180,7 @@ impl WorkspaceModel {
             .declared
             .slots
             .iter()
-            .filter(|slot| slot.is_drawer() && !self.offers_declared(&slot.identity))
+            .filter(|slot| slot.is_drawer() && !self.offers_declared(&slot.owner))
             .map(|slot| slot.id)
             .collect();
         self.remembered
