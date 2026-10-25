@@ -175,12 +175,14 @@ impl<'a> Server<'a> {
             self.fields
                 .insert(extension.clone(), checked.fixtures.clone());
             if let Some(compiled) = &checked.compiled {
-                let sources = compiled
-                    .manifest
-                    .surfaces
-                    .iter()
-                    .map(|surface| (surface.view.clone(), surface.source.clone()))
-                    .collect();
+                // A view several surfaces draw is bound to the first one's
+                // source, as the manifest lists them.
+                let mut sources = BTreeMap::new();
+                for surface in &compiled.manifest.surfaces {
+                    sources
+                        .entry(surface.view.clone())
+                        .or_insert_with(|| surface.source.clone());
+                }
                 self.sources.insert(extension.clone(), sources);
             }
             let mut by_file: BTreeMap<String, Vec<Value>> = BTreeMap::new();
