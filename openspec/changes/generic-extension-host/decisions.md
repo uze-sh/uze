@@ -10,7 +10,7 @@
 
 ## D2 — Stop the unattended run before architect moves
 
-- status:   resolved (the operator asked to continue; the gestures await their check by hand)
+- status:   resolved (the operator asked to continue, then checked the moved architect by hand in the TUI and found it unchanged)
 - task:     2.0
 - commit:
 - trigger:  Mapping `architect` showed its move is a rewrite of the slot path, not a port: it borrows the code surface's frame, its text selection reads the rows that frame drew, and it answers hover, a grabbed diagram's drag, a sideways pan, its scrollbar and a jump into the code surface, none of which the slot path carries.
