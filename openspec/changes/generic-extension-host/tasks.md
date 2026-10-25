@@ -6,11 +6,11 @@
 
 ## 2. Architect
 
-- [ ] 2.0 Grow the contract for H4: `hover`, `drag`, `pan`, `scroll_to`, `text` with doing-nothing defaults, `Outcome::OpenPath` and `Outcome::Copy`, followed by the host on the slot path
+- [x] 2.0 Grow the contract for H4: `hover`, `drag`, `pan`, `scroll_to`, `text` with doing-nothing defaults, `Outcome::OpenPath` and `Outcome::Copy`, followed by the host on the slot path
 
-- [ ] 2.1 `ArchitectExtension: Extension` in `uze-extensions`: its surface, its artifact read as a job, `ArchitectOutcome` onto `Outcome`, its place
-- [ ] 2.2 Host it in the slot map; remove `architect`, `architect_root`, `architect_asked`, its channel, `spawn_architect_*`/`absorb_*`, `ExtensionHit::Architect` and `architect_places`; keep `architect_grab` as host geometry
-- [ ] 2.3 Every orchestrator and TestBackend test green; the architecture suite green
+- [x] 2.1 `ArchitectExtension: Extension` in `uze-extensions`: its surface, its artifact read as a job, `ArchitectOutcome` onto `Outcome`, its place
+- [x] 2.2 Host it in the slot map; remove `architect`, `architect_root`, `architect_asked`, its channel, `spawn_architect_*`/`absorb_*`, `ExtensionHit::Architect` and `architect_places`; keep `architect_grab` as host geometry
+- [x] 2.3 Every orchestrator and TestBackend test green; the architecture suite green
 
 ## 3. Spec
 
