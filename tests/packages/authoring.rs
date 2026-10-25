@@ -921,7 +921,9 @@ fn the_language_server_exits_after_shutdown() {
 }
 
 /// A snapshot a plugin links elsewhere is never written through, and what
-/// a snapshot file says reaches the terminal cleaned.
+/// a snapshot file says reaches the terminal cleaned. Unix: the link is
+/// made with `std::os::unix::fs::symlink`, which Windows grants only to
+/// an elevated or developer-mode account.
 #[cfg(unix)]
 #[test]
 fn a_linked_snapshot_is_refused_and_a_held_one_is_said_cleaned() {
@@ -984,7 +986,8 @@ fn a_linked_snapshot_is_refused_and_a_held_one_is_said_cleaned() {
 }
 
 /// An extension's directory name is the plugin's, so the check says it
-/// cleaned, whatever escape it was given.
+/// cleaned, whatever escape it was given. Unix: Windows refuses a control
+/// character in a file name, so no such directory can exist there.
 #[cfg(unix)]
 #[test]
 fn an_extension_directory_name_reaches_the_terminal_cleaned() {
