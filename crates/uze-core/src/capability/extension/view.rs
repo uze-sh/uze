@@ -87,6 +87,9 @@ struct UseSite {
     template: String,
     within: Within,
     offset: usize,
+    /// The node it stands in and the nodes that node holds, `None` at the
+    /// top of a view or of a template.
+    holder: Option<(NodeName, Vec<NodeName>)>,
 }
 
 struct TemplateFacts {
@@ -124,7 +127,7 @@ impl Compiler<'_, '_> {
     ) -> Option<Item> {
         let name = node.name().value();
         match name {
-            "use" => self.use_template(node, within),
+            "use" => self.use_template(node, within, parent),
             "template" | "lookup" => {
                 self.report.on(
                     node,
@@ -649,7 +652,12 @@ impl Compiler<'_, '_> {
         }
     }
 
-    fn use_template(&mut self, node: &KdlNode, within: &Within) -> Option<Item> {
+    fn use_template(
+        &mut self,
+        node: &KdlNode,
+        within: &Within,
+        parent: Option<(NodeName, &[NodeName])>,
+    ) -> Option<Item> {
         let parts = entries(node, self.report);
         refuse_extra(node, &parts, 1, &[], false, self.report);
         let name = match parts.args.first().map(|arg| arg.value()) {
@@ -667,6 +675,7 @@ impl Compiler<'_, '_> {
             template: name.clone(),
             within: within.clone(),
             offset: node.offset(),
+            holder: parent.map(|(kind, allowed)| (kind, allowed.to_vec())),
         });
         Some(Item::Use {
             template: name,
@@ -814,6 +823,7 @@ impl Compiler<'_, '_> {
         let cycles = self.refuse_cycles();
         self.refuse_unknown_templates();
         self.refuse_deep_uses(&cycles);
+        self.refuse_misplaced_uses();
         self.refuse_unknown_tables();
         self.refuse_unknown_shows();
     }
@@ -953,6 +963,62 @@ impl Compiler<'_, '_> {
         let depth = own.max(through);
         depths.insert(name, depth);
         depth
+    }
+
+    /// A `use` stands its template's nodes where it is written, so each of
+    /// them must be one the node it stands in holds, or one a view's top
+    /// may hold: a `Tab` brought into a `Row` through a template is as
+    /// misplaced as one written there.
+    fn refuse_misplaced_uses(&mut self) {
+        let mut misplaced = Vec::new();
+        for site in &self.uses {
+            let mut placed = Vec::new();
+            let mut seen = BTreeSet::new();
+            self.placed_by(&site.template, &mut placed, &mut seen);
+            let refused = placed.into_iter().find(|kind| match &site.holder {
+                Some((_, allowed)) => !allowed.contains(kind),
+                None => site.within.template.is_none() && !top_level(*kind),
+            });
+            if let Some(kind) = refused {
+                let said = match &site.holder {
+                    Some((holder, _)) => format!(
+                        "the template `{}` places a `{kind}` in a `{holder}`, which does not hold it",
+                        site.template
+                    ),
+                    None => format!(
+                        "the template `{}` places a `{kind}` at the top of the view, where it is not drawn",
+                        site.template
+                    ),
+                };
+                misplaced.push((site.offset, said));
+            }
+        }
+        for (offset, said) in misplaced {
+            self.report.at(
+                offset,
+                said,
+                Some("use the template where that node belongs".to_owned()),
+            );
+        }
+    }
+
+    /// The nodes `template` stands in its place, through the templates it
+    /// uses at its top, each template walked once.
+    fn placed_by<'n>(
+        &'n self,
+        template: &'n str,
+        into: &mut Vec<NodeName>,
+        seen: &mut BTreeSet<&'n str>,
+    ) {
+        if !seen.insert(template) {
+            return;
+        }
+        for item in self.view.templates.get(template).into_iter().flatten() {
+            match item {
+                Item::Node(node) => into.push(node.name),
+                Item::Use { template, .. } => self.placed_by(template, into, seen),
+            }
+        }
     }
 
     fn refuse_unknown_tables(&mut self) {

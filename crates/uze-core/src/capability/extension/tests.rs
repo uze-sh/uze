@@ -881,5 +881,32 @@ Stack { use "a"; }"#,
 #[test]
 fn a_block_on_a_leaf_whose_string_is_optional_is_said() {
     let said = the_one("Stack {\n    Rule {\n        Text \"hidden\"\n    }\n}");
-    assert!(said.message.contains("`Rule` holds no other nodes"), "{said:?}");
+    assert!(
+        said.message.contains("`Rule` holds no other nodes"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_part_node_placed_through_a_template_is_refused_like_one_written_there() {
+    let said = the_one(
+        r#"template "t" { Tab "x"; }
+Row { use "t"; }"#,
+    );
+    assert!(
+        said.message.contains("places a `Tab` in a `Row`"),
+        "{said:?}"
+    );
+    let top = the_one(
+        r#"template "t" { Mark; }
+use "t""#,
+    );
+    assert!(top.message.contains("at the top of the view"), "{top:?}");
+    assert!(
+        view(
+            r#"template "tabs" { Tab "a" value="a"; }
+Tabs id="t" { use "tabs"; }"#
+        )
+        .is_ok()
+    );
 }
