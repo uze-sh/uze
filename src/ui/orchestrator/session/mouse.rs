@@ -1666,6 +1666,15 @@ impl Attach<'_> {
             },
             // The docked drawer's: the engine's, told the room its view
             // had, and the drawer has the navigation keys from now on.
+            // The open view's scrollbar is the host's too, as the code
+            // surface's is: held, it follows the pointer.
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::DragContentScrollbar,
+            }) if self.model.declared_open == Some(slot) => {
+                self.model.dragging_code_content = true;
+                self.scroll_code_content_to(mouse.row);
+            }
             // Its scrollbar is the host's, as on every surface: held, it
             // follows the pointer.
             WorkspaceHit::Extension(ExtensionHit::Declared {

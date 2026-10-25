@@ -1621,3 +1621,54 @@ fn a_failed_discovery_lets_the_next_one_be_asked() {
         "a plugin installed since is looked for"
     );
 }
+
+/// A full-frame declared view's scrollbar answers the pointer as the
+/// drawer's does: a press low on its track scrolls the view there.
+#[test]
+fn a_declared_views_scrollbar_follows_the_pointer() {
+    let root = uze_testkit::temp::scratch("declared-view-scrollbar");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    the_gsd_band_installed(&root, &home);
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let slot = view_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.area = ratatui::layout::Rect::new(0, 0, 120, 14);
+    driven.frame();
+    let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
+    driven.press(button.x, button.y);
+    driven.frame();
+    let shown = |driven: &Driven<'_>| {
+        let space = uze_extensions::view::Size {
+            width: 100,
+            height: 10,
+        };
+        match driven
+            .attach
+            .model
+            .declared_view(space)
+            .map(|view| view.content)
+        {
+            Some(Content::Tree { scroll, .. }) => scroll,
+            _ => panic!("a tree"),
+        }
+    };
+    assert_eq!(shown(&driven), 0);
+    let bar = drawn(
+        &driven.attach.model,
+        WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot,
+            hit: ViewHit::DragContentScrollbar,
+        }),
+    );
+    driven.press(bar.x, bar.y + bar.height - 1);
+    driven.frame();
+    assert!(shown(&driven) > 0, "a press low on the track scrolls down");
+    let _ = std::fs::remove_dir_all(root);
+}

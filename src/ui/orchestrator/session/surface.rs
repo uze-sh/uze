@@ -377,6 +377,27 @@ impl Attach<'_> {
         } else if let Some(view) = self.model.code.as_mut() {
             code::scroll_to(view, bar.first_at(row));
             self.model.dirty = true;
+        } else if self.model.declared_open.is_some() {
+            self.scroll_declared_to(bar.first_at(row));
+        }
+    }
+
+    /// Scrolls the open declared view to `wanted`, from the row it shows
+    /// now: its engine is told a row at a time, as the wheel tells it.
+    fn scroll_declared_to(&mut self, wanted: usize) {
+        let space = self.code_space();
+        let shown = match self.model.declared_view(space).map(|view| view.content) {
+            Some(uze_extensions::view::Content::Tree { scroll, .. }) => scroll,
+            _ => return,
+        };
+        let direction = match wanted.cmp(&shown) {
+            std::cmp::Ordering::Equal => return,
+            std::cmp::Ordering::Greater => ScrollDirection::Down,
+            std::cmp::Ordering::Less => ScrollDirection::Up,
+        };
+        for _ in 0..wanted.abs_diff(shown) {
+            self.model
+                .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
         }
     }
 
