@@ -112,8 +112,8 @@ pub(super) fn difference(held: &str, taken: &str) -> String {
         said.push_str(&format!(
             "\n  line {}\n  - {}\n  + {}",
             index + 1,
-            uze_contract::Clean::label(before.unwrap_or("")).as_str(),
-            uze_contract::Clean::label(after.unwrap_or("")).as_str()
+            uze_contract::Clean::text(before.unwrap_or("")).as_str(),
+            uze_contract::Clean::text(after.unwrap_or("")).as_str()
         ));
         shown += 1;
     }
