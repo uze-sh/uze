@@ -932,6 +932,26 @@ fn a_forgotten_surface_starts_over() {
     assert!(extension.ui(VIEW).is_none());
 }
 
+#[test]
+fn a_scrollbar_held_at_a_row_scrolls_there_and_no_further_than_the_tree() {
+    let lines = (0..6)
+        .map(|line| n(NodeName::Text).arg(&format!("line {line}")).item())
+        .collect();
+    let mut extension = hosted(lines, json!({}));
+    let scroll = |extension: &DeclaredExtension| match extension.view(VIEW, SPACE) {
+        Some(View {
+            content: Content::Tree { scroll, .. },
+            ..
+        }) => scroll,
+        _ => panic!("a tree"),
+    };
+    assert_eq!(scroll(&extension), 0);
+    extension.scroll_to(VIEW, 3, SPACE);
+    assert_eq!(scroll(&extension), 3);
+    extension.scroll_to(VIEW, 99, SPACE);
+    assert_eq!(scroll(&extension), 6);
+}
+
 fn tabbed() -> Vec<Item> {
     vec![
         n(NodeName::Tabs)

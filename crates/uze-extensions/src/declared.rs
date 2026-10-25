@@ -221,6 +221,14 @@ impl DeclaredExtension {
         }
     }
 
+    /// The furthest `surface` scrolls: the tree takes no more rows than it
+    /// has nodes, which bounds a scroll the host would clamp anyway.
+    fn scroll_bound(&self, surface: &str) -> usize {
+        let space = self.last_space(surface);
+        self.with_built(surface, space, |built| built.count)
+            .unwrap_or(0)
+    }
+
     fn last_space(&self, surface: &str) -> Size {
         self.memo
             .borrow()
@@ -472,17 +480,17 @@ impl Extension for DeclaredExtension {
         if target != ScrollTarget::Content {
             return;
         }
-        let space = self.last_space(surface);
-        // The tree takes no more rows than it has nodes, which bounds a
-        // scroll the host would clamp anyway.
-        let bound = self
-            .with_built(surface, space, |built| built.count)
-            .unwrap_or(0);
+        let bound = self.scroll_bound(surface);
         let scroll = self.scroll.entry(surface.to_owned()).or_default();
         *scroll = match direction {
             ScrollDirection::Down => (*scroll + 1).min(bound),
             ScrollDirection::Up => scroll.saturating_sub(1),
         };
+    }
+
+    fn scroll_to(&mut self, surface: &str, first: usize, _space: Size) {
+        let bound = self.scroll_bound(surface);
+        self.scroll.insert(surface.to_owned(), first.min(bound));
     }
 
     fn place(&self, surface: &str) -> Option<Opaque> {

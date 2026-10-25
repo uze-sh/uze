@@ -629,6 +629,26 @@ impl WorkspaceModel {
             Outcome::Stay => {}
             Outcome::Close => self.close_declared(),
             Outcome::Notice(span) => self.declared_notice = Some(span),
+            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::Copy(text) => self.copy_answered(text),
+        }
+        self.dirty = true;
+    }
+
+    /// Text a surface asked to have copied: on the clipboard, and said.
+    pub(super) fn copy_answered(&mut self, text: String) {
+        self.raise_toast(ToastKind::Done, "copied", text.clone(), None);
+        self.clipboard = Some(text);
+    }
+
+    /// Scrolls the open view to show line `first` at the top, as its held
+    /// scrollbar asks.
+    pub(super) fn scroll_declared_to(&mut self, first: usize, space: Size) {
+        let Some(id) = self.declared_open else {
+            return;
+        };
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll_to(&surface, first, space);
         }
         self.dirty = true;
     }
@@ -854,17 +874,4 @@ pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
     model.declared_root = Some(root);
     model.code_tree_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;
-}
-
-/// How a held scrollbar moves a declared engine from the row it shows to
-/// the one the pointer asks for: which way, and how many rows, since an
-/// engine is told a row at a time, as the wheel tells it. `None` when it
-/// is already there.
-pub(super) fn steps_toward(shown: usize, wanted: usize) -> Option<(ScrollDirection, usize)> {
-    let direction = match wanted.cmp(&shown) {
-        std::cmp::Ordering::Equal => return None,
-        std::cmp::Ordering::Greater => ScrollDirection::Down,
-        std::cmp::Ordering::Less => ScrollDirection::Up,
-    };
-    Some((direction, wanted.abs_diff(shown)))
 }

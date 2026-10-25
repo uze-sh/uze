@@ -226,13 +226,18 @@ impl WorkspaceModel {
             return;
         };
         let wanted = bar.first_at(row);
-        let Some((direction, steps)) = super::steps_toward(shown, wanted) else {
+        if wanted == shown {
+            return;
+        }
+        let Some(id) = self.open_drawer() else {
             return;
         };
-        for _ in 0..steps {
-            self.scroll_drawer(direction);
+        let space = self.dock_space.get();
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll_to(&surface, wanted, space);
         }
         self.dock_bar.set(Some((bar, wanted)));
+        self.dirty = true;
     }
 
     /// What the drawer's engine answered, followed: its notice is said
@@ -242,6 +247,8 @@ impl WorkspaceModel {
             Outcome::Stay => {}
             Outcome::Close => self.close_drawer(),
             Outcome::Notice(span) => self.dock_notice = Some(span),
+            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::Copy(text) => self.copy_answered(text),
         }
         self.dirty = true;
     }

@@ -378,26 +378,8 @@ impl Attach<'_> {
             code::scroll_to(view, bar.first_at(row));
             self.model.dirty = true;
         } else if self.model.declared_open.is_some() {
-            self.scroll_declared_to(bar.first_at(row));
-        }
-    }
-
-    /// Scrolls the open declared view to `wanted`, from the row it shows
-    /// now: its engine is told a row at a time, as the wheel tells it.
-    fn scroll_declared_to(&mut self, wanted: usize) {
-        let space = self.code_space();
-        let shown = match self.model.declared_view(space).map(|view| view.content) {
-            Some(uze_extensions::view::Content::Tree { scroll, .. }) => scroll,
-            _ => return,
-        };
-        let Some((direction, steps)) =
-            crate::ui::orchestrator::declared::steps_toward(shown, wanted)
-        else {
-            return;
-        };
-        for _ in 0..steps {
-            self.model
-                .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
+            let space = self.code_space();
+            self.model.scroll_declared_to(bar.first_at(row), space);
         }
     }
 
@@ -551,11 +533,7 @@ impl Attach<'_> {
         match outcome {
             code::CodeOutcome::Stay => {}
             code::CodeOutcome::Close => self.model.close_code(),
-            code::CodeOutcome::Copy(text) => {
-                self.model
-                    .raise_toast(ToastKind::Done, "copied", text.clone(), None);
-                self.model.clipboard = Some(text);
-            }
+            code::CodeOutcome::Copy(text) => self.model.copy_answered(text),
         }
     }
 }

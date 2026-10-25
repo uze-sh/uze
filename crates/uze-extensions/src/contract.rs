@@ -1,19 +1,19 @@
 //! The one contract the host speaks to every extension through.
 //!
-//! Each built-in extension is still wired into the orchestrator by hand,
-//! field by field (about twenty places for `spec`). This is the shape that
-//! replaces that wiring: the declared engine implements it first
-//! (`extension-view-engine`), and `code`, `architect` and `spec` move onto it
-//! in a later change without the contract changing — which is why it already
-//! carries what the first review found the orchestrator does on their
-//! behalf today (A1): which jobs may run together, what a job answers when
-//! its thread dies, what happens to an answer whose surface has closed, and
-//! state that outlives a surface.
+//! The declared engine implemented it first (`extension-view-engine`), and
+//! the built-ins move onto it one at a time (`generic-extension-host`). It
+//! carries what the orchestrator did on their behalf when each was wired
+//! by hand (A1): which jobs may run together, what a job answers when its
+//! thread dies, what happens to an answer whose surface has closed, state
+//! that outlives a surface, and the gestures a board answers (H4).
 
 use std::any::Any;
+use std::path::PathBuf;
 
 use crate::Host;
-use crate::view::{Command, ScrollDirection, ScrollTarget, Section, Size, Span, View, ViewHit};
+use crate::view::{
+    Command, Layout, ScrollDirection, ScrollTarget, Section, Size, Span, View, ViewHit,
+};
 
 /// Where a surface is drawn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +42,25 @@ pub enum Outcome {
     Close,
     /// Say this at the far end of the footer.
     Notice(Span),
+    /// Show `target` on the code surface: where a drawing or a document
+    /// ends and the checkout begins. `project` is what the path was
+    /// written relative to.
+    OpenPath {
+        project: PathBuf,
+        target: PathBuf,
+    },
+    /// Put this on the clipboard, and say so.
+    Copy(String),
+}
+
+/// The checkout a full-frame surface opens on, as the host found it in
+/// front of the viewer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Checkout {
+    pub root: PathBuf,
+    /// The checkout as a reader is shown it, for a title: which checkout
+    /// is being looked at is known from the first frame, never read.
+    pub display: String,
 }
 
 /// Whether an extension's jobs may run at the same time.
@@ -106,6 +125,39 @@ pub trait Extension: Send {
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome;
 
     fn scroll(&mut self, surface: &str, target: ScrollTarget, direction: ScrollDirection);
+
+    /// `surface` is opening full-frame on `checkout`, before any place is
+    /// handed back to it.
+    fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
+
+    /// How `surface` is laid out now, which decides the room it is given:
+    /// a board takes the frame, a list the column beside its navigator.
+    fn layout(&self, _surface: &str) -> Layout {
+        Layout::Sidebar
+    }
+
+    /// The pointer moved over `surface` without pressing, onto `hit`.
+    /// Answers whether the frame has to be drawn again.
+    fn hover(&mut self, _surface: &str, _hit: Option<ViewHit>) -> bool {
+        false
+    }
+
+    /// What `surface` drew was taken hold of and moved by so many cells.
+    fn drag(&mut self, _surface: &str, _columns: i32, _rows: i32, _space: Size) {}
+
+    /// A sideways wheel over `surface`, by so many columns.
+    fn pan(&mut self, _surface: &str, _columns: i32, _space: Size) {}
+
+    /// The content's scrollbar was pressed or held at the row that shows
+    /// line `first` at the top.
+    fn scroll_to(&mut self, _surface: &str, _first: usize, _space: Size) {}
+
+    /// The text of `lines` of what `surface` shows, for copying a
+    /// selection: asked rather than read off the frame, because a
+    /// selection reaches lines scrolled out of what was drawn.
+    fn text(&self, _surface: &str, _lines: std::ops::Range<usize>) -> Vec<String> {
+        Vec::new()
+    }
 
     /// Work to hand the host now. Empty when there is none.
     fn jobs(&mut self) -> Vec<Job> {

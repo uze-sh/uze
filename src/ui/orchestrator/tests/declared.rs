@@ -97,6 +97,11 @@ impl Extension for Board {
                 self.tab = (self.tab + 1) % 2;
                 Outcome::Stay
             }
+            Command::Activate => Outcome::Copy(format!("tab {}", self.tab)),
+            Command::Back => Outcome::OpenPath {
+                project: PathBuf::from("/project"),
+                target: PathBuf::from("src/lib.rs"),
+            },
             _ => Outcome::Stay,
         }
     }
@@ -337,6 +342,24 @@ fn switching_a_tab_runs_nothing() {
             .is_err(),
         "and none answered"
     );
+}
+
+#[test]
+fn a_view_that_asks_for_a_copy_or_a_path_gets_the_clipboard_or_the_code_surface() {
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    super::open_declared(&mut model, slot);
+    let space = Size {
+        width: 80,
+        height: 20,
+    };
+    model.tell_declared(Command::Activate, space);
+    assert_eq!(model.clipboard.as_deref(), Some("tab 0"));
+
+    model.tell_declared(Command::Back, space);
+    assert_eq!(model.declared_open, None, "the view gave way");
+    let code = model.code.as_ref().expect("the code surface opened");
+    assert_eq!(code.root(), std::path::Path::new("/project"));
 }
 
 #[test]
