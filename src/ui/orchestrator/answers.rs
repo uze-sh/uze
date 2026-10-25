@@ -586,9 +586,11 @@ impl WorkspaceModel {
         for identity in &answer.recompiled {
             declared.recompiling.remove(identity);
         }
+        if answer.discovery {
+            declared.discovery_pending = false;
+        }
         let mut went = false;
         if let Some(found) = &answer.discovered {
-            declared.discovery_pending = false;
             went = declared.absorb_discovery(found);
         }
         // A recompile answers only for an extension still installed: one a

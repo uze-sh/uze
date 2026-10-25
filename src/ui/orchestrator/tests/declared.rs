@@ -210,6 +210,7 @@ fn loaded(
 
 fn discovered() -> ExtensionAnswer {
     ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
         loaded: vec![loaded(Ok(compiled()))],
@@ -220,6 +221,7 @@ fn recompiled(
     compiled: std::result::Result<CompiledExtension, Vec<ExtensionDiagnostic>>,
 ) -> ExtensionAnswer {
     ExtensionAnswer {
+        discovery: false,
         discovered: None,
         recompiled: vec![identity()],
         loaded: vec![loaded(compiled)],
@@ -345,6 +347,7 @@ fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
 
     // The plugin was removed: its view goes, whatever stood in the pane.
     model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(Vec::new()),
         recompiled: Vec::new(),
         loaded: Vec::new(),
@@ -424,6 +427,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
         ..DeclaredExtensions::default()
     };
     model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
         loaded: vec![loaded(Err(vec![ExtensionDiagnostic {
@@ -734,6 +738,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
 
     // Installed: only the newcomer is loaded, the board is as it was.
     let changed = model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![installed(), notes()]),
         recompiled: Vec::new(),
         loaded: vec![LoadedExtension {
@@ -754,6 +759,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     // Removed: its slots close and its place goes with them.
     super::open_declared(&mut model, slot);
     let changed = model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
         loaded: Vec::new(),
@@ -771,6 +777,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
 
     // Nothing moved: nothing to redraw.
     assert!(!model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
         loaded: Vec::new(),
@@ -979,6 +986,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
             title: Some("Side".to_owned()),
         });
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
         loaded: vec![loaded(Ok(with_drawer))],
@@ -1553,6 +1561,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         ..DeclaredExtensions::default()
     };
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
         loaded: vec![loaded(Ok(compiled()))],
@@ -1588,4 +1597,27 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
     let mut said = engine.inspect("board").nodes;
     said.sort();
     assert_eq!(said, ["fell back", "read through the host: true"]);
+}
+
+/// A discovery that failed (its thread panicked, or the application could
+/// not be built) still releases the discovery it reserved, so the next one
+/// is asked when it falls due rather than never.
+#[test]
+fn a_failed_discovery_lets_the_next_one_be_asked() {
+    let (mut model, _first, _second) = two_agents_with_shells();
+    let declared = &mut model.remembered.declared;
+    declared.discovery_pending = true;
+    declared.discovered_at = Some(std::time::Instant::now());
+    model.absorb_extension_answer(ExtensionAnswer {
+        discovery: true,
+        discovered: None,
+        recompiled: Vec::new(),
+        loaded: Vec::new(),
+    });
+    let declared = &model.remembered.declared;
+    assert!(!declared.discovery_pending);
+    assert!(
+        declared.discovery_due(declared.plugins_seen + 1, std::time::Instant::now()),
+        "a plugin installed since is looked for"
+    );
 }

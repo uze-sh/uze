@@ -1710,8 +1710,11 @@ pub(super) enum ExtensionJob {
 
 /// A declared-extension job's answer, carrying what it was asked.
 pub(super) struct ExtensionAnswer {
+    /// Whether it answers a discovery, found or failed: a failed one still
+    /// releases the discovery it reserved, or none would be asked again.
+    pub(super) discovery: bool,
     /// What a discovery found, for the extensions no plugin carries any
-    /// more to go. `None` for a recompile.
+    /// more to go. `None` for a recompile, or a discovery that failed.
     pub(super) discovered: Option<Vec<uze_application::InstalledExtension>>,
     /// The extensions a recompile was asked for, so their reservation is
     /// released whatever became of them.
@@ -1731,6 +1734,7 @@ pub(super) fn spawn_extension_job(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.declared_extensions", parent: &parent);
+        let discovery = matches!(job, ExtensionJob::Discover(_));
         let recompiled = match &job {
             ExtensionJob::Discover(_) => Vec::new(),
             ExtensionJob::Recompile(list) => list
@@ -1739,6 +1743,7 @@ pub(super) fn spawn_extension_job(
                 .collect(),
         };
         let silence = ExtensionAnswer {
+            discovery,
             discovered: None,
             recompiled: recompiled.clone(),
             loaded: Vec::new(),
@@ -1747,6 +1752,7 @@ pub(super) fn spawn_extension_job(
             || {
                 let Ok(app) = tui_application(home.clone()) else {
                     return ExtensionAnswer {
+                        discovery,
                         discovered: None,
                         recompiled: recompiled.clone(),
                         loaded: Vec::new(),
@@ -1788,6 +1794,7 @@ pub(super) fn spawn_extension_job(
                     })
                     .collect();
                 ExtensionAnswer {
+                    discovery,
                     discovered,
                     recompiled: recompiled.clone(),
                     loaded,
