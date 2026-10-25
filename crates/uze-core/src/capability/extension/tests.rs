@@ -924,3 +924,30 @@ Text "{t::next}""#,
     assert_eq!(said.suggestion.as_deref(), Some("write `locale=\"pt\"`"));
     assert!(view("lookup \"t\" locale=\"pt\" { next \"executar\"; }\nText \"{t::next}\"").is_ok());
 }
+
+#[test]
+fn a_show_names_a_tab_by_its_label_and_a_template_leaves_the_choices_open() {
+    assert!(
+        view(
+            r#"Tabs id="tab" { Tab "tasks"; Tab "Notes" value="notes"; }
+Text "a" show="ui.tab=tasks""#
+        )
+        .is_ok()
+    );
+    assert!(
+        view(
+            r#"template "first" { Tab "Tasks" value="tasks"; }
+Tabs id="tab" { use "first"; Tab "Notes" value="notes"; }
+Text "a" show="ui.tab=tasks""#
+        )
+        .is_ok()
+    );
+    let refused = the_one(
+        r#"Tabs id="tab" { Tab "tasks"; }
+Text "a" show="ui.tab=task""#,
+    );
+    assert!(
+        refused.message.contains("have no tab `task`"),
+        "{refused:?}"
+    );
+}

@@ -638,17 +638,30 @@ impl Compiler<'_, '_> {
         let Some(Binding::Literal(serde_json::Value::String(id))) = compiled.props.get("id") else {
             return;
         };
-        let values = (kind == NodeName::Tabs).then(|| {
-            node.children()
-                .map(KdlDocument::nodes)
-                .unwrap_or_default()
-                .iter()
-                .filter_map(|tab| match tab.get("value") {
-                    Some(KdlValue::String(value)) => Some(value.clone()),
-                    _ => None,
-                })
-                .collect()
-        });
+        // A tab is chosen as its `value`, else as its label, which is how
+        // the engine holds it. A tab that names neither outright (its label
+        // bound to data) or one a template brings leaves the choices open:
+        // no `show` against them can be checked here.
+        let values = (kind == NodeName::Tabs)
+            .then(|| {
+                node.children()
+                    .map(KdlDocument::nodes)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(
+                        |tab| match (tab.name().value(), tab.get("value"), tab.get(0)) {
+                            ("Tab", Some(KdlValue::String(value)), _) => Some(value.clone()),
+                            ("Tab", None, Some(KdlValue::String(label)))
+                                if !label.contains('{') =>
+                            {
+                                Some(uze_contract::Clean::label(label).into_string())
+                            }
+                            _ => None,
+                        },
+                    )
+                    .collect::<Option<BTreeSet<String>>>()
+            })
+            .flatten();
         if self.states.insert(id.clone(), State { values }).is_some() {
             self.report.on(
                 node,

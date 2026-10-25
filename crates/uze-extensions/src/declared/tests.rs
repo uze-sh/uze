@@ -1297,3 +1297,32 @@ fn a_log_keeps_its_latest_lines_and_counts_them_against_the_cap() {
         "bounded by the cap: {drawn}"
     );
 }
+
+#[test]
+fn a_template_brought_tab_leaves_the_others_checked() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::Tabs)
+                .prop("id", "tab")
+                .child(n(NodeName::Tab).arg("Tasks").prop("value", "tasks"))
+                .child(n(NodeName::Tab).arg("Notes").prop("value", "notes"))
+                .uses("more")
+                .item(),
+            n(NodeName::Text)
+                .arg("{nosuchfield}")
+                .show("tab", "notes")
+                .item(),
+        ],
+        vec![(
+            "more",
+            vec![n(NodeName::Tab).arg("Extra").prop("value", "extra").item()],
+        )],
+        Vec::new(),
+    );
+    let fixtures = BTreeMap::from([(SOURCE.to_owned(), json!({}))]);
+    let missing = super::missing_fields(&extension(view), &fixtures, "en");
+    assert!(
+        missing.iter().any(|field| field.field == "nosuchfield"),
+        "{missing:#?}"
+    );
+}
