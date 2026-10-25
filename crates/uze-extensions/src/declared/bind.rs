@@ -110,17 +110,31 @@ pub(super) fn effective_ui(
 fn tab_defaults(items: &[Item], out: &mut Vec<(String, String)>) {
     for item in items {
         let Item::Node(node) = item else { continue };
+        // The first tab, as `tabs` draws it active with nothing held: not
+        // the first that happens to name a value.
         if node.name == NodeName::Tabs
             && let Some(id) = literal(node, "id")
-            && let Some(first) = node.children.iter().find_map(|child| match child {
-                Item::Node(tab) if tab.name == NodeName::Tab => literal(tab, "value"),
-                _ => None,
-            })
+            && let Some(Item::Node(first)) = node.children.first()
+            && let Some(value) = tab_value(first)
         {
-            out.push((id, first));
+            out.push((id, value));
         }
         tab_defaults(&node.children, out);
     }
+}
+
+/// What a tab's choice is held as, when the view says it outright: its
+/// `value`, else its label when that is a literal, as `make_tab` takes it.
+pub(super) fn tab_value(tab: &Compiled) -> Option<String> {
+    if tab.name != NodeName::Tab {
+        return None;
+    }
+    literal(tab, "value").or_else(|| match tab.args.first()? {
+        uze_contract::Binding::Literal(value) => value
+            .as_str()
+            .map(|label| Clean::label(label).into_string()),
+        _ => None,
+    })
 }
 
 /// Every `id` a view declares, so a newer compile keeps only the state

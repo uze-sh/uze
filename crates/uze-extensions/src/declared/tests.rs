@@ -1229,3 +1229,31 @@ fn details_stats_rules_blocks_and_keys_bind_their_arguments() {
     );
     assert_eq!(kinds[7], NodeKind::Grid { gap: 2 });
 }
+
+#[test]
+fn tabs_without_values_are_bound_by_their_labels_and_open_on_the_first() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::Tabs)
+                .prop("id", "mode")
+                .child(n(NodeName::Tab).arg("A"))
+                .child(n(NodeName::Tab).arg("B").prop("value", "b"))
+                .item(),
+            n(NodeName::Text).arg("{titel}").show("mode", "A").item(),
+            n(NodeName::Text).arg("{other}").show("mode", "b").item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let fixtures = BTreeMap::from([(SOURCE.to_owned(), json!({}))]);
+    let missing = super::missing_fields(&extension(view.clone()), &fixtures, "en");
+    let fields: Vec<&str> = missing.iter().map(|field| field.field.as_str()).collect();
+    assert_eq!(fields, ["titel", "other"], "{missing:#?}");
+
+    let extension = hosted_view(view, json!({"titel": "first", "other": "second"}), "en");
+    assert_eq!(
+        texts(&tree(&extension)),
+        ["first"],
+        "the first tab is the one drawn"
+    );
+}

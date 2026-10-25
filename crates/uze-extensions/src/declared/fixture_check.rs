@@ -148,20 +148,20 @@ fn find_tabs(items: &[Item], into: &mut Vec<(String, Vec<String>)>) {
         let Item::Node(node) = item else {
             continue;
         };
+        // A tab whose choice the view does not say outright (a label bound
+        // to data) leaves its tabs out: they are bound as the view opens.
         if node.name == NodeName::Tabs
             && let Some(Binding::Literal(Value::String(id))) = node.props.get("id")
-        {
-            let values = node
+            && let Some(values) = node
                 .children
                 .iter()
-                .filter_map(|child| match child {
-                    Item::Node(tab) => match tab.props.get("value") {
-                        Some(Binding::Literal(Value::String(value))) => Some(value.clone()),
-                        _ => None,
-                    },
+                .map(|child| match child {
+                    Item::Node(tab) => super::bind::tab_value(tab),
                     Item::Use { .. } => None,
                 })
-                .collect();
+                .collect::<Option<Vec<String>>>()
+            && !values.is_empty()
+        {
             into.push((id.clone(), values));
         }
         find_tabs(&node.children, into);
