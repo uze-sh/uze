@@ -448,6 +448,7 @@ impl Extension for DeclaredExtension {
             scroll: 0,
             rows: Vec::new(),
             tree: Some(root),
+            lit: Vec::new(),
         })
     }
 

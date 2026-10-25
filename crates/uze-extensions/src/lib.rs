@@ -278,4 +278,10 @@ pub trait Host {
     fn artifact_source(&self, _project: &std::path::Path) -> ArtifactSource {
         ArtifactSource::Undeclared
     }
+
+    /// The branch `checkout` delivers to, as the workspace's delivery
+    /// policy names it. A host that keeps no policy names none.
+    fn delivery_target(&self, _checkout: &std::path::Path) -> Option<String> {
+        None
+    }
 }

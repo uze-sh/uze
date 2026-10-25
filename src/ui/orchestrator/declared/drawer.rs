@@ -249,6 +249,11 @@ impl WorkspaceModel {
             Outcome::Notice(span) => self.dock_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Show(surface) => {
+                if let Some(id) = self.open_drawer() {
+                    self.show_surface(id, &surface);
+                }
+            }
         }
         self.dirty = true;
     }

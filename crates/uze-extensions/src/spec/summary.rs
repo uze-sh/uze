@@ -88,6 +88,7 @@ pub fn summary_section(summary: &Summary, collapsed: bool, scroll: usize) -> Sec
         collapsed,
         scroll,
         tree: None,
+        lit: Vec::new(),
         rows: summary
             .changes
             .iter()

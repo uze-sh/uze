@@ -115,6 +115,7 @@ pub fn timeline_section(timeline: &Timeline, collapsed: bool, scroll: usize) -> 
         collapsed,
         scroll,
         tree: None,
+        lit: Vec::new(),
         rows: timeline
             .commits
             .iter()

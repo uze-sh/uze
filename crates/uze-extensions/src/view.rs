@@ -804,6 +804,9 @@ pub struct Section {
     /// A declared extension's section is a tree of nodes rather than rows.
     /// When present it is drawn instead of [`Section::rows`].
     pub tree: Option<Node>,
+    /// Rows that stand for what the extension shows full-frame now, lit
+    /// as a row under the pointer is.
+    pub lit: Vec<usize>,
 }
 
 /// What a [`SectionRow`]'s mark stands for, so the host can draw it.

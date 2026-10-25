@@ -600,6 +600,7 @@ impl FirstSteps<'_> {
             collapsed: self.collapsed,
             scroll: 0,
             tree: None,
+            lit: Vec::new(),
             rows: self
                 .steps
                 .iter()

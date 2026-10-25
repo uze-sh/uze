@@ -51,6 +51,10 @@ pub enum Outcome {
     },
     /// Put this on the clipboard, and say so.
     Copy(String),
+    /// Open this extension's full-frame `surface` on the checkout in
+    /// front: a summary in the sidebar sending the viewer to what it
+    /// counts.
+    Show(String),
 }
 
 /// The checkout a full-frame surface opens on, as the host found it in
@@ -61,6 +65,9 @@ pub struct Checkout {
     /// The checkout as a reader is shown it, for a title: which checkout
     /// is being looked at is known from the first frame, never read.
     pub display: String,
+    /// The branch the checkout delivers to, once the host has evaluated
+    /// it.
+    pub target: Option<String>,
 }
 
 /// Whether an extension's jobs may run at the same time.
@@ -135,6 +142,12 @@ pub trait Extension: Send {
     /// `surface` is opening full-frame on `checkout`, before any place is
     /// handed back to it.
     fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
+
+    /// The checkout in front of the viewer, told on every pass of the
+    /// host's loop: what a section about the work in front reads from.
+    /// `None` when no agent's checkout is in front, or when the operator
+    /// switched the extension off.
+    fn focus(&mut self, _checkout: Option<&Checkout>) {}
 
     /// A press on `surface` landed on nothing it drew: a list it has open
     /// shuts, as a click outside every menu here does.

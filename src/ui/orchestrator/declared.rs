@@ -732,8 +732,30 @@ impl WorkspaceModel {
             Outcome::Notice(span) => self.declared_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Show(surface) => {
+                if let Some(id) = self.declared_open {
+                    self.show_surface(id, &surface);
+                }
+            }
         }
         self.dirty = true;
+    }
+
+    /// Opens the full-frame `surface` of the extension slot `from` belongs
+    /// to, as one of its surfaces asked.
+    pub(super) fn show_surface(&mut self, from: SlotId, surface: &str) {
+        let declared = &self.remembered.declared;
+        let Some(owner) = declared.slot(from).map(|slot| slot.owner.clone()) else {
+            return;
+        };
+        let shown = declared
+            .slots
+            .iter()
+            .find(|slot| slot.owner == owner && slot.surface.id == surface && slot.is_view())
+            .map(|slot| slot.id);
+        if let Some(id) = shown {
+            open_declared(self, id);
+        }
     }
 
     /// Text a surface asked to have copied: on the clipboard, and said.
@@ -783,6 +805,11 @@ impl WorkspaceModel {
             .slot_engine_mut(id)
             .map(|(surface, engine)| engine.hit(&surface, hit, space))
             .unwrap_or(Outcome::Stay);
+        if let Outcome::Show(surface) = &outcome {
+            self.show_surface(id, surface);
+            self.dirty = true;
+            return;
+        }
         if self.open_drawer() == Some(id) {
             self.follow_drawer(outcome);
             return;
@@ -974,6 +1001,11 @@ pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
     let checkout = Checkout {
         root: root.clone(),
         display: crate::ui::display_project_path(&root),
+        target: model
+            .remembered
+            .targets
+            .get(&evaluation_key(&root))
+            .cloned(),
     };
     let declared = &mut model.remembered.declared;
     if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {

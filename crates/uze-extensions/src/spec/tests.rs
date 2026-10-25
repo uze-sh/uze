@@ -1558,3 +1558,109 @@ fn no_checkout_offers_more_than_three_subjects() {
             <= 3
     );
 }
+
+mod hosted {
+    use super::*;
+    use crate::contract::{Checkout, Extension, Opaque, Outcome};
+    use crate::spec::{DOCUMENT, SUMMARY, SpecExtension};
+
+    fn checkout(root: &Path, target: Option<String>) -> Checkout {
+        Checkout {
+            root: root.to_path_buf(),
+            display: root.display().to_string(),
+            target,
+        }
+    }
+
+    fn run(extension: &mut SpecExtension) -> Vec<Opaque> {
+        extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(&DiskHost))
+            .collect()
+    }
+
+    /// A checkout on a branch of its own, with one change it touched.
+    fn working() -> (uze_testkit::git::Repository, String) {
+        let repository = uze_testkit::git::Repository::new("spec-hosted");
+        let target = repository.branch();
+        repository.commit_file("openspec/config.yaml", "schema: spec-driven\n");
+        repository.git(&["checkout", "--quiet", "-b", "work"]);
+        repository.commit_file("openspec/changes/mine/tasks.md", "- [x] a\n- [ ] b\n");
+        (repository, target)
+    }
+
+    #[test]
+    fn the_checkout_in_front_is_counted_once_while_it_stands() {
+        let (repository, target) = working();
+        let mut extension = SpecExtension::default();
+        assert!(
+            extension.jobs().is_empty(),
+            "nothing in front, nothing counted"
+        );
+        extension.focus(Some(&checkout(repository.root(), Some(target.clone()))));
+        let answers = run(&mut extension);
+        assert_eq!(answers.len(), 1);
+        assert!(extension.jobs().is_empty(), "one count at a time");
+        for answer in answers {
+            extension.absorb(answer);
+        }
+        let section = extension.section(SUMMARY, false).expect("counted");
+        assert_eq!(section.caption.text, "1/2");
+        assert!(extension.jobs().is_empty(), "fresh, not counted again");
+
+        let elsewhere = TempDir::new("spec-hosted-elsewhere");
+        extension.focus(Some(&checkout(elsewhere.path(), None)));
+        assert_eq!(run(&mut extension).len(), 1, "another checkout is counted");
+        extension.focus(None);
+        assert!(
+            extension.section(SUMMARY, false).is_none(),
+            "and none in front"
+        );
+    }
+
+    #[test]
+    fn a_count_about_a_checkout_left_behind_is_dropped() {
+        let (repository, target) = working();
+        let mut extension = SpecExtension::default();
+        extension.focus(Some(&checkout(repository.root(), Some(target))));
+        let late = run(&mut extension);
+        let elsewhere = TempDir::new("spec-hosted-left");
+        extension.focus(Some(&checkout(elsewhere.path(), None)));
+        for answer in late {
+            extension.absorb(answer);
+        }
+        assert!(extension.section(SUMMARY, false).is_none());
+        assert_eq!(
+            run(&mut extension).len(),
+            1,
+            "the late answer released its count"
+        );
+    }
+
+    #[test]
+    fn a_summary_row_sends_the_document_to_its_change_over_the_last_place() {
+        let (repository, target) = working();
+        let at = checkout(repository.root(), Some(target));
+        let mut extension = SpecExtension::default();
+        extension.focus(Some(&at));
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        assert_eq!(
+            extension.hit(SUMMARY, ViewHit::SelectItem(0), space()),
+            Outcome::Show(DOCUMENT.to_owned())
+        );
+        extension.open(DOCUMENT, &at);
+        extension.resume(DOCUMENT, Opaque::new(SpecPlace::change("somewhere-else")));
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        let on_show = extension
+            .place(DOCUMENT)
+            .and_then(|place| place.downcast::<SpecPlace>());
+        assert_eq!(on_show, Some(SpecPlace::change("mine")));
+        let section = extension.section(SUMMARY, false).expect("counted");
+        assert_eq!(section.lit, [0], "the change on show is lit");
+    }
+}
