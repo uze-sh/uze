@@ -863,3 +863,17 @@ fn a_misspelled_name_is_answered_with_the_nearest_one() {
         "{said:#?}"
     );
 }
+
+#[test]
+fn a_template_reaching_a_cycle_it_is_not_on_is_refused_without_recursing() {
+    let said = refused(
+        r#"template "a" { Stack { use "b"; }; }
+template "b" { Stack { use "c"; }; }
+template "c" { Stack { use "b"; }; }
+Stack { use "a"; }"#,
+    );
+    assert!(
+        said.iter().any(|d| d.message.contains("`b` → `c` → `b`")),
+        "{said:#?}"
+    );
+}

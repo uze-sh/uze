@@ -932,6 +932,10 @@ impl Compiler<'_, '_> {
         if let Some(depth) = depths.get(name) {
             return *depth;
         }
+        // Marked before its uses are walked: a template that reaches a
+        // cycle without being on it would otherwise walk that cycle
+        // forever. The cycle itself is said by `refuse_cycles`.
+        depths.insert(name, 0);
         let own = self.templates.get(name).map_or(0, |facts| facts.each);
         let through = self
             .uses
