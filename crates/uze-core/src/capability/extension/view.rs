@@ -63,14 +63,14 @@ pub fn compile(document: &KdlDocument, file: &str, report: &mut Report<'_>) -> C
     compiler.view
 }
 
-/// Whether `kind` may stand at the top of a view: what any container
-/// holds, which leaves out the parts of one (`Mark`, `Segment`, `Tab`).
 /// A language as the operator's locale is read: two or three lowercase
 /// letters, the way `uze-platform` answers it.
 fn is_language(code: &str) -> bool {
     (2..=3).contains(&code.len()) && code.bytes().all(|byte| byte.is_ascii_lowercase())
 }
 
+/// Whether `kind` may stand at the top of a view: what any container
+/// holds, which leaves out the parts of one (`Mark`, `Segment`, `Tab`).
 fn top_level(kind: NodeName) -> bool {
     NodeName::Stack
         .spec()

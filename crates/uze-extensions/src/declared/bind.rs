@@ -947,12 +947,12 @@ fn align(value: Option<&Value>) -> Align {
     }
 }
 
-/// A log's lines: a list of them, or one string of several. A line may be
-/// an object with `text` and a `role`, for a log whose lines have a tone.
 /// The most lines one `Log` keeps: its latest, as a log is read from its
 /// end.
 const LOG_MAX: usize = 500;
 
+/// A log's lines: a list of them, or one string of several. A line may be
+/// an object with `text` and a `role`, for a log whose lines have a tone.
 fn log_lines(value: &Value) -> Vec<view::Span> {
     let mut lines = Vec::new();
     let mut push = |text: &str, role: Role| {
