@@ -20,6 +20,7 @@
 //! position; the host only draws the cells it is handed.
 
 mod catalog;
+mod extension;
 mod layout;
 mod mermaid;
 mod minimap;
@@ -50,6 +51,7 @@ use crate::shared::places::{ArtifactRoot, ArtifactSource};
 use catalog::Catalog;
 
 pub use catalog::Artifact;
+pub use extension::{ArchitectExtension, SURFACE};
 use minimap::Minimap;
 use model::Diagram;
 use paint::{Leads, Scene};
@@ -482,8 +484,13 @@ impl ArchitectView {
     /// into. Nothing is resolved here: the artifacts have not been read
     /// yet, and a name can only be looked up among files that exist.
     pub fn resuming(mut self, place: ArchitectPlace) -> Self {
-        self.resuming = Some(place);
+        self.resume(place);
         self
+    }
+
+    /// [`Self::resuming`], on a surface already open.
+    pub fn resume(&mut self, place: ArchitectPlace) {
+        self.resuming = Some(place);
     }
 
     /// Where the viewer is, for the host to keep.

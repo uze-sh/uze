@@ -117,7 +117,14 @@ impl Extension for Board {
         Outcome::Stay
     }
 
-    fn scroll(&mut self, _surface: &str, _target: ScrollTarget, _direction: ScrollDirection) {}
+    fn scroll(
+        &mut self,
+        _surface: &str,
+        _target: ScrollTarget,
+        _direction: ScrollDirection,
+        _space: Size,
+    ) {
+    }
 
     fn place(&self, _surface: &str) -> Option<uze_extensions::contract::Opaque> {
         Some(uze_extensions::contract::Opaque::new(self.tab))
@@ -1522,7 +1529,14 @@ impl Extension for Fetcher {
         Outcome::Stay
     }
 
-    fn scroll(&mut self, _surface: &str, _target: ScrollTarget, _direction: ScrollDirection) {}
+    fn scroll(
+        &mut self,
+        _surface: &str,
+        _target: ScrollTarget,
+        _direction: ScrollDirection,
+        _space: Size,
+    ) {
+    }
 
     fn jobs(&mut self) -> Vec<uze_extensions::contract::Job> {
         if std::mem::replace(&mut self.asked, true) {

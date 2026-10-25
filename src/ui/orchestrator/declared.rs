@@ -614,12 +614,14 @@ impl WorkspaceModel {
         let Some(slot) = declared.slot(id) else {
             return;
         };
-        let place = declared
-            .engine(&slot.identity)
-            .and_then(|engine| engine.place(&slot.surface.id));
+        let (identity, surface) = (slot.identity.clone(), slot.surface.id.clone());
+        let Some(engine) = declared.engines.get_mut(&identity) else {
+            return;
+        };
+        let place = engine.place(&surface);
+        engine.close(&surface);
         if let (Some(place), Some(root)) = (place, root) {
-            let key = (slot.identity.clone(), slot.surface.id.clone(), root);
-            declared.places.insert(key, place);
+            declared.places.insert((identity, surface, root), place);
         }
     }
 
@@ -693,12 +695,17 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
-    pub(super) fn scroll_declared(&mut self, target: ScrollTarget, direction: ScrollDirection) {
+    pub(super) fn scroll_declared(
+        &mut self,
+        target: ScrollTarget,
+        direction: ScrollDirection,
+        space: Size,
+    ) {
         let Some(id) = self.declared_open else {
             return;
         };
         if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
-            engine.scroll(&surface, target, direction);
+            engine.scroll(&surface, target, direction, space);
         }
         self.dirty = true;
     }

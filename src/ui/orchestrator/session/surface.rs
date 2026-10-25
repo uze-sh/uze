@@ -336,8 +336,11 @@ impl Attach<'_> {
         } else if let Some(view) = self.model.spec.as_mut() {
             spec::handle_scroll(view, direction);
         } else if self.model.declared_open.is_some() {
-            self.model
-                .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
+            self.model.scroll_declared(
+                uze_extensions::view::ScrollTarget::Content,
+                direction,
+                space,
+            );
         } else if let Some(view) = self.model.code.as_mut() {
             code::handle_scroll(view, direction, at_end);
         }

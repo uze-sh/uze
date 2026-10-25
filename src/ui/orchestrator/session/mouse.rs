@@ -1147,8 +1147,12 @@ impl Attach<'_> {
                 } else {
                     ScrollDirection::Down
                 };
-                self.model
-                    .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
+                let space = self.code_space();
+                self.model.scroll_declared(
+                    uze_extensions::view::ScrollTarget::Content,
+                    direction,
+                    space,
+                );
             }
             _ if self.model.spec.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {

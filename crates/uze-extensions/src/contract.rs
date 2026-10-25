@@ -124,11 +124,21 @@ pub trait Extension: Send {
 
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome;
 
-    fn scroll(&mut self, surface: &str, target: ScrollTarget, direction: ScrollDirection);
+    fn scroll(
+        &mut self,
+        surface: &str,
+        target: ScrollTarget,
+        direction: ScrollDirection,
+        space: Size,
+    );
 
     /// `surface` is opening full-frame on `checkout`, before any place is
     /// handed back to it.
     fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
+
+    /// `surface` was put away; what it held for the viewer may go. Called
+    /// after its place was taken.
+    fn close(&mut self, _surface: &str) {}
 
     /// How `surface` is laid out now, which decides the room it is given:
     /// a board takes the frame, a list the column beside its navigator.

@@ -213,8 +213,9 @@ impl WorkspaceModel {
         let Some(id) = self.open_drawer() else {
             return;
         };
+        let space = self.dock_space.get();
         if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
-            engine.scroll(&surface, ScrollTarget::Content, direction);
+            engine.scroll(&surface, ScrollTarget::Content, direction, space);
         }
         self.dirty = true;
     }

@@ -80,6 +80,10 @@ pub fn artifacts_declared_in(project: &Path) -> uze_extensions::ArtifactSource {
 pub struct WorkspaceHost;
 
 impl uze_extensions::Host for WorkspaceHost {
+    fn artifact_source(&self, project: &Path) -> uze_extensions::ArtifactSource {
+        artifacts_declared_in(project)
+    }
+
     /// Through `uze-git`'s read path, so an overlay refreshing every few
     /// seconds cannot contend with an agent writing in a sibling checkout.
     ///

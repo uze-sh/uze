@@ -273,4 +273,11 @@ pub trait Host {
     /// same reason every other colour is, and it arrives here rather than as
     /// a constant so a light theme does not leave a diff illegible.
     fn syntax_theme(&self) -> String;
+
+    /// Where the project around `project` declares its artifacts: the
+    /// directories its `workspace.artifacts` names, why they were refused,
+    /// or that it names none. A host that reads no declaration finds none.
+    fn artifact_source(&self, _project: &std::path::Path) -> ArtifactSource {
+        ArtifactSource::Undeclared
+    }
 }

@@ -476,7 +476,13 @@ impl Extension for DeclaredExtension {
         }
     }
 
-    fn scroll(&mut self, surface: &str, target: ScrollTarget, direction: ScrollDirection) {
+    fn scroll(
+        &mut self,
+        surface: &str,
+        target: ScrollTarget,
+        direction: ScrollDirection,
+        _space: Size,
+    ) {
         if target != ScrollTarget::Content {
             return;
         }
