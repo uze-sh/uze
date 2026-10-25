@@ -599,9 +599,12 @@ impl Compiler<'_, '_> {
             return Vec::new();
         };
         let Some(allowed) = spec.children else {
-            // `Text {id}` was already answered as a pasted brace.
+            // `Text {id}` was already answered as a pasted brace, which is
+            // said only for a node whose string is required: a `Rule { … }`
+            // is a block on a leaf, and nothing else would say so.
             let pasted_brace = node.entries().iter().all(|entry| entry.name().is_some())
-                && spec.args.first() == Some(&PropKind::Text);
+                && spec.args.first() == Some(&PropKind::Text)
+                && spec.required_args > 0;
             if !pasted_brace {
                 self.report.on(
                     block,

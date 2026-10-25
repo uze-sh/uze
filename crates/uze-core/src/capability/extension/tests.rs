@@ -877,3 +877,9 @@ Stack { use "a"; }"#,
         "{said:#?}"
     );
 }
+
+#[test]
+fn a_block_on_a_leaf_whose_string_is_optional_is_said() {
+    let said = the_one("Stack {\n    Rule {\n        Text \"hidden\"\n    }\n}");
+    assert!(said.message.contains("`Rule` holds no other nodes"), "{said:?}");
+}
