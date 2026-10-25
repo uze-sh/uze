@@ -390,12 +390,12 @@ impl Attach<'_> {
             Some(uze_extensions::view::Content::Tree { scroll, .. }) => scroll,
             _ => return,
         };
-        let direction = match wanted.cmp(&shown) {
-            std::cmp::Ordering::Equal => return,
-            std::cmp::Ordering::Greater => ScrollDirection::Down,
-            std::cmp::Ordering::Less => ScrollDirection::Up,
+        let Some((direction, steps)) =
+            crate::ui::orchestrator::declared::steps_toward(shown, wanted)
+        else {
+            return;
         };
-        for _ in 0..wanted.abs_diff(shown) {
+        for _ in 0..steps {
             self.model
                 .scroll_declared(uze_extensions::view::ScrollTarget::Content, direction);
         }

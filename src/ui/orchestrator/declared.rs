@@ -855,3 +855,16 @@ pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
     model.code_tree_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;
 }
+
+/// How a held scrollbar moves a declared engine from the row it shows to
+/// the one the pointer asks for: which way, and how many rows, since an
+/// engine is told a row at a time, as the wheel tells it. `None` when it
+/// is already there.
+pub(super) fn steps_toward(shown: usize, wanted: usize) -> Option<(ScrollDirection, usize)> {
+    let direction = match wanted.cmp(&shown) {
+        std::cmp::Ordering::Equal => return None,
+        std::cmp::Ordering::Greater => ScrollDirection::Down,
+        std::cmp::Ordering::Less => ScrollDirection::Up,
+    };
+    Some((direction, wanted.abs_diff(shown)))
+}
