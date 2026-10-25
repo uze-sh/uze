@@ -50,7 +50,7 @@ impl Attach<'_> {
             Scope::CodeEditing
         } else if self.model.showing(architect::CATALOG.id) {
             Scope::Architect
-        } else if self.model.spec.is_some() {
+        } else if self.model.showing(spec::CATALOG.id) {
             Scope::Spec
         } else if self.model.declared_open.is_some() {
             Scope::Declared
@@ -357,10 +357,6 @@ impl Attach<'_> {
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
             self.toggle_space_overview();
-            return Flow::Continue;
-        }
-        if self.model.spec.is_some() {
-            self.spec_action(action);
             return Flow::Continue;
         }
         if self.model.declared_open.is_some() {

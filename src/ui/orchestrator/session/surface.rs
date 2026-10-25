@@ -236,10 +236,7 @@ impl Attach<'_> {
             return self.slot_hit_at(column, row);
         }
         match self.model.hit_rect_at(column, row) {
-            Some((
-                rect,
-                WorkspaceHit::Extension(ExtensionHit::Code(hit) | ExtensionHit::Spec(hit)),
-            )) => Some((rect, hit)),
+            Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => Some((rect, hit)),
             _ => None,
         }
     }
@@ -284,10 +281,7 @@ impl Attach<'_> {
     /// Hands the open surface a pointer gesture the host finished itself.
     pub(super) fn surface_mouse(&mut self, hit: ViewHit) {
         let space = self.code_space();
-        if let Some(view) = self.model.spec.as_mut() {
-            let outcome = spec::handle_mouse(view, Some(hit), space);
-            self.follow_spec(Some(outcome));
-        } else if let Some(slot) = self.model.declared_open {
+        if let Some(slot) = self.model.declared_open {
             self.model.hit_declared(slot, hit, space);
         } else if let Some(view) = self.model.code.as_mut() {
             let outcome = code::handle_mouse(view, Some(hit), space);
@@ -307,8 +301,6 @@ impl Attach<'_> {
                 .engine(&slot.owner)
                 .map(|engine| engine.text(&slot.surface.id, lines))
                 .unwrap_or_default()
-        } else if let Some(view) = self.model.spec.as_ref() {
-            spec::text(view, lines)
         } else if let Some(view) = self.model.code.as_ref() {
             code::text(view, lines)
         } else {
@@ -320,9 +312,7 @@ impl Attach<'_> {
     pub(super) fn scroll_surface_content(&mut self, direction: ScrollDirection) {
         let space = self.code_space();
         let at_end = self.model.code_scrollbars.content_at_end;
-        if let Some(view) = self.model.spec.as_mut() {
-            spec::handle_scroll(view, direction);
-        } else if self.model.declared_open.is_some() {
+        if self.model.declared_open.is_some() {
             self.model.scroll_declared(
                 uze_extensions::view::ScrollTarget::Content,
                 direction,
@@ -337,10 +327,9 @@ impl Attach<'_> {
     /// content.
     pub(super) fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
         match self.model.hit_at(column, row) {
-            Some(WorkspaceHit::Extension(
-                ExtensionHit::Code(ViewHit::DragContentScrollbar)
-                | ExtensionHit::Spec(ViewHit::DragContentScrollbar),
-            )) => true,
+            Some(WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar))) => {
+                true
+            }
             Some(WorkspaceHit::Extension(ExtensionHit::Declared {
                 slot,
                 hit: ViewHit::DragContentScrollbar,
@@ -364,10 +353,7 @@ impl Attach<'_> {
         let Some(bar) = self.model.code_scrollbars.content_bar else {
             return;
         };
-        if let Some(view) = self.model.spec.as_mut() {
-            spec::scroll_to(view, bar.first_at(row));
-            self.model.dirty = true;
-        } else if let Some(view) = self.model.code.as_mut() {
+        if let Some(view) = self.model.code.as_mut() {
             code::scroll_to(view, bar.first_at(row));
             self.model.dirty = true;
         } else if self.model.declared_open.is_some() {
@@ -424,28 +410,6 @@ impl Attach<'_> {
         self.tell_the_code_surface(command);
     }
 
-    /// The spec surface: its own door closes it, the other surfaces'
-    /// doors lead there, and everything else is a command it answers.
-    pub(super) fn spec_action(&mut self, action: Action) {
-        match action {
-            Action::ToggleSpec => self.model.close_spec(),
-            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
-            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
-            Action::ToggleArchitect => open_architect(&mut self.model),
-            _ => {
-                let space = self.code_space();
-                let outcome = crate::ui::extension_view::command_for(action).and_then(|command| {
-                    self.model
-                        .spec
-                        .as_mut()
-                        .map(|view| spec::handle_command(view, command, space))
-                });
-                self.follow_spec(outcome);
-            }
-        }
-        self.model.dirty = true;
-    }
-
     /// The view standing in a slot: its own door closes it, the doors lead
     /// to the other surfaces, a plugin's key opens the inspector beside it,
     /// and everything else is a command its engine answers. Esc puts the
@@ -454,6 +418,9 @@ impl Attach<'_> {
     pub(super) fn declared_action(&mut self, action: Action) {
         match action {
             Action::ToggleArchitect if self.model.showing(architect::CATALOG.id) => {
+                self.model.close_declared();
+            }
+            Action::ToggleSpec if self.model.showing(spec::CATALOG.id) => {
                 self.model.close_declared();
             }
             Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
@@ -472,18 +439,6 @@ impl Attach<'_> {
             }
         }
         self.model.dirty = true;
-    }
-
-    /// What the spec surface asked for by answering: to stay, to be
-    /// closed, or to hand a document to the code surface.
-    pub(super) fn follow_spec(&mut self, outcome: Option<spec::SpecOutcome>) {
-        match outcome {
-            Some(spec::SpecOutcome::Close) => self.model.close_spec(),
-            Some(spec::SpecOutcome::OpenPath { project, target }) => {
-                open_code_at(&mut self.model, &project, &target);
-            }
-            Some(spec::SpecOutcome::Stay) | None => {}
-        }
     }
 
     /// Hands one command down, and does what the surface asks back.

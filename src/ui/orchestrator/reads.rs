@@ -1326,25 +1326,6 @@ pub(super) fn spawn_changes_refresh(
     });
 }
 
-/// The changes in flight in a checkout, counted, for the sidebar.
-pub(super) struct SpecSummaryResolution {
-    pub(super) cwd: PathBuf,
-    pub(super) summary: Option<spec::Summary>,
-}
-
-/// What the sidebar's spec section last read, and when.
-pub(super) struct SpecSummaryState {
-    pub(super) cwd: PathBuf,
-    pub(super) summary: Option<spec::Summary>,
-    pub(super) checked_at: Instant,
-}
-
-/// A checkout's specs, read for the checkout they were asked about.
-pub(super) struct SpecResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: spec::SpecAnswer,
-}
-
 /// The checkout measured for the code surface's map, tagged with the
 /// checkout it was measured from — an answer landing after the viewer
 /// moved to another tab describes a repository nobody is looking at.
@@ -1352,55 +1333,6 @@ pub(super) struct MeasureResolution {
     pub(super) root: PathBuf,
     /// `None` outside a repository, where there is nothing to measure.
     pub(super) measure: Option<code::Measure>,
-}
-
-/// Counting the changes in flight: a directory walk and a read of every
-/// task list, none of it for the render thread.
-pub(super) fn spawn_spec_summary(
-    cwd: PathBuf,
-    target: Option<String>,
-    sender: mpsc::Sender<SpecSummaryResolution>,
-) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.spec_summary", parent: &parent);
-        let summary = answered_or(
-            || spec::summary(&WorkspaceHost, &cwd, target.as_deref()),
-            None,
-        );
-        let _ = sender.send(SpecSummaryResolution { cwd, summary });
-    });
-}
-
-/// Walking the dialect's directories, reading every document in them and
-/// asking Git which of them the checkout touched — none of it the render
-/// thread's to wait on. The branch the checkout delivers to comes from
-/// the application, the one question here that is not the checkout's own.
-pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sender<SpecResolution>) {
-    let home = home.clone();
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.spec_read", parent: &parent);
-        let silence = spec::SpecAnswer {
-            root: root.clone(),
-            branch: String::new(),
-            theme: String::new(),
-            found: spec::Found::NoLayout,
-            subjects: Vec::new(),
-        };
-        let answer = answered_or(
-            || {
-                let target = tui_application(home.clone())
-                    .ok()
-                    .and_then(|app| app.workspace().delivery_policy(&root))
-                    .and_then(|policy| policy.target);
-                let places = crate::ui::extension_host::artifacts_declared_in(&root);
-                spec::read_spec(&WorkspaceHost, &root, target.as_deref(), &places)
-            },
-            silence,
-        );
-        let _ = sender.send(SpecResolution { root, answer });
-    });
 }
 
 /// Measuring the checkout for the code surface's map: a `git grep` over
@@ -1813,6 +1745,7 @@ pub(super) fn spawn_engine_jobs(
     extension: super::declared::Owner,
     jobs: Vec<uze_extensions::contract::Job>,
     lanes: uze_extensions::contract::Lanes,
+    home: &UzeHome,
     sender: mpsc::Sender<EngineAnswer>,
 ) {
     fn answered(
@@ -1824,6 +1757,7 @@ pub(super) fn spawn_engine_jobs(
             .unwrap_or_else(|_| fallback())
     }
     let parent = tracing::Span::current();
+    let home = home.clone();
     match lanes {
         uze_extensions::contract::Lanes::Serial => {
             thread::spawn(move || {
@@ -1831,7 +1765,7 @@ pub(super) fn spawn_engine_jobs(
                 for job in jobs {
                     let _ = sender.send(EngineAnswer {
                         extension: extension.clone(),
-                        answer: answered(job, &WorkspaceHost),
+                        answer: answered(job, &EngineHost { home: home.clone() }),
                     });
                 }
             });
@@ -1841,12 +1775,13 @@ pub(super) fn spawn_engine_jobs(
                 let sender = sender.clone();
                 let parent = parent.clone();
                 let extension = extension.clone();
+                let home = home.clone();
                 thread::spawn(move || {
                     let _pass =
                         crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
                     let _ = sender.send(EngineAnswer {
                         extension: extension.clone(),
-                        answer: answered(job, &WorkspaceHost),
+                        answer: answered(job, &EngineHost { home: home.clone() }),
                     });
                 });
             }

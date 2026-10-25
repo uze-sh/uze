@@ -187,7 +187,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
                 WorkspaceHit::OpenSpec,
                 Symbol::Spec,
                 "spec",
-                model.spec.is_some(),
+                model.showing(spec::CATALOG.id),
             ),
             (
                 architect::CATALOG.id,

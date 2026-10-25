@@ -164,13 +164,17 @@ impl Hosted for DeclaredExtension {
 }
 
 impl Hosted for uze_extensions::architect::ArchitectExtension {}
+impl Hosted for uze_extensions::spec::SpecExtension {}
 
 /// The built-ins hosted on the slot path, each with its engine.
 fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
-    vec![(
-        architect::CATALOG.id,
-        Box::new(architect::ArchitectExtension::default()),
-    )]
+    vec![
+        (
+            architect::CATALOG.id,
+            Box::new(architect::ArchitectExtension::default()),
+        ),
+        (spec::CATALOG.id, Box::new(spec::SpecExtension::default())),
+    ]
 }
 
 fn recorded_line(action: &RecordedAction) -> String {
@@ -655,6 +659,29 @@ impl WorkspaceModel {
         self.offers_extension(&owner.switch_id())
     }
 
+    /// The spec summary's slot and what it draws for the checkout in front,
+    /// folded as the operator left it: it keeps its own place at the
+    /// sidebar's foot, on the timeline, rather than a plugin's.
+    pub(super) fn spec_summary(&self) -> Option<(SlotId, Section)> {
+        if !self.offers_extension(spec::CATALOG.id) {
+            return None;
+        }
+        let declared = &self.remembered.declared;
+        let slot = declared.builtin_slot(spec::CATALOG.id, spec::SUMMARY)?;
+        let section = declared
+            .engine(&Owner::Builtin(spec::CATALOG.id))?
+            .section(spec::SUMMARY, !self.spec_summary_open)?;
+        Some((slot, section))
+    }
+
+    /// Whether `slot` is the spec summary's.
+    pub(super) fn is_spec_summary(&self, slot: SlotId) -> bool {
+        self.remembered
+            .declared
+            .builtin_slot(spec::CATALOG.id, spec::SUMMARY)
+            == Some(slot)
+    }
+
     /// The views plugins declare that the tab strip offers, in slot order:
     /// a built-in's has a door of its own.
     pub(super) fn declared_views(&self) -> impl Iterator<Item = &DeclaredSlot> {
@@ -898,7 +925,9 @@ impl WorkspaceModel {
             .slots
             .iter()
             .filter(|slot| {
-                slot.surface.slot == SurfaceSlot::Section && self.offers_declared(&slot.owner)
+                slot.surface.slot == SurfaceSlot::Section
+                    && slot.owner.declared().is_some()
+                    && self.offers_declared(&slot.owner)
             })
             .filter_map(|slot| {
                 let errors = declared.errors_of(&slot.owner);

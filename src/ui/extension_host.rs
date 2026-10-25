@@ -604,6 +604,74 @@ fn count_lines_of(path: &Path) -> u32 {
     }
 }
 
+/// The grant a hosted engine's jobs run with: the workspace's, and the
+/// one question about a checkout that is the application's rather than the
+/// machine's, which needs the home it was started on.
+pub struct EngineHost {
+    pub home: uze_application::UzeHome,
+}
+
+impl uze_extensions::Host for EngineHost {
+    fn delivery_target(&self, checkout: &Path) -> Option<String> {
+        super::tui_application(self.home.clone())
+            .ok()
+            .and_then(|app| app.workspace().delivery_policy(checkout))
+            .and_then(|policy| policy.target)
+    }
+
+    fn artifact_source(&self, project: &Path) -> uze_extensions::ArtifactSource {
+        WorkspaceHost.artifact_source(project)
+    }
+
+    fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
+        WorkspaceHost.git(root, args, answers)
+    }
+
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        WorkspaceHost.repository_root(path)
+    }
+
+    fn read_file(&self, path: &Path) -> Result<String, Unreadable> {
+        WorkspaceHost.read_file(path)
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, Unreadable> {
+        WorkspaceHost.read_bytes(path)
+    }
+
+    fn list_dir(&self, path: &Path) -> Result<Vec<uze_extensions::DirEntry>, String> {
+        WorkspaceHost.list_dir(path)
+    }
+
+    fn write_file(&self, root: &Path, path: &Path, contents: &str) -> Result<(), String> {
+        WorkspaceHost.write_file(root, path, contents)
+    }
+
+    fn delete_file(&self, root: &Path, path: &Path) -> Result<(), String> {
+        WorkspaceHost.delete_file(root, path)
+    }
+
+    fn delete_dir(&self, root: &Path, path: &Path) -> Result<(), String> {
+        WorkspaceHost.delete_dir(root, path)
+    }
+
+    fn rename_path(&self, root: &Path, from: &Path, to: &Path) -> Result<(), String> {
+        WorkspaceHost.rename_path(root, from, to)
+    }
+
+    fn restore_to_head(&self, root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        WorkspaceHost.restore_to_head(root, paths)
+    }
+
+    fn count_lines(&self, path: &Path) -> u32 {
+        WorkspaceHost.count_lines(path)
+    }
+
+    fn syntax_theme(&self) -> String {
+        WorkspaceHost.syntax_theme()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use uze_extensions::{Host, Unreadable};

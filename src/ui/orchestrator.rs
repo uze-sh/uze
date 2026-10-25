@@ -5,7 +5,7 @@
 //! it opens over itself reads as one product, not two.
 
 use super::tui_application;
-use crate::ui::extension_host::WorkspaceHost;
+use crate::ui::extension_host::{EngineHost, WorkspaceHost};
 use crate::ui::extension_view;
 use crate::ui::root_picker::RootPicker;
 use crate::ui::selection::{self, Selection};
@@ -102,10 +102,6 @@ const TIMELINE_COMMITS: usize = 30;
 /// compares patches across the branch and its target, and history does
 /// not move at the pace a working tree does.
 const TIMELINE_REFRESH: Duration = Duration::from_secs(3);
-/// How often the sidebar's spec summary is re-read while the tab stays
-/// put. Slower still: task lists are ticked by hand, a few times an hour,
-/// and each read walks every change in flight.
-const SPEC_SUMMARY_REFRESH: Duration = Duration::from_secs(5);
 
 /// How far apart two reads of the same thing are kept: never closer than
 /// `floor`, and never closer than a few times what the last one took.
@@ -1027,10 +1023,7 @@ impl WorkspaceHit {
     /// an extension keeps in the sidebar, which answer as the sidebar does.
     /// A slot's are told apart by the model, which knows which is open.
     pub(super) fn is_open_surfaces(self) -> bool {
-        matches!(
-            self,
-            WorkspaceHit::Extension(ExtensionHit::Code(_) | ExtensionHit::Spec(_))
-        )
+        matches!(self, WorkspaceHit::Extension(ExtensionHit::Code(_)))
     }
 
     /// Whether this is one of recent's own targets, its way in and out
@@ -1486,8 +1479,6 @@ struct Channels {
     labels: Answers<LabelResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
-    spec: Answers<SpecResolution>,
-    spec_summaries: Answers<SpecSummaryResolution>,
     /// The declared extensions installed plugins carry: found, compiled and
     /// their fixtures read, or one of them compiled again after a save.
     extension_jobs: Answers<ExtensionAnswer>,
@@ -1579,11 +1570,6 @@ struct Remembered {
     /// The checkout a background Git read is out for, so the workspace
     /// asks once rather than once per frame — see [`spawn_git_read`].
     git_pending: Option<PathBuf>,
-    /// The sidebar's spec summary for the checkout in front, and the one
-    /// being read — kept like the badge, so a tab switch shows the last
-    /// answer until the new one lands rather than an empty column.
-    spec_summary: Option<SpecSummaryState>,
-    spec_summary_pending: Option<PathBuf>,
     /// How long the last of those reads took (see [`paced`]).
     git_took: Duration,
     /// Per-pane reconstruction of the line being typed, flushed on Enter.
@@ -1595,9 +1581,6 @@ struct Remembered {
     /// being rewritten while nobody is looking; within a session it is
     /// worth returning to, and across runs it is worth nothing.
     code_places: BTreeMap<PathBuf, code::CodePlace>,
-    /// The same for the spec surface: which change, and which of its
-    /// documents.
-    spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
     /// The surfaces plugins declare, each with the engine that answers for
     /// it, and where the viewer was on each per checkout.
     declared: DeclaredExtensions,
@@ -1916,18 +1899,11 @@ struct WorkspaceModel {
     /// dismissal but a click on whatever it landed on. `Esc`, either
     /// shortcut that opens it, or putting another tab in front closes it.
     code: Option<code::CodeView>,
-    /// Open state of the spec surface. It borrows the code surface's
-    /// frame — the navigator width, its scroll, the scrollbars — because
-    /// the two are never open together and the frame is the host's, not
-    /// either extension's.
-    spec: Option<spec::SpecView>,
-    /// The checkout it belongs to, and whether it has been read yet: asked
-    /// once per opening, and the answer carries the root, so one that
-    /// arrives for a surface since closed or reopened elsewhere is dropped.
-    spec_root: Option<PathBuf>,
-    spec_asked: bool,
-    /// The declared view standing in the pane, by its slot, and the
-    /// checkout it was opened on — what its place is remembered under.
+    /// The view standing in a slot in the pane, by its slot, and the
+    /// checkout it was opened on — what its place is remembered under. It
+    /// borrows the code surface's frame — the navigator width, its scroll,
+    /// the scrollbars — because the two are never open together and the
+    /// frame is the host's, not either extension's.
     declared_open: Option<SlotId>,
     declared_root: Option<PathBuf>,
     /// Whether the inspector stands beside it.
@@ -2397,10 +2373,7 @@ impl WorkspaceModel {
     /// that isn't already claimed by one of them straight into the focused
     /// pane's PTY instead of dropping it.
     fn no_modal_open(&self) -> bool {
-        self.chrome_answers()
-            && self.code.is_none()
-            && self.spec.is_none()
-            && self.declared_open.is_none()
+        self.chrome_answers() && self.code.is_none() && self.declared_open.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is

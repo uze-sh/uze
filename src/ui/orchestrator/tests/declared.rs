@@ -496,7 +496,7 @@ fn a_declared_section_folds_from_its_header() {
         .declared
         .slots
         .iter()
-        .find(|slot| slot.surface.slot == SurfaceSlot::Section)
+        .find(|slot| slot.surface.slot == SurfaceSlot::Section && slot.owner.declared().is_some())
         .expect("the band is hosted")
         .id;
     let mut driven = driven(model, &home).on_a_roomy_terminal();
@@ -1603,8 +1603,12 @@ fn fetcher(_compiled: CompiledExtension, _locale: &str) -> Box<dyn Hosted> {
 /// fallback rather than leaving the engine waiting.
 #[test]
 fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-jobs"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
+    // The spec counts the checkout in front on the same pass; off, only
+    // this extension's jobs are handed out.
+    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
     model.remembered.declared = DeclaredExtensions {
         engine: fetcher,
         discovered_at: Some(std::time::Instant::now()),
@@ -1630,7 +1634,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
     let engines = declared.engines.keys().filter(|owner| ours(owner)).count();
     assert_eq!(engines, 1);
     let (sender, receiver) = std::sync::mpsc::channel();
-    assert_eq!(model.schedule_engine_jobs(&sender), 2);
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 2);
     let mut absorbed = 0;
     while absorbed < 2 * engines {
         let answer = receiver
@@ -1639,7 +1643,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         assert!(model.absorb_engine_answer(answer));
         absorbed += 1;
     }
-    assert_eq!(model.schedule_engine_jobs(&sender), 0, "asked once");
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "asked once");
     let engine = model
         .remembered
         .declared

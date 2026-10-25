@@ -773,12 +773,6 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.code_measures.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_measure(resolution);
         }
-        while let Ok(resolution) = self.channels.spec.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_spec(resolution);
-        }
-        while let Ok(resolution) = self.channels.spec_summaries.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_spec_summary(resolution);
-        }
         while let Ok(answer) = self.channels.extension_jobs.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_extension_answer(answer);
         }
@@ -801,10 +795,6 @@ impl Attach<'_> {
             .schedule_file_request(&self.channels.code_files.sender);
         self.model
             .schedule_code_measure(&self.channels.code_measures.sender);
-        self.model
-            .schedule_spec_read(self.home, &self.channels.spec.sender);
-        self.model
-            .schedule_spec_summary(&self.channels.spec_summaries.sender);
         self.model.schedule_extension_jobs(
             self.home,
             crate::ui::extension_switch::plugins_revision(),
@@ -813,7 +803,7 @@ impl Attach<'_> {
         );
         let _ = self
             .model
-            .schedule_engine_jobs(&self.channels.engine_answers.sender);
+            .schedule_engine_jobs(self.home, &self.channels.engine_answers.sender);
     }
 
     /// Advances the activity spinner while anything it animates is on

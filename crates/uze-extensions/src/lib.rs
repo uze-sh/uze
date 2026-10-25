@@ -78,10 +78,6 @@ pub enum ExtensionHit {
     /// file list than in a list of commits, and the host is the only side
     /// that knows which of the two it drew.
     CodeTimeline(view::ViewHit),
-    /// The spec extension's full-frame surface.
-    Spec(view::ViewHit),
-    /// The spec extension's sidebar section — its changes in flight.
-    SpecSummary(view::ViewHit),
     /// A surface a plugin declared, by the number the host gave the slot it
     /// stands in. One variant for every declared surface, view and section
     /// alike: which extension and which of its surfaces a slot is, is the

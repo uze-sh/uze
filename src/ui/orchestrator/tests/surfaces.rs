@@ -96,7 +96,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
     for open in [
         (|model: &mut WorkspaceModel| open_code(model, uze_extensions::code::ContentMode::Contents))
             as fn(&mut WorkspaceModel),
-        |model| model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned())),
+        |model| open_spec(model),
         |model| open_architect(model),
     ] {
         let (mut model, first, _second) = two_agents_with_shells();
@@ -160,7 +160,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
         match (
             model.code.as_ref().map(CodeView::showing),
             model.showing(uze_extensions::architect::CATALOG.id),
-            model.spec.is_some(),
+            model.showing(uze_extensions::spec::CATALOG.id),
         ) {
             (Some(mode), false, false) => format!("code {mode:?}"),
             (None, true, false) => "architect".to_owned(),
@@ -255,7 +255,13 @@ fn the_spec_button_opens_and_closes_the_spec_surface() {
 
     let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.spec.is_some(), "opened by its button");
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "opened by its button"
+    );
     assert!(driven.attach.model.code.is_none());
     assert!(
         !driven
@@ -267,7 +273,13 @@ fn the_spec_button_opens_and_closes_the_spec_surface() {
     driven.frame();
     let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.spec.is_none(), "closed in one click");
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "closed in one click"
+    );
 }
 
 fn switched_off(ids: &[&str]) -> std::collections::BTreeSet<String> {
@@ -379,14 +391,20 @@ fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
         uze_extensions::code::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
     ]));
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-switched-off-reads",
+    ));
     let (git, _git_answers) = std::sync::mpsc::channel();
-    let (summary, _summary_answers) = std::sync::mpsc::channel();
+    let (engines, _engine_answers) = std::sync::mpsc::channel();
 
     model.schedule_git_read(&git);
-    model.schedule_spec_summary(&summary);
+    assert_eq!(
+        model.schedule_engine_jobs(&home, &engines),
+        0,
+        "the spec counts nothing"
+    );
 
     assert!(model.remembered.git_pending.is_none());
-    assert!(model.remembered.spec_summary_pending.is_none());
     assert!(!model.absorb_git_read(GitResolution {
         cwd: PathBuf::from("/repo"),
         answer: GitAnswer::Summary(None),
@@ -403,11 +421,11 @@ fn an_extension_switched_back_on_opens_again() {
     select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[uze_extensions::spec::CATALOG.id]));
     open_spec(&mut model);
-    assert!(model.spec.is_none());
+    assert!(!model.showing(uze_extensions::spec::CATALOG.id));
 
     model.follow_extension_switch(std::collections::BTreeSet::new());
     open_spec(&mut model);
-    assert!(model.spec.is_some());
+    assert!(model.showing(uze_extensions::spec::CATALOG.id));
 }
 
 /// The surface seals the keyboard: a letter it has no use for is not
@@ -425,7 +443,12 @@ fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
 
     driven.press_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
 
-    assert!(driven.attach.model.spec.is_some());
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id)
+    );
     assert!(
         !driven
             .sent()

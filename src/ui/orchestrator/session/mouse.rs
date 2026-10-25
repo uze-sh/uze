@@ -337,31 +337,6 @@ impl Attach<'_> {
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
-            _ if self.model.spec.is_some() && on_surface => {
-                let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
-                    Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
-                    _ => None,
-                };
-                // The frame is the code surface's, and so are the three
-                // gestures that are about its geometry rather than its rows.
-                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
-                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
-                } else if view_hit == Some(ViewHit::DragContentScrollbar)
-                    && self.model.code_scrollbars.content_bar.is_some()
-                {
-                    self.model.dragging_code_content = true;
-                    self.scroll_code_content_to(mouse.row);
-                } else {
-                    let space = self.code_space();
-                    let outcome = self
-                        .model
-                        .spec
-                        .as_mut()
-                        .map(|view| spec::handle_mouse(view, view_hit, space));
-                    self.follow_spec(outcome);
-                }
-                self.model.dirty = true;
-            }
             _ if self.model.declared_open.is_some() && on_surface => {
                 self.slot_press(mouse.column, mouse.row);
             }
@@ -697,7 +672,10 @@ impl Attach<'_> {
                 self.model.remember_sidebar();
                 self.model.dirty = true;
             }
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_spec_summary(slot) => {
                 toggle_spec_summary(&mut self.model);
             }
             WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
@@ -1104,6 +1082,8 @@ impl Attach<'_> {
                     _ => crate::ui::input::PREVIEW_WHEEL,
                 });
             }
+            // Over a navigator the wheel scrolls the list, which is the
+            // host's; anywhere else the content, which is the engine's.
             _ if self.model.declared_open.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
@@ -1111,19 +1091,11 @@ impl Attach<'_> {
                     ScrollDirection::Down
                 };
                 let space = self.code_space();
-                self.model.scroll_declared(
-                    uze_extensions::view::ScrollTarget::Content,
-                    direction,
-                    space,
-                );
-            }
-            _ if self.model.spec.is_some() && in_pane => {
-                let direction = if mouse.kind == MouseEventKind::ScrollUp {
-                    ScrollDirection::Up
-                } else {
-                    ScrollDirection::Down
-                };
-                let target = match on_content_scrollbar {
+                let navigated = self
+                    .model
+                    .declared_view(space)
+                    .is_some_and(|view| view.navigator.is_some());
+                let target = match on_content_scrollbar || !navigated {
                     true => Some(uze_extensions::view::ScrollTarget::Content),
                     false => crate::ui::extension_view::scroll_target(
                         layout.pane,
@@ -1136,15 +1108,11 @@ impl Attach<'_> {
                     Some(uze_extensions::view::ScrollTarget::Navigator) => {
                         self.model.code_tree_scroll =
                             self.model.code_tree_scroll.scrolled(direction);
+                        self.model.dirty = true;
                     }
-                    Some(uze_extensions::view::ScrollTarget::Content) => {
-                        if let Some(view) = self.model.spec.as_mut() {
-                            spec::handle_scroll(view, direction);
-                        }
-                    }
+                    Some(target) => self.model.scroll_declared(target, direction, space),
                     None => {}
                 }
-                self.model.dirty = true;
             }
             _ if self.model.code.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
@@ -1517,7 +1485,9 @@ impl Attach<'_> {
             WorkspaceHit::OpenArchitect if self.model.showing(architect::CATALOG.id) => {
                 self.model.close_declared();
             }
-            WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
+            WorkspaceHit::OpenSpec if self.model.showing(spec::CATALOG.id) => {
+                self.model.close_declared();
+            }
             WorkspaceHit::OpenDeclared(slot) if self.model.declared_open == Some(slot) => {
                 self.model.close_declared();
             }
@@ -1609,26 +1579,24 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
-            WorkspaceHit::Extension(ExtensionHit::Code(_) | ExtensionHit::Spec(_)) => {}
-            // The spec section: its header folds it, and a change opens the
-            // surface on that change. Nothing else is drawn in it.
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {
-                ViewHit::ToggleSection => self.press_foot_header(
-                    WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
-                    hit_rect,
-                ),
-                ViewHit::SelectItem(index) => {
-                    let change = self
-                        .model
-                        .spec_summary()
-                        .and_then(|summary| summary.changes.get(index))
-                        .map(|change| change.name.clone());
-                    if let Some(change) = change {
-                        open_spec_at(&mut self.model, &change);
+            WorkspaceHit::Extension(ExtensionHit::Code(_)) => {}
+            // The spec section: its header is a handle on the timeline and
+            // folds it, and a change opens the surface on that change.
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
+                if self.model.is_spec_summary(slot) =>
+            {
+                match hit {
+                    ViewHit::ToggleSection => self.press_foot_header(
+                        WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
+                        hit_rect,
+                    ),
+                    ViewHit::SelectItem(_) => {
+                        let space = self.code_space();
+                        self.model.hit_declared(slot, hit, space);
                     }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             // The docked drawer's: the engine's, told the room its view
             // had, and the drawer has the navigation keys from now on.
             // The open view's scrollbar is the host's too, as the code

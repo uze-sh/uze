@@ -1,4 +1,4 @@
-//! Opening and closing the extension surfaces over the workspace: code, architect, spec and the views plugins declare.
+//! Opening and closing the extension surfaces over the workspace: code, and the ones hosted in slots (architect, spec and the views plugins declare).
 
 use super::*;
 
@@ -34,17 +34,6 @@ impl WorkspaceModel {
             .insert(view.root().to_path_buf(), view.place());
     }
 
-    /// Closes the spec surface, keeping where the viewer was on this
-    /// checkout, for the reason [`Self::close_code`] does.
-    pub(super) fn close_spec(&mut self) {
-        let (Some(view), Some(root)) = (self.spec.take(), self.spec_root.clone()) else {
-            return;
-        };
-        if let Some(place) = view.place() {
-            self.remembered.spec_places.insert(root, place);
-        }
-    }
-
     pub(super) fn offers_extension(&self, id: &str) -> bool {
         !self.disabled_extensions.contains(id)
     }
@@ -68,9 +57,19 @@ impl WorkspaceModel {
             self.commit_detail = None;
             self.commit_detail_pending = None;
         }
-        if !self.offers_extension(spec::CATALOG.id) {
-            self.close_spec();
-            self.remembered.spec_summary = None;
+        // What a section switched off was drawn from goes now, not on
+        // the next pass.
+        let offered: Vec<bool> = self
+            .remembered
+            .declared
+            .engines
+            .keys()
+            .map(|owner| self.offers_declared(owner))
+            .collect();
+        for (engine, offered) in self.remembered.declared.engines.values_mut().zip(offered) {
+            if !offered {
+                engine.focus(None);
+            }
         }
         if self
             .open_declared_slot()
@@ -85,7 +84,6 @@ impl WorkspaceModel {
     /// Closes whichever surface is standing in the pane.
     pub(super) fn close_extension(&mut self) {
         self.close_code();
-        self.close_spec();
         self.close_declared();
     }
 
@@ -122,37 +120,13 @@ pub(super) fn open_architect(model: &mut WorkspaceModel) {
 }
 
 pub(super) fn open_spec(model: &mut WorkspaceModel) {
-    open_spec_on(model, None);
-}
-
-/// The spec surface, opened on the change a summary row named: the step
-/// from the macro to the change it counts.
-pub(super) fn open_spec_at(model: &mut WorkspaceModel, change: &str) {
-    open_spec_on(model, Some(spec::SpecPlace::change(change)));
-}
-
-pub(super) fn open_spec_on(model: &mut WorkspaceModel, sent_to: Option<spec::SpecPlace>) {
-    if !model.offers_extension(spec::CATALOG.id) {
-        return;
+    let slot = model
+        .remembered
+        .declared
+        .builtin_slot(spec::CATALOG.id, spec::DOCUMENT);
+    if let Some(slot) = slot {
+        open_declared(model, slot);
     }
-    let Some(root) = model.focused_cwd() else {
-        return;
-    };
-    model.close_code();
-    model.close_spec();
-    model.close_declared();
-    let place = sent_to.or_else(|| model.remembered.spec_places.get(&root).cloned());
-    let display_root = crate::ui::display_project_path(&root);
-    model.stand_extension_in_front();
-    model.spec_root = Some(root);
-    model.spec_asked = false;
-    let view = spec::SpecView::opening(display_root);
-    model.spec = Some(match place {
-        Some(place) => view.resuming(place),
-        None => view,
-    });
-    model.code_tree_scroll = extension_view::NavigatorScroll::default();
-    model.dirty = true;
 }
 
 /// The code surface, opened on a path a diagram pointed at: the last
@@ -172,7 +146,6 @@ pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &
         display_root,
         code::ContentMode::Contents,
     );
-    model.close_spec();
     model.close_declared();
     model.stand_extension_in_front();
     model.code = Some(view.resuming(place));
@@ -192,7 +165,6 @@ pub(super) fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
     let display_root = crate::ui::display_project_path(&cwd);
     let place = model.remembered.code_places.get(&cwd).cloned();
     let view = code::CodeView::opening(cwd, display_root, mode);
-    model.close_spec();
     model.close_declared();
     model.stand_extension_in_front();
     model.code = Some(match place {

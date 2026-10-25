@@ -274,9 +274,9 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // The spec section sits on the timeline: what the work intends over
     // what it did. Reserved the same way, before the tree.
     let spec_summary = model.spec_summary();
-    let spec_reserved = spec_summary.map_or(0, |summary| {
+    let spec_reserved = spec_summary.as_ref().map_or(0, |(_, section)| {
         spec_summary_height(
-            summary,
+            section,
             model.spec_summary_open,
             rows.remaining()
                 .saturating_sub(steps_height)
@@ -475,7 +475,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         declared_top += height;
     }
 
-    if let Some(summary) = spec_summary
+    if let Some((slot, section)) = &spec_summary
         && spec_reserved > 0
     {
         rows.scroll_past(0);
@@ -488,7 +488,8 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         rows.y = column_bottom - reserved - spec_reserved;
         metrics.marquee |= render_spec_summary(
             frame,
-            summary,
+            *slot,
+            section,
             model,
             grabbed(spec_reserved),
             &mut rows,
@@ -512,7 +513,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
 /// are what the sidebar is for. Nothing when even the header would not
 /// fit.
 pub(in crate::ui::orchestrator) fn spec_summary_height(
-    summary: &uze_extensions::spec::Summary,
+    section: &uze_extensions::view::Section,
     open: bool,
     remaining: u16,
 ) -> u16 {
@@ -520,7 +521,7 @@ pub(in crate::ui::orchestrator) fn spec_summary_height(
     if budget < SECTION_CHROME {
         return 0;
     }
-    let changes = u16::try_from(summary.changes.len()).unwrap_or(u16::MAX);
+    let changes = u16::try_from(section.rows.len()).unwrap_or(u16::MAX);
     if open {
         SECTION_CHROME + changes + SECTION_AIR
     } else {
@@ -534,37 +535,34 @@ pub(in crate::ui::orchestrator) fn spec_summary_height(
 /// host state, and tags the hits it gets back.
 pub(super) fn render_spec_summary(
     frame: &mut ratatui::Frame<'_>,
-    summary: &uze_extensions::spec::Summary,
+    slot: SlotId,
+    section: &uze_extensions::view::Section,
     model: &WorkspaceModel,
     dragging: bool,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit))) => Some(hit),
+        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: over, hit }))
+            if over == slot =>
+        {
+            Some(hit)
+        }
         _ => None,
     };
     let hovered_row = match under {
         Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
-    let on_show = model
-        .spec
-        .as_ref()
-        .and_then(uze_extensions::spec::SpecView::change_on_show)
-        .and_then(|name| {
-            summary
-                .changes
-                .iter()
-                .position(|change| change.name == name)
-        });
-    let lit_rows: Vec<usize> = hovered_row.into_iter().chain(on_show).collect();
+    let lit_rows: Vec<usize> = hovered_row
+        .into_iter()
+        .chain(section.lit.iter().copied())
+        .collect();
     let slid = crate::ui::extension_view::render_section(
         frame,
-        &section,
+        section,
         &mut column,
         SectionState {
             dragging,
@@ -576,7 +574,7 @@ pub(super) fn render_spec_summary(
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {
         (
             rect,
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
         )
     }));
     slid
@@ -1773,7 +1771,8 @@ mod tests {
             done: 0,
             total: 0,
         };
-        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
-        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+        let section = uze_extensions::spec::summary_section(&summary, false, 0);
+        assert_eq!(render::spec_summary_height(&section, true, 40), 1 + 2 + 1);
+        assert_eq!(render::spec_summary_height(&section, false, 40), 1);
     }
 }

@@ -1014,3 +1014,59 @@ pub(super) fn architect_slot(model: &WorkspaceModel) -> u32 {
         )
         .expect("the architect has a slot")
 }
+
+/// The spec's engine, as the slot map hosts it.
+pub(super) fn spec_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::spec::CATALOG.id))
+        .expect("the spec is hosted")
+        .as_mut()
+}
+
+/// Hands the spec's engine a count of the checkout in front, as its job
+/// would have.
+pub(super) fn count_spec(model: &mut WorkspaceModel, summary: uze_extensions::spec::Summary) {
+    let cwd = model.focused_cwd().expect("a checkout in front");
+    let engine = spec_engine(model);
+    engine.focus(Some(&uze_extensions::contract::Checkout {
+        root: cwd.clone(),
+        display: cwd.display().to_string(),
+        target: None,
+    }));
+    engine.absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::spec::SummaryRead {
+            cwd,
+            summary: Some(summary),
+        },
+    ));
+}
+
+/// Hands the open spec view the read of its checkout, as its job would.
+pub(super) fn answer_spec(model: &mut WorkspaceModel, answer: uze_extensions::spec::SpecAnswer) {
+    let root = model.declared_root.clone().expect("opened on a checkout");
+    spec_engine(model).absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::spec::SpecRead { root, answer },
+    ));
+}
+
+/// Where the viewer is on the open spec view.
+pub(super) fn spec_place(model: &WorkspaceModel) -> Option<uze_extensions::spec::SpecPlace> {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(uze_extensions::spec::CATALOG.id))
+        .and_then(|engine| engine.place(uze_extensions::spec::DOCUMENT))
+        .and_then(|place| place.downcast())
+}
+
+/// The slot a spec surface stands in, as its hits are tagged.
+pub(super) fn spec_slot(model: &WorkspaceModel, surface: &str) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(uze_extensions::spec::CATALOG.id, surface)
+        .expect("the spec has the slot")
+}

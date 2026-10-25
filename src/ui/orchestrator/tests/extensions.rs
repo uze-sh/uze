@@ -4,7 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, SpecResolution, SpecSummaryState, WorkspaceModel, open_code, open_spec,
+    ExtensionHit, WorkspaceModel, open_code, open_spec,
     render::{self, compute_layout},
 };
 use crate::ui::theme::{self, Token};
@@ -368,24 +368,26 @@ fn a_sidebar_section_answers_while_a_surface_is_open() {
     ));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    let cwd = model.focused_cwd().expect("a tab in front");
-    model.remembered.spec_summary = Some(SpecSummaryState {
-        cwd,
-        summary: Some(Summary {
+    count_spec(
+        &mut model,
+        Summary {
             changes: vec![ChangeSummary {
                 name: "mine".to_owned(),
                 progress: Some(Progress { done: 1, total: 4 }),
             }],
             done: 1,
             total: 4,
-        }),
-        checked_at: std::time::Instant::now(),
-    });
-    model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned()));
+        },
+    );
+    open_spec(&mut model);
+    let summary = spec_slot(&model, uze_extensions::spec::SUMMARY);
     let mut driven = driven(model, &home);
     driven.frame();
     let header = driven.hit(|hit| {
-        *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection))
+        *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot: summary,
+            hit: ViewHit::ToggleSection,
+        })
     });
     driven.press(header.x, header.y);
     assert!(
@@ -404,10 +406,9 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.timeline_collapsed = false;
-    let cwd = model.focused_cwd().expect("a tab in front");
-    model.remembered.spec_summary = Some(SpecSummaryState {
-        cwd,
-        summary: Some(Summary {
+    count_spec(
+        &mut model,
+        Summary {
             changes: vec![
                 ChangeSummary {
                     name: "mine".to_owned(),
@@ -420,9 +421,9 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
             ],
             done: 3,
             total: 6,
-        }),
-        checked_at: std::time::Instant::now(),
-    });
+        },
+    );
+    let summary = spec_slot(&model, uze_extensions::spec::SUMMARY);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -432,7 +433,12 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
             .model
             .hits
             .iter()
-            .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+            .find(|(_, hit)| {
+                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                    slot: summary,
+                    hit: wanted,
+                })
+            })
             .map(|(rect, _)| *rect)
             .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"))
     };
@@ -450,13 +456,14 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     driven.frame();
     let row = drawn(&driven, ViewHit::SelectItem(1));
     driven.press(row.x, row.y);
-    let place = driven
-        .attach
-        .model
-        .spec
-        .as_ref()
-        .expect("the surface opened")
-        .place();
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "the surface opened"
+    );
+    let place = spec_place(&driven.attach.model);
     assert_eq!(
         place,
         Some(uze_extensions::spec::SpecPlace::change("theirs")),
@@ -484,7 +491,12 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     let bright_name = |wanted: ViewHit, name: &str| {
         let (rect, _) = hits
             .iter()
-            .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+            .find(|(_, hit)| {
+                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                    slot: summary,
+                    hit: wanted,
+                })
+            })
             .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"));
         let text: String = (rect.x..rect.right())
             .map(|column| buffer[(column, rect.y)].symbol())
@@ -503,33 +515,50 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
 #[test]
 fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
     let (mut model, first, second) = two_agents_with_shells();
-    let answer = |root: PathBuf| SpecResolution {
-        root: root.clone(),
-        answer: uze_extensions::spec::SpecAnswer {
-            root,
-            branch: "main".to_owned(),
-            theme: String::new(),
-            found: uze_extensions::spec::Found::NoLayout,
-            subjects: Vec::new(),
-        },
+    let read = |root: PathBuf| {
+        uze_extensions::contract::Opaque::new(uze_extensions::spec::SpecRead {
+            root: root.clone(),
+            answer: uze_extensions::spec::SpecAnswer {
+                root,
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: uze_extensions::spec::Found::NoLayout,
+                subjects: Vec::new(),
+            },
+        })
+    };
+    let reading = |model: &WorkspaceModel| {
+        let space = uze_extensions::view::Size {
+            width: 80,
+            height: 24,
+        };
+        matches!(
+            model.declared_view(space).map(|view| view.content),
+            Some(uze_extensions::view::Content::Message { text, .. }) if text.starts_with("Reading")
+        )
     };
     select_tab(&mut model, first);
     open_spec(&mut model);
-    let asked_for = model.spec_root.clone().expect("a root");
-    model.close_spec();
-    assert!(!model.absorb_spec(answer(asked_for.clone())));
-    assert!(model.spec.is_none(), "nothing reopened");
+    let asked_for = model.declared_root.clone().expect("a root");
+    model.close_declared();
+    spec_engine(&mut model).absorb(read(asked_for.clone()));
+    assert!(
+        !model.showing(uze_extensions::spec::CATALOG.id),
+        "nothing reopened"
+    );
 
     select_tab(&mut model, second);
     open_spec(&mut model);
-    if model.spec_root.as_ref() != Some(&asked_for) {
+    let here = model.declared_root.clone().expect("a root");
+    if here != asked_for {
+        spec_engine(&mut model).absorb(read(asked_for.clone()));
         assert!(
-            !model.absorb_spec(answer(asked_for.clone())),
+            reading(&model),
             "an answer about another checkout is not drawn"
         );
     }
-    let here = model.spec_root.clone().expect("a root");
-    assert!(model.absorb_spec(answer(here)), "its own answer lands");
+    spec_engine(&mut model).absorb(read(here));
+    assert!(!reading(&model), "its own answer lands");
 }
 
 /// Coming back to a checkout's spec surface returns to the document it
@@ -551,26 +580,29 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
             rank: 0,
             text: Ok(format!("# {name}\n")),
         };
-        model.spec.as_mut().expect("open").absorb(spec::SpecAnswer {
-            root: PathBuf::from("/repo"),
-            branch: "main".to_owned(),
-            theme: String::new(),
-            found: spec::Found::Units {
-                dialects: vec!["OpenSpec"],
-                units: vec![spec::Unit {
-                    subject: spec::Subject::Changes,
-                    name: "x".to_owned(),
-                    relative: "openspec/changes/x".to_owned(),
-                    dialect: "OpenSpec",
-                    archives: true,
-                    artifacts: vec![artifact("proposal"), artifact("design")],
-                    progress: None,
-                    own: false,
-                    standing: None,
-                }],
+        answer_spec(
+            model,
+            spec::SpecAnswer {
+                root: PathBuf::from("/repo"),
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: spec::Found::Units {
+                    dialects: vec!["OpenSpec"],
+                    units: vec![spec::Unit {
+                        subject: spec::Subject::Changes,
+                        name: "x".to_owned(),
+                        relative: "openspec/changes/x".to_owned(),
+                        dialect: "OpenSpec",
+                        archives: true,
+                        artifacts: vec![artifact("proposal"), artifact("design")],
+                        progress: None,
+                        own: false,
+                        standing: None,
+                    }],
+                },
+                subjects: vec![spec::Subject::Changes],
             },
-            subjects: vec![spec::Subject::Changes],
-        });
+        );
     };
     let space = uze_extensions::view::Size {
         width: 120,
@@ -581,14 +613,14 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
     open_spec(&mut model);
     answer(&mut model);
     for command in [Command::Expand, Command::SelectNext, Command::SelectNext] {
-        spec::handle_command(model.spec.as_mut().expect("open"), command, space);
+        model.tell_declared(command, space);
     }
-    let left_on = model.spec.as_ref().expect("open").place();
-    model.close_spec();
+    let left_on = spec_place(&model);
+    model.close_declared();
 
     open_spec(&mut model);
     answer(&mut model);
-    assert_eq!(model.spec.as_ref().expect("open").place(), left_on);
+    assert_eq!(spec_place(&model), left_on);
     assert!(left_on.is_some());
 }
 
@@ -873,7 +905,11 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
 /// a job through the workspace's host, and the answer reaches its engine.
 #[test]
 fn opening_the_architect_reads_its_artifacts_as_a_job() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-job"));
     let mut model = agent_session_in("/repo");
+    // The spec counts the checkout in front on the same pass; off, only
+    // the architect's read is handed out.
+    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
     super::open_architect(&mut model);
     assert!(model.showing(uze_extensions::architect::CATALOG.id));
     let reading = |model: &WorkspaceModel| {
@@ -884,8 +920,8 @@ fn opening_the_architect_reads_its_artifacts_as_a_job() {
     };
     assert!(reading(&model));
     let (sender, receiver) = std::sync::mpsc::channel();
-    assert_eq!(model.schedule_engine_jobs(&sender), 1);
-    assert_eq!(model.schedule_engine_jobs(&sender), 0, "asked once");
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "asked once");
     let answer = receiver
         .recv_timeout(std::time::Duration::from_secs(30))
         .expect("the read answers");
@@ -941,4 +977,38 @@ fn the_architects_board_is_dragged_through_its_slot() {
         before,
         "the board moved with the pointer"
     );
+}
+
+/// The spec summary is counted for the checkout in front as its engine's
+/// job, once while it stands, and the answer reaches the sidebar.
+#[test]
+fn the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front() {
+    let repository = uze_testkit::git::Repository::new("orchestrator-spec-count");
+    let target = repository.branch();
+    repository.commit_file("openspec/config.yaml", "schema: spec-driven\n");
+    repository.git(&["checkout", "--quiet", "-b", "work"]);
+    repository.commit_file("openspec/changes/mine/tasks.md", "- [x] a\n- [ ] b\n");
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-count-home"));
+    let root = repository.root().display().to_string();
+    let mut model = agent_session_in(&root);
+    // What the checkout delivers to, as an evaluation left it: what the
+    // count is measured against.
+    model
+        .remembered
+        .targets
+        .insert(super::evaluation_key(repository.root()), target);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
+    assert_eq!(
+        model.schedule_engine_jobs(&home, &sender),
+        0,
+        "one count at a time"
+    );
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the count answers");
+    assert!(model.absorb_engine_answer(answer));
+    let (_, section) = model.spec_summary().expect("the section is drawn");
+    assert_eq!(section.rows.len(), 1);
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "fresh");
 }

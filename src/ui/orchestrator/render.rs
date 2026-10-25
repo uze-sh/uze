@@ -387,9 +387,9 @@ fn render_extension(
                 .code_edge_drag
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
             sliding: match model.hovered {
-                Some(WorkspaceHit::Extension(
-                    ExtensionHit::Code(hit) | ExtensionHit::Spec(hit),
-                )) => Some((hit, model.hovered_for())),
+                Some(WorkspaceHit::Extension(ExtensionHit::Code(hit))) => {
+                    Some((hit, model.hovered_for()))
+                }
                 Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
                     if model.declared_open == Some(slot) =>
                 {
@@ -503,6 +503,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
             Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
                 uze_keys::Scope::Architect
             }
+            Owner::Builtin(id) if *id == uze_extensions::spec::CATALOG.id => uze_keys::Scope::Spec,
             _ => uze_keys::Scope::Declared,
         };
         let tag = Tag::Declared(slot.id);
@@ -512,16 +513,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
             tag,
         });
     }
-    let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) = if let Some(spec) = &model.spec {
-        (
-            uze_extensions::spec::view(
-                spec,
-                crate::ui::extension_view::code_space(area, model.code_tree_width, None),
-            ),
-            uze_keys::Scope::Spec,
-            ExtensionHit::Spec,
-        )
-    } else if let Some(code) = &model.code {
+    let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) = if let Some(code) = &model.code {
         (
             uze_extensions::code::view(
                 code,

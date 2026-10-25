@@ -68,59 +68,6 @@ impl WorkspaceModel {
         spawn_git_read(cwd, target, !timeline_fresh, sender.clone());
     }
 
-    /// Asks for the spec summary of the checkout in front when the one
-    /// held is about another or has gone stale.
-    pub(super) fn schedule_spec_summary(&mut self, sender: &mpsc::Sender<SpecSummaryResolution>) {
-        if !self.offers_extension(spec::CATALOG.id) {
-            return;
-        }
-        let Some(cwd) = self.focused_cwd() else {
-            self.remembered.spec_summary = None;
-            return;
-        };
-        if self.remembered.spec_summary_pending.is_some() {
-            return;
-        }
-        let fresh = self.remembered.spec_summary.as_ref().is_some_and(|state| {
-            state.cwd == cwd && state.checked_at.elapsed() < SPEC_SUMMARY_REFRESH
-        });
-        if fresh {
-            return;
-        }
-        let target = self.remembered.targets.get(&evaluation_key(&cwd)).cloned();
-        self.remembered.spec_summary_pending = Some(cwd.clone());
-        spawn_spec_summary(cwd, target, sender.clone());
-    }
-
-    /// Installs a finished summary if it is still about the checkout in
-    /// front; releases the pending key either way.
-    pub(super) fn absorb_spec_summary(&mut self, resolution: SpecSummaryResolution) -> bool {
-        if self.remembered.spec_summary_pending.as_ref() == Some(&resolution.cwd) {
-            self.remembered.spec_summary_pending = None;
-        }
-        if self.focused_cwd().as_ref() != Some(&resolution.cwd)
-            || !self.offers_extension(spec::CATALOG.id)
-        {
-            return false;
-        }
-        let changed =
-            self.remembered.spec_summary.as_ref().is_none_or(|state| {
-                state.cwd != resolution.cwd || state.summary != resolution.summary
-            });
-        self.remembered.spec_summary = Some(SpecSummaryState {
-            cwd: resolution.cwd,
-            summary: resolution.summary,
-            checked_at: Instant::now(),
-        });
-        changed
-    }
-
-    /// The summary the sidebar draws: the checkout in front's, when it has
-    /// a spec layout.
-    pub(super) fn spec_summary(&self) -> Option<&spec::Summary> {
-        self.remembered.spec_summary.as_ref()?.summary.as_ref()
-    }
-
     /// Installs a finished read, or drops it.
     ///
     /// Returns whether anything on screen changed. An answer about a
@@ -246,30 +193,6 @@ impl WorkspaceModel {
             };
             self.code_request_pending |= !listing;
             spawn_file_request(root.clone(), request, sender.clone());
-        }
-    }
-
-    pub(super) fn schedule_spec_read(
-        &mut self,
-        home: &UzeHome,
-        sender: &mpsc::Sender<SpecResolution>,
-    ) {
-        if self.spec.is_none() || self.spec_asked {
-            return;
-        }
-        if let Some(root) = self.spec_root.clone() {
-            self.spec_asked = true;
-            spawn_spec_read(home, root, sender.clone());
-        }
-    }
-
-    pub(super) fn absorb_spec(&mut self, resolution: SpecResolution) -> bool {
-        match self.spec.as_mut() {
-            Some(view) if self.spec_root.as_ref() == Some(&resolution.root) => {
-                view.absorb(resolution.answer);
-                true
-            }
-            _ => false,
         }
     }
 
@@ -540,13 +463,33 @@ impl WorkspaceModel {
     /// Hands each hosted engine's pending jobs to a thread, and answers how
     /// many it handed. Cheap enough for every tick: an engine with nothing
     /// to read answers none.
-    pub(super) fn schedule_engine_jobs(&mut self, answers: &mpsc::Sender<EngineAnswer>) -> usize {
+    pub(super) fn schedule_engine_jobs(
+        &mut self,
+        home: &UzeHome,
+        answers: &mpsc::Sender<EngineAnswer>,
+    ) -> usize {
+        let in_front = self
+            .focused_cwd()
+            .map(|root| uze_extensions::contract::Checkout {
+                display: crate::ui::display_project_path(&root),
+                target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+                root,
+            });
+        let offered: BTreeSet<Owner> = self
+            .remembered
+            .declared
+            .engines
+            .keys()
+            .filter(|owner| self.offers_declared(owner))
+            .cloned()
+            .collect();
         let mut handed = 0;
-        for (identity, engine) in &mut self.remembered.declared.engines {
+        for (owner, engine) in &mut self.remembered.declared.engines {
+            engine.focus(in_front.as_ref().filter(|_| offered.contains(owner)));
             let jobs = engine.jobs();
             handed += jobs.len();
             if !jobs.is_empty() {
-                spawn_engine_jobs(identity.clone(), jobs, engine.lanes(), answers.clone());
+                spawn_engine_jobs(owner.clone(), jobs, engine.lanes(), home, answers.clone());
             }
         }
         handed
