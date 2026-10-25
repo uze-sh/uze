@@ -110,7 +110,7 @@ fn files_digest(identity: &Identity, dir: &Path) -> Option<String> {
         push_field(&mut stream, part.as_bytes());
     }
     let mut total = 0u64;
-    for (relative, path) in walk(dir, WALK_DEPTH)? {
+    for (relative, path) in walk(dir, WALK_DEPTH, Past::Refuse)? {
         // Read no further than the bound allows: one file of gigabytes is
         // past it after its first eight mebibytes, not after all of it.
         let mut bytes = Vec::new();
@@ -134,7 +134,7 @@ fn files_digest(identity: &Identity, dir: &Path) -> Option<String> {
 /// extension can be asked several times a second.
 pub fn extension_stamp(dir: &Path) -> u64 {
     let mut stream = Vec::new();
-    for (relative, path) in walk(dir, STAMP_DEPTH).unwrap_or_default() {
+    for (relative, path) in walk(dir, STAMP_DEPTH, Past::Skip).unwrap_or_default() {
         let Ok(metadata) = std::fs::metadata(&path) else {
             continue;
         };
@@ -159,9 +159,18 @@ fn push_field(stream: &mut Vec<u8>, field: &[u8]) {
 
 /// The files under `dir`, by their path relative to it in `/` spelling,
 /// sorted. Links are not followed: an extension's files are its own.
-/// `None` past [`WALK_FILES`] files or a directory deeper than
-/// `max_depth`: a digest that left files out would serve a stale compile.
-fn walk(dir: &Path, max_depth: usize) -> Option<Vec<(String, PathBuf)>> {
+/// `None` past [`WALK_FILES`] files, or at a directory deeper than
+/// `max_depth` when `past` refuses one.
+/// What a walk does with a directory deeper than it looks.
+#[derive(Clone, Copy, PartialEq)]
+enum Past {
+    /// Gives no answer: a digest that left files out would be stale.
+    Refuse,
+    /// Leaves it out: a stamp of the rest still sees a save there.
+    Skip,
+}
+
+fn walk(dir: &Path, max_depth: usize, past: Past) -> Option<Vec<(String, PathBuf)>> {
     let mut files = Vec::new();
     let mut pending = vec![(dir.to_path_buf(), String::new(), 0usize)];
     while let Some((directory, prefix, depth)) = pending.pop() {
@@ -180,7 +189,10 @@ fn walk(dir: &Path, max_depth: usize) -> Option<Vec<(String, PathBuf)>> {
             };
             if kind.is_dir() {
                 if depth >= max_depth {
-                    return None;
+                    match past {
+                        Past::Refuse => return None,
+                        Past::Skip => continue,
+                    }
                 }
                 pending.push((entry.path(), relative, depth + 1));
             } else if kind.is_file() {
@@ -278,6 +290,20 @@ mod tests {
             },
             views: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn a_save_is_stamped_beside_a_directory_too_deep_to_walk() {
+        let root = uze_testkit::temp::scratch("extensions-stamp-deep");
+        let deep = (0..STAMP_DEPTH + 2).fold(root.join("assets"), |path, level| {
+            path.join(level.to_string())
+        });
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(root.join("board.kdl"), "Text \"a\"").unwrap();
+        let before = extension_stamp(&root);
+        fs::write(root.join("board.kdl"), "Text \"a longer view\"").unwrap();
+        assert_ne!(extension_stamp(&root), before, "the save is seen");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
