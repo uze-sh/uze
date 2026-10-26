@@ -1735,3 +1735,121 @@ fn a_declared_views_scrollbar_follows_the_pointer() {
     assert!(shown(&driven) > 0, "a press low on the track scrolls down");
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// A Git checkout outside the system's temporary directory, which an
+/// extension may never read: beside the build's own output.
+fn checkout_outside_the_temporary_directory(label: &str) -> PathBuf {
+    let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/extension-checkouts")
+        .join(format!("{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&checkout);
+    std::fs::create_dir_all(checkout.join(".planning")).unwrap();
+    uze_testkit::git::isolated_git_in(&checkout, &["init", "-q"]);
+    uze_platform::path::canonical(&checkout).unwrap()
+}
+
+/// Every engine job asked now and the answers they give, absorbed until
+/// `wanted` is drawn or the wait runs out; the rows drawn last.
+fn drawn_once_answered(
+    model: &mut WorkspaceModel,
+    home: &uze_application::UzeHome,
+    area: ratatui::layout::Rect,
+    wanted: &str,
+) -> Vec<String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        model.schedule_engine_jobs(home, &sender);
+        while let Ok(answer) = receiver.recv_timeout(std::time::Duration::from_millis(50)) {
+            model.absorb_engine_answer(answer);
+        }
+        let rows = frame_rows_at(model, area);
+        if shown(&rows, wanted) || std::time::Instant::now() > deadline {
+            return rows;
+        }
+    }
+}
+
+#[test]
+fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
+    let root = uze_testkit::temp::scratch("declared-script");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    let band = the_gsd_band_installed(&root, &home)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let manifest = band.join("extension.kdl");
+    let declared = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        declared.replace(
+            "source \"milestone\" {",
+            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+             source \"milestone\" {",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        band.join("lines.kdl"),
+        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+    )
+    .unwrap();
+    let checkout = checkout_outside_the_temporary_directory("declared-script");
+    std::fs::write(checkout.join(".planning/STATE.md"), "a\nb\nc\nd").unwrap();
+
+    let mut model = agent_session_in(&checkout.display().to_string());
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    let rows = drawn_once_answered(&mut model, &home, area, "needs consent");
+    assert!(shown(&rows, "needs consent"), "{rows:#?}");
+    assert!(
+        shown(&rows, "v1.23 65%"),
+        "the fixture draws as before: {rows:#?}"
+    );
+
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let identity = ExtensionIdentity {
+        marketplace: "studio".to_owned(),
+        plugin: "gsd".to_owned(),
+        id: "gsd-band".to_owned(),
+    };
+    let extensions = app.extensions();
+    extensions
+        .consent(&identity, uze_application::Asker::Operator)
+        .unwrap();
+    let installed: Vec<InstalledExtension> = model
+        .remembered
+        .declared
+        .extensions
+        .values()
+        .map(|hosted| hosted.installed.clone())
+        .collect();
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Recompile(installed.clone()),
+    );
+    // The column wraps the reason: its first words are on one row.
+    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling in this");
+    assert!(shown(&rows, "needs enabling in this"), "{rows:#?}");
+
+    extensions
+        .enable(
+            &identity,
+            &uze_application::project_root_of(&checkout),
+            uze_application::Asker::Operator,
+        )
+        .unwrap();
+    answered(&mut model, &home, super::ExtensionJob::Recompile(installed));
+    let rows = drawn_once_answered(&mut model, &home, area, "4 lines of state");
+    assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
+    assert_eq!(model.remembered.declared.runner.runs(), 1);
+
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(checkout).unwrap();
+}

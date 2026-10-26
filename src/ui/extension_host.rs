@@ -604,14 +604,27 @@ fn count_lines_of(path: &Path) -> u32 {
     }
 }
 
-/// The grant a hosted engine's jobs run with: the workspace's, and the
-/// one question about a checkout that is the application's rather than the
-/// machine's, which needs the home it was started on.
+/// The grant a hosted engine's jobs run with: the workspace's, the one
+/// question about a checkout that is the application's rather than the
+/// machine's, which needs the home it was started on, and a declared
+/// extension's questions, answered by the session's runner.
 pub struct EngineHost {
     pub home: uze_application::UzeHome,
+    pub runner: Arc<uze_application::ExtensionRunner>,
 }
 
 impl uze_extensions::Host for EngineHost {
+    /// Through the runner alone: it finds what answers the question in the
+    /// compile the operator consented to, and says why when nothing may.
+    fn answer(&self, question: uze_extensions::Question) -> uze_extensions::Answer {
+        match super::tui_application(self.home.clone()) {
+            Ok(app) => self.runner.answer(&app.extensions(), &question),
+            Err(error) => uze_extensions::Answer::withheld(format!(
+                "the workspace's application cannot start: {error}"
+            )),
+        }
+    }
+
     fn delivery_target(&self, checkout: &Path) -> Option<String> {
         super::tui_application(self.home.clone())
             .ok()

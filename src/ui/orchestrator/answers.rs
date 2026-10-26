@@ -192,12 +192,20 @@ impl WorkspaceModel {
             .cloned()
             .collect();
         let mut handed = 0;
-        for (owner, engine) in &mut self.remembered.declared.engines {
+        let declared = &mut self.remembered.declared;
+        for (owner, engine) in &mut declared.engines {
             engine.focus(in_front.as_ref().filter(|_| offered.contains(owner)));
             let jobs = engine.jobs();
             handed += jobs.len();
             if !jobs.is_empty() {
-                spawn_engine_jobs(owner.clone(), jobs, engine.lanes(), home, answers.clone());
+                spawn_engine_jobs(
+                    owner.clone(),
+                    jobs,
+                    engine.lanes(),
+                    home,
+                    &declared.runner,
+                    answers.clone(),
+                );
             }
         }
         handed

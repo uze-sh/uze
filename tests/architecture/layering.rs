@@ -1707,6 +1707,67 @@ fn only_uze_script_names_the_script_engine() {
     );
 }
 
+/// A declared extension's question reaches the runner from one place: the
+/// declared engine (`add-extension-platform` D3). `Host::answer` is the
+/// grant to answer *a declaration of this extension*, and a built-in, which
+/// has no manifest, has no declaration to name; the client passes a
+/// question through and never makes one up.
+#[test]
+fn only_the_declared_engine_asks_a_source() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut extensions = Vec::new();
+    collect_rust_files(&root.join("crates/uze-extensions/src"), &mut extensions);
+    for file in extensions {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let declared = relative == "crates/uze-extensions/src/declared.rs"
+            || relative.starts_with("crates/uze-extensions/src/declared/");
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let asks = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".answer(") || line.contains("Host::answer"));
+        if asks && !declared {
+            failures.push(format!("  {relative} asks the host to answer"));
+        }
+    }
+    let mut client = Vec::new();
+    collect_rust_files(&root.join("src"), &mut client);
+    for file in client {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        // The host's own file takes the question to the runner, and is
+        // the one place the client names the type.
+        let passes_it_on = relative == "src/ui/extension_host.rs";
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let asks = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| {
+                line.contains("Host::answer")
+                    || line.contains("host.answer(")
+                    || (!passes_it_on
+                        && (line.contains("uze_extensions::Question")
+                            || line.contains("uze_contract::Question")))
+            });
+        if asks {
+            failures.push(format!("  {relative} makes up a question for the host"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only uze-extensions' declared engine asks `Host::answer`:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// The project's `AGENTS.md` is the operator's: no UZE operation creates,
 /// changes or appends to it, except the cleanup that takes out the regions
 /// earlier releases wrote there. A production file that names the file and

@@ -1595,15 +1595,23 @@ pub(super) struct EngineAnswer {
     pub(super) answer: uze_extensions::contract::Opaque,
 }
 
+/// The one pool every extension whose jobs run one at a time shares, for
+/// the whole client (`add-extension-platform` D28).
+static EXTENSION_POOL: std::sync::LazyLock<super::lanes::LanePool<super::declared::Owner>> =
+    std::sync::LazyLock::new(|| super::lanes::LanePool::new(super::lanes::POOL_THREADS));
+
 /// Runs a hosted engine's jobs, each with the workspace's `Host`, off the
-/// drawing thread: one after another on one thread for an engine whose
-/// lane is serial, each on its own thread for one that runs in parallel. A
-/// job that panics answers its fallback, so a failed read is drawn as one.
+/// drawing thread. An engine whose lane is serial (every declared
+/// extension's) has its jobs run one after another in its own lane of the
+/// extension pool; one that runs in parallel (a built-in's Git reads) runs
+/// each on a thread of its own. A job that panics answers its fallback, so
+/// a failed read is drawn as one.
 pub(super) fn spawn_engine_jobs(
     extension: super::declared::Owner,
     jobs: Vec<uze_extensions::contract::Job>,
     lanes: uze_extensions::contract::Lanes,
     home: &UzeHome,
+    runner: &std::sync::Arc<uze_application::ExtensionRunner>,
     sender: mpsc::Sender<EngineAnswer>,
 ) {
     fn answered(
@@ -1615,33 +1623,28 @@ pub(super) fn spawn_engine_jobs(
             .unwrap_or_else(|_| fallback())
     }
     let parent = tracing::Span::current();
-    let home = home.clone();
-    match lanes {
-        uze_extensions::contract::Lanes::Serial => {
-            thread::spawn(move || {
-                let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
-                for job in jobs {
-                    let _ = sender.send(EngineAnswer {
-                        extension: extension.clone(),
-                        answer: answered(job, &EngineHost { home: home.clone() }),
-                    });
-                }
+    for job in jobs {
+        let sender = sender.clone();
+        let parent = parent.clone();
+        let lane = extension.clone();
+        let extension = extension.clone();
+        let host = EngineHost {
+            home: home.clone(),
+            runner: std::sync::Arc::clone(runner),
+        };
+        let run = move || {
+            let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+            let _ = sender.send(EngineAnswer {
+                extension,
+                answer: answered(job, &host),
             });
-        }
-        uze_extensions::contract::Lanes::Parallel => {
-            for job in jobs {
-                let sender = sender.clone();
-                let parent = parent.clone();
-                let extension = extension.clone();
-                let home = home.clone();
-                thread::spawn(move || {
-                    let _pass =
-                        crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
-                    let _ = sender.send(EngineAnswer {
-                        extension: extension.clone(),
-                        answer: answered(job, &EngineHost { home: home.clone() }),
-                    });
-                });
+        };
+        match lanes {
+            uze_extensions::contract::Lanes::Serial => {
+                EXTENSION_POOL.submit(lane, Box::new(run));
+            }
+            uze_extensions::contract::Lanes::Parallel => {
+                thread::spawn(run);
             }
         }
     }

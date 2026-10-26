@@ -71,6 +71,7 @@ mod declared;
 use declared::*;
 mod events;
 mod interrupt;
+mod lanes;
 mod notices;
 mod overview_question;
 mod proposal;

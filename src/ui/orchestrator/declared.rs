@@ -127,6 +127,7 @@ impl Hosted for DeclaredExtension {
                 DataState::Bound => {}
                 DataState::Waiting => nodes.push("waiting for data".to_owned()),
                 DataState::Failed(reason) => nodes.push(format!("no data: {reason}")),
+                DataState::Withheld(reason) => nodes.push(format!("not asked: {reason}")),
             }
             outline(&trace.items, 0, &mut nodes);
             for (name, body) in &trace.templates {
@@ -345,6 +346,9 @@ pub(super) struct HostedExtensions {
     pub(super) engine: EngineFactory,
     /// The language every engine draws its label tables in.
     pub(super) locale: String,
+    /// What answers the declared extensions' sources, and remembers their
+    /// answers for as long as the client runs.
+    pub(super) runner: std::sync::Arc<uze_application::ExtensionRunner>,
 }
 
 impl Default for HostedExtensions {
@@ -366,6 +370,7 @@ impl Default for HostedExtensions {
             drawer_space: None,
             engine: declared_engine,
             locale: uze_platform::locale::language(),
+            runner: std::sync::Arc::default(),
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);

@@ -150,6 +150,8 @@ mod tests {
         fs::remove_dir_all(scratch).unwrap();
     }
 
+    // Making a symbolic link takes no privilege on Unix; on Windows it
+    // needs developer mode, which a test machine may not have.
     #[cfg(unix)]
     #[test]
     fn a_link_out_of_the_root_is_not_followed() {
