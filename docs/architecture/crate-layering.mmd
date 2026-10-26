@@ -9,6 +9,7 @@ flowchart TD
   end
   ext[uze-extensions<br/>describes, never draws]
   contract[uze-contract<br/>manifest · compiled views · catalog]
+  script[uze-script<br/>Rhai, built raw · only what grants register]
   keys[uze-keys<br/>actions · scopes]
   theme[uze-theme<br/>tokens · symbols]
   terminal[uze-terminal<br/>PTY server + protocol]
@@ -52,6 +53,9 @@ flowchart TD
   app --> delivery
   app --> project
   app --> registry
+  app -->|ExtensionRunner| script
+  script --> contract
+  script --> process
   app --> tasks
   tasks --> project
   tasks --> git
