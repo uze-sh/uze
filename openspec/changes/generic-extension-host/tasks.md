@@ -27,4 +27,4 @@
 ## 5. Contract and docs
 
 - [x] 5.1 `ExtensionHit` as `{ slot, surface, hit }`; the extensions rule and `docs/architecture/invariants.md` updated; `docs/architecture/workspace-components.mmd` redrawn; `make artifacts`
-- [ ] 5.2 `make check`, the journeys, `openspec validate --all --strict`
+- [x] 5.2 `make check`, the journeys, `openspec validate --all --strict`
