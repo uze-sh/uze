@@ -47,3 +47,14 @@
 - decided:  The operator asked that it keep exactly what it does today, seen and used. Its slot is hosted, but the sidebar draws it in its own place with its own budget, fold and handle, as before; the engine is told the checkout in front and its target on every pass (`Extension::focus`, `Checkout::target`) and recounts on the same cadence; a row sends the view to its change (`Outcome::Show`), which wins over the place last left; the row of the change on show is the extension's to say (`Section::lit`). The view's read asks the host for the delivery target, which needs the home (`Host::delivery_target`, answered by `EngineHost`). The code timeline (task 4) follows the same rule.
 - rejected: One rule for every section (budget and handle), which would change how either the spec or a plugin's section looks.
 - blast:    The redraw after a count is no longer skipped when it found nothing new: one frame every five seconds while an agent's checkout is in front.
+
+## D6 — The code surface is entered, and its timeline asks the host for a commit
+
+- status:   pending
+- task:     4.1–4.2
+- commit:   969c813a, 9a15e328, d906f727
+- trigger:  Moving `code` showed what the host still did for it by hand: opening it through one of two doors, or onto a path another surface pointed at; sealing the keys while a file or a new name takes text, and pasting into it; keeping its file writes in order; saying a write that failed after the surface closed; holding a press for a drag only where something drags; and opening a commit's account beside the timeline row it was clicked on. The timeline was read with the tab strip's changes badge.
+- decided:  `Extension` gained `enter(surface, Entry)` (`Entry::Door` or `Entry::Path`), `typing`, `paste` and `drags`; `absorb` answers an `Outcome`, and `orphaned` went, since the extension knows whether the surface it read for is still open; `Outcome` gained `Failed` (a toast) and `OpenCommit` (the timeline's popup, which stays the host's chrome, as `OpenPath` leads to the code surface). The order of the files half is kept by the extension, which runs its jobs in parallel and holds a read or write until the one before it answers. The timeline is the extension's section, read for the checkout in front as spec's summary is (D5); the badge is the host's own read of the summary alone.
+- rejected: A `Hosted` method only the code engine answers (the doors, the commit): it would keep a built-in's shape in the host. A status-segment slot for the badge: the parent change's, not this one's.
+- blast:    Two behaviours moved: a letter typed while a file is being renamed in the tree now reaches the name, where it was dropped before; and the wheel or a drag past the edge stops at the last line on every view, not only on code. The badge and the timeline are two reads now, each on its own cadence, where the timeline rode on every fourth badge read. The `tui.code_*` spans are `tui.engine_jobs`.
+

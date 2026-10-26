@@ -20,9 +20,9 @@
 
 ## 4. Code
 
-- [ ] 4.1 `CodeExtension: Extension`: the surface in its modes and the timeline section, its four reads as jobs, `CodeOutcome::Copy` onto `Outcome`
-- [ ] 4.2 Host it; remove its fields, channels, reads, `ExtensionHit::Code`/`CodeTimeline` and `code_places`; typing stays a direct command
-- [ ] 4.3 Tests green
+- [x] 4.1 `CodeExtension: Extension`: the surface in its modes and the timeline section, its four reads as jobs, `CodeOutcome::Copy` onto `Outcome`
+- [x] 4.2 Host it; remove its fields, channels, reads, `ExtensionHit::Code`/`CodeTimeline` and `code_places`; typing stays a direct command
+- [x] 4.3 Tests green
 
 ## 5. Contract and docs
 
