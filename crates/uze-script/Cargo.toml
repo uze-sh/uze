@@ -16,7 +16,10 @@ uze-platform = { path = "../uze-platform" }
 # dropped (hash keys protect nothing here), and `sync` is required because a
 # job runs on the extension pool. `unchecked`, `internals` and `debugging`
 # are never enabled: they remove the limits or open the engine's insides.
-rhai = { version = "1.27", default-features = false, features = ["std", "sync"] }
+# `compact_str` replaces the unmaintained `smartstring` (RUSTSEC-2026-0249,
+# MPL-2.0) inside the engine; rhai 1.27 still compiles smartstring, which is
+# why deny.toml carries one exception for it.
+rhai = { version = "1.27", default-features = false, features = ["std", "sync", "compact_str"] }
 # The input, the context and the envelope are JSON on both sides.
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"

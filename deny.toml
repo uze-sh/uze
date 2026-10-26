@@ -32,6 +32,14 @@ allow = [
 # The list is a policy, not an inventory: a licence being absent from the
 # tree today is not a reason to stop allowing it tomorrow.
 unused-allowed-license = "allow"
+# One weak-copyleft exception, by crate. smartstring (MPL-2.0, copyleft per
+# file: an obligation only on modifying its files, which this project never
+# does) is compiled into rhai unconditionally, though `uze-script` enables
+# rhai's compact_str instead of it. Decided by the operator on 2026-10-26;
+# it leaves with the advisory ignore above.
+exceptions = [
+  { crate = "smartstring", allow = ["MPL-2.0"] },
+]
 
 [bans]
 # Two versions of one crate is ordinary in a large graph and is a size
@@ -46,7 +54,7 @@ allow-wildcard-paths = true
 
 [advisories]
 yanked = "deny"
-# Two crates are flagged `unmaintained`. Neither is a vulnerability, and
+# Three crates are flagged `unmaintained`. Neither is a vulnerability, and
 # neither can be dropped without changing production Rust, so each is
 # recorded here with what would remove it rather than left to fail the gate
 # every run until someone stops reading it. A vulnerability advisory is
@@ -65,6 +73,12 @@ ignore = [
   # definitions. Nothing here calls it directly. It leaves when syntect
   # moves to yaml-rust2, which is not a decision this project makes.
   { id = "RUSTSEC-2024-0320", reason = "yaml-rust is transitive through syntect; it leaves when syntect moves to yaml-rust2" },
+  # smartstring 1.0.1, archived by its author, reaches the tree only through
+  # rhai, the extension scripts' engine (`uze-script`). rhai 1.27 already
+  # uses compact_str instead under the feature `uze-script` enables, but
+  # still compiles smartstring unconditionally. It leaves when rhai makes it
+  # optional.
+  { id = "RUSTSEC-2026-0249", reason = "smartstring is transitive through rhai, unused under its compact_str feature; it leaves when rhai makes it optional" },
 ]
 
 [sources]
