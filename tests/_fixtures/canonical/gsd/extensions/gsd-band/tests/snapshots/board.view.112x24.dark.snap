@@ -22,7 +22,7 @@
 
 
 
-esc close  ·  i inspector
+esc close  ·  ctrl+r refresh  ·  i inspector
 ---
  aaaaaaaa a aaaaaaaaa
 
@@ -47,7 +47,7 @@ esc close  ·  i inspector
 
 
 
-hhh aaaaa  f  h aaaaaaaaa
+hhh aaaaa  f  hhhhhh aaaaaaa  f  h aaaaaaaaa
 ---
 a text.muted
 b text.bright
