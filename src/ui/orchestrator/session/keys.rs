@@ -87,18 +87,26 @@ impl Attach<'_> {
         scopes
     }
 
-    /// What is on offer where the index is opened that holds no key: what
-    /// recent's selected row offers, or, over the pane or a surface
-    /// standing in it, delivering every task of the space.
+    /// What is on offer where the index is opened beyond the host's own
+    /// vocabulary: what recent's selected row offers, or the declared
+    /// surface in front's actions, with their keys or by pointer alone,
+    /// and, over the pane or a surface standing in it, delivering every
+    /// task of the space.
     fn offered_without_a_key(&self) -> Vec<Action> {
         if self.model.recent.has_keys() {
             return recent_offered(&self.model);
         }
         let in_the_pane = self.scopes().last() == Some(&Scope::Surfaces);
+        let mut offered: Vec<Action> = self
+            .model
+            .declared_actions()
+            .into_iter()
+            .map(|(action, _)| action)
+            .collect();
         if in_the_pane && self.model.focused_cwd().is_some() {
-            return vec![Action::DeliverAllTasks];
+            offered.push(Action::DeliverAllTasks);
         }
-        Vec::new()
+        offered
     }
 
     /// Keyboard input: say what is open, then act on what the keystroke
@@ -129,7 +137,11 @@ impl Attach<'_> {
             return flow;
         }
         let scopes = self.scopes();
-        match uze_keys::active().resolve(chord, &scopes) {
+        let front = self.model.declared_front();
+        let front = front
+            .as_ref()
+            .map(|(owner, surface)| uze_keys::Front { owner, surface });
+        match uze_keys::active().resolve_for(chord, &scopes, front) {
             Resolution::Act(action) if !self.model.offers_action(action) => {
                 self.unclaimed(key, chord);
                 Flow::Continue

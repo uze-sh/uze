@@ -28,6 +28,8 @@ mod delivery;
 #[cfg(test)]
 mod drawing;
 #[cfg(test)]
+mod extension_keys;
+#[cfg(test)]
 mod extensions;
 #[cfg(test)]
 mod foot;

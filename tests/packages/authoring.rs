@@ -776,6 +776,74 @@ fn a_failing_extension_test_fails_the_check_until_its_snapshot_is_updated() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// A key an extension suggests for its action reaches that action in a
+/// test the way it does in the workspace: through the extension's own
+/// table, beside the host's keys.
+#[test]
+fn a_tests_press_reaches_an_extension_action_by_its_key() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-press");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let extension = plugin.join("extensions/board");
+    let manifest = extension.join("extension.kdl");
+    let mut written = fs::read_to_string(&manifest).unwrap();
+    written.push_str(
+        "action \"reload\" label=\"Reload\" on=\"board\" key=\"ctrl-r\" { refresh \"board\"; }\n",
+    );
+    fs::write(&manifest, written).unwrap();
+    let test = extension.join("tests/board.test.kdl");
+    let mut written = fs::read_to_string(&test).unwrap();
+    written.push_str(
+        "\ntest \"its key reloads the board\" {\n    surface \"board\"\n    press \"ctrl+r\"\n    expect-action \"reload\"\n}\n",
+    );
+    fs::write(&test, written).unwrap();
+
+    // The footer now names the key, so the snapshot is written again.
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    assert!(
+        updated.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&updated.stdout),
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let snapshot =
+        fs::read_to_string(extension.join("tests/snapshots/board.view.100x30.dark.snap")).unwrap();
+    assert!(snapshot.contains("ctrl+r reload"), "{snapshot}");
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
+    assert!(output.contains("4 tests passed"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// An id a built-in extension answers to is refused, and nothing written.
 #[test]
 fn a_reserved_extension_id_is_refused_before_the_scaffold() {

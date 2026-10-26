@@ -595,6 +595,40 @@ fn a_pressed_button_records_its_action_with_the_item_and_runs_nothing() {
 }
 
 #[test]
+fn a_key_on_a_declared_action_records_it_where_it_is_offered() {
+    let mut compiled = extension(compiled_view(Vec::new(), Vec::new(), Vec::new()));
+    compiled.manifest.actions = vec![uze_contract::ActionDecl {
+        id: "refresh".to_owned(),
+        label: "Refresh".to_owned(),
+        on: VIEW.to_owned(),
+        key: None,
+        confirm: None,
+        does: uze_contract::Does::Refresh(vec![SOURCE.to_owned()]),
+    }];
+    let mut extension = DeclaredExtension::new(compiled, "en");
+    assert_eq!(
+        extension.press(SECTION, "refresh"),
+        Outcome::Stay,
+        "not offered there"
+    );
+    assert_eq!(
+        extension.press(VIEW, "missing"),
+        Outcome::Stay,
+        "not declared"
+    );
+    let outcome = extension.press(VIEW, "refresh");
+    assert!(matches!(&outcome, Outcome::Notice(span) if span.text == "refresh recorded, not run"));
+    assert_eq!(
+        extension.recorded(),
+        [RecordedAction {
+            surface: VIEW.into(),
+            action: "refresh".into(),
+            item: Value::Null,
+        }]
+    );
+}
+
+#[test]
 fn a_toggle_flips_its_ui_value_from_the_declared_default() {
     let items = vec![
         n(NodeName::Toggle)

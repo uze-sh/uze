@@ -545,6 +545,7 @@ pub(crate) fn attach_workspace(
         first_steps_closed: layout.first_steps.closed,
         steps_taken: layout.first_steps.taken.clone(),
         disabled_extensions: super::extension_switch::disabled(),
+        registered_keys: BTreeMap::new(),
         timeline_collapsed: layout.workspace.timeline_collapsed,
         timeline_rows: layout.workspace.timeline_rows,
         collapsed_spaces: layout.workspace.collapsed_spaces.clone(),
@@ -1819,6 +1820,10 @@ struct WorkspaceModel {
     /// button, an entry in the index, a sidebar section, the reads that
     /// feed one — asks this, so switching one off is one place changing.
     disabled_extensions: std::collections::BTreeSet<String>,
+    /// What this client registered with the keyboard for the declared
+    /// extensions it hosts, by owner: an extension disabled or gone is
+    /// taken back from what is here.
+    registered_keys: BTreeMap<String, uze_keys::ExtensionTable>,
     dragging_sidebar: bool,
     /// What's being renamed (a tab or a space) and its live edit buffer.
     /// While set, all keyboard input edits this instead of reaching the

@@ -20,7 +20,7 @@ use uze_contract::{GivenData, Slot, StepKind, TestDecl, ThemeName};
 use uze_extensions::contract::Extension as _;
 use uze_extensions::declared::{Absence, DeclaredExtension, TraceEntry, TraceNode};
 use uze_extensions::view::{Size, ViewHit};
-use uze_keys::{Resolution, Scope};
+use uze_keys::{Action, Front, Resolution, Scope};
 
 use crate::ui::extension_view::{
     FooterKeys, NavigatorFrame, SectionState, command_for, render, render_docked, render_section,
@@ -119,6 +119,21 @@ fn run_one(
     }
     let theme = world.theme.unwrap_or(ThemeName::Dark);
     let (width, height) = world.size.unwrap_or_else(|| default_size(surface.slot));
+    // The extension's keys are the workspace's: its table registered over
+    // the operator's keymap, as an enabled extension's is there.
+    let table = crate::keymap::extension_table(compiled);
+    let owner = table.owner.clone();
+    uze_keys::register_extension(table);
+    let footer = uze_keys::active()
+        .extension_actions(Front {
+            owner: &owner,
+            surface: &surface.id,
+        })
+        .into_iter()
+        .filter(|(_, chord)| chord.is_some())
+        .map(|(action, _)| action)
+        .chain([Action::ToggleInspector])
+        .collect();
     let mut stage = Stage {
         engine: DeclaredExtension::new(
             compiled.clone(),
@@ -127,6 +142,8 @@ fn run_one(
         surface: surface.id.clone(),
         slot: surface.slot,
         identity: compiled.identity.clone(),
+        owner,
+        footer,
         theme,
         width,
         height,
@@ -167,7 +184,18 @@ fn run_one(
             StepKind::Press(chord) => {
                 let parsed = uze_keys::Chord::parse(chord)
                     .map_err(|_| fail(at, format!("`{chord}` is not a key")))?;
-                let command = match uze_keys::active().resolve(parsed, &[Scope::Declared]) {
+                let front = Front {
+                    owner: &stage.owner,
+                    surface: &stage.surface,
+                };
+                let meaning =
+                    uze_keys::active().resolve_for(parsed, &[Scope::Declared], Some(front));
+                if let Resolution::Act(Action::Extension(id)) = meaning {
+                    let action = uze_keys::extension::local(id);
+                    stage.engine.press(&stage.surface, &action);
+                    continue;
+                }
+                let command = match meaning {
                     Resolution::Act(action) => command_for(action),
                     _ => None,
                 }
@@ -324,6 +352,10 @@ struct Stage {
     surface: String,
     slot: Slot,
     identity: uze_contract::Identity,
+    /// The extension's owner as the keymap names it.
+    owner: String,
+    /// What the host adds to its footer, as the workspace does.
+    footer: Vec<Action>,
     theme: ThemeName,
     width: u16,
     height: u16,
@@ -408,7 +440,7 @@ impl Stage {
                                     FooterKeys {
                                         scope: Scope::Declared,
                                         hovered: None,
-                                        host: &[uze_keys::Action::ToggleInspector],
+                                        host: &self.footer,
                                     },
                                     None,
                                     &mut hits,
@@ -544,6 +576,8 @@ pub(crate) fn hit_for_text(
         surface: surface.to_owned(),
         slot,
         identity: compiled.identity.clone(),
+        owner: crate::keymap::extension_owner(&compiled.identity),
+        footer: vec![Action::ToggleInspector],
         theme: ThemeName::Dark,
         width,
         height,

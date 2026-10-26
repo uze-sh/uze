@@ -288,6 +288,7 @@ impl WorkspaceModel {
             self.open_root = None;
             self.inspecting = false;
         }
+        self.register_extension_keys();
         changed
     }
 

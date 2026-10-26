@@ -13,7 +13,7 @@ pub(super) fn render_footer_row(
     frame: &mut ratatui::Frame<'_>,
     footer: Rect,
     commands: &[Command],
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     trailing: Option<TextSpan<'static>>,
 ) -> Vec<(Rect, uze_keys::Action)> {
     let Some(trailing) = trailing else {
@@ -38,7 +38,7 @@ pub(super) fn render_footer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     commands: &[Command],
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
 ) -> Vec<(Rect, uze_keys::Action)> {
     // The overlay is what is open, so its own scope is what a key would
     // resolve against — the same stack `Attach::scopes` builds.

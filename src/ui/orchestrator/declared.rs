@@ -91,6 +91,11 @@ pub(super) trait Hosted: Extension {
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
+    /// One of its declared actions, asked for by a key or the index while
+    /// `surface` is in front. Nothing by default: a built-in declares none.
+    fn press(&mut self, _surface: &str, _action: &str) -> Outcome {
+        Outcome::Stay
+    }
 
     /// The code surface, for the tests to look into.
     #[cfg(test)]
@@ -115,6 +120,10 @@ impl Hosted for DeclaredExtension {
 
     fn forget(&mut self, surface: &str) {
         DeclaredExtension::forget(self, surface);
+    }
+
+    fn press(&mut self, surface: &str, action: &str) -> Outcome {
+        DeclaredExtension::press(self, surface, action)
     }
 
     fn inspect(&self, surface: &str) -> Inspection {
@@ -349,6 +358,9 @@ pub(super) struct HostedExtensions {
     /// What answers the declared extensions' sources, and remembers their
     /// answers for as long as the client runs.
     pub(super) runner: std::sync::Arc<uze_application::ExtensionRunner>,
+    /// What each compiled extension offers the keyboard, from its last
+    /// compile that went through.
+    pub(super) keys: BTreeMap<ExtensionIdentity, uze_keys::ExtensionTable>,
 }
 
 impl Default for HostedExtensions {
@@ -371,6 +383,7 @@ impl Default for HostedExtensions {
             engine: declared_engine,
             locale: uze_platform::locale::language(),
             runner: std::sync::Arc::default(),
+            keys: BTreeMap::new(),
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);
@@ -472,6 +485,7 @@ impl HostedExtensions {
         let stays = |owner: &Owner| owner.declared().is_none_or(|found| present.contains(found));
         self.extensions
             .retain(|identity, _| present.contains(identity));
+        self.keys.retain(|identity, _| present.contains(identity));
         self.slots.retain(|slot| stays(&slot.owner));
         self.engines.retain(|owner, _| stays(owner));
         self.places.retain(|(owner, _, _), _| stays(owner));
@@ -542,6 +556,8 @@ impl HostedExtensions {
         data: &BTreeMap<String, SourceData>,
     ) {
         let surfaces = surfaces_of(&compiled);
+        self.keys
+            .insert(identity.clone(), crate::keymap::extension_table(&compiled));
         let owner = Owner::Declared(identity.clone());
         // The stand-in of a compile that never went through, and surfaces
         // the extension no longer declares.
@@ -685,6 +701,83 @@ pub(super) fn switch_id(identity: &ExtensionIdentity) -> String {
 impl WorkspaceModel {
     pub(super) fn offers_declared(&self, owner: &Owner) -> bool {
         self.offers_extension(&owner.switch_id())
+    }
+
+    /// Brings the keyboard in line with the declared extensions hosted
+    /// now: each enabled one that offers an action has its table
+    /// registered, and one disabled or gone has its table taken back.
+    pub(super) fn register_extension_keys(&mut self) {
+        let wanted: BTreeMap<String, &uze_keys::ExtensionTable> = self
+            .remembered
+            .declared
+            .keys
+            .iter()
+            .filter(|(identity, table)| {
+                !table.offered.is_empty() && self.offers_extension(&switch_id(identity))
+            })
+            .map(|(_, table)| (table.owner.clone(), table))
+            .collect();
+        let changed: Vec<uze_keys::ExtensionTable> = wanted
+            .iter()
+            .filter(|(owner, table)| self.registered_keys.get(*owner) != Some(**table))
+            .map(|(_, table)| (*table).clone())
+            .collect();
+        let gone: Vec<String> = self
+            .registered_keys
+            .keys()
+            .filter(|owner| !wanted.contains_key(*owner))
+            .cloned()
+            .collect();
+        for owner in gone {
+            uze_keys::unregister_extension(&owner);
+            self.registered_keys.remove(&owner);
+        }
+        for table in changed {
+            uze_keys::register_extension(table.clone());
+            self.registered_keys.insert(table.owner.clone(), table);
+        }
+    }
+
+    /// The declared extension and surface in front of the keyboard: its
+    /// owner as the keymap names it, and the surface's id.
+    pub(super) fn declared_front(&self) -> Option<(String, String)> {
+        let slot = self.slot_in_pane()?;
+        let identity = slot.owner.declared()?;
+        Some((
+            crate::keymap::extension_owner(identity),
+            slot.surface.id.clone(),
+        ))
+    }
+
+    /// The declared actions the surface in front offers, each with the
+    /// chord that reaches it: the footer's and the index's list.
+    pub(super) fn declared_actions(&self) -> Vec<(Action, Option<uze_keys::Chord>)> {
+        match self.declared_front() {
+            Some((owner, surface)) => uze_keys::active().extension_actions(uze_keys::Front {
+                owner: &owner,
+                surface: &surface,
+            }),
+            None => Vec::new(),
+        }
+    }
+
+    /// Hands the surface in front one of its declared actions, asked for
+    /// by a key, a footer hint or the index.
+    pub(super) fn press_declared_action(&mut self, action: uze_keys::ExtensionActionId) {
+        let (Some(id), Some((owner, _))) = (self.open_slot, self.declared_front()) else {
+            return;
+        };
+        if uze_keys::extension::owner(action) != owner {
+            return;
+        }
+        let local = uze_keys::extension::local(action);
+        let outcome = self
+            .remembered
+            .declared
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.press(&surface, &local))
+            .unwrap_or(Outcome::Stay);
+        self.follow_surface(outcome);
     }
 
     /// The spec summary's slot and what it draws for the checkout in front,

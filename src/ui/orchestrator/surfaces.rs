@@ -47,6 +47,7 @@ impl WorkspaceModel {
             self.close_surface();
         }
         self.close_drawers_switched_off();
+        self.register_extension_keys();
         self.dirty = true;
     }
 

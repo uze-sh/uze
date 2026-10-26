@@ -379,6 +379,7 @@ fn render_extension(
     // `hits` vec — the one place that translation happens.
     let OpenExtension { view, scope, tag } = open;
     let (scope, tag) = (*scope, *tag);
+    let host_keys = footer_host_keys(model);
     let mut view_hits = Vec::new();
     metrics.surface = Some(crate::ui::extension_view::render(
         frame,
@@ -402,12 +403,7 @@ fn render_extension(
         crate::ui::extension_view::FooterKeys {
             scope,
             hovered: model.hovered_hint(),
-            host: match model.slot_in_pane() {
-                Some(slot) if slot.owner.declared().is_some() => {
-                    &[uze_keys::Action::ToggleInspector]
-                }
-                _ => &[],
-            },
+            host: &host_keys,
         },
         match &model.selection {
             Some(Selection::Text(marking)) => Some(marking),
@@ -433,6 +429,25 @@ fn render_extension(
         scope,
         tag,
     })
+}
+
+/// What the host adds to a surface's footer: on a declared one, the
+/// actions it declares for the surface that hold a key, then its inspector.
+/// One with no key is offered in the index, by pointer.
+fn footer_host_keys(model: &WorkspaceModel) -> Vec<uze_keys::Action> {
+    if !model
+        .slot_in_pane()
+        .is_some_and(|slot| slot.owner.declared().is_some())
+    {
+        return Vec::new();
+    }
+    model
+        .declared_actions()
+        .into_iter()
+        .filter(|(_, chord)| chord.is_some())
+        .map(|(action, _)| action)
+        .chain([uze_keys::Action::ToggleInspector])
+        .collect()
 }
 
 /// The open surface's navigation, in the bar's leading slot. Drawn after

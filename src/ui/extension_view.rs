@@ -120,13 +120,13 @@ pub(crate) struct Rendered {
 /// The keys a surface's footer names: read from the scope the surface is
 /// open in, the one under the pointer drawn lit.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct FooterKeys {
+pub(crate) struct FooterKeys<'a> {
     pub(crate) scope: uze_keys::Scope,
     pub(crate) hovered: Option<uze_keys::Action>,
     /// Keys the host offers on this surface beyond the ones its commands
-    /// name, after them: a declared view's inspector, which no engine
-    /// knows of.
-    pub(crate) host: &'static [uze_keys::Action],
+    /// name, after them: a declared view's own actions and its inspector,
+    /// which no engine draws.
+    pub(crate) host: &'a [uze_keys::Action],
 }
 
 /// Where the host holds the navigator this frame: the width it was
@@ -147,7 +147,7 @@ pub(crate) fn render(
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -215,7 +215,7 @@ fn render_surface(
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -444,7 +444,7 @@ fn render_board(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     hovered: Option<ViewHit>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,

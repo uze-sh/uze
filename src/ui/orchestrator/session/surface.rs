@@ -356,6 +356,7 @@ impl Attach<'_> {
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),
             Action::ToggleInspector => self.model.toggle_inspector(),
+            Action::Extension(id) => self.model.press_declared_action(id),
             Action::Dismiss if self.model.inspecting => self.model.toggle_inspector(),
             Action::ScrollPageDown if self.model.inspecting => self.model.page_inspector(true),
             Action::ScrollPageUp if self.model.inspecting => self.model.page_inspector(false),

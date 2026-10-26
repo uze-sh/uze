@@ -305,6 +305,22 @@ impl DeclaredExtension {
         &self.recorded
     }
 
+    /// The declared `action` asked for by a key or the index while
+    /// `surface` is in front, on no item. Recorded, as a button is, until
+    /// actions run; one the manifest does not offer on `surface` is
+    /// nothing.
+    pub fn press(&mut self, surface: &str, action: &str) -> Outcome {
+        let offered = self
+            .compiled
+            .manifest
+            .action(action)
+            .is_some_and(|declared| declared.on == surface);
+        if !offered {
+            return Outcome::Stay;
+        }
+        self.record(surface, action.to_owned(), serde_json::Value::Null)
+    }
+
     /// How many times a surface was bound since this extension was made.
     pub fn builds(&self) -> u64 {
         self.builds.get()
