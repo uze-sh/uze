@@ -1629,6 +1629,84 @@ fn an_extension_depends_on_the_contract_alone() {
     );
 }
 
+/// Every key of a dependency table in `manifest`, dev and target tables
+/// included.
+fn dependency_names(manifest: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_dependencies = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.ends_with("dependencies]");
+            continue;
+        }
+        if in_dependencies && let Some((name, _)) = line.split_once('=') {
+            found.push(name.trim().to_owned());
+        }
+    }
+    found
+}
+
+/// A script engine runs third-party code inside UZE's process, so exactly
+/// one crate holds it (`add-extension-platform` D19): `uze-script`, which
+/// builds the engine raw and bounded. A second crate naming `rhai` could
+/// build one without those bounds, or hand a script a function no grant
+/// registers. And `uze-script` reaches only the leaves it was given, so the
+/// engine carries nothing of the domain to the scripts it runs.
+#[test]
+fn only_uze_script_names_the_script_engine() {
+    let root = repository_root();
+    let mut manifests = vec![("uze".to_owned(), root.join("Cargo.toml"))];
+    for entry in fs::read_dir(root.join("crates"))
+        .unwrap()
+        .filter_map(Result::ok)
+    {
+        let manifest = entry.path().join("Cargo.toml");
+        if manifest.exists() {
+            manifests.push((entry.file_name().to_string_lossy().into_owned(), manifest));
+        }
+    }
+    let mut failures = Vec::new();
+    for (crate_name, manifest) in &manifests {
+        let names = dependency_names(&fs::read_to_string(manifest).unwrap());
+        if crate_name != "uze-script" && names.iter().any(|name| name == "rhai") {
+            failures.push(format!("  {crate_name} depends on rhai"));
+        }
+    }
+
+    let mut sources = Vec::new();
+    collect_rust_files(&root.join("src"), &mut sources);
+    collect_rust_files(&root.join("crates"), &mut sources);
+    for file in sources {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.starts_with("crates/uze-script/") {
+            continue;
+        }
+        let contents = fs::read_to_string(&file).unwrap_or_default();
+        if occurrences(&contents, "rhai::") > 0 || occurrences(&contents, "use rhai") > 0 {
+            failures.push(format!("  {relative} names rhai"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the script engine is uze-script's alone; ask it for a `Script` and an answer:\n{}",
+        failures.join("\n")
+    );
+
+    let script_manifest = fs::read_to_string(root.join("crates/uze-script/Cargo.toml")).unwrap();
+    let outside: Vec<_> = workspace_dependencies(&script_manifest)
+        .into_iter()
+        .filter(|name| !["uze-contract", "uze-platform"].contains(&name.as_str()))
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "uze-script may depend on uze-contract and uze-platform only, found {outside:?}"
+    );
+}
+
 /// The project's `AGENTS.md` is the operator's: no UZE operation creates,
 /// changes or appends to it, except the cleanup that takes out the regions
 /// earlier releases wrote there. A production file that names the file and

@@ -28,6 +28,7 @@ members = [
   "crates/uze-document",
   "crates/uze-platform",
   "crates/uze-keys",
+  "crates/uze-script",
 ]
 default-members = ["."]
 resolver = "3"

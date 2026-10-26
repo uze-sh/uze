@@ -109,3 +109,36 @@
 - decided:  A volume root is a path with no parent or a network (9p) mount point from `uze_platform::mounts`; a temporary directory is anything at or below `std::env::temp_dir()`; the home directory and its ancestors, and `$UZE_HOME` with anything above or below it, are compared canonically with `uze_platform::path::is_within`. A bare repository is named from its files (`HEAD`, `objects`, `refs` at its top) because Git refuses it; a worktree root without a `.git` inside it is refused too. Enabling does not check the checkout: the runner does, on every answer, from step 4.
 - rejected: Refusing only when Git says bare: through `uze-git` a bare repository reads as no repository at all, and the reason would be wrong.
 - blast:    A project kept under the system temporary directory has no extension source run in it.
+## S1. `rhai` reviewed, and one licence the earlier review missed (task 4.1)
+
+**Who publishes it.** `cargo info rhai@1.27.0`: repository
+`github.com/rhaiscript/rhai`, MIT OR Apache-2.0, MSRV 1.66.
+
+**What it brings** with `default-features = false, features = ["std",
+"sync"]` (`cargo tree -p uze-script -e normal`): `ahash` 0.8.12 (with
+`const-random` → `const-random-macro`, `getrandom` 0.2, `tiny-keccak`,
+`crunchy`; `zerocopy`), `bitflags`, `num-traits`, `once_cell`
+(`portable-atomic`), `rhai_codegen` 3.3.0 (a proc macro over `syn` 2, in the
+tree already), `smallvec`, `smartstring` 1.0.1 (`static_assertions`),
+`thin-vec`. New in `Cargo.lock`: `ahash`, `const-random`,
+`const-random-macro`, `crunchy`, `getrandom` 0.2, `no-std-compat`, `rhai`,
+`rhai_codegen`, `smartstring`, `spin`, `thin-vec`, `tiny-keccak`. No crate
+compiles C.
+
+**`unsafe`.** The crate does not forbid it (only its `grain` module does).
+Four sites in 1.27.0: `src/reify.rs:19` and `:56` (`transmute_copy` after a
+`TypeId` check, the `Dynamic` downcast), `src/func/register.rs:60` (the same,
+for a `&str` argument), `src/func/func_call.rs:198` (swapping the first
+argument of a method call). `uze-script` itself is `#![forbid(unsafe_code)]`.
+
+**Licences.** `rhai`, `rhai_codegen`, `ahash`, `const-random*`, `getrandom`,
+`thin-vec`: MIT OR Apache-2.0; `crunchy`, `spin`, `no-std-compat`: MIT;
+`tiny-keccak`: CC0-1.0. **`smartstring` 1.0.1 is `MPL-2.0+`**, a mandatory
+dependency of `rhai` (no feature removes it), and MPL-2.0 is in neither
+`deny.toml`'s `allow` nor `about.toml`'s `accepted`. `cargo deny check` (the
+workspace graph) and `make attributions` will refuse it. The earlier review
+said every licence was on the list; it was not. Open, for the operator: an
+MPL-2.0 exception for `smartstring` alone in both files (file-level copyleft;
+UZE does not modify it, and its source is published), or another engine.
+`cargo deny` and `cargo-about` are not installed on this machine, so neither
+was run.

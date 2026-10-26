@@ -1,0 +1,25 @@
+[package]
+name = "uze-script"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "The engine a declared extension's script runs in: built raw, bounded, and reaching only the host functions its grants register"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# The clock a script reads when the host does not answer one of its own.
+uze-platform = { path = "../uze-platform" }
+# The scripting engine (`add-extension-platform` D19, D27). rhaiscript,
+# MIT OR Apache-2.0, pure Rust. No default features: `ahash/runtime-rng` is
+# dropped (hash keys protect nothing here), and `sync` is required because a
+# job runs on the extension pool. `unchecked`, `internals` and `debugging`
+# are never enabled: they remove the limits or open the engine's insides.
+rhai = { version = "1.27", default-features = false, features = ["std", "sync"] }
+# The input, the context and the envelope are JSON on both sides.
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+# The `regex` primitive. rust-lang, already in the lock; its automata are in
+# the tree through the terminal runtime.
+regex = "1.13"
